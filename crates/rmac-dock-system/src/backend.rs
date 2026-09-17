@@ -46,6 +46,32 @@ impl Backend for SystemBackend {
         })
     }
 
+    fn restore_window(
+        &self,
+        request_id: rmac_compositor::ActivationId,
+        window: rmac_compositor::WindowId,
+    ) -> BackendFuture<'_, Result<(), BackendError>> {
+        Box::pin(async move {
+            let mut store = rmac_compositor::ParkingStore::load_default();
+            let Some(workspace) = store.forget(window) else {
+                return Err(BackendError::new(
+                    FailureKind::Unsupported,
+                    "the shell did not park this window",
+                ));
+            };
+            if let Err(error) = store.save_default() {
+                eprintln!("could not save the parking set: {error}");
+            }
+            rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
+                id: request_id,
+                action: rmac_compositor::Action::RestoreWindow { window, workspace },
+            })
+            .await
+            .result
+            .map_err(|error| BackendError::new(action_error_kind(error.kind), error.message))
+        })
+    }
+
     fn reveal_application(&self, source: &Path) -> BackendFuture<'_, Result<(), BackendError>> {
         let source = source.to_path_buf();
         Box::pin(async move {

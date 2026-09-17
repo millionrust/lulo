@@ -735,3 +735,105 @@ fn drag_reorder_moves_to_a_bounded_persisted_index() {
         ["terminal.desktop", "notes.desktop", "finder.desktop"]
     );
 }
+
+#[test]
+fn parked_windows_become_minimized_tiles_instead_of_running_apps() {
+    let catalog = [application("terminal.desktop", "Terminal")];
+    let place = |id: u64, name: Option<&str>| rmac_compositor::Workspace {
+        id: rmac_compositor::WorkspaceId(id),
+        index: id as u8,
+        name: name.map(str::to_owned),
+        output: None,
+        urgent: false,
+        active: false,
+        focused: false,
+        active_window: None,
+    };
+    let mut running = window(1, "terminal.desktop", false, false, 10);
+    running.workspace = Some(rmac_compositor::WorkspaceId(1));
+    let mut parked = window(2, "terminal.desktop", false, false, 20);
+    parked.workspace = Some(rmac_compositor::WorkspaceId(9));
+    let compositor = rmac_compositor::Snapshot {
+        workspaces: vec![
+            place(1, None),
+            place(9, Some(rmac_compositor::PARKING_WORKSPACE)),
+        ],
+        windows: vec![running, parked],
+        ..Default::default()
+    };
+
+    let model = Model::build(
+        &[rmac_shell_settings::AppId("terminal.desktop".into())],
+        &Default::default(),
+        &catalog,
+        &compositor,
+    );
+
+    // The parked window never counts as running...
+    assert_eq!(model.items[0].windows.len(), 1);
+    assert_eq!(model.items[0].windows[0].id, rmac_compositor::WindowId(1));
+    // ...it is a minimized tile, and it restores on activation.
+    assert_eq!(model.minimized.len(), 1);
+    assert_eq!(model.minimized[0].window, rmac_compositor::WindowId(2));
+    assert_eq!(
+        model.minimized[0].app_id.as_deref(),
+        Some("terminal.desktop")
+    );
+    assert_eq!(model.minimized[0].title.as_deref(), Some("Window 2"));
+    assert_eq!(
+        model.minimized[0].icon.as_deref(),
+        Some(std::path::Path::new("/icons/terminal.desktop.svg"))
+    );
+    assert_eq!(
+        model.activate_minimized(rmac_compositor::WindowId(2)),
+        Activation::RestoreWindow {
+            window: rmac_compositor::WindowId(2),
+        }
+    );
+    assert_eq!(
+        model.activate_minimized(rmac_compositor::WindowId(1)),
+        Activation::NoAction
+    );
+}
+
+#[test]
+fn minimized_tiles_lead_the_right_group_before_the_trash() {
+    let mut model = Model::default();
+    model.special_items = vec![SpecialItem {
+        kind: SpecialItemKind::Trash,
+        name: "Trash",
+        available: true,
+        item_count: Some(0),
+        activation: SpecialActivation::OpenTrash,
+    }];
+    model.minimized = vec![MinimizedItem {
+        window: rmac_compositor::WindowId(7),
+        app_id: Some("terminal.desktop".into()),
+        title: Some("jacob@Jake: ~".into()),
+        icon: Some(PathBuf::from("/icons/terminal.desktop.svg")),
+        thumbnail: Some(PathBuf::from("/run/rmac/thumbnails/7.png")),
+    }];
+
+    let content = presentation::ShelfContent::project(&model);
+    let ids: Vec<_> = content.places.iter().map(|entry| &entry.id).collect();
+    assert_eq!(
+        ids,
+        vec![
+            &presentation::EntryId::Minimized(rmac_compositor::WindowId(7)),
+            &presentation::EntryId::Special(SpecialItemKind::Trash),
+        ]
+    );
+    // The thumbnail is the tile and the app icon becomes the badge.
+    let tile = &content.places[0];
+    assert_eq!(
+        tile.icon,
+        presentation::Icon::File(PathBuf::from("/run/rmac/thumbnails/7.png"))
+    );
+    assert_eq!(
+        tile.miniature,
+        Some(presentation::Icon::File(PathBuf::from(
+            "/icons/terminal.desktop.svg"
+        )))
+    );
+    assert_eq!(tile.label, "jacob@Jake: ~");
+}

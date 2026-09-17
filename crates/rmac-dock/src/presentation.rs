@@ -54,6 +54,8 @@ impl fmt::Debug for Icon {
 pub enum EntryId {
     Application(String),
     Special(SpecialItemKind),
+    /// A parked window shown as a minimized tile in the right group (§4.11).
+    Minimized(rmac_compositor::WindowId),
     Overflow,
 }
 
@@ -71,6 +73,9 @@ pub struct Entry {
     /// Complete, path-free state for the renderer's accessible name.
     pub accessible_label: String,
     pub icon: Icon,
+    /// A secondary icon drawn over the tile. Minimized tiles use it for the
+    /// owning application's badge (§4.11); other entries leave it unset.
+    pub miniature: Option<Icon>,
     /// False means the item remains visible but cannot be activated.
     pub enabled: bool,
     pub activity: ActivityIndicator,
@@ -239,9 +244,17 @@ impl From<motion::ConfigError> for LayoutError {
 
 impl ShelfContent {
     pub fn project(model: &Model) -> Self {
+        // Minimized tiles lead the right group so the authoritative Trash
+        // endpoint stays rightmost.
+        let places = model
+            .minimized
+            .iter()
+            .map(minimized_entry)
+            .chain(model.special_items.iter().map(special_entry))
+            .collect();
         Self {
             applications: model.items.iter().map(application_entry).collect(),
-            places: model.special_items.iter().map(special_entry).collect(),
+            places,
         }
     }
 
@@ -515,6 +528,7 @@ pub(crate) fn overflow_group(hidden_applications: Vec<Entry>) -> OverflowGroup {
             label: "More".into(),
             accessible_label: accessible.join(", "),
             icon: Icon::Builtin(BuiltinIcon::More),
+            miniature: None,
             enabled: true,
             activity: if active {
                 ActivityIndicator::Active
@@ -559,6 +573,7 @@ fn application_entry(item: &Item) -> Entry {
             .clone()
             .map(Icon::File)
             .unwrap_or(Icon::Builtin(BuiltinIcon::Application)),
+        miniature: None,
         enabled,
         activity,
         urgent: item.urgent,
@@ -583,6 +598,35 @@ fn application_accessible_label(item: &Item, enabled: bool) -> String {
         parts.push("unavailable".into());
     }
     parts.join(", ")
+}
+
+fn minimized_entry(item: &crate::MinimizedItem) -> Entry {
+    let label = item
+        .title
+        .clone()
+        .or_else(|| item.app_id.clone())
+        .unwrap_or_else(|| format!("Window {}", item.window.0));
+    let mut accessible = vec![label.clone(), "minimized window".into()];
+    if let Some(app_id) = &item.app_id {
+        accessible.push(app_id.clone());
+    }
+    Entry {
+        id: EntryId::Minimized(item.window),
+        label,
+        accessible_label: accessible.join(", "),
+        // The thumbnail is the tile; fall back to the application icon.
+        icon: item
+            .thumbnail
+            .clone()
+            .map(Icon::File)
+            .or_else(|| item.icon.clone().map(Icon::File))
+            .unwrap_or(Icon::Builtin(BuiltinIcon::Application)),
+        miniature: item.icon.clone().map(Icon::File),
+        enabled: true,
+        activity: ActivityIndicator::None,
+        urgent: false,
+        badge: None,
+    }
 }
 
 fn special_entry(item: &SpecialItem) -> Entry {
@@ -611,6 +655,7 @@ fn special_entry(item: &SpecialItem) -> Entry {
         label: item.name.to_owned(),
         accessible_label: accessible.join(", "),
         icon: Icon::Builtin(icon),
+        miniature: None,
         enabled: item.available,
         activity: ActivityIndicator::None,
         urgent: false,

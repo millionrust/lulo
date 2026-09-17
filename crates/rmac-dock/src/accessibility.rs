@@ -344,6 +344,8 @@ pub fn project_accessibility(
         let menu_enabled = match &visible.entry.id {
             EntryId::Application(_) | EntryId::Overflow => true,
             EntryId::Special(_) => visible.entry.enabled,
+            // Minimized tiles restore on activation and have no menu yet.
+            EntryId::Minimized(_) => false,
         };
         let mut actions = Vec::with_capacity(2);
         if !matches!(visible.entry.id, EntryId::Overflow) {
@@ -361,6 +363,16 @@ pub fn project_accessibility(
                         return Err(AccessibilityProjectionError::InvalidEntry);
                     }
                     activation_available
+                }
+                EntryId::Minimized(window) => {
+                    let available = !matches!(
+                        input.model.activate_minimized(*window),
+                        Activation::NoAction | Activation::Unavailable { .. }
+                    );
+                    if visible.entry.enabled != available {
+                        return Err(AccessibilityProjectionError::InvalidEntry);
+                    }
+                    available
                 }
                 EntryId::Overflow => unreachable!("overflow handled above"),
             };
@@ -570,6 +582,18 @@ fn validate_layout<'a>(
                     group: ShelfGroup::Places,
                 });
             }
+            EntryId::Minimized(window) => {
+                let entry = content
+                    .places
+                    .iter()
+                    .find(|entry| entry.id == EntryId::Minimized(*window))
+                    .ok_or(AccessibilityProjectionError::InvalidLayout)?;
+                visible.push(VisibleEntry {
+                    entry,
+                    semantic_id: format!("dock-minimized-{}", window.0),
+                    group: ShelfGroup::Places,
+                });
+            }
         }
     }
     let projected_application_count = visible
@@ -602,6 +626,8 @@ fn validate_menu_authority(
             .overflow
             .as_ref()
             .and_then(|overflow| menu::Session::overflow(overflow).ok()),
+        // A minimized tile never owns a menu session.
+        EntryId::Minimized(_) => None,
     }
     .ok_or(AccessibilityProjectionError::InvalidMenu)?;
     if !session.is_open()

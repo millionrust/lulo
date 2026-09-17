@@ -320,6 +320,11 @@ pub fn prepare(
         rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Special(kind)) => {
             Ok(Preparation::Ready(prepare_special_activation(model, kind)))
         }
+        rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Minimized(
+            window,
+        )) => Ok(Preparation::Ready(prepare_minimized_activation(
+            model, window,
+        ))),
         rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Overflow) => {
             Err(PrepareError::UnsupportedEntry)
         }
@@ -419,6 +424,9 @@ fn prepare_application_activation(
     let operation = match &activation {
         rmac_dock::Activation::Launch { .. } => Operation::Launch,
         rmac_dock::Activation::FocusWindow(_) => Operation::Focus,
+        // An application activation never restores a parked window; minimized
+        // tiles take the dedicated path below.
+        rmac_dock::Activation::RestoreWindow { .. } => Operation::Restore,
         rmac_dock::Activation::NoAction => return Ok(Preparation::NoAction),
         rmac_dock::Activation::Unavailable { .. } => Operation::Resolve,
     };
@@ -427,6 +435,33 @@ fn prepare_application_activation(
         operation,
         execution: Execution::Activation(activation),
     }))
+}
+
+/// Resolve a minimized-tile click against the newest Dock projection. The
+/// window must still be parked, so a tile left over from a restore fails
+/// closed instead of moving an unrelated window.
+fn prepare_minimized_activation(
+    model: &rmac_dock::Model,
+    window: rmac_compositor::WindowId,
+) -> PreparedAction {
+    let application = model
+        .minimized
+        .iter()
+        .find(|item| item.window == window)
+        .and_then(|item| item.app_id.clone())
+        .unwrap_or_default();
+    let target = ActionTarget::Window {
+        application,
+        window,
+    };
+    match model.activate_minimized(window) {
+        activation @ rmac_dock::Activation::RestoreWindow { .. } => PreparedAction {
+            target,
+            operation: Operation::Restore,
+            execution: Execution::Activation(activation),
+        },
+        _ => rejected(target, Operation::Restore, &format!("window {}", window.0)),
+    }
 }
 
 fn prepare_context_action(
@@ -1401,5 +1436,64 @@ mod tests {
             ),
             Err(PrepareError::UnsupportedEntry)
         );
+    }
+
+    #[test]
+    fn minimized_tiles_restore_the_parked_window_and_reject_stale_ones() {
+        let place = |id: u64, name: Option<&str>| rmac_compositor::Workspace {
+            id: rmac_compositor::WorkspaceId(id),
+            index: id as u8,
+            name: name.map(str::to_owned),
+            output: None,
+            urgent: false,
+            active: false,
+            focused: false,
+            active_window: None,
+        };
+        let mut parked = window(9, false);
+        parked.workspace = Some(rmac_compositor::WorkspaceId(2));
+        let current = rmac_dock::Model::build(
+            &[],
+            &Default::default(),
+            &[application("terminal")],
+            &rmac_compositor::Snapshot {
+                workspaces: vec![
+                    place(1, None),
+                    place(2, Some(rmac_compositor::PARKING_WORKSPACE)),
+                ],
+                windows: vec![parked],
+                ..Default::default()
+            },
+        );
+
+        let Preparation::Ready(prepared) = prepare(
+            &current,
+            rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Minimized(
+                rmac_compositor::WindowId(9),
+            )),
+        )
+        .unwrap() else {
+            panic!("a parked window is ready to restore");
+        };
+        assert_eq!(prepared.operation(), Operation::Restore);
+        assert_eq!(
+            prepared.target(),
+            &ActionTarget::Window {
+                application: "terminal".into(),
+                window: rmac_compositor::WindowId(9),
+            }
+        );
+
+        // A tile left over from another window fails closed.
+        let Preparation::Ready(stale) = prepare(
+            &current,
+            rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Minimized(
+                rmac_compositor::WindowId(404),
+            )),
+        )
+        .unwrap() else {
+            panic!("stale minimized tiles produce feedback");
+        };
+        assert_eq!(stale.operation(), Operation::Restore);
     }
 }

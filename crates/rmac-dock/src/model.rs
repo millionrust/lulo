@@ -92,6 +92,19 @@ pub struct SpecialContextMenu {
     pub empty_trash: Option<SpecialContextAction>,
 }
 
+/// A window the shell parked on the hidden workspace, shown as a tile in the
+/// Dock's right group until it is restored (§4.11).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MinimizedItem {
+    pub window: rmac_compositor::WindowId,
+    pub app_id: Option<String>,
+    pub title: Option<String>,
+    /// Application icon drawn as the tile's badge.
+    pub icon: Option<PathBuf>,
+    /// Snapshot captured just before the window was parked, when available.
+    pub thumbnail: Option<PathBuf>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Activation {
     Launch {
@@ -99,6 +112,10 @@ pub enum Activation {
         spec: rmac_apps::LaunchSpec,
     },
     FocusWindow(rmac_compositor::WindowId),
+    /// Restore a parked window to the workspace it was minimized from.
+    RestoreWindow {
+        window: rmac_compositor::WindowId,
+    },
     NoAction,
     Unavailable {
         app_id: String,
@@ -263,5 +280,9 @@ pub struct Model {
     /// default projection contains only Trash; Files remains a configured app
     /// and optional folder stacks require persisted user configuration.
     pub special_items: Vec<SpecialItem>,
+    /// Parked windows shown as minimized tiles ahead of the special items when
+    /// "minimize into application icon" is off (§4.11). These windows are
+    /// excluded from `items` so they never count as running applications.
+    pub minimized: Vec<MinimizedItem>,
     pub(super) repeated_click: rmac_shell_settings::RepeatedClickBehavior,
 }

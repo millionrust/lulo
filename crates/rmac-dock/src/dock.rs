@@ -66,10 +66,25 @@ impl Model {
         running.sort_by_key(|item| (item.name.to_lowercase(), item.id.clone()));
         items.extend(running);
 
+        // Parked windows are minimized-window tiles, never running applications
+        // (§2.2, §4.11). "Minimize into application icon" (4.15) is not a
+        // setting yet, so the macOS default of showing tiles applies.
+        let minimized = minimized_items(compositor, &applications);
+
         Self {
             items,
             special_items: places.map(project_special_items).unwrap_or_default(),
+            minimized,
             repeated_click: settings.repeated_click,
+        }
+    }
+
+    /// Resolve a minimized-tile click against the newest projection.
+    pub fn activate_minimized(&self, window: rmac_compositor::WindowId) -> Activation {
+        if self.minimized.iter().any(|item| item.window == window) {
+            Activation::RestoreWindow { window }
+        } else {
+            Activation::NoAction
         }
     }
 
@@ -335,12 +350,59 @@ pub(super) fn catalog_index(
     index
 }
 
+/// Workspaces the shell parks hidden windows on. They are not part of the
+/// running-application projection.
+pub(super) fn parking_workspaces(
+    compositor: &rmac_compositor::Snapshot,
+) -> BTreeSet<rmac_compositor::WorkspaceId> {
+    compositor
+        .workspaces
+        .iter()
+        .filter(|workspace| workspace.name.as_deref() == Some(rmac_compositor::PARKING_WORKSPACE))
+        .map(|workspace| workspace.id)
+        .collect()
+}
+
+/// Parked windows as minimized tiles, newest app identity first by window id.
+pub(super) fn minimized_items(
+    compositor: &rmac_compositor::Snapshot,
+    applications: &BTreeMap<String, &rmac_apps::Application>,
+) -> Vec<MinimizedItem> {
+    let parking = parking_workspaces(compositor);
+    let mut minimized: Vec<MinimizedItem> = compositor
+        .windows
+        .iter()
+        .filter(|window| window.workspace.is_some_and(|id| parking.contains(&id)))
+        .map(|window| {
+            let application = window
+                .app_id
+                .as_deref()
+                .map(canonical_app_id)
+                .and_then(|canonical| applications.get(&canonical).copied());
+            MinimizedItem {
+                window: window.id,
+                app_id: window.app_id.clone(),
+                title: window.title.clone(),
+                icon: application.and_then(|application| application.icon.clone()),
+                thumbnail: rmac_compositor::ParkingStore::default_thumbnail_path(window.id),
+            }
+        })
+        .collect();
+    minimized.sort_by_key(|item| item.window);
+    minimized
+}
+
 pub(super) fn window_groups(
     compositor: &rmac_compositor::Snapshot,
 ) -> BTreeMap<String, Vec<GroupedWindow>> {
     let focused_id = compositor.focus.window;
+    let parking = parking_workspaces(compositor);
     let mut groups: BTreeMap<String, Vec<GroupedWindow>> = BTreeMap::new();
-    for window in &compositor.windows {
+    for window in compositor
+        .windows
+        .iter()
+        .filter(|window| !window.workspace.is_some_and(|id| parking.contains(&id)))
+    {
         let Some(app_id) = window
             .app_id
             .as_ref()

@@ -321,6 +321,12 @@ mod linux_wayland {
                     self.schedule_hide(cx);
                 }
             }
+            let minimized_entries: Vec<rmac_dock::presentation::Entry> = content
+                .places
+                .iter()
+                .filter(|entry| matches!(entry.id, rmac_dock::presentation::EntryId::Minimized(_)))
+                .cloned()
+                .collect();
             let trash = model
                 .special_items
                 .iter()
@@ -350,7 +356,8 @@ mod linux_wayland {
             }
             let separates_running = pinned_count > 0 && pinned_count < entries.len();
             let separator_count = usize::from(separates_running) + usize::from(!entries.is_empty());
-            let item_count = entries.len() + 1;
+            // Minimized tiles sit between the application group and Trash.
+            let item_count = entries.len() + minimized_entries.len() + 1;
             let child_count = item_count + separator_count;
             let window_size = window.bounds().size;
             let surface_width = f32::from(window_size.width);
@@ -588,6 +595,113 @@ mod linux_wayland {
                         }
                     }),
                 );
+            let minimized_children: Vec<gpui::AnyElement> = minimized_entries
+                .iter()
+                .enumerate()
+                .filter_map(|(index, entry)| {
+                    let window = match &entry.id {
+                        rmac_dock::presentation::EntryId::Minimized(window) => *window,
+                        _ => return None,
+                    };
+                    // Trash is the rightmost item, so minimized tiles count
+                    // back from it without touching application geometry.
+                    let center = trash_center
+                        - (minimized_entries.len() - index) as f32 * (ICON_SIZE + ICON_GAP);
+                    let visual_size = magnified_icon_size(
+                        center,
+                        self.hovered_item.as_ref().map(|(center, _)| *center),
+                        &dock_settings,
+                    );
+                    let visual_offset = (ICON_SIZE - visual_size) / 2.0;
+                    let thumbnail = minimized_icon_path(entry);
+                    let badge = minimized_badge_path(entry);
+                    let label = entry.label.clone();
+                    let tooltip_label = entry.label.clone();
+                    let mut tile = div()
+                        .id(format!("dock-minimized-{}-{index}", self.display_id))
+                        .role(Role::Button)
+                        .aria_label(entry.accessible_label.clone())
+                        .relative()
+                        .w(px(ICON_SIZE))
+                        .h(px(ICON_SIZE))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_color(rgba(tokens::primary_text()))
+                        .text_lg()
+                        .font_weight(FontWeight::BOLD)
+                        .rounded(px(tokens::dock_tile_radius(ICON_SIZE)))
+                        .cursor_pointer()
+                        .hover(|style| style.opacity(0.88))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.dispatch_action(
+                                    rmac_dock::menu::Action::ActivateEntry(
+                                        rmac_dock::presentation::EntryId::Minimized(window),
+                                    ),
+                                    cx,
+                                );
+                            }),
+                        )
+                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                            if *hovered {
+                                this.hovered_item = Some((center, tooltip_label.clone()));
+                                cx.notify();
+                            } else if this
+                                .hovered_item
+                                .as_ref()
+                                .is_some_and(|(candidate, _)| *candidate == center)
+                            {
+                                this.hovered_item = None;
+                                cx.notify();
+                            }
+                        }));
+                    let mut visual = div()
+                        .absolute()
+                        .w(px(visual_size))
+                        .h(px(visual_size))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(tokens::dock_tile_radius(visual_size)))
+                        .bg(rgba(0x00000000));
+                    visual = match self.placement {
+                        rmac_shell_settings::DockPlacement::Bottom => {
+                            visual.left(px(visual_offset)).bottom_0()
+                        }
+                        rmac_shell_settings::DockPlacement::Left => {
+                            visual.left_0().top(px(visual_offset))
+                        }
+                        rmac_shell_settings::DockPlacement::Right => {
+                            visual.right_0().top(px(visual_offset))
+                        }
+                    };
+                    visual = match thumbnail {
+                        Some(path) => visual.child(
+                            img(path)
+                                .w(px(visual_size - 2.0))
+                                .h(px(visual_size - 2.0))
+                                .rounded(px(tokens::dock_tile_radius(visual_size))),
+                        ),
+                        None => visual.child(item_mark(&label)),
+                    };
+                    tile = tile.child(visual);
+                    if let Some(path) = badge {
+                        tile = tile.child(
+                            img(path)
+                                .absolute()
+                                .bottom(px(-2.0))
+                                .right(px(-2.0))
+                                .w(px(20.0))
+                                .h(px(20.0))
+                                .rounded(px(4.0)),
+                        );
+                    }
+                    Some(tile.into_any_element())
+                })
+                .collect();
             root.child(
                 shelf
                     .children(entries.into_iter().enumerate().flat_map(|(index, entry)| {
@@ -873,6 +987,7 @@ mod linux_wayland {
                     .when(!model.items.is_empty(), |shelf| {
                         shelf.child(dock_separator(self.placement))
                     })
+                    .children(minimized_children)
                     .child({
                         let visual_size = magnified_icon_size(
                             trash_center,
@@ -1163,6 +1278,22 @@ mod linux_wayland {
             rmac_dock::presentation::Icon::File(_) | rmac_dock::presentation::Icon::Builtin(_) => {
                 first_party_icon_path(app_id)
             }
+        }
+    }
+
+    /// The minimized tile's own image: the capture taken at minimize time.
+    fn minimized_icon_path(entry: &rmac_dock::presentation::Entry) -> Option<PathBuf> {
+        match &entry.icon {
+            rmac_dock::presentation::Icon::File(path) if path.is_file() => Some(path.clone()),
+            _ => None,
+        }
+    }
+
+    /// The owning application's icon, drawn as the tile badge.
+    fn minimized_badge_path(entry: &rmac_dock::presentation::Entry) -> Option<PathBuf> {
+        match entry.miniature.as_ref() {
+            Some(rmac_dock::presentation::Icon::File(path)) if path.is_file() => Some(path.clone()),
+            _ => None,
         }
     }
 

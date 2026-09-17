@@ -10,6 +10,7 @@ pub enum Operation {
     Launch,
     Focus,
     Close,
+    Restore,
     Reveal,
     Terminate,
     UpdatePins,
@@ -51,6 +52,7 @@ impl fmt::Display for Operation {
             Self::Launch => "launch application",
             Self::Focus => "focus application window",
             Self::Close => "close application window",
+            Self::Restore => "restore minimized window",
             Self::Reveal => "show application in Finder",
             Self::Terminate => "terminate application",
             Self::UpdatePins => "update pinned applications",
@@ -114,6 +116,9 @@ pub enum Outcome {
     CloseRequested {
         window: rmac_compositor::WindowId,
     },
+    RestoreRequested {
+        window: rmac_compositor::WindowId,
+    },
     ApplicationRevealed {
         app_id: String,
     },
@@ -150,6 +155,21 @@ pub trait Backend: Send + Sync + 'static {
         request_id: rmac_compositor::ActivationId,
         window: rmac_compositor::WindowId,
     ) -> BackendFuture<'_, Result<(), BackendError>>;
+
+    /// Move a parked window back to the workspace it was minimized from.
+    fn restore_window(
+        &self,
+        request_id: rmac_compositor::ActivationId,
+        window: rmac_compositor::WindowId,
+    ) -> BackendFuture<'_, Result<(), BackendError>> {
+        let _ = (request_id, window);
+        Box::pin(async {
+            Err(BackendError::new(
+                FailureKind::Unsupported,
+                "restoring minimized windows is unavailable",
+            ))
+        })
+    }
 
     fn reveal_application(&self, source: &Path) -> BackendFuture<'_, Result<(), BackendError>> {
         let _ = source;

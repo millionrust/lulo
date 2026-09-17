@@ -28,6 +28,18 @@ pub async fn execute(
                     error.detail,
                 )
             }),
+        rmac_dock::Activation::RestoreWindow { window } => backend
+            .restore_window(request_id, *window)
+            .await
+            .map(|()| Outcome::RestoreRequested { window: *window })
+            .map_err(|error| {
+                Error::new(
+                    Operation::Restore,
+                    error.kind,
+                    format!("window {}", window.0),
+                    error.detail,
+                )
+            }),
         rmac_dock::Activation::NoAction => Ok(Outcome::NoAction),
         rmac_dock::Activation::Unavailable { app_id, detail } => Err(Error::new(
             Operation::Resolve,

@@ -540,8 +540,8 @@ mod linux_wayland {
                         .items_center()
                         .rounded(px(tokens::menu_item_radius()))
                         .cursor_pointer()
-                        .when(open, |style| style.bg(rgba(0xffffff2d)))
-                        .hover(|style| style.bg(rgba(0xffffff22)))
+                        .when(open, |style| style.bg(rgba(tokens::light_selection())))
+                        .hover(|style| style.bg(rgba(tokens::light_hover())))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             if this.open_menu == Some(index) {
@@ -611,10 +611,10 @@ mod linux_wayland {
                                             .h(px(28.0))
                                             .flex()
                                             .items_center()
-                                            .rounded(px(6.0))
-                                            .bg(rgba(0xffffff1f))
+                                            .rounded(px(tokens::menu_item_radius()))
+                                            .bg(rgba(tokens::separator()))
                                             .cursor_pointer()
-                                            .hover(|style| style.bg(rgba(0xffffff35)))
+                                            .hover(|style| style.bg(rgba(tokens::separator())))
                                             .on_click(cx.listener(|this, _, _, cx| {
                                                 cx.stop_propagation();
                                                 this.pending_system_action = None;
@@ -633,7 +633,7 @@ mod linux_wayland {
                                             .h(px(28.0))
                                             .flex()
                                             .items_center()
-                                            .rounded(px(6.0))
+                                            .rounded(px(tokens::menu_item_radius()))
                                             .bg(rgba(tokens::accent()))
                                             .cursor_pointer()
                                             .hover(|style| style.bg(rgba(tokens::accent_hover())))
@@ -650,7 +650,8 @@ mod linux_wayland {
                 }
                 for (item_index, item) in menu.items.into_iter().enumerate() {
                     if item.separator_before {
-                        panel = panel.child(div().h(px(1.0)).mx_2().my_1().bg(rgba(0xffffff25)));
+                        panel = panel
+                            .child(div().h(px(1.0)).mx_2().my_1().bg(rgba(tokens::separator())));
                     }
                     let action = item.action.clone();
                     let item_app_id = app_id.clone();
@@ -793,7 +794,7 @@ mod linux_wayland {
                         }
                         let clear_index = self.recent_items.len();
                         submenu = submenu
-                            .child(div().h(px(1.0)).mx_2().my_1().bg(rgba(0xffffff25)))
+                            .child(div().h(px(1.0)).mx_2().my_1().bg(rgba(tokens::separator())))
                             .child(
                                 div()
                                     .id(format!("recent-items-clear-{}", self.display_id))
@@ -860,12 +861,12 @@ mod linux_wayland {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .rounded(px(5.0))
+                                .rounded(px(tokens::menu_item_radius()))
                                 .cursor_pointer()
                                 .when(self.open_menu == Some(0), |style| {
-                                    style.bg(rgba(0xffffff2d))
+                                    style.bg(rgba(tokens::light_selection()))
                                 })
-                                .hover(|style| style.bg(rgba(0xffffff22)))
+                                .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     cx.stop_propagation();
                                     if this.open_menu == Some(0) {
@@ -909,9 +910,9 @@ mod linux_wayland {
                                         .items_center()
                                         .gap_1()
                                         .px_1()
-                                        .rounded(px(5.0))
+                                        .rounded(px(tokens::menu_item_radius()))
                                         .cursor_pointer()
-                                        .hover(|style| style.bg(rgba(0xffffff22)))
+                                        .hover(|style| style.bg(rgba(tokens::light_hover())))
                                         .on_click(|_, _, cx| {
                                             dispatch_shortcut("quick-settings", cx)
                                         })
@@ -933,9 +934,9 @@ mod linux_wayland {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .rounded(px(5.0))
+                                .rounded(px(tokens::menu_item_radius()))
                                 .cursor_pointer()
-                                .hover(|style| style.bg(rgba(0xffffff22)))
+                                .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(|_, _, cx| dispatch_shortcut("launcher", cx))
                                 .child(
                                     img(shell_icon_path("spotlight.svg"))
@@ -953,9 +954,9 @@ mod linux_wayland {
                                 .flex()
                                 .items_center()
                                 .justify_center()
-                                .rounded(px(5.0))
+                                .rounded(px(tokens::menu_item_radius()))
                                 .cursor_pointer()
-                                .hover(|style| style.bg(rgba(0xffffff22)))
+                                .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(|_, _, cx| dispatch_shortcut("quick-settings", cx))
                                 .child(
                                     img(shell_icon_path("control-center.svg"))
@@ -974,9 +975,9 @@ mod linux_wayland {
                                 .h(px(22.0))
                                 .flex()
                                 .items_center()
-                                .rounded(px(5.0))
+                                .rounded(px(tokens::menu_item_radius()))
                                 .cursor_pointer()
-                                .hover(|style| style.bg(rgba(0xffffff22)))
+                                .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(|_, _, cx| dispatch_shortcut("notification-center", cx))
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(clock),

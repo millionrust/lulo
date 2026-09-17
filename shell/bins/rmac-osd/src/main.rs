@@ -184,7 +184,14 @@ mod linux_wayland {
             let label = presentation.accessible_label();
             let ticks = (0..16).fold(
                 div().flex().items_center().justify_between().w_full(),
-                |row, _| row.child(div().size(px(2.5)).rounded_full().bg(rgba(0xffffffb5))),
+                |row, _| {
+                    row.child(
+                        div()
+                            .size(px(2.5))
+                            .rounded_full()
+                            .bg(rgba(tokens::overlay_tick())),
+                    )
+                },
             );
             root.child(
                 div()
@@ -199,7 +206,7 @@ mod linux_wayland {
                     .rounded(px(tokens::hud_radius()))
                     .bg(rgba(tokens::hud_tint()))
                     .border_1()
-                    .border_color(rgba(0xffffff26))
+                    .border_color(rgba(tokens::separator()))
                     .role(Role::Status)
                     .aria_label(label)
                     .child(
@@ -208,9 +215,9 @@ mod linux_wayland {
                             .overflow_hidden()
                             .text_ellipsis()
                             .whitespace_nowrap()
-                            .text_size(px(13.0))
+                            .text_size(px(tokens::dock_tile_radius(ICON_SIZE)))
                             .font_weight(FontWeight::SEMIBOLD)
-                            .text_color(rgba(0xffffffff))
+                            .text_color(rgba(tokens::primary_text()))
                             .child(presentation.title),
                     )
                     .child(
@@ -232,7 +239,7 @@ mod linux_wayland {
                                             .w_full()
                                             .h(px(7.0))
                                             .rounded_full()
-                                            .bg(rgba(0xffffff36))
+                                            .bg(rgba(tokens::fill_control()))
                                             .child(
                                                 div()
                                                     .absolute()
@@ -241,7 +248,7 @@ mod linux_wayland {
                                                     .h_full()
                                                     .w(relative(fraction))
                                                     .rounded_full()
-                                                    .bg(rgba(0xffffffff)),
+                                                    .bg(rgba(tokens::primary_text())),
                                             ),
                                     )
                                     .child(ticks),

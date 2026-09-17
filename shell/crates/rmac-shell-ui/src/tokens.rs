@@ -205,6 +205,77 @@ pub fn hud_radius() -> f32 {
     current().radii.hud
 }
 
+pub fn control_radius() -> f32 {
+    current().radii.control
+}
+
+pub fn card_radius() -> f32 {
+    current().radii.card
+}
+
+pub fn pill_radius() -> f32 {
+    current().radii.pill
+}
+
+/// Dock app-tile corner radius: the tile radius scales with the icon size
+/// rather than the shelf radius token.
+pub fn dock_tile_radius(tile: f32) -> f32 {
+    tile * 0.232
+}
+
+pub fn transparent() -> u32 {
+    0
+}
+
+pub fn surface_window() -> u32 {
+    hex(current().colors.surface_window)
+}
+
+pub fn surface_raised() -> u32 {
+    hex(current().colors.surface_raised)
+}
+
+pub fn fill_control() -> u32 {
+    hex(current().colors.fill_control)
+}
+
+pub fn danger() -> u32 {
+    hex(current().colors.danger)
+}
+
+pub fn system_red() -> u32 {
+    hex(current().colors.system_red)
+}
+
+pub fn system_blue() -> u32 {
+    hex(current().colors.system_blue)
+}
+
+pub fn on_accent() -> u32 {
+    hex(current().colors.on_accent)
+}
+
+pub fn selection_text() -> u32 {
+    hex(current().colors.selection_text)
+}
+
+pub fn overlay_chip() -> u32 {
+    hex(current().materials.hud.tint)
+}
+
+pub fn tooltip_tint() -> u32 {
+    hex(current().materials.tooltip.tint)
+}
+
+pub fn tooltip_border() -> u32 {
+    hex(current().materials.tooltip.border)
+}
+
+/// A translucent primary-color tick/dot for HUD controls.
+pub fn overlay_tick() -> u32 {
+    hex(current().colors.label_primary.with_alpha(0xb5))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -386,12 +386,12 @@ mod linux_wayland {
                                 .px_3()
                                 .py_1()
                                 .rounded(px(tokens::tooltip_radius()))
-                                .bg(rgba(0x18263aee))
+                                .bg(rgba(tokens::tooltip_tint()))
                                 .border_1()
                                 .border_color(rgba(tokens::light_border()))
                                 .shadow_lg()
                                 .text_sm()
-                                .text_color(rgba(0xffffffff))
+                                .text_color(rgba(tokens::primary_text()))
                                 .child(label.clone()),
                         );
                     match self.placement {
@@ -506,7 +506,7 @@ mod linux_wayland {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_color(rgba(0xffffffff))
+                            .text_color(rgba(tokens::primary_text()))
                             .text_lg()
                             .font_weight(FontWeight::BOLD)
                             .opacity(if available { 1.0 } else { 0.58 });
@@ -518,7 +518,7 @@ mod linux_wayland {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .rounded(px(13.0 * visual_size / ICON_SIZE))
+                            .rounded(px(tokens::dock_tile_radius(visual_size)))
                             .bg(rgba(if icon_path.is_some() {
                                 0x00000000
                             } else {
@@ -592,7 +592,7 @@ mod linux_wayland {
                                 img(path)
                                     .w(px(visual_size - 2.0))
                                     .h(px(visual_size - 2.0))
-                                    .rounded(px(14.0 * visual_size / ICON_SIZE)),
+                                    .rounded(px(tokens::dock_tile_radius(visual_size))),
                             );
                         } else {
                             visual = visual.child(item_mark(&entry.label));
@@ -661,7 +661,7 @@ mod linux_wayland {
                                     .w(px(10.0))
                                     .h(px(10.0))
                                     .rounded_full()
-                                    .bg(rgba(0xff3b30ff)),
+                                    .bg(rgba(tokens::system_red())),
                             );
                         }
                         let mut children: Vec<gpui::AnyElement> = Vec::with_capacity(2);
@@ -691,7 +691,7 @@ mod linux_wayland {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .rounded(px(13.0))
+                            .rounded(px(tokens::dock_tile_radius(ICON_SIZE)))
                             .hover(|style| style.opacity(0.88))
                             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                 if *hovered {
@@ -757,7 +757,7 @@ mod linux_wayland {
                                 .absolute()
                                 .w(px(visual_size - 2.0))
                                 .h(px(visual_size - 2.0))
-                                .rounded(px(14.0 * visual_size / ICON_SIZE));
+                                .rounded(px(tokens::dock_tile_radius(visual_size)));
                             let image = match self.placement {
                                 rmac_shell_settings::DockPlacement::Bottom => {
                                     image.left(px(visual_offset)).bottom_0()
@@ -807,7 +807,7 @@ mod linux_wayland {
             .border_1()
             .border_color(rgba(tokens::light_border()))
             .shadow_lg()
-            .text_size(px(13.0))
+            .text_size(px(tokens::dock_tile_radius(ICON_SIZE)))
             .text_color(rgba(tokens::primary_text()))
             .occlude()
             .child(
@@ -832,7 +832,7 @@ mod linux_wayland {
         };
         for (index, row) in rows.iter().enumerate() {
             if index > 0 && rows[index - 1].section != row.section {
-                panel = panel.child(div().h(px(1.0)).mx_2().my_1().bg(rgba(0xffffff25)));
+                panel = panel.child(div().h(px(1.0)).mx_2().my_1().bg(rgba(tokens::separator())));
             }
             let row_id = row.id.clone();
             let primary = row.primary.clone();

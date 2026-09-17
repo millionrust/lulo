@@ -524,7 +524,12 @@ mod linux_wayland {
                 );
             if let Some(surface) = surface {
                 root = root
-                    .child(div().absolute().inset_0().bg(rgba(0x1e1e20ff)))
+                    .child(
+                        div()
+                            .absolute()
+                            .inset_0()
+                            .bg(rgba(tokens::surface_window())),
+                    )
                     .children(render_surface(surface));
             }
             let viewport_height = f32::from(window.bounds().size.height);
@@ -558,19 +563,21 @@ mod linux_wayland {
                     .flex_col()
                     .items_center()
                     .gap_1()
-                    .rounded(px(8.0))
-                    .when(selected, |element| element.bg(rgba(0x1976d255)))
-                    .hover(|element| element.bg(rgba(0xffffff18)))
+                    .rounded(px(tokens::control_radius()))
+                    .when(selected, |element| {
+                        element.bg(rgba(tokens::selection_text()))
+                    })
+                    .hover(|element| element.bg(rgba(tokens::light_hover())))
                     .child(icon)
                     .child(
                         div()
                             .max_w(px(80.0))
                             .px_1()
-                            .rounded(px(4.0))
-                            .bg(rgba(0x11182770))
+                            .rounded(px(tokens::menu_item_radius()))
+                            .bg(rgba(tokens::overlay_chip()))
                             .text_xs()
                             .text_center()
-                            .text_color(rgba(0xffffffff))
+                            .text_color(rgba(tokens::primary_text()))
                             .line_clamp(2)
                             .child(item.name),
                     )
@@ -609,13 +616,13 @@ mod linux_wayland {
                         .max_w(px(360.0))
                         .px_3()
                         .py_2()
-                        .rounded(px(10.0))
-                        .bg(rgba(0x1f2937ee))
+                        .rounded(px(tokens::menu_radius()))
+                        .bg(rgba(tokens::regular_dark_tint()))
                         .border_1()
-                        .border_color(rgba(0xffffff30))
+                        .border_color(rgba(tokens::separator()))
                         .shadow_lg()
                         .text_sm()
-                        .text_color(rgba(0xffffffff))
+                        .text_color(rgba(tokens::primary_text()))
                         .child(message),
                 );
             }
@@ -637,8 +644,8 @@ mod linux_wayland {
                         .top_0()
                         .w(px(24.0))
                         .h(px(10.0))
-                        .rounded_t(px(5.0))
-                        .bg(rgba(0x65b8ffff)),
+                        .rounded_t(px(tokens::menu_item_radius()))
+                        .bg(rgba(tokens::system_blue())),
                 )
                 .child(
                     div()
@@ -647,15 +654,15 @@ mod linux_wayland {
                         .right_0()
                         .bottom_0()
                         .h(px(37.0))
-                        .rounded(px(8.0))
+                        .rounded(px(tokens::control_radius()))
                         .bg(linear_gradient(
                             180.0,
-                            linear_color_stop(rgba(0x79c7ffff), 0.0),
-                            linear_color_stop(rgba(0x2389e8ff), 1.0),
+                            linear_color_stop(rgba(tokens::accent()), 0.0),
+                            linear_color_stop(rgba(tokens::accent()), 1.0),
                         )
                         .color_space(gpui::ColorSpace::Oklab))
                         .border_1()
-                        .border_color(rgba(0xcceaff88)),
+                        .border_color(rgba(tokens::separator())),
                 )
                 .into_any_element(),
             _ => div()
@@ -666,14 +673,14 @@ mod linux_wayland {
                 .items_end()
                 .justify_center()
                 .pb_1()
-                .rounded(px(6.0))
-                .bg(rgba(0xf5f7faff))
+                .rounded(px(tokens::menu_item_radius()))
+                .bg(rgba(tokens::surface_raised()))
                 .border_1()
-                .border_color(rgba(0x9aa7b488))
+                .border_color(rgba(tokens::separator()))
                 .shadow_md()
                 .text_xs()
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(rgba(0x3b5168ff))
+                .text_color(rgba(tokens::primary_text()))
                 .child(if extension.is_empty() {
                     "FILE".to_owned()
                 } else {
@@ -713,16 +720,16 @@ mod linux_wayland {
                         .mx_2()
                         .my_1()
                         .h(px(1.0))
-                        .bg(rgba(0xffffff24))
+                        .bg(rgba(tokens::separator()))
                         .into_any_element(),
                 );
             }
             previous_section = Some(row.section);
             let command = row.command;
             let foreground = if row.danger {
-                rgba(0xff6961ff)
+                rgba(tokens::danger())
             } else {
-                rgba(0xffffffff)
+                rgba(tokens::primary_text())
             };
             children.push(
                 div()
@@ -735,13 +742,13 @@ mod linux_wayland {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .rounded(px(6.0))
+                    .rounded(px(tokens::menu_item_radius()))
                     .text_sm()
                     .text_color(foreground)
                     .when(index == menu.selected, |element| {
-                        element.bg(rgba(0x278bffff))
+                        element.bg(rgba(tokens::accent()))
                     })
-                    .hover(|element| element.bg(rgba(0x278bffff)))
+                    .hover(|element| element.bg(rgba(tokens::accent())))
                     .child(
                         div()
                             .flex()
@@ -784,10 +791,10 @@ mod linux_wayland {
                         .top(px(top))
                         .w(px(width))
                         .py_1()
-                        .rounded(px(12.0))
-                        .bg(rgba(0x182333f2))
+                        .rounded(px(tokens::card_radius()))
+                        .bg(rgba(tokens::regular_dark_tint()))
                         .border_1()
-                        .border_color(rgba(0xffffff33))
+                        .border_color(rgba(tokens::separator()))
                         .shadow_lg()
                         .occlude()
                         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())

@@ -204,3 +204,37 @@ pub fn tooltip_radius() -> f32 {
 pub fn hud_radius() -> f32 {
     current().radii.hud
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmac_appearance::{Contrast, MotionPreference, ResolvedColorScheme, TextScale};
+
+    fn appearance(scheme: ResolvedColorScheme) -> rmac_appearance::ResolvedAppearance {
+        rmac_appearance::ResolvedAppearance {
+            color_scheme: scheme,
+            accent_color: rmac_appearance::AccentColor::new(0.0, 0.478, 1.0).unwrap(),
+            contrast: Contrast::Normal,
+            motion: MotionPreference::Full,
+            text_scale: TextScale::Standard,
+        }
+    }
+
+    #[test]
+    fn surface_colors_follow_the_resolved_appearance() {
+        set(DesignTokens::resolve(appearance(
+            ResolvedColorScheme::Light,
+        )));
+        assert_eq!(top_bar_tint(), 0xf6f6f6f2);
+        assert_eq!(primary_text(), 0x1d1d1fff);
+        assert_eq!(menu_radius(), 10.0);
+
+        set(DesignTokens::resolve(appearance(ResolvedColorScheme::Dark)));
+        assert_eq!(top_bar_tint(), 0x1e1e20f2);
+        assert_eq!(primary_text(), 0xf5f5f7ff);
+
+        assert!(!set(DesignTokens::resolve(appearance(
+            ResolvedColorScheme::Dark
+        ))));
+    }
+}

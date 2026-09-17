@@ -48,12 +48,17 @@ fn send_window_action(action: WindowAction, cx: &mut App) {
                 store.record_from(&snapshot, &[window]);
                 // Capture the tile thumbnail while the window is still on
                 // screen; the Dock shows it for the parked window (§4.11).
-                if let (Some(rect), Some(path)) = (
+                match (
                     rmac_compositor::window_logical_rect(&snapshot, window),
                     rmac_compositor::ParkingStore::default_thumbnail_path(window),
                 ) {
-                    if capture_thumbnail(&executor, rect, &path).await {
-                        store.set_thumbnail(window, path);
+                    (Some(rect), Some(path)) => {
+                        if capture_thumbnail(&executor, rect, &path).await {
+                            store.set_thumbnail(window, path);
+                        }
+                    }
+                    (rect, path) => {
+                        eprintln!("no minimized-tile geometry: rect={rect:?} path={path:?}");
                     }
                 }
                 if let Err(error) = store.save_default() {
@@ -83,6 +88,7 @@ async fn capture_thumbnail(
         rect.height.round()
     );
     let path = path.to_path_buf();
+    let captured = path.clone();
     let status = executor
         .spawn(async move {
             std::process::Command::new("grim")
@@ -92,7 +98,17 @@ async fn capture_thumbnail(
                 .status()
         })
         .await;
-    matches!(status, Ok(status) if status.success())
+    match status {
+        Ok(status) if status.success() => true,
+        Ok(status) => {
+            eprintln!("grim failed for {captured:?}: {status}");
+            false
+        }
+        Err(error) => {
+            eprintln!("could not run grim: {error}");
+            false
+        }
+    }
 }
 
 fn traffic_light(

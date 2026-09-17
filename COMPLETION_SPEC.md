@@ -625,7 +625,7 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
 **Goal:** every shared control in §5 exists in both UI crates, matches reference captures, and the component gallery proves it.
 **Read first:** `docs/component-gallery.md`, `crates/rmac-ui/src/controls.rs`, `crates/rmac-ui/src/components.rs`, `crates/component-gallery/src/specimens.rs`.
 
-- [ ] **1.1 Capture the reference set (Mac).**
+- [~] **1.1 Capture the reference set (Mac).** (unblocked tooling done: `scripts/compose-evidence.py` + `scripts/test_compose_evidence.py`, 3 tests pass. The Mac captures and S-value measurement remain **owner-blocked** — they need the reference Mac and pixel ruler.)
   Do: on the reference Mac at scale 2 ("Default" resolution) in Light and Dark, capture: menu bar over a light and a dark wallpaper; an open menu with submenu, disabled item, checkmark, shortcut; a context menu in Finder; Control Center fully open; Notification Center with 3 grouped notifications; a banner; Spotlight empty, typing "term", typing "2+2"; Launchpad/Apps; Dock idle, hover tooltip, right-click menu, magnification on; Finder window in icon/list/column/gallery views; System Settings Wi-Fi, Appearance, Desktop & Dock panes; an alert; a sheet (Save); a window's traffic lights hovered and inactive; volume OSD; lock screen. Store under `target/evidence/reference-mac/<surface>-<light|dark>.png` (ignored). Record macOS version and settings in `target/evidence/reference-mac/README.txt`.
   Measure with any pixel ruler (divide by 2 for logical px). Overwrite every **S** value in §4 of this file **and** in `crates/rmac-design` in one commit named `Measure Tahoe tokens from reference captures`.
   Verify: diff shows only §4/`rmac-design` changes; tests pass.

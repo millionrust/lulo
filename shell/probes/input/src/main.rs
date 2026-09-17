@@ -14,7 +14,7 @@ use wayland_client::{
     Connection, Dispatch, QueueHandle,
 };
 use wayland_protocols_wlr::virtual_pointer::v1::client::{
-    zwlr_virtual_pointer_manager_v1::ZwlrVirtualPointerManagerV1,
+    zwlr_virtual_pointer_manager_v1::{self, ZwlrVirtualPointerManagerV1},
     zwlr_virtual_pointer_v1::{self, ZwlrVirtualPointerV1},
 };
 
@@ -74,7 +74,7 @@ impl Dispatch<ZwlrVirtualPointerManagerV1, ()> for State {
     fn event(
         _: &mut Self,
         _: &ZwlrVirtualPointerManagerV1,
-        _: (),
+        _: zwlr_virtual_pointer_manager_v1::Event,
         _: &(),
         _: &Connection,
         _: &QueueHandle<Self>,

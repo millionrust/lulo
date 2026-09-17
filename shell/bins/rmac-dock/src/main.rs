@@ -321,7 +321,8 @@ mod linux_wayland {
                     self.schedule_hide(cx);
                 }
             }
-            let minimized_entries: Vec<rmac_dock::presentation::Entry> = content
+            let minimized_entries: Vec<rmac_dock::presentation::Entry> = self
+                .content
                 .places
                 .iter()
                 .filter(|entry| matches!(entry.id, rmac_dock::presentation::EntryId::Minimized(_)))

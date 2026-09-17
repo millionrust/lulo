@@ -510,14 +510,14 @@ mod linux_wayland {
                     div().absolute().inset_0().bg(linear_gradient(
                         35.0,
                         linear_color_stop(rgba((palette[2] << 8) | 0xc8), 0.0),
-                        linear_color_stop(rgba((palette[2] << 8) | 0x00), 0.72),
+                        linear_color_stop(rgba(palette[2] << 8), 0.72),
                     )
                     .color_space(gpui::ColorSpace::Oklab)),
                 )
                 .child(
                     div().absolute().inset_0().bg(linear_gradient(
                         315.0,
-                        linear_color_stop(rgba((palette[3] << 8) | 0x00), 0.28),
+                        linear_color_stop(rgba(palette[3] << 8), 0.28),
                         linear_color_stop(rgba((palette[3] << 8) | 0xb8), 1.0),
                     )
                     .color_space(gpui::ColorSpace::Oklab)),

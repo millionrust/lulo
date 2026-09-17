@@ -55,7 +55,7 @@ mod linux_wayland {
                                 .snapshot
                                 .outputs
                                 .iter()
-                                .map(|output| rmac_shell_layer::stable_output_uuid(output))
+                                .map(rmac_shell_layer::stable_output_uuid)
                                 .collect();
                             if was_ready
                                 && rmac_shell_layer::output_reappeared(
@@ -206,7 +206,7 @@ mod linux_wayland {
                 }
             };
             let Some(request_id) = next_activation_id() else {
-                let _ = self.status.update(cx, |status, cx| {
+                self.status.update(cx, |status, cx| {
                     if pending.cancel(&mut status.actions).visible {
                         cx.notify();
                     }
@@ -222,7 +222,7 @@ mod linux_wayland {
             });
             cx.spawn(async move |_, cx| {
                 let completion = execution.await;
-                let _ = status.update(cx, |status, cx| {
+                status.update(cx, |status, cx| {
                     let (result, transition) = completion.apply(&mut status.actions);
                     if let Err(error) = &result {
                         eprintln!("{error}");

@@ -682,12 +682,10 @@ mod linux_wayland {
                             .cursor_pointer()
                             .hover(|style| style.bg(rgba(visuals::ACCENT)))
                             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                                if *hovered {
-                                    if this.recent_submenu_open != opens_recents {
-                                        this.recent_submenu_open = opens_recents;
-                                        this.recent_selected_item = 0;
-                                        cx.notify();
-                                    }
+                                if *hovered && this.recent_submenu_open != opens_recents {
+                                    this.recent_submenu_open = opens_recents;
+                                    this.recent_selected_item = 0;
+                                    cx.notify();
                                 }
                             }))
                             .on_click(cx.listener(move |this, _, window, cx| {

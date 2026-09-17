@@ -522,11 +522,72 @@ mod linux_wayland {
                 .border_color(rgba(tokens::dock_border()))
                 .shadow_lg()
                 .opacity(if self.hidden { 0.0 } else { 1.0 });
-            let shelf = if horizontal {
+            let mut shelf = if horizontal {
                 shelf.items_end()
             } else {
                 shelf.flex_col().items_center()
             };
+            // The shelf owns pointer frames for an in-progress tile drag, so the
+            // reorder keeps tracking even when the pointer leaves the tile.
+            shelf = shelf
+                .on_mouse_move(
+                    cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
+                        if event.pressed_button != Some(MouseButton::Left) {
+                            return;
+                        }
+                        let axis = match this.placement {
+                            rmac_shell_settings::DockPlacement::Bottom => {
+                                f32::from(event.position.x)
+                            }
+                            _ => f32::from(event.position.y),
+                        };
+                        let active_order = {
+                            let Some(session) = this.drag.as_mut() else {
+                                return;
+                            };
+                            match session.update(axis) {
+                                Ok(update) if update.active => Some(update.preview_order.to_vec()),
+                                _ => None,
+                            }
+                        };
+                        if let Some(order) = active_order {
+                            this.drag_order = Some(order);
+                            cx.notify();
+                        }
+                    }),
+                )
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(move |this, event: &gpui::MouseUpEvent, _, cx| {
+                        let Some(session) = this.drag.take() else {
+                            return;
+                        };
+                        this.drag_order = None;
+                        match session.finish() {
+                            rmac_dock::drag::DropOutcome::Click { entry } => {
+                                if let rmac_dock::presentation::EntryId::Application(app_id) = entry
+                                {
+                                    this.activate_entry(&app_id, event.modifiers.platform, cx);
+                                }
+                            }
+                            rmac_dock::drag::DropOutcome::Reorder(intent) => {
+                                let model = this.model_snapshot(cx);
+                                if let Some(revalidated) =
+                                    model.as_ref().and_then(|model| intent.revalidate(model))
+                                {
+                                    let command = revalidated.command().clone();
+                                    this.dispatch_action(
+                                        rmac_dock::menu::Action::Context(
+                                            rmac_dock::ContextAction::UpdatePins(command),
+                                        ),
+                                        cx,
+                                    );
+                                }
+                            }
+                            _ => cx.notify(),
+                        }
+                    }),
+                );
             root.child(
                 shelf
                     .children(entries.into_iter().enumerate().flat_map(|(index, entry)| {

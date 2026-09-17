@@ -614,9 +614,9 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
 
 **Phase 0 exit checklist**
 - [~] `shell/` builds on Ubuntu ✔ (debug + release, `--locked`); systemd units start the promoted binaries (installer `--check` passes; binary names preserved) — nested smoke ✗ blocked by pre-existing niri requirement in `rmac-dock-runtime` (see 0.2).
-- [ ] `rg -n "0x[0-9a-fA-F]{8}" shell/bins crates/*/src --glob '*render*'` finds no color literals outside `rmac-design` (allow SVG/asset code and tests).
-- [ ] Inter and JetBrains Mono render on Ubuntu (screenshot of component gallery text).
-- [ ] No visible "App Drawer" string.
+- [x] `rg -n "0x[0-9a-fA-F]{8}" shell/bins crates/*/src --glob '*render*'` finds no color literals outside `rmac-design` (allow SVG/asset code and tests). (No `*render*` file contains an 8-digit hex literal. Caveat: 55 component-specific literals remain in `shell/bins/*/main.rs` — bespoke wallpaper-picker preview art, the Dock's fallback-tile letter, and OSD/menu chrome whites. They are recorded for the Phase 1/3/4 restyles that will define their tokens.)
+- [~] Inter renders on Ubuntu (`fc-match Inter` → Inter-Regular) and the terminal/UI now request it via tokens; the JetBrains Mono screenshot is blocked because `fonts-jetbrains-mono` is not installed and sudo needs a password (see 0.6). Neither could be captured because the reference display stopped presenting during the check.
+- [x] No visible "App Drawer" string (0.7).
 
 ---
 

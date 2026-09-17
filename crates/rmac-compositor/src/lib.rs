@@ -7,11 +7,13 @@
 mod actions;
 mod events;
 mod model;
+mod parking;
 mod state;
 
 pub use actions::*;
 pub use events::*;
 pub use model::*;
+pub use parking::*;
 pub use state::*;
 
 #[cfg(test)]

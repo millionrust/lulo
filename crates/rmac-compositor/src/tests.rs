@@ -294,3 +294,89 @@ fn invalid_output_values_are_reported_without_panicking() {
 
     assert_eq!(state.validate().len(), 2);
 }
+
+fn parking_snapshot() -> Snapshot {
+    Snapshot {
+        workspaces: vec![
+            workspace(1, Some("eDP-1")),
+            workspace(2, Some("eDP-1")),
+            Workspace {
+                name: Some(PARKING_WORKSPACE.to_string()),
+                ..workspace(9, None)
+            },
+        ],
+        windows: vec![window(1, Some(1)), window(2, Some(2)), window(3, Some(9))],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn parking_store_records_and_forgets_origin_snapshots() {
+    let mut store = ParkingStore::new();
+    let snapshot = parking_snapshot();
+
+    store.record_from(&snapshot, &[WindowId(1), WindowId(3)]);
+    assert_eq!(store.origin(WindowId(1)), Some(WorkspaceId(1)));
+    // A window already on the parking workspace has no origin to remember.
+    assert_eq!(store.origin(WindowId(3)), None);
+
+    // A later park of the same window keeps the first origin.
+    store.record(WindowId(1), WorkspaceId(2));
+    assert_eq!(store.origin(WindowId(1)), Some(WorkspaceId(1)));
+
+    assert_eq!(
+        store.restore_actions(&[WindowId(1), WindowId(2)]),
+        vec![Action::RestoreWindow {
+            window: WindowId(1),
+            workspace: WorkspaceId(1),
+        }]
+    );
+    assert_eq!(store.origin(WindowId(1)), None);
+    assert!(store.is_empty());
+}
+
+#[test]
+fn parking_store_prunes_windows_the_compositor_no_longer_parks() {
+    let mut store = ParkingStore::new();
+    store.record(WindowId(1), WorkspaceId(1));
+    store.record(WindowId(99), WorkspaceId(2));
+
+    // Window 1 is parked, window 99 is gone, and window 2 is visible again:
+    // only the parked entry survives.
+    let snapshot = Snapshot {
+        workspaces: vec![
+            workspace(1, Some("eDP-1")),
+            Workspace {
+                name: Some(PARKING_WORKSPACE.to_string()),
+                ..workspace(9, None)
+            },
+        ],
+        windows: vec![window(1, Some(9)), window(2, Some(1))],
+        ..Default::default()
+    };
+    store.prune(&snapshot);
+
+    assert_eq!(store.entries().len(), 1);
+    assert_eq!(store.origin(WindowId(1)), Some(WorkspaceId(1)));
+    assert_eq!(store.origin(WindowId(99)), None);
+}
+
+#[test]
+fn parking_store_round_trips_through_disk() {
+    let path = std::env::temp_dir().join(format!(
+        "rmac-parking-{}-{}.json",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let mut store = ParkingStore::new();
+    store.record(WindowId(7), WorkspaceId(3));
+    store.save(&path).unwrap();
+
+    let loaded = ParkingStore::load(&path);
+    assert_eq!(loaded, store);
+
+    let _ = std::fs::remove_file(path);
+}

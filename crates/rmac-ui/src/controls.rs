@@ -1151,9 +1151,9 @@ impl RenderOnce for SegmentedControl {
                     .active(mac::raised())
             } else {
                 ButtonCustomVariant::new(cx)
-                    .color(rgba(0x00000000))
+                    .color(rgba(0x00000000).into())
                     .foreground(mac::text())
-                    .border(rgba(0x00000000))
+                    .border(rgba(0x00000000).into())
                     .hover(mac::hover())
                     .active(mac::control_fill_hover())
             };

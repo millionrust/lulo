@@ -8,7 +8,10 @@ use gpui::{
     SharedString, StyleRefinement, Styled, Window,
 };
 use gpui_component::{
-    button::{Button as ComponentButton, ButtonCustomVariant, ButtonGroup, ButtonVariants as _},
+    button::{
+        Button as ComponentButton, ButtonCustomVariant, ButtonGroup, ButtonVariants as _,
+        DropdownButton,
+    },
     input::Input as ComponentInput,
     menu::{DropdownMenu as _, PopupMenu},
     slider::Slider as ComponentSlider,
@@ -168,9 +171,19 @@ impl Styled for Button {
 }
 
 impl RenderOnce for Button {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let transparent = rgba(0x00000000).into();
+        let window_active = window.is_window_active();
         let (color, foreground, border, hover, active) = match self.role {
+            // A filled default button loses its fill in an inactive window and
+            // reads as an ordinary control instead.
+            ButtonRole::Primary if !window_active => (
+                mac::control_fill(),
+                mac::text(),
+                mac::separator(),
+                mac::control_fill_hover(),
+                mac::control_fill_hover(),
+            ),
             ButtonRole::Primary => (
                 mac::accent(),
                 mac::on_accent(),
@@ -236,6 +249,78 @@ impl RenderOnce for Button {
         } else {
             button.into_any_element()
         }
+    }
+}
+
+/// Pop-up button (5.2): a secondary-styled button showing the current choice
+/// with a trailing chevron that opens a menu.
+#[derive(IntoElement)]
+pub struct PopUpButton {
+    id: ElementId,
+    label: SharedString,
+    disabled: bool,
+    selected: bool,
+    menu: Option<MenuBuilder>,
+    style: StyleRefinement,
+}
+
+impl PopUpButton {
+    pub fn new(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Self {
+        Self {
+            id: id.into(),
+            label: label.into(),
+            disabled: false,
+            selected: false,
+            menu: None,
+            style: StyleRefinement::default(),
+        }
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    pub fn dropdown_menu(
+        mut self,
+        builder: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+    ) -> Self {
+        self.menu = Some(Rc::new(builder));
+        self
+    }
+}
+
+impl Styled for PopUpButton {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl RenderOnce for PopUpButton {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let variant = ButtonCustomVariant::new(cx)
+            .color(mac::control_fill())
+            .foreground(mac::text())
+            .border(mac::separator())
+            .hover(mac::control_fill_hover())
+            .active(mac::hover());
+        let button = ComponentButton::new(self.id.clone())
+            .custom(variant)
+            .label(self.label)
+            .selected(self.selected);
+        let mut dropdown = DropdownButton::new(self.id).button(button).compact();
+        if let Some(builder) = self.menu {
+            dropdown = dropdown.dropdown_menu(move |menu, window, cx| builder(menu, window, cx));
+        }
+        if self.disabled {
+            dropdown = dropdown.disabled(true);
+        }
+        dropdown.refine_style(&self.style)
     }
 }
 
@@ -1189,6 +1274,14 @@ mod tests {
         assert_eq!(ButtonRole::default(), ButtonRole::Secondary);
         assert_ne!(ButtonRole::Primary, ButtonRole::Destructive);
         assert_ne!(ButtonRole::Ghost, ButtonRole::Secondary);
+    }
+
+    #[test]
+    fn popup_button_builds_with_and_without_a_menu() {
+        let _ = PopUpButton::new("popup", "Group By")
+            .disabled(true)
+            .selected(true);
+        let _ = PopUpButton::new("popup-menu", "Kind").dropdown_menu(|menu, _window, _cx| menu);
     }
 
     #[test]

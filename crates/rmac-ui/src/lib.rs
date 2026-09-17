@@ -20,9 +20,9 @@ pub use components::{
     RequestClose,
 };
 pub use controls::{
-    Button, ButtonRole, CollectionState, InputEvent, InputState, List, ListRow, Position, RopeExt,
-    SearchField, SegmentedControl, Slider, SliderAxis, SliderEvent, SliderState, Table, Tabs,
-    TextField, Toggle, ToggleState, Tree, TreeRow,
+    Button, ButtonRole, CollectionState, InputEvent, InputState, List, ListRow, PopUpButton,
+    Position, RopeExt, SearchField, SegmentedControl, Slider, SliderAxis, SliderEvent, SliderState,
+    Table, Tabs, TextField, Toggle, ToggleState, Tree, TreeRow,
 };
 pub use controls::{Column, ColumnSort, TableDelegate, TableEvent, TableState};
 pub use feedback::{EmptyState, Progress, ProgressStatus, Toast, ToastKind, Tooltip};

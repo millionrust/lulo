@@ -583,7 +583,9 @@ mod linux_wayland {
                 let app_id = if menu_index == 0 {
                     SYSTEM_MENU_ID.to_owned()
                 } else {
-                    focused_app_id.clone()?
+                    // Use the app the menu was opened for; the live focus
+                    // projection can blip to None during unrelated events.
+                    self.open_app_id.clone()?
                 };
                 let left = menu_left?;
                 let selected = self.selected_item.min(menu.items.len().saturating_sub(1));

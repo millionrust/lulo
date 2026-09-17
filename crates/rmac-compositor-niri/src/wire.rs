@@ -39,6 +39,9 @@ pub enum Action {
     },
     OpenOverview {},
     CloseOverview {},
+    FullscreenWindow {},
+    ExpandColumnToAvailableWidth {},
+    CenterWindow {},
 }
 
 #[derive(Debug, Serialize)]

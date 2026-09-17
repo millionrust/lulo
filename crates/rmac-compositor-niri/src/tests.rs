@@ -106,6 +106,43 @@ fn action_wire_format_uses_stable_ids_and_explicit_targets() {
 }
 
 #[test]
+fn targeted_window_actions_focus_then_act() {
+    let cases = [
+        (
+            domain::Action::FullscreenWindow {
+                window: domain::WindowId(7),
+                on: true,
+            },
+            r#"{"FullscreenWindow":{}}"#,
+        ),
+        (
+            domain::Action::FillWindow {
+                window: domain::WindowId(7),
+            },
+            r#"{"ExpandColumnToAvailableWidth":{}}"#,
+        ),
+        (
+            domain::Action::CenterWindow {
+                window: domain::WindowId(7),
+            },
+            r#"{"CenterWindow":{}}"#,
+        ),
+    ];
+    for (action, expected) in cases {
+        let sequence = convert_action_sequence(&action);
+        assert_eq!(sequence.len(), 2);
+        assert_eq!(
+            serde_json::to_string(&sequence[0]).unwrap(),
+            r#"{"FocusWindow":{"id":7}}"#
+        );
+        assert_eq!(serde_json::to_string(&sequence[1]).unwrap(), expected);
+    }
+    // Untargeted actions stay a single request.
+    let sequence = convert_action_sequence(&domain::Action::SetOverview { visible: true });
+    assert_eq!(sequence.len(), 1);
+}
+
+#[test]
 fn action_results_distinguish_handled_rejected_and_transport_failures() {
     let socket = PathBuf::from(format!("/tmp/rmac-action-{}.sock", std::process::id()));
     let _ = fs::remove_file(&socket);

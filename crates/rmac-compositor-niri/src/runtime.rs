@@ -60,6 +60,9 @@ pub fn action_capabilities() -> domain::ActionCapabilities {
             domain::ActionKind::MoveWindowToWorkspace,
             domain::ActionKind::MoveWindowToOutput,
             domain::ActionKind::SetOverview,
+            domain::ActionKind::FullscreenWindow,
+            domain::ActionKind::FillWindow,
+            domain::ActionKind::CenterWindow,
         ],
     }
 }
@@ -84,21 +87,28 @@ pub async fn execute(request: domain::ActionRequest) -> domain::ActionResult {
 
 /// Sends one action on its own socket so targets cannot race between requests.
 pub async fn execute_at(path: &Path, action: &domain::Action) -> Result<(), domain::ActionError> {
-    let request = Request::Action(convert_action(action));
-    let reply = request_reply_once(path, &request)
-        .await
-        .map_err(action_error)?;
-    match reply {
-        Ok(Response::Handled) => Ok(()),
-        Ok(_) => Err(domain::ActionError {
-            kind: domain::ActionErrorKind::Protocol,
-            message: "niri returned an unexpected action response".into(),
-        }),
-        Err(message) => Err(domain::ActionError {
-            kind: domain::ActionErrorKind::Rejected,
-            message,
-        }),
+    for wire_action in convert_action_sequence(action) {
+        let request = Request::Action(wire_action);
+        let reply = request_reply_once(path, &request)
+            .await
+            .map_err(action_error)?;
+        match reply {
+            Ok(Response::Handled) => {}
+            Ok(_) => {
+                return Err(domain::ActionError {
+                    kind: domain::ActionErrorKind::Protocol,
+                    message: "niri returned an unexpected action response".into(),
+                })
+            }
+            Err(message) => {
+                return Err(domain::ActionError {
+                    kind: domain::ActionErrorKind::Rejected,
+                    message,
+                })
+            }
+        }
     }
+    Ok(())
 }
 
 pub(super) fn convert_action(action: &domain::Action) -> wire::Action {
@@ -131,6 +141,23 @@ pub(super) fn convert_action(action: &domain::Action) -> wire::Action {
         }
         domain::Action::SetOverview { visible: true } => wire::Action::OpenOverview {},
         domain::Action::SetOverview { visible: false } => wire::Action::CloseOverview {},
+        domain::Action::FullscreenWindow { .. } => wire::Action::FullscreenWindow {},
+        domain::Action::FillWindow { .. } => wire::Action::ExpandColumnToAvailableWidth {},
+        domain::Action::CenterWindow { .. } => wire::Action::CenterWindow {},
+    }
+}
+
+/// niri window-management actions apply to the focused window, so a targeted
+/// action is a focus step followed by the action on its own socket.
+pub(super) fn convert_action_sequence(action: &domain::Action) -> Vec<wire::Action> {
+    match action {
+        domain::Action::FullscreenWindow { window, .. }
+        | domain::Action::FillWindow { window }
+        | domain::Action::CenterWindow { window } => vec![
+            wire::Action::FocusWindow { id: window.0 },
+            convert_action(action),
+        ],
+        _ => vec![convert_action(action)],
     }
 }
 

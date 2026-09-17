@@ -15,6 +15,9 @@ pub enum ActionKind {
     MoveWindowToWorkspace,
     MoveWindowToOutput,
     SetOverview,
+    FullscreenWindow,
+    FillWindow,
+    CenterWindow,
 }
 
 pub(crate) const MAX_SPAWN_ARGUMENTS: usize = 256;
@@ -146,6 +149,21 @@ pub enum Action {
     SetOverview {
         visible: bool,
     },
+    /// Toggle full screen for `window`. niri exposes only a toggle, so a
+    /// caller must send this only when the desired state differs from the
+    /// current one; `on` records the requested target.
+    FullscreenWindow {
+        window: WindowId,
+        on: bool,
+    },
+    /// Maximize `window` into the available width without full screen.
+    FillWindow {
+        window: WindowId,
+    },
+    /// Center `window` in its output.
+    CenterWindow {
+        window: WindowId,
+    },
 }
 
 impl Action {
@@ -159,6 +177,9 @@ impl Action {
             Self::MoveWindowToWorkspace { .. } => ActionKind::MoveWindowToWorkspace,
             Self::MoveWindowToOutput { .. } => ActionKind::MoveWindowToOutput,
             Self::SetOverview { .. } => ActionKind::SetOverview,
+            Self::FullscreenWindow { .. } => ActionKind::FullscreenWindow,
+            Self::FillWindow { .. } => ActionKind::FillWindow,
+            Self::CenterWindow { .. } => ActionKind::CenterWindow,
         }
     }
 }

@@ -282,6 +282,14 @@ mod tests {
     }
 
     #[test]
+    fn an_app_is_named_from_its_id_while_its_popup_holds_focus() {
+        // A live popup makes the focused window None; the menu bar still needs
+        // the app it belongs to rather than the Finder desktop fallback.
+        assert_eq!(app_display_name(rmac_apps::identity::FILES), "Finder");
+        assert_eq!(app_display_name("org.mozilla.firefox"), "Firefox");
+    }
+
+    #[test]
     fn hidden_indicators_do_not_create_placeholder_items() {
         let snapshot = rmac_shell_status::Snapshot::default();
         assert!(top_bar_indicator_labels(&snapshot).is_empty());

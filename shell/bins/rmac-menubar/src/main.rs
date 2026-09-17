@@ -568,6 +568,9 @@ mod linux_wayland {
                         .hover(|style| style.bg(rgba(tokens::light_hover())))
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
+                            if std::env::var_os("RMAC_DEBUG_MENU").is_some() {
+                                eprintln!("dbg menu btn index={index} app={app_id}");
+                            }
                             if this.open_menu == Some(index) {
                                 this.close_menu(window, cx);
                             } else {

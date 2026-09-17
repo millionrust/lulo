@@ -87,6 +87,12 @@ async fn capture_thumbnail(
         rect.width.round(),
         rect.height.round()
     );
+    if let Some(parent) = path.parent() {
+        if let Err(error) = std::fs::create_dir_all(parent) {
+            eprintln!("could not create the thumbnail directory: {error}");
+            return false;
+        }
+    }
     let path = path.to_path_buf();
     let captured = path.clone();
     let status = executor

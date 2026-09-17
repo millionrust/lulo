@@ -258,6 +258,27 @@ pub fn application_windows(snapshot: &Snapshot, app_id: &str) -> Vec<WindowId> {
         .collect()
 }
 
+/// Every window of `app_id`, parked or not. Quitting closes hidden windows too.
+pub fn windows_of_application(snapshot: &Snapshot, app_id: &str) -> Vec<WindowId> {
+    snapshot
+        .windows
+        .iter()
+        .filter(|window| window.app_id.as_deref() == Some(app_id))
+        .map(|window| window.id)
+        .collect()
+}
+
+/// Visible windows that do not belong to `app_id`, for Hide Others.
+pub fn visible_windows_except(snapshot: &Snapshot, app_id: &str) -> Vec<WindowId> {
+    snapshot
+        .windows
+        .iter()
+        .filter(|window| window.app_id.as_deref() != Some(app_id))
+        .filter(|window| !window_is_parked(snapshot, window))
+        .map(|window| window.id)
+        .collect()
+}
+
 /// Expand `HideApplication` into one minimize per visible window. niri has no
 /// composite action, so the stateful shell piece calls this with a snapshot.
 pub fn hide_application(snapshot: &Snapshot, app_id: &str) -> Vec<Action> {

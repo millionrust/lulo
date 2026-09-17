@@ -295,6 +295,57 @@ fn invalid_output_values_are_reported_without_panicking() {
     assert_eq!(state.validate().len(), 2);
 }
 
+#[test]
+fn hide_others_skips_the_app_and_already_parked_windows() {
+    let desktop = WorkspaceId(1);
+    let parking = Workspace {
+        name: Some(crate::actions::PARKING_WORKSPACE.to_string()),
+        ..workspace(9, None)
+    };
+    let snapshot = Snapshot {
+        workspaces: vec![workspace(1, Some("DP-1")), parking],
+        windows: vec![
+            app_window(1, "org.rmac.Files", desktop),
+            app_window(2, "org.rmac.Notes", desktop),
+            app_window(3, "org.rmac.Notes", WorkspaceId(9)),
+            app_window(4, "org.mozilla.firefox", desktop),
+        ],
+        ..Default::default()
+    };
+
+    assert_eq!(
+        visible_windows_except(&snapshot, "org.rmac.Files"),
+        vec![WindowId(2), WindowId(4)]
+    );
+}
+
+#[test]
+fn quitting_an_app_closes_its_hidden_windows_too() {
+    let desktop = WorkspaceId(1);
+    let parking = Workspace {
+        name: Some(crate::actions::PARKING_WORKSPACE.to_string()),
+        ..workspace(9, None)
+    };
+    let snapshot = Snapshot {
+        workspaces: vec![workspace(1, Some("DP-1")), parking],
+        windows: vec![
+            app_window(1, "org.rmac.Notes", WorkspaceId(9)),
+            app_window(2, "org.rmac.Notes", desktop),
+            app_window(3, "org.rmac.Files", desktop),
+        ],
+        ..Default::default()
+    };
+
+    assert_eq!(
+        windows_of_application(&snapshot, "org.rmac.Notes"),
+        vec![WindowId(1), WindowId(2)]
+    );
+    assert_eq!(
+        application_windows(&snapshot, "org.rmac.Notes"),
+        vec![WindowId(2)]
+    );
+}
+
 fn parking_snapshot() -> Snapshot {
     Snapshot {
         workspaces: vec![

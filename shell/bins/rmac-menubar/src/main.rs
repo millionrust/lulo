@@ -1425,13 +1425,7 @@ mod linux_wayland {
                         .collect();
                 }
                 "app::hide-others" => {
-                    let windows = snapshot
-                        .windows
-                        .iter()
-                        .filter(|window| window.app_id.as_deref() != Some(app_id.as_str()))
-                        .filter(|window| !rmac_compositor::window_is_parked(&snapshot, window))
-                        .map(|window| window.id)
-                        .collect::<Vec<_>>();
+                    let windows = rmac_compositor::visible_windows_except(&snapshot, &app_id);
                     store.record_from(&snapshot, &windows);
                     actions = windows
                         .into_iter()
@@ -1447,12 +1441,7 @@ mod linux_wayland {
                     actions = store.restore_actions(&windows);
                 }
                 "app::quit" => {
-                    let windows = snapshot
-                        .windows
-                        .iter()
-                        .filter(|window| window.app_id.as_deref() == Some(app_id.as_str()))
-                        .map(|window| window.id)
-                        .collect::<Vec<_>>();
+                    let windows = rmac_compositor::windows_of_application(&snapshot, &app_id);
                     for window in &windows {
                         store.forget(*window);
                     }

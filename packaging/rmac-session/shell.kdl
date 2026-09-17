@@ -30,22 +30,30 @@ window-rule {
     clip-to-geometry true
     focus-ring { off; }
     border { off; }
-}
-
-// Finder uses the measured macOS document-window curve and lets niri clip and
-// blur the translucent source-list material behind its unified toolbar.
-window-rule {
-    match app-id=r#"^org\.rmac\.Files$"#
-    open-maximized true
-    geometry-corner-radius 12
-    clip-to-geometry true
     shadow {
         on
         softness 28
         spread 2
         offset x=0 y=8
         color "#00000050"
+        inactive-color "#00000030"
     }
+}
+
+// Unified-toolbar apps (Files, System Settings, Notes) use the wider 16 px
+// window curve measured from the reference Mac.
+window-rule {
+    match app-id=r#"^org\.rmac\.(Files|SystemSettings|Notes)$"#
+    geometry-corner-radius 16
+    clip-to-geometry true
+    focus-ring { off; }
+    border { off; }
+}
+
+// Finder opens at its last saved size (never maximized) and lets niri clip and
+// blur the translucent source-list material behind its unified toolbar.
+window-rule {
+    match app-id=r#"^org\.rmac\.Files$"#
     background-effect {
         xray false
         blur true

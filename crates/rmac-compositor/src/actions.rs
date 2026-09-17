@@ -18,7 +18,28 @@ pub enum ActionKind {
     FullscreenWindow,
     FillWindow,
     CenterWindow,
+    TileWindow,
+    MinimizeWindow,
+    RestoreWindow,
 }
+
+/// Target region for [`Action::TileWindow`]. niri's scrolling layout only
+/// supports the horizontal `Left`/`Right` placements; the rest are rejected.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TileRegion {
+    Left,
+    Right,
+    Top,
+    Bottom,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+/// The hidden workspace that holds minimized windows.
+pub const PARKING_WORKSPACE: &str = "rmac-parking";
 
 pub(crate) const MAX_SPAWN_ARGUMENTS: usize = 256;
 const MAX_SPAWN_ARGUMENT_BYTES: usize = 32 * 1024;
@@ -164,6 +185,20 @@ pub enum Action {
     CenterWindow {
         window: WindowId,
     },
+    /// Tile `window` into a screen region.
+    TileWindow {
+        window: WindowId,
+        region: TileRegion,
+    },
+    /// Move `window` to the hidden parking workspace.
+    MinimizeWindow {
+        window: WindowId,
+    },
+    /// Move `window` back to `workspace` and focus it.
+    RestoreWindow {
+        window: WindowId,
+        workspace: WorkspaceId,
+    },
 }
 
 impl Action {
@@ -180,6 +215,9 @@ impl Action {
             Self::FullscreenWindow { .. } => ActionKind::FullscreenWindow,
             Self::FillWindow { .. } => ActionKind::FillWindow,
             Self::CenterWindow { .. } => ActionKind::CenterWindow,
+            Self::TileWindow { .. } => ActionKind::TileWindow,
+            Self::MinimizeWindow { .. } => ActionKind::MinimizeWindow,
+            Self::RestoreWindow { .. } => ActionKind::RestoreWindow,
         }
     }
 }

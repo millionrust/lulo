@@ -63,6 +63,9 @@ pub fn action_capabilities() -> domain::ActionCapabilities {
             domain::ActionKind::FullscreenWindow,
             domain::ActionKind::FillWindow,
             domain::ActionKind::CenterWindow,
+            domain::ActionKind::TileWindow,
+            domain::ActionKind::MinimizeWindow,
+            domain::ActionKind::RestoreWindow,
         ],
     }
 }
@@ -87,7 +90,7 @@ pub async fn execute(request: domain::ActionRequest) -> domain::ActionResult {
 
 /// Sends one action on its own socket so targets cannot race between requests.
 pub async fn execute_at(path: &Path, action: &domain::Action) -> Result<(), domain::ActionError> {
-    for wire_action in convert_action_sequence(action) {
+    for wire_action in convert_action_sequence(action)? {
         let request = Request::Action(wire_action);
         let reply = request_reply_once(path, &request)
             .await
@@ -144,20 +147,55 @@ pub(super) fn convert_action(action: &domain::Action) -> wire::Action {
         domain::Action::FullscreenWindow { .. } => wire::Action::FullscreenWindow {},
         domain::Action::FillWindow { .. } => wire::Action::ExpandColumnToAvailableWidth {},
         domain::Action::CenterWindow { .. } => wire::Action::CenterWindow {},
+        domain::Action::TileWindow {
+            region: domain::TileRegion::Left,
+            ..
+        } => wire::Action::MoveColumnToFirst {},
+        domain::Action::TileWindow {
+            region: domain::TileRegion::Right,
+            ..
+        } => wire::Action::MoveColumnToLast {},
+        // niri's scrolling layout has no vertical split; the caller receives an
+        // explicit Unsupported error from `convert_action_sequence`.
+        domain::Action::TileWindow { .. } => wire::Action::CenterWindow {},
+        domain::Action::MinimizeWindow { window } => wire::Action::MoveWindowToWorkspace {
+            window_id: Some(window.0),
+            reference: wire::WorkspaceReference::Name(domain::PARKING_WORKSPACE.into()),
+            focus: false,
+        },
+        domain::Action::RestoreWindow { window, workspace } => {
+            wire::Action::MoveWindowToWorkspace {
+                window_id: Some(window.0),
+                reference: wire::WorkspaceReference::Id(workspace.0),
+                focus: true,
+            }
+        }
     }
 }
 
 /// niri window-management actions apply to the focused window, so a targeted
-/// action is a focus step followed by the action on its own socket.
-pub(super) fn convert_action_sequence(action: &domain::Action) -> Vec<wire::Action> {
+/// action is a focus step followed by the action on its own socket. Regions
+/// niri cannot express return an explicit `Unsupported` error.
+pub(super) fn convert_action_sequence(
+    action: &domain::Action,
+) -> Result<Vec<wire::Action>, domain::ActionError> {
     match action {
+        domain::Action::TileWindow { region, .. }
+            if !matches!(region, domain::TileRegion::Left | domain::TileRegion::Right) =>
+        {
+            Err(domain::ActionError {
+                kind: domain::ActionErrorKind::Unsupported,
+                message: "niri cannot tile to vertical or quarter regions".into(),
+            })
+        }
         domain::Action::FullscreenWindow { window, .. }
         | domain::Action::FillWindow { window }
-        | domain::Action::CenterWindow { window } => vec![
+        | domain::Action::CenterWindow { window }
+        | domain::Action::TileWindow { window, .. } => Ok(vec![
             wire::Action::FocusWindow { id: window.0 },
             convert_action(action),
-        ],
-        _ => vec![convert_action(action)],
+        ]),
+        _ => Ok(vec![convert_action(action)]),
     }
 }
 

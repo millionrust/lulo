@@ -42,11 +42,14 @@ pub enum Action {
     FullscreenWindow {},
     ExpandColumnToAvailableWidth {},
     CenterWindow {},
+    MoveColumnToFirst {},
+    MoveColumnToLast {},
 }
 
 #[derive(Debug, Serialize)]
 pub enum WorkspaceReference {
     Id(u64),
+    Name(String),
 }
 
 #[derive(Debug, Deserialize)]

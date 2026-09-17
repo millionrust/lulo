@@ -129,7 +129,7 @@ fn targeted_window_actions_focus_then_act() {
         ),
     ];
     for (action, expected) in cases {
-        let sequence = convert_action_sequence(&action);
+        let sequence = convert_action_sequence(&action).unwrap();
         assert_eq!(sequence.len(), 2);
         assert_eq!(
             serde_json::to_string(&sequence[0]).unwrap(),
@@ -138,8 +138,50 @@ fn targeted_window_actions_focus_then_act() {
         assert_eq!(serde_json::to_string(&sequence[1]).unwrap(), expected);
     }
     // Untargeted actions stay a single request.
-    let sequence = convert_action_sequence(&domain::Action::SetOverview { visible: true });
+    let sequence = convert_action_sequence(&domain::Action::SetOverview { visible: true }).unwrap();
     assert_eq!(sequence.len(), 1);
+}
+
+#[test]
+fn minimize_and_restore_use_the_named_parking_workspace() {
+    let minimized = convert_action_sequence(&domain::Action::MinimizeWindow {
+        window: domain::WindowId(4),
+    })
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(&minimized[0]).unwrap(),
+        r#"{"MoveWindowToWorkspace":{"window_id":4,"reference":{"Name":"rmac-parking"},"focus":false}}"#
+    );
+    let restored = convert_action_sequence(&domain::Action::RestoreWindow {
+        window: domain::WindowId(4),
+        workspace: domain::WorkspaceId(2),
+    })
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(&restored[0]).unwrap(),
+        r#"{"MoveWindowToWorkspace":{"window_id":4,"reference":{"Id":2},"focus":true}}"#
+    );
+}
+
+#[test]
+fn unsupported_tile_regions_are_rejected_before_any_request() {
+    let error = convert_action_sequence(&domain::Action::TileWindow {
+        window: domain::WindowId(7),
+        region: domain::TileRegion::TopLeft,
+    })
+    .unwrap_err();
+    assert_eq!(error.kind, domain::ActionErrorKind::Unsupported);
+
+    let left = convert_action_sequence(&domain::Action::TileWindow {
+        window: domain::WindowId(7),
+        region: domain::TileRegion::Left,
+    })
+    .unwrap();
+    assert_eq!(left.len(), 2);
+    assert_eq!(
+        serde_json::to_string(&left[1]).unwrap(),
+        r#"{"MoveColumnToFirst":{}}"#
+    );
 }
 
 #[test]

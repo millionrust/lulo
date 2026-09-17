@@ -581,7 +581,7 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
   Keep binary names that `packaging/` and systemd units already expect (check `packaging/rmac-session/*` and `scripts/linux/install-session-units.sh`; if a unit expects `rmac-top-bar`, keep that binary name).
   Verify (Ubuntu): `cd shell && cargo build --locked --release --features wayland` then run the existing `shell/scripts/nested-wayland-smoke.sh` (moved with the lab).
 
-- [x] **0.3 Create `crates/rmac-design` (GPUI-free tokens).** (all §4 tokens as plain data; `Tokens::resolve`; 8 tests) — pending shell/Cargo.toml dep in 0.2
+- [x] **0.3 Create `crates/rmac-design` (GPUI-free tokens).** (all §4 tokens as plain data; `Tokens::resolve`; 8 tests) — `9f0ecaf`; pending shell/Cargo.toml dep in 0.2
   Files: new crate in main workspace; add `rmac-design = { path = "../crates/rmac-design" }` to `shell/Cargo.toml` too.
   Do: `pub struct Tokens { colors, materials, type_scale, radii, metrics, elevation, motion }` built by `Tokens::resolve(appearance: rmac_appearance::ResolvedAppearance) -> Tokens`, containing **every** value in §4 as named fields (use the token names in §4 converted to snake_case). Colors are `Rgba(u32)`. No gpui dependency. Unit tests: dark/light/high-contrast each produce WCAG ≥ 4.5 for `label.primary` on `surface.window`, ≥ 3.0 for `label.secondary`; every alpha in reduced-transparency materials ≥ `F0`.
   Verify: `cargo test --locked -p rmac-design`.

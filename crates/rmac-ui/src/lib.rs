@@ -14,7 +14,9 @@ pub mod shortcuts;
 pub mod theme;
 mod window;
 
-pub use chrome::{body_bg, page, title_bar, toolbar, traffic_lights};
+pub use chrome::{
+    body_bg, page, title_bar, toolbar, toolbar_group, traffic_lights, traffic_lights_active,
+};
 pub use components::{
     alert, dialog, dialog_button, type_select_match, ContextMenu, ContextMenuState,
     DialogButtonKind, DismissMenu, MenuCheck, RequestClose,

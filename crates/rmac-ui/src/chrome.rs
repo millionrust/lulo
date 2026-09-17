@@ -164,3 +164,18 @@ pub fn toolbar(children: impl IntoElement) -> impl IntoElement {
             .child(children),
     )
 }
+
+/// A grouped glass capsule for toolbar items (Tahoe): a rounded translucent
+/// container that holds 28×28 icon buttons.
+pub fn toolbar_group(children: impl IntoElement) -> impl IntoElement {
+    div()
+        .h(px(32.0))
+        .px(px(2.0))
+        .flex()
+        .items_center()
+        .rounded(px(16.0))
+        .bg(mac::material_clear())
+        .border_1()
+        .border_color(mac::separator())
+        .child(children)
+}

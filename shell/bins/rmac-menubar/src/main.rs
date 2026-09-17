@@ -1228,7 +1228,7 @@ mod linux_wayland {
 
     fn shell_icon_path(file: &str) -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("assets/status")
+            .join("../../assets/status")
             .join(file)
     }
 

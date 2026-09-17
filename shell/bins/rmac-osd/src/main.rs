@@ -260,7 +260,7 @@ mod linux_wayland {
     }
 
     fn icon_pair(presentation: &Presentation) -> (PathBuf, PathBuf) {
-        let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/osd");
+        let directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/osd");
         let (low, high) = match (presentation.kind, presentation.muted) {
             (Kind::Output, true) => ("muted.svg", "speaker-high.svg"),
             (Kind::Output, false) => ("speaker-low.svg", "speaker-high.svg"),

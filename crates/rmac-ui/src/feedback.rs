@@ -38,6 +38,95 @@ impl RenderOnce for Tooltip {
     }
 }
 
+/// Twelve-spoke activity indicator. The owner advances `phase` on a timer;
+/// a hidden spinner stops rendering, so it costs nothing while idle.
+#[derive(IntoElement)]
+pub struct Spinner {
+    size: f32,
+    phase: u8,
+    style: StyleRefinement,
+}
+
+const SPINNER_SPOKES: u8 = 12;
+
+impl Spinner {
+    pub fn new() -> Self {
+        Self {
+            size: 16.0,
+            phase: 0,
+            style: StyleRefinement::default(),
+        }
+    }
+
+    pub fn small() -> Self {
+        Self {
+            size: 12.0,
+            ..Self::new()
+        }
+    }
+
+    pub fn large() -> Self {
+        Self {
+            size: 32.0,
+            ..Self::new()
+        }
+    }
+
+    pub fn phase(mut self, phase: u8) -> Self {
+        self.phase = phase;
+        self
+    }
+
+    /// Opacity of spoke `index`: the phase head is fully opaque and the trail
+    /// fades back to 20%.
+    pub fn spoke_opacity(phase: u8, index: u8, spokes: u8) -> f32 {
+        if spokes == 0 {
+            return 1.0;
+        }
+        let head = phase % spokes;
+        let distance = (index + spokes - head) % spokes;
+        1.0 - (f32::from(distance) / f32::from(spokes)) * 0.8
+    }
+}
+
+impl Default for Spinner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Styled for Spinner {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl RenderOnce for Spinner {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let size = self.size;
+        let center = size / 2.0;
+        let radius = (center - 2.0).max(0.0);
+        let dot = (size * 0.16).max(2.0);
+        let mut container = div().relative().size(px(size)).refine_style(&self.style);
+        for index in 0..SPINNER_SPOKES {
+            let angle = f32::from(index) * std::f32::consts::TAU / f32::from(SPINNER_SPOKES);
+            let x = center + radius * angle.sin() - dot / 2.0;
+            let y = center - radius * angle.cos() - dot / 2.0;
+            let opacity = Self::spoke_opacity(self.phase, index, SPINNER_SPOKES);
+            container = container.child(
+                div()
+                    .absolute()
+                    .left(px(x))
+                    .top(px(y))
+                    .size(px(dot))
+                    .rounded_full()
+                    .bg(mac::accent().opacity(opacity)),
+            );
+        }
+        container
+    }
+}
+
 /// Visual outcome of a progress operation.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ProgressStatus {
@@ -358,5 +447,13 @@ mod tests {
     fn toast_roles_are_distinct() {
         assert_ne!(ToastKind::Informational, ToastKind::Error);
         assert_ne!(ToastKind::Success, ToastKind::Warning);
+    }
+
+    #[test]
+    fn spinner_head_is_opaque_and_trail_fades() {
+        assert_eq!(Spinner::spoke_opacity(0, 0, 12), 1.0);
+        assert!(Spinner::spoke_opacity(0, 11, 12) < Spinner::spoke_opacity(0, 1, 12));
+        assert!(Spinner::spoke_opacity(0, 6, 12) < 1.0);
+        assert_eq!(Spinner::spoke_opacity(3, 0, 0), 1.0);
     }
 }

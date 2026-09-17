@@ -29,7 +29,7 @@ impl FinderView {
                     .child(
                         div()
                             .max_w(px(520.0))
-                            .rounded(px(mac::radius_control()))
+                            .rounded(px(rmac_ui::mac::radius_control()))
                             .border_1()
                             .border_color(rmac_ui::mac::error_border())
                             .bg(rmac_ui::mac::error_background())
@@ -68,7 +68,7 @@ impl FinderView {
                             img(preview.clone())
                                 .max_w(px(700.0))
                                 .max_h(px(500.0))
-                                .rounded(px(mac::radius_menu_item())),
+                                .rounded(px(rmac_ui::mac::radius_menu_item())),
                         )
                         .into_any_element(),
                     Some("Image preview".into()),
@@ -85,7 +85,7 @@ impl FinderView {
                             img(preview.clone())
                                 .max_w(px(700.0))
                                 .max_h(px(500.0))
-                                .rounded(px(mac::radius_menu_item())),
+                                .rounded(px(rmac_ui::mac::radius_menu_item())),
                         )
                         .into_any_element(),
                     Some(
@@ -142,7 +142,7 @@ impl FinderView {
                         .overflow_y_scroll()
                         .m_4()
                         .p_4()
-                        .rounded(px(mac::radius_menu_item()))
+                        .rounded(px(rmac_ui::mac::radius_menu_item()))
                         .border_1()
                         .border_color(sep())
                         .bg(list_bg())
@@ -247,7 +247,7 @@ impl FinderView {
                         .h(px(620.0))
                         .v_flex()
                         .overflow_hidden()
-                        .rounded(px(mac::radius_card()))
+                        .rounded(px(rmac_ui::mac::radius_card()))
                         .bg(rmac_ui::mac::raised())
                         .border_1()
                         .border_color(sep())

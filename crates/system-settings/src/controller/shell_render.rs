@@ -204,7 +204,7 @@ impl Render for Settings {
                         rmac_system_settings::accessibility::GLOBAL_ERROR_TITLE,
                     )
                     .message(message)
-                    .rounded(px(mac::radius_none()))
+                    .rounded(px(rmac_ui::mac::radius_none()))
                     .border_l_0()
                     .border_r_0()
                     .on_dismiss(cx.listener(|this, _, _, cx| {

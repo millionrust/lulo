@@ -18,7 +18,7 @@ impl NotesView {
                     .p_6()
                     .v_flex()
                     .gap_3()
-                    .rounded(px(mac::radius_card()))
+                    .rounded(px(rmac_ui::mac::radius_card()))
                     .bg(mac::raised())
                     .border_1()
                     .border_color(mac::separator())
@@ -88,7 +88,7 @@ impl NotesView {
             .p_6()
             .v_flex()
             .gap_3()
-            .rounded(px(mac::radius_card()))
+            .rounded(px(rmac_ui::mac::radius_card()))
             .bg(mac::raised())
             .border_1()
             .border_color(mac::separator());

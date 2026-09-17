@@ -101,7 +101,7 @@ pub(super) fn note_card(text: impl Into<SharedString>) -> Div {
         .mb_3()
         .px_3()
         .py_2p5()
-        .rounded(px(rmac_ui::mac::radius_card()))
+        .rounded(px(rmac_ui::rmac_ui::mac::radius_card()))
         .bg(rmac_ui::mac::warning_background())
         .border_1()
         .border_color(rmac_ui::mac::warning_border())
@@ -262,7 +262,7 @@ pub(super) fn card(rows: Vec<AnyElement>) -> Div {
     let mut c = div()
         .v_flex()
         .mb_3()
-        .rounded(px(rmac_ui::mac::radius_card()))
+        .rounded(px(rmac_ui::rmac_ui::mac::radius_card()))
         .bg(card_bg())
         .border_1()
         .border_color(sep());

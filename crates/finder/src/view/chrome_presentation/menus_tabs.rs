@@ -146,7 +146,7 @@ impl FinderView {
                     .gap_1()
                     .h(px(22.0))
                     .px_2()
-                    .rounded(px(mac::radius_menu_item()))
+                    .rounded(px(rmac_ui::mac::radius_menu_item()))
                     .when(active, |el: Stateful<Div>| el.bg(rmac_ui::mac::raised()))
                     .when(!active, |el: Stateful<Div>| {
                         el.hover(|h| h.bg(rmac_ui::mac::hover()))

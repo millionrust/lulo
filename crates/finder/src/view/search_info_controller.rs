@@ -190,7 +190,7 @@ impl FinderView {
             .w(px(300.0))
             .max_h(px(500.0))
             .overflow_hidden()
-            .rounded(px(mac::radius_card()))
+            .rounded(px(rmac_ui::mac::radius_card()))
             .bg(rmac_ui::mac::raised())
             .border_1()
             .border_color(sep())

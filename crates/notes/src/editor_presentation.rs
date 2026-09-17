@@ -34,7 +34,7 @@ impl NotesView {
             {
                 div()
                     .size_full()
-                    .rounded(px(mac::radius_control()))
+                    .rounded(px(rmac_ui::mac::radius_control()))
                     .overflow_hidden()
                     .bg(mac::control_fill())
                     .child(
@@ -93,7 +93,7 @@ impl NotesView {
                 .flex()
                 .gap_3()
                 .p_2()
-                .rounded(px(mac::radius_menu()))
+                .rounded(px(rmac_ui::mac::radius_menu()))
                 .border_1()
                 .border_color(mac::separator())
                 .bg(mac::window())
@@ -237,7 +237,7 @@ impl NotesView {
                     .items_center()
                     .gap_1()
                     .px_2()
-                    .rounded(px(mac::radius_segmented()))
+                    .rounded(px(rmac_ui::mac::radius_segmented()))
                     .bg(mac::control_fill())
                     .text_size(rmac_ui::text_px(12.0))
                     .text_color(mac::notes_accent())
@@ -329,7 +329,7 @@ fn centered_attachment_state(
         .flex()
         .items_center()
         .justify_center()
-        .rounded(px(mac::radius_control()))
+        .rounded(px(rmac_ui::mac::radius_control()))
         .bg(mac::control_fill())
         .child(
             div()

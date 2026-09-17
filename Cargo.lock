@@ -5919,6 +5919,8 @@ dependencies = [
  "rmac-appearance",
  "rmac-appearance-portal",
  "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
  "rmac-design",
  "rmac-theme",
  "rmac-window-state",

@@ -165,6 +165,7 @@ mod linux_wayland {
         revealed: bool,
         pointer_inside: bool,
         hide_generation: u64,
+        parking: rmac_compositor::ParkingStore,
         focus: FocusHandle,
         _blur: Subscription,
     }
@@ -202,6 +203,7 @@ mod linux_wayland {
                 revealed: !fullscreen,
                 pointer_inside: false,
                 hide_generation: 0,
+                parking: rmac_compositor::ParkingStore::load_default(),
                 focus,
                 _blur: blur,
             }
@@ -234,6 +236,7 @@ mod linux_wayland {
             self.revealed = true;
             self.selected_item = 0;
             self.open_app_id = Some(app_id);
+            self.parking = rmac_compositor::ParkingStore::load_default();
             self.recent_submenu_open = false;
             self.recent_selected_item = 0;
             self.pending_system_action = None;
@@ -469,11 +472,22 @@ mod linux_wayland {
                 .to_string();
             let clock_label = clock.clone();
             let active_app = top_bar_active_app_name(snapshot);
+            let active_app_id = snapshot.focused.app_id.clone();
             let workspace = top_bar_workspace_label(snapshot);
             let indicators = top_bar_indicator_labels(snapshot);
             let focused_window_id = snapshot.focused.window_id;
             let mut menus = status.menus.clone();
             menus.insert(0, system_menu());
+            // The bold app name is the app menu (§3.3): it is synthesized, not
+            // exported, so every app gets About/Hide/Hide Others/Show All/Quit.
+            menus.insert(
+                1,
+                app_menu(
+                    &active_app,
+                    active_app_id.as_deref(),
+                    !self.parking.is_empty(),
+                ),
+            );
 
             if self.open_menu.is_some()
                 && (self.open_menu >= Some(menus.len())
@@ -548,7 +562,7 @@ mod linux_wayland {
             let menu_buttons = menus
                 .iter()
                 .enumerate()
-                .skip(1)
+                .skip(2)
                 .map(|(index, menu)| {
                     let app_id = app_id_for_buttons.clone().unwrap_or_default();
                     let open = self.open_menu == Some(index);
@@ -903,7 +917,37 @@ mod linux_wayland {
                                 }))
                                 .child(img(shell_icon_path("rmac.svg")).w(px(15.0)).h(px(15.0))),
                         )
-                        .child(div().font_weight(FontWeight::SEMIBOLD).child(active_app))
+                        .child({
+                            let app_id = active_app_id.clone().unwrap_or_default();
+                            let open = self.open_menu == Some(1);
+                            div()
+                                .id(format!("app-menu-name-{}", self.display_id))
+                                .role(Role::Button)
+                                .aria_label(format!("{active_app} menu"))
+                                .focusable()
+                                .tab_stop(true)
+                                .h(px(22.0))
+                                .px_1()
+                                .flex()
+                                .items_center()
+                                .rounded(px(tokens::menu_item_radius()))
+                                .cursor_pointer()
+                                .when(open, |style| style.bg(rgba(tokens::light_selection())))
+                                .hover(|style| style.bg(rgba(tokens::light_hover())))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    cx.stop_propagation();
+                                    if this.open_menu == Some(1) {
+                                        this.close_menu(window, cx);
+                                    } else {
+                                        this.open_menu(1, app_id.clone(), window, cx);
+                                    }
+                                }))
+                                .child(
+                                    div()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .child(active_app.clone()),
+                                )
+                        })
                         .children(menu_buttons)
                         .children(workspace.map(|workspace| {
                             div()
@@ -1036,10 +1080,12 @@ mod linux_wayland {
             return 4.0;
         }
         let app_width = active_app.chars().count() as f32 * 7.2 + 16.0;
+        // Index 1 is the synthesized app menu, drawn as the bold app name
+        // itself, so only menus after it add width before `index`.
         let preceding = menus
             .iter()
-            .skip(1)
-            .take(index - 1)
+            .skip(2)
+            .take(index.saturating_sub(2))
             .map(|menu| menu.label.chars().count() as f32 * 7.0 + 16.0)
             .sum::<f32>();
         (44.0 + app_width + preceding).max(16.0)
@@ -1125,6 +1171,51 @@ mod linux_wayland {
                     separator_before: false,
                 },
             ],
+        }
+    }
+
+    /// The bold-name app menu every application gets, exported or not (§3.3).
+    /// Hide and Hide Others park the app's windows; Show All unparks them.
+    fn app_menu(app_name: &str, app_id: Option<&str>, any_parked: bool) -> rmac_app_menu::Menu {
+        use rmac_app_menu::Item;
+
+        let known = app_id.is_some();
+        let row =
+            |label: String, action: &str, shortcut: &str, enabled: bool, separator_before| Item {
+                label,
+                action: action.into(),
+                shortcut: shortcut.into(),
+                enabled,
+                separator_before,
+            };
+        let mut items = vec![
+            // No app ships About metadata yet, so the row is present but
+            // disabled rather than inventing facts (§FD-8).
+            row(format!("About {app_name}"), "app::about", "", false, false),
+            row("Services".into(), "app::services", "›", false, true),
+            row(format!("Hide {app_name}"), "app::hide", "⌘H", known, true),
+            row(
+                "Hide Others".into(),
+                "app::hide-others",
+                "⌥⌘H",
+                known,
+                false,
+            ),
+            row("Show All".into(), "app::show-all", "", any_parked, false),
+        ];
+        // Files, like Finder, can never be quit (§2.9).
+        if app_id != Some(rmac_apps::identity::FILES) {
+            items.push(row(
+                format!("Quit {app_name}"),
+                "app::quit",
+                "⌘Q",
+                known,
+                true,
+            ));
+        }
+        rmac_app_menu::Menu {
+            label: app_name.to_owned(),
+            items,
         }
     }
 
@@ -1288,6 +1379,10 @@ mod linux_wayland {
             dispatch_system_menu(action, cx);
             return;
         }
+        if action.starts_with("app::") {
+            dispatch_app_menu_action(app_id, action, cx);
+            return;
+        }
         static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(1);
         cx.background_executor()
             .spawn(async move {
@@ -1303,6 +1398,79 @@ mod linux_wayland {
                 }
                 if let Err(error) = rmac_app_menu::activate(&app_id, &action).await {
                     eprintln!("could not activate {app_id} menu command: {error}");
+                }
+            })
+            .detach();
+    }
+
+    /// Hide/Hide Others/Show All use the parking model (§2.2): niri has no
+    /// minimize, so a window is hidden by moving it to `rmac-parking` and its
+    /// origin workspace is recorded so Show All can bring it back.
+    fn dispatch_app_menu_action(app_id: String, action: String, cx: &mut App) {
+        cx.background_executor()
+            .spawn(async move {
+                let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+                    eprintln!("could not read windows to {action}");
+                    return;
+                };
+                let mut store = rmac_compositor::ParkingStore::load_default();
+                store.prune(&snapshot);
+                let mut actions = Vec::new();
+                match action.as_str() {
+                    "app::hide" => {
+                        let windows = rmac_compositor::application_windows(&snapshot, &app_id);
+                        store.record_from(&snapshot, &windows);
+                        actions = windows
+                            .into_iter()
+                            .map(|window| rmac_compositor::Action::MinimizeWindow { window })
+                            .collect();
+                    }
+                    "app::hide-others" => {
+                        let windows = snapshot
+                            .windows
+                            .iter()
+                            .filter(|window| window.app_id.as_deref() != Some(app_id.as_str()))
+                            .filter(|window| !rmac_compositor::window_is_parked(&snapshot, window))
+                            .map(|window| window.id)
+                            .collect::<Vec<_>>();
+                        store.record_from(&snapshot, &windows);
+                        actions = windows
+                            .into_iter()
+                            .map(|window| rmac_compositor::Action::MinimizeWindow { window })
+                            .collect();
+                    }
+                    "app::show-all" => {
+                        let windows = store
+                            .entries()
+                            .iter()
+                            .map(|entry| entry.window)
+                            .collect::<Vec<_>>();
+                        actions = store.restore_actions(&windows);
+                    }
+                    "app::quit" => {
+                        let windows = snapshot
+                            .windows
+                            .iter()
+                            .filter(|window| window.app_id.as_deref() == Some(app_id.as_str()))
+                            .map(|window| window.id)
+                            .collect::<Vec<_>>();
+                        for window in &windows {
+                            store.forget(*window);
+                        }
+                        actions = windows
+                            .into_iter()
+                            .map(|window| rmac_compositor::Action::CloseWindow { window })
+                            .collect();
+                    }
+                    other => eprintln!("unknown app menu action: {other}"),
+                }
+                for action in &actions {
+                    if let Err(error) = rmac_compositor_niri::execute_action(action).await {
+                        eprintln!("could not run app menu action: {error:?}");
+                    }
+                }
+                if let Err(error) = store.save_default() {
+                    eprintln!("could not save the parking set: {error}");
                 }
             })
             .detach();

@@ -483,6 +483,15 @@ mod linux_wayland {
                             .as_deref()
                             .is_some_and(|id| self.open_app_id.as_deref() != Some(id))))
             {
+                if std::env::var_os("RMAC_DEBUG_MENU").is_some() {
+                    eprintln!(
+                        "dbg close open={:?} len={} menu_app={:?} open_app={:?}",
+                        self.open_menu,
+                        menus.len(),
+                        status.menu_app_id,
+                        self.open_app_id
+                    );
+                }
                 self.open_menu = None;
                 self.open_app_id = None;
                 self.selected_item = 0;

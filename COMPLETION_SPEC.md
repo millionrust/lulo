@@ -557,7 +557,7 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
 **Goal:** one shell workspace, one token crate, installed fonts, correct names, no contradictory docs.
 **Read first:** `experiments/gpui-upstream-lab/README.md`, `docs/decisions/0001-gpui-linux-gate.md`, `docs/decisions/0002-gpui-version-policy.md`, `scripts/linux/install-upstream-shell-candidate.sh`, `scripts/linux/build-native-packages.py`.
 
-- [ ] **0.1 Record the framework decision.**
+- [x] **0.1 Record the framework decision.** ([ADR 0006](docs/decisions/0006-shell-and-app-framework-split.md))
   Files: new `docs/decisions/0006-shell-and-app-framework-split.md`.
   Do: write FD-1 as an ADR: context (stable 0.2.2 lacks layer-shell/a11y proof), decision (shell on rev `76c93968…`, apps on 0.2.2), consequences, upgrade policy (bump rev at most monthly after the Phase 8 smoke passes), rollback (previous rev manifest). Link it from `README.md` and `GOAL.md` Checkpoint 0.
   Verify: `python3 scripts/verify-documentation.py`.

@@ -185,6 +185,7 @@ macOS baseline, method, known failures, and remaining Linux/frame-time evidence.
 - [`docs/wallpaper.md`](docs/wallpaper.md) — wallpaper authority, sources, geometry, decoding, and runtime contract.
 - [`docs/decisions/0003-wallpaper-portal-authority.md`](docs/decisions/0003-wallpaper-portal-authority.md) — session versus XDG portal wallpaper ownership.
 - [`docs/decisions/0004-secure-lock-boundary.md`](docs/decisions/0004-secure-lock-boundary.md) — compositor, PAM, logind, and crash-recovery ownership for locking.
+- [`docs/decisions/0006-shell-and-app-framework-split.md`](docs/decisions/0006-shell-and-app-framework-split.md) — shell on the pinned upstream GPUI layer-shell revision, apps on 0.2.2.
 - [`PLAN.md`](PLAN.md) and [`PARITY.md`](PARITY.md) — prototype history.
 
 ## License

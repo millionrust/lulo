@@ -220,6 +220,9 @@ status. The order may change only when evidence shows a dependency or blocker.
 4. Remove the split between a convincing experiment and the actual product by
    promoting the chosen shell primitives into maintained crates.
 
+Decision record:
+[`docs/decisions/0006-shell-and-app-framework-split.md`](docs/decisions/0006-shell-and-app-framework-split.md).
+
 Exit proof: the product packages use the selected framework path, a fresh
 targeted build succeeds on Ubuntu, and the decision record contains the exact
 revision, known gaps, upgrade policy, and rollback.

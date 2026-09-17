@@ -21,6 +21,7 @@ use wayland_protocols_wlr::virtual_pointer::v1::client::{
 const OUTPUT_WIDTH: u32 = 1920;
 const OUTPUT_HEIGHT: u32 = 1080;
 const BTN_LEFT: u32 = 0x110;
+const BTN_RIGHT: u32 = 0x111;
 
 #[derive(Default)]
 struct State;
@@ -74,6 +75,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some("click") if args.len() == 4 => {
             ("click", args[2].parse::<u32>()?, args[3].parse::<u32>()?)
         }
+        Some("rclick") if args.len() == 4 => {
+            ("rclick", args[2].parse::<u32>()?, args[3].parse::<u32>()?)
+        }
         Some("press") if args.len() == 4 => {
             ("press", args[2].parse::<u32>()?, args[3].parse::<u32>()?)
         }
@@ -81,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ("move", args[2].parse::<u32>()?, args[3].parse::<u32>()?)
         }
         _ => {
-            eprintln!("usage: input-probe click|press|move <x> <y>");
+            eprintln!("usage: input-probe click|rclick|press|move <x> <y>");
             std::process::exit(2);
         }
     };
@@ -100,12 +104,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::thread::sleep(std::time::Duration::from_millis(80));
 
     match command {
-        "click" => {
-            pointer.button(now_millis(), BTN_LEFT, wl_pointer::ButtonState::Pressed);
+        "click" | "rclick" => {
+            let button = if command == "rclick" {
+                BTN_RIGHT
+            } else {
+                BTN_LEFT
+            };
+            pointer.button(now_millis(), button, wl_pointer::ButtonState::Pressed);
             pointer.frame();
             queue.flush()?;
             std::thread::sleep(std::time::Duration::from_millis(60));
-            pointer.button(now_millis(), BTN_LEFT, wl_pointer::ButtonState::Released);
+            pointer.button(now_millis(), button, wl_pointer::ButtonState::Released);
             pointer.frame();
         }
         "press" => {

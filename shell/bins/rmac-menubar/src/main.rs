@@ -1407,73 +1407,72 @@ mod linux_wayland {
     /// minimize, so a window is hidden by moving it to `rmac-parking` and its
     /// origin workspace is recorded so Show All can bring it back.
     fn dispatch_app_menu_action(app_id: String, action: String, cx: &mut App) {
-        cx.background_executor()
-            .spawn(async move {
-                let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
-                    eprintln!("could not read windows to {action}");
-                    return;
-                };
-                let mut store = rmac_compositor::ParkingStore::load_default();
-                store.prune(&snapshot);
-                let mut actions = Vec::new();
-                match action.as_str() {
-                    "app::hide" => {
-                        let windows = rmac_compositor::application_windows(&snapshot, &app_id);
-                        store.record_from(&snapshot, &windows);
-                        actions = windows
-                            .into_iter()
-                            .map(|window| rmac_compositor::Action::MinimizeWindow { window })
-                            .collect();
-                    }
-                    "app::hide-others" => {
-                        let windows = snapshot
-                            .windows
-                            .iter()
-                            .filter(|window| window.app_id.as_deref() != Some(app_id.as_str()))
-                            .filter(|window| !rmac_compositor::window_is_parked(&snapshot, window))
-                            .map(|window| window.id)
-                            .collect::<Vec<_>>();
-                        store.record_from(&snapshot, &windows);
-                        actions = windows
-                            .into_iter()
-                            .map(|window| rmac_compositor::Action::MinimizeWindow { window })
-                            .collect();
-                    }
-                    "app::show-all" => {
-                        let windows = store
-                            .entries()
-                            .iter()
-                            .map(|entry| entry.window)
-                            .collect::<Vec<_>>();
-                        actions = store.restore_actions(&windows);
-                    }
-                    "app::quit" => {
-                        let windows = snapshot
-                            .windows
-                            .iter()
-                            .filter(|window| window.app_id.as_deref() == Some(app_id.as_str()))
-                            .map(|window| window.id)
-                            .collect::<Vec<_>>();
-                        for window in &windows {
-                            store.forget(*window);
-                        }
-                        actions = windows
-                            .into_iter()
-                            .map(|window| rmac_compositor::Action::CloseWindow { window })
-                            .collect();
-                    }
-                    other => eprintln!("unknown app menu action: {other}"),
+        cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
+            let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+                eprintln!("could not read windows to {action}");
+                return;
+            };
+            let mut store = rmac_compositor::ParkingStore::load_default();
+            store.prune(&snapshot);
+            let mut actions = Vec::new();
+            match action.as_str() {
+                "app::hide" => {
+                    let windows = rmac_compositor::application_windows(&snapshot, &app_id);
+                    store.record_from(&snapshot, &windows);
+                    actions = windows
+                        .into_iter()
+                        .map(|window| rmac_compositor::Action::MinimizeWindow { window })
+                        .collect();
                 }
-                for action in &actions {
-                    if let Err(error) = rmac_compositor_niri::execute_action(action).await {
-                        eprintln!("could not run app menu action: {error:?}");
+                "app::hide-others" => {
+                    let windows = snapshot
+                        .windows
+                        .iter()
+                        .filter(|window| window.app_id.as_deref() != Some(app_id.as_str()))
+                        .filter(|window| !rmac_compositor::window_is_parked(&snapshot, window))
+                        .map(|window| window.id)
+                        .collect::<Vec<_>>();
+                    store.record_from(&snapshot, &windows);
+                    actions = windows
+                        .into_iter()
+                        .map(|window| rmac_compositor::Action::MinimizeWindow { window })
+                        .collect();
+                }
+                "app::show-all" => {
+                    let windows = store
+                        .entries()
+                        .iter()
+                        .map(|entry| entry.window)
+                        .collect::<Vec<_>>();
+                    actions = store.restore_actions(&windows);
+                }
+                "app::quit" => {
+                    let windows = snapshot
+                        .windows
+                        .iter()
+                        .filter(|window| window.app_id.as_deref() == Some(app_id.as_str()))
+                        .map(|window| window.id)
+                        .collect::<Vec<_>>();
+                    for window in &windows {
+                        store.forget(*window);
                     }
+                    actions = windows
+                        .into_iter()
+                        .map(|window| rmac_compositor::Action::CloseWindow { window })
+                        .collect();
                 }
-                if let Err(error) = store.save_default() {
-                    eprintln!("could not save the parking set: {error}");
+                other => eprintln!("unknown app menu action: {other}"),
+            }
+            for action in &actions {
+                if let Err(error) = rmac_compositor_niri::execute_action(action).await {
+                    eprintln!("could not run app menu action: {error:?}");
                 }
-            })
-            .detach();
+            }
+            if let Err(error) = store.save_default() {
+                eprintln!("could not save the parking set: {error}");
+            }
+        })
+        .detach();
     }
 
     fn dispatch_system_menu(action: String, cx: &mut App) {

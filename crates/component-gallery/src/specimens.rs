@@ -103,6 +103,7 @@ pub(crate) fn render_specimen(
             render_collection(component, state, scale)
         }
         GalleryComponent::Tabs => render_tab(state, scale),
+        GalleryComponent::Segmented => render_segmented(state, scale),
         GalleryComponent::Dialog => render_dialog(state, scale),
         GalleryComponent::Alert | GalleryComponent::Toast => {
             render_message(component, state, scale)
@@ -325,6 +326,43 @@ fn render_tab(state: GalleryState, scale: PreviewScale) -> AnyElement {
         .text_size(p(scale, 11.0))
         .when(is_disabled(state), |element| element.opacity(0.42))
         .child("General")
+        .into_any_element()
+}
+
+fn render_segmented(state: GalleryState, scale: PreviewScale) -> AnyElement {
+    let segment = |label: &'static str, selected: bool| {
+        div()
+            .h(p(scale, 20.0))
+            .px(p(scale, 10.0))
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded(p(scale, 6.0))
+            .when(selected, |element| {
+                element
+                    .bg(mac::raised())
+                    .border_1()
+                    .border_color(mac::separator())
+            })
+            .text_color(if selected {
+                mac::text()
+            } else {
+                mac::text_secondary()
+            })
+            .text_size(p(scale, 11.0))
+            .child(label)
+    };
+    div()
+        .flex()
+        .items_center()
+        .p(p(scale, 2.0))
+        .rounded(p(scale, mac::radius_control()))
+        .bg(mac::control_fill())
+        .border_1()
+        .border_color(state_border(state))
+        .when(is_disabled(state), |element| element.opacity(0.42))
+        .child(segment("Icons", true))
+        .child(segment("List", false))
         .into_any_element()
 }
 

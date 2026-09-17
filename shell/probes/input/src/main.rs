@@ -71,23 +71,20 @@ fn now_millis() -> u32 {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
-    let (command, x, y) = match args.get(1).map(String::as_str) {
-        Some("click") if args.len() == 4 => {
-            ("click", args[2].parse::<u32>()?, args[3].parse::<u32>()?)
-        }
-        Some("rclick") if args.len() == 4 => {
-            ("rclick", args[2].parse::<u32>()?, args[3].parse::<u32>()?)
-        }
-        Some("press") if args.len() == 4 => {
-            ("press", args[2].parse::<u32>()?, args[3].parse::<u32>()?)
-        }
-        Some("move") if args.len() == 4 => {
-            ("move", args[2].parse::<u32>()?, args[3].parse::<u32>()?)
-        }
+    let command = args.get(1).map(String::as_str).unwrap_or("");
+    let (x, y) = match (args.get(2), args.get(3)) {
+        (Some(x), Some(y)) => (x.parse::<u32>()?, y.parse::<u32>()?),
         _ => {
-            eprintln!("usage: input-probe click|rclick|press|move <x> <y>");
+            eprintln!(
+                "usage: input-probe click|rclick|press|move <x> <y> | drag <x1> <y1> <x2> <y2>"
+            );
             std::process::exit(2);
         }
+    };
+    let target = if command == "drag" {
+        Some((args[4].parse::<u32>()?, args[5].parse::<u32>()?))
+    } else {
+        None
     };
 
     let connection = Connection::connect_to_env()?;
@@ -121,8 +118,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             pointer.button(now_millis(), BTN_LEFT, wl_pointer::ButtonState::Pressed);
             pointer.frame();
         }
+        "drag" => {
+            let (x2, y2) = target.ok_or("drag needs an end point")?;
+            pointer.button(now_millis(), BTN_LEFT, wl_pointer::ButtonState::Pressed);
+            pointer.frame();
+            queue.flush()?;
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            for step in 1..=10i64 {
+                let nx = (i64::from(x) + (i64::from(x2) - i64::from(x)) * step / 10) as u32;
+                let ny = (i64::from(y) + (i64::from(y2) - i64::from(y)) * step / 10) as u32;
+                pointer.motion_absolute(now_millis(), nx, ny, OUTPUT_WIDTH, OUTPUT_HEIGHT);
+                pointer.frame();
+                queue.flush()?;
+                std::thread::sleep(std::time::Duration::from_millis(40));
+            }
+            pointer.button(now_millis(), BTN_LEFT, wl_pointer::ButtonState::Released);
+            pointer.frame();
+        }
         "move" => {}
-        _ => unreachable!(),
+        _ => {
+            eprintln!("unknown command: {command}");
+            std::process::exit(2);
+        }
     }
     queue.flush()?;
     std::thread::sleep(std::time::Duration::from_millis(120));

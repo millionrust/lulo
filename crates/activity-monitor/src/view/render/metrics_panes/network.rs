@@ -6,7 +6,7 @@ impl MonitorView {
     /// Network is system-wide because the current authority has no reliable
     /// per-process network accounting.
     pub(in crate::view::render) fn render_network_pane(&self) -> impl IntoElement {
-        let teal = gpui::rgb(0x32ade6);
+        let teal = mac::system_teal();
         let figure = |value: String, color: gpui::Hsla| {
             div()
                 .w(px(110.0))
@@ -106,7 +106,7 @@ impl MonitorView {
                 .overflow_y_scroll()
                 .border_1()
                 .border_color(mac::separator())
-                .rounded(px(8.0))
+                .rounded(px(mac::radius_control()))
                 .bg(mac::window())
                 .child(header)
                 .children(rows),

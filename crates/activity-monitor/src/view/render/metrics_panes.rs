@@ -18,7 +18,7 @@ impl MonitorView {
             .px_4()
             .py_3()
             .min_w(px(150.0))
-            .rounded(px(10.0))
+            .rounded(px(mac::radius_menu()))
             .bg(mac::chrome())
             .border_1()
             .border_color(mac::separator())
@@ -48,7 +48,7 @@ impl MonitorView {
                     .flex_1()
                     .h(px(40.0 * fraction))
                     .min_w(px(2.0))
-                    .rounded(px(1.0))
+                    .rounded(px(mac::radius_menu_item()))
                     .bg(accent)
             })
             .collect();
@@ -70,7 +70,7 @@ impl MonitorView {
     }
 
     pub(super) fn render_core_bars(&self) -> impl IntoElement {
-        let blue = gpui::rgb(0x007aff);
+        let blue = mac::system_blue();
         let cores = self.sampler.aggregates.per_core.clone();
         div()
             .v_flex()
@@ -102,13 +102,13 @@ impl MonitorView {
                             div()
                                 .flex_1()
                                 .h(px(6.0))
-                                .rounded(px(3.0))
+                                .rounded(px(mac::radius_menu_item()))
                                 .bg(mac::chrome())
                                 .child(
                                     div()
                                         .h_full()
                                         .w(gpui::relative(fraction))
-                                        .rounded(px(3.0))
+                                        .rounded(px(mac::radius_menu_item()))
                                         .bg(blue),
                                 ),
                         )
@@ -124,15 +124,15 @@ impl MonitorView {
     }
 
     pub(super) fn render_summary(&self, cx: &Context<Self>) -> impl IntoElement {
-        let blue = gpui::rgb(0x007aff).into();
-        let green = gpui::rgb(0x28b463).into();
-        let orange = gpui::rgb(0xff9500).into();
-        let purple = gpui::rgb(0xaf52de).into();
-        let teal = gpui::rgb(0x32ade6).into();
+        let blue = mac::system_blue();
+        let green = mac::system_green();
+        let orange = mac::system_orange();
+        let purple = mac::system_purple();
+        let teal = mac::system_teal();
 
         let (cards, samples, accent): (Vec<gpui::AnyElement>, &[f32], gpui::Hsla) = match self.tab {
             Tab::Cpu => {
-                let red = gpui::rgb(0xff3b30).into();
+                let red = mac::system_red();
                 let mut cards = vec![
                     self.stat_card(
                         "CPU Load",

@@ -8,11 +8,11 @@ impl MonitorView {
             / self.sampler.aggregates.mem_total as f32)
             .clamp(0.0, 1.0);
         let (color, label): (gpui::Hsla, &str) = if fraction < 0.60 {
-            (gpui::rgb(0x28b463).into(), "Normal")
+            (mac::system_green(), "Normal")
         } else if fraction < 0.80 {
-            (gpui::rgb(0xff9500).into(), "Elevated")
+            (mac::system_orange(), "Elevated")
         } else {
-            (gpui::rgb(0xff3b30).into(), "High")
+            (mac::system_red(), "High")
         };
         div()
             .v_flex()
@@ -42,13 +42,13 @@ impl MonitorView {
                 div()
                     .h(px(10.0))
                     .w_full()
-                    .rounded(px(5.0))
+                    .rounded(px(mac::radius_menu_item()))
                     .bg(mac::chrome())
                     .child(
                         div()
                             .h_full()
                             .w(gpui::relative(fraction))
-                            .rounded(px(5.0))
+                            .rounded(px(mac::radius_menu_item()))
                             .bg(color),
                     ),
             )

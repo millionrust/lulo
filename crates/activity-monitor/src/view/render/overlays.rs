@@ -81,7 +81,7 @@ impl MonitorView {
             .gap_1()
             .w(px(420.0))
             .p_5()
-            .rounded(px(12.0))
+            .rounded(px(mac::radius_card()))
             .bg(mac::window())
             .border_1()
             .border_color(mac::separator())

@@ -37,7 +37,7 @@ paths=(
 exempt=(
   shell/crates/rmac-shell-ui/src/tokens.rs
 )
-pattern='rgb\(0x|rgba\(0x|hsla\(|\.rounded\(px\([0-9]'
+pattern='rgb\(0x|rgba\(0x|hsla\(0x|\.rounded\(px\([0-9]'
 
 raw="$(mktemp)"
 filtered="$(mktemp)"

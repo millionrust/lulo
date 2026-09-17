@@ -27,7 +27,7 @@ impl MonitorView {
             .right(px(16.0))
             .w(px(210.0))
             .bg(mac::window())
-            .rounded(px(8.0))
+            .rounded(px(mac::radius_control()))
             .border_1()
             .border_color(mac::separator())
             .shadow_lg()

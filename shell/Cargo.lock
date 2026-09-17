@@ -4709,6 +4709,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-design"
+version = "0.1.0"
+dependencies = [
+ "rmac-appearance",
+]
+
+[[package]]
 name = "rmac-desktop"
 version = "0.1.0"
 dependencies = [
@@ -5188,9 +5195,15 @@ dependencies = [
 name = "rmac-shell-ui"
 version = "0.1.0"
 dependencies = [
+ "async-channel",
+ "gpui",
+ "rmac-appearance",
+ "rmac-appearance-portal",
  "rmac-apps",
+ "rmac-design",
  "rmac-shell-settings",
  "rmac-shell-status",
+ "rmac-theme",
 ]
 
 [[package]]

@@ -123,7 +123,7 @@ fn apply(tokens: DesignTokens, cx: &mut AsyncApp) {
     if !set(tokens) {
         return;
     }
-    let _ = cx.update(|app| app.refresh_windows());
+    cx.update(|app| app.refresh_windows());
 }
 
 // Semantic accessors used by the shell hosts. Each reads the live tokens so a

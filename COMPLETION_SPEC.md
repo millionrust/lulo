@@ -615,7 +615,7 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
 **Phase 0 exit checklist**
 - [~] `shell/` builds on Ubuntu ✔ (debug + release, `--locked`); systemd units start the promoted binaries (installer `--check` passes; binary names preserved) — nested smoke ✗ blocked by pre-existing niri requirement in `rmac-dock-runtime` (see 0.2).
 - [x] `rg -n "0x[0-9a-fA-F]{8}" shell/bins crates/*/src --glob '*render*'` finds no color literals outside `rmac-design` (allow SVG/asset code and tests). (No `*render*` file contains an 8-digit hex literal. Caveat: 55 component-specific literals remain in `shell/bins/*/main.rs` — bespoke wallpaper-picker preview art, the Dock's fallback-tile letter, and OSD/menu chrome whites. They are recorded for the Phase 1/3/4 restyles that will define their tokens.)
-- [~] Inter renders on Ubuntu (`fc-match Inter` → Inter-Regular) and the terminal/UI now request it via tokens; the JetBrains Mono screenshot is blocked because `fonts-jetbrains-mono` is not installed and sudo needs a password (see 0.6). Neither could be captured because the reference display stopped presenting during the check.
+- [x] Inter and JetBrains Mono render on Ubuntu: `fc-match Inter` → Inter-Regular and `fc-match "JetBrains Mono"` → JetBrainsMono-Regular after installing `fonts-jetbrains-mono`; the Component Gallery screenshot (`target/evidence/phase1/gallery-*.png`) shows Inter rendering in dark/light/high-contrast. Token crate requests both via `rmac_design::UI_FONT`/`MONO_FONT`.
 - [x] No visible "App Drawer" string (0.7).
 
 ---
@@ -642,7 +642,7 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
 For each of 1.2–1.8, **Verify:** `cargo test --locked -p rmac-ui`; `cargo run -p rmac-component-gallery` screenshot light + dark + high contrast placed next to the reference capture; states match within ±1 px geometry and visually indistinguishable color at 100% zoom.
 
 **Phase 1 exit checklist**
-- [ ] Gallery shows every component × every state × light/dark/HC/reduced-transparency.
+- [~] Gallery shows every component × every state × light/dark/HC/reduced-transparency. (Captured live on the reference PC: `target/evidence/phase1/gallery{,-light,-hc}.png` show Button (Default/Hover/Pressed/Focused/Disabled/Busy/Destructive), Toggle (Off/On/Mixed/Focused/Disabled), Slider (Default/Focused/Disabled/Unavailable), Text field (Empty/Filled/Focused/Invalid/Disabled) with the error border, and more, in dark, light, and high-contrast with live theme switching. Reduced-transparency capture still to add.)
 - [x] Token gate passes in CI (1.9; local `bash scripts/check-design-tokens.sh` clean, wired after the shared-control step).
 - [ ] Keyboard: Tab reaches every gallery control; Space/Return/Escape/arrow semantics per §5.
 

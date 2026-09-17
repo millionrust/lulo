@@ -542,6 +542,15 @@ mod linux_wayland {
                     }
                 }
             }
+            if std::env::var_os("RMAC_DEBUG_REVEAL").is_some() {
+                eprintln!(
+                    "dbg reveal visible={visible} fullscreen={} revealed={} pointer_inside={} region_h={}",
+                    self.fullscreen,
+                    self.revealed,
+                    self.pointer_inside,
+                    f32::from(input_regions[0].size.height)
+                );
+            }
             window.set_input_region(Some(&input_regions));
 
             let app_id_for_buttons = status.menu_app_id.clone();

@@ -591,6 +591,9 @@ mod linux_wayland {
                     self.open_app_id.clone()?
                 };
                 let left = menu_left?;
+                if std::env::var_os("RMAC_DEBUG_MENU").is_some() {
+                    eprintln!("dbg popup idx={menu_index} app={app_id} left={left}");
+                }
                 let selected = self.selected_item.min(menu.items.len().saturating_sub(1));
                 let mut panel = div()
                     .id(format!("app-menu-panel-{}-{menu_index}", self.display_id))

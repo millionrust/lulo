@@ -2,7 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ActivationId, OutputId, WindowId, WorkspaceId};
+use crate::{ActivationId, OutputId, Snapshot, Window, WindowId, WorkspaceId};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -231,6 +231,61 @@ impl ActionCapabilities {
     pub fn supports(&self, kind: ActionKind) -> bool {
         self.supported.contains(&kind)
     }
+}
+
+/// Whether `window` currently sits on the hidden parking workspace.
+pub fn window_is_parked(snapshot: &Snapshot, window: &Window) -> bool {
+    window
+        .workspace
+        .and_then(|id| {
+            snapshot
+                .workspaces
+                .iter()
+                .find(|workspace| workspace.id == id)
+        })
+        .and_then(|workspace| workspace.name.as_deref())
+        == Some(PARKING_WORKSPACE)
+}
+
+/// Visible (not-yet-parked) windows of `app_id`.
+pub fn application_windows(snapshot: &Snapshot, app_id: &str) -> Vec<WindowId> {
+    snapshot
+        .windows
+        .iter()
+        .filter(|window| window.app_id.as_deref() == Some(app_id))
+        .filter(|window| !window_is_parked(snapshot, window))
+        .map(|window| window.id)
+        .collect()
+}
+
+/// Expand `HideApplication` into one minimize per visible window. niri has no
+/// composite action, so the stateful shell piece calls this with a snapshot.
+pub fn hide_application(snapshot: &Snapshot, app_id: &str) -> Vec<Action> {
+    application_windows(snapshot, app_id)
+        .into_iter()
+        .map(|window| Action::MinimizeWindow { window })
+        .collect()
+}
+
+/// Expand `ShowDesktop` (on) into a minimize for every visible window.
+pub fn show_desktop(snapshot: &Snapshot) -> Vec<Action> {
+    snapshot
+        .windows
+        .iter()
+        .filter(|window| !window_is_parked(snapshot, window))
+        .map(|window| Action::MinimizeWindow { window: window.id })
+        .collect()
+}
+
+/// Expand a restore set back into per-window restore actions.
+pub fn restore_all(origins: &[(WindowId, WorkspaceId)]) -> Vec<Action> {
+    origins
+        .iter()
+        .map(|(window, workspace)| Action::RestoreWindow {
+            window: *window,
+            workspace: *workspace,
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

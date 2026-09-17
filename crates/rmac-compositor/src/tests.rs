@@ -139,6 +139,66 @@ fn actions_report_stable_kinds_and_capabilities() {
 }
 
 #[test]
+fn hide_and_show_desktop_expand_to_minimize_per_visible_window() {
+    let desktop = WorkspaceId(1);
+    let parking = Workspace {
+        name: Some(crate::actions::PARKING_WORKSPACE.to_string()),
+        ..workspace(9, None)
+    };
+    let snapshot = Snapshot {
+        workspaces: vec![workspace(1, Some("DP-1")), parking],
+        windows: vec![
+            Window {
+                id: WindowId(1),
+                app_id: Some("org.rmac.Notes".into()),
+                workspace: Some(desktop),
+                ..Default::default()
+            },
+            Window {
+                id: WindowId(2),
+                app_id: Some("org.rmac.Notes".into()),
+                workspace: Some(WorkspaceId(9)),
+                ..Default::default()
+            },
+            Window {
+                id: WindowId(3),
+                app_id: Some("org.mozilla.firefox".into()),
+                workspace: Some(desktop),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    };
+
+    // The parked Notes window is skipped; only the visible one is hidden.
+    assert_eq!(
+        hide_application(&snapshot, "org.rmac.Notes"),
+        vec![Action::MinimizeWindow {
+            window: WindowId(1)
+        }]
+    );
+    assert_eq!(
+        show_desktop(&snapshot),
+        vec![
+            Action::MinimizeWindow {
+                window: WindowId(1)
+            },
+            Action::MinimizeWindow {
+                window: WindowId(3)
+            },
+        ]
+    );
+    assert!(window_is_parked(&snapshot, &snapshot.windows[1]));
+    assert_eq!(
+        restore_all(&[(WindowId(1), desktop)]),
+        vec![Action::RestoreWindow {
+            window: WindowId(1),
+            workspace: desktop,
+        }]
+    );
+}
+
+#[test]
 fn spawn_commands_are_bounded_round_trippable_and_debug_redacted() {
     let command = SpawnCommand::new(vec![
         "demo".into(),

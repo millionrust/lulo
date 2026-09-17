@@ -346,6 +346,92 @@ fn quitting_an_app_closes_its_hidden_windows_too() {
     );
 }
 
+#[test]
+fn parked_entries_carry_the_metadata_a_minimized_tile_needs() {
+    let snapshot = parking_snapshot();
+    let mut store = ParkingStore::new();
+    store.record_from(&snapshot, &[WindowId(1)]);
+
+    let entry = store.entry(WindowId(1)).expect("entry recorded");
+    assert_eq!(entry.app_id.as_deref(), Some("org.rmac.Test"));
+    assert_eq!(entry.title.as_deref(), Some("Window 1"));
+    assert_eq!(entry.thumbnail, None);
+
+    let thumbnail = std::path::PathBuf::from("/run/user/1000/rmac/thumbnails/1.png");
+    assert!(store.set_thumbnail(WindowId(1), thumbnail.clone()));
+    assert_eq!(
+        store
+            .entry(WindowId(1))
+            .and_then(|entry| entry.thumbnail.clone()),
+        Some(thumbnail)
+    );
+    // A window that is not parked cannot receive a thumbnail.
+    assert!(!store.set_thumbnail(WindowId(42), std::path::PathBuf::from("/tmp/x.png")));
+}
+
+#[test]
+fn thumbnails_are_cached_beside_the_store() {
+    assert_eq!(
+        ParkingStore::thumbnail_path_beside(
+            std::path::Path::new("/run/user/1000/rmac/parking.json"),
+            WindowId(7)
+        ),
+        std::path::PathBuf::from("/run/user/1000/rmac/thumbnails/7.png")
+    );
+}
+
+#[test]
+fn window_logical_rect_places_a_window_on_its_output() {
+    let mut snapshot = Snapshot {
+        outputs: vec![Output {
+            id: OutputId::from("eDP-1"),
+            make: String::new(),
+            model: String::new(),
+            serial: None,
+            physical_size_mm: None,
+            modes: vec![],
+            current_mode: Some(0),
+            custom_mode: false,
+            vrr_supported: false,
+            vrr_enabled: false,
+            logical: Some(LogicalOutput {
+                position: LogicalPoint { x: 0.0, y: 0.0 },
+                size: LogicalSize {
+                    width: 1536.0,
+                    height: 864.0,
+                },
+                scale: 1.25,
+                transform: "normal".into(),
+            }),
+        }],
+        workspaces: vec![workspace(1, Some("eDP-1"))],
+        ..Default::default()
+    };
+    let mut placed = window(1, Some(1));
+    placed.layout = WindowLayout {
+        tile_position_in_view: Some(LogicalPoint { x: 218.4, y: 84.8 }),
+        tile_size: LogicalSize {
+            width: 1100.0,
+            height: 720.0,
+        },
+        ..Default::default()
+    };
+    snapshot.windows = vec![placed];
+
+    assert_eq!(
+        window_logical_rect(&snapshot, WindowId(1)),
+        Some(LogicalRect {
+            x: 218.4,
+            y: 84.8,
+            width: 1100.0,
+            height: 720.0,
+        })
+    );
+    // A window with no known placement cannot be captured.
+    snapshot.windows = vec![window(2, Some(1))];
+    assert_eq!(window_logical_rect(&snapshot, WindowId(2)), None);
+}
+
 fn parking_snapshot() -> Snapshot {
     Snapshot {
         workspaces: vec![

@@ -14,10 +14,20 @@ use serde::{Deserialize, Serialize};
 
 use crate::{window_is_parked, Action, Snapshot, WindowId, WorkspaceId, PARKING_WORKSPACE};
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParkedWindow {
     pub window: WindowId,
     pub workspace: WorkspaceId,
+    /// App id and title let the Dock label a minimized tile (§4.11); they are
+    /// `None` for older store files and for windows hidden without a tile.
+    #[serde(default)]
+    pub app_id: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Snapshot captured just before the window was parked, shown as the
+    /// tile's thumbnail. Absolute path into the session's runtime directory.
+    #[serde(default)]
+    pub thumbnail: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -49,7 +59,13 @@ impl ParkingStore {
     /// failed restore that re-parks cannot lose the real workspace.
     pub fn record(&mut self, window: WindowId, workspace: WorkspaceId) {
         if self.origin(window).is_none() {
-            self.parked.push(ParkedWindow { window, workspace });
+            self.parked.push(ParkedWindow {
+                window,
+                workspace,
+                app_id: None,
+                title: None,
+                thumbnail: None,
+            });
         }
     }
 
@@ -61,22 +77,48 @@ impl ParkingStore {
         Some(self.parked.remove(index).workspace)
     }
 
+    pub fn entry(&self, window: WindowId) -> Option<&ParkedWindow> {
+        self.parked.iter().find(|entry| entry.window == window)
+    }
+
+    /// Attach the thumbnail captured before parking. Returns whether an entry
+    /// existed to attach it to.
+    pub fn set_thumbnail(&mut self, window: WindowId, thumbnail: PathBuf) -> bool {
+        match self.parked.iter_mut().find(|entry| entry.window == window) {
+            Some(entry) => {
+                entry.thumbnail = Some(thumbnail);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Record the origin workspace of every id that still sits on a normal
     /// workspace of `snapshot`; windows already parked keep their origin.
     pub fn record_from(&mut self, snapshot: &Snapshot, windows: &[WindowId]) {
         for window in windows {
-            let Some(workspace) = snapshot
+            let Some(candidate) = snapshot
                 .windows
                 .iter()
                 .find(|candidate| candidate.id == *window)
-                .and_then(|candidate| candidate.workspace)
             else {
+                continue;
+            };
+            let Some(workspace) = candidate.workspace else {
                 continue;
             };
             if workspace_name(snapshot, workspace).as_deref() == Some(PARKING_WORKSPACE) {
                 continue;
             }
-            self.record(*window, workspace);
+            if self.origin(*window).is_none() {
+                self.parked.push(ParkedWindow {
+                    window: *window,
+                    workspace,
+                    app_id: candidate.app_id.clone(),
+                    title: candidate.title.clone(),
+                    thumbnail: None,
+                });
+            }
         }
     }
 
@@ -127,6 +169,21 @@ impl ParkingStore {
     pub fn default_path() -> Option<PathBuf> {
         let runtime = std::env::var_os("XDG_RUNTIME_DIR")?;
         Some(PathBuf::from(runtime).join("rmac").join("parking.json"))
+    }
+
+    /// Where a minimized window's thumbnail is cached, next to the store so the
+    /// runtime directory owns the lifetime of both.
+    pub fn default_thumbnail_path(window: WindowId) -> Option<PathBuf> {
+        Self::default_path().map(|store| Self::thumbnail_path_beside(&store, window))
+    }
+
+    /// [`Self::default_thumbnail_path`] for an explicit store path.
+    pub fn thumbnail_path_beside(store_path: &Path, window: WindowId) -> PathBuf {
+        store_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("thumbnails")
+            .join(format!("{}.png", window.0))
     }
 
     pub fn load_default() -> Self {

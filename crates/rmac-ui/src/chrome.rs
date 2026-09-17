@@ -25,6 +25,7 @@ enum WindowAction {
 /// window. Minimize parks the window on `rmac-parking` and records where it
 /// came from so the app menu's Show All can restore it (§2.2).
 fn send_window_action(action: WindowAction, cx: &mut App) {
+    let executor = cx.background_executor().clone();
     cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;
         let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
@@ -45,6 +46,16 @@ fn send_window_action(action: WindowAction, cx: &mut App) {
             WindowAction::Minimize => {
                 let mut store = rmac_compositor::ParkingStore::load_default();
                 store.record_from(&snapshot, &[window]);
+                // Capture the tile thumbnail while the window is still on
+                // screen; the Dock shows it for the parked window (§4.11).
+                if let (Some(rect), Some(path)) = (
+                    rmac_compositor::window_logical_rect(&snapshot, window),
+                    rmac_compositor::ParkingStore::default_thumbnail_path(window),
+                ) {
+                    if capture_thumbnail(&executor, rect, &path).await {
+                        store.set_thumbnail(window, path);
+                    }
+                }
                 if let Err(error) = store.save_default() {
                     eprintln!("could not save the parking set: {error}");
                 }
@@ -54,6 +65,34 @@ fn send_window_action(action: WindowAction, cx: &mut App) {
         let _ = rmac_compositor_niri::execute_action(&action).await;
     })
     .detach();
+}
+
+/// Capture a logical rectangle into `path` for a minimized-window thumbnail.
+/// `grim` scales the region to the output's physical pixels; if the tool is
+/// missing or fails the tile simply falls back to the application icon.
+async fn capture_thumbnail(
+    executor: &gpui::BackgroundExecutor,
+    rect: rmac_compositor::LogicalRect,
+    path: &std::path::Path,
+) -> bool {
+    let geometry = format!(
+        "{:.0},{:.0} {:.0}x{:.0}",
+        rect.x.round(),
+        rect.y.round(),
+        rect.width.round(),
+        rect.height.round()
+    );
+    let path = path.to_path_buf();
+    let status = executor
+        .spawn(async move {
+            std::process::Command::new("grim")
+                .arg("-g")
+                .arg(&geometry)
+                .arg(&path)
+                .status()
+        })
+        .await;
+    matches!(status, Ok(status) if status.success())
 }
 
 fn traffic_light(

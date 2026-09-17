@@ -247,6 +247,39 @@ pub fn window_is_parked(snapshot: &Snapshot, window: &Window) -> bool {
         == Some(PARKING_WORKSPACE)
 }
 
+/// A window's on-screen rectangle in logical compositor coordinates, used to
+/// capture a thumbnail before the window is parked (§4.11).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LogicalRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Where `window` currently sits on its output, if it is mapped and its output
+/// geometry is known. Returns `None` for windows with no placement yet.
+pub fn window_logical_rect(snapshot: &Snapshot, window: WindowId) -> Option<LogicalRect> {
+    let window = snapshot.windows.iter().find(|w| w.id == window)?;
+    let workspace = snapshot
+        .workspaces
+        .iter()
+        .find(|w| Some(w.id) == window.workspace)?;
+    let output = snapshot
+        .outputs
+        .iter()
+        .find(|output| Some(&output.id) == workspace.output.as_ref())?;
+    let logical = output.logical.as_ref()?;
+    let tile = window.layout.tile_position_in_view?;
+    let offset = window.layout.window_offset_in_tile;
+    Some(LogicalRect {
+        x: logical.position.x + tile.x + offset.x,
+        y: logical.position.y + tile.y + offset.y,
+        width: window.layout.tile_size.width,
+        height: window.layout.tile_size.height,
+    })
+}
+
 /// Visible (not-yet-parked) windows of `app_id`.
 pub fn application_windows(snapshot: &Snapshot, app_id: &str) -> Vec<WindowId> {
     snapshot

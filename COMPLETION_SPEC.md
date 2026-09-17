@@ -586,7 +586,7 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
   Do: `pub struct Tokens { colors, materials, type_scale, radii, metrics, elevation, motion }` built by `Tokens::resolve(appearance: rmac_appearance::ResolvedAppearance) -> Tokens`, containing **every** value in §4 as named fields (use the token names in §4 converted to snake_case). Colors are `Rgba(u32)`. No gpui dependency. Unit tests: dark/light/high-contrast each produce WCAG ≥ 4.5 for `label.primary` on `surface.window`, ≥ 3.0 for `label.secondary`; every alpha in reduced-transparency materials ≥ `F0`.
   Verify: `cargo test --locked -p rmac-design`.
 
-- [ ] **0.4 Make `rmac-ui` consume `rmac-design`.**
+- [x] **0.4 Make `rmac-ui` consume `rmac-design`.** (`ThemeTokens::from_appearance` now converts `rmac_design::Tokens`, keeps every public field/type, app-only derivations for subtle accent/error surfaces) — `f79a79f`, `05d47d8`, lock `0df8316`. Ubuntu: `cargo test --locked -p rmac-ui` ✔ (27), `cargo check --locked -p rmac-finder -p rmac-system-settings` ✔.
   Files: `crates/rmac-ui/src/theme.rs`, `mac.rs`.
   Do: `ThemeTokens::from_appearance` becomes a thin conversion from `rmac_design::Tokens`. Keep public API names used by apps so apps compile unchanged. Delete duplicated literals.
   Verify: `cargo test --locked -p rmac-ui`; `cargo check --locked -p rmac-finder -p rmac-system-settings`.

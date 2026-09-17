@@ -472,7 +472,13 @@ mod linux_wayland {
                 .to_string();
             let clock_label = clock.clone();
             let active_app = top_bar_active_app_name(snapshot);
-            let active_app_id = snapshot.focused.app_id.clone();
+            // Opening a popup moves keyboard focus to this layer surface, so the
+            // live focused window drops to None. Use the last app the status
+            // runtime reported (kept across those blips) for the app menu.
+            let active_app_id = status
+                .menu_app_id
+                .clone()
+                .or_else(|| snapshot.focused.app_id.clone());
             let workspace = top_bar_workspace_label(snapshot);
             let indicators = top_bar_indicator_labels(snapshot);
             let focused_window_id = snapshot.focused.window_id;

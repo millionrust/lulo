@@ -152,6 +152,14 @@ pub struct ColorTokens {
     pub scrim: RgbaColor,
     pub notes_accent: RgbaColor,
     pub notes_selection: RgbaColor,
+    pub traffic_close: RgbaColor,
+    pub traffic_close_border: RgbaColor,
+    pub traffic_minimize: RgbaColor,
+    pub traffic_minimize_border: RgbaColor,
+    pub traffic_zoom: RgbaColor,
+    pub traffic_zoom_border: RgbaColor,
+    pub traffic_inactive: RgbaColor,
+    pub traffic_inactive_border: RgbaColor,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -329,6 +337,14 @@ impl ThemeTokens {
             scrim: design.colors.scrim.into(),
             notes_accent: design.colors.notes_accent.into(),
             notes_selection: RgbaColor::opaque(if light { 0xfdeaa3 } else { 0x5c4b08 }),
+            traffic_close: design.colors.traffic_close.into(),
+            traffic_close_border: design.colors.traffic_close_border.into(),
+            traffic_minimize: design.colors.traffic_minimize.into(),
+            traffic_minimize_border: design.colors.traffic_minimize_border.into(),
+            traffic_zoom: design.colors.traffic_zoom.into(),
+            traffic_zoom_border: design.colors.traffic_zoom_border.into(),
+            traffic_inactive: design.colors.traffic_inactive.into(),
+            traffic_inactive_border: design.colors.traffic_inactive_border.into(),
         };
 
         let type_scale = &design.type_scale;
@@ -543,6 +559,23 @@ mod tests {
         assert!(high.focus.ring_width > normal.focus.ring_width);
         assert!(high.materials.regular.alpha > normal.materials.regular.alpha);
         assert!(high.materials.clear.alpha > normal.materials.clear.alpha);
+    }
+
+    #[test]
+    fn traffic_lights_use_distinct_semantic_colors() {
+        for scheme in [ResolvedColorScheme::Light, ResolvedColorScheme::Dark] {
+            let colors = ThemeTokens::from_appearance(appearance(
+                scheme,
+                (0.0, 0.48, 1.0),
+                Contrast::Normal,
+                MotionPreference::Full,
+            ))
+            .colors;
+            assert_ne!(colors.traffic_close, colors.traffic_inactive);
+            assert_ne!(colors.traffic_minimize, colors.traffic_inactive);
+            assert_ne!(colors.traffic_zoom, colors.traffic_inactive);
+            assert_ne!(colors.traffic_close, colors.traffic_zoom);
+        }
     }
 
     #[test]

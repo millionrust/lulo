@@ -23,6 +23,39 @@ pub fn material_clear() -> Hsla {
 pub fn material_sidebar() -> Hsla {
     crate::theme::current().materials.sidebar.hsla()
 }
+/// Traffic-light fill/border pairs, or the inactive gray pair.
+pub fn traffic_close() -> (Hsla, Hsla) {
+    let colors = crate::theme::current().colors;
+    (
+        colors.traffic_close.hsla(),
+        colors.traffic_close_border.hsla(),
+    )
+}
+
+pub fn traffic_minimize() -> (Hsla, Hsla) {
+    let colors = crate::theme::current().colors;
+    (
+        colors.traffic_minimize.hsla(),
+        colors.traffic_minimize_border.hsla(),
+    )
+}
+
+pub fn traffic_zoom() -> (Hsla, Hsla) {
+    let colors = crate::theme::current().colors;
+    (
+        colors.traffic_zoom.hsla(),
+        colors.traffic_zoom_border.hsla(),
+    )
+}
+
+pub fn traffic_inactive() -> (Hsla, Hsla) {
+    let colors = crate::theme::current().colors;
+    (
+        colors.traffic_inactive.hsla(),
+        colors.traffic_inactive_border.hsla(),
+    )
+}
+
 /// Absolute white, for switch thumbs and slider knobs.
 pub fn white() -> Hsla {
     crate::theme::current().colors.white.hsla()

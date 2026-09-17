@@ -1,6 +1,6 @@
 use gpui::{
-    div, px, rgb, rgba, App, ElementId, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, SharedString, Styled as _, Window,
+    div, prelude::FluentBuilder as _, px, rgba, App, ElementId, Hsla, InteractiveElement as _,
+    IntoElement, ParentElement as _, SharedString, Styled as _, Window,
 };
 use gpui_component::{
     button::{Button as ComponentButton, ButtonVariants as _},
@@ -14,9 +14,11 @@ use crate::{components, mac, text_px};
 /// but transparent until hover, giving the macOS reveal-on-hover effect.
 fn traffic_light(
     id: impl Into<ElementId>,
-    color: Hsla,
+    fill: Hsla,
+    border: Hsla,
     glyph: &'static str,
     tooltip: &'static str,
+    active: bool,
     on_click: impl Fn(&mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
     ComponentButton::new(id)
@@ -33,14 +35,18 @@ fn traffic_light(
             div()
                 .size(px(mac::traffic_light_diameter()))
                 .rounded_full()
-                .bg(color)
+                .bg(fill)
+                .border_1()
+                .border_color(border)
                 .flex()
                 .items_center()
                 .justify_center()
                 .text_size(text_px(9.0))
                 .font_weight(mac::BOLD)
                 .text_color(rgba(0x00000000))
-                .hover(|circle| circle.text_color(rgba(0x00000088)))
+                .when(active, |circle| {
+                    circle.hover(|c| c.text_color(mac::black().opacity(0.55)))
+                })
                 .child(glyph),
         )
         .on_click(move |_, window, cx| on_click(window, cx))
@@ -49,30 +55,57 @@ fn traffic_light(
 /// The rmac traffic-light cluster (close / minimize / zoom), wired to the GPUI
 /// window controls. Reusable so unified-toolbar apps can place it themselves.
 pub fn traffic_lights() -> impl IntoElement {
+    traffic_lights_active(true)
+}
+
+/// [`traffic_lights`] for an inactive window: the three buttons share the
+/// inactive gray pair and do not reveal glyphs on hover.
+pub fn traffic_lights_active(active: bool) -> impl IntoElement {
+    let (close_fill, close_border) = if active {
+        mac::traffic_close()
+    } else {
+        mac::traffic_inactive()
+    };
+    let (min_fill, min_border) = if active {
+        mac::traffic_minimize()
+    } else {
+        mac::traffic_inactive()
+    };
+    let (zoom_fill, zoom_border) = if active {
+        mac::traffic_zoom()
+    } else {
+        mac::traffic_inactive()
+    };
     div()
         .flex()
         .items_center()
         .child(traffic_light(
             "tl-close",
-            rgb(0xff5f57).into(),
+            close_fill,
+            close_border,
             "✕",
             "Close",
+            active,
             // Route through the app's close guard (e.g. unsaved-changes prompt)
             // rather than closing the window directly. Apps bind `RequestClose`.
             |window, cx| window.dispatch_action(Box::new(components::RequestClose), cx),
         ))
         .child(traffic_light(
             "tl-min",
-            rgb(0xfebc2e).into(),
+            min_fill,
+            min_border,
             "—",
             "Minimize",
+            active,
             |window, _| window.minimize_window(),
         ))
         .child(traffic_light(
             "tl-zoom",
-            rgb(0x28c840).into(),
+            zoom_fill,
+            zoom_border,
             "+",
             "Zoom",
+            active,
             |window, _| window.zoom_window(),
         ))
 }

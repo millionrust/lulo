@@ -135,7 +135,7 @@ mod linux_wayland {
         hide_generation: u64,
         surface_description: Option<rmac_dock::SurfaceDescription>,
         content: rmac_dock::presentation::ShelfContent,
-        drag: Option<rmac_dock::DragSession>,
+        drag: Option<rmac_dock::drag::DragSession>,
         drag_order: Option<Vec<String>>,
     }
 

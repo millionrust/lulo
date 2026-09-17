@@ -21,8 +21,8 @@ pub use components::{
 };
 pub use controls::{
     Button, ButtonRole, CollectionState, InputEvent, InputState, List, ListRow, Position, RopeExt,
-    SearchField, Slider, SliderAxis, SliderEvent, SliderState, Table, Tabs, TextField, Toggle,
-    ToggleState, Tree, TreeRow,
+    SearchField, SegmentedControl, Slider, SliderAxis, SliderEvent, SliderState, Table, Tabs,
+    TextField, Toggle, ToggleState, Tree, TreeRow,
 };
 pub use controls::{Column, ColumnSort, TableDelegate, TableEvent, TableState};
 pub use feedback::{EmptyState, Progress, ProgressStatus, Toast, ToastKind, Tooltip};

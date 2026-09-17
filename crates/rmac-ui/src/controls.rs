@@ -1071,6 +1071,115 @@ impl<D: TableDelegate> RenderOnce for Table<D> {
     }
 }
 
+type SegmentedHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// Mutually exclusive segmented control: one rounded track holding compact
+/// segments where the selected segment is a raised pill.
+#[derive(IntoElement)]
+pub struct SegmentedControl {
+    id: ElementId,
+    options: Vec<SharedString>,
+    selected: usize,
+    disabled: bool,
+    on_change: Option<SegmentedHandler>,
+    style: StyleRefinement,
+}
+
+impl SegmentedControl {
+    pub fn new(
+        id: impl Into<ElementId>,
+        options: impl IntoIterator<Item = impl Into<SharedString>>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            options: options.into_iter().map(Into::into).collect(),
+            selected: 0,
+            disabled: false,
+            on_change: None,
+            style: StyleRefinement::default(),
+        }
+    }
+
+    pub fn selected(mut self, index: usize) -> Self {
+        self.selected = index;
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn on_change(mut self, handler: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
+        self.on_change = Some(Rc::new(handler));
+        self
+    }
+
+    /// Move `current` by `delta`, wrapping within `len`; `None` when empty.
+    /// This is the pure model behind Left/Right segmented navigation.
+    pub fn wrapped_selection(current: usize, len: usize, delta: i32) -> Option<usize> {
+        if len == 0 {
+            return None;
+        }
+        Some(((current as i32 + delta).rem_euclid(len as i32)) as usize)
+    }
+}
+
+impl Styled for SegmentedControl {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl RenderOnce for SegmentedControl {
+    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let count = self.options.len();
+        let selected = if count == 0 {
+            0
+        } else {
+            self.selected.min(count - 1)
+        };
+        let base = self.id.to_string();
+        let mut group = ButtonGroup::new(self.id).compact().disabled(self.disabled);
+        for (index, label) in self.options.into_iter().enumerate() {
+            let variant = if index == selected {
+                ButtonCustomVariant::new(cx)
+                    .color(mac::raised())
+                    .foreground(mac::text())
+                    .border(mac::separator())
+                    .hover(mac::raised())
+                    .active(mac::raised())
+            } else {
+                ButtonCustomVariant::new(cx)
+                    .color(rgba(0x00000000))
+                    .foreground(mac::text())
+                    .border(rgba(0x00000000))
+                    .hover(mac::hover())
+                    .active(mac::control_fill_hover())
+            };
+            group = group.child(
+                ComponentButton::new(ElementId::named_usize(base.clone(), index))
+                    .custom(variant)
+                    .label(label),
+            );
+        }
+        if let Some(handler) = self.on_change {
+            group = group.on_click(move |clicks: &Vec<usize>, window, cx| {
+                if let Some(&index) = clicks.first() {
+                    handler(index, window, cx);
+                }
+            });
+        }
+        div()
+            .rounded(px(crate::theme::current().radii.control))
+            .bg(mac::control_fill())
+            .p(px(2.0))
+            .refine_style(&self.style)
+            .child(group)
+            .into_any_element()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1080,6 +1189,14 @@ mod tests {
         assert_eq!(ButtonRole::default(), ButtonRole::Secondary);
         assert_ne!(ButtonRole::Primary, ButtonRole::Destructive);
         assert_ne!(ButtonRole::Ghost, ButtonRole::Secondary);
+    }
+
+    #[test]
+    fn segmented_selection_wraps_within_bounds() {
+        assert_eq!(SegmentedControl::wrapped_selection(0, 3, 1), Some(1));
+        assert_eq!(SegmentedControl::wrapped_selection(2, 3, 1), Some(0));
+        assert_eq!(SegmentedControl::wrapped_selection(0, 3, -1), Some(2));
+        assert_eq!(SegmentedControl::wrapped_selection(0, 0, 1), None);
     }
 
     #[test]

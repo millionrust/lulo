@@ -479,7 +479,8 @@ mod linux_wayland {
             if self.open_menu.is_some()
                 && (self.open_menu >= Some(menus.len())
                     || (self.open_menu != Some(0)
-                        && focused_app_id
+                        && status
+                            .menu_app_id
                             .as_deref()
                             .is_some_and(|id| self.open_app_id.as_deref() != Some(id))))
             {
@@ -544,7 +545,7 @@ mod linux_wayland {
             }
             window.set_input_region(Some(&input_regions));
 
-            let app_id_for_buttons = focused_app_id.clone();
+            let app_id_for_buttons = status.menu_app_id.clone();
             let menu_buttons = menus
                 .iter()
                 .enumerate()

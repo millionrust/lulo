@@ -5024,6 +5024,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-shell-input-probe"
+version = "0.1.0"
+dependencies = [
+ "wayland-client",
+ "wayland-protocols-wlr",
+]
+
+[[package]]
 name = "rmac-shell-invocation"
 version = "0.1.0"
 dependencies = [

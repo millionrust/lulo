@@ -29,7 +29,7 @@ impl FinderView {
         // click, Return, or New Folder.
         window.on_next_frame(move |window, cx| {
             window.focus(&focus);
-            window.dispatch_action(Box::new(gpui_component::input::SelectAll), cx);
+            window.dispatch_action(Box::new(rmac_ui::SelectAll), cx);
         });
     }
 

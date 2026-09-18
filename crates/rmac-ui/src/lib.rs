@@ -24,9 +24,9 @@ pub use components::{
 };
 pub use controls::{
     Button, ButtonRole, Checkbox, CollectionState, InputEvent, InputState, List, ListRow,
-    PopUpButton, Position, Radio, RopeExt, SearchField, SegmentedControl, Slider, SliderAxis,
-    SliderEvent, SliderState, SwitchSize, Table, Tabs, TextField, Toggle, ToggleState, Tree,
-    TreeRow,
+    PopUpButton, Position, Radio, RopeExt, SearchField, SegmentedControl, SelectAll, Slider,
+    SliderAxis, SliderEvent, SliderState, SwitchSize, Table, Tabs, TextField, Toggle, ToggleState,
+    Tree, TreeRow,
 };
 pub use controls::{Column, ColumnSort, TableDelegate, TableEvent, TableState};
 pub use feedback::{EmptyState, Progress, ProgressStatus, Spinner, Toast, ToastKind, Tooltip};

@@ -242,6 +242,7 @@ async fn consume(
             },
             event = service_event => {
                 let event = event.map_err(|_| Error::new("receive Linux service state", "watcher stopped"))?;
+                eprintln!("rmac-refresh {event:?}");
                 match event {
                     rmac_shell_status_linux::Event::Refresh(sources) => {
                         let batch = blocking::unblock(move || {

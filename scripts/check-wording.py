@@ -33,6 +33,10 @@ FORBIDDEN = (
 )
 
 
+# Desktop-entry fields that are shown to the user.
+DESKTOP_KEY = re.compile(r"^(Name|GenericName|Comment|X-GNOME-FullName)=")
+
+
 def rust_sources() -> list[Path]:
     files: list[Path] = []
     for root in SCAN_ROOTS:
@@ -43,6 +47,20 @@ def rust_sources() -> list[Path]:
                 continue
             files.append(path)
     return sorted(files)
+
+
+def desktop_sources() -> list[Path]:
+    packaging = REPO_ROOT / "packaging"
+    return sorted(packaging.rglob("*.desktop")) if packaging.is_dir() else []
+
+
+def scan_literal(relative: Path, number: int, literal: str) -> str | None:
+    if "org.freedesktop" in literal or literal.startswith("Error::"):
+        return None
+    for pattern in FORBIDDEN:
+        if pattern.search(literal):
+            return f"{relative}:{number}: {literal}"
+    return None
 
 
 def main() -> int:
@@ -57,15 +75,19 @@ def main() -> int:
                 continue
             for match in STRING.finditer(line):
                 literal = match.group(1) or match.group(2) or ""
-                # D-Bus interface names and Rust Debug shapes are protocol
-                # constants, not user prose.
-                if "org.freedesktop" in literal or literal.startswith("Error::"):
-                    continue
-                for pattern in FORBIDDEN:
-                    if pattern.search(literal):
-                        relative = path.relative_to(REPO_ROOT)
-                        violations.append(f"{relative}:{number}: {literal}")
-                        break
+                found = scan_literal(path.relative_to(REPO_ROOT), number, literal)
+                if found is not None:
+                    violations.append(found)
+    for path in desktop_sources():
+        for number, line in enumerate(
+            path.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+        ):
+            if not DESKTOP_KEY.match(line):
+                continue
+            _, _, value = line.partition("=")
+            found = scan_literal(path.relative_to(REPO_ROOT), number, value)
+            if found is not None:
+                violations.append(found)
     for violation in violations:
         print(violation)
     print(f"\n{len(violations)} wording violation(s)")

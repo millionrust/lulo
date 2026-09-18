@@ -501,7 +501,7 @@ mod tests {
         status.network = Some(rmac_shell_status::NetworkIndicator {
             state: rmac_shell_status::NetworkState::Connected,
             connection_name: None,
-            wifi_strength: Some(80),
+            wifi_bars: Some(3),
         });
         let now = chrono::FixedOffset::east_opt(0)
             .unwrap()

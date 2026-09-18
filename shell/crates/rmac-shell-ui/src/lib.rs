@@ -138,7 +138,7 @@ pub fn top_bar_indicator_labels(
     }
     if let Some(network) = &snapshot.network {
         let strength = network
-            .wifi_bars()
+            .wifi_bars
             .map(|bars| format!(", signal {bars} of 3 bars"))
             .unwrap_or_default();
         labels.push(TopBarIndicatorLabel {
@@ -310,7 +310,7 @@ mod tests {
         snapshot.network = Some(rmac_shell_status::NetworkIndicator {
             state: rmac_shell_status::NetworkState::Connected,
             connection_name: Some("Home".into()),
-            wifi_strength: Some(82),
+            wifi_bars: Some(3),
         });
         snapshot.sound = Some(rmac_shell_status::SoundIndicator {
             available: true,

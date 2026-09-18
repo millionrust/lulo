@@ -141,7 +141,7 @@ fn connected_wifi_is_normalized_for_compact_consumers() {
         Some(NetworkIndicator {
             state: NetworkState::Connected,
             connection_name: Some("Office Wi-Fi".into()),
-            wifi_strength: Some(76),
+            wifi_bars: Some(3),
         })
     );
     assert_eq!(snapshot.vpn.unwrap().active_names, Vec::<String>::new());

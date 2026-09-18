@@ -280,22 +280,9 @@ async fn consume(
     }
 }
 
-/// The status as the shell draws it: raw Wi-Fi signal percent is snapped to the
-/// bar levels the glyph shows, so a drifting signal no longer counts as a
-/// visible change (the cause of idle menubar redraws).
-fn visible_status(status: &rmac_shell_status::Snapshot) -> rmac_shell_status::Snapshot {
-    let mut normalized = status.clone();
-    if let Some(network) = normalized.network.as_mut() {
-        network.wifi_strength = network.wifi_bars().map(|bars| u8::from(bars) * 25);
-    }
-    normalized
-}
-
 pub(crate) fn publication(previous: &Snapshot, next: Snapshot) -> Option<Update> {
     (next != *previous).then(|| Update {
-        // Sub-bar Wi-Fi strength drift is not drawn, so it must not request a
-        // frame even though the snapshot changed.
-        visible: visible_status(&next.status) != visible_status(&previous.status),
+        visible: next.status != previous.status,
         quick_settings_visible: next.quick_settings != previous.quick_settings,
         snapshot: next,
     })

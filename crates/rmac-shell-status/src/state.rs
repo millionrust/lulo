@@ -155,12 +155,16 @@ impl State {
         } else {
             NetworkState::Unavailable
         };
-        let wifi_strength = self
+        let wifi_bars = self
             .wifi
             .networks
             .iter()
             .find(|network| network.connected)
-            .map(|network| network.strength.min(100));
+            .map(|network| match network.strength.min(100) {
+                0..=32 => 1,
+                33..=65 => 2,
+                _ => 3,
+            });
         NetworkIndicator {
             state,
             connection_name: self
@@ -168,7 +172,7 @@ impl State {
                 .primary_connection
                 .clone()
                 .or_else(|| self.wifi.current_ssid.clone()),
-            wifi_strength,
+            wifi_bars,
         }
     }
 

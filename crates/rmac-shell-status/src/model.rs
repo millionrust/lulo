@@ -32,22 +32,11 @@ pub enum NetworkState {
 pub struct NetworkIndicator {
     pub state: NetworkState,
     pub connection_name: Option<String>,
-    pub wifi_strength: Option<u8>,
-}
-
-impl NetworkIndicator {
-    /// Wi-Fi signal as the menu-bar's three bars (1–3), bucketing
-    /// NetworkManager's percent. Three levels keep a signal hovering near a
-    /// bucket edge (e.g. ~50%) from flickering the glyph every few seconds,
-    /// which otherwise wakes the shell at idle. The buckets match the
-    /// accessible wording "3 of 3 bars" (COMPLETION_SPEC §3.10).
-    pub fn wifi_bars(&self) -> Option<u8> {
-        self.wifi_strength.map(|strength| match strength.min(100) {
-            0..=32 => 1,
-            33..=65 => 2,
-            _ => 3,
-        })
-    }
+    /// Wi-Fi signal as the menu-bar's three bars (1–3), matching the glyph and
+    /// the spoken "N of 3 bars". The raw NetworkManager percent is quantized at
+    /// the source so a drifting signal does not change the snapshot — and wake
+    /// the shell — at idle (COMPLETION_SPEC §3.10).
+    pub wifi_bars: Option<u8>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

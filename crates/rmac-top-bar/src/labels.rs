@@ -118,7 +118,7 @@ pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<Indicator
     }
     if let Some(network) = &snapshot.network {
         let strength = network
-            .wifi_bars()
+            .wifi_bars
             .map(|bars| format!(", signal {bars} of 3 bars"))
             .unwrap_or_default();
         labels.push(IndicatorLabel {

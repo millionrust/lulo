@@ -90,7 +90,7 @@ fn every_live_indicator_has_compact_and_accessible_state() {
         network: Some(rmac_shell_status::NetworkIndicator {
             state: rmac_shell_status::NetworkState::Connected,
             connection_name: Some("Private SSID".into()),
-            wifi_strength: Some(82),
+            wifi_bars: Some(3),
         }),
         bluetooth: Some(rmac_shell_status::BluetoothIndicator {
             available: true,

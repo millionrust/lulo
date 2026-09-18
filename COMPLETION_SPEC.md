@@ -832,7 +832,7 @@ For each of 1.2–1.8, **Verify:** `cargo test --locked -p rmac-ui`; `cargo run 
 - [ ] Screenshot pairs: idle, hover tooltip, magnification, context menu (running/not running), Trash full/empty, stack grid, autohide revealed.
 - [ ] Launch bounce stops on window map; failed launch shows alert.
 - [ ] Reorder, remove, add, drag-open, drag-trash all persist across `systemctl --user restart rmac-dock`.
-- [ ] Dock idle CPU 0% and no redraw when pointer is outside (render counter from `RMAC_DOCK_RENDER_COUNT_DIR` stays flat for 60 s).
+- [x] Dock idle CPU 0% and no redraw when pointer is outside (render counter from `RMAC_DOCK_RENDER_COUNT_DIR` stays flat for 60 s). **Verified live 2026-09-18:** with `RMAC_DOCK_RENDER_COUNT_DIR=/run/user/1000/rmac-dock-renders` set on the dev Dock unit, the counter held at **3** for a full 60 s with the pointer away from the Dock (no idle redraw).
 
 ---
 

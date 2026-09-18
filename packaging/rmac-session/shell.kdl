@@ -37,6 +37,40 @@ cursor {
     xcursor-size 24
 }
 
+// Motion continuity (FEEL_SPEC.md §D.3), matching the §4.9 motion tokens.
+// macOS: windows come from somewhere, work off-screen in one coordinated
+// motion, and Mission Control eases rather than snaps.
+animations {
+    // App launch: scale up over 320 ms, ease-out.
+    window-open {
+        duration-ms 320
+        curve "ease-out-expo"
+    }
+    // App quit / close: reverse over 200 ms, ease-in.
+    window-close {
+        duration-ms 200
+        curve "ease-in-quad"
+    }
+    // Space switch: the whole desktop slides over 320 ms, ease-in-out.
+    workspace-switch {
+        duration-ms 320
+        curve "ease-in-out-cubic"
+    }
+    // Mission Control: windows fly to their slots over 350 ms.
+    overview-open-close {
+        duration-ms 350
+        curve "ease-in-out-cubic"
+    }
+    config-notification-open-close {
+        duration-ms 250
+        curve "ease-out-quad"
+    }
+    screenshot-ui-open {
+        duration-ms 250
+        curve "ease-out-quad"
+    }
+}
+
 // niri has no native minimize, so the shell hides a window by parking it on
 // this named workspace. It must be declared here for niri to resolve the name
 // in a move-window-to-workspace reference; the shell excludes it from the

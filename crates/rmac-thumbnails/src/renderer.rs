@@ -13,10 +13,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(target_os = "macos")]
 use std::time::{Duration, Instant};
 
-use crate::{
-    cache_directory, Error, CONVERTER_TIMEOUT, MAX_DECODE_ALLOC, MAX_SOURCE_DIMENSION,
-    THUMBNAIL_DIMENSION,
-};
+#[cfg(target_os = "macos")]
+use crate::CONVERTER_TIMEOUT;
+use crate::{cache_directory, Error, MAX_DECODE_ALLOC, MAX_SOURCE_DIMENSION, THUMBNAIL_DIMENSION};
 
 #[cfg(target_os = "macos")]
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);

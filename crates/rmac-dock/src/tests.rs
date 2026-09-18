@@ -798,21 +798,23 @@ fn parked_windows_become_minimized_tiles_instead_of_running_apps() {
 
 #[test]
 fn minimized_tiles_lead_the_right_group_before_the_trash() {
-    let mut model = Model::default();
-    model.special_items = vec![SpecialItem {
-        kind: SpecialItemKind::Trash,
-        name: "Trash",
-        available: true,
-        item_count: Some(0),
-        activation: SpecialActivation::OpenTrash,
-    }];
-    model.minimized = vec![MinimizedItem {
-        window: rmac_compositor::WindowId(7),
-        app_id: Some("terminal.desktop".into()),
-        title: Some("jacob@Jake: ~".into()),
-        icon: Some(PathBuf::from("/icons/terminal.desktop.svg")),
-        thumbnail: Some(PathBuf::from("/run/rmac/thumbnails/7.png")),
-    }];
+    let model = Model {
+        special_items: vec![SpecialItem {
+            kind: SpecialItemKind::Trash,
+            name: "Trash",
+            available: true,
+            item_count: Some(0),
+            activation: SpecialActivation::OpenTrash,
+        }],
+        minimized: vec![MinimizedItem {
+            window: rmac_compositor::WindowId(7),
+            app_id: Some("terminal.desktop".into()),
+            title: Some("jacob@Jake: ~".into()),
+            icon: Some(PathBuf::from("/icons/terminal.desktop.svg")),
+            thumbnail: Some(PathBuf::from("/run/rmac/thumbnails/7.png")),
+        }],
+        ..Default::default()
+    };
 
     let content = presentation::ShelfContent::project(&model);
     let ids: Vec<_> = content.places.iter().map(|entry| &entry.id).collect();

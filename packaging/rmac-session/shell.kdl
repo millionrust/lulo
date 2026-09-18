@@ -49,17 +49,17 @@ animations {
     // App quit / close: reverse over 200 ms, ease-in.
     window-close {
         duration-ms 200
-        curve "ease-in-quad"
+        curve "cubic-bezier" 0.55 0.06 0.68 0.19
     }
     // Space switch: the whole desktop slides over 320 ms, ease-in-out.
     workspace-switch {
         duration-ms 320
-        curve "ease-in-out-cubic"
+        curve "cubic-bezier" 0.65 0.0 0.35 1.0
     }
     // Mission Control: windows fly to their slots over 350 ms.
     overview-open-close {
         duration-ms 350
-        curve "ease-in-out-cubic"
+        curve "cubic-bezier" 0.65 0.0 0.35 1.0
     }
     config-notification-open-close {
         duration-ms 250

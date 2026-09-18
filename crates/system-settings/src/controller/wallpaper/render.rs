@@ -185,13 +185,12 @@ impl Settings {
         }
 
         cards.push(section_header("Image"));
-        let aurora_view = view.clone();
         let use_default_view = view.clone();
         let source_name = wallpaper_source_name(&selection);
-        let using_aurora = matches!(
-            rmac_wallpaper::parse_source(selection.source.as_deref()),
-            Ok(rmac_wallpaper::Source::BuiltIn(_))
-        );
+        let current_builtin = match rmac_wallpaper::parse_source(selection.source.as_deref()) {
+            Ok(rmac_wallpaper::Source::BuiltIn(id)) => Some(id),
+            _ => None,
+        };
         let mut source_rows = vec![row_base()
             .child(text_block(
                 "Current image".into(),
@@ -211,28 +210,37 @@ impl Settings {
                     .child(source_name),
             )
             .into_any_element()];
-        source_rows.push(
-            row_base()
-                .child(text_block(
-                    "Original Aurora".into(),
-                    Some("Procedural rmac artwork; no third-party file".into()),
-                ))
-                .child(
-                    Button::new("wallpaper-use-aurora", "Use")
-                        .disabled(!enabled || using_aurora)
+        for id in rmac_wallpaper::BuiltInId::ALL {
+            let using = current_builtin == Some(id);
+            let row_view = view.clone();
+            let change = if id == rmac_wallpaper::BuiltInId::Aurora {
+                WallpaperChange::Source(None)
+            } else {
+                WallpaperChange::Source(Some(format!("builtin:{}", id.id())))
+            };
+            source_rows.push(
+                row_base()
+                    .child(text_block(
+                        gpui::SharedString::from(format!("Original {}", id.metadata().title)),
+                        Some("Procedural rmac artwork; no third-party file".into()),
+                    ))
+                    .child(
+                        Button::new(
+                            gpui::SharedString::from(format!("wallpaper-use-{}", id.id())),
+                            "Use",
+                        )
+                        .disabled(!enabled || using)
                         .on_click(move |_, _, cx| {
-                            aurora_view.update(cx, |settings, cx| {
+                            let change = change.clone();
+                            row_view.update(cx, |settings, cx| {
                                 let target = settings.wallpaper_target.clone();
-                                settings.apply_wallpaper_change(
-                                    target,
-                                    WallpaperChange::Source(None),
-                                    cx,
-                                )
+                                settings.apply_wallpaper_change(target, change, cx);
                             });
                         }),
-                )
-                .into_any_element(),
-        );
+                    )
+                    .into_any_element(),
+            );
+        }
         if matches!(self.wallpaper_target, WallpaperTarget::Output(_)) {
             source_rows.push(
                 row_base()

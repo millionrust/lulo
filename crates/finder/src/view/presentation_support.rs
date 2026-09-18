@@ -63,6 +63,7 @@ impl AssetSource for CombinedAssets {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub(super) fn hsl(h: u32) -> Hsla {
     gpui::rgb(h).into()
 }

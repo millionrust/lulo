@@ -146,6 +146,7 @@ impl FinderView {
             accent(),
             PlaceKind::Trash,
         ));
+        #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
         let mut sections = vec![
             Section {
                 title: "".into(),

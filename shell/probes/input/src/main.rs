@@ -88,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let connection = Connection::connect_to_env()?;
-    let (globals, mut queue) = registry_queue_init::<State>(&connection)?;
+    let (globals, queue) = registry_queue_init::<State>(&connection)?;
     let qh = queue.handle();
     let manager = globals.bind::<ZwlrVirtualPointerManagerV1, State, ()>(&qh, 1..=2, ())?;
     // Passing no seat lets the compositor choose its default seat.

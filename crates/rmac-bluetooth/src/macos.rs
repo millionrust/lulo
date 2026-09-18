@@ -1,7 +1,9 @@
 #[cfg(target_os = "macos")]
 use std::process::Command;
 
-use crate::{BluetoothService, Device, Error, PairingSession, Snapshot, SystemBluetoothService};
+use crate::Device;
+#[cfg(target_os = "macos")]
+use crate::{BluetoothService, Error, PairingSession, Snapshot, SystemBluetoothService};
 
 #[cfg(target_os = "macos")]
 impl BluetoothService for SystemBluetoothService {

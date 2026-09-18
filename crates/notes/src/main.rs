@@ -69,9 +69,8 @@ use presentation::{
     styled_search_fragment, tag_pill,
 };
 use search_highlight::{
-    matched_search_fragment, plain_search_fragment, SearchTextFragment,
-    MAX_SEARCH_DETAIL_FRAGMENT_CHARS, MAX_SEARCH_LABEL_FRAGMENT_CHARS,
-    MAX_SEARCH_TITLE_FRAGMENT_CHARS,
+    matched_search_fragment, plain_search_fragment, MAX_SEARCH_DETAIL_FRAGMENT_CHARS,
+    MAX_SEARCH_LABEL_FRAGMENT_CHARS, MAX_SEARCH_TITLE_FRAGMENT_CHARS,
 };
 use view_model::*;
 use worker_bridge::PreviewBridgeEvent;

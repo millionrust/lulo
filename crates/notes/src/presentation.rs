@@ -5,8 +5,8 @@ use std::time::{Duration, SystemTime};
 use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
     div, font, prelude::FluentBuilder as _, px, AnyElement, Div, InteractiveElement as _,
-    IntoElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement as _,
-    StrikethroughStyle, Styled, StyledText, TextRun, Window,
+    IntoElement, ParentElement, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
+    StyledText, TextRun, Window,
 };
 use gpui_component::{Icon, IconName, Sizable as _, Size};
 use rmac_ui::{mac, StyledExt as _};

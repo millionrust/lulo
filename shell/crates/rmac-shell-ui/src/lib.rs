@@ -138,8 +138,8 @@ pub fn top_bar_indicator_labels(
     }
     if let Some(network) = &snapshot.network {
         let strength = network
-            .wifi_strength
-            .map(|strength| format!(", signal {strength} percent"))
+            .wifi_bars()
+            .map(|bars| format!(", signal {bars} of 3 bars"))
             .unwrap_or_default();
         labels.push(TopBarIndicatorLabel {
             kind: TopBarIndicatorKind::Network,
@@ -319,7 +319,7 @@ mod tests {
         });
 
         let labels = top_bar_indicator_labels(&snapshot);
-        assert_eq!(labels[0].accessible, "Wi-Fi connected, signal 82 percent");
+        assert_eq!(labels[0].accessible, "Wi-Fi connected, signal 3 of 3 bars");
         assert_eq!(labels[1].accessible, "Sound volume 37 percent");
     }
 }

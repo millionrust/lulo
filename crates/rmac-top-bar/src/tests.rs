@@ -109,7 +109,7 @@ fn every_live_indicator_has_compact_and_accessible_state() {
         ..Default::default()
     };
     let labels = indicator_labels(&status);
-    assert_eq!(labels[0].accessible, "Wi-Fi connected, signal 82 percent");
+    assert_eq!(labels[0].accessible, "Wi-Fi connected, signal 3 of 3 bars");
     assert_eq!(labels[1].accessible, "Bluetooth off");
     assert_eq!(labels[2].accessible, "Sound volume 37 percent");
     assert_eq!(labels[3].visible, "99+");

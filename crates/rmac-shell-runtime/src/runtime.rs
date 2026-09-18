@@ -281,29 +281,6 @@ async fn consume(
 }
 
 pub(crate) fn publication(previous: &Snapshot, next: Snapshot) -> Option<Update> {
-    if next.status != previous.status {
-        let (s, p) = (&next.status, &previous.status);
-        let mut changed: Vec<&str> = Vec::new();
-        macro_rules! d {
-            ($n:ident) => {
-                if s.$n != p.$n {
-                    changed.push(stringify!($n));
-                }
-            };
-        }
-        d!(outputs);
-        d!(focused);
-        d!(network);
-        d!(vpn);
-        d!(bluetooth);
-        d!(sound);
-        d!(battery);
-        d!(show_battery_percentage);
-        d!(focus);
-        d!(notifications);
-        d!(clock);
-        eprintln!("rmac-shell-runtime: status changed fields: {}", changed.join(","));
-    }
     (next != *previous).then(|| Update {
         visible: next.status != previous.status,
         quick_settings_visible: next.quick_settings != previous.quick_settings,

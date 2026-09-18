@@ -6,6 +6,10 @@
 > is checked.
 > **Written against:** branch `dev`, commit `cc553a0` ("Make Finder inline
 > rename reliable"), 2026-08-12, after an audit of the whole repository.
+> **Companion file:** `FEEL_SPEC.md` (2026-09-18) covers what makes rmac *feel* like a Mac — sound,
+> cursor, motion continuity, scrolling physics, typography tuning, foreign dialogs, wording — plus
+> the **macOS 27 Golden Gate delta**, the owner's measured Mac profile, and pixel measurements taken
+> from the reference Mac's screen. Read it next; its §G says which phase each of its tasks joins.
 > **Relationship to other docs:** `GOAL.md` is the *why* and the stopping
 > condition. This file is the *exactly what and how*. If they conflict on
 > process, `GOAL.md` wins. If they conflict on a concrete visual/behavioral
@@ -152,7 +156,7 @@ A compiler error, failing test, flaky runtime, or missing API is **not** a reaso
 |---|---|---|
 | **FD-1 Shell framework** | All *shell surfaces* (wallpaper, menu bar, Dock, OSD, Spotlight, Control Center, Notification Center, banners, Apps, app switcher, screenshot overlay, Force Quit, logout/shutdown dialog) run on the pinned upstream GPUI rev `76c93968…` as **wlr-layer-shell** surfaces in one promoted workspace `shell/`. Applications (Files, Settings, Terminal, Notes, Text Editor, System Monitor) stay on `gpui 0.2.2 + gpui-component 0.5.1` until Phase 10. | Overlays must never appear in window MRU, must open on the focused output, must stack above full-screen windows, and must dismiss on click-away. Only layer-shell guarantees this on niri. Domain crates are already GPUI-free, so hosts are thin. |
 | **FD-2 One token source** | Create GPUI-free crate `crates/rmac-design` holding every token as plain data (`u32` RGBA, `f32`). Both `rmac-ui` (stable GPUI) and `shell/` (upstream GPUI) convert from it. Delete `experiments/.../lib.rs::visuals` constants after migration. | Two palettes guarantee visual drift. |
-| **FD-3 Canonical sizes** | Menu bar height **26** logical px; Dock resting tile **56** px (Settings "Size" slider range 32–96, default 56); docs are corrected to match. | Code values are newer and were set against reference captures. |
+| **FD-3 Canonical sizes** | Measured on the reference Mac 2026-09-18 (1920×1080 @ 1×, macOS 27.0): menu bar height **29** logical px; Dock rendered tile **64** px with **76 px** pitch (12 px gap), shelf ≈ 72 px tall sitting ≈ 18 px above the screen edge, indicator dot 4 px below the shelf. The Settings size slider keeps the macOS mapping (the owner's `tilesize` preference of 78 renders as 64). See `FEEL_SPEC.md` §C.2. | Real pixels from the owner's screen beat both the old docs and my earlier guesses. |
 | **FD-4 Command key** | `Super` is ⌘ Command. In rmac apps, every `⌘X` shortcut binds `super-x` **and** keeps `ctrl-x` as a silent alias. Exception: Terminal passes `ctrl-*` to the PTY and uses only `super-*` for app commands (`super-c` copy, `super-v` paste, `super-t` new tab). Menus print `⌘`. Third-party apps are untouched (no global key remapping) until optional Phase 10.4. | macOS muscle memory without breaking Linux apps or terminal signals. |
 | **FD-5 Fonts** | UI font **Inter** (OFL) via package dependency `fonts-inter`; monospace **JetBrains Mono** via `fonts-jetbrains-mono`. Add both to native package `Depends:`. Terminal uses `rmac_ui::MONO_FONT`. Measure cell width from the font, never a constant ratio. | Only licensed, installable fonts; no fallback surprises. |
 | **FD-6 Naming** | Visible names: **Files** (app id `org.rmac.Files`), **Apps** (was "App Drawer"), **Spotlight**-equivalent visible name **Search** in menus/Settings (internal crate names stay), **Control Center**, **Notification Center**, **System Settings**, **System Monitor**, **Terminal**, **Notes**, **Text Editor**. Crate/package names do not change. | Tahoe hierarchy without Apple trademarks for services; generic nouns are fine. |
@@ -314,7 +318,7 @@ Size × `TextScale` factor (R logic). Line height = round(size × 1.23). Letter 
 | `radius.pill` | 30 | R | search pills, toggle pills |
 | `radius.menu` | 10 | S (lab had 9) | menus/context menus |
 | `radius.menu.item` | 6 | S (lab had 5) | menu item highlight |
-| `radius.window` | 12 | R (`shell.kdl`) | normal windows; 16 for windows with unified toolbar (S, measure) |
+| `radius.window` | 16 | S — measure | **One radius for every window**: macOS 27 standardized this, so drop the old "12 normally, 16 with a toolbar" rule here and in `shell.kdl`. |
 | `radius.dock` | 26 | R (lab) | Dock shelf at size 56 → scale `radius = tile*0.46` |
 | `radius.hud` | 28 | R | OSD |
 | `radius.tooltip` | 8 | R | tooltip |
@@ -325,15 +329,15 @@ Size × `TextScale` factor (R logic). Line height = round(size × 1.23). Letter 
 
 | Token | Value | Src |
 |---|---|---|
-| `menubar.height` | 26 | R (FD-3) |
+| `menubar.height` | **29** | **M** measured 2026-09-18 |
 | `menubar.item.height` | 22 | R |
 | `menubar.item.padding.x` | 8 | S |
 | `menubar.leading.inset` | 12 | S |
 | `menubar.trailing.inset` | 10 | S |
 | `menubar.status.icon` | 16 (hit 22×22) | R |
-| `menu.row.height` | 22 | S — **measure**; lab uses 28 for rows; pick the capture value |
+| `menu.row.height` | **24** | **M** 2026-09-18 (Finder ▸ File menu item pitch) |
 | `menu.padding` | 5 vertical, 5 horizontal | S |
-| `menu.min.width` / `max.width` | 180 / 420 | S |
+| `menu.min.width` / `max.width` | 180 / 420; Finder ▸ File measures **269** | S / **M** |
 | `menu.separator` | 1 px line, 9 px total block, inset 10 | S |
 | `menu.shortcut.gap` | 24 px min between title and shortcut | S |
 | `toolbar.height` | 52 (R) unified; 38 titlebar-only | R/S |
@@ -353,10 +357,10 @@ Size × `TextScale` factor (R logic). Line height = round(size × 1.23). Letter 
 | `searchfield.height` | 28, radius pill | S |
 | `segmented.height` | 24, radius 7 | S |
 | `traffic.diameter` | 12 (R), center spacing 20, leading inset 20 in toolbar windows / 8 in titlebar-only; vertically centered | R/S |
-| `dock.tile` | 56 default (32–96) | R (FD-3) |
-| `dock.gap` / `dock.padding` | 8 / 8 | R |
-| `dock.bottom.margin` | 6 above screen edge | S |
-| `dock.indicator` | 4×4 dot, 3 px below tile | S |
+| `dock.tile` | **64** rendered default (slider 32–128) | **M** measured 2026-09-18 |
+| `dock.gap` / `dock.padding` | **12** / 4–6 (pitch 76) | **M** measured 2026-09-18 |
+| `dock.bottom.margin` | **18** above screen edge | **M** measured 2026-09-18 |
+| `dock.indicator` | 4×4 dot, centred **below the shelf** (y ≈ shelf bottom + 6) | **M** measured 2026-09-18 |
 | `tooltip.padding` | 8×4 | S |
 | `focus.ring` | 3 px outside, radius = control radius + 3 (HC 4 px) | S (R had 2) |
 | `hit.target.min` | 24×24 (pointer), 44×44 not required on desktop | S |
@@ -489,7 +493,7 @@ error, window-inactive*.
 
 ### 5.9 Menu (menu bar menus, context menus, pop-up menus)
 
-Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / – for mixed), 4 px, optional icon 16 + 6 px, title (`body`), flexible gap ≥ 24, shortcut text (`body`, `label.secondary`, glyphs `⌃⌥⇧⌘` in that order, key letter uppercase), submenu chevron `›` 10 px, 10 px.
+Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / – for mixed), 4 px, icon 16 + 6 px **only for app/file rows** (macOS 27 removed icons from ordinary menu items), title (`body`), flexible gap ≥ 24, shortcut text (`body`, `label.secondary`, glyphs `⌃⌥⇧⌘` in that order, key letter uppercase), submenu chevron `›` 10 px, 10 px.
 
 - Panel: `material.menu`, radius `radius.menu`, padding 5, `elev.popover`.
 - Hover/keyboard highlight: `accent` fill with radius `radius.menu.item`, text/shortcut turn `on_accent`.
@@ -612,6 +616,12 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
   Files: `docs/macos-ui-reference.md` (32→26 menu bar, 48→56 Dock icons), `docs/dock.md`, `docs/places.md`, `docs/user-guide.md` (remove forced Files/Downloads Dock tail per parity spec §13 mismatch 1).
   Verify: `python3 scripts/run-release-contract-checks.py`.
 
+- [ ] **0.9 Move the reference target to macOS 27 Golden Gate and adopt the owner's real profile.**
+  Files: `git mv docs/macos-tahoe-parity-spec.md docs/macos-parity-spec.md` (fix every link), `crates/rmac-design`, `crates/rmac-shell-settings/src/model.rs`, `packaging/rmac-session/{shell.kdl,config.kdl}`, Files defaults.
+  Read first: `FEEL_SPEC.md` §B (macOS 27 delta), §C (owner profile), §C.2 (pixel measurements).
+  Do: (a) apply the §B deltas — Liquid Glass intensity slider, one standard window radius, edge-to-edge sidebars, standardized toolbars, menus without icons, four-appearance icons, traffic-light press bounce, wallpaper animating on unlock, and keep Search as plain Search with no assistant; (b) apply the §C defaults — Dark appearance, Dock pins without a browser, tile 64, magnification off, natural scrolling **off** (delete `natural-scroll` from `shell.kdl`), Files in List view with the status bar on, `en_GB` + India region, bottom-right hot corner = New Note; (c) replace the `S` geometry values with §C.2's measured ones; (d) record macOS 27.0 build 26A428 and the 2026-09-18 date at the top of the parity doc.
+  Verify: fresh user account → first login is dark, the Dock is 64 px tiles with 76 px pitch, Files opens in List view with a status bar, scrolling is not natural, dates read dd/mm/yyyy with a 12-hour clock, and the menu bar measures 29 px in a screenshot.
+
 **Phase 0 exit checklist**
 - [~] `shell/` builds on Ubuntu ✔ (debug + release, `--locked`); systemd units start the promoted binaries (installer `--check` passes; binary names preserved) — nested smoke ✗ blocked by pre-existing niri requirement in `rmac-dock-runtime` (see 0.2).
 - [x] `rg -n "0x[0-9a-fA-F]{8}" shell/bins crates/*/src --glob '*render*'` finds no color literals outside `rmac-design` (allow SVG/asset code and tests). (No `*render*` file contains an 8-digit hex literal. Caveat: 55 component-specific literals remain in `shell/bins/*/main.rs` — bespoke wallpaper-picker preview art, the Dock's fallback-tile letter, and OSD/menu chrome whites. They are recorded for the Phase 1/3/4 restyles that will define their tokens.)
@@ -625,7 +635,7 @@ Layout of one row (left→right): 6 px, **checkmark column 14** (✓ / • / –
 **Goal:** every shared control in §5 exists in both UI crates, matches reference captures, and the component gallery proves it.
 **Read first:** `docs/component-gallery.md`, `crates/rmac-ui/src/controls.rs`, `crates/rmac-ui/src/components.rs`, `crates/component-gallery/src/specimens.rs`.
 
-- [~] **1.1 Capture the reference set (Mac).** (unblocked tooling done: `scripts/compose-evidence.py` + `scripts/test_compose_evidence.py`, 3 tests pass. The Mac captures and S-value measurement remain **owner-blocked** — they need the reference Mac and pixel ruler.)
+- [~] **1.1 Capture the reference set (Mac).** (**Partly done 2026-09-18**: menu + submenu, Control Center, Notification Center, Spotlight empty/typing, Finder all four views, save sheet, open panel, unsaved alert, four Settings panes captured to `target/evidence/reference-mac/` and measured in `docs/reference-captures-2026-09-18.md`; those values are now `M` in §4. **Remaining:** lock screen, Mission Control, Apps grid, Dock context menu, magnification, and light-appearance versions.) (unblocked tooling done: `scripts/compose-evidence.py` + `scripts/test_compose_evidence.py`, 3 tests pass. The Mac captures and S-value measurement remain **owner-blocked** — they need the reference Mac and pixel ruler.)
   Do: on the reference Mac at scale 2 ("Default" resolution) in Light and Dark, capture: menu bar over a light and a dark wallpaper; an open menu with submenu, disabled item, checkmark, shortcut; a context menu in Finder; Control Center fully open; Notification Center with 3 grouped notifications; a banner; Spotlight empty, typing "term", typing "2+2"; Launchpad/Apps; Dock idle, hover tooltip, right-click menu, magnification on; Finder window in icon/list/column/gallery views; System Settings Wi-Fi, Appearance, Desktop & Dock panes; an alert; a sheet (Save); a window's traffic lights hovered and inactive; volume OSD; lock screen. Store under `target/evidence/reference-mac/<surface>-<light|dark>.png` (ignored). Record macOS version and settings in `target/evidence/reference-mac/README.txt`.
   Measure with any pixel ruler (divide by 2 for logical px). Overwrite every **S** value in §4 of this file **and** in `crates/rmac-design` in one commit named `Measure Tahoe tokens from reference captures`.
   Verify: diff shows only §4/`rmac-design` changes; tests pass.
@@ -671,7 +681,7 @@ For each of 1.2–1.8, **Verify:** `cargo test --locked -p rmac-ui`; `cargo run 
 
 - [ ] **2.5 Window menu commands (all first-party apps).** Window menu: Minimize ⌘M, Zoom, Fill ⌃⌥F (Tahoe fn⌃F), Center ⌃⌥C, Move & Resize ▸ (Left ⌃⌥←, Right ⌃⌥→, Top ⌃⌥↑, Bottom ⌃⌥↓, quarters), Full Screen Tile ▸, ─, Remove Window from Set (disabled), ─, Bring All to Front, ─, list of the app's windows with ✓ on the key window.
 - [ ] **2.6 Edge tiling by drag.** Dragging a floating window's toolbar so the pointer touches the left/right screen edge shows a translucent preview (`material.popover` rect inset 6 px) after 300 ms; release tiles. Top edge → Fill. Holding ⌥ while dragging shows the preview immediately. Setting in Desktop & Dock: "Drag windows to screen edges to tile" (on), "Drag windows to menu bar to fill screen" (on), "Hold ⌥ key while dragging windows to tile" (on), "Tiled windows have margins" (off). Implement in the menubar/dock-independent `rmac-shell-windowing` helper that watches niri window-move events; if niri IPC cannot observe interactive moves, implement only the keyboard/menu tiling and mark drag tiling *(may defer)* with a note in `docs/known-limitations.md`.
-- [ ] **2.7 Spaces and Mission Control.** Map: ⌃↑ = niri overview (exists) presented as Mission Control; ⌃↓ = App Exposé (overview filtered to the focused app — if niri cannot filter, open the app switcher window list instead, see 5.7); ⌃←/⌃→ switch Space (exists); ⌃1…⌃9 go to Space N; F3/Mission Control key = overview. Spaces bar: niri overview shows workspaces; ensure `rmac-parking` never appears (name-filter via niri `workspace` `open-on-output` + hiding rule; if niri shows it anyway, park windows off-screen in a floating position instead and document).
+- [ ] **2.7 Spaces and Mission Control.** (Measured: the Spaces strip is a single **"Desktop" pill** at top centre with a **+** at the far right, not a filmstrip of numbered Spaces; windows spread without overlapping, each labelled with its app name, and the Dock stays visible.) Map: ⌃↑ = niri overview (exists) presented as Mission Control; ⌃↓ = App Exposé (overview filtered to the focused app — if niri cannot filter, open the app switcher window list instead, see 5.7); ⌃←/⌃→ switch Space (exists); ⌃1…⌃9 go to Space N; F3/Mission Control key = overview. Spaces bar: niri overview shows workspaces; ensure `rmac-parking` never appears (name-filter via niri `workspace` `open-on-output` + hiding rule; if niri shows it anyway, park windows off-screen in a floating position instead and document).
 - [ ] **2.8 Click-away semantics.** Clicking the wallpaper never closes or hides app windows. Setting "Click wallpaper to reveal desktop": *Only in Stage Manager* (default, i.e. never, since no Stage Manager) / *Always* (runs ShowDesktop).
 - [ ] **2.9 Close vs quit.** Closing the last window of an app does **not** quit it, except where the macOS counterpart quits. Defaults: Files, Terminal, Text Editor, Notes, System Monitor stay running with a Dock running dot; System Settings quits on last-window close. Confirm each against the matching Mac app during 1.1 and adjust. Files can never be quit (no Quit item, like Finder). ⌘Q quits the app after unsaved-change prompts. The Dock and menu bar always reflect the real process state.
 
@@ -787,7 +797,7 @@ For each of 1.2–1.8, **Verify:** `cargo test --locked -p rmac-ui`; `cargo run 
 - [~] **4.5 Magnification.** When on: each tile's size = `size + (mag − size) × cos²(π·d/(2·R))` for `d < R`, `R = 2.5 × size`, `d` = distance from pointer to tile center along the Dock axis; the shelf grows so total stays centered; tiles grow upward only. Pointer leave → animate back 200 ms. Reduced motion → no magnification. Stable centers: order and relative position never jump (existing "stable magnification" commit `c983474` implements parts; complete it to this formula). (Verified live 2026-09-17: enabling `dock.magnification` + `magnification_scale` in `shell.json`, then hovering a tile, grew the hovered tile and its neighbours with the tooltip; `target/evidence/phase4/magnify.png`. Magnification left off (FD-7 default) after the check.)
 - [~] **4.6 Click behavior.** (Verified live 2026-09-17 with the virtual-pointer probe: clicking the Dock's Terminal tile launched/focused `org.rmac.Terminal`; hover shows the tile tooltip. Bounce/alert, unhide, ⌥/⌘/middle-click variants still to verify.) Not running → launch (bounce if `animate_opening`: §4.9, stops when first window maps or after 10 s; if launch fails show alert "The application “X” can't be opened." with details). Running, no visible windows → unhide/restore the most recent window. Running, windows visible, not focused → focus most recent window. Focused → no change (macOS: does nothing; do not cycle). ⌥-click → hide others after activating. ⌘-click → reveal in Files. Middle click → new window if the app's desktop entry has a `new-window` action.
 - [ ] **4.7 Indicators and badges.** Running dot 4×4 `label.primary` @ 70%, 3 px under the icon (hidden if `show_indicators` off). Badge: red `system.red` capsule, min 18×18, top-right, `footnote` bold white, from Unity LauncherEntry `count` over D-Bus (`com.canonical.Unity.LauncherEntry`) and our notification unread count per app (only if app allows badges in Notifications settings). Progress bar under the icon from LauncherEntry `progress`. Urgent window → one bounce (repeat every 10 s up to 3 times).
-- [~] **4.8 Context menu (right-click or press-and-hold 500 ms).** (Verified live: a non-running tile (Firefox) opens *Firefox* · Open · New Window · New Private Window · Open Profile Manager · ─ · Remove from Dock · Show in Finder; the running Terminal tile opens *Terminal* · **jacob@Jake: ~ — Terminal ✓** (key-window row) · ─ · Remove from Dock · Show in Finder · ─ · Quit, with the running dot and hover tooltip. Still to do: the Options `›` submenu (Keep in Dock/Open at Login/Show in Files), Hide, ⌥→Force Quit, Show All Windows, and the Trash/folder menus.) Rows by state:
+- [~] **4.8 Context menu (right-click or press-and-hold 500 ms).** (Verified live: a non-running tile (Firefox) opens *Firefox* · Open · New Window · New Private Window · Open Profile Manager · ─ · Remove from Dock · Show in Finder; the running Terminal tile opens *Terminal* · **jacob@Jake: ~ — Terminal ✓** (key-window row) · ─ · Remove from Dock · Show in Finder · ─ · Quit, with the running dot and hover tooltip. Still to do: the Options `›` submenu (Keep in Dock/Open at Login/Show in Files), Hide, ⌥→Force Quit, Show All Windows, and the Trash/folder menus.) Rows by state: **Measured 2026-09-18:** menu ≈ 165 px wide, radius ≈ 10, with a small **triangular pointer at the bottom** aimed at the tile, and **no icons on any row** (`dock-context-menu-dark.png`).
   ```
   <window titles with ✓ for key window, • for minimized>   (running only)
   ─
@@ -833,8 +843,13 @@ For each of 1.2–1.8, **Verify:** `cargo test --locked -p rmac-ui`; `cargo run 
 
 ### 5.1 Search (Spotlight)
 
+**Measured 2026-09-18:** the bar is **642 × 59**, pill radius ≈ 29.5, horizontally centred with its
+top edge at **23.2 % of output height**. Typing shows an **inline completion inside the bar**
+("terminal.app — Open") with the target's glyph in a rounded square at the right end; a result list
+appears only for multi-result queries. Build the inline completion first.
+
 ```
-                   ╭──────────────────────────────────────────────╮   ← 680 wide, 52 high, radius 26
+                   ╭──────────────────────────────────────────────╮   ← 642 wide, 59 high, radius 29.5
                    │ ⌕  Search                             [A][▢][⌘][▤] │   ← trailing: Apps, Files, Actions, Clipboard filters (Tahoe)
                    ╰──────────────────────────────────────────────╯
                    ╭──────────────────────────────────────────────╮
@@ -883,6 +898,14 @@ For each of 1.2–1.8, **Verify:** `cargo test --locked -p rmac-ui`; `cargo run 
 ╰────────────────────────────────────╯
 ```
 
+**Measured 2026-09-18:** panel width **287**, top edge ≈ 34 px below the menu bar, right inset ≈ 20.
+The real layout is a **single column of mixed-size modules**, not the 2×2 grid drawn above: Wi-Fi
+pill, Bluetooth pill, AirDrop pill (rmac: omit — no AirDrop), Now Playing card beside them, then a
+row of **circular** buttons (appearance, screen mirroring, Focus), then full-width **Display** and
+**Sound** slider modules, then **Edit Controls** bottom-right. Pills use radius ≈ 26 with a filled
+circular glyph badge. Rebuild the ASCII sketch above to match `settings-appearance-dark.png` and
+`control-center-dark.png` in `target/evidence/reference-mac/`.
+
 - Panel: `material.popover`, radius 20 (R), padding 12, module gap 10. Modules: `surface` `FFFFFF 59` light / `FFFFFF 14` dark over the glass, radius 18.
 - Circular toggle: 36 px, on = `accent` + white glyph; off = `fill.control` + `label.primary` glyph; pending = spinner inside; unavailable authority = module hidden (not grayed).
 - Clicking the **circle** toggles; clicking the **title area** expands the module in place into a detail list (Wi-Fi networks, Bluetooth devices, Focus modes, Sound outputs) with a back chevron header, `motion.standard` height morph.
@@ -912,9 +935,11 @@ For each of 1.2–1.8, **Verify:** `cargo test --locked -p rmac-ui`; `cargo run 
 
 ### 5.5 Apps (Tahoe Apps / Launchpad replacement)
 
-- Full-output overlay: wallpaper blurred heavily + `scrim`; opens via Dock "Apps" tile, F4, or pinch (if gesture available).
-- Top: search pill 280×32 centered at y=48; below it category chips (All · Productivity · Utilities · Developer · Graphics · Internet · Games · System) **only** if the desktop-entry categories produce ≥ 2 non-empty groups.
-- Grid: icons 88, labels `callout` white with shadow, 7 columns × 5 rows per page on 1440×900 (compute from output), horizontal paging with page dots, two-finger swipe / ←→ / ⌘←→ changes page.
+**Corrected from the 2026-09-18 capture (`apps-grid-dark.png`): this is a floating panel, not a full-screen Launchpad.**
+- Floating glass panel ≈ **840 × 570**, centred, `material.popover`, radius `radius.large`; the desktop behind is untouched (no full-screen blur, no scrim). Opens from the Dock "Apps" tile, F4, or the pinch gesture.
+- Top row: search field with a grid glyph and placeholder **"Applications"**, plus a `⋯` menu at the right (Sort by Name / Sort by Category, Show in Files).
+- Below it: **category chips** — Productivity & Finance · Utilities · Developer Tools · Creativity · Social · Entertainment · Other — from desktop-entry categories, hiding empty groups. (These are the pills task 5.1 removes from Spotlight; they live here.)
+- Grid: **7 columns**, icons ≈ 56 with one-line labels beneath, vertical scrolling — **no pages, no page dots**.
 - Drag an icon onto the Dock pins it; right-click → Open, Keep in Dock, Show in Files, (Uninstall: only if the package authority supports removal with confirmation; otherwise omit).
 - Type anything → search field focuses and filters live; Return launches first match; Escape clears/closes; clicking empty space closes.
 - Existing list/grid view toggle and "Reveal in Finder" wording removed; "Show in Files".
@@ -1101,7 +1126,7 @@ For each of 1.2–1.8, **Verify:** `cargo test --locked -p rmac-ui`; `cargo run 
 - **General ▸ Login Items & Extensions:** "Open at Login" list (+/− with app picker), "Allow in the Background" list (systemd user units/XDG autostart with switches).
 - **General ▸ Sharing:** Content & Media: File Sharing (Samba if installed), Remote Login (SSH, needs polkit), Remote Management/Screen Sharing (gnome-remote-desktop if installed); Local hostname editable. Rows absent when the service is not installed.
 - **Accessibility:** Vision: Screen reader (Orca switch + shortcut), Zoom (niri has no zoom → omit unless implemented), Display (Increase contrast, Reduce transparency, Reduce motion, Pointer size slider, Differentiate without color, Text size → global TextScale), Spoken Content *(omit)*. Hearing: Audio (Flash the screen when an alert sound occurs), Captions omit. Motor: Keyboard (Sticky keys, Slow keys, Full Keyboard Access switch), Pointer Control (mouse keys *if* supported). General: Shortcut (⌥⌘F5 panel listing enabled toggles).
-- **Appearance:** Appearance tiles Auto/Light/Dark (large 84×56 previews), Accent color dots (9), Highlight color pop-up (Accent/Other colors), Icon & widget style (Default/Dark/Clear/Tinted — only once icon variants exist), Folder color pop-up *(Files feature)*, Sidebar icon size (Small/Medium/Large), Allow wallpaper tinting in windows switch *(omit until material implements it)*, Show scroll bars (Automatically/When scrolling/Always), Click in the scroll bar to (Jump to next page / Jump to spot).
+- **Appearance (macOS 27 order, measured):** Appearance tiles Light/Dark/Auto (picture previews) · **Liquid Glass** live preview + intensity slider · Theme → **Colour** (Multicolour + 8 dots) · **Text highlight colour** pop-up (Automatic) · **Icon & widget style** tiles (Default/Dark/Clear/Tinted) · Folder color pop-up *(Files feature)*, Sidebar icon size (Small/Medium/Large), Allow wallpaper tinting in windows switch *(omit until material implements it)*, Show scroll bars (Automatically/When scrolling/Always), Click in the scroll bar to (Jump to next page / Jump to spot).
 - **Menu Bar (new):** Automatically hide and show the menu bar pop-up, Show menu bar background switch, Recent documents/applications/servers count pop-up, "Menu Bar Controls" list: each control with Show in Menu Bar pop-up (Always/When Active/Never), Clock Options… sheet (3.7 fields), Allow in the Menu Bar list of third-party SNI items with switches.
 - **Search (Spotlight):** Search results categories with switches (Applications, Files, Folders, System Settings, Calculator, Actions, Clipboard history + consent text), "Help Apple improve…" omitted, Search Privacy… sheet (excluded paths +/−, existing), Include removable volumes switch (existing).
 - **Desktop & Dock:** exactly 4.15 fields, then Desktop & Stage Manager: Show items On Desktop (if desktop icons implemented), Click wallpaper to reveal desktop pop-up, Stage Manager **omitted**; Widgets omitted; Default web browser pop-up (xdg-settings); Windows: Prefer tabs when opening documents (Always/In Full Screen/Never — first-party apps honor), Ask to keep changes when closing documents, Close windows when quitting an application, Drag windows to screen edges to tile, Drag windows to menu bar to fill screen, Hold ⌥ key while dragging windows to tile, Tiled windows have margins; Mission Control: Automatically rearrange Spaces based on most recent use (omit unless niri can reorder workspaces), When switching to an application, switch to a Space with open windows, Group windows by application, Displays have separate Spaces (read-only on) ; Shortcuts… sheet; Hot Corners… sheet (4 pop-ups: – / Mission Control / Application Windows / Desktop / Notification Center / Launchpad→Apps / Quick Note (if Notes) / Lock Screen / Put Display to Sleep / Start Screen Saver omitted) — implement hot corners in `rmac-dock`'s pointer barrier watcher or a dedicated 1 px layer surface per corner.

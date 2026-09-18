@@ -180,6 +180,17 @@ def package_files() -> dict[str, tuple[bytes, int]]:
         if destination in files:
             raise PackageError(f"duplicate package destination: {source.name}")
         files[destination] = (_session_unit(source), 0o644)
+    # Original rmac pointer theme (FEEL_SPEC.md §D.2).
+    cursors = REPO_ROOT / "assets" / "cursors" / "rmac"
+    if not cursors.is_dir():
+        raise PackageError("the rmac cursor theme is missing; run scripts/build-cursors.py")
+    for source in sorted(cursors.iterdir(), key=lambda path: path.name):
+        if source.is_symlink() or not source.is_file():
+            raise PackageError("cursor theme source inventory is not regular")
+        destination = f"usr/share/icons/rmac/{source.name}"
+        if destination in files:
+            raise PackageError(f"duplicate package destination: {source.name}")
+        files[destination] = (_read_regular(source), 0o644)
     return files
 
 

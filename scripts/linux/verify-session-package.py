@@ -15,6 +15,10 @@ import sys
 
 MANIFEST = Path("usr/share/rmac/session-package-manifest.json")
 MAX_MANIFEST_BYTES = 64 * 1024
+# Original rmac pointer theme shipped by the session package (FEEL_SPEC.md §D.2).
+_CURSOR_THEME = (
+    Path(__file__).resolve().parents[2] / "assets" / "cursors" / "rmac"
+)
 REQUIRED_RMAC_EXECUTABLES = (
     "rmac-session-supervisor",
     "rmac-osd",
@@ -78,6 +82,9 @@ EXPECTED_PATHS = {
     Path("usr/share/dbus-1/services/org.rmac.Focus1.service"),
 } | {
     Path("usr/lib/systemd/user") / unit for unit in EXPECTED_SYSTEMD_UNITS
+} | {
+    Path("usr/share/icons/rmac") / path.name
+    for path in _CURSOR_THEME.iterdir()
 }
 
 

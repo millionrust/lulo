@@ -292,6 +292,16 @@ fn visible_status(status: &rmac_shell_status::Snapshot) -> rmac_shell_status::Sn
 }
 
 pub(crate) fn publication(previous: &Snapshot, next: Snapshot) -> Option<Update> {
+    if next.status.network != previous.status.network {
+        let (p, n) = (&previous.status.network, &next.status.network);
+        match (p, n) {
+            (Some(p), Some(n)) => eprintln!(
+                "rmac-net: state {:?}->{:?} name {:?}->{:?} strength {:?}->{:?}",
+                p.state, n.state, p.connection_name, n.connection_name, p.wifi_strength, n.wifi_strength
+            ),
+            _ => eprintln!("rmac-net: presence changed"),
+        }
+    }
     (next != *previous).then(|| Update {
         // Sub-bar Wi-Fi strength drift is not drawn, so it must not request a
         // frame even though the snapshot changed.

@@ -200,6 +200,13 @@ fn every_built_in_round_trips_and_has_a_distinct_palette() {
         assert!(!metadata.title.is_empty());
         assert!(ids.insert(metadata.id.id()));
         assert!(palettes.insert(metadata.palette));
+        assert_ne!(
+            metadata.palette, metadata.light_palette,
+            "{:?} has no light pair",
+            id
+        );
+        assert_eq!(metadata.palette_for(true), metadata.palette);
+        assert_eq!(metadata.palette_for(false), metadata.light_palette);
     }
     assert_eq!(ids.len(), BuiltInId::ALL.len());
     assert_eq!(palettes.len(), BuiltInId::ALL.len());

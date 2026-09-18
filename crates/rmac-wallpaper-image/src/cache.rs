@@ -200,8 +200,9 @@ fn procedural(
             let scaled = position * 3.0;
             let index = (scaled.floor() as usize).min(2);
             let amount = scaled - index as f32;
-            let from = rgb(metadata.palette[index]);
-            let to = rgb(metadata.palette[index + 1]);
+            let palette = metadata.palette_for(true);
+            let from = rgb(palette[index]);
+            let to = rgb(palette[index + 1]);
             rgba.extend_from_slice(&[
                 lerp(from[0], to[0], amount),
                 lerp(from[1], to[1], amount),

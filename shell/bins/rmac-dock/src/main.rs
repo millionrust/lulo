@@ -622,6 +622,10 @@ mod linux_wayland {
                     let visual_offset = (ICON_SIZE - visual_size) / 2.0;
                     let thumbnail = minimized_icon_path(entry);
                     let badge = minimized_badge_path(entry);
+                    // Prefer the captured thumbnail; without one, show the
+                    // application icon rather than a bare letter.
+                    let main_icon = thumbnail.clone().or_else(|| badge.clone());
+                    let badge_overlay = thumbnail.is_some().then(|| badge.clone()).flatten();
                     let label = entry.label.clone();
                     let tooltip_label = entry.label.clone();
                     let mut tile = div()
@@ -685,7 +689,7 @@ mod linux_wayland {
                             visual.right_0().top(px(visual_offset))
                         }
                     };
-                    visual = match thumbnail {
+                    visual = match main_icon {
                         Some(path) => visual.child(
                             img(path)
                                 .w(px(visual_size - 2.0))
@@ -695,7 +699,7 @@ mod linux_wayland {
                         None => visual.child(item_mark(&label)),
                     };
                     tile = tile.child(visual);
-                    if let Some(path) = badge {
+                    if let Some(path) = badge_overlay {
                         tile = tile.child(
                             img(path)
                                 .absolute()

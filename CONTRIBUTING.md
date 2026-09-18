@@ -51,6 +51,27 @@ license additions require a written scope and removal/review condition in
 - Follow `docs/decisions/0002-gpui-version-policy.md` for every GPUI-family
   dependency change. Framework upgrades must be isolated from feature work.
 
+## User-facing wording
+
+Follow `FEEL_SPEC.md` §D.10 so the product reads like macOS, not a Linux app:
+
+- Menu items are Title Case (`Move to Trash`, `Get Info`); buttons are Title
+  Case verbs (`Empty Trash`, `Don't Save`); messages and errors are sentence
+  case and end with a period.
+- Destructive confirmations state the consequence and the irreversibility
+  ("Are you sure you want to permanently erase the items in the Trash?" /
+  "You can't undo this action."), not "Delete files?".
+- Use the ellipsis only when more input follows (`Save As…`, not `Get Info…`).
+- Buttons read `[Cancel] [Primary]` right-aligned; a destructive primary is
+  red-tinted text, never a red filled default.
+- Errors say what happened, why, and what to do ("The disk "Backup" wasn't
+  ejected because one or more programs may be using it."), never an errno,
+  D-Bus name, or stack trace.
+- Never surface `Linux`, `niri`, `Wayland`, `systemd`, `/home/…`, or `dbus` in
+  ordinary user text. No `Error:`, `Failed to`, or `Warning:` prefixes.
+- Use curly quotes (“ ”) around names. Units are 1 KB = 1000 bytes (`12.4 MB`),
+  not KiB.
+
 ## Tests
 
 - Unit-test parsers, sorting, state transitions, persistence, and command

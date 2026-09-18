@@ -36,15 +36,16 @@ pub struct NetworkIndicator {
 }
 
 impl NetworkIndicator {
-    /// Wi-Fi signal as menu-bar bars (1–4), bucketing NetworkManager's percent.
-    /// The bar glyph only shows these levels, so sub-bar drift is not a visible
-    /// change and must not wake the shell.
+    /// Wi-Fi signal as the menu-bar's three bars (1–3), bucketing
+    /// NetworkManager's percent. Three levels keep a signal hovering near a
+    /// bucket edge (e.g. ~50%) from flickering the glyph every few seconds,
+    /// which otherwise wakes the shell at idle. The buckets match the
+    /// accessible wording "3 of 3 bars" (COMPLETION_SPEC §3.10).
     pub fn wifi_bars(&self) -> Option<u8> {
         self.wifi_strength.map(|strength| match strength.min(100) {
-            0..=24 => 1,
-            25..=49 => 2,
-            50..=74 => 3,
-            _ => 4,
+            0..=32 => 1,
+            33..=65 => 2,
+            _ => 3,
         })
     }
 }

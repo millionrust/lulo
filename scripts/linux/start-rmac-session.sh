@@ -62,6 +62,10 @@ elif [ "${graphical_invocation}" = true ]; then
         *) XDG_CURRENT_DESKTOP="rmac:${XDG_CURRENT_DESKTOP}" ;;
     esac
     export XDG_CURRENT_DESKTOP
+    # Original rmac pointer theme (FEEL_SPEC.md §D.2); the compositor reads the
+    # niri cursor rule, this is for GTK/Qt/Electron clients.
+    export XCURSOR_THEME="rmac"
+    export XCURSOR_SIZE="24"
 fi
 
 set --
@@ -77,6 +81,8 @@ if [ "${graphical_invocation}" = true ]; then
     [ "${DBUS_SESSION_BUS_ADDRESS+x}" = x ] && set -- "$@" DBUS_SESSION_BUS_ADDRESS
     [ "${NIRI_SOCKET+x}" = x ] && set -- "$@" NIRI_SOCKET
     [ "${RMAC_COLOR_SCHEME+x}" = x ] && set -- "$@" RMAC_COLOR_SCHEME
+    [ "${XCURSOR_THEME+x}" = x ] && set -- "$@" XCURSOR_THEME
+    [ "${XCURSOR_SIZE+x}" = x ] && set -- "$@" XCURSOR_SIZE
 fi
 
 if [ "$#" -gt 0 ]; then

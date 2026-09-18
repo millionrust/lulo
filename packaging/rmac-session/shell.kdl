@@ -22,6 +22,13 @@ layout {
     }
 }
 
+// Original rmac pointer theme (FEEL_SPEC.md §D.2). Clients get the same via
+// XCURSOR_THEME from the session start script.
+cursor {
+    xcursor-theme "rmac"
+    xcursor-size 24
+}
+
 // niri has no native minimize, so the shell hides a window by parking it on
 // this named workspace. It must be declared here for niri to resolve the name
 // in a move-window-to-workspace reference; the shell excludes it from the

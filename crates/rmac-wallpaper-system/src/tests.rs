@@ -64,6 +64,16 @@ fn built_in_resolution_uses_only_original_metadata() {
     };
     assert_eq!(metadata.id.id(), "rmac-aurora");
     assert_eq!(metadata.attribution, "Original procedural artwork by rmac");
+
+    // Every original built-in resolves to its own metadata with no I/O.
+    for id in rmac_wallpaper::BuiltInId::ALL {
+        let resolved = resolve(&rmac_wallpaper::Source::BuiltIn(id)).unwrap();
+        let ResolvedSource::BuiltIn(metadata) = resolved else {
+            panic!("built-in resolves without filesystem access");
+        };
+        assert_eq!(metadata.id, id);
+        assert_eq!(metadata.attribution, "Original procedural artwork by rmac");
+    }
 }
 
 #[test]

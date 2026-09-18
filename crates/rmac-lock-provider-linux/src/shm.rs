@@ -17,6 +17,7 @@ pub struct ShmFrame {
 }
 
 impl ShmFrame {
+    #[allow(clippy::too_many_arguments)]
     pub fn paint(
         plan: &RenderPlan,
         palette: LockPalette,

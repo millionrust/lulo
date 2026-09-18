@@ -15,6 +15,8 @@ pub(crate) struct ApplicationIdentity {
 pub(crate) enum Busy {
     ClearAll,
     ClearApp(String),
+    // Wired once the notification options menu lands (§5.3).
+    #[allow(dead_code)]
     DisableApp(String),
     Invoke(NotificationId, ActionSelection),
 }

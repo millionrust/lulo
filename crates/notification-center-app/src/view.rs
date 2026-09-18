@@ -88,6 +88,8 @@ impl NotificationCenterView {
         .detach();
     }
 
+    // Deferred: the options menu that calls this is not built yet (§5.3).
+    #[allow(dead_code)]
     pub(crate) fn disable_app(&mut self, app_id: String, cx: &mut Context<Self>) {
         if self.busy.is_some() {
             return;
@@ -158,6 +160,8 @@ impl NotificationCenterView {
         .detach();
     }
 
+    // Deferred: the options menu that calls this is not built yet (§5.3).
+    #[allow(dead_code)]
     fn policy(&self, app_id: &str) -> Option<rmac_notifications_store::AppPolicy> {
         self.snapshot
             .as_ref()?
@@ -234,6 +238,8 @@ impl NotificationCenterView {
             })
     }
 
+    // Deferred: the options menu that calls this is not built yet (§5.3).
+    #[allow(dead_code)]
     pub(crate) fn policy_enabled(&self, app_id: &str) -> bool {
         self.policy(app_id).is_none_or(|policy| policy.enabled)
     }

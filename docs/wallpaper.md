@@ -9,8 +9,13 @@ desktop portal response.
 
 The safe default is `builtin:rmac-aurora`: original rmac procedural-gradient
 metadata with four sRGB palette colors. It is not an Apple wallpaper, a traced
-asset, or a redistributed bitmap. A future renderer generates it directly at
-the output size, avoiding decode, scaling, and licensing ambiguity.
+asset, or a redistributed bitmap. The renderer generates it directly at the
+output size, avoiding decode, scaling, and licensing ambiguity.
+
+The original set is `rmac-aurora` (default), `rmac-tide`, `rmac-basalt`,
+`rmac-monsoon`, and `rmac-paper`. Each carries a dark `palette` and a distinct
+`light_palette`; `BuiltInMetadata::palette_for(dark)` selects one so a wallpaper
+can follow the system appearance. Every palette is original rmac artwork.
 
 User sources accept only that built-in ID, a hostless local `file:///` URI, or
 a normalized absolute path. Remote schemes, relative paths, parent traversal,

@@ -6,13 +6,8 @@ use super::*;
 pub(super) const WATCH_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 #[cfg(not(target_os = "macos"))]
 pub(super) const WATCH_QUIET_PERIOD: std::time::Duration = std::time::Duration::from_millis(75);
-// `pw-mon` prints a line for every PipeWire event, so a busy graph flushes
-// almost continuously. Each flush makes the shell re-read the default level
-// with a blocking `wpctl get-volume` subprocess, which at idle kept two
-// blocking threads ~9% busy. One flush per second is still prompt for a
-// menu-bar speaker glyph while cutting that work ~4–5×.
 #[cfg(not(target_os = "macos"))]
-pub(super) const WATCH_MAX_COALESCE: std::time::Duration = std::time::Duration::from_secs(1);
+pub(super) const WATCH_MAX_COALESCE: std::time::Duration = std::time::Duration::from_millis(250);
 #[cfg(not(target_os = "macos"))]
 pub(super) const MUTATION_VERIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 #[cfg(not(target_os = "macos"))]

@@ -219,6 +219,16 @@ pub fn pill_radius() -> f32 {
 
 /// Dock app-tile corner radius: the tile radius scales with the icon size
 /// rather than the shelf radius token.
+/// The measured menu bar height (29 px on the 2026-09-18 macOS 27 reference).
+pub fn menubar_height() -> f32 {
+    current().metrics.menubar_height
+}
+
+/// The measured rendered Dock tile size (64 px on the reference Mac).
+pub fn dock_tile() -> f32 {
+    current().metrics.dock_tile
+}
+
 pub fn dock_tile_radius(tile: f32) -> f32 {
     tile * 0.232
 }

@@ -15,9 +15,11 @@ pub(crate) const DEFAULT_ACCENT: (f64, f64, f64) = (0.0, 0.478_431_372_5, 1.0);
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SchemePreference {
-    #[default]
     Automatic,
     Light,
+    // The owner's reference Mac runs Dark (FEEL_SPEC.md §C), so a fresh rmac
+    // session is dark until the user chooses otherwise.
+    #[default]
     Dark,
 }
 

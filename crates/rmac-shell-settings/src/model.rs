@@ -211,15 +211,15 @@ pub struct ShellSettings {
 impl Default for ShellSettings {
     fn default() -> Self {
         Self {
+            // The owner's reference Dock (FEEL_SPEC.md §C): Files leads
+            // implicitly, then Apps, Notes, Text Editor, Terminal, System
+            // Settings. No browser and no Downloads are pinned.
             pinned_apps: [
                 rmac_apps::identity::FILES,
                 rmac_apps::identity::APP_DRAWER,
-                // Ubuntu 26.04 ships Firefox as this desktop identity. Keeping
-                // the browser in the first-run shelf makes a fresh rmac
-                // session useful before the user has customised the Dock.
-                "firefox_firefox.desktop",
-                rmac_apps::identity::TERMINAL,
                 rmac_apps::identity::NOTES,
+                rmac_apps::identity::TEXT_EDITOR,
+                rmac_apps::identity::TERMINAL,
                 rmac_apps::identity::SYSTEM_SETTINGS,
             ]
             .into_iter()

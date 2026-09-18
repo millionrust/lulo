@@ -39,7 +39,7 @@
 1. `AGENTS.md` (disk and build limits; these are hard rules).
 2. `GOAL.md` (objective, principles, never-do list).
 3. This file, completely.
-4. `docs/macos-tahoe-parity-spec.md` §1–§4 (reference classes `M0/M1/M2/LE/AO/NA`).
+4. `docs/macos-parity-spec.md` §0–§4 (reference target, owner profile, reference classes `M0/M1/M2/LE/AO/NA`).
 5. `ARCHITECTURE.md` (crate boundaries).
 
 You do **not** need to read every other doc up front. Each task names the docs it needs.

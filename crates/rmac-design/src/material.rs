@@ -32,7 +32,12 @@ pub struct Materials {
 }
 
 impl Materials {
-    pub fn resolve(scheme: ResolvedColorScheme, contrast: Contrast, colors: Colors) -> Self {
+    pub fn resolve(
+        scheme: ResolvedColorScheme,
+        contrast: Contrast,
+        colors: Colors,
+        glass_intensity: f32,
+    ) -> Self {
         let high = contrast == Contrast::Higher;
         match scheme {
             ResolvedColorScheme::Light => {
@@ -80,13 +85,13 @@ impl Materials {
                     fallback: Rgba::from_rgba(0xfafafaf2),
                 };
                 Self {
-                    menu: harden(menu, high, colors),
-                    popover: harden(popover, high, colors),
-                    hud: harden(hud, high, colors),
-                    dock: harden(dock, high, colors),
-                    sidebar: harden(sidebar, high, colors),
-                    menubar: harden(menubar, high, colors),
-                    tooltip: harden(tooltip, high, colors),
+                    menu: harden(glass(menu, glass_intensity), high, colors),
+                    popover: harden(glass(popover, glass_intensity), high, colors),
+                    hud: harden(glass(hud, glass_intensity), high, colors),
+                    dock: harden(glass(dock, glass_intensity), high, colors),
+                    sidebar: harden(glass(sidebar, glass_intensity), high, colors),
+                    menubar: harden(glass(menubar, glass_intensity), high, colors),
+                    tooltip: harden(glass(tooltip, glass_intensity), high, colors),
                 }
             }
             ResolvedColorScheme::Dark => {
@@ -134,17 +139,33 @@ impl Materials {
                     fallback: Rgba::from_rgba(0x2c2c2ef2),
                 };
                 Self {
-                    menu: harden(menu, high, colors),
-                    popover: harden(popover, high, colors),
-                    hud: harden(hud, high, colors),
-                    dock: harden(dock, high, colors),
-                    sidebar: harden(sidebar, high, colors),
-                    menubar: harden(menubar, high, colors),
-                    tooltip: harden(tooltip, high, colors),
+                    menu: harden(glass(menu, glass_intensity), high, colors),
+                    popover: harden(glass(popover, glass_intensity), high, colors),
+                    hud: harden(glass(hud, glass_intensity), high, colors),
+                    dock: harden(glass(dock, glass_intensity), high, colors),
+                    sidebar: harden(glass(sidebar, glass_intensity), high, colors),
+                    menubar: harden(glass(menubar, glass_intensity), high, colors),
+                    tooltip: harden(glass(tooltip, glass_intensity), high, colors),
                 }
             }
         }
     }
+}
+
+/// macOS 27 Liquid Glass intensity: one multiplier over every material tint.
+/// 0.0 → alpha ×0.4 (clear), 0.5 → ×1.0 (the default), 1.0 → ×1.6 (tinted).
+fn glass(material: Material, intensity: f32) -> Material {
+    Material {
+        tint: glass_tint(material.tint, intensity),
+        ..material
+    }
+}
+
+fn glass_tint(tint: Rgba, intensity: f32) -> Rgba {
+    let multiplier = 0.4 + intensity.clamp(0.0, 1.0) * 1.2;
+    let alpha = tint.0 & 0xff;
+    let scaled = ((alpha as f32 * multiplier).round() as u32).min(0xff);
+    Rgba::from_rgba((tint.0 & 0xffff_ff00) | scaled)
 }
 
 /// High contrast forces near-opaque tints and a 1 px `label.secondary` border.

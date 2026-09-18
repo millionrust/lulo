@@ -55,7 +55,9 @@ impl Default for Radii {
             pill: 30.0,
             menu: 10.0,
             menu_item: 6.0,
-            window: 12.0,
+            // macOS 27 standardized one window radius; the old "16 with a
+            // unified toolbar, 12 otherwise" split is gone.
+            window: 16.0,
             window_toolbar: 16.0,
             dock: 26.0,
             hud: 28.0,
@@ -158,7 +160,7 @@ pub struct Metrics {
 impl Default for Metrics {
     fn default() -> Self {
         Self {
-            menubar_height: 26.0,
+            menubar_height: 29.0,
             menubar_item_height: 22.0,
             menubar_item_padding_x: 8.0,
             menubar_leading_inset: 12.0,
@@ -166,7 +168,7 @@ impl Default for Metrics {
             menubar_status_icon: 16.0,
             menubar_status_hit: 22.0,
 
-            menu_row_height: 22.0,
+            menu_row_height: 24.0,
             menu_padding_v: 5.0,
             menu_padding_h: 5.0,
             menu_min_width: 180.0,
@@ -221,14 +223,16 @@ impl Default for Metrics {
             traffic_leading_inset_toolbar: 20.0,
             traffic_leading_inset_titlebar: 8.0,
 
-            dock_tile: 56.0,
+            // Measured 2026-09-18: rendered tile 64, pitch 76 (gap 12), shelf
+            // 72 tall (padding 4), 18 above the edge, running dot below it.
+            dock_tile: 64.0,
             dock_tile_min: 32.0,
-            dock_tile_max: 96.0,
-            dock_gap: 8.0,
-            dock_padding: 8.0,
-            dock_bottom_margin: 6.0,
+            dock_tile_max: 128.0,
+            dock_gap: 12.0,
+            dock_padding: 4.0,
+            dock_bottom_margin: 18.0,
             dock_indicator: 4.0,
-            dock_indicator_offset: 3.0,
+            dock_indicator_offset: 6.0,
 
             tooltip_padding_x: 8.0,
             tooltip_padding_y: 4.0,

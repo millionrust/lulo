@@ -27,7 +27,9 @@ mod linux_wayland {
     };
     use uuid::Uuid;
 
-    const BAR_HEIGHT: f32 = 26.0;
+    // Measured from the reference Mac 2026-09-18 (FEEL_SPEC.md §C.2): the bar
+    // occupies rows 0–28 and is fully transparent.
+    const BAR_HEIGHT: f32 = 29.0;
     const MENU_SURFACE_HEIGHT: f32 = 520.0;
     const MENU_WIDTH: f32 = 248.0;
     const RECENT_MENU_WIDTH: f32 = 286.0;

@@ -3,7 +3,8 @@
 input {
     touchpad {
         tap
-        natural-scroll
+        // The owner's Mac has natural scrolling off (FEEL_SPEC.md §C), so the
+        // touchpad must not reverse the scroll direction.
     }
 }
 
@@ -32,7 +33,9 @@ workspace "rmac-parking"
 // of exposing the scrolling-tiler layout as the product experience.
 window-rule {
     open-floating true
-    geometry-corner-radius 12
+    // macOS 27 standardized one window radius for every window; the old
+    // 12/16 toolbar split is gone (FEEL_SPEC.md §B).
+    geometry-corner-radius 16
     clip-to-geometry true
     focus-ring { off; }
     border { off; }
@@ -44,16 +47,6 @@ window-rule {
         color "#00000050"
         inactive-color "#00000030"
     }
-}
-
-// Unified-toolbar apps (Files, System Settings, Notes) use the wider 16 px
-// window curve measured from the reference Mac.
-window-rule {
-    match app-id=r#"^org\.rmac\.(Files|SystemSettings|Notes)$"#
-    geometry-corner-radius 16
-    clip-to-geometry true
-    focus-ring { off; }
-    border { off; }
 }
 
 // Finder opens at its last saved size (never maximized) and lets niri clip and

@@ -1,11 +1,49 @@
-# macOS Tahoe parity specification
+# macOS parity specification
 
-> Research baseline: macOS Tahoe 26.6, reviewed 2026-08-11
+> Research baseline: **macOS 27.0 "Golden Gate", build 26A428**, reviewed 2026-09-18
+> on the owner's reference Mac (1920×1080 @ 1×, Dark appearance, en-GB with India region)
 >
 > Product baseline: the owner's current Mac and supplied screenshots
 >
 > Purpose: define what rmac must reproduce, what remains optional, and what it
 > must never fake
+>
+> Previous baseline (for history): macOS Tahoe 26.6, reviewed 2026-08-11. The
+> 27.0 delta is recorded in `FEEL_SPEC.md` §B and summarized in §0 below; all
+> measured values in this document and `COMPLETION_SPEC.md` §4 come from
+> `docs/reference-captures-2026-09-18.md`.
+
+## 0. Reference target and owner profile (2026-09-18)
+
+The reference Mac now runs **macOS 27.0 "Golden Gate" (build 26A428)**. The
+target and the shipping defaults are set from it, not from guesses.
+
+**macOS 27 delta that changes this document (`FEEL_SPEC.md` §B):** user-adjustable
+Liquid Glass intensity (one `glass_intensity` 0.0–1.0 multiplier over material
+tint alpha); one standardized window corner radius (**16**) for every window —
+the old "16 with a unified toolbar, 12 otherwise" split is deleted; edge-to-edge
+sidebars; one standardized toolbar; menus **without** ordinary menu-item icons;
+four app-icon appearances (light / dark / clear / tinted); traffic lights get the
+Liquid Glass press-and-drag bounce; wallpapers animate when the Mac unlocks; and
+Spotlight is labelled **Search** with no assistant, chat, or AI row — rmac must
+never fake Siri or Apple Intelligence.
+
+**Owner profile → rmac shipping defaults (`FEEL_SPEC.md` §C):** Dark appearance;
+Dock pins **Files, Apps, Notes, Text Editor, Terminal, System Settings** (no
+browser, no Downloads); Dock tile **64** rendered (slider range 32–128),
+magnification off, autohide off, bottom; **natural scrolling off** (the
+`natural-scroll` niri input rule is removed); Files opens in **List view** with
+the **status bar on** and the path bar off; locale **en_GB with India region**
+(dd/mm/yyyy, 12-hour clock, ₹, metric); spelling autocorrect on; keyboard repeat
+225 ms initial / 90 ms; hot corner bottom-right = **New Note**; the only desktop
+content is the wallpaper, menu bar, and Dock.
+
+**Measured geometry that overrides earlier guesses (`FEEL_SPEC.md` §C.2):** menu
+bar height **29** and fully transparent; Dock tile **64**, pitch **76** (gap
+**12**), shelf **72** tall, **18** above the screen edge, running dot **4** below
+the shelf; menu (Finder ▸ File) width **269**, item pitch **24**; Spotlight
+**642 × 59** pill at 23.2 % height; Control Center **287** wide. These live as
+tokens in `crates/rmac-design`; no other file hard-codes them.
 
 This is the master macOS research and parity contract for rmac. It describes
 the complete product experience rather than a theme. It covers the visible

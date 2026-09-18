@@ -35,6 +35,9 @@ pub struct Tokens {
     pub color_scheme: ResolvedColorScheme,
     pub contrast: Contrast,
     pub text_scale: TextScale,
+    /// macOS 27 Liquid Glass intensity, 0.0 (clear) … 1.0 (tinted). The
+    /// Appearance pane drives this; 0.5 is the default mid setting.
+    pub glass_intensity: f32,
     pub colors: Colors,
     pub materials: Materials,
     pub type_scale: TypeScale,
@@ -53,7 +56,13 @@ impl Tokens {
             appearance.accent_color,
             appearance.contrast,
         );
-        let materials = Materials::resolve(appearance.color_scheme, appearance.contrast, colors);
+        let glass_intensity = 0.5;
+        let materials = Materials::resolve(
+            appearance.color_scheme,
+            appearance.contrast,
+            colors,
+            glass_intensity,
+        );
         let mut metrics = Metrics::default();
         if appearance.contrast == Contrast::Higher {
             metrics.focus_ring_width = metrics.focus_ring_width_high_contrast;
@@ -62,6 +71,7 @@ impl Tokens {
             color_scheme: appearance.color_scheme,
             contrast: appearance.contrast,
             text_scale: appearance.text_scale,
+            glass_intensity,
             colors,
             materials,
             type_scale: TypeScale::resolve(appearance.text_scale),
@@ -71,6 +81,18 @@ impl Tokens {
             elevation: Elevation::resolve(appearance.contrast),
             motion: Motion::resolve(appearance.motion),
         }
+    }
+
+    /// Re-resolve the materials for a Liquid Glass intensity (macOS 27).
+    pub fn with_glass_intensity(mut self, glass_intensity: f32) -> Self {
+        self.glass_intensity = glass_intensity.clamp(0.0, 1.0);
+        self.materials = Materials::resolve(
+            self.color_scheme,
+            self.contrast,
+            self.colors,
+            self.glass_intensity,
+        );
+        self
     }
 
     /// The default light appearance, for tests and first paint.
@@ -187,6 +209,21 @@ mod tests {
         assert_eq!(palette[0].0, "Multicolor");
         assert_eq!(palette[0].1, Tokens::light_default().colors.system_blue);
         assert_eq!(palette[8].0, "Graphite");
+    }
+
+    #[test]
+    fn glass_intensity_scales_material_tint_alpha() {
+        let base = Tokens::light_default();
+        let clear = base.with_glass_intensity(0.0);
+        let tinted = base.with_glass_intensity(1.0);
+        assert!(clear.materials.menu.tint.alpha() < base.materials.menu.tint.alpha());
+        assert!(tinted.materials.menu.tint.alpha() > base.materials.menu.tint.alpha());
+        // The menu bar stays fully transparent at any intensity.
+        assert_eq!(tinted.materials.menubar.tint.alpha(), 0);
+        // High contrast wins over a clear glass setting.
+        let high = Tokens::resolve(appearance(ResolvedColorScheme::Light, Contrast::Higher))
+            .with_glass_intensity(0.0);
+        assert!(high.materials.menu.tint.alpha() >= 0xf6);
     }
 
     #[test]

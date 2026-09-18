@@ -71,8 +71,8 @@ Every one of them is specified below.
 ## B. macOS 27 "Golden Gate" delta (the repo currently targets Tahoe 26.6)
 
 The owner's Mac is the authority and it now runs 27.0. Update
-`docs/macos-tahoe-parity-spec.md` (rename to `docs/macos-parity-spec.md`) and
-`COMPLETION_SPEC.md` §4 with these changes, then re-capture every reference screenshot.
+`docs/macos-parity-spec.md` and `COMPLETION_SPEC.md` §4 with these changes, then
+re-capture every reference screenshot.
 
 | Area | macOS 26 (what the repo assumes) | macOS 27 Golden Gate (what to build) |
 |---|---|---|

@@ -17,13 +17,16 @@ mod linux_wayland {
     use gpui_platform::application;
     use rmac_shell_ui::tokens;
 
-    const EXCLUSIVE_ZONE: f32 = 88.0;
-    const ICON_SIZE: f32 = 56.0;
-    const ICON_GAP: f32 = 8.0;
-    const SHELF_PADDING: f32 = 8.0;
+    // Measured from the reference Mac 2026-09-18 (FEEL_SPEC.md §C.2): rendered
+    // tile 64, pitch 76 (gap 12), shelf 72 tall (padding 4), 18 above the edge.
+    const ICON_SIZE: f32 = 64.0;
+    const ICON_GAP: f32 = 12.0;
+    const SHELF_PADDING: f32 = 4.0;
+    const SHELF_BOTTOM_MARGIN: f32 = 18.0;
+    const EXCLUSIVE_ZONE: f32 = ICON_SIZE + 2.0 * SHELF_PADDING + SHELF_BOTTOM_MARGIN;
     const SEPARATOR_WIDTH: f32 = 1.0;
     const TOOLTIP_WIDTH: f32 = 240.0;
-    const TOOLTIP_BOTTOM: f32 = 92.0;
+    const TOOLTIP_BOTTOM: f32 = EXCLUSIVE_ZONE + 6.0;
     const MENU_WIDTH: f32 = 248.0;
     const MENU_ROW_HEIGHT: f32 = 28.0;
     const READY_FILE_ENV: &str = "RMAC_DOCK_READY_FILE";
@@ -510,21 +513,24 @@ mod linux_wayland {
                 }))
                 .children(tooltip);
             let root = match self.placement {
-                rmac_shell_settings::DockPlacement::Bottom => {
-                    root.items_end().justify_center().pb_2()
-                }
-                rmac_shell_settings::DockPlacement::Left => {
-                    root.items_start().justify_center().pl_2()
-                }
-                rmac_shell_settings::DockPlacement::Right => {
-                    root.items_end().justify_center().pr_2()
-                }
+                rmac_shell_settings::DockPlacement::Bottom => root
+                    .items_end()
+                    .justify_center()
+                    .pb(px(SHELF_BOTTOM_MARGIN)),
+                rmac_shell_settings::DockPlacement::Left => root
+                    .items_start()
+                    .justify_center()
+                    .pl(px(SHELF_BOTTOM_MARGIN)),
+                rmac_shell_settings::DockPlacement::Right => root
+                    .items_end()
+                    .justify_center()
+                    .pr(px(SHELF_BOTTOM_MARGIN)),
             };
             let shelf = div()
                 .flex()
-                .gap_2()
-                .p_2()
-                .rounded(px(tokens::dock_radius()))
+                .gap(px(ICON_GAP))
+                .p(px(SHELF_PADDING))
+                .rounded(px(tokens::dock_tile_radius(ICON_SIZE)))
                 .bg(rgba(tokens::dock_tint()))
                 .border_1()
                 .border_color(rgba(tokens::dock_border()))
@@ -667,7 +673,7 @@ mod linux_wayland {
                         .items_center()
                         .justify_center()
                         .rounded(px(tokens::dock_tile_radius(visual_size)))
-                        .bg(rgba(0x00000000));
+                        .bg(rgba(tokens::transparent()));
                     visual = match self.placement {
                         rmac_shell_settings::DockPlacement::Bottom => {
                             visual.left(px(visual_offset)).bottom_0()
@@ -697,7 +703,7 @@ mod linux_wayland {
                                 .right(px(-2.0))
                                 .w(px(20.0))
                                 .h(px(20.0))
-                                .rounded(px(4.0)),
+                                .rounded(px(tokens::menu_item_radius())),
                         );
                     }
                     Some(tile.into_any_element())

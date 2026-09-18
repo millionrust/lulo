@@ -89,8 +89,7 @@ impl AppDrawer {
             Err(error) => {
                 if catalog_error.is_none() {
                     catalog_error = Some(
-                        format!("Apps loaded, but live updates are unavailable: {error}")
-                            .into(),
+                        format!("Apps loaded, but live updates are unavailable: {error}").into(),
                     );
                 }
                 None

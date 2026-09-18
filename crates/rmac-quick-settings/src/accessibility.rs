@@ -663,24 +663,18 @@ mod tests {
         assert!(!snapshot.controls[0].actions[0].enabled);
         assert!(!snapshot.controls[1].actions[0].enabled);
         assert!(snapshot.controls[2].error_action.is_some());
-        assert!(
-            snapshot
-                .announcements
-                .iter()
-                .any(|announcement| announcement.politeness == LivePoliteness::Polite)
-        );
-        assert!(
-            snapshot
-                .announcements
-                .iter()
-                .any(|announcement| announcement.politeness == LivePoliteness::Assertive)
-        );
-        assert!(
-            snapshot
-                .keyboard_order
-                .iter()
-                .any(|id| id == "dismiss-Sound-error")
-        );
+        assert!(snapshot
+            .announcements
+            .iter()
+            .any(|announcement| announcement.politeness == LivePoliteness::Polite));
+        assert!(snapshot
+            .announcements
+            .iter()
+            .any(|announcement| announcement.politeness == LivePoliteness::Assertive));
+        assert!(snapshot
+            .keyboard_order
+            .iter()
+            .any(|id| id == "dismiss-Sound-error"));
     }
 
     #[test]

@@ -114,6 +114,9 @@ mod tests {
         assert_eq!(tracking(96.0), -1.5);
         // A size between table rows interpolates instead of snapping.
         let twenty = tracking(20.0);
-        assert!(twenty < -0.10 && twenty > -0.25, "20px tracking was {twenty}");
+        assert!(
+            twenty < -0.10 && twenty > -0.25,
+            "20px tracking was {twenty}"
+        );
     }
 }

@@ -260,9 +260,10 @@ pub(crate) fn run(show_on_start: bool) {
                     };
                     let watcher = async { shortcut_done.await.map_err(|error| error.to_string()) };
                     let readiness = async {
-                        ready_rx.recv().await.map_err(|_| {
-                            "Apps endpoint stopped before readiness".to_owned()
-                        })?;
+                        ready_rx
+                            .recv()
+                            .await
+                            .map_err(|_| "Apps endpoint stopped before readiness".to_owned())?;
                         blocking::unblock(notify_ready).await
                     };
                     if let Err(error) = futures_util::try_join!(watcher, consume, readiness) {

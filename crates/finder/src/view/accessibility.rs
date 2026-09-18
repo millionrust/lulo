@@ -1,10 +1,10 @@
 //! Exact adapters from Files' live controller models to public semantics.
 
 use rmac_finder::accessibility::{
-    AccessibilityProjectionError, AccessibleDialog, AccessibleDialogAction, AccessibleDialogOption,
-    AccessibleGallery, AccessibleGalleryItem, AccessibleLiveRegion, AccessibleProgress,
-    DialogActionKind, DialogFocus, DialogKind, FilesAccessibilitySnapshot, LivePoliteness,
-    ProgressUnit, project_files_accessibility,
+    project_files_accessibility, AccessibilityProjectionError, AccessibleDialog,
+    AccessibleDialogAction, AccessibleDialogOption, AccessibleGallery, AccessibleGalleryItem,
+    AccessibleLiveRegion, AccessibleProgress, DialogActionKind, DialogFocus, DialogKind,
+    FilesAccessibilitySnapshot, LivePoliteness, ProgressUnit,
 };
 
 use super::*;
@@ -626,14 +626,12 @@ impl FinderView {
                     operation.total,
                     ProgressUnit::Items,
                 ),
-                actions: vec![
-                    dialog_action(
-                        "cancel-trash",
-                        cancel_progress_label(cancelling),
-                        DialogActionKind::Normal,
-                    )
-                    .disabled(cancelling),
-                ],
+                actions: vec![dialog_action(
+                    "cancel-trash",
+                    cancel_progress_label(cancelling),
+                    DialogActionKind::Normal,
+                )
+                .disabled(cancelling)],
             });
         }
         if let Some(undo) = &self.undo_operation {
@@ -642,14 +640,12 @@ impl FinderView {
                 text: undo_progress_text(undo),
                 politeness: LivePoliteness::Polite,
                 progress: None,
-                actions: vec![
-                    dialog_action(
-                        "cancel-undo",
-                        cancel_progress_label(undo.cancelling),
-                        DialogActionKind::Normal,
-                    )
-                    .disabled(undo.cancelling),
-                ],
+                actions: vec![dialog_action(
+                    "cancel-undo",
+                    cancel_progress_label(undo.cancelling),
+                    DialogActionKind::Normal,
+                )
+                .disabled(undo.cancelling)],
             });
         }
         if let Some(transfer) = &self.transfer {
@@ -667,14 +663,12 @@ impl FinderView {
                 text: transfer_progress_text(transfer),
                 politeness: LivePoliteness::Polite,
                 progress,
-                actions: vec![
-                    dialog_action(
-                        "cancel-transfer",
-                        cancel_progress_label(transfer.cancelling),
-                        DialogActionKind::Normal,
-                    )
-                    .disabled(transfer.cancelling),
-                ],
+                actions: vec![dialog_action(
+                    "cancel-transfer",
+                    cancel_progress_label(transfer.cancelling),
+                    DialogActionKind::Normal,
+                )
+                .disabled(transfer.cancelling)],
             });
         }
         regions

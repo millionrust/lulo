@@ -88,7 +88,26 @@ def _ring(draw: ImageDraw.ImageDraw, s: float, gap: bool) -> None:
         draw.rectangle([0.5 * s, pad, s - pad, s - 0.5 * s], fill=(0, 0, 0, 0))
 
 
-def shapes(name: str, image: Image.Image, size: int) -> tuple[int, int]:
+def _busy_arc(
+    draw: ImageDraw.ImageDraw, s: float, frame: int, frames: int
+) -> None:
+    """One frame of the animated busy ring: a rotating three-quarter arc."""
+    width = max(1, int(0.11 * s))
+    pad = 0.28 * s
+    step = 360.0 / max(frames, 1)
+    start = frame * step - 90.0
+    draw.arc(
+        [pad, pad, s - pad, s - pad],
+        start=start,
+        end=start + 270.0,
+        fill=BLACK,
+        width=width,
+    )
+
+
+def shapes(
+    name: str, image: Image.Image, size: int, frame: int = 0, frames: int = 1
+) -> tuple[int, int]:
     """Draw `name` and return (xhot, yhot) in pixels."""
     s = size * SUPERSAMPLE
     draw = ImageDraw.Draw(image)
@@ -148,11 +167,11 @@ def shapes(name: str, image: Image.Image, size: int) -> tuple[int, int]:
         draw.line([(0.24 * s, 0.76 * s), (0.76 * s, 0.24 * s)], fill=BLACK, width=max(1, int(0.10 * s)))
         return (int(0.5 * size), int(0.5 * size))
     if name == "wait":
-        _ring(draw, s, gap=True)
+        _busy_arc(draw, s, frame, frames)
         return (int(0.5 * size), int(0.5 * size))
     if name == "progress":
         _arrow(draw, s)
-        _ring(draw, s, gap=True)
+        _busy_arc(draw, s, frame, frames)
         return (int(0.12 * size), int(0.04 * size))
     # Anything else is not drawn yet; inherit Adwaita so the pointer still works.
     raise KeyError(name)
@@ -199,12 +218,12 @@ ALIASES = {
 }
 
 
-def _xcursor(images: list[tuple[int, Image.Image, int, int]], path: Path) -> None:
-    """Write one Xcursor file with one image per nominal size."""
+def _xcursor(images: list[tuple[int, Image.Image, int, int, int]], path: Path) -> None:
+    """Write one Xcursor file; animated names carry several frames per size."""
     toc = []
     body = bytearray()
     position = XCURSOR_HEADER + 12 * len(images)
-    for nominal, image, xhot, yhot in images:
+    for nominal, image, xhot, yhot, delay in images:
         pixels = image.tobytes("raw", "BGRA")  # Xcursor wants ARGB little-endian.
         header = struct.pack(
             "<IIIIIIIII",
@@ -216,14 +235,16 @@ def _xcursor(images: list[tuple[int, Image.Image, int, int]], path: Path) -> Non
             image.height,
             xhot,
             yhot,
-            0,
+            delay,
         )
         # Premultiply on the fly (Pillow gives straight alpha).
         out = bytearray()
         for i in range(0, len(pixels), 4):
             b, g, r, a = pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]
             out += bytes(((a * b) // 255, (a * g) // 255, (a * r) // 255, a))
-        chunk = struct.pack("<I", len(header) + len(out)) + header + bytes(out)
+        # Xcursor images are header + pixels with no length prefix; the reader
+        # derives the pixel count from width, height, and the 4-byte format.
+        chunk = header + bytes(out)
         toc.append((IMAGE_TYPE, nominal, position))
         body += chunk
         position += len(chunk)
@@ -237,12 +258,16 @@ def _xcursor(images: list[tuple[int, Image.Image, int, int]], path: Path) -> Non
 
 def build(output: Path) -> None:
     output.mkdir(parents=True, exist_ok=True)
+    animated = {"wait": 12, "progress": 12}
     for name in DRAWN:
+        frames = animated.get(name, 1)
         rendered = []
         for size in SIZES:
-            image = _canvas(size)
-            xhot, yhot = shapes(name, image, size)
-            rendered.append((size, _downscale(image, size), xhot, yhot))
+            for frame in range(frames):
+                image = _canvas(size)
+                xhot, yhot = shapes(name, image, size, frame, frames)
+                delay = 60 if frames > 1 else 0
+                rendered.append((size, _downscale(image, size), xhot, yhot, delay))
         _xcursor(rendered, output / name)
     for alias, target in ALIASES.items():
         (output / alias).write_bytes((output / target).read_bytes())

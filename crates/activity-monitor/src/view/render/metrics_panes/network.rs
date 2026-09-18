@@ -65,7 +65,7 @@ impl MonitorView {
                             .items_center()
                             .gap_2()
                             .child(div().size(px(7.0)).rounded_full().bg(if active {
-                                teal.into()
+                                teal
                             } else {
                                 mac::text_tertiary()
                             }))
@@ -80,19 +80,11 @@ impl MonitorView {
                     .child(figure(format_bytes(interface.total_sent), mac::text()))
                     .child(figure(
                         format_rate(interface.recv_rate),
-                        if active {
-                            teal.into()
-                        } else {
-                            mac::text_secondary()
-                        },
+                        if active { teal } else { mac::text_secondary() },
                     ))
                     .child(figure(
                         format_rate(interface.sent_rate),
-                        if active {
-                            teal.into()
-                        } else {
-                            mac::text_secondary()
-                        },
+                        if active { teal } else { mac::text_secondary() },
                     ))
                     .into_any_element()
             })

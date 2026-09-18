@@ -775,7 +775,7 @@ For each of 1.2–1.8, **Verify:** `cargo test --locked -p rmac-ui`; `cargo run 
 - [ ] Every system-menu row performs its real action on Ubuntu (Sleep/Restart/Shut Down/Log Out tested on the reference PC with recovery).
 - [ ] Files, Settings, Terminal, Notes, Text Editor, System Monitor show complete real menus; Firefox shows FD-8 fallback; a GTK app (e.g. `gnome-text-editor`) shows its exported menus.
 - [ ] Turning Wi-Fi off from GNOME Settings/`nmcli` updates the bar within 1 s, no polling.
-- [ ] Idle: the menu bar process wakes ≤ 1×/min with seconds off.
+- [~] Idle: the menu bar process wakes ≤ 1×/min with seconds off. **Measured 2026-09-18 with `RMAC_TOP_BAR_RENDER_COUNT_DIR`: the dev top-bar rendered 10 times in 70 s at idle — a real idle-wake bug.** The clock tick itself is correct (`delay_until_next_clock_tick` waits to the next minute when seconds are off), so the redraws come from the shell status runtime publishing `Update`s that call `cx.notify()`; the offending periodic source still needs to be found (battery/network/audio should be event-driven) and made to publish only on change.
 
 ---
 

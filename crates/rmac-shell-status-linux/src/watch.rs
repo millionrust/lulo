@@ -34,7 +34,7 @@ const RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 // JSON parse) on the blocking pool. 75 ms flushed several times a second at
 // idle and kept the menu bar ~35% busy; 500 ms bounds that while keeping a
 // volume change prompt.
-const QUIET_PERIOD: std::time::Duration = std::time::Duration::from_millis(500);
+const QUIET_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[cfg(target_os = "linux")]
 async fn reconnecting_system_bus(sender: Sender<Event>) -> Result<(), Error> {

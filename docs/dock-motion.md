@@ -34,7 +34,7 @@ errors rather than clipped or overlapping controls.
 
 Crowded output fitting is hover-independent. The layout reserves a conservative
 upper bound for every icon that can lie inside the influence radius, scales the
-48-pixel base icon, gap, and radius together, and stops at the 36-pixel primary-
+64-pixel base icon, gap, and radius together, and stops at the 36-pixel primary-
 shell target. If that cannot fit, it keeps the stable leading application order
 and all places while replacing only the hidden application tail with one More
 stack. That stack aggregates active/running/urgent state and retains the exact
@@ -49,7 +49,7 @@ sets every scale to one rather than replacing magnification with a different
 spatial effect.
 
 The runtime surface plan reserves only the fixed base shelf thickness: the
-48-logical-pixel icon plus 8 logical pixels of padding on each side by default.
+64-logical-pixel icon plus 4 logical pixels of padding on each side by default.
 The maximum renderer extent includes the configured magnified icon size, but
 hover never grows the exclusive zone and therefore never pushes application
 windows around. `reserve_space` remains an explicit user policy independent of

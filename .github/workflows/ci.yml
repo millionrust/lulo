@@ -88,6 +88,9 @@ jobs:
       - name: Check design token boundary
         run: bash scripts/check-design-tokens.sh
 
+      - name: Check user-facing wording
+        run: python3 scripts/check-wording.py --fail
+
       - name: Check Linux reference tooling
         run: |
           bash -n scripts/linux/collect-reference-evidence.sh \

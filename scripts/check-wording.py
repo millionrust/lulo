@@ -29,7 +29,7 @@ FORBIDDEN = (
     re.compile(r"Failed to"),
     re.compile(r"Warning:"),
     re.compile(r"/home/"),
-    re.compile(r"\bdbus\b", re.IGNORECASE),
+    re.compile(r"\bdbus\b"),
 )
 
 

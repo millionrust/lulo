@@ -186,7 +186,6 @@ ALIASES = {
     "top_left_arrow": "default",
     "xterm": "text",
     "ibeam": "text",
-    "hand2": "default",
     "sb_h_double_arrow": "ew-resize",
     "sb_v_double_arrow": "ns-resize",
     "size_hor": "ew-resize",

@@ -134,6 +134,17 @@ impl State {
         }
     }
 
+    /// Menu-bar Wi-Fi bars (1–3) for a raw NetworkManager percent. The
+    /// boundaries sit well away from common signal values (e.g. ~50%) so a
+    /// drifting signal does not cross a bucket and wake the shell at idle.
+    pub(crate) fn wifi_bars_for(strength: u8) -> u8 {
+        match strength.min(100) {
+            0..=32 => 1,
+            33..=65 => 2,
+            _ => 3,
+        }
+    }
+
     fn network_indicator(&self) -> NetworkIndicator {
         let wifi_connected = self.wifi.current_ssid.is_some()
             || self.wifi.networks.iter().any(|network| network.connected);
@@ -160,11 +171,7 @@ impl State {
             .networks
             .iter()
             .find(|network| network.connected)
-            .map(|network| match network.strength.min(100) {
-                0..=32 => 1,
-                33..=65 => 2,
-                _ => 3,
-            });
+            .map(|network| Self::wifi_bars_for(network.strength));
         NetworkIndicator {
             state,
             connection_name: self

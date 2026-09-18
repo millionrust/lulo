@@ -235,3 +235,16 @@ fn clock_policy_changes_are_consumer_visible() {
     assert!(state.apply(Event::Settings(settings)).visible);
     assert_ne!(state.snapshot().clock, before.clock);
 }
+
+#[test]
+fn wifi_bars_bucket_a_drifting_signal_stably() {
+    use crate::state::State;
+    assert_eq!(State::wifi_bars_for(0), 1);
+    assert_eq!(State::wifi_bars_for(32), 1);
+    assert_eq!(State::wifi_bars_for(33), 2);
+    assert_eq!(State::wifi_bars_for(49), 2);
+    assert_eq!(State::wifi_bars_for(51), 2);
+    assert_eq!(State::wifi_bars_for(65), 2);
+    assert_eq!(State::wifi_bars_for(66), 3);
+    assert_eq!(State::wifi_bars_for(100), 3);
+}

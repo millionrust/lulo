@@ -292,17 +292,10 @@ fn visible_status(status: &rmac_shell_status::Snapshot) -> rmac_shell_status::Sn
 }
 
 pub(crate) fn publication(previous: &Snapshot, next: Snapshot) -> Option<Update> {
-    if next == *previous {
-        return None;
-    }
-    if next.quick_settings == previous.quick_settings
-        && visible_status(&next.status) == visible_status(&previous.status)
-    {
-        // Only sub-bar Wi-Fi strength drift changed; do not wake the hosts.
-        return None;
-    }
     (next != *previous).then(|| Update {
-        visible: next.status != previous.status,
+        // Sub-bar Wi-Fi strength drift is not drawn, so it must not request a
+        // frame even though the snapshot changed.
+        visible: visible_status(&next.status) != visible_status(&previous.status),
         quick_settings_visible: next.quick_settings != previous.quick_settings,
         snapshot: next,
     })

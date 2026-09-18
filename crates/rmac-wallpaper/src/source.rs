@@ -5,12 +5,29 @@ pub const DEFAULT_BUILT_IN: BuiltInId = BuiltInId::Aurora;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum BuiltInId {
     Aurora,
+    Tide,
+    Basalt,
+    Monsoon,
+    Paper,
 }
 
 impl BuiltInId {
+    /// Every original built-in, in picker order. `Aurora` is the default.
+    pub const ALL: [BuiltInId; 5] = [
+        BuiltInId::Aurora,
+        BuiltInId::Tide,
+        BuiltInId::Basalt,
+        BuiltInId::Monsoon,
+        BuiltInId::Paper,
+    ];
+
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "rmac-aurora" => Some(Self::Aurora),
+            "rmac-tide" => Some(Self::Tide),
+            "rmac-basalt" => Some(Self::Basalt),
+            "rmac-monsoon" => Some(Self::Monsoon),
+            "rmac-paper" => Some(Self::Paper),
             _ => None,
         }
     }
@@ -18,17 +35,28 @@ impl BuiltInId {
     pub fn id(self) -> &'static str {
         match self {
             Self::Aurora => "rmac-aurora",
+            Self::Tide => "rmac-tide",
+            Self::Basalt => "rmac-basalt",
+            Self::Monsoon => "rmac-monsoon",
+            Self::Paper => "rmac-paper",
         }
     }
 
     pub fn metadata(self) -> BuiltInMetadata {
-        match self {
-            Self::Aurora => BuiltInMetadata {
-                id: self,
-                title: "Aurora",
-                attribution: "Original procedural artwork by rmac",
-                palette: [0x10162f, 0x3949ab, 0x22a6a1, 0xd96c9d],
-            },
+        // Original sRGB four-stop palettes; the renderer draws a diagonal
+        // gradient, so no third-party bitmap is ever bundled (FEEL_SPEC.md §D.6).
+        let (title, palette) = match self {
+            Self::Aurora => ("Aurora", [0x10162f, 0x3949ab, 0x22a6a1, 0xd96c9d]),
+            Self::Tide => ("Tide", [0x06283d, 0x1363df, 0x47b5ff, 0xe8f9fa]),
+            Self::Basalt => ("Basalt", [0x1b1b1f, 0x3a3a44, 0x6b4f3a, 0xc98a4b]),
+            Self::Monsoon => ("Monsoon", [0x0b1c1e, 0x1f4e4a, 0x4f7f6f, 0xb8c4b0]),
+            Self::Paper => ("Paper", [0xf5efe6, 0xe6d9c7, 0xcbb99a, 0x8a7a5c]),
+        };
+        BuiltInMetadata {
+            id: self,
+            title,
+            attribution: "Original procedural artwork by rmac",
+            palette,
         }
     }
 }

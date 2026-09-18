@@ -184,3 +184,18 @@ fn fit_geometry_covers_crop_letterbox_stretch_center_and_tile() {
         .tiled
     );
 }
+
+#[test]
+fn every_built_in_round_trips_and_has_a_distinct_palette() {
+    let mut ids = std::collections::BTreeSet::new();
+    let mut palettes = std::collections::BTreeSet::new();
+    for id in BuiltInId::ALL {
+        assert_eq!(BuiltInId::parse(id.id()), Some(id), "{:?} did not round-trip", id);
+        let metadata = id.metadata();
+        assert!(!metadata.title.is_empty());
+        assert!(ids.insert(metadata.id.id()));
+        assert!(palettes.insert(metadata.palette));
+    }
+    assert_eq!(ids.len(), BuiltInId::ALL.len());
+    assert_eq!(palettes.len(), BuiltInId::ALL.len());
+}

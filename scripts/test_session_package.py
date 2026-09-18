@@ -121,7 +121,7 @@ class SessionPackageTests(unittest.TestCase):
             self.assertEqual(paths, sorted(paths))
             self.assertEqual(
                 [path for path in paths if not path.startswith("/usr/")],
-                ["/etc/pam.d/rmac-lock"],
+                ["/etc/fonts/conf.d/60-rmac.conf", "/etc/pam.d/rmac-lock"],
             )
             self.assertFalse(any("/home/" in path or "/root/" in path for path in paths))
             self.assertFalse(

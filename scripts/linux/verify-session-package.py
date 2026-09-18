@@ -66,7 +66,7 @@ EXPECTED_PATHS = {
     Path("usr/share/rmac/greeter/rmac-aurora.svg"),
     Path("usr/share/rmac/greeter/rmac-greeter-logo.svg"),
     Path("usr/share/glib-2.0/schemas/90_rmac-greeter.gschema.override"),
-    Path("etc/fonts/conf.d/60-rmac.conf"),
+    Path("etc/fonts/conf.d/99-rmac.conf"),
     Path("usr/share/xdg-desktop-portal/portals/rmac.portal"),
     Path("usr/share/xdg-desktop-portal/rmac-portals.conf"),
     Path("usr/share/doc/rmac-session/copyright"),
@@ -131,7 +131,7 @@ def _safe_manifest_path(value: object) -> Path:
     if not isinstance(value, str) or not (
         value.startswith("/usr/")
         or value == "/etc/pam.d/rmac-lock"
-        or value == "/etc/fonts/conf.d/60-rmac.conf"
+        or value == "/etc/fonts/conf.d/99-rmac.conf"
     ):
         raise VerificationError("package manifest contains a non-system path")
     relative = Path(value.removeprefix("/"))

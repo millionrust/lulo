@@ -305,9 +305,11 @@ Inter is the right licensed choice, but it must be tuned or it reads "Linux-y":
 - Weights: menu bar app name and dialog titles **Semibold (600)**, not Bold (700) — Apple's "bold"
   in the menu bar is optically closer to 600 at these sizes.
 - Rendering: grayscale antialiasing (no subpixel RGB), hinting **off** (`hintnone`), gamma-correct
-  blending. Ship `/usr/share/rmac/fontconfig/60-rmac.conf` setting exactly that for Inter and
-  JetBrains Mono, and make `Inter` the fontconfig alias target for `-apple-system`, `system-ui`,
-  `Helvetica Neue`, `SF Pro Text`, `SF Pro Display` so third-party apps and websites fall in line.
+  blending. Ship `99-rmac.conf` (installed to `/etc/fonts/conf.d/`, numbered 99 so it is processed
+  after Ubuntu's `6x`/`99-language-selector` generic-family rules, which otherwise override the
+  aliases) setting exactly that for Inter and JetBrains Mono, and make `Inter` the fontconfig alias
+  target for `-apple-system`, `system-ui`, `Helvetica Neue`, `SF Pro Text`, `SF Pro Display` so
+  third-party apps and websites fall in line.
 - Line heights: body 1.23×, list rows use fixed row heights (never font-driven), paragraph text in
   Notes/Text Editor 1.45×.
 - **Verify:** render the same sentence in rmac and on the Mac at 13 px, overlay the two screenshots

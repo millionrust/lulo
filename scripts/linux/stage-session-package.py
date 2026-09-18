@@ -131,8 +131,8 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             _read_regular(package / "greeter" / "90_rmac-greeter.gschema.override"),
             0o644,
         ),
-        "etc/fonts/conf.d/60-rmac.conf": (
-            _read_regular(package / "fontconfig" / "60-rmac.conf"),
+        "etc/fonts/conf.d/99-rmac.conf": (
+            _read_regular(package / "fontconfig" / "99-rmac.conf"),
             0o644,
         ),
         "usr/share/xdg-desktop-portal/portals/rmac.portal": (

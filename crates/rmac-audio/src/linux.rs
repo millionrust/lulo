@@ -810,9 +810,7 @@ pub(super) struct DefaultNode {
 pub(super) fn parse_wpctl_default_inspect(output: &str, kind: DeviceKind) -> Option<DefaultNode> {
     let mut lines = output.lines();
     let id = lines.next()?.trim().strip_prefix("id ")?.split_once(',')?.0;
-    if id.parse::<u32>().ok().filter(|id| *id > 0).is_none() {
-        return None;
-    }
+    id.parse::<u32>().ok().filter(|id| *id > 0)?;
     let expected_class = match kind {
         DeviceKind::Output => "Audio/Sink",
         DeviceKind::Input => "Audio/Source",

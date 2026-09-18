@@ -4,8 +4,12 @@ use super::*;
 
 #[cfg(not(target_os = "macos"))]
 pub(super) const WATCH_RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+// Each flush drives a full `rmac_audio::snapshot()` (a `pw-dump` subprocess
+// plus JSON parse), so the flushes must be bounded even when `pw-mon` is
+// chatty. 500 ms keeps a menu-bar volume change prompt while cutting the
+// subprocess work by several times.
 #[cfg(not(target_os = "macos"))]
-pub(super) const WATCH_QUIET_PERIOD: std::time::Duration = std::time::Duration::from_millis(75);
+pub(super) const WATCH_QUIET_PERIOD: std::time::Duration = std::time::Duration::from_millis(500);
 // `pw-mon` prints a line for every PipeWire event, so a busy graph flushes
 // almost continuously. Each flush makes the shell re-read the default level
 // with a blocking `wpctl get-volume` subprocess, which at idle kept two

@@ -44,7 +44,7 @@ impl EditorView {
         if let Some(path) = self.path.clone() {
             let Some(expected) = self.saved_bytes.clone() else {
                 self.alert = Some(ActiveAlert::Error {
-                    title: "Failed to save the file.",
+                    title: "The file could not be saved.",
                     message: "Text Editor could not validate the opened document revision. Save a copy instead."
                         .into(),
                 });
@@ -181,7 +181,7 @@ impl EditorView {
                         ActiveAlert::Conflict
                     } else {
                         ActiveAlert::Error {
-                            title: "Failed to save the file.",
+                            title: "The file could not be saved.",
                             message: error.to_string(),
                         }
                     },

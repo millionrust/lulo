@@ -1225,6 +1225,8 @@ circular glyph badge. Rebuild the ASCII sketch above to match `settings-appearan
 - **Hierarchical view:** disclosure triangles by parent PID.
 - **Exit checks:** numbers match `top`/`free`/`iotop` within sampling tolerance; quit and force quit a user process; permission-denied process shows correct alert "You don't have permission to quit “X”." with Authenticate… via polkit `pkexec kill` *(may defer)*; idle CPU of System Monitor itself < 1% at Normally frequency; sampling stops when window hidden/minimized.
 
+- [~] **7.8 Wording and button-order pass (FEEL_SPEC.md §D.10).** Added `scripts/check-wording.py`, which scans product Rust for the strings the spec forbids (`Error:`, `Failed to`, `Warning:`, and user text containing `/home/` or `dbus`), stripping inline `#[cfg(test)]` modules and ignoring D-Bus protocol constants/Debug shapes. Fixed the first real user-facing hits: Text Editor's alert titles now read **"The file could not be opened." / "The file could not be saved."** instead of "Failed to …" (`cargo test -p rmac-text-editor` ✔ 37). The rules are documented in `CONTRIBUTING.md`. **Remaining:** a full repo-wide string pass (the scanner still prints five `/org/freedesktop/DBus` object-path false positives that need a narrower rule before it can become a CI gate), plus button-order and curly-quote fixes in the remaining apps.
+
 **Phase 7 exit checklist**
 - [ ] Every app passes its exit checks and the common app contract.
 - [ ] Screenshot pairs for each app's main window light/dark, one sheet, one menu.

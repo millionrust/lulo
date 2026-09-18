@@ -76,7 +76,7 @@ impl EditorView {
                 if !self.clear_recovery(cx) {
                     self.alert = Some(ActiveAlert::Recover(prompt));
                 } else if let Some(path) = self.pending_startup_path.take() {
-                    self.load_document_path(path, "Failed to open the file.", window, cx);
+                    self.load_document_path(path, "The file could not be opened.", window, cx);
                 }
             }
             Some(ActiveAlert::ConfirmSave(pending)) => {

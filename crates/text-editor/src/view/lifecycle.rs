@@ -110,7 +110,7 @@ impl EditorView {
                 this.alert = recovery.prompt.map(ActiveAlert::Recover);
                 if this.alert.is_none() {
                     if let Some(path) = this.pending_startup_path.take() {
-                        this.load_document_path(path, "Failed to open the file.", window, cx);
+                        this.load_document_path(path, "The file could not be opened.", window, cx);
                     }
                 }
                 cx.notify();

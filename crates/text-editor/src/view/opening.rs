@@ -77,7 +77,7 @@ impl EditorView {
                 let mut paths = paths.into_iter();
                 if reuse_current {
                     if let Some(path) = paths.next() {
-                        this.load_document_path(path, "Failed to open the file.", window, cx);
+                        this.load_document_path(path, "The file could not be opened.", window, cx);
                     }
                 }
                 let mut failed_windows = 0_usize;

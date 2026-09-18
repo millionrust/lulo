@@ -463,7 +463,7 @@ fn printable_descriptor(bytes: &[u8]) -> std::io::Result<std::fs::File> {
             &file,
             SealFlags::SHRINK | SealFlags::GROW | SealFlags::WRITE | SealFlags::SEAL,
         )?;
-        return Ok(file);
+        Ok(file)
     }
 
     #[cfg(not(target_os = "linux"))]

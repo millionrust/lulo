@@ -47,6 +47,7 @@ STAGES = (
             "scripts.test_security_review",
             "scripts.test_documentation",
             "scripts.test_check_wording",
+            "scripts.test_build_cursors",
             "scripts.test_release_contract_checks",
             "scripts.test_alpha_candidate",
             "scripts.test_beta_candidate",

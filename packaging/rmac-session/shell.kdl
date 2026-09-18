@@ -5,6 +5,14 @@ input {
         tap
         // The owner's Mac has natural scrolling off (FEEL_SPEC.md §C), so the
         // touchpad must not reverse the scroll direction.
+        // macOS-like tracking speed and adaptive acceleration (FEEL_SPEC.md §D.4).
+        accel-profile "adaptive"
+        accel-speed 0.3
+    }
+    keyboard {
+        // macOS defaults: 225 ms initial delay, ~90 ms repeat (FEEL_SPEC.md §C).
+        repeat-delay 225
+        repeat-rate 11
     }
 }
 

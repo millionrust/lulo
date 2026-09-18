@@ -10,6 +10,7 @@ mod feedback;
 pub mod gallery;
 pub mod mac;
 mod runtime;
+pub mod scroll;
 pub mod shortcuts;
 pub mod theme;
 mod window;

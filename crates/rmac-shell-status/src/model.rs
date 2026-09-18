@@ -35,6 +35,20 @@ pub struct NetworkIndicator {
     pub wifi_strength: Option<u8>,
 }
 
+impl NetworkIndicator {
+    /// Wi-Fi signal as menu-bar bars (1–4), bucketing NetworkManager's percent.
+    /// The bar glyph only shows these levels, so sub-bar drift is not a visible
+    /// change and must not wake the shell.
+    pub fn wifi_bars(&self) -> Option<u8> {
+        self.wifi_strength.map(|strength| match strength.min(100) {
+            0..=24 => 1,
+            25..=49 => 2,
+            50..=74 => 3,
+            _ => 4,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct VpnIndicator {
     pub active_names: Vec<String>,

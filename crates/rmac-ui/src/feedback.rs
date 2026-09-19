@@ -5,11 +5,91 @@ use std::rc::Rc;
 use gpui::{
     div, prelude::FluentBuilder as _, px, relative, App, ClickEvent, ElementId,
     InteractiveElement as _, IntoElement, ParentElement as _, RenderOnce, SharedString,
-    StyleRefinement, Styled, Window,
+    StatefulInteractiveElement as _, StyleRefinement, Styled, Window,
 };
 use gpui_component::StyledExt as _;
 
-use crate::{mac, Button};
+use crate::mac;
+
+/// The application boundary presenting an internal failure to a person.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ErrorSurface {
+    Settings,
+    Files,
+}
+
+/// Reduce an internal error chain to one calm, bounded sentence. Domain
+/// errors remain intact for diagnostics; only the visible and accessibility
+/// projections pass through this boundary.
+pub fn user_error_message(
+    surface: ErrorSurface,
+    raw: &str,
+    recovery_pending: bool,
+) -> SharedString {
+    let lower = raw.to_ascii_lowercase();
+    if surface == ErrorSurface::Files
+        && lower.contains("trash")
+        && (lower.contains("recovery") || lower.contains("verified"))
+    {
+        return if recovery_pending {
+            "Review interrupted Trash operations before continuing.".into()
+        } else {
+            "Trash isn’t available right now—try again.".into()
+        };
+    }
+    if surface == ErrorSurface::Files && recovery_pending {
+        return "Review interrupted file operations before continuing.".into();
+    }
+
+    let first_line = raw.lines().next().unwrap_or_default().trim();
+    let headline = first_line
+        .split_once("Caused by")
+        .map_or(first_line, |(headline, _)| headline);
+    let headline = headline
+        .split_once(':')
+        .map_or(headline, |(headline, _)| headline);
+    let headline = headline
+        .split_once(';')
+        .map_or(headline, |(headline, _)| headline)
+        .trim();
+    let headline_lower = headline.to_ascii_lowercase();
+    let exposes_internal_name = [
+        "niri",
+        "socket",
+        "dbus",
+        "wayland",
+        "caused by",
+        "backtrace",
+    ]
+    .iter()
+    .any(|term| headline_lower.contains(term));
+
+    if headline.is_empty() || exposes_internal_name {
+        return match surface {
+            ErrorSurface::Settings => "This setting isn’t available right now—try again.".into(),
+            ErrorSurface::Files => "Files couldn’t complete that action—try again.".into(),
+        };
+    }
+
+    let sentence_end = headline
+        .char_indices()
+        .find_map(|(index, character)| matches!(character, '.' | '!' | '?').then_some(index + 1));
+    let sentence = sentence_end.map_or(headline, |end| &headline[..end]).trim();
+    let sentence = if sentence.len() <= 160 {
+        sentence.to_owned()
+    } else {
+        let mut end = 160;
+        while !sentence.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}…", sentence[..end].trim_end())
+    };
+    if sentence.ends_with(['.', '!', '?', '…']) {
+        sentence.into()
+    } else {
+        format!("{sentence}.").into()
+    }
+}
 
 /// Compact explanatory surface used by hover/focus tooltip hosts.
 #[derive(IntoElement)]
@@ -382,6 +462,7 @@ impl RenderOnce for Toast {
         let dismiss_id: ElementId = SharedString::from(format!("{}-dismiss", self.id)).into();
         div()
             .id(self.id)
+            .relative()
             .min_h(px(44.0))
             .flex()
             .items_center()
@@ -410,8 +491,10 @@ impl RenderOnce for Toast {
             )
             .child(
                 div()
+                    .min_w_0()
                     .flex_1()
                     .v_flex()
+                    .pr_20()
                     .child(
                         div()
                             .text_size(crate::text_px(12.0))
@@ -424,8 +507,21 @@ impl RenderOnce for Toast {
             )
             .when_some(self.on_dismiss, |toast, handler| {
                 toast.child(
-                    Button::new(dismiss_id, "Dismiss")
-                        .ghost()
+                    div()
+                        .id(dismiss_id)
+                        .absolute()
+                        .right_2()
+                        .top(px(10.0))
+                        .h(px(24.0))
+                        .px_2()
+                        .flex()
+                        .items_center()
+                        .rounded(px(mac::radius_control()))
+                        .text_size(crate::text_px(11.0))
+                        .font_weight(mac::SEMIBOLD)
+                        .cursor_pointer()
+                        .hover(|button| button.bg(mac::control_fill_hover()))
+                        .child("Dismiss")
                         .on_click(move |event, window, cx| handler(event, window, cx)),
                 )
             })
@@ -455,5 +551,33 @@ mod tests {
         assert!(Spinner::spoke_opacity(0, 11, 12) < Spinner::spoke_opacity(0, 1, 12));
         assert!(Spinner::spoke_opacity(0, 6, 12) < 1.0);
         assert_eq!(Spinner::spoke_opacity(3, 0, 0), 1.0);
+    }
+
+    #[test]
+    fn visible_errors_hide_internal_names_and_cause_chains() {
+        assert_eq!(
+            user_error_message(
+                ErrorSurface::Settings,
+                "NIRI_SOCKET is not set, are you running this within niri?",
+                false,
+            ),
+            "This setting isn’t available right now—try again."
+        );
+        assert_eq!(
+            user_error_message(
+                ErrorSurface::Settings,
+                "Could not update Displays: NIRI_SOCKET is not set\nCaused by: backend detail",
+                false,
+            ),
+            "Could not update Displays."
+        );
+        assert_eq!(
+            user_error_message(
+                ErrorSurface::Files,
+                "Trash recovery data could not be verified; Trash actions are disabled",
+                true,
+            ),
+            "Review interrupted Trash operations before continuing."
+        );
     }
 }

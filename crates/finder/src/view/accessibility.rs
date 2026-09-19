@@ -588,7 +588,12 @@ impl FinderView {
             let recovery_pending = recovery_pending || self.trash_pending != 0;
             regions.push(AccessibleLiveRegion {
                 id: "operation-error".to_string(),
-                text: error.to_string(),
+                text: rmac_ui::user_error_message(
+                    rmac_ui::ErrorSurface::Files,
+                    error.as_ref(),
+                    recovery_pending,
+                )
+                .to_string(),
                 politeness: LivePoliteness::Assertive,
                 progress: None,
                 actions: vec![dialog_action(

@@ -34,6 +34,9 @@ impl Settings {
         }
         let query = self.search.read(cx).value().to_string();
         let subpage_title = self.nav.last().map(|subpage| self.subpage_title(subpage));
+        let global_error = self.global_settings_error().map(|error| {
+            rmac_ui::user_error_message(rmac_ui::ErrorSurface::Settings, error.as_ref(), false)
+        });
         project_settings_navigation(NavigationInput {
             sections: &sections,
             selected: self.selected,
@@ -41,7 +44,7 @@ impl Settings {
             account_name: self.account.as_ref(),
             subpage_title: subpage_title.as_deref(),
             back_depth: self.nav.len(),
-            global_error: self.global_settings_error().map(|error| error.as_ref()),
+            global_error: global_error.as_ref().map(|error| error.as_ref()),
             sidebar_visible: layout.sidebar_visible,
             detail_visible: layout.detail_visible,
         })

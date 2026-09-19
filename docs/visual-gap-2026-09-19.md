@@ -379,3 +379,36 @@ without rendering a second control language.
 The remaining System Monitor card/table redesign and Terminal content padding are unchanged and
 remain in their per-surface audit lists. The fresh full-surface run also confirms the shared change
 did not add right-side controls to any other rmac window.
+
+## Live-surface X6 — user-safe error presentation
+
+Fresh reference-PC captures are in `target/evidence/live-surfaces-x6/`. The reference-Mac set has
+no capture of an equivalent inline failure, so these pairs compare the audited failure with the
+corrected failure instead of presenting an unrelated macOS alert as evidence:
+
+- `target/evidence/live-surfaces-x6/pairs/app-files-before-after.png`
+- `target/evidence/live-surfaces-x6/pairs/app-settings-before-after.png`
+
+Visible and accessibility error projections now pass through one shared boundary while the full
+domain error remains available to diagnostics. Files and Settings show one bounded sentence and
+one recovery action; compositor names, socket names, cause chains, and backtraces are not eligible
+for display.
+
+### X6 measurements
+
+- Files' error strip remains **41 physical px** high, a **0 px** geometry change. Its action has a
+  **22 physical px** right inset and remains one action before and after the change. The visible
+  `verified` and `disabled` diagnostics fall from **1 each to 0**.
+- Settings' error surface falls from **100 physical px** high to **55 physical px**, a reduction of
+  **45 px**, because the cause chain no longer expands the toast. Its action has a **22 physical
+  px** right inset.
+- Settings' visible error falls from **4 case-insensitive `niri` occurrences** and **1 `Caused by:`
+  line** to **0** of each. Both fresh captures retain exactly **1** visible action.
+
+### Remaining measured visual differences
+
+X6 corrects error content and recovery structure; it does not claim a new macOS error-surface
+style. There is no equivalent inline-error capture in `target/evidence/reference-mac/` or
+`design-lab/`, so the reference difference for the **41 px** Files strip and **55 px** Settings
+toast is **S** rather than invented. Their opaque material remains assigned to X4, while the type
+scale remains assigned to X7.

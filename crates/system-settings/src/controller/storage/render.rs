@@ -42,7 +42,13 @@ impl Settings {
                     .child(tile("icons/hard-drive.svg", hsl(0xff9500), 22.0))
                     .child(text_block(
                         volume.mount.name.clone().into(),
-                        volume.usage_error.clone().map(Into::into),
+                        volume.usage_error.as_ref().map(|error| {
+                            rmac_ui::user_error_message(
+                                rmac_ui::ErrorSurface::Settings,
+                                error.as_ref(),
+                                false,
+                            )
+                        }),
                     ))
                     .child(
                         Button::new(("open-storage-volume", index), "Review in Files")

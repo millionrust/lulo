@@ -21,7 +21,9 @@ impl Render for Settings {
             f32::from(window.bounds().size.width),
             self.compact_sidebar_open,
         );
-        let settings_error = self.global_settings_error().cloned();
+        let settings_error = self.global_settings_error().map(|error| {
+            rmac_ui::user_error_message(rmac_ui::ErrorSurface::Settings, error.as_ref(), false)
+        });
         let wifi_password_dialog = self.render_wifi_password_dialog(cx);
         let wifi_enterprise_dialog = self.render_wifi_enterprise_dialog(cx);
         let wifi_forget_dialog = self.render_wifi_forget_dialog(cx);

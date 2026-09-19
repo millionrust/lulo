@@ -121,10 +121,18 @@ impl Settings {
                 .into_any_element(),
         ]));
         if let Some(error) = self.shortcut_status_error.clone() {
-            cards.push(note_card(error));
+            cards.push(note_card(rmac_ui::user_error_message(
+                rmac_ui::ErrorSurface::Settings,
+                error.as_ref(),
+                false,
+            )));
         }
         if let Some(error) = self.shortcut_configuration_error.clone() {
-            cards.push(note_card(error));
+            cards.push(note_card(rmac_ui::user_error_message(
+                rmac_ui::ErrorSurface::Settings,
+                error.as_ref(),
+                false,
+            )));
         }
         cards.push(note_card(
             "The portal owns user consent and the actual trigger. Configure opens its UI through the broker's existing session; it never creates a second binding authority. The fallback is enabled only when the broker reports it is required, so one shortcut backend owns Logo/Mod+Space at a time.",

@@ -114,7 +114,11 @@ impl FinderView {
                     .py_2()
                     .text_size(rmac_ui::text_px(12.0))
                     .text_color(rmac_ui::mac::danger())
-                    .child(error.clone()),
+                    .child(rmac_ui::user_error_message(
+                        rmac_ui::ErrorSurface::Files,
+                        error.as_ref(),
+                        false,
+                    )),
             );
         }
 

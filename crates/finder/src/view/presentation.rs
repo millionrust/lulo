@@ -51,6 +51,13 @@ impl Render for FinderView {
         #[cfg(not(any(target_os = "linux", test)))]
         let trash_recovery_pending = false;
         let any_recovery_pending = recovery_pending || trash_recovery_pending;
+        let operation_error = operation_error.map(|message| {
+            rmac_ui::user_error_message(
+                rmac_ui::ErrorSurface::Files,
+                message.as_ref(),
+                any_recovery_pending,
+            )
+        });
         let open_with_dialog = self.render_open_with(cx);
         let quick_look_dialog = self.render_quick_look(cx);
         let conflict_dialog = self.render_conflict(cx);
@@ -174,7 +181,7 @@ impl Render for FinderView {
                                 .text_color(rmac_ui::mac::on_accent())
                                 .child("✓"),
                         )
-                        .child(div().flex_1().child(message))
+                        .child(div().min_w_0().flex_1().truncate().child(message))
                         .child(
                             Button::new("dismiss-operation-notice", "Dismiss")
                                 .ghost()
@@ -189,6 +196,7 @@ impl Render for FinderView {
                 el.child(
                     div()
                         .id("operation-error")
+                        .relative()
                         .h(px(34.0))
                         .flex_none()
                         .flex()
@@ -212,19 +220,27 @@ impl Render for FinderView {
                                 .text_color(rmac_ui::mac::on_danger())
                                 .child("!"),
                         )
-                        .child(div().flex_1().child(message))
+                        .child(div().min_w_0().flex_1().pr_20().truncate().child(message))
                         .child(
-                            Button::new(
-                                "resolve-operation-error",
-                                if any_recovery_pending {
+                            div()
+                                .id("resolve-operation-error")
+                                .absolute()
+                                .right_2()
+                                .top(px(5.0))
+                                .h(px(24.0))
+                                .px_2()
+                                .flex()
+                                .items_center()
+                                .rounded(px(rmac_ui::mac::radius_control()))
+                                .font_weight(rmac_ui::mac::SEMIBOLD)
+                                .cursor_pointer()
+                                .hover(|button| button.bg(rmac_ui::mac::control_fill_hover()))
+                                .child(if any_recovery_pending {
                                     "Review"
                                 } else {
                                     "Dismiss"
-                                },
-                            )
-                            .ghost()
-                            .on_click(cx.listener(
-                                move |this, _, _, cx| {
+                                })
+                                .on_click(cx.listener(move |this, _, _, cx| {
                                     if recovery_pending {
                                         this.recovery_open = true;
                                     } else {
@@ -237,8 +253,7 @@ impl Render for FinderView {
                                         this.operation_error = None;
                                     }
                                     cx.notify();
-                                },
-                            )),
+                                })),
                         ),
                 )
             })

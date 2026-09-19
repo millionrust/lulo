@@ -29,7 +29,10 @@ pub use controls::{
     Tree, TreeRow,
 };
 pub use controls::{Column, ColumnSort, TableDelegate, TableEvent, TableState};
-pub use feedback::{EmptyState, Progress, ProgressStatus, Spinner, Toast, ToastKind, Tooltip};
+pub use feedback::{
+    user_error_message, EmptyState, ErrorSurface, Progress, ProgressStatus, Spinner, Toast,
+    ToastKind, Tooltip,
+};
 pub use gpui_component::{ActiveTheme, StyledExt};
 pub use runtime::{init_application, install_app_menu, prepare_surface_window, text_px};
 pub use window::*;

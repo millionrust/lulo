@@ -197,10 +197,18 @@ impl Settings {
             );
         }
         if let Some(error) = &self.notification_error {
-            body = body.child(note_card(error.clone()));
+            body = body.child(note_card(rmac_ui::user_error_message(
+                rmac_ui::ErrorSurface::Settings,
+                error.as_ref(),
+                false,
+            )));
         }
         if let Some(error) = &self.notification_stream_error {
-            body = body.child(note_card(error.clone()));
+            body = body.child(note_card(rmac_ui::user_error_message(
+                rmac_ui::ErrorSurface::Settings,
+                error.as_ref(),
+                false,
+            )));
         }
         body.child(card(vec![
             notification_toggle_row(

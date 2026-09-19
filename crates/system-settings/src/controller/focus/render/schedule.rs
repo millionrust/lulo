@@ -35,10 +35,18 @@ impl Settings {
             );
         }
         if let Some(error) = &self.focus_policy_error {
-            body = body.child(note_card(error.clone()));
+            body = body.child(note_card(rmac_ui::user_error_message(
+                rmac_ui::ErrorSurface::Settings,
+                error.as_ref(),
+                false,
+            )));
         }
         if let Some(error) = &self.focus_policy_stream_error {
-            body = body.child(note_card(error.clone()));
+            body = body.child(note_card(rmac_ui::user_error_message(
+                rmac_ui::ErrorSurface::Settings,
+                error.as_ref(),
+                false,
+            )));
         }
         body = body.child(card(vec![focus_schedule_toggle_row(
             &view, schedule, mode_name, busy,

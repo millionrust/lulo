@@ -178,10 +178,18 @@ impl Settings {
             ));
         }
         if let Some(error) = self.wallpaper_preview_error.clone() {
-            cards.push(note_card(error));
+            cards.push(note_card(rmac_ui::user_error_message(
+                rmac_ui::ErrorSurface::Settings,
+                error.as_ref(),
+                false,
+            )));
         }
         if let Some(error) = self.wallpaper_preview_watch_error.clone() {
-            cards.push(note_card(error));
+            cards.push(note_card(rmac_ui::user_error_message(
+                rmac_ui::ErrorSurface::Settings,
+                error.as_ref(),
+                false,
+            )));
         }
 
         cards.push(section_header("Image"));

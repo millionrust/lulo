@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use crate::store::{default_accent, invalid_accent, validate_preferences};
 
 pub(crate) const CURRENT_VERSION: u32 = 1;
-pub(crate) const DEFAULT_ACCENT: (f64, f64, f64) = (0.0, 0.478_431_372_5, 1.0);
+pub(crate) const DEFAULT_ACCENT: (f64, f64, f64) = (19.0 / 255.0, 114.0 / 255.0, 249.0 / 255.0);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]

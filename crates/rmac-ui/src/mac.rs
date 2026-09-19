@@ -9,6 +9,33 @@ pub fn window() -> Hsla {
 pub fn raised() -> Hsla {
     crate::theme::current().colors.raised.hsla()
 }
+/// Opaque sheet background.
+pub fn sheet() -> Hsla {
+    crate::theme::current().colors.sheet.hsla()
+}
+/// Text-entry field fill.
+pub fn field_fill() -> Hsla {
+    crate::theme::current().colors.field_fill.hsla()
+}
+/// Bottom status-bar fill.
+pub fn statusbar() -> Hsla {
+    crate::theme::current().colors.statusbar.hsla()
+}
+/// Secondary push-button fill.
+pub fn button_secondary() -> Hsla {
+    crate::theme::current().colors.button_secondary.hsla()
+}
+/// Destructive push-button fill.
+pub fn button_destructive() -> Hsla {
+    crate::theme::current().colors.button_destructive.hsla()
+}
+pub fn on_button_destructive() -> Hsla {
+    crate::theme::current().colors.on_button_destructive.hsla()
+}
+/// Full-opacity menu-bar foreground selected for the current appearance.
+pub fn menubar_text() -> Hsla {
+    crate::theme::current().colors.menubar_text.hsla()
+}
 /// Regular Liquid Glass-style material for navigation and transient panels.
 /// The compositor supplies the blurred pixels beneath it; rmac supplies the
 /// adaptive tint and foreground contrast.

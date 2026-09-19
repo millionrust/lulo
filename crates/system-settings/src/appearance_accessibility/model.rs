@@ -69,7 +69,7 @@ impl AccentChoice {
     pub const fn hex(self) -> Option<u32> {
         match self {
             Self::Automatic => None,
-            Self::Blue => Some(0x0a84ff),
+            Self::Blue => Some(0x1372f9),
             Self::Purple => Some(0xaf52de),
             Self::Pink => Some(0xff2d55),
             Self::Red => Some(0xff3b30),

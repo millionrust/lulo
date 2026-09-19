@@ -62,7 +62,7 @@ impl FinderView {
             .gap_1p5()
             .px_2()
             .rounded(px(rmac_ui::mac::radius_segmented()))
-            .bg(rmac_ui::mac::control_fill())
+            .bg(rmac_ui::mac::field_fill())
             .child(icon("icons/search.svg", 14.0, tertiary()))
             .child(
                 div()

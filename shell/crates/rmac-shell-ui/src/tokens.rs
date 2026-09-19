@@ -137,6 +137,10 @@ pub fn secondary_text() -> u32 {
     hex(current().colors.label_secondary)
 }
 
+pub fn menubar_text() -> u32 {
+    hex(current().colors.menubar_text)
+}
+
 pub fn disabled_text() -> u32 {
     hex(current().colors.label_disabled)
 }
@@ -294,7 +298,12 @@ mod tests {
     fn appearance(scheme: ResolvedColorScheme) -> rmac_appearance::ResolvedAppearance {
         rmac_appearance::ResolvedAppearance {
             color_scheme: scheme,
-            accent_color: rmac_appearance::AccentColor::new(0.0, 0.478, 1.0).unwrap(),
+            accent_color: rmac_appearance::AccentColor::new(
+                19.0 / 255.0,
+                114.0 / 255.0,
+                249.0 / 255.0,
+            )
+            .unwrap(),
             contrast: Contrast::Normal,
             motion: MotionPreference::Full,
             text_scale: TextScale::Standard,
@@ -308,11 +317,13 @@ mod tests {
         )));
         assert_eq!(top_bar_tint(), 0xf6f6f6f2);
         assert_eq!(primary_text(), 0x1d1d1fff);
+        assert_eq!(menubar_text(), 0x010206ff);
         assert_eq!(menu_radius(), 10.0);
 
         set(DesignTokens::resolve(appearance(ResolvedColorScheme::Dark)));
         assert_eq!(top_bar_tint(), 0x1e1e20f2);
         assert_eq!(primary_text(), 0xf5f5f7ff);
+        assert_eq!(menubar_text(), 0xffffffff);
 
         assert!(!set(DesignTokens::resolve(appearance(
             ResolvedColorScheme::Dark

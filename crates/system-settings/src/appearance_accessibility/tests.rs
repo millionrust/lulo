@@ -24,8 +24,12 @@ fn theme(accent: rmac_theme::AccentPreference) -> rmac_theme::Snapshot {
         },
         effective: rmac_appearance::ResolvedAppearance {
             color_scheme: rmac_appearance::ResolvedColorScheme::Dark,
-            accent_color: rmac_appearance::AccentColor::new(10.0 / 255.0, 132.0 / 255.0, 1.0)
-                .unwrap(),
+            accent_color: rmac_appearance::AccentColor::new(
+                19.0 / 255.0,
+                114.0 / 255.0,
+                249.0 / 255.0,
+            )
+            .unwrap(),
             contrast: rmac_appearance::Contrast::Higher,
             motion: rmac_appearance::MotionPreference::Reduced,
             text_scale: rmac_appearance::TextScale::Large,
@@ -40,7 +44,7 @@ fn theme(accent: rmac_theme::AccentPreference) -> rmac_theme::Snapshot {
 fn ready_projection_matches_visual_order_selection_and_typed_actions() {
     let host = host(true);
     let theme = theme(rmac_theme::AccentPreference::Custom(components_from_hex(
-        0x0a84ff,
+        0x1372f9,
     )));
     let snapshot = project_appearance(AppearanceInput {
         theme: Some(&theme),

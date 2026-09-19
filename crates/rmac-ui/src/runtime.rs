@@ -42,10 +42,10 @@ fn apply_component_theme(cx: &mut App) {
     theme.background = colors.window.hsla();
     theme.foreground = colors.text.hsla();
     theme.border = colors.separator.hsla();
-    theme.input = colors.separator.hsla();
+    theme.input = colors.field_fill.hsla();
     theme.accent = colors.selection_unfocused.hsla();
     theme.accent_foreground = colors.text.hsla();
-    theme.secondary = colors.control_fill.hsla();
+    theme.secondary = colors.button_secondary.hsla();
     theme.secondary_foreground = colors.text.hsla();
     theme.secondary_hover = colors.control_fill_hover.hsla();
     theme.secondary_active = colors.hover.hsla();
@@ -62,10 +62,10 @@ fn apply_component_theme(cx: &mut App) {
     theme.selection = colors.accent_subtle.hsla();
     theme.caret = colors.accent.hsla();
     theme.ring = colors.accent.hsla();
-    theme.danger = colors.danger.hsla();
-    theme.danger_foreground = colors.on_danger.hsla();
-    theme.danger_hover = colors.danger.hsla();
-    theme.danger_active = colors.danger.hsla();
+    theme.danger = colors.button_destructive.hsla();
+    theme.danger_foreground = colors.on_button_destructive.hsla();
+    theme.danger_hover = colors.button_destructive.hsla();
+    theme.danger_active = colors.button_destructive.hsla();
     theme.sidebar = colors.sidebar.hsla();
     theme.sidebar_accent = colors.accent.hsla();
     theme.sidebar_accent_foreground = colors.on_accent.hsla();

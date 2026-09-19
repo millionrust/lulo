@@ -154,7 +154,7 @@ impl EditorView {
             .px_3()
             .border_t_1()
             .border_color(mac::separator())
-            .bg(mac::chrome())
+            .bg(mac::statusbar())
             .child(cell(format!(
                 "Ln {}, Col {}",
                 pos.line + 1,

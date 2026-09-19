@@ -41,30 +41,33 @@ impl Materials {
         let high = contrast == Contrast::Higher;
         match scheme {
             ResolvedColorScheme::Light => {
+                // S: exact light-material alpha awaits paired black/white
+                // reference captures. The measured light composites are
+                // near-opaque, so keep these explicitly separate from dark.
                 let menu = Material {
-                    tint: Rgba::from_rgba(0xf6f6f6d9),
+                    tint: Rgba::from_rgba(0xfcfcfcfa),
                     blur: true,
                     border: Rgba::from_rgba(0x0000001a),
                     highlight: Rgba::from_rgba(0xffffff66),
                     fallback: colors.surface_raised,
                 };
                 let popover = Material {
-                    tint: Rgba::from_rgba(0xf2f2f2cc),
+                    tint: Rgba::from_rgba(0xfcfcfcfa),
                     ..menu
                 };
                 let hud = Material {
-                    tint: Rgba::from_rgba(0xffffffb3),
+                    tint: Rgba::from_rgba(0xfffffffc),
                     ..menu
                 };
                 let dock = Material {
-                    tint: Rgba::from_rgba(0xffffff40),
+                    tint: Rgba::from_rgba(0xffffffe8),
                     blur: true,
                     border: Rgba::from_rgba(0xffffff59),
                     highlight: Rgba::from_rgba(0x00000014),
                     fallback: Rgba::from_rgba(0xf0f0f0f2),
                 };
                 let sidebar = Material {
-                    tint: Rgba::from_rgba(0xf2f2f2e0),
+                    tint: Rgba::from_rgba(0xfcfcfcfa),
                     blur: true,
                     border: Rgba::TRANSPARENT,
                     highlight: Rgba::TRANSPARENT,
@@ -78,7 +81,7 @@ impl Materials {
                     fallback: Rgba::from_rgba(0xf6f6f6f2),
                 };
                 let tooltip = Material {
-                    tint: Rgba::from_rgba(0xfafafaf2),
+                    tint: Rgba::from_rgba(0xfcfcfcff),
                     blur: false,
                     border: colors.separator,
                     highlight: Rgba::TRANSPARENT,
@@ -95,6 +98,8 @@ impl Materials {
                 }
             }
             ResolvedColorScheme::Dark => {
+                // S: the dark alpha values remain provisional until the same
+                // surfaces are captured over black and white references.
                 let menu = Material {
                     tint: Rgba::from_rgba(0x28282bd9),
                     blur: true,
@@ -118,7 +123,7 @@ impl Materials {
                     fallback: Rgba::from_rgba(0x2a2a2df2),
                 };
                 let sidebar = Material {
-                    tint: Rgba::from_rgba(0x242426e0),
+                    tint: Rgba::from_rgba(0x29252ee0),
                     blur: true,
                     border: Rgba::TRANSPARENT,
                     highlight: Rgba::TRANSPARENT,
@@ -172,7 +177,7 @@ fn glass_tint(tint: Rgba, intensity: f32) -> Rgba {
 fn harden(material: Material, high: bool, colors: Colors) -> Material {
     if high {
         Material {
-            tint: material.tint.with_alpha(0xf6),
+            tint: material.tint.with_alpha(material.tint.alpha().max(0xf6)),
             border: if material.tint.alpha() == 0 {
                 material.border
             } else {

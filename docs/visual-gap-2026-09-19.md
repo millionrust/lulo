@@ -146,3 +146,54 @@ Pair: `target/evidence/rmac-2026-09-19/pairs/dock-menu-vs-mac.png`
    **496 px** too far.
 
 These are observations only. No Tasks 2–12 work is included in this baseline.
+
+## Task 2 measured-colour recapture
+
+Task 2 was re-captured from the Ubuntu reference PC in
+`target/evidence/rmac-2026-09-19-task2/pairs/`. The rmac image remains on the left and the same
+owner-Mac reference remains on the right. Finder was maximised before its final four captures; an
+earlier capture containing a tiled stock Nautilus window was rejected and is not used in a pair.
+
+### Rendered flat-surface measurements
+
+These pixels were sampled with `scripts/measure-reference.py`; coordinates are physical pixels in
+the two 1920 × 1080 source PNGs. The largest rendered flat-surface channel error is **1**, within
+Task 2's maximum of 2.
+
+| Surface | rmac sample | macOS sample | Per-channel absolute delta | Result |
+|---|---:|---:|---:|---|
+| Finder content | `222025` at `1000,700` | `222025` at `1000,700` | `0,0,0` | exact |
+| Finder sidebar material over the captured desktop | `28242D` at `100,700` | `29252E` at `100,700` | `1,1,1` | pass |
+| Finder status bar | `29272C` at `1000,940` | `29272C` at `1000,960` | `0,0,0` | exact |
+| Finder search field | `181818` at `1750,84` | measured reference token `181818` | `0,0,0` | exact |
+
+The other measured opaque values are asserted directly in `rmac-design` as `222026` grouped
+background, `29272D` grouped row, `262227` sheet, `363237` secondary button, `812E25` destructive
+button, and `FFFFFF` dark menu-bar text. Task 1's capture set does not expose clean pixels for all
+of those roles, so this recapture does **not** claim an additional rendered comparison for them.
+The light colours and all material tint alphas without black/white same-surface captures remain
+explicitly marked **S**. In particular, the sidebar's `E0` alpha is S even though its captured
+composite is within one channel step.
+
+### Pair paths and remaining non-colour differences
+
+Colour work did not change geometry. These are the largest still-visible pixel differences in the
+new pairs; they remain assigned to later playbook tasks.
+
+| Surface | Task 2 pair | Remaining measured difference |
+|---|---|---|
+| Desktop | `target/evidence/rmac-2026-09-19-task2/pairs/desktop-vs-mac.png` | menu bar **36 px vs 29 px**, rmac **7 px too tall** |
+| Menu open | `target/evidence/rmac-2026-09-19-task2/pairs/menu-open-vs-mac.png` | panel **310 px vs 269 px**, rmac **41 px too wide** |
+| Search typing | `target/evidence/rmac-2026-09-19-task2/pairs/search-typing-vs-mac.png` | outer width **885 px vs 642 px**, rmac **243 px too wide** |
+| Control Center | `target/evidence/rmac-2026-09-19-task2/pairs/control-center-vs-mac.png` | panel **380 px vs 287 px**, rmac **93 px too wide** |
+| Notification Center | `target/evidence/rmac-2026-09-19-task2/pairs/notification-center-vs-mac.png` | occupied width **450 px vs 346 px**, rmac **104 px too wide** |
+| Apps | `target/evidence/rmac-2026-09-19-task2/pairs/apps-vs-mac.png` | panel **1,058 px vs 845 px**, rmac **213 px too wide** |
+| Files — Icon | `target/evidence/rmac-2026-09-19-task2/pairs/files-icons-vs-mac.png` | maximised window **1,890 px vs 1,577 px**, rmac **313 px too wide** |
+| Files — List | `target/evidence/rmac-2026-09-19-task2/pairs/files-list-vs-mac.png` | row pitch **30 px vs 20 px**, rmac rows **10 px too tall** |
+| Files — Column | `target/evidence/rmac-2026-09-19-task2/pairs/files-columns-vs-mac.png` | first content column **290 px vs 242 px**, rmac **48 px too wide** |
+| Files — Gallery | `target/evidence/rmac-2026-09-19-task2/pairs/files-gallery-vs-mac.png` | filmstrip **130 px vs 70 px**, rmac **60 px too tall** |
+| Mission Control | `target/evidence/rmac-2026-09-19-task2/pairs/mission-control-vs-mac.png` | main preview **450 px vs 957 px**, rmac **507 px too short** |
+| Dock menu | `target/evidence/rmac-2026-09-19-task2/pairs/dock-menu-vs-mac.png` | menu **309 px vs ≈165 px**, rmac **≈144 px too wide** |
+
+Task 2 therefore closes the measured flat-colour gap only. It does not close the recorded layout,
+typography, material-alpha, wallpaper-tint, or interaction gaps.

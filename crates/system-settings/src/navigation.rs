@@ -53,7 +53,7 @@ pub(super) const PANE_ROUTES: [(&str, &str); 24] = [
 ];
 
 pub(super) fn categories() -> Vec<Vec<Category>> {
-    let blue = color(0x0a84ff);
+    let blue = color(0x1372f9);
     let gray = color(0x8e8e93);
     let green = color(0x34c759);
     let red = color(0xff3b30);

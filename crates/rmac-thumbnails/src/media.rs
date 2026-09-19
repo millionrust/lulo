@@ -150,7 +150,7 @@ pub(crate) fn converter_plan(kind: MediaKind, input: &OsStr) -> ConverterPlan {
                 "30".into(),
                 "-filter_complex".into(),
                 format!(
-                    "aformat=channel_layouts=mono,showwavespic=s={PREVIEW_DIMENSION}x360:colors=0x0a84ff"
+                    "aformat=channel_layouts=mono,showwavespic=s={PREVIEW_DIMENSION}x360:colors=0x1372f9"
                 )
                 .into(),
                 "-frames:v".into(),

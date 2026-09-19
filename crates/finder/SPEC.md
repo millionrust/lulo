@@ -399,7 +399,8 @@ Authoritative values (points). Sources: AppKit/NSColor, HIG, measured on light m
 | sidebar | `#e9e9ed` |
 | alt row | `#f4f5f5` |
 | selected row (focused) | `#0063e1` (white text) |
-| accent / systemBlue (folder tint) | `#007aff` |
+| accent | `#1372f9` (measured dark; light is S) |
+| folder tint | `#0088ff` light / `#0091ff` dark |
 | separator | `#e5e5e5` |
 | label / secondary / tertiary | `#272727` / `#808080` / `#bfbfbf` |
 | drive icon tint | `#808080` (gray) |

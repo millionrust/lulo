@@ -99,7 +99,7 @@ pub fn alert(
         .p(px(20.0))
         .gap_2()
         .rounded(px(mac::radius_popover()))
-        .bg(mac::material())
+        .bg(mac::sheet())
         .border_1()
         .border_color(mac::separator())
         .shadow_xl()

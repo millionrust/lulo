@@ -225,19 +225,25 @@ All sizes are **logical pixels** at scale 1. All colors are `0xRRGGBBAA`.
 
 | Token | Light | Dark | Src |
 |---|---|---|---|
-| `surface.window` | `FFFFFFFF` | `1E1E20FF` | R |
-| `surface.chrome` (toolbar/titlebar fallback) | `F6F6F6FF` | `29292CFF` | R |
-| `surface.sidebar.opaque` | `F2F2F2FF` | `242426FF` | R |
+| `surface.window` | `FFFFFFFF` | `222025FF` | S light / R dark |
+| `surface.chrome` (toolbar/titlebar fallback) | `F6F6F6FF` | `29272CFF` | S light / S dark |
+| `surface.sidebar.opaque` | `F2F2F2FF` | `29252EFF` | S light / R dark |
 | `surface.raised` (cards, grouped rows) | `FFFFFFFF` | `323236FF` | R |
-| `surface.grouped.background` (Settings detail pane) | `F5F5F7FF` | `1C1C1EFF` | S |
-| `surface.grouped.row` | `FFFFFFFF` | `2C2C2EFF` | S |
+| `surface.grouped.background` (Settings detail pane) | `F5F5F7FF` | `222026FF` | S light / R dark |
+| `surface.grouped.row` | `FFFFFFFF` | `29272DFF` | S light / R dark |
+| `surface.sheet` | `FFFFFFFF` | `262227FF` | S light / R dark |
+| `field.fill` | `E9E9ECFF` | `181818FF` | S light / R dark |
+| `surface.statusbar` | `F6F6F6FF` | `29272CFF` | S light / R dark |
+| `button.secondary` | `E9E9ECFF` | `363237FF` | S light / R dark |
+| `button.destructive` | `D70015FF` | `812E25FF` | S light / R dark |
+| `menubar.text` | `010206FF` | `FFFFFFFF` | R |
 | `scrim` | `00000038` | `00000070` | R |
 
 ### 4.3 Color: system palette (for accents, tags, badges, charts)
 
 | Token | Light | Dark |
 |---|---|---|
-| `system.blue` (default accent) | `007AFFFF` | `0A84FFFF` |
+| `system.blue` (default accent) | `1372F9FF` (S) | `1372F9FF` (R) |
 | `system.purple` | `AF52DEFF` | `BF5AF2FF` |
 | `system.pink` | `FF2D55FF` | `FF375FFF` |
 | `system.red` | `FF3B30FF` | `FF453AFF` |
@@ -272,15 +278,20 @@ Materials are *tint + compositor blur behind the surface only*. The compositor (
 
 | Token | Tint light | Tint dark | Blur | Border | Used by | Reduce Transparency fallback |
 |---|---|---|---|---|---|---|
-| `material.menu` | `F6F6F6D9` | `28282BD9` | yes | 0.5 px `0000001A` / `FFFFFF1F` + inner top highlight `FFFFFF66`/`FFFFFF14` | menus, context menus, submenus | `surface.raised` opaque |
-| `material.popover` | `F2F2F2CC` | `232326CC` | yes | same as menu | Control Center, NC, Spotlight, calendar popover | opaque `surface.raised` |
-| `material.hud` | `FFFFFFB3` | `1C1C1EB3` | yes | same | OSD, banners | opaque |
-| `material.dock` | `FFFFFF40` | `00000033` | yes | 0.5 px `FFFFFF59` outer + `00000014` inner | Dock shelf | `F0F0F0F2` / `2A2A2DF2` |
-| `material.sidebar` | `F2F2F2E0` (R ratio) | `242426E0` | yes (window rule) | none; right edge `separator` | app sidebars | `surface.sidebar.opaque` |
+| `material.menu` | `FCFCFCFA` (S) | `28282BD9` (S) | yes | 0.5 px `0000001A` / `FFFFFF1F` + inner top highlight `FFFFFF66`/`FFFFFF14` | menus, context menus, submenus | `surface.raised` opaque |
+| `material.popover` | `FCFCFCFA` (S) | `232326CC` (S) | yes | same as menu | Control Center, NC, Spotlight, calendar popover | opaque `surface.raised` |
+| `material.hud` | `FFFFFFFC` (S) | `1C1C1EB3` (S) | yes | same | OSD, banners | opaque |
+| `material.dock` | `FFFFFFE8` (S) | `00000033` (S) | yes | 0.5 px `FFFFFF59` outer + `00000014` inner | Dock shelf | `F0F0F0F2` / `2A2A2DF2` |
+| `material.sidebar` | `FCFCFCFA` (S) | `29252EE0` (S) | yes (window rule) | none; right edge `separator` | app sidebars | `surface.sidebar.opaque` |
 | `material.menubar` | `00000000` (fully clear) | `00000000` | no | none | menu bar | `F6F6F6F2` / `1E1E20F2` |
-| `material.tooltip` | `FAFAFAF2` | `2C2C2EF2` | no | 0.5 px separator | tooltips | same |
+| `material.tooltip` | `FCFCFCFF` (S) | `2C2C2EF2` (S) | no | 0.5 px separator | tooltips | same |
 
-High contrast: every tint alpha becomes `F6`, borders become `label.secondary` at 1 px.
+Material alpha entries marked **S** remain provisional until the same reference surface is captured
+over black and white. The measured composite colours govern in the meantime; they are not evidence
+for a unique tint alpha.
+
+High contrast: every tint alpha is raised to at least `F6` (never reduced), and borders become
+`label.secondary` at 1 px.
 
 ### 4.6 Typography (font: Inter; mono: JetBrains Mono)
 

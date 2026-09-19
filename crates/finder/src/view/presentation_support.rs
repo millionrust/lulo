@@ -73,6 +73,9 @@ pub(super) fn list_bg() -> Hsla {
 pub(super) fn toolbar_bg() -> Hsla {
     rmac_ui::mac::chrome()
 }
+pub(super) fn statusbar_bg() -> Hsla {
+    rmac_ui::mac::statusbar()
+}
 pub(super) fn sidebar_bg() -> Hsla {
     rmac_ui::mac::material_sidebar()
 }

@@ -116,6 +116,13 @@ pub struct ColorTokens {
     pub sidebar: RgbaColor,
     pub list: RgbaColor,
     pub raised: RgbaColor,
+    pub sheet: RgbaColor,
+    pub field_fill: RgbaColor,
+    pub statusbar: RgbaColor,
+    pub button_secondary: RgbaColor,
+    pub button_destructive: RgbaColor,
+    pub on_button_destructive: RgbaColor,
+    pub menubar_text: RgbaColor,
     pub text: RgbaColor,
     pub text_secondary: RgbaColor,
     pub text_tertiary: RgbaColor,
@@ -307,6 +314,13 @@ impl ThemeTokens {
             sidebar: design.colors.surface_sidebar_opaque.into(),
             list: design.colors.surface_window.into(),
             raised: design.colors.surface_raised.into(),
+            sheet: design.colors.surface_sheet.into(),
+            field_fill: design.colors.field_fill.into(),
+            statusbar: design.colors.statusbar.into(),
+            button_secondary: design.colors.button_secondary.into(),
+            button_destructive: design.colors.button_destructive.into(),
+            on_button_destructive: on_color(design.colors.button_destructive.into()),
+            menubar_text: design.colors.menubar_text.into(),
             text: design.colors.label_primary.into(),
             text_secondary: design.colors.label_secondary.into(),
             text_tertiary: design.colors.label_tertiary.into(),
@@ -451,7 +465,7 @@ impl ThemeTokens {
     pub fn light_default() -> Self {
         Self::from_appearance(ResolvedAppearance {
             color_scheme: ResolvedColorScheme::Light,
-            accent_color: AccentColor::new(0.0, 122.0 / 255.0, 1.0)
+            accent_color: AccentColor::new(19.0 / 255.0, 114.0 / 255.0, 249.0 / 255.0)
                 .expect("default accent is valid"),
             contrast: Contrast::Normal,
             motion: MotionPreference::Full,

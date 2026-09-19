@@ -192,14 +192,14 @@ impl RenderOnce for Button {
                 mac::accent().opacity(0.76),
             ),
             ButtonRole::Destructive => (
-                mac::danger(),
-                mac::on_danger(),
-                mac::danger(),
-                mac::danger().opacity(0.88),
-                mac::danger().opacity(0.76),
+                mac::button_destructive(),
+                mac::on_button_destructive(),
+                mac::button_destructive(),
+                mac::button_destructive().opacity(0.88),
+                mac::button_destructive().opacity(0.76),
             ),
             ButtonRole::Secondary => (
-                mac::control_fill(),
+                mac::button_secondary(),
                 mac::text(),
                 mac::separator(),
                 mac::control_fill_hover(),
@@ -304,7 +304,7 @@ impl Styled for PopUpButton {
 impl RenderOnce for PopUpButton {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let variant = ButtonCustomVariant::new(cx)
-            .color(mac::control_fill())
+            .color(mac::button_secondary())
             .foreground(mac::text())
             .border(mac::separator())
             .hover(mac::control_fill_hover())
@@ -823,11 +823,13 @@ impl Styled for TextField {
 
 impl RenderOnce for TextField {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
-        let style = if self.error.is_some() {
-            self.style.clone().border_color(mac::danger())
-        } else {
-            self.style.clone()
-        };
+        let mut style = self.style.clone();
+        if self.appearance {
+            style = style.bg(mac::field_fill());
+        }
+        if self.error.is_some() {
+            style = style.border_color(mac::danger());
+        }
         let input = ComponentInput::new(&self.state)
             .appearance(self.appearance)
             .cleanable(self.cleanable)

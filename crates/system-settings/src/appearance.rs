@@ -20,7 +20,7 @@ pub(super) struct ThemeLoad {
 }
 
 pub(super) const ACCENTS: &[(&str, u32)] = &[
-    ("Blue", 0x0a84ff),
+    ("Blue", 0x1372f9),
     ("Purple", 0xaf52de),
     ("Pink", 0xff2d55),
     ("Red", 0xff3b30),

@@ -169,7 +169,7 @@ impl FinderView {
                 tag("Orange", 0xff9500),
                 tag("Yellow", 0xffcc00),
                 tag("Green", 0x34c759),
-                tag("Blue", 0x007aff),
+                tag("Blue", 0x1372f9),
                 tag("Purple", 0xaf52de),
                 tag("Gray", 0x8e8e93),
             ],

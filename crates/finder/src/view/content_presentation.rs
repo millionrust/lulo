@@ -276,7 +276,7 @@ impl FinderView {
             .items_center()
             .justify_center()
             .gap_2()
-            .bg(toolbar_bg())
+            .bg(statusbar_bg())
             .border_t_1()
             .border_color(sep())
             .text_size(rmac_ui::text_px(11.0))

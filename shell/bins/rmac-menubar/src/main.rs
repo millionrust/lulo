@@ -900,7 +900,7 @@ mod linux_wayland {
                 .items_center()
                 .px_4()
                 .bg(rgba(tokens::top_bar_tint()))
-                .text_color(rgba(tokens::primary_text()))
+                .text_color(rgba(tokens::menubar_text()))
                 .text_size(px(12.0))
                 .child(
                     div()

@@ -99,7 +99,7 @@ impl Tokens {
     pub fn light_default() -> Self {
         Self::resolve(ResolvedAppearance {
             color_scheme: ResolvedColorScheme::Light,
-            accent_color: AccentColor::new(0.0, 122.0 / 255.0, 1.0)
+            accent_color: AccentColor::new(19.0 / 255.0, 114.0 / 255.0, 249.0 / 255.0)
                 .expect("default accent is valid"),
             contrast: Contrast::Normal,
             motion: MotionPreference::Full,
@@ -176,7 +176,7 @@ mod tests {
         let high = Tokens::resolve(appearance(ResolvedColorScheme::Light, Contrast::Higher));
         assert!(high.colors.separator.alpha() > normal.colors.separator.alpha());
         assert!(high.metrics.focus_ring_width > normal.metrics.focus_ring_width);
-        assert!(high.materials.menu.tint.alpha() > normal.materials.menu.tint.alpha());
+        assert!(high.materials.menu.tint.alpha() >= normal.materials.menu.tint.alpha());
         assert!(high.elevation.raised.alpha > normal.elevation.raised.alpha);
     }
 
@@ -209,6 +209,34 @@ mod tests {
         assert_eq!(palette[0].0, "Multicolor");
         assert_eq!(palette[0].1, Tokens::light_default().colors.system_blue);
         assert_eq!(palette[8].0, "Graphite");
+    }
+
+    #[test]
+    fn dark_flat_surfaces_match_the_measured_reference() {
+        let colors =
+            Tokens::resolve(appearance(ResolvedColorScheme::Dark, Contrast::Normal)).colors;
+        assert_eq!(colors.surface_window, Rgba::rgb(0x222025));
+        assert_eq!(colors.surface_sidebar_opaque, Rgba::rgb(0x29252e));
+        assert_eq!(colors.surface_grouped_background, Rgba::rgb(0x222026));
+        assert_eq!(colors.surface_grouped_row, Rgba::rgb(0x29272d));
+        assert_eq!(colors.surface_sheet, Rgba::rgb(0x262227));
+        assert_eq!(colors.field_fill, Rgba::rgb(0x181818));
+        assert_eq!(colors.statusbar, Rgba::rgb(0x29272c));
+        assert_eq!(colors.button_secondary, Rgba::rgb(0x363237));
+        assert_eq!(colors.button_destructive, Rgba::rgb(0x812e25));
+        assert_eq!(colors.menubar_text, Rgba::rgb(0xffffff));
+        assert_eq!(colors.system_blue, Rgba::rgb(0x1372f9));
+    }
+
+    #[test]
+    fn light_materials_are_more_opaque_than_dark_materials() {
+        let light = Tokens::resolve(appearance(ResolvedColorScheme::Light, Contrast::Normal));
+        let dark = Tokens::resolve(appearance(ResolvedColorScheme::Dark, Contrast::Normal));
+        assert!(light.materials.menu.tint.alpha() > dark.materials.menu.tint.alpha());
+        assert!(light.materials.popover.tint.alpha() > dark.materials.popover.tint.alpha());
+        assert!(light.materials.hud.tint.alpha() > dark.materials.hud.tint.alpha());
+        assert!(light.materials.dock.tint.alpha() > dark.materials.dock.tint.alpha());
+        assert!(light.materials.sidebar.tint.alpha() > dark.materials.sidebar.tint.alpha());
     }
 
     #[test]

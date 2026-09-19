@@ -350,3 +350,32 @@ records a **750 logical px** rmac window; the macOS capture has no compositor me
 corresponding logical-width difference remains **S** rather than being invented from the screenshot.
 The overlay bounds remain the measured X2 values: Control Centre is **93 px too wide**, and Apps is
 **106 px too wide** and **73 px too tall**. Their opaque material difference remains assigned to X4.
+
+## Live-surface X5 — one window-control language
+
+Fresh reference-PC captures are in `target/evidence/live-surfaces-x5/`. Because the reference set
+does not contain Terminal or Activity Monitor, the direct evidence pairs show the audited build
+beside the corrected build rather than pretending an unrelated macOS window is a reference:
+
+- `target/evidence/live-surfaces-x5/pairs/app-terminal-before-after.png`
+- `target/evidence/live-surfaces-x5/pairs/app-monitor-before-after.png`
+
+The shared gpui-component title bar unconditionally appended three Linux controls after its
+application content. rmac now owns that drag region, preserving the existing left traffic lights
+without rendering a second control language.
+
+### X5 measurements
+
+- The removed right-hand cluster was **3 × 34 = 102 logical px** in both Terminal and System
+  Monitor. The fresh captures contain **0** right-hand window controls, matching the macOS target;
+  the difference is **0 px**.
+- The left cluster remains **3** traffic lights with the measured **12 logical px** diameter; its
+  count and diameter changed by **0 px**.
+- The replacement title bar deliberately retains the prior **34 logical px** height, a **0 px**
+  regression within X5. `rmac-design` maps the eventual title-bar target to **38 logical px**, so a
+  **4 logical px shortfall** remains for the later density pass rather than being hidden in this
+  control-only commit.
+
+The remaining System Monitor card/table redesign and Terminal content padding are unchanged and
+remain in their per-surface audit lists. The fresh full-surface run also confirms the shared change
+did not add right-side controls to any other rmac window.

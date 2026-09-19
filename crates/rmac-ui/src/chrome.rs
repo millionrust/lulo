@@ -1,10 +1,10 @@
 use gpui::{
     div, prelude::FluentBuilder as _, px, rgba, App, ElementId, Hsla, InteractiveElement as _,
-    IntoElement, ParentElement as _, SharedString, Styled as _, Window,
+    IntoElement, ParentElement as _, SharedString, Styled as _, Window, WindowControlArea,
 };
 use gpui_component::{
     button::{Button as ComponentButton, ButtonVariants as _},
-    ActiveTheme as _, StyledExt as _, TitleBar,
+    ActiveTheme as _, InteractiveElementExt as _, StyledExt as _, TITLE_BAR_HEIGHT,
 };
 
 use crate::{components, mac, text_px};
@@ -224,9 +224,28 @@ pub fn traffic_lights_active(active: bool) -> impl IntoElement {
         ))
 }
 
-/// Overlay our traffic lights in the left gutter (x=13) of a `TitleBar`. The
-/// `TitleBar` forces its own children into an 80px left-padded zone, so the
-/// lights are layered as a sibling anchored to the bar's true left edge.
+/// A draggable client title bar that deliberately has no platform control
+/// cluster. gpui-component's `TitleBar` adds Linux minimize/maximize/close
+/// buttons on the right, which duplicated rmac's traffic lights.
+fn client_title_bar(children: impl IntoElement) -> impl IntoElement {
+    div()
+        .id("rmac-title-bar")
+        .h(TITLE_BAR_HEIGHT)
+        .w_full()
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .pl(px(12.0))
+        .bg(mac::chrome())
+        .border_b_1()
+        .border_color(mac::separator())
+        .window_control_area(WindowControlArea::Drag)
+        .on_double_click(|_, window, _| window.zoom_window())
+        .child(div().h_full().flex_1().child(children))
+}
+
+/// Overlay our traffic lights in the left gutter (x=13) of the draggable bar,
+/// leaving the application-owned title content independent of the controls.
 fn with_traffic_lights(bar: impl IntoElement) -> impl IntoElement {
     div().relative().w_full().flex_shrink_0().child(bar).child(
         div()
@@ -241,21 +260,19 @@ fn with_traffic_lights(bar: impl IntoElement) -> impl IntoElement {
 }
 
 /// The shared title bar: our own traffic lights on the left, centered title.
-/// Apps put this at the top of their root `div`. The bar stays draggable via
-/// gpui-component's `TitleBar` container.
+/// Apps put this at the top of their root `div`. The bar remains a compositor
+/// drag region without adding a second platform control cluster.
 pub fn title_bar(title: impl Into<SharedString>) -> impl IntoElement {
     let title: SharedString = title.into();
-    with_traffic_lights(
-        TitleBar::new().child(
-            div()
-                .size_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_sm()
-                .child(title),
-        ),
-    )
+    with_traffic_lights(client_title_bar(
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_sm()
+            .child(title),
+    ))
 }
 
 /// A full-bleed page background using the active theme — the base every app
@@ -271,12 +288,7 @@ pub fn body_bg(cx: &App) -> gpui::Hsla {
 
 /// A unified macOS toolbar/title bar with the chrome color and a hairline base.
 pub fn toolbar(children: impl IntoElement) -> impl IntoElement {
-    with_traffic_lights(
-        TitleBar::new()
-            .bg(mac::chrome())
-            .border_color(mac::separator())
-            .child(children),
-    )
+    with_traffic_lights(client_title_bar(children))
 }
 
 /// A grouped glass capsule for toolbar items (Tahoe): a rounded translucent

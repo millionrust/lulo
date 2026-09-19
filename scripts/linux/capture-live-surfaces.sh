@@ -12,6 +12,14 @@ runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 export XDG_RUNTIME_DIR=${runtime}
 export WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1}
 
+files_bin=${RMAC_FILES_BIN:-/usr/bin/rmac-files}
+settings_bin=${RMAC_SETTINGS_BIN:-/usr/bin/rmac-system-settings}
+terminal_bin=${RMAC_TERMINAL_BIN:-/usr/bin/rmac-terminal}
+notes_bin=${RMAC_NOTES_BIN:-/usr/bin/rmac-notes}
+monitor_bin=${RMAC_MONITOR_BIN:-/usr/bin/rmac-system-monitor}
+text_editor_bin=${RMAC_TEXT_EDITOR_BIN:-/usr/bin/rmac-text-editor}
+shortcut_dispatch_bin=${RMAC_SHORTCUT_DISPATCH_BIN:-/usr/libexec/rmac/rmac-shortcut-dispatch}
+
 if [ -z "${NIRI_SOCKET:-}" ]; then
     NIRI_SOCKET=$(find "${runtime}" -maxdepth 1 -type s -name 'niri.*.sock' -print -quit)
     export NIRI_SOCKET
@@ -91,10 +99,10 @@ capture_app() {
 capture_overlay() {
     name=$1
     endpoint=$2
-    /usr/libexec/rmac/rmac-shortcut-dispatch "${endpoint}" \
+    "${shortcut_dispatch_bin}" "${endpoint}" \
         >"${out}/${name}.log" 2>&1 || true
     shot "${name}"
-    /usr/libexec/rmac/rmac-shortcut-dispatch "${endpoint}" >/dev/null 2>&1 || true
+    "${shortcut_dispatch_bin}" "${endpoint}" >/dev/null 2>&1 || true
 }
 
 {
@@ -107,12 +115,12 @@ capture_overlay() {
         | tail -n 1
 } >"${out}/session.txt"
 
-capture_app app-files org.rmac.Files /usr/bin/rmac-files
-capture_app app-settings org.rmac.SystemSettings /usr/bin/rmac-system-settings
-capture_app app-terminal org.rmac.Terminal /usr/bin/rmac-terminal
-capture_app app-notes org.rmac.Notes /usr/bin/rmac-notes
-capture_app app-monitor org.rmac.SystemMonitor /usr/bin/rmac-system-monitor
-capture_app app-texteditor org.rmac.TextEditor /usr/bin/rmac-text-editor --new-document
+capture_app app-files org.rmac.Files "${files_bin}"
+capture_app app-settings org.rmac.SystemSettings "${settings_bin}"
+capture_app app-terminal org.rmac.Terminal "${terminal_bin}"
+capture_app app-notes org.rmac.Notes "${notes_bin}"
+capture_app app-monitor org.rmac.SystemMonitor "${monitor_bin}"
+capture_app app-texteditor org.rmac.TextEditor "${text_editor_bin}" --new-document
 
 capture_overlay overlay-launcher launcher
 capture_overlay overlay-quick-settings quick-settings

@@ -29,12 +29,56 @@ pub async fn watch(sender: Sender<Event>) -> Result<(), Error> {
 const RECONNECT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[cfg(target_os = "linux")]
-// `pw-mon` prints a line for every PipeWire event, and each coalesced flush
-// makes the shell rebuild the full audio snapshot (a `pw-dump` subprocess plus
-// JSON parse) on the blocking pool. 75 ms flushed several times a second at
-// idle and kept the menu bar ~35% busy; 500 ms bounds that while keeping a
-// volume change prompt.
+// `pw-mon` prints several lines for each relevant PipeWire event. Once an
+// audio object changes, wait for its burst to settle before rebuilding the
+// authoritative snapshot.
 const QUIET_PERIOD: std::time::Duration = std::time::Duration::from_secs(1);
+
+#[cfg(target_os = "linux")]
+#[derive(Default)]
+struct PipeWireObjects {
+    audio: std::collections::BTreeSet<u32>,
+}
+
+#[cfg(target_os = "linux")]
+impl PipeWireObjects {
+    fn observe(&mut self, lines: &[String]) -> bool {
+        let action = lines.iter().find_map(|line| match line.trim() {
+            "added:" => Some("added"),
+            "changed:" => Some("changed"),
+            "removed:" => Some("removed"),
+            _ => None,
+        });
+        let id = lines.iter().find_map(|line| {
+            line.trim()
+                .strip_prefix("id:")
+                .and_then(|value| value.trim().parse::<u32>().ok())
+        });
+        let kind = lines.iter().find_map(|line| {
+            line.trim()
+                .strip_prefix("type: PipeWire:Interface:")
+                .and_then(|value| value.split_whitespace().next())
+        });
+        let relevant_kind = matches!(kind, Some("Node" | "Device" | "Metadata"));
+
+        match (action, id) {
+            (Some("added"), Some(id)) => {
+                if relevant_kind {
+                    self.audio.insert(id);
+                }
+                relevant_kind
+            }
+            (Some("changed"), Some(id)) => {
+                if relevant_kind {
+                    self.audio.insert(id);
+                }
+                relevant_kind || self.audio.contains(&id)
+            }
+            (Some("removed"), Some(id)) => self.audio.remove(&id),
+            _ => false,
+        }
+    }
+}
 
 #[cfg(target_os = "linux")]
 async fn reconnecting_system_bus(sender: Sender<Event>) -> Result<(), Error> {
@@ -209,6 +253,7 @@ async fn watch_audio_once(
     let mut command = async_process::Command::new("pw-mon");
     command
         .arg("--color=never")
+        .arg("--print-separator")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -225,6 +270,8 @@ async fn watch_audio_once(
     // The process is listening before the authoritative audio snapshot is read.
     send(sender, Event::Refresh(Sources::audio())).await?;
     *previous_error = None;
+    let mut objects = PipeWireObjects::default();
+    let mut event = Vec::new();
     loop {
         let next = futures_util::FutureExt::fuse(lines.next());
         let closed = futures_util::FutureExt::fuse(sender.closed());
@@ -236,7 +283,16 @@ async fn watch_audio_once(
         let Some(line) = line else {
             return child_status_error(child).await;
         };
-        line.map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
+        let line = line.map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
+        if !line.trim().is_empty() {
+            event.push(line);
+            continue;
+        }
+        if !objects.observe(&event) {
+            event.clear();
+            continue;
+        }
+        event.clear();
         loop {
             let next = futures_util::FutureExt::fuse(lines.next());
             let quiet = futures_util::FutureExt::fuse(async_io::Timer::after(QUIET_PERIOD));
@@ -245,7 +301,13 @@ async fn watch_audio_once(
             futures_util::select! {
                 line = next => match line {
                     Some(line) => {
-                        line.map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
+                        let line = line.map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
+                        if line.trim().is_empty() {
+                            objects.observe(&event);
+                            event.clear();
+                        } else {
+                            event.push(line);
+                        }
                     }
                     None => return child_status_error(child).await,
                 },
@@ -275,4 +337,41 @@ async fn send(sender: &Sender<Event>, event: Event) -> Result<(), Error> {
         .send(event)
         .await
         .map_err(|_| Error::new("publish service change", "consumer closed"))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod pipewire_tests {
+    use super::PipeWireObjects;
+
+    fn event(value: &str) -> Vec<String> {
+        value.lines().map(str::to_owned).collect()
+    }
+
+    #[test]
+    fn client_churn_from_snapshot_commands_is_not_an_audio_change() {
+        let mut objects = PipeWireObjects::default();
+        assert!(!objects.observe(&event(
+            "added:\n id: 66\n type: PipeWire:Interface:Client (version 3)\n application.process.binary = \"pw-dump\"",
+        )));
+        assert!(!objects.observe(&event("removed:\n id: 66")));
+    }
+
+    #[test]
+    fn audio_objects_remain_relevant_until_removed() {
+        let mut objects = PipeWireObjects::default();
+        assert!(objects.observe(&event(
+            "added:\n id: 58\n type: PipeWire:Interface:Node (version 3)",
+        )));
+        assert!(objects.observe(&event("changed:\n id: 58")));
+        assert!(objects.observe(&event("removed:\n id: 58")));
+        assert!(!objects.observe(&event("changed:\n id: 58")));
+    }
+
+    #[test]
+    fn default_device_metadata_is_an_audio_change() {
+        let mut objects = PipeWireObjects::default();
+        assert!(objects.observe(&event(
+            "added:\n id: 41\n type: PipeWire:Interface:Metadata (version 3)",
+        )));
+    }
 }

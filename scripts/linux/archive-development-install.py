@@ -26,7 +26,11 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "linux"))
 from native_package_contract import ALL_BINARIES  # noqa: E402
 
 
-ARCHIVE_NAMES = ("development-install-v1", "development-install-v2")
+ARCHIVE_NAMES = (
+    "development-install-v1",
+    "development-install-v2",
+    "development-install-v3",
+)
 LEGACY_APPLICATION_IDS = (
     "org.rmac.Files",
     "org.rmac.Terminal",
@@ -137,16 +141,48 @@ def _development_libexec(path: Path) -> bool:
     return True
 
 
+def _development_drop_in(path: Path) -> bool:
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise MigrationError("development unit override cannot be inspected") from error
+    if path.is_symlink() or not stat.S_ISDIR(metadata.st_mode):
+        raise MigrationError("development unit override is not an ordinary directory")
+    try:
+        entries = tuple(path.iterdir())
+    except OSError as error:
+        raise MigrationError("development unit override cannot be read") from error
+    if len(entries) != 1 or entries[0].name != "dev.conf" or not _regular_file(entries[0]):
+        raise MigrationError("development unit override contains an unknown entry")
+    return True
+
+
 def discover(roots: Roots) -> tuple[Artifact, ...]:
     artifacts: list[Artifact] = []
     unit_dir = roots.config / "systemd/user"
-    for name in _unit_names():
+    unit_names = _unit_names()
+    for name in unit_names:
         source = unit_dir / name
         if _regular_file(source):
             artifacts.append(Artifact(source, Path("config/systemd/user") / name))
+        drop_in = unit_dir / f"{name}.d"
+        if _development_drop_in(drop_in):
+            artifacts.append(
+                Artifact(
+                    drop_in,
+                    Path("config/systemd/user") / drop_in.name,
+                    directory=True,
+                )
+            )
 
     if unit_dir.is_dir() and not unit_dir.is_symlink():
-        known = set(_unit_names()) | set(PRESERVED_AUXILIARY_UNITS)
+        known = (
+            set(unit_names)
+            | {f"{name}.d" for name in unit_names}
+            | set(PRESERVED_AUXILIARY_UNITS)
+        )
         try:
             unknown = sorted(
                 path.name

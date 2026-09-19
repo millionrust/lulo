@@ -118,6 +118,41 @@ class ArchiveDevelopmentInstallTests(unittest.TestCase):
             self.assertEqual(MODULE.discover(roots), ())
             self.assertTrue(all(unit.is_file() for unit in units))
 
+    def test_exact_development_unit_override_is_archived(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            roots = self.roots(temporary)
+            override = (
+                roots.config
+                / "systemd/user/rmac-top-bar.service.d/dev.conf"
+            )
+            self.write(
+                override,
+                b"[Service]\nExecStart=\nExecStart=/checkout/shell/target/debug/top-bar\n",
+            )
+
+            artifacts = MODULE.discover(roots)
+            self.assertEqual(len(artifacts), 1)
+            destination = MODULE.archive(roots, artifacts)
+
+            self.assertFalse(override.parent.exists())
+            self.assertTrue(
+                (
+                    destination
+                    / "config/systemd/user/rmac-top-bar.service.d/dev.conf"
+                ).is_file()
+            )
+
+    def test_unknown_development_override_entry_refuses(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            roots = self.roots(temporary)
+            override_dir = roots.config / "systemd/user/rmac-dock.service.d"
+            self.write(override_dir / "dev.conf")
+            self.write(override_dir / "personal.conf")
+
+            with self.assertRaisesRegex(MODULE.MigrationError, "unknown entry"):
+                MODULE.discover(roots)
+            self.assertTrue((override_dir / "personal.conf").is_file())
+
     def test_unknown_rmac_unit_still_refuses(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             roots = self.roots(temporary)

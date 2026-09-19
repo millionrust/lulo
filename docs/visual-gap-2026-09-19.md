@@ -412,3 +412,58 @@ style. There is no equivalent inline-error capture in `target/evidence/reference
 `design-lab/`, so the reference difference for the **41 px** Files strip and **55 px** Settings
 toast is **S** rather than invented. Their opaque material remains assigned to X4, while the type
 scale remains assigned to X7.
+
+## Live-surface X10 — event-driven idle shell
+
+Fresh reference-PC captures are in `target/evidence/live-surfaces-x10/`. The direct macOS
+comparisons are:
+
+- `target/evidence/live-surfaces-x10/pairs/app-settings-vs-mac.png`
+- `target/evidence/live-surfaces-x10/pairs/overlay-launcher-vs-mac.png`
+- `target/evidence/live-surfaces-x10/pairs/overlay-quick-settings-vs-mac.png`
+- `target/evidence/live-surfaces-x10/pairs/overlay-notification-center-vs-mac.png`
+- `target/evidence/live-surfaces-x10/pairs/overlay-app-drawer-vs-mac.png`
+
+The capture harness was given explicit current-checkout binary paths so it could launch, capture,
+and close each application instead of silently reopening the older installed package. All four
+overlay inventories contain **0** transient normal windows and exactly **1** matching layer-shell
+surface. The fresh Settings capture uses `#1372F9`, so the set does not regress X2 or X3.
+
+PipeWire Client churn was the top-bar feedback loop. Every authoritative audio read starts
+`pw-dump` and `wpctl`; `pw-mon` reported those inspection clients as changes, which caused another
+read indefinitely. The watcher now retains Node, Device, and Metadata identities and ignores
+Client-only add/remove events. Muting the real default sink still produced **1** render within
+**3 seconds**, and the test restored the original mute state.
+
+### X10 measurements
+
+- The unpatched current release consumed **542 scheduler ticks in 30 seconds** and rendered
+  **5** times while untouched. After warm-up, the patched release consumed **40 ticks in 30
+  seconds** and rendered **0** times: **502 fewer ticks (92.6%)** and **5 fewer renders**.
+- During the clean `22:24:06`–`22:24:26` reference-PC window, top bar stayed **12 → 12**, Dock
+  stayed **88 → 88**, and wallpaper stayed **23 → 23**: **0 redraws on all three surfaces**.
+- A process trace after warm-up recorded **0** `pw-dump`/`wpctl` executions. The subprocess burst
+  ends **2.7 seconds** after startup instead of repeating for the lifetime of the shell.
+- The package migration now archives an exact `dev.conf` override for any known rmac unit. This
+  removes the debug-binary overrides found by the live audit while continuing to refuse symlinks,
+  extra files, and unknown rmac units.
+
+There is a measured residual outside the rmac render authorities: the pinned GPUI Wayland backend
+requests a compositor frame callback at 60 Hz even while the rmac render counters remain flat.
+Top bar, Dock, and wallpaper each consumed **38–40 scheduler ticks in 30 seconds** (about
+**1.3% of one core**) at that platform baseline. The newer upstream backend has a parked frame
+loop, but changing the pinned GPUI platform is not folded into this cross-cutting application fix.
+No rmac surface redraws in response to those callbacks.
+
+### Remaining measured visual differences
+
+X10 changes scheduling, not geometry or colour; the fresh pairs therefore retain the already
+measured gaps rather than inventing new values:
+
+- Search remains **164 px too wide**, **17 px too tall**, and **228 px too low**.
+- Control Centre remains **93 px too wide**.
+- Notification Centre remains **104 px too wide** and **459 px too tall**.
+- Apps remains **106 px too wide** and **73 px too tall**.
+
+Those differences belong to X4/X7 and the later per-surface passes. Pixel geometry introduced by
+X10 itself is **0 px** on every captured surface.

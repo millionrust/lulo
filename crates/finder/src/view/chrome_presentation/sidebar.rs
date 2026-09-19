@@ -58,7 +58,7 @@ impl FinderView {
             .flex()
             .items_center()
             .gap_2()
-            .h(px(28.0))
+            .h(px(rmac_ui::mac::sidebar_row_height()))
             .px_2()
             .rounded(px(rmac_ui::mac::radius_menu_item()))
             .when(selected, |el: Stateful<Div>| {

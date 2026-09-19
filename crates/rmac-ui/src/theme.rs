@@ -414,7 +414,7 @@ impl ThemeTokens {
             regular_control_height: design.metrics.control_height_large,
             toolbar_height: design.metrics.toolbar_height,
             sidebar_row_height: design.metrics.sidebar_row_height,
-            list_row_height: design.metrics.list_row_height_regular,
+            list_row_height: design.metrics.list_row_height_compact,
             toggle_width: design.metrics.switch_regular_width,
             toggle_height: design.metrics.switch_regular_height,
             toggle_thumb: design.metrics.switch_regular_thumb,
@@ -659,8 +659,9 @@ mod tests {
         assert!(metrics.regular_control_height < metrics.toolbar_height);
         assert!(metrics.toggle_thumb < metrics.toggle_height);
         assert!(metrics.traffic_light_diameter < metrics.traffic_light_hit_width);
-        assert_eq!(metrics.sidebar_row_height % 2.0, 0.0);
-        assert_eq!(metrics.list_row_height % 2.0, 0.0);
+        assert_eq!(metrics.sidebar_row_height, 28.0);
+        assert_eq!(metrics.list_row_height, 24.0);
+        assert_eq!(ThemeTokens::light_default().typography.body, 13.0);
     }
 
     #[test]

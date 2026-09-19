@@ -133,6 +133,10 @@ pub fn primary_text() -> u32 {
     hex(current().colors.label_primary)
 }
 
+pub fn body_text_size() -> f32 {
+    current().type_scale.body.size
+}
+
 pub fn secondary_text() -> u32 {
     hex(current().colors.label_secondary)
 }

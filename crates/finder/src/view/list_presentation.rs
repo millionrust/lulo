@@ -161,7 +161,11 @@ impl FinderView {
                     .id(("row", ix))
                     .flex()
                     .items_center()
-                    .h(px(if has_search_detail { 38.0 } else { 24.0 }))
+                    .h(px(if has_search_detail {
+                        38.0
+                    } else {
+                        rmac_ui::mac::list_row_height()
+                    }))
                     .px_2()
                     .text_size(rmac_ui::text_px(13.0))
                     .when(selected, |el: Stateful<Div>| el.bg(sel()))

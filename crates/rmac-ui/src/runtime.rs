@@ -6,7 +6,10 @@ use crate::{components, theme};
 
 const BENCHMARK_READY_FILE_ENV: &str = "RMAC_BENCHMARK_READY_FILE";
 const COLOR_SCHEME_ENV: &str = "RMAC_COLOR_SCHEME";
-const BASE_REM_SIZE: f32 = 16.0;
+// GPUI defaults to a web-style 16 px rem. macOS desktop body copy is 13 px;
+// keeping 16 here made every unqualified component label look oversized even
+// though the semantic type scale was already correct.
+const BASE_REM_SIZE: f32 = 13.0;
 
 fn apply_window_text_scale(window: &mut Window, scale: rmac_appearance::TextScale) {
     window.set_rem_size(px(BASE_REM_SIZE * scale.factor()));
@@ -387,5 +390,11 @@ mod tests {
             rmac_appearance::ColorScheme::PreferLight
         );
         assert!(initial_host_appearance_from("unknown").is_none());
+    }
+
+    #[test]
+    fn unqualified_component_copy_uses_the_body_scale() {
+        assert_eq!(BASE_REM_SIZE, 13.0);
+        assert_eq!(theme::ThemeTokens::light_default().typography.body, 13.0);
     }
 }

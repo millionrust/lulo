@@ -538,3 +538,43 @@ retain the measured geometry gaps:
 
 The menu and Dock glass are now bounded, but their content geometry, overlay sizing, and the
 Notification Centre's unused panel area remain visible differences for the later per-surface pass.
+
+## Live-surface X7 — desktop type and row density
+
+Fresh reference-PC captures are in `target/evidence/live-surfaces-x7/`. The direct macOS
+comparisons are:
+
+- `target/evidence/live-surfaces-x7/pairs/app-files-vs-mac.png`
+- `target/evidence/live-surfaces-x7/pairs/app-settings-vs-mac.png`
+
+The reference display reports **1920 × 1080 physical px**, **1536 × 864 logical px**, and scale
+**1.25**. Shared GPUI copy now starts from the measured **13 logical px** body size instead of its
+web-style **16 logical px** default. Sidebar and compact list rows resolve through the shared design
+authority instead of app-local literals.
+
+### X7 measurements
+
+| Surface | Before | Current capture / token | Measured target | Remaining difference |
+|---|---:|---:|---:|---:|
+| Shared unqualified body copy | 16 logical px | 13 logical px | 13 logical px | 0 px |
+| Files sidebar row | 28 logical px | 35 physical / 28 logical px | 28 logical px | 0 px |
+| Settings normal sidebar row | 30 logical px | 35 physical / 28 logical px | 28 logical px | 0 px |
+| Notes folder row | content + 12 px vertical padding | 35 physical / 28 logical px | 28 logical px | 0 px |
+| Shared compact list row | 30 logical px | 24 logical px | 24 logical px | 0 px |
+| Menu-bar body copy | 12 logical px | 13 logical px | 13 logical px | 0 px |
+
+The **35 physical px** selected-row spans in Files and Settings were measured in the fresh captures;
+dividing by the compositor's **1.25** output scale gives the intended **28 logical px** row. Search
+result rows intentionally retain their separate **38 logical px** two-line layout, so X7 does not
+collapse result detail.
+
+### Remaining measured visual differences
+
+X7 corrects density only. The Files pair still shows the already-audited content-state error and a
+much smaller first-launch window; no numeric window-size claim is made because its persisted state
+is user-controlled. Settings still uses a **750 logical px** window and its per-pane structure is
+assigned to the later app-specific pass. The shared titlebar remains **34 logical px** against the
+**38 logical px** design token, a **4 logical px shortfall**. Overlay captures could not prove type
+density in this run because the three panel surfaces remained below the foreground window; those
+surfaces consume the same **13 logical px** token, but their visual delta remains **S** until a valid
+foreground capture exists.

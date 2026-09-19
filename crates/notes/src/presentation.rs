@@ -59,8 +59,8 @@ pub(super) fn folder_row(
         .flex()
         .items_center()
         .gap_2()
+        .h(px(mac::sidebar_row_height()))
         .px_2()
-        .py_1p5()
         .rounded(px(rmac_ui::mac::radius_menu_item()))
         .when(selected, |element: Stateful<Div>| {
             element.bg(mac::sidebar_selection())

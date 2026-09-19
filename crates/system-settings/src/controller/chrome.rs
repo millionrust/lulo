@@ -277,7 +277,11 @@ impl Settings {
                     .selected(selected)
                     .mx_2()
                     .px_2()
-                    .h(px(if searching { 42.0 } else { 30.0 }))
+                    .h(px(if searching {
+                        42.0
+                    } else {
+                        rmac_ui::mac::sidebar_row_height()
+                    }))
                     .on_activate(cx.listener(move |t, _, window, cx| {
                         t.select_position((si, ci), cx);
                         if searching {

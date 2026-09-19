@@ -5,10 +5,12 @@ mod view;
 
 use std::borrow::Cow;
 
+#[cfg(not(target_os = "linux"))]
+use gpui::WindowDecorations;
 use gpui::{
-    point, px, size, AnyWindowHandle, App, AppContext as _, Application, AssetSource,
-    BorrowAppContext as _, Bounds, Global, Pixels, Result, SharedString, WeakEntity,
-    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions,
+    point, px, size, AnyWindowHandle, App, AppContext as _, AssetSource, BorrowAppContext as _,
+    Bounds, Global, Pixels, Result, SharedString, WeakEntity, WindowBackgroundAppearance,
+    WindowBounds, WindowKind, WindowOptions,
 };
 use gpui_component::Root;
 
@@ -64,6 +66,41 @@ pub(crate) struct QuickSettingsService {
 
 impl Global for QuickSettingsService {}
 
+#[cfg(target_os = "linux")]
+fn popover_options(bounds: Bounds<Pixels>) -> WindowOptions {
+    use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
+
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+            point(px(0.0), px(0.0)),
+            bounds.size,
+        ))),
+        titlebar: None,
+        focus: true,
+        show: true,
+        kind: WindowKind::LayerShell(LayerShellOptions {
+            namespace: rmac_quick_settings::surface::NAMESPACE.into(),
+            layer: Layer::Overlay,
+            anchor: Anchor::TOP | Anchor::RIGHT,
+            margin: Some((
+                px(rmac_quick_settings::surface::TOP_MARGIN as f32),
+                px(rmac_quick_settings::surface::RIGHT_MARGIN as f32),
+                px(0.0),
+                px(0.0),
+            )),
+            keyboard_interactivity: KeyboardInteractivity::OnDemand,
+            ..Default::default()
+        }),
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        window_background: WindowBackgroundAppearance::Blurred,
+        app_id: Some("org.rmac.QuickSettings".into()),
+        ..Default::default()
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
 fn popover_options(bounds: Bounds<Pixels>) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -206,7 +243,7 @@ fn notify_ready() -> std::result::Result<(), String> {
 }
 
 fn main() {
-    Application::new()
+    rmac_ui::application()
         .with_assets(CombinedAssets)
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
@@ -234,11 +271,7 @@ fn main() {
                                 blocking::unblock(notify_ready).await?;
                             }
                             rmac_shell_activation_runtime::Update::Activated(activation) => {
-                                if cx.update(|cx| route_activation(*activation, cx)).is_err() {
-                                    return Err(
-                                        "Quick Settings application context stopped".to_owned()
-                                    );
-                                }
+                                cx.update(|cx| route_activation(*activation, cx));
                             }
                         }
                     }

@@ -269,3 +269,46 @@ The earlier `target/evidence/live-surfaces/` audit was made while niri had loade
 recovery configuration (`~/.config/niri/config.kdl`), so it could not exercise the package-owned
 rmac rule. This recapture temporarily loaded the candidate policy, restored the recovery file
 after capture, and verified every app ID in the emitted `*-windows.json` files.
+
+## Live-surface X2 — overlays are layer-shell surfaces
+
+Fresh reference-PC captures and compositor inventories are in
+`target/evidence/live-surfaces-x2/`. The direct comparisons are:
+
+- `target/evidence/live-surfaces-x2/pairs/overlay-launcher-vs-mac.png`
+- `target/evidence/live-surfaces-x2/pairs/overlay-quick-settings-vs-mac.png`
+- `target/evidence/live-surfaces-x2/pairs/overlay-notification-center-vs-mac.png`
+- `target/evidence/live-surfaces-x2/pairs/overlay-app-drawer-vs-mac.png`
+
+The `*-windows.json` and `*-layers.json` files were captured while each surface was visible. They
+show the user-visible X2 contract directly:
+
+| Surface | Matching normal windows | Matching layers | Layer | Keyboard | Native title-bar height | Overlay Dock tiles |
+|---|---:|---:|---|---|---:|---:|
+| Search | 0 | 1 | Overlay | Exclusive | 0 px | 0 |
+| Control Centre | 0 | 1 | Overlay | OnDemand | 0 px | 0 |
+| Notification Centre | 0 | 1 | Overlay | OnDemand | 0 px | 0 |
+| Apps | 0 | 1 | Overlay | OnDemand | 0 px | 0 |
+
+Because the Dock and menu-bar identity are derived from Niri's normal-window inventory, the zero
+normal-window count also removes the four transient Dock tiles and the internal Launcher,
+QuickSettings, NotificationCenter, and Apps menu-bar identities. Notification Centre's old close
+button occupied its native title bar; that bar is now **0 px**, matching the **0 px** macOS target.
+
+### Remaining measured visual differences
+
+X2 changes surface ownership, not the overlay designs. These bounds were measured from the fresh
+1920 × 1080 PNGs with `scripts/measure-reference.py`; reference values are the captured values
+already recorded above in this document.
+
+- Search: **806 × 76 px** vs **642 × 59 px**, so it remains **164 px too wide** and **17 px too
+  tall**. Its top is **y = 479 px** vs **y = 251 px**, so it is **228 px too low**.
+- Control Centre: **380 px** wide vs **287 px**, so it remains **93 px too wide**. Its top is
+  **y = 106 px** vs **y ≈ 63 px**, so it is **≈43 px too low**.
+- Notification Centre: **450 × 877 px** vs **346 × 418 px**, so it remains **104 px too wide** and
+  **459 px too tall**. Its top is **y = 106 px** vs **y = 37 px**, so it is **69 px too low**.
+- Apps: **951 × 651 px** vs **845 × 578 px**, so it remains **106 px too wide** and **73 px too
+  tall**. Its top is **y = 191 px** vs **y = 251 px**, so it is **60 px too high**.
+
+The flat opaque materials, purple accent, and internal layout differences visible in the pairs are
+not claimed by X2; they remain assigned to X3, X4, and the later per-surface work.

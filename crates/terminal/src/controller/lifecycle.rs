@@ -90,7 +90,7 @@ impl TerminalView {
         ]);
 
         let focus = cx.focus_handle();
-        window.focus(&focus);
+        window.focus(&focus, cx);
         let window_active = window.is_window_active();
         cx.observe_window_activation(window, |this, window, cx| {
             this.handle_window_activation(window.is_window_active(), window, cx);

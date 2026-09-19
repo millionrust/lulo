@@ -153,7 +153,7 @@ impl LauncherView {
         let ShortcutEffect::Open(opened) = coordinator.handle_shortcut(&event) else {
             unreachable!("a fresh launcher surface starts from one launcher activation")
         };
-        query.read(cx).focus_handle(cx).focus(window);
+        query.read(cx).focus_handle(cx).focus(window, cx);
         let compact = initial_browse_mode.is_none();
         if !compact {
             window.resize(size(

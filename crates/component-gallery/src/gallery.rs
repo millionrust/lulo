@@ -36,7 +36,7 @@ impl ComponentGallery {
             KeyBinding::new("ctrl-=", NextScale, Some(KEY_CONTEXT)),
         ]);
         let focus = cx.focus_handle();
-        focus.focus(window);
+        focus.focus(window, cx);
         Self {
             focus,
             scale_index: 0,

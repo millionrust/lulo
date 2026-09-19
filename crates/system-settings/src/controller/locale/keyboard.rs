@@ -39,7 +39,7 @@ impl Settings {
                 .placeholder("grp:ctrl_space_toggle")
         });
         let focus = layout_editor.read(cx).focus_handle(cx);
-        window.focus(&focus);
+        window.focus(&focus, cx);
         self.x11_layout_editor = Some(layout_editor);
         self.x11_variant_editor = Some(variant_editor);
         self.x11_options_editor = Some(options_editor);

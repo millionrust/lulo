@@ -102,8 +102,8 @@ pub(super) const CAPABILITIES: &[Capability] = &[
     Capability {
         id: "layer-shell",
         name: "Wayland layer-shell",
-        status: CapabilityStatus::MissingFromStableApi,
-        instruction: "GPUI 0.2.2 exposes no layer-shell API; test current upstream.",
+        status: CapabilityStatus::ExerciseHere,
+        instruction: "Open every rmac overlay; verify Niri lists one named layer and no window.",
     },
 ];
 

@@ -16,6 +16,38 @@ pub(crate) fn release(token: u64, cx: &mut App) {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn overlay_options(bounds: WindowBounds) -> WindowOptions {
+    use gpui::layer_shell::{KeyboardInteractivity, Layer, LayerShellOptions};
+
+    let size = bounds.get_bounds().size;
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+            point(px(0.0), px(0.0)),
+            size,
+        ))),
+        titlebar: None,
+        focus: true,
+        show: true,
+        kind: WindowKind::LayerShell(LayerShellOptions {
+            namespace: "rmac-launcher".into(),
+            layer: Layer::Overlay,
+            keyboard_interactivity: KeyboardInteractivity::Exclusive,
+            ..Default::default()
+        }),
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        // Compact Spotlight is a row of separated glass shapes. The GPUI
+        // window itself stays transparent while each shape supplies its own
+        // material tint; niri supplies compositor blur behind the surface.
+        window_background: WindowBackgroundAppearance::Transparent,
+        app_id: Some("org.rmac.Launcher".into()),
+        ..Default::default()
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
 fn overlay_options(bounds: WindowBounds) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(bounds),
@@ -26,9 +58,6 @@ fn overlay_options(bounds: WindowBounds) -> WindowOptions {
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
-        // Compact Spotlight is a row of separated glass shapes. The GPUI
-        // window itself stays transparent while each shape supplies its own
-        // material tint; niri supplies compositor blur behind the surface.
         window_background: WindowBackgroundAppearance::Transparent,
         app_id: Some("org.rmac.Launcher".into()),
         window_decorations: Some(WindowDecorations::Client),

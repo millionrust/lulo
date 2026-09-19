@@ -221,7 +221,7 @@ impl FinderView {
                                 return;
                             }
                             this.handle_click(ix, ev.modifiers.platform, ev.modifiers.shift);
-                            window.focus(&this.focus);
+                            window.focus(&this.focus, cx);
                             cx.notify();
                         }),
                     )
@@ -236,7 +236,7 @@ impl FinderView {
                         if ev.click_count() >= 2 {
                             this.open_index(ix, cx);
                         }
-                        window.focus(&this.focus);
+                        window.focus(&this.focus, cx);
                     }))
                     .when(
                         !self.trash_view && !self.applications_view,
@@ -392,7 +392,7 @@ impl FinderView {
                                     return;
                                 }
                                 this.handle_click(ix, ev.modifiers.platform, ev.modifiers.shift);
-                                window.focus(&this.focus);
+                                window.focus(&this.focus, cx);
                                 cx.notify();
                             }),
                         )
@@ -407,7 +407,7 @@ impl FinderView {
                             if ev.click_count() >= 2 {
                                 this.open_index(ix, cx);
                             }
-                            window.focus(&this.focus);
+                            window.focus(&this.focus, cx);
                         }))
                         .when(!self.trash_view && !self.applications_view, |element| {
                             element.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
@@ -459,7 +459,7 @@ impl FinderView {
                         cx.listener(|this, _, window, cx| {
                             this.selected.clear();
                             this.anchor = None;
-                            window.focus(&this.focus);
+                            window.focus(&this.focus, cx);
                             cx.notify();
                         }),
                     )
@@ -493,7 +493,7 @@ impl FinderView {
                         cx.listener(|this, _, window, cx| {
                             this.selected.clear();
                             this.anchor = None;
-                            window.focus(&this.focus);
+                            window.focus(&this.focus, cx);
                             cx.notify();
                         }),
                     )

@@ -263,7 +263,7 @@ impl AppDrawer {
             self.query.update(cx, |st, cx| st.set_value("", window, cx));
             self.selected = 0;
             self.selection_visible = false;
-            self.focus.focus(window);
+            self.focus.focus(window, cx);
         } else if self.filter.take().is_some() {
             self.selected = 0;
             self.selection_visible = false;

@@ -83,7 +83,7 @@ impl TerminalView {
                 self.tabs[self.active].ui.search_open = false;
                 self.picker_open = false;
                 self.menu_at = None;
-                window.focus(&self.focus);
+                window.focus(&self.focus, cx);
             }
             Err(error) => {
                 if !matches!(
@@ -107,13 +107,13 @@ impl TerminalView {
             .position(|session| session.id == pending.session_id)
         else {
             self.operation_error = Some("The terminal session changed; nothing was pasted.".into());
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
             cx.notify();
             return;
         };
         if index != self.active {
             self.operation_error = Some("The active terminal changed; nothing was pasted.".into());
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
             cx.notify();
             return;
         }
@@ -125,7 +125,7 @@ impl TerminalView {
                 self.operation_error = Some(error.to_string().into());
             }
         }
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 

@@ -153,7 +153,7 @@ impl FinderView {
                                 event.modifiers.platform,
                                 event.modifiers.shift,
                             );
-                            window.focus(&this.focus);
+                            window.focus(&this.focus, cx);
                             cx.notify();
                         }),
                     )
@@ -240,7 +240,7 @@ impl FinderView {
                 cx.listener(|this, _, window, cx| {
                     this.selected.clear();
                     this.anchor = None;
-                    window.focus(&this.focus);
+                    window.focus(&this.focus, cx);
                     cx.notify();
                 }),
             )

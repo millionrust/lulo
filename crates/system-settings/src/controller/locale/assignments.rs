@@ -25,7 +25,7 @@ impl Settings {
                 .placeholder("en_US.UTF-8")
         });
         let focus = editor.read(cx).focus_handle(cx);
-        window.focus(&focus);
+        window.focus(&focus, cx);
         self.locale_editor = Some(editor);
         self.locale_error = None;
         cx.notify();
@@ -83,7 +83,7 @@ impl Settings {
                 .placeholder("en_IN.UTF-8")
         });
         let focus = editor.read(cx).focus_handle(cx);
-        window.focus(&focus);
+        window.focus(&focus, cx);
         self.region_editor = Some(editor);
         self.locale_error = None;
         cx.notify();

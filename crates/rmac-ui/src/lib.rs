@@ -44,5 +44,11 @@ pub mod app_id {
 pub const UI_FONT: &str = "Inter";
 pub const MONO_FONT: &str = "JetBrains Mono";
 
+/// Construct GPUI with the platform backend that owns native display and
+/// Wayland layer-shell integration.
+pub fn application() -> gpui::Application {
+    gpui_platform::application()
+}
+
 #[cfg(test)]
 mod tests;

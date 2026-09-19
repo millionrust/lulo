@@ -58,7 +58,7 @@ fn main() {
                     Some("ActivityMonitor"),
                 ),
             ]);
-            window.focus(&view.focus);
+            window.focus(&view.focus, cx);
             view
         },
     );

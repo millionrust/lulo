@@ -63,7 +63,7 @@ impl Settings {
         };
         self.select_position(target, cx);
         self.clear_search(window, cx);
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         true
     }
 

@@ -102,13 +102,10 @@ impl MonitorView {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
             cx.background_executor().timer(Duration::from_secs(2)).await;
             let Some(this) = this.upgrade() else { break };
-            let updated = cx.update_entity(&this, |view: &mut MonitorView, cx| {
+            cx.update_entity(&this, |view: &mut MonitorView, cx| {
                 view.refresh(cx);
                 cx.notify();
             });
-            if updated.is_err() {
-                break;
-            }
         })
         .detach();
 

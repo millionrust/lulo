@@ -56,7 +56,7 @@ impl NotesView {
         .detach();
 
         let focus = cx.focus_handle();
-        window.focus(&focus);
+        window.focus(&focus, cx);
         NotesInputs {
             search_query,
             folder_name_input,

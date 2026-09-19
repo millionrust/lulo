@@ -15,7 +15,7 @@ use gpui_component::{
     input::Input as ComponentInput,
     menu::{DropdownMenu as _, PopupMenu},
     slider::Slider as ComponentSlider,
-    table::Table as ComponentTable,
+    table::DataTable as ComponentTable,
     Disableable as _, Icon, Selectable as _, Sizable as _, Size, StyledExt as _,
 };
 
@@ -216,7 +216,6 @@ impl RenderOnce for Button {
         let variant = ButtonCustomVariant::new(cx)
             .color(color)
             .foreground(foreground)
-            .border(border)
             .hover(hover)
             .active(active)
             .shadow(matches!(
@@ -229,6 +228,8 @@ impl RenderOnce for Button {
             .disabled(self.disabled)
             .loading(self.busy)
             .selected(self.selected)
+            .border_1()
+            .border_color(border)
             .refine_style(&self.style);
         if let Some(label) = self.label {
             button = button.label(label);
@@ -306,13 +307,14 @@ impl RenderOnce for PopUpButton {
         let variant = ButtonCustomVariant::new(cx)
             .color(mac::button_secondary())
             .foreground(mac::text())
-            .border(mac::separator())
             .hover(mac::control_fill_hover())
             .active(mac::hover());
         let button = ComponentButton::new(self.id.clone())
             .custom(variant)
             .label(self.label)
-            .selected(self.selected);
+            .selected(self.selected)
+            .border_1()
+            .border_color(mac::separator());
         let mut dropdown = DropdownButton::new(self.id).button(button).compact();
         if let Some(builder) = self.menu {
             dropdown = dropdown.dropdown_menu(move |menu, window, cx| builder(menu, window, cx));
@@ -432,7 +434,6 @@ impl RenderOnce for Toggle {
         let variant = ButtonCustomVariant::new(cx)
             .color(transparent)
             .foreground(mac::text())
-            .border(transparent)
             .hover(mac::control_fill_hover())
             .active(mac::hover());
         let indicator = if self.pending {
@@ -591,7 +592,6 @@ impl RenderOnce for Checkbox {
         let variant = ButtonCustomVariant::new(cx)
             .color(rgba(0x00000000).into())
             .foreground(mac::text())
-            .border(rgba(0x00000000).into())
             .hover(mac::control_fill_hover())
             .active(mac::hover());
         let mut button = ComponentButton::new(self.id)
@@ -680,7 +680,6 @@ impl RenderOnce for Radio {
         let variant = ButtonCustomVariant::new(cx)
             .color(rgba(0x00000000).into())
             .foreground(mac::text())
-            .border(rgba(0x00000000).into())
             .hover(mac::control_fill_hover())
             .active(mac::hover());
         let mut button = ComponentButton::new(self.id)
@@ -1197,7 +1196,6 @@ impl RenderOnce for ListRow {
         let variant = ButtonCustomVariant::new(cx)
             .color(transparent)
             .foreground(mac::text())
-            .border(transparent)
             .hover(mac::hover())
             .active(mac::accent());
         let mut row = ComponentButton::new(self.id)
@@ -1514,14 +1512,12 @@ impl RenderOnce for SegmentedControl {
                 ButtonCustomVariant::new(cx)
                     .color(mac::raised())
                     .foreground(mac::text())
-                    .border(mac::separator())
                     .hover(mac::raised())
                     .active(mac::raised())
             } else {
                 ButtonCustomVariant::new(cx)
                     .color(rgba(0x00000000).into())
                     .foreground(mac::text())
-                    .border(rgba(0x00000000).into())
                     .hover(mac::hover())
                     .active(mac::control_fill_hover())
             };

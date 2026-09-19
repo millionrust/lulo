@@ -20,7 +20,7 @@ impl FinderView {
         })
         .detach();
         let focus = input.read(cx).focus_handle(cx);
-        window.focus(&focus);
+        window.focus(&focus, cx);
         self.renaming = Some((index, input));
         cx.notify();
         // The TextField action handlers exist after the next render. Select
@@ -28,7 +28,7 @@ impl FinderView {
         // like Finder, regardless of whether Rename came from a menu, a name
         // click, Return, or New Folder.
         window.on_next_frame(move |window, cx| {
-            window.focus(&focus);
+            window.focus(&focus, cx);
             window.dispatch_action(Box::new(rmac_ui::SelectAll), cx);
         });
     }

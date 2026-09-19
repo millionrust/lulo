@@ -209,11 +209,8 @@ mod tests {
 
     #[test]
     fn window_elevation_matches_the_design_lab_mapping() {
-        let elevation = Tokens::resolve(appearance(
-            ResolvedColorScheme::Dark,
-            Contrast::Normal,
-        ))
-        .elevation;
+        let elevation =
+            Tokens::resolve(appearance(ResolvedColorScheme::Dark, Contrast::Normal)).elevation;
         assert_eq!(elevation.window_active.softness, 32.0);
         assert_eq!(elevation.window_active.spread, 0.0);
         assert_eq!(elevation.window_active.offset_y, 12.0);

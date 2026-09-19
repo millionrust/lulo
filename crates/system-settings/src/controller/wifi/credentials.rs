@@ -55,7 +55,7 @@ impl Settings {
                 validation_error: None,
             });
             self.wifi_error = None;
-            window.focus(&focus);
+            window.focus(&focus, cx);
             cx.notify();
             return;
         }
@@ -81,7 +81,7 @@ impl Settings {
             validation_error: None,
         });
         self.wifi_error = None;
-        window.focus(&focus);
+        window.focus(&focus, cx);
         cx.notify();
     }
 
@@ -132,7 +132,7 @@ impl Settings {
             prompt.editor = empty_editor;
             prompt.validation_error = None;
         }
-        window.focus(&focus);
+        window.focus(&focus, cx);
 
         let cancellation = rmac_network::WifiCancellation::new();
         self.begin_wifi_mutation();
@@ -218,7 +218,7 @@ impl Settings {
             prompt.password = empty_password;
             prompt.validation_error = None;
         }
-        window.focus(&focus);
+        window.focus(&focus, cx);
 
         let cancellation = rmac_network::WifiCancellation::new();
         self.begin_wifi_mutation();

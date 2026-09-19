@@ -4,10 +4,11 @@ mod model;
 mod render;
 mod view;
 
+#[cfg(not(target_os = "linux"))]
+use gpui::WindowDecorations;
 use gpui::{
-    point, px, size, AnyWindowHandle, App, AppContext as _, Application, BorrowAppContext as _,
-    Bounds, Global, Pixels, WeakEntity, WindowBackgroundAppearance, WindowBounds,
-    WindowDecorations, WindowKind, WindowOptions,
+    point, px, size, AnyWindowHandle, App, AppContext as _, BorrowAppContext as _, Bounds, Global,
+    Pixels, WeakEntity, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
 };
 use gpui_component::Root;
 
@@ -36,6 +37,41 @@ pub(crate) struct NotificationCenterService {
 
 impl Global for NotificationCenterService {}
 
+#[cfg(target_os = "linux")]
+fn panel_options(bounds: Bounds<Pixels>) -> WindowOptions {
+    use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
+
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+            point(px(0.0), px(0.0)),
+            bounds.size,
+        ))),
+        titlebar: None,
+        focus: true,
+        show: true,
+        kind: WindowKind::LayerShell(LayerShellOptions {
+            namespace: rmac_notifications_linux::center_surface::NAMESPACE.into(),
+            layer: Layer::Overlay,
+            anchor: Anchor::TOP | Anchor::RIGHT,
+            margin: Some((
+                px(rmac_notifications_linux::center_surface::TOP_MARGIN as f32),
+                px(rmac_notifications_linux::center_surface::RIGHT_MARGIN as f32),
+                px(0.0),
+                px(0.0),
+            )),
+            keyboard_interactivity: KeyboardInteractivity::OnDemand,
+            ..Default::default()
+        }),
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        window_background: WindowBackgroundAppearance::Transparent,
+        app_id: Some("org.rmac.NotificationCenter".into()),
+        ..Default::default()
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
 fn panel_options(bounds: Bounds<Pixels>) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -179,7 +215,7 @@ fn route_activation(activation: rmac_shell_activation_runtime::Activation, cx: &
 }
 
 fn main() {
-    Application::new()
+    rmac_ui::application()
         .with_assets(gpui_component_assets::Assets)
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
@@ -207,10 +243,7 @@ fn main() {
                                 blocking::unblock(notify_ready).await?;
                             }
                             rmac_shell_activation_runtime::Update::Activated(activation) => {
-                                if cx.update(|cx| route_activation(*activation, cx)).is_err() {
-                                    return Err("Notification Center application context stopped"
-                                        .to_owned());
-                                }
+                                cx.update(|cx| route_activation(*activation, cx));
                             }
                         }
                     }

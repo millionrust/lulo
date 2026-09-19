@@ -124,7 +124,7 @@ impl Render for AppDrawer {
                 this.clear_search(window, cx);
             }))
             .on_action(cx.listener(|this, _: &rmac_ui::DismissMenu, window, cx| {
-                if rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window) {
+                if rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window, cx) {
                     cx.notify();
                 }
             }))

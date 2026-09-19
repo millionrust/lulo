@@ -49,15 +49,23 @@ mod tests {
     }
 
     #[test]
-    fn stable_api_records_phase_one_blockers() {
-        for id in ["accessibility", "layer-shell"] {
-            let capability = CAPABILITIES
-                .iter()
-                .find(|capability| capability.id == id)
-                .expect("required gate exists");
-            assert_eq!(capability.status, CapabilityStatus::MissingFromStableApi);
-            assert_eq!(positive_result(*capability), ProbeResult::BlockerConfirmed);
-        }
+    fn current_api_records_only_the_accessibility_blocker() {
+        let accessibility = CAPABILITIES
+            .iter()
+            .find(|capability| capability.id == "accessibility")
+            .expect("required gate exists");
+        assert_eq!(accessibility.status, CapabilityStatus::MissingFromStableApi);
+        assert_eq!(
+            positive_result(*accessibility),
+            ProbeResult::BlockerConfirmed
+        );
+
+        let layer_shell = CAPABILITIES
+            .iter()
+            .find(|capability| capability.id == "layer-shell")
+            .expect("required gate exists");
+        assert_eq!(layer_shell.status, CapabilityStatus::ExerciseHere);
+        assert_eq!(positive_result(*layer_shell), ProbeResult::Passed);
     }
 
     #[test]
@@ -73,6 +81,7 @@ mod tests {
             "keyboard-focus",
             "suspend-resume",
             "idle",
+            "layer-shell",
         ] {
             let capability = CAPABILITIES
                 .iter()
@@ -126,16 +135,11 @@ mod tests {
             .iter()
             .position(|capability| capability.id == "accessibility")
             .unwrap();
-        let layer_shell = CAPABILITIES
-            .iter()
-            .position(|capability| capability.id == "layer-shell")
-            .unwrap();
         let clipboard = CAPABILITIES
             .iter()
             .position(|capability| capability.id == "clipboard")
             .unwrap();
         results[accessibility] = ProbeResult::BlockerConfirmed;
-        results[layer_shell] = ProbeResult::BlockerConfirmed;
 
         let passing_report = evidence_report(&results);
         assert!(passing_report.contains("recording_complete=true\n"));
@@ -151,7 +155,7 @@ mod tests {
             failed_report.contains(&format!("recorded={CAPABILITY_COUNT}/{CAPABILITY_COUNT}\n"))
         );
         assert!(failed_report.contains("probe.clipboard=fail\n"));
+        assert!(failed_report.contains("probe.layer-shell=pass\n"));
         assert!(failed_report.contains("blocker.accessibility=blocker-confirmed\n"));
-        assert!(failed_report.contains("blocker.layer-shell=blocker-confirmed\n"));
     }
 }

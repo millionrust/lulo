@@ -7,11 +7,12 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 
+#[cfg(not(target_os = "linux"))]
+use gpui::WindowDecorations;
 use gpui::{point, Bounds};
 use gpui::{
-    px, size, AnyWindowHandle, App, AppContext as _, Application, BorrowAppContext as _,
-    ClipboardItem, Global, SharedString, WeakEntity, WindowBackgroundAppearance, WindowBounds,
-    WindowDecorations, WindowKind, WindowOptions,
+    px, size, AnyWindowHandle, App, AppContext as _, BorrowAppContext as _, ClipboardItem, Global,
+    SharedString, WeakEntity, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
 };
 use gpui_component::Root;
 use rmac_launcher_runtime::{CatalogUpdate, Registry, SettingsUpdate};
@@ -118,7 +119,7 @@ fn apply_settings_update(update: SettingsUpdate, cx: &mut App) {
 }
 
 pub(crate) fn run() {
-    Application::new()
+    rmac_ui::application()
         .with_assets(gpui_component_assets::Assets)
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
@@ -140,12 +141,7 @@ pub(crate) fn run() {
 
             cx.spawn(async move |cx: &mut gpui::AsyncApp| {
                 while let Ok(text) = clipboard_rx.recv().await {
-                    if cx
-                        .update(|cx| cx.write_to_clipboard(ClipboardItem::new_string(text)))
-                        .is_err()
-                    {
-                        break;
-                    }
+                    cx.update(|cx| cx.write_to_clipboard(ClipboardItem::new_string(text)));
                 }
             })
             .detach();
@@ -169,9 +165,7 @@ pub(crate) fn run() {
                                 blocking::unblock(notify_ready).await?;
                             }
                             rmac_shell_activation_runtime::Update::Activated(activation) => {
-                                if cx.update(|cx| route_activation(*activation, cx)).is_err() {
-                                    return Err("Launcher application context stopped".to_owned());
-                                }
+                                cx.update(|cx| route_activation(*activation, cx));
                             }
                         }
                     }
@@ -239,9 +233,7 @@ pub(crate) fn run() {
                 .detach();
             cx.spawn(async move |cx: &mut gpui::AsyncApp| {
                 while let Ok(update) = catalog_rx.recv().await {
-                    if cx.update(|cx| update_active_catalog(update, cx)).is_err() {
-                        break;
-                    }
+                    cx.update(|cx| update_active_catalog(update, cx));
                 }
             })
             .detach();
@@ -252,9 +244,7 @@ pub(crate) fn run() {
                 .detach();
             cx.spawn(async move |cx: &mut gpui::AsyncApp| {
                 while let Ok(update) = settings_rx.recv().await {
-                    if cx.update(|cx| apply_settings_update(update, cx)).is_err() {
-                        break;
-                    }
+                    cx.update(|cx| apply_settings_update(update, cx));
                 }
             })
             .detach();

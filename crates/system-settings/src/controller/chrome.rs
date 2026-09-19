@@ -282,7 +282,7 @@ impl Settings {
                         t.select_position((si, ci), cx);
                         if searching {
                             t.clear_search(window, cx);
-                            window.focus(&t.focus);
+                            window.focus(&t.focus, cx);
                         }
                     })),
                 );

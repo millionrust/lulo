@@ -189,7 +189,7 @@ impl ContextMenuState {
         cx: &mut Context<V>,
     ) -> Self {
         let menu_focus = cx.focus_handle();
-        window.focus(&menu_focus);
+        window.focus(&menu_focus, cx);
         Self {
             position,
             menu_focus,
@@ -203,11 +203,11 @@ impl ContextMenuState {
     }
 
     /// Close `menu`, returning focus to the control that opened it.
-    pub fn dismiss(menu: &mut Option<Self>, window: &mut Window) -> bool {
+    pub fn dismiss(menu: &mut Option<Self>, window: &mut Window, cx: &mut App) -> bool {
         let Some(menu) = menu.take() else {
             return false;
         };
-        window.focus(&menu.return_focus);
+        window.focus(&menu.return_focus, cx);
         true
     }
 }
@@ -219,25 +219,25 @@ fn move_context_menu_focus(
     cx: &mut App,
 ) {
     if forward {
-        window.focus_next();
+        window.focus_next(cx);
         if !menu_focus.contains_focused(window, cx) {
-            window.focus(menu_focus);
-            window.focus_next();
+            window.focus(menu_focus, cx);
+            window.focus_next(cx);
         }
     } else {
-        window.focus_prev();
+        window.focus_prev(cx);
         if !menu_focus.contains_focused(window, cx) {
             // The menu is rendered last. Starting reverse traversal without a
             // current focus therefore wraps to its final enabled item.
             window.blur();
-            window.focus_prev();
+            window.focus_prev(cx);
         }
     }
 
     // Empty or fully disabled menus retain focus on their overlay rather than
     // leaking keyboard input to the application underneath.
     if !menu_focus.contains_focused(window, cx) {
-        window.focus(menu_focus);
+        window.focus(menu_focus, cx);
     }
 }
 
@@ -474,7 +474,7 @@ impl ContextMenu {
                         row = row.on_activate({
                             let return_focus = return_focus.clone();
                             move |_, window, cx| {
-                                window.focus(&return_focus);
+                                window.focus(&return_focus, cx);
                                 // Dismiss first so actions that deliberately
                                 // move focus (for example Finder's inline
                                 // Rename editor) keep their new focus.

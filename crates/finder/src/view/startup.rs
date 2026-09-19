@@ -196,9 +196,10 @@ impl FinderView {
                 .default_value(icon_size)
         });
         cx.subscribe(&icon_size_slider, |this, _, event: &SliderEvent, cx| {
-            let SliderEvent::Change(value) = event;
-            this.icon_size = value.start().clamp(48.0, 88.0);
-            cx.notify();
+            if let SliderEvent::Change(value) = event {
+                this.icon_size = value.start().clamp(48.0, 88.0);
+                cx.notify();
+            }
         })
         .detach();
 
@@ -211,10 +212,10 @@ impl FinderView {
         let (mount_events, mount_event_rx) = async_channel::bounded(8);
 
         let focus = cx.focus_handle();
-        window.focus(&focus);
+        window.focus(&focus, cx);
         cx.observe_window_activation(window, |this, window, cx| {
             if !window.is_window_active()
-                && rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window)
+                && rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window, cx)
             {
                 cx.notify();
             }

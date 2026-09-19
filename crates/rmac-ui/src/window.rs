@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use gpui::{
-    point, px, size, App, AppContext as _, Application, Bounds, Context, Pixels, Render,
-    SharedString, Size, TitlebarOptions, Window, WindowBounds, WindowOptions,
+    point, px, size, App, AppContext as _, Bounds, Context, Pixels, Render, SharedString, Size,
+    TitlebarOptions, Window, WindowBounds, WindowOptions,
 };
 use gpui_component::Root;
 use rmac_window_state::{DisplayBounds, Store as WindowStateStore, WindowMode, WindowState};
@@ -309,7 +309,7 @@ where
     V: Render + 'static,
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
-    Application::new()
+    crate::application()
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
@@ -336,7 +336,7 @@ pub fn boot_unified_app_with_assets<A, V, F>(
     V: Render + 'static,
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
-    Application::new()
+    crate::application()
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
@@ -409,7 +409,7 @@ pub fn boot_app_with_assets<A, V, F>(
     let title = rmac_apps::identity::window_title(app_id)
         .map(SharedString::from)
         .unwrap_or(fallback_title);
-    Application::new()
+    crate::application()
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
@@ -445,7 +445,7 @@ pub fn boot_with_assets<A, V, F>(
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
     let title: SharedString = title.into();
-    Application::new()
+    crate::application()
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);

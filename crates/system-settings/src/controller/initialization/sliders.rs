@@ -16,9 +16,10 @@ impl Settings {
                 .default_value(value)
         });
         cx.subscribe(&slider, move |this, _, event: &SliderEvent, cx| {
-            let SliderEvent::Change(value) = event;
-            this.schedule_audio_volume(kind, value.start(), cx);
-            cx.notify();
+            if let SliderEvent::Change(value) = event {
+                this.schedule_audio_volume(kind, value.start(), cx);
+                cx.notify();
+            }
         })
         .detach();
         slider
@@ -36,9 +37,10 @@ impl Settings {
                 .default_value(value)
         });
         cx.subscribe(&slider, move |this, _, event: &SliderEvent, cx| {
-            let SliderEvent::Change(value) = event;
-            this.schedule_audio_balance(value.start(), cx);
-            cx.notify();
+            if let SliderEvent::Change(value) = event {
+                this.schedule_audio_balance(value.start(), cx);
+                cx.notify();
+            }
         })
         .detach();
         slider

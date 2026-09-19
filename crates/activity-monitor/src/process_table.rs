@@ -324,8 +324,8 @@ impl TableDelegate for ProcessTableDelegate {
         self.rows.len()
     }
 
-    fn column(&self, column_index: usize, _cx: &App) -> &Column {
-        &self.columns[column_index]
+    fn column(&self, column_index: usize, _cx: &App) -> Column {
+        self.columns[column_index].clone()
     }
 
     fn perform_sort(

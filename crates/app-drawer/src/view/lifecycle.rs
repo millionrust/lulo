@@ -35,7 +35,7 @@ impl AppDrawer {
         .detach();
 
         let focus = cx.focus_handle();
-        focus.focus(window);
+        focus.focus(window, cx);
         cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
                 this.was_active = true;

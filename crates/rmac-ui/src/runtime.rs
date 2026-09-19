@@ -53,7 +53,6 @@ fn apply_component_theme(cx: &mut App) {
     theme.muted_foreground = colors.text_secondary.hsla();
     theme.popover = colors.raised.hsla();
     theme.popover_foreground = colors.text.hsla();
-    theme.list = colors.window.hsla();
     theme.list_hover = colors.hover.hsla();
     theme.list_active = colors.accent.hsla();
     theme.list_active_border = colors.accent.hsla();

@@ -46,7 +46,8 @@ impl TerminalView {
             return;
         }
         self.window_active = active;
-        let menu_closed = !active && rmac_ui::ContextMenuState::dismiss(&mut self.menu_at, window);
+        let menu_closed =
+            !active && rmac_ui::ContextMenuState::dismiss(&mut self.menu_at, window, cx);
         if self.report_active_focus(active) || menu_closed {
             cx.notify();
         }

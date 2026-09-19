@@ -275,6 +275,42 @@ fn apps_and_spotlight_have_exactly_one_activation_owner_each() {
 }
 
 #[test]
+fn desktop_overlays_are_linux_layer_surfaces_without_window_chrome() {
+    let overlays = [
+        (
+            include_str!("../../launcher-app/src/service/overlay.rs"),
+            "namespace: \"rmac-launcher\"",
+        ),
+        (
+            include_str!("../../quick-settings-app/src/main.rs"),
+            "namespace: rmac_quick_settings::surface::NAMESPACE",
+        ),
+        (
+            include_str!("../../notification-center-app/src/main.rs"),
+            "namespace: rmac_notifications_linux::center_surface::NAMESPACE",
+        ),
+        (
+            include_str!("../../app-drawer/src/service.rs"),
+            "namespace: \"rmac-app-drawer\"",
+        ),
+    ];
+
+    for (source, namespace_declaration) in overlays {
+        let linux_options = source
+            .split_once("#[cfg(target_os = \"linux\")]")
+            .expect("overlay has Linux-specific window options")
+            .1
+            .split("#[cfg(not(target_os = \"linux\"))]")
+            .next()
+            .expect("Linux window options precede the non-Linux fallback");
+        assert!(linux_options.contains("WindowKind::LayerShell"));
+        assert!(linux_options.contains("Layer::Overlay"));
+        assert!(linux_options.contains(namespace_declaration));
+        assert!(!linux_options.contains("WindowDecorations::Client"));
+    }
+}
+
+#[test]
 fn compositor_shortcuts_preserve_standard_command_keys() {
     let shell = include_str!("../../../packaging/rmac-session/shell.kdl");
     let fallback = include_str!("../../../packaging/rmac-session/shortcuts-fallback.kdl");

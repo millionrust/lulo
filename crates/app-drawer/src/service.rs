@@ -1,7 +1,9 @@
+#[cfg(not(target_os = "linux"))]
+use gpui::WindowDecorations;
 use gpui::{
-    point, px, size, AnyWindowHandle, App as GpuiApp, AppContext as _, Application,
-    BorrowAppContext as _, Bounds, Global, KeyBinding, Pixels, WeakEntity,
-    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions,
+    point, px, size, AnyWindowHandle, App as GpuiApp, AppContext as _, BorrowAppContext as _,
+    Bounds, Global, KeyBinding, Pixels, WeakEntity, WindowBackgroundAppearance, WindowBounds,
+    WindowKind, WindowOptions,
 };
 use gpui_component::Root;
 
@@ -104,6 +106,34 @@ fn dismiss_active(cx: &mut GpuiApp) -> bool {
     false
 }
 
+#[cfg(target_os = "linux")]
+fn drawer_options(bounds: Bounds<Pixels>) -> WindowOptions {
+    use gpui::layer_shell::{KeyboardInteractivity, Layer, LayerShellOptions};
+
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+            point(px(0.0), px(0.0)),
+            bounds.size,
+        ))),
+        titlebar: None,
+        focus: true,
+        show: true,
+        kind: WindowKind::LayerShell(LayerShellOptions {
+            namespace: "rmac-app-drawer".into(),
+            layer: Layer::Overlay,
+            keyboard_interactivity: KeyboardInteractivity::OnDemand,
+            ..Default::default()
+        }),
+        is_movable: false,
+        is_resizable: false,
+        is_minimizable: false,
+        window_background: WindowBackgroundAppearance::Transparent,
+        app_id: Some(rmac_ui::app_id::APP_DRAWER.to_owned()),
+        ..Default::default()
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
 fn drawer_options(bounds: Bounds<Pixels>) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -184,7 +214,7 @@ fn route_activation(activation: rmac_shell_activation_runtime::Activation, cx: &
 }
 
 pub(crate) fn run(show_on_start: bool) {
-    Application::new()
+    rmac_ui::application()
         .with_assets(gpui_component_assets::Assets)
         .run(move |cx: &mut GpuiApp| {
             rmac_ui::init_application(cx);
@@ -213,9 +243,7 @@ pub(crate) fn run(show_on_start: bool) {
                                 blocking::unblock(notify_ready).await?;
                             }
                             rmac_shell_activation_runtime::Update::Activated(activation) => {
-                                if cx.update(|cx| route_activation(*activation, cx)).is_err() {
-                                    return Err("Apps application context stopped".to_owned());
-                                }
+                                cx.update(|cx| route_activation(*activation, cx));
                             }
                         }
                     }

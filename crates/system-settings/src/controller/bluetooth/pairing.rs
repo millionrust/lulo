@@ -42,7 +42,7 @@ impl Settings {
             stopping: false,
         });
         self.bluetooth_error = None;
-        window.focus(&editor_focus);
+        window.focus(&editor_focus, cx);
         cx.notify();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
@@ -195,7 +195,7 @@ impl Settings {
                 pairing.prompt = None;
                 pairing.display = None;
                 pairing.validation_error = None;
-                window.focus(&focus);
+                window.focus(&focus, cx);
             } else {
                 pairing.validation_error = Some("This pairing request has expired.".into());
             }

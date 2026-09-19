@@ -43,7 +43,7 @@ impl QuickSettingsView {
     pub(crate) fn new(token: u64, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let volume = Self::volume_slider(cx, 0.0);
         let focus = cx.focus_handle();
-        focus.focus(window);
+        focus.focus(window, cx);
         cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
                 this.was_active = true;
@@ -113,8 +113,9 @@ impl QuickSettingsView {
                 .default_value(value)
         });
         cx.subscribe(&slider, |this, _, event: &SliderEvent, cx| {
-            let SliderEvent::Change(value) = event;
-            this.schedule_volume(value.start(), cx);
+            if let SliderEvent::Change(value) = event {
+                this.schedule_volume(value.start(), cx);
+            }
         })
         .detach();
         slider

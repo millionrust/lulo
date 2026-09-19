@@ -101,7 +101,7 @@ impl Settings {
                 .placeholder("studio-pc")
         });
         let focus = editor.read(cx).focus_handle(cx);
-        window.focus(&focus);
+        window.focus(&focus, cx);
         self.hostname_editor = Some(editor);
         self.system_data_error = None;
         cx.notify();

@@ -33,7 +33,7 @@ impl TerminalView {
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.capture_active_search_query(cx);
                         this.tabs[this.active].ui.search_open = false;
-                        window.focus(&this.focus);
+                        window.focus(&this.focus, cx);
                         cx.notify();
                     })),
             )

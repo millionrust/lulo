@@ -78,7 +78,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) {
         if self.pending_paste.take().is_some() {
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
             cx.notify();
             return;
         }
@@ -96,7 +96,7 @@ impl TerminalView {
             self.tabs[self.active].ui.search_open = false;
             self.picker_open = false;
             self.menu_at = None;
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
             cx.notify();
             return;
         }
@@ -141,7 +141,7 @@ impl TerminalView {
 
     pub(super) fn request_close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.pending_paste.take().is_some() {
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
             cx.notify();
             return;
         }
@@ -170,7 +170,7 @@ impl TerminalView {
         self.tabs[self.active].ui.search_open = false;
         self.picker_open = false;
         self.menu_at = None;
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -188,7 +188,7 @@ impl TerminalView {
 
     pub(super) fn cancel_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.pending_close = None;
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -206,18 +206,18 @@ impl TerminalView {
                     .unwrap_or(Ok(()));
                 if let Err(error) = result {
                     self.operation_error = Some(error.to_string().into());
-                    window.focus(&self.focus);
+                    window.focus(&self.focus, cx);
                     cx.notify();
                     return;
                 }
                 self.remove_tab(session_id, window, cx);
-                window.focus(&self.focus);
+                window.focus(&self.focus, cx);
             }
             PendingClose::Window { .. } => {
                 if self.terminate_all().is_err() {
                     self.operation_error =
                         Some("Terminal could not terminate every shell safely.".into());
-                    window.focus(&self.focus);
+                    window.focus(&self.focus, cx);
                     cx.notify();
                     return;
                 }

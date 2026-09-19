@@ -145,7 +145,7 @@ impl Settings {
                 .placeholder("Asia/Kolkata")
         });
         let focus = editor.read(cx).focus_handle(cx);
-        window.focus(&focus);
+        window.focus(&focus, cx);
         self.timezone_editor = Some(editor);
         self.time_error = None;
         cx.notify();
@@ -222,7 +222,7 @@ impl Settings {
                 .placeholder("2026-07-18 11:30:00 +05:30")
         });
         let focus = editor.read(cx).focus_handle(cx);
-        window.focus(&focus);
+        window.focus(&focus, cx);
         self.clock_editor = Some(editor);
         self.clock_confirmation = None;
         self.time_error = None;

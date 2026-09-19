@@ -7,6 +7,7 @@ authors.workspace = true
 
 [dependencies]
 gpui.workspace = true
+gpui_platform.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
 async-channel.workspace = true

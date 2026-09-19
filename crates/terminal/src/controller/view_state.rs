@@ -28,15 +28,15 @@ impl TerminalView {
             .update(cx, |state, cx| state.set_value(query, window, cx));
         if self.tabs[self.active].ui.search_open {
             let search_focus = self.search.read(cx).focus_handle(cx);
-            window.focus(&search_focus);
+            window.focus(&search_focus, cx);
         } else {
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
         }
     }
 
     pub(super) fn cancel_paste(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.pending_paste = None;
-        window.focus(&self.focus);
+        window.focus(&self.focus, cx);
         cx.notify();
     }
 
@@ -119,9 +119,9 @@ impl TerminalView {
         self.tabs[self.active].ui.search_open = !self.tabs[self.active].ui.search_open;
         if self.tabs[self.active].ui.search_open {
             let search_focus = self.search.read(cx).focus_handle(cx);
-            window.focus(&search_focus);
+            window.focus(&search_focus, cx);
         } else {
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
         }
         cx.notify();
     }

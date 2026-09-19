@@ -26,7 +26,7 @@ use std::{
 };
 
 use gpui::{
-    App, AppContext as _, Application, Context, Entity, FocusHandle, KeyBinding, PathPromptOptions,
+    App, AppContext as _, Context, Entity, FocusHandle, KeyBinding, PathPromptOptions,
     SharedString, Subscription, Window,
 };
 use gpui_component::Root;

@@ -79,7 +79,7 @@ pub(crate) fn run() {
             std::process::exit(2);
         }
     };
-    Application::new()
+    rmac_ui::application()
         .with_assets(gpui_component_assets::Assets)
         .run(move |cx: &mut App| {
             rmac_ui::init_application(cx);

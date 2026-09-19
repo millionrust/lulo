@@ -5,7 +5,7 @@ impl Render for Settings {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.focused_once {
             self.focused_once = true;
-            window.focus(&self.focus);
+            window.focus(&self.focus, cx);
         }
         let title_subject = self
             .nav

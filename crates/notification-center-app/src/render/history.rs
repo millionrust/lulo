@@ -167,7 +167,7 @@ impl NotificationCenterView {
             .rounded(px(mac::radius_popover()))
             .border_1()
             .border_color(mac::separator())
-            .bg(mac::material())
+            .bg(mac::material_popover())
             .shadow_lg()
             .child(
                 div()

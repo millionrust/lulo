@@ -138,7 +138,7 @@ impl LauncherView {
             .border_1()
             .border_color(mac::separator())
             .shadow_lg()
-            .bg(mac::material())
+            .bg(mac::material_popover())
             .text_color(mac::text())
             .child(option(
                 "apps-view-grid",
@@ -269,7 +269,7 @@ impl Render for LauncherView {
                                 .border_1()
                                 .border_color(mac::separator())
                                 .shadow_xl()
-                                .bg(mac::material())
+                                .bg(mac::material_popover())
                                 .child(
                                     svg()
                                         .path("icons/search.svg")
@@ -321,7 +321,7 @@ impl Render for LauncherView {
                     .border_1()
                     .border_color(mac::separator())
                     .shadow_xl()
-                    .bg(mac::material())
+                    .bg(mac::material_popover())
                     .child(
                         div()
                             .h(px(72.0))

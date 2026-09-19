@@ -467,3 +467,53 @@ measured gaps rather than inventing new values:
 
 Those differences belong to X4/X7 and the later per-surface passes. Pixel geometry introduced by
 X10 itself is **0 px** on every captured surface.
+
+## Live-surface X4 — bounded glass materials
+
+Fresh reference-PC captures are in `target/evidence/live-surfaces-x4/`. The direct comparisons are:
+
+- `target/evidence/live-surfaces-x4/pairs/menu-open-vs-mac.png`
+- `target/evidence/live-surfaces-x4/pairs/launcher-vs-mac.png`
+- `target/evidence/live-surfaces-x4/pairs/quick-settings-vs-mac.png`
+- `target/evidence/live-surfaces-x4/pairs/notification-center-vs-mac.png`
+- `target/evidence/live-surfaces-x4/pairs/app-drawer-vs-mac.png`
+
+The full-output Dock and menu-bar interaction hosts remain transparent. Each now owns a separate,
+bounded material surface, so requesting blur cannot soften the entire desktop. Search, Control
+Centre, Notification Centre, and Apps request the compositor blur protocol on their already bounded
+layer-shell surfaces. The scoped niri rule sets `xray false`, making those materials sample the real
+window below instead of only the wallpaper; it does not force a background effect or change their
+Overlay-layer ordering.
+
+### X4 measurements
+
+The tint values are copied from `design-lab/tokens.css` into `rmac-design`; the mapping difference is
+**0 channels** and **0 alpha steps** for every role below:
+
+| Role | Dark token | Light token | Design-lab difference |
+|---|---:|---:|---:|
+| Menu | `rgba(44,44,50,.80)` (`#2C2C32CC`) | `rgba(246,246,248,.86)` (`#F6F6F8DB`) | `0, 0, 0, 0` |
+| Popover | `rgba(40,42,48,.78)` (`#282A30C7`) | `rgba(244,244,246,.84)` (`#F4F4F6D6`) | `0, 0, 0, 0` |
+| HUD | `rgba(28,28,32,.72)` (`#1C1C20B8`) | `rgba(255,255,255,.80)` (`#FFFFFFCC`) | `0, 0, 0, 0` |
+| Dock | `rgba(255,255,255,.14)` (`#FFFFFF24`) | `rgba(255,255,255,.40)` (`#FFFFFF66`) | `0, 0, 0, 0` |
+| Dock border | `rgba(255,255,255,.35)` (`#FFFFFF59`) | same | `0, 0, 0, 0` |
+
+The menu material capture is **248 logical px** wide and its rows are **28 logical px**, matching the
+checked shell mapping. The compositor blur kernel is expressed by niri as **3 passes × 3 px offset**,
+not a CSS radius, so a numerical comparison with design-lab's `blur(40px)` remains **S** rather than
+inventing an equivalence.
+
+### Remaining measured visual differences
+
+X4 changes material ownership and colour response, not surface layout. The fresh pairs therefore
+retain the measured geometry gaps:
+
+- Search remains **164 px too wide**, **17 px too tall**, and **228 px too low**.
+- Control Centre remains **93 px too wide** and about **43 px too low**.
+- Notification Centre remains **104 px too wide**, **459 px too tall**, and **69 px too low**.
+- Apps remains **106 px too wide**, **73 px too tall**, and **60 px too high**.
+- The Dock shelf remains **92 px vs ≈72 px**, or **≈20 px too tall**, and its bottom inset remains
+  **22 px vs ≈18 px**, or **≈4 px too high**.
+
+The menu and Dock glass are now bounded, but their content geometry, overlay sizing, and the
+Notification Centre's unused panel area remain visible differences for the later per-surface pass.

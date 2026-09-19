@@ -35,7 +35,7 @@ impl Render for QuickSettingsView {
             .border_1()
             .border_color(mac::separator())
             .shadow_xl()
-            .bg(mac::material())
+            .bg(mac::material_popover())
             .text_color(mac::text())
             .when_some(self.stream_error.clone(), |panel, error| {
                 panel.child(

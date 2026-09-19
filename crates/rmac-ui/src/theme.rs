@@ -217,6 +217,7 @@ pub struct RadiusTokens {
 pub struct MaterialTokens {
     pub content: RgbaColor,
     pub regular: RgbaColor,
+    pub popover: RgbaColor,
     pub clear: RgbaColor,
     pub sidebar: RgbaColor,
     pub hud: RgbaColor,
@@ -448,6 +449,7 @@ impl ThemeTokens {
             materials: MaterialTokens {
                 content: design.colors.surface_window.into(),
                 regular: design.materials.menu.tint.into(),
+                popover: design.materials.popover.tint.into(),
                 clear: design.materials.dock.tint.into(),
                 sidebar: design.materials.sidebar.tint.into(),
                 hud: design.materials.hud.tint.into(),

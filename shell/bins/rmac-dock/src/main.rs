@@ -101,6 +101,7 @@ mod linux_wayland {
         fn surfaces(&self) -> Option<Vec<DockSurface>> {
             let snapshot = self.snapshot()?;
             let fullscreen = rmac_shell_layer::top_bar_output_policies(&snapshot.compositor);
+            let shelf_extent = dock_shelf_extent(snapshot);
             snapshot.surface_plan.as_ref().ok().map(|surfaces| {
                 surfaces
                     .iter()
@@ -109,11 +110,36 @@ mod linux_wayland {
                         DockSurface::from_description(
                             surface,
                             fullscreen.get(&output).copied().unwrap_or(false),
+                            shelf_extent,
                         )
                     })
                     .collect()
             })
         }
+    }
+
+    fn dock_shelf_extent(snapshot: &rmac_dock_runtime::Snapshot) -> f32 {
+        let entries = snapshot.content.applications.len();
+        let minimized = snapshot
+            .content
+            .places
+            .iter()
+            .filter(|entry| matches!(entry.id, rmac_dock::presentation::EntryId::Minimized(_)))
+            .count();
+        let pinned = snapshot
+            .model
+            .items
+            .iter()
+            .take_while(|item| item.pinned)
+            .count();
+        let separates_running = pinned > 0 && pinned < entries;
+        let separators = usize::from(separates_running) + usize::from(entries > 0);
+        let items = entries + minimized + 1;
+        let children = items + separators;
+        ICON_SIZE * items as f32
+            + SEPARATOR_WIDTH * separators as f32
+            + ICON_GAP * children.saturating_sub(1) as f32
+            + 2.0 * SHELF_PADDING
     }
 
     struct DockMenu {
@@ -531,10 +557,7 @@ mod linux_wayland {
                 .gap(px(ICON_GAP))
                 .p(px(SHELF_PADDING))
                 .rounded(px(tokens::dock_tile_radius(ICON_SIZE)))
-                .bg(rgba(tokens::dock_tint()))
-                .border_1()
-                .border_color(rgba(tokens::dock_border()))
-                .shadow_lg()
+                .bg(rgba(tokens::transparent()))
                 .opacity(if self.hidden { 0.0 } else { 1.0 });
             let mut shelf = if horizontal {
                 shelf.items_end()
@@ -1403,6 +1426,7 @@ mod linux_wayland {
         reserve_space: bool,
         fullscreen: bool,
         overview_visible: bool,
+        shelf_extent: f32,
         description: Option<rmac_dock::SurfaceDescription>,
     }
 
@@ -1414,19 +1438,25 @@ mod linux_wayland {
                 reserve_space: true,
                 fullscreen: false,
                 overview_visible: false,
+                shelf_extent: ICON_SIZE + 2.0 * SHELF_PADDING,
                 description: None,
             }
         }
     }
 
     impl DockSurface {
-        fn from_description(surface: &rmac_dock::SurfaceDescription, fullscreen: bool) -> Self {
+        fn from_description(
+            surface: &rmac_dock::SurfaceDescription,
+            fullscreen: bool,
+            shelf_extent: f32,
+        ) -> Self {
             Self {
                 output: Some(surface.output.clone()),
                 placement: surface.placement,
                 reserve_space: surface.exclusive_zone > 0.0 && !fullscreen,
                 fullscreen,
                 overview_visible: surface.overview_visible,
+                shelf_extent,
                 description: Some(surface.clone()),
             }
         }
@@ -1434,7 +1464,8 @@ mod linux_wayland {
 
     #[derive(Default)]
     struct DockWindows {
-        windows: std::collections::BTreeMap<uuid::Uuid, (DockSurface, AnyWindowHandle)>,
+        windows:
+            std::collections::BTreeMap<uuid::Uuid, (DockSurface, AnyWindowHandle, AnyWindowHandle)>,
     }
 
     impl DockWindows {
@@ -1478,8 +1509,9 @@ mod linux_wayland {
                 .copied()
                 .collect::<Vec<_>>();
             for uuid in unavailable {
-                if let Some((_, handle)) = self.windows.remove(&uuid) {
-                    let _ = handle.update(cx, |_, window, _| window.remove_window());
+                if let Some((_, foreground, backdrop)) = self.windows.remove(&uuid) {
+                    let _ = foreground.update(cx, |_, window, _| window.remove_window());
+                    let _ = backdrop.update(cx, |_, window, _| window.remove_window());
                 }
             }
             for (uuid, display) in displays {
@@ -1493,16 +1525,96 @@ mod linux_wayland {
                 if self
                     .windows
                     .get(&uuid)
-                    .is_some_and(|(current, _)| *current == surface)
+                    .is_some_and(|(current, _, _)| *current == surface)
                 {
                     continue;
                 }
-                let handle = open_dock(display, surface.clone(), status.clone(), cx);
-                if let Some((_, previous)) = self.windows.insert(uuid, (surface, handle)) {
-                    let _ = previous.update(cx, |_, window, _| window.remove_window());
+                let backdrop = open_dock_backdrop(display.clone(), &surface, cx);
+                let foreground = open_dock(display, surface.clone(), status.clone(), cx);
+                if let Some((_, previous_foreground, previous_backdrop)) =
+                    self.windows.insert(uuid, (surface, foreground, backdrop))
+                {
+                    let _ = previous_foreground.update(cx, |_, window, _| window.remove_window());
+                    let _ = previous_backdrop.update(cx, |_, window, _| window.remove_window());
                 }
             }
         }
+    }
+
+    struct DockBackdrop;
+
+    impl Render for DockBackdrop {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .size_full()
+                .rounded(px(tokens::dock_tile_radius(ICON_SIZE)))
+                .bg(rgba(tokens::dock_tint()))
+                .border_1()
+                .border_color(rgba(tokens::dock_border()))
+                .shadow_lg()
+        }
+    }
+
+    fn open_dock_backdrop(
+        display: Rc<dyn PlatformDisplay>,
+        surface: &DockSurface,
+        cx: &mut App,
+    ) -> AnyWindowHandle {
+        let display_id = display.id();
+        let (anchor, size, margin) = match surface.placement {
+            rmac_shell_settings::DockPlacement::Bottom => (
+                Anchor::BOTTOM,
+                Size::new(
+                    px(surface.shelf_extent),
+                    px(ICON_SIZE + 2.0 * SHELF_PADDING),
+                ),
+                (px(0.0), px(0.0), px(SHELF_BOTTOM_MARGIN), px(0.0)),
+            ),
+            rmac_shell_settings::DockPlacement::Left => (
+                Anchor::LEFT,
+                Size::new(
+                    px(ICON_SIZE + 2.0 * SHELF_PADDING),
+                    px(surface.shelf_extent),
+                ),
+                (px(0.0), px(0.0), px(0.0), px(SHELF_BOTTOM_MARGIN)),
+            ),
+            rmac_shell_settings::DockPlacement::Right => (
+                Anchor::RIGHT,
+                Size::new(
+                    px(ICON_SIZE + 2.0 * SHELF_PADDING),
+                    px(surface.shelf_extent),
+                ),
+                (px(0.0), px(SHELF_BOTTOM_MARGIN), px(0.0), px(0.0)),
+            ),
+        };
+        cx.open_window(
+            WindowOptions {
+                titlebar: None,
+                focus: false,
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size,
+                })),
+                display_id: Some(display_id),
+                app_id: Some("dev.rmac.DockMaterial".to_owned()),
+                window_background: WindowBackgroundAppearance::Blurred,
+                kind: WindowKind::LayerShell(LayerShellOptions {
+                    namespace: format!("rmac-dock-material-{}", u64::from(display_id)),
+                    layer: Layer::Top,
+                    anchor,
+                    margin: Some(margin),
+                    keyboard_interactivity: KeyboardInteractivity::None,
+                    // Ignore the foreground Dock's reserved work area; both
+                    // surfaces must occupy the same physical shelf bounds.
+                    exclusive_zone: Some(px(-1.0)),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            |_, cx| cx.new(|_| DockBackdrop),
+        )
+        .expect("open Dock material layer surface")
+        .into()
     }
 
     fn open_dock(
@@ -1534,10 +1646,9 @@ mod linux_wayland {
                     })),
                     display_id: Some(display_id),
                     app_id: Some("dev.rmac.Dock".to_owned()),
-                    // The layer is deliberately much larger than the visible
-                    // shelf so Dock menus can open above it. A blurred window
-                    // background would therefore blur a large band of every
-                    // application behind the otherwise transparent surface.
+                    // This interaction layer spans the output so menus can
+                    // escape the shelf. Blur belongs to the bounded backdrop
+                    // surface, never to this transparent host.
                     window_background: WindowBackgroundAppearance::Transparent,
                     kind: WindowKind::LayerShell(LayerShellOptions {
                         namespace: format!("rmac-dock-{}", u64::from(display_id)),

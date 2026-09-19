@@ -127,7 +127,7 @@ fn drawer_options(bounds: Bounds<Pixels>) -> WindowOptions {
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
-        window_background: WindowBackgroundAppearance::Transparent,
+        window_background: WindowBackgroundAppearance::Blurred,
         app_id: Some(rmac_ui::app_id::APP_DRAWER.to_owned()),
         ..Default::default()
     }
@@ -144,7 +144,7 @@ fn drawer_options(bounds: Bounds<Pixels>) -> WindowOptions {
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
-        window_background: WindowBackgroundAppearance::Transparent,
+        window_background: WindowBackgroundAppearance::Blurred,
         app_id: Some(rmac_ui::app_id::APP_DRAWER.to_owned()),
         window_decorations: Some(WindowDecorations::Client),
         ..Default::default()

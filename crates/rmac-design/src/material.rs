@@ -41,26 +41,26 @@ impl Materials {
         let high = contrast == Contrast::Higher;
         match scheme {
             ResolvedColorScheme::Light => {
-                // S: exact light-material alpha awaits paired black/white
-                // reference captures. The measured light composites are
-                // near-opaque, so keep these explicitly separate from dark.
+                // design-lab/tokens.css is the checked visual mapping for
+                // material tint. Measured composites remain the authority for
+                // the resulting pixels over the reference wallpaper.
                 let menu = Material {
-                    tint: Rgba::from_rgba(0xfcfcfcfa),
+                    tint: Rgba::from_rgba(0xf6f6f8db),
                     blur: true,
                     border: Rgba::from_rgba(0x0000001a),
                     highlight: Rgba::from_rgba(0xffffff66),
                     fallback: colors.surface_raised,
                 };
                 let popover = Material {
-                    tint: Rgba::from_rgba(0xfcfcfcfa),
+                    tint: Rgba::from_rgba(0xf4f4f6d6),
                     ..menu
                 };
                 let hud = Material {
-                    tint: Rgba::from_rgba(0xfffffffc),
+                    tint: Rgba::from_rgba(0xffffffcc),
                     ..menu
                 };
                 let dock = Material {
-                    tint: Rgba::from_rgba(0xffffffe8),
+                    tint: Rgba::from_rgba(0xffffff66),
                     blur: true,
                     border: Rgba::from_rgba(0xffffff59),
                     highlight: Rgba::from_rgba(0x00000014),
@@ -98,25 +98,23 @@ impl Materials {
                 }
             }
             ResolvedColorScheme::Dark => {
-                // S: the dark alpha values remain provisional until the same
-                // surfaces are captured over black and white references.
                 let menu = Material {
-                    tint: Rgba::from_rgba(0x28282bd9),
+                    tint: Rgba::from_rgba(0x2c2c32cc),
                     blur: true,
                     border: Rgba::from_rgba(0xffffff1f),
                     highlight: Rgba::from_rgba(0xffffff14),
                     fallback: colors.surface_raised,
                 };
                 let popover = Material {
-                    tint: Rgba::from_rgba(0x232326cc),
+                    tint: Rgba::from_rgba(0x282a30c7),
                     ..menu
                 };
                 let hud = Material {
-                    tint: Rgba::from_rgba(0x1c1c1eb3),
+                    tint: Rgba::from_rgba(0x1c1c20b8),
                     ..menu
                 };
                 let dock = Material {
-                    tint: Rgba::from_rgba(0x00000033),
+                    tint: Rgba::from_rgba(0xffffff24),
                     blur: true,
                     border: Rgba::from_rgba(0xffffff59),
                     highlight: Rgba::from_rgba(0x00000014),

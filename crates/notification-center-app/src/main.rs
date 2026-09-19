@@ -65,7 +65,7 @@ fn panel_options(bounds: Bounds<Pixels>) -> WindowOptions {
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
-        window_background: WindowBackgroundAppearance::Transparent,
+        window_background: WindowBackgroundAppearance::Blurred,
         app_id: Some("org.rmac.NotificationCenter".into()),
         ..Default::default()
     }
@@ -82,7 +82,7 @@ fn panel_options(bounds: Bounds<Pixels>) -> WindowOptions {
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
-        window_background: WindowBackgroundAppearance::Transparent,
+        window_background: WindowBackgroundAppearance::Blurred,
         app_id: Some("org.rmac.NotificationCenter".into()),
         window_decorations: Some(WindowDecorations::Client),
         ..Default::default()

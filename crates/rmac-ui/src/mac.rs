@@ -42,6 +42,10 @@ pub fn menubar_text() -> Hsla {
 pub fn material() -> Hsla {
     crate::theme::current().materials.regular.hsla()
 }
+/// Floating popover material measured independently from menus and the Dock.
+pub fn material_popover() -> Hsla {
+    crate::theme::current().materials.popover.hsla()
+}
 /// Clear material for compact floating controls over rich backgrounds.
 pub fn material_clear() -> Hsla {
     crate::theme::current().materials.clear.hsla()

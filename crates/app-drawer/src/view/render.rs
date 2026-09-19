@@ -133,7 +133,7 @@ impl Render for AppDrawer {
             }))
             .size_full()
             .v_flex()
-            .bg(mac::material())
+            .bg(mac::material_popover())
             .rounded(px(mac::radius_large_surface()))
             .overflow_hidden()
             .border_1()

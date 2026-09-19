@@ -143,6 +143,16 @@ blur {
     saturation 1.5
 }
 
+// Floating rmac glass samples the actual content beneath it, like macOS,
+// rather than niri's cheaper wallpaper-only xray backdrop. Blur itself is
+// still requested and shaped by each bounded client surface.
+layer-rule {
+    match namespace=r#"^rmac-(launcher|quick-settings|notification-center|app-drawer|dock-material|menu-material)(-|$)"#
+    background-effect {
+        xray false
+    }
+}
+
 binds {
     // Preserve Super/Command letter keys for the focused application. macOS
     // uses Control+Arrow for Spaces and Control+Up for Mission Control.

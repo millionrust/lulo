@@ -150,8 +150,19 @@ mod linux_wayland {
         .detach();
     }
 
+    #[derive(Clone, Debug, PartialEq)]
+    struct MenuBackdropPanel {
+        left: f32,
+        top: f32,
+        width: f32,
+        height: f32,
+    }
+
+    type MenuBackdropUpdate = (Uuid, Option<Vec<MenuBackdropPanel>>);
+
     struct TopBar {
         display_id: u64,
+        output_uuid: Uuid,
         render_count: u64,
         status: Entity<ShellStatus>,
         open_menu: Option<usize>,
@@ -169,6 +180,8 @@ mod linux_wayland {
         pointer_inside: bool,
         hide_generation: u64,
         parking: rmac_compositor::ParkingStore,
+        backdrop_panels: Option<Vec<MenuBackdropPanel>>,
+        backdrop_tx: async_channel::Sender<MenuBackdropUpdate>,
         focus: FocusHandle,
         _blur: Subscription,
     }
@@ -176,8 +189,10 @@ mod linux_wayland {
     impl TopBar {
         fn new(
             display_id: DisplayId,
+            output_uuid: Uuid,
             status: Entity<ShellStatus>,
             fullscreen: bool,
+            backdrop_tx: async_channel::Sender<MenuBackdropUpdate>,
             window: &mut Window,
             cx: &mut Context<Self>,
         ) -> Self {
@@ -190,6 +205,7 @@ mod linux_wayland {
             });
             Self {
                 display_id,
+                output_uuid,
                 render_count: 0,
                 status,
                 open_menu: None,
@@ -207,6 +223,8 @@ mod linux_wayland {
                 pointer_inside: false,
                 hide_generation: 0,
                 parking: rmac_compositor::ParkingStore::load_default(),
+                backdrop_panels: None,
+                backdrop_tx,
                 focus,
                 _blur: blur,
             }
@@ -540,6 +558,40 @@ mod linux_wayland {
                     })
                     .unwrap_or(BAR_HEIGHT + 2.0)
             });
+            let backdrop_panels = if visible {
+                match (menu_left, menu_height) {
+                    (Some(left), Some(height)) => {
+                        let mut panels = vec![MenuBackdropPanel {
+                            left,
+                            top: BAR_HEIGHT + 2.0,
+                            width: MENU_WIDTH,
+                            height,
+                        }];
+                        if let Some(top) = recent_submenu_top {
+                            panels.push(MenuBackdropPanel {
+                                left: left + MENU_WIDTH - 4.0,
+                                top,
+                                width: RECENT_MENU_WIDTH,
+                                height: recent_menu_height(
+                                    self.recent_items.len(),
+                                    self.recent_items_loading,
+                                    self.recent_items_unavailable,
+                                ),
+                            });
+                        }
+                        Some(panels)
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+            if self.backdrop_panels != backdrop_panels {
+                self.backdrop_panels = backdrop_panels.clone();
+                let _ = self
+                    .backdrop_tx
+                    .try_send((self.output_uuid, backdrop_panels));
+            }
             let bar_region = Bounds {
                 origin: point(px(0.0), px(0.0)),
                 size: Size::new(
@@ -630,7 +682,8 @@ mod linux_wayland {
                     .w(px(MENU_WIDTH))
                     .py_1()
                     .rounded(px(tokens::menu_radius()))
-                    .bg(rgba(tokens::regular_dark_tint()))
+                    .bg(rgba(tokens::transparent()))
+                    .text_color(rgba(tokens::primary_text()))
                     .border_1()
                     .border_color(rgba(tokens::light_border()))
                     .shadow_lg()
@@ -794,7 +847,8 @@ mod linux_wayland {
                         .w(px(RECENT_MENU_WIDTH))
                         .py_1()
                         .rounded(px(tokens::menu_radius()))
-                        .bg(rgba(tokens::regular_dark_tint()))
+                        .bg(rgba(tokens::transparent()))
+                        .text_color(rgba(tokens::primary_text()))
                         .border_1()
                         .border_color(rgba(tokens::light_border()))
                         .shadow_lg()
@@ -1581,6 +1635,89 @@ mod linux_wayland {
         cx.new(|cx| ShellStatus::new(status_rx, cx))
     }
 
+    struct MenuBackdrop;
+
+    impl Render for MenuBackdrop {
+        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .size_full()
+                .rounded(px(tokens::menu_radius()))
+                .bg(rgba(tokens::regular_dark_tint()))
+        }
+    }
+
+    #[derive(Default)]
+    struct MenuBackdropTracker {
+        windows: BTreeMap<Uuid, (Vec<MenuBackdropPanel>, Vec<AnyWindowHandle>)>,
+    }
+
+    impl MenuBackdropTracker {
+        fn update(&mut self, output: Uuid, desired: Option<Vec<MenuBackdropPanel>>, cx: &mut App) {
+            if self
+                .windows
+                .get(&output)
+                .is_some_and(|(current, _)| Some(current) == desired.as_ref())
+            {
+                return;
+            }
+            if let Some((_, handles)) = self.windows.remove(&output) {
+                for handle in handles {
+                    let _ = handle.update(cx, |_, window, _| window.remove_window());
+                }
+            }
+            let Some(panels) = desired else {
+                return;
+            };
+            let Some(display) = rmac_shell_layer::output_surfaces::newest_displays(cx)
+                .get(&output)
+                .cloned()
+            else {
+                return;
+            };
+            let handles = panels
+                .iter()
+                .enumerate()
+                .map(|(index, panel)| open_menu_backdrop(display.clone(), output, index, panel, cx))
+                .collect();
+            self.windows.insert(output, (panels, handles));
+        }
+    }
+
+    fn open_menu_backdrop(
+        display: Rc<dyn PlatformDisplay>,
+        output: Uuid,
+        index: usize,
+        panel: &MenuBackdropPanel,
+        cx: &mut App,
+    ) -> AnyWindowHandle {
+        cx.open_window(
+            WindowOptions {
+                titlebar: None,
+                focus: false,
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: Size::new(px(panel.width), px(panel.height)),
+                })),
+                display_id: Some(display.id()),
+                app_id: Some("dev.rmac.MenuMaterial".to_owned()),
+                window_background: WindowBackgroundAppearance::Blurred,
+                kind: WindowKind::LayerShell(LayerShellOptions {
+                    namespace: format!("rmac-menu-material-{output}-{index}"),
+                    layer: Layer::Top,
+                    anchor: Anchor::TOP | Anchor::LEFT,
+                    margin: Some((px(panel.top), px(0.0), px(0.0), px(panel.left))),
+                    keyboard_interactivity: KeyboardInteractivity::None,
+                    exclusive_zone: Some(px(0.0)),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+            |_, cx| cx.new(|_| MenuBackdrop),
+        )
+        .expect("open menu material layer surface")
+        .into()
+    }
+
     #[derive(Default)]
     struct TopBarTracker {
         windows: BTreeMap<Uuid, (bool, AnyWindowHandle)>,
@@ -1595,6 +1732,7 @@ mod linux_wayland {
             &mut self,
             desired: Option<&BTreeMap<Uuid, bool>>,
             status: &Entity<ShellStatus>,
+            backdrop_tx: &async_channel::Sender<MenuBackdropUpdate>,
             cx: &mut App,
         ) {
             let available = rmac_shell_layer::output_surfaces::newest_displays(cx);
@@ -1618,6 +1756,7 @@ mod linux_wayland {
                 if let Some((_, handle)) = self.windows.remove(&uuid) {
                     let _ = handle.update(cx, |_, window, _| window.remove_window());
                 }
+                let _ = backdrop_tx.try_send((uuid, None));
             }
 
             for (uuid, fullscreen) in target {
@@ -1629,7 +1768,14 @@ mod linux_wayland {
                     continue;
                 }
                 if let Some(display) = available.get(&uuid) {
-                    let handle = open_top_bar(display.clone(), status.clone(), fullscreen, cx);
+                    let handle = open_top_bar(
+                        display.clone(),
+                        uuid,
+                        status.clone(),
+                        fullscreen,
+                        backdrop_tx.clone(),
+                        cx,
+                    );
                     if let Some((_, previous)) = self.windows.insert(uuid, (fullscreen, handle)) {
                         let _ = previous.update(cx, |_, window, _| window.remove_window());
                     }
@@ -1640,8 +1786,10 @@ mod linux_wayland {
 
     fn open_top_bar(
         display: Rc<dyn PlatformDisplay>,
+        output_uuid: Uuid,
         status: Entity<ShellStatus>,
         fullscreen: bool,
+        backdrop_tx: async_channel::Sender<MenuBackdropUpdate>,
         cx: &mut App,
     ) -> AnyWindowHandle {
         let display_id = display.id();
@@ -1657,10 +1805,13 @@ mod linux_wayland {
                     })),
                     display_id: Some(display_id),
                     app_id: Some("dev.rmac.TopBar".to_owned()),
+                    // This interaction layer includes the menu drop-down
+                    // region. Bounded companion surfaces request blur for the
+                    // visible panels without softening the whole desktop.
                     window_background: WindowBackgroundAppearance::Transparent,
                     kind: WindowKind::LayerShell(LayerShellOptions {
                         namespace: format!("rmac-top-bar-{}", u64::from(display_id)),
-                        layer: Layer::Top,
+                        layer: Layer::Overlay,
                         anchor: Anchor::TOP | Anchor::LEFT | Anchor::RIGHT,
                         keyboard_interactivity: KeyboardInteractivity::OnDemand,
                         exclusive_zone: Some(px(if fullscreen { 0.0 } else { BAR_HEIGHT })),
@@ -1671,7 +1822,17 @@ mod linux_wayland {
                 {
                     let status = status.clone();
                     move |window, cx| {
-                        cx.new(|cx| TopBar::new(display_id, status, fullscreen, window, cx))
+                        cx.new(|cx| {
+                            TopBar::new(
+                                display_id,
+                                output_uuid,
+                                status,
+                                fullscreen,
+                                backdrop_tx,
+                                window,
+                                cx,
+                            )
+                        })
                     }
                 },
             )
@@ -1693,6 +1854,14 @@ mod linux_wayland {
         app.run(|cx: &mut App| {
             rmac_shell_ui::tokens::install_appearance_watch(cx);
             let status = start_status(cx);
+            let (backdrop_tx, backdrop_rx) = async_channel::bounded(16);
+            cx.spawn(async move |cx| {
+                let mut tracker = MenuBackdropTracker::default();
+                while let Ok((output, desired)) = backdrop_rx.recv().await {
+                    cx.update(|cx| tracker.update(output, desired, cx));
+                }
+            })
+            .detach();
             let (output_tx, output_rx) = async_channel::bounded(4);
             cx.background_executor()
                 .spawn(async move {
@@ -1709,7 +1878,7 @@ mod linux_wayland {
                 match output_rx.recv().await {
                     Ok(mut desired) => 'updates: loop {
                         let complete = cx.update(|cx| {
-                            tracker.reconcile(Some(&desired), &status, cx);
+                            tracker.reconcile(Some(&desired), &status, &backdrop_tx, cx);
                             tracker.len() == desired.len()
                         });
                         if complete {
@@ -1742,7 +1911,7 @@ mod linux_wayland {
                         }
                     },
                     Err(_) => loop {
-                        cx.update(|cx| tracker.reconcile(None, &status, cx));
+                        cx.update(|cx| tracker.reconcile(None, &status, &backdrop_tx, cx));
                         cx.background_executor()
                             .timer(Duration::from_millis(500))
                             .await;

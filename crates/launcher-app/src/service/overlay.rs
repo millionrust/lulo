@@ -38,10 +38,9 @@ fn overlay_options(bounds: WindowBounds) -> WindowOptions {
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
-        // Compact Spotlight is a row of separated glass shapes. The GPUI
-        // window itself stays transparent while each shape supplies its own
-        // material tint; niri supplies compositor blur behind the surface.
-        window_background: WindowBackgroundAppearance::Transparent,
+        // The compact surface matches the visible Spotlight bounds, so its
+        // client-requested blur cannot spill over the desktop.
+        window_background: WindowBackgroundAppearance::Blurred,
         app_id: Some("org.rmac.Launcher".into()),
         ..Default::default()
     }
@@ -58,7 +57,7 @@ fn overlay_options(bounds: WindowBounds) -> WindowOptions {
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
-        window_background: WindowBackgroundAppearance::Transparent,
+        window_background: WindowBackgroundAppearance::Blurred,
         app_id: Some("org.rmac.Launcher".into()),
         window_decorations: Some(WindowDecorations::Client),
         ..Default::default()

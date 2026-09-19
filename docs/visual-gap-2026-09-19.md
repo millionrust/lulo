@@ -312,3 +312,41 @@ already recorded above in this document.
 
 The flat opaque materials, purple accent, and internal layout differences visible in the pairs are
 not claimed by X2; they remain assigned to X3, X4, and the later per-surface work.
+
+## Live-surface X3 — measured default accent
+
+Fresh reference-PC captures are in `target/evidence/live-surfaces-x3/`. The direct comparisons are:
+
+- `target/evidence/live-surfaces-x3/pairs/app-settings-vs-mac.png`
+- `target/evidence/live-surfaces-x3/pairs/overlay-quick-settings-vs-mac.png`
+- `target/evidence/live-surfaces-x3/pairs/overlay-app-drawer-vs-mac.png`
+
+The automatic rmac preference now resolves to the measured macOS default `#1372F9` instead of
+importing GNOME's host accent. Components continue to consume the shared `rmac-design` theme
+authority; the Notes list's former Notes-specific yellow selection was the one exception and now
+uses that authority with `on_accent` text.
+
+### X3 measurements
+
+The following pixels were sampled from the fresh 1920 x 1080 PNGs with
+`scripts/measure-reference.py`:
+
+| Surface | Coordinates | Captured | Measured reference | Channel difference |
+|---|---|---:|---:|---:|
+| Settings selected sidebar row | `50,250`, `200,275`, `300,250` | `#1372F9` | `#1372F9` | `0, 0, 0` |
+| Settings Wi-Fi hero icon | `675,160` | `#1372F9` | `#1372F9` | `0, 0, 0` |
+| Notes selected row | `600,170`, `600,210`, `300,220` | `#1372F9` | `#1372F9` | `0, 0, 0` |
+| Apps active-chip border | `641,298`, `665,280`, `691,298` | `#1952A4` composite | shared accent at 50% opacity | n/a (composite) |
+
+An exact-pixel scan found **21,264** `#1372F9` pixels in the clean Settings capture and
+**25,825** in the clean Notes capture. There is no Notes reference capture in
+`target/evidence/reference-mac/`, so no direct Notes pair is claimed; the measured colour authority
+is the reference for that surface.
+
+### Remaining measured visual differences
+
+X3 changes the accent authority, not geometry or materials. The clean Settings compositor inventory
+records a **750 logical px** rmac window; the macOS capture has no compositor metadata, so its
+corresponding logical-width difference remains **S** rather than being invented from the screenshot.
+The overlay bounds remain the measured X2 values: Control Centre is **93 px too wide**, and Apps is
+**106 px too wide** and **73 px too tall**. Their opaque material difference remains assigned to X4.

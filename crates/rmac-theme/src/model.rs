@@ -94,7 +94,10 @@ impl Preferences {
             SchemePreference::Dark => ResolvedColorScheme::Dark,
         };
         let accent_color = match self.accent_color {
-            AccentPreference::Automatic => host.accent_color.unwrap_or_else(default_accent),
+            // "Automatic" is rmac's measured Mac default, not the host
+            // desktop's accent. Importing GNOME's accent here made every
+            // selection, switch, and active chip purple on the reference PC.
+            AccentPreference::Automatic => default_accent(),
             AccentPreference::Custom([red, green, blue]) => AccentColor::new(red, green, blue)
                 .ok_or_else(|| invalid_accent(Path::new("theme.json")))?,
         };

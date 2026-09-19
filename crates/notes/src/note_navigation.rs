@@ -141,6 +141,7 @@ impl NotesView {
         let mut items = Vec::<AnyElement>::new();
         for (note, search_hit) in notes {
             let note_id = note.id;
+            let is_selected = selected == Some(note.id);
             let title_source = if note.title.trim().is_empty() {
                 "New Note"
             } else {
@@ -239,10 +240,10 @@ impl NotesView {
                     .px_3()
                     .py_2()
                     .rounded(px(rmac_ui::mac::radius_menu_item()))
-                    .when(selected == Some(note.id), |element: Stateful<Div>| {
-                        element.bg(mac::notes_selection())
+                    .when(is_selected, |element: Stateful<Div>| {
+                        element.bg(mac::accent())
                     })
-                    .when(selected != Some(note.id), |element: Stateful<Div>| {
+                    .when(!is_selected, |element: Stateful<Div>| {
                         element.hover(|hover| hover.bg(mac::hover()))
                     })
                     .child(
@@ -257,7 +258,11 @@ impl NotesView {
                                     .when(note.pinned, |element| {
                                         element.child(
                                             Icon::new(IconName::Star)
-                                                .text_color(mac::notes_accent())
+                                                .text_color(if is_selected {
+                                                    mac::on_accent()
+                                                } else {
+                                                    mac::notes_accent()
+                                                })
                                                 .with_size(Size::XSmall),
                                         )
                                     })
@@ -266,7 +271,11 @@ impl NotesView {
                                             .flex_1()
                                             .text_size(rmac_ui::text_px(14.0))
                                             .font_weight(mac::SEMIBOLD)
-                                            .text_color(mac::text())
+                                            .text_color(if is_selected {
+                                                mac::on_accent()
+                                            } else {
+                                                mac::text()
+                                            })
                                             .truncate()
                                             .child(styled_search_fragment(
                                                 title_fragment,
@@ -284,14 +293,22 @@ impl NotesView {
                                         div()
                                             .text_size(rmac_ui::text_px(12.0))
                                             .font_weight(mac::MEDIUM)
-                                            .text_color(mac::text())
+                                            .text_color(if is_selected {
+                                                mac::on_accent()
+                                            } else {
+                                                mac::text()
+                                            })
                                             .child(date_label(note.modified_unix_ms)),
                                     )
                                     .child(
                                         div()
                                             .flex_1()
                                             .text_size(rmac_ui::text_px(12.0))
-                                            .text_color(mac::text_secondary())
+                                            .text_color(if is_selected {
+                                                mac::on_accent().opacity(0.82)
+                                            } else {
+                                                mac::text_secondary()
+                                            })
                                             .truncate()
                                             .child(styled_search_fragment(
                                                 body_fragment,

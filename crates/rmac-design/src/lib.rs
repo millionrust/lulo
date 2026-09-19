@@ -250,6 +250,7 @@ mod tests {
         assert_eq!(palette[0].0, "Multicolor");
         assert_eq!(palette[0].1, Tokens::light_default().colors.system_blue);
         assert_eq!(palette[8].0, "Graphite");
+        assert_eq!(Tokens::light_default().colors.accent, Rgba::rgb(0x1372f9));
     }
 
     #[test]

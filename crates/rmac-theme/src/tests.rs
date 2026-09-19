@@ -31,10 +31,10 @@ fn host() -> HostSnapshot {
 }
 
 #[test]
-fn automatic_preferences_follow_host_values() {
+fn automatic_preferences_use_measured_blue_and_follow_other_host_values() {
     let resolved = Preferences::default().resolve(&host()).unwrap();
     assert_eq!(resolved.color_scheme, ResolvedColorScheme::Dark);
-    assert_eq!(resolved.accent_color.components(), (0.8, 0.2, 0.4));
+    assert_eq!(resolved.accent_color.components(), DEFAULT_ACCENT);
     assert_eq!(resolved.contrast, Contrast::Higher);
     assert_eq!(resolved.motion, MotionPreference::Reduced);
     assert_eq!(resolved.text_scale, TextScale::Standard);

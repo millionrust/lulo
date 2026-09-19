@@ -13,7 +13,7 @@ mod material;
 mod motion;
 mod typography;
 
-pub use color::{Colors, Rgba};
+pub use color::{tint, Colors, Rgba};
 pub use elevation::{Elevation, ElevationLevel, WindowShadow};
 pub use geometry::{Metrics, Radii, Spacing};
 pub use material::{Material, Materials};
@@ -38,6 +38,8 @@ pub struct Tokens {
     /// macOS 27 Liquid Glass intensity, 0.0 (clear) … 1.0 (tinted). The
     /// Appearance pane drives this; 0.5 is the default mid setting.
     pub glass_intensity: f32,
+    /// Dominant 8×8 sRGB wallpaper average. Transparent means unavailable.
+    pub wallpaper_tint: Rgba,
     pub colors: Colors,
     pub materials: Materials,
     pub type_scale: TypeScale,
@@ -72,6 +74,7 @@ impl Tokens {
             contrast: appearance.contrast,
             text_scale: appearance.text_scale,
             glass_intensity,
+            wallpaper_tint: Rgba::TRANSPARENT,
             colors,
             materials,
             type_scale: TypeScale::resolve(appearance.text_scale),
@@ -86,6 +89,30 @@ impl Tokens {
     /// Re-resolve the materials for a Liquid Glass intensity (macOS 27).
     pub fn with_glass_intensity(mut self, glass_intensity: f32) -> Self {
         self.glass_intensity = glass_intensity.clamp(0.0, 1.0);
+        self.materials = Materials::resolve(
+            self.color_scheme,
+            self.contrast,
+            self.colors,
+            self.glass_intensity,
+        );
+        self
+    }
+
+    /// Apply the measured wallpaper mix to app surfaces. The sidebar material
+    /// derives from its explicitly tinted sidebar token; floating glass such
+    /// as menus and Control Center remains unchanged because compositor blur
+    /// already reveals the wallpaper there.
+    pub fn with_wallpaper_tint(mut self, wallpaper_tint: Rgba) -> Self {
+        self.wallpaper_tint = wallpaper_tint.with_alpha(0xff);
+        self.colors.surface_window = tint(self.colors.surface_window, wallpaper_tint, 0.06);
+        self.colors.surface_sidebar_opaque =
+            tint(self.colors.surface_sidebar_opaque, wallpaper_tint, 0.10);
+        self.colors.surface_grouped_background =
+            tint(self.colors.surface_grouped_background, wallpaper_tint, 0.06);
+        self.colors.surface_grouped_row =
+            tint(self.colors.surface_grouped_row, wallpaper_tint, 0.07);
+        self.colors.surface_sheet = tint(self.colors.surface_sheet, wallpaper_tint, 0.05);
+        self.colors.surface_chrome = tint(self.colors.surface_chrome, wallpaper_tint, 0.08);
         self.materials = Materials::resolve(
             self.color_scheme,
             self.contrast,
@@ -212,20 +239,52 @@ mod tests {
     }
 
     #[test]
-    fn dark_flat_surfaces_match_the_measured_reference() {
+    fn dark_neutral_bases_are_ready_for_runtime_wallpaper_tinting() {
         let colors =
             Tokens::resolve(appearance(ResolvedColorScheme::Dark, Contrast::Normal)).colors;
-        assert_eq!(colors.surface_window, Rgba::rgb(0x222025));
-        assert_eq!(colors.surface_sidebar_opaque, Rgba::rgb(0x29252e));
-        assert_eq!(colors.surface_grouped_background, Rgba::rgb(0x222026));
-        assert_eq!(colors.surface_grouped_row, Rgba::rgb(0x29272d));
-        assert_eq!(colors.surface_sheet, Rgba::rgb(0x262227));
+        assert_eq!(colors.surface_window, Rgba::rgb(0x1e1e20));
+        assert_eq!(colors.surface_sidebar_opaque, Rgba::rgb(0x242426));
+        assert_eq!(colors.surface_grouped_background, Rgba::rgb(0x1c1c1e));
+        assert_eq!(colors.surface_grouped_row, Rgba::rgb(0x2c2c2e));
+        assert_eq!(colors.surface_sheet, Rgba::rgb(0x2c2c2e));
         assert_eq!(colors.field_fill, Rgba::rgb(0x181818));
         assert_eq!(colors.statusbar, Rgba::rgb(0x29272c));
         assert_eq!(colors.button_secondary, Rgba::rgb(0x363237));
         assert_eq!(colors.button_destructive, Rgba::rgb(0x812e25));
         assert_eq!(colors.menubar_text, Rgba::rgb(0xffffff));
         assert_eq!(colors.system_blue, Rgba::rgb(0x1372f9));
+    }
+
+    #[test]
+    fn wallpaper_tint_uses_measured_strengths_without_recoloring_floating_glass() {
+        let base = Tokens::resolve(appearance(ResolvedColorScheme::Dark, Contrast::Normal));
+        let tinted = base.with_wallpaper_tint(Rgba::rgb(0xc040e0));
+        assert_eq!(tinted.wallpaper_tint, Rgba::rgb(0xc040e0));
+        assert_eq!(tinted.colors.surface_window, Rgba::rgb(0x28202c));
+        assert_eq!(tinted.colors.surface_sidebar_opaque, Rgba::rgb(0x342739));
+        assert_eq!(
+            tinted.colors.surface_grouped_background,
+            Rgba::rgb(0x261e2a)
+        );
+        assert_eq!(tinted.colors.surface_grouped_row, Rgba::rgb(0x362d3a));
+        assert_eq!(tinted.colors.surface_sheet, Rgba::rgb(0x332d37));
+        assert_eq!(tinted.colors.surface_chrome, Rgba::rgb(0x352b3a));
+        assert_eq!(tinted.materials.sidebar.tint, Rgba::from_rgba(0x342739e0));
+        assert_eq!(tinted.materials.menu.tint, base.materials.menu.tint);
+        assert_eq!(tinted.materials.popover.tint, base.materials.popover.tint);
+        assert_eq!(tinted.materials.dock.tint, base.materials.dock.tint);
+    }
+
+    #[test]
+    fn srgb_tint_clamps_strength_and_preserves_base_alpha() {
+        assert_eq!(
+            tint(Rgba::from_rgba(0x6496c880), Rgba::rgb(0xc83200), 0.25),
+            Rgba::from_rgba(0x7d7d9680)
+        );
+        assert_eq!(
+            tint(Rgba::rgb(0x102030), Rgba::rgb(0xf0e0d0), 2.0),
+            Rgba::rgb(0xf0e0d0)
+        );
     }
 
     #[test]

@@ -197,3 +197,46 @@ new pairs; they remain assigned to later playbook tasks.
 
 Task 2 therefore closes the measured flat-colour gap only. It does not close the recorded layout,
 typography, material-alpha, wallpaper-tint, or interaction gaps.
+
+## Task 3 wallpaper-tinting recapture
+
+The reference-PC capture pair is
+`target/evidence/rmac-2026-09-19-task3/pairs/strong-vs-gray.png`. Both halves are the same maximised
+Finder window and the same state; only the wallpaper source changes. The left source is a strong
+purple image and the right source is neutral gray.
+
+The live wallpaper authority published these measured values before the captures:
+
+| Source | Published 8×8 sRGB average | Relative luminance |
+|---|---:|---:|
+| Strong purple | `[190, 62, 221]` | `0.1961286` |
+| Neutral gray | `[128, 128, 128]` | `0.21586052` |
+
+Pixels below were sampled with `scripts/measure-reference.py` from the two 1920 × 1080 source
+images. The gray side's chroma is at most 3 channel levels, while all three required Finder
+surfaces visibly take the strong wallpaper's hue.
+
+| Surface and coordinate | Strong wallpaper | Gray wallpaper | Strong − gray | Gray chroma |
+|---|---:|---:|---:|---:|
+| Finder content `1000,700` | `28202B` | `242426` | `+4,-4,+5` | 2 |
+| Finder sidebar `100,700` | `322636` | `2C2C2E` | `+6,-6,+8` | 2 |
+| Finder toolbar `1000,85` | `352B3A` | `303033` | `+5,-5,+7` | 3 |
+
+The sidebar material initially retained Task 2's purple reference composite over the gray source.
+That rejected capture is not used. The final implementation keeps a neutral sidebar base and applies
+the explicit 0.10 sidebar role once; menus, Control Center, Dock, and other floating glass tints are
+unchanged. The preference `Allow wallpaper tinting in windows` defaults on and persists through the
+existing theme authority.
+
+### Remaining measured differences
+
+Task 3 changes colour response, not layout. The current capture therefore retains these measured
+macOS geometry gaps from the immediately preceding Finder pair:
+
+- Menu bar: **36 px vs 29 px**, so rmac remains **7 px too tall**.
+- Maximised Finder window: **1,890 px vs 1,577 px**, so rmac remains **313 px wider** in the
+  available reference captures.
+- Finder gallery filmstrip: **130 px vs 70 px**, so rmac remains **60 px too tall**.
+
+The reference PC has one output, so the per-output JSON publication is exercised for `eDP-1` only.
+Multi-output window-local selection remains unclaimed by this evidence.

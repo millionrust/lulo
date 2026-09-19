@@ -288,6 +288,32 @@ fn start_theme_runtime(cx: &mut App) {
         }
     })
     .detach();
+
+    // The wallpaper renderer publishes a bounded per-output colour snapshot.
+    // Re-resolve opaque app surfaces whenever that authority changes.
+    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+        let watcher = cx
+            .background_executor()
+            .spawn(async {
+                rmac_theme::WallpaperColorStore::from_environment()
+                    .and_then(|store| store.watch())
+                    .map_err(|error| error.to_string())
+            })
+            .await;
+        let Ok(watcher) = watcher else {
+            return;
+        };
+        while watcher.recv().await.is_ok() {
+            let result = cx
+                .background_executor()
+                .spawn(async { load_resolved_tokens().await })
+                .await;
+            if let Ok(tokens) = result {
+                apply_resolved_tokens(tokens, cx);
+            }
+        }
+    })
+    .detach();
 }
 
 async fn load_resolved_tokens() -> Result<theme::ThemeTokens, String> {
@@ -301,7 +327,19 @@ async fn load_resolved_tokens() -> Result<theme::ThemeTokens, String> {
 fn load_tokens_with_host(host: rmac_appearance::Snapshot) -> Result<theme::ThemeTokens, String> {
     let store = rmac_theme::ThemeStore::from_environment().map_err(|error| error.to_string())?;
     let resolved = store.load(&host).map_err(|error| error.to_string())?;
-    Ok(theme::ThemeTokens::from_appearance(resolved.effective))
+    let wallpaper_tint = if resolved.preferences.allow_wallpaper_tinting {
+        rmac_theme::WallpaperColorStore::from_environment()
+            .and_then(|store| store.load())
+            .ok()
+            .and_then(|colors| colors.primary())
+            .map(|color| color.dominant)
+    } else {
+        None
+    };
+    Ok(theme::ThemeTokens::from_appearance_with_wallpaper(
+        resolved.effective,
+        wallpaper_tint,
+    ))
 }
 
 fn apply_resolved_tokens(tokens: theme::ThemeTokens, cx: &mut gpui::AsyncApp) {

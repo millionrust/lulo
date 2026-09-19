@@ -21,6 +21,7 @@ fn theme(accent: rmac_theme::AccentPreference) -> rmac_theme::Snapshot {
             contrast: rmac_theme::ContrastPreference::Higher,
             motion: rmac_theme::MotionPreferenceSetting::Reduced,
             text_scale: rmac_theme::TextScalePreference::Large,
+            allow_wallpaper_tinting: true,
         },
         effective: rmac_appearance::ResolvedAppearance {
             color_scheme: rmac_appearance::ResolvedColorScheme::Dark,

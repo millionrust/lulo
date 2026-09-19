@@ -910,14 +910,39 @@ mod linux_wayland {
                         rmac_wallpaper_runtime::Update::Render {
                             rasterized, health, ..
                         } => {
-                            let surfaces = blocking::unblock(move || {
-                                rasterized
-                                    .surfaces
-                                    .into_iter()
-                                    .filter_map(prepare_surface)
-                                    .collect()
+                            let (surfaces, colors) = blocking::unblock(move || {
+                                let mut prepared = std::collections::BTreeMap::new();
+                                let mut outputs = std::collections::BTreeMap::new();
+                                for surface in rasterized.surfaces {
+                                    if let Some(summary) =
+                                        rmac_wallpaper_image::summarize_color(&surface.image)
+                                    {
+                                        outputs.insert(
+                                            surface.output.0.clone(),
+                                            rmac_theme::WallpaperColor {
+                                                dominant: summary.dominant,
+                                                luminance: summary.luminance,
+                                            },
+                                        );
+                                    }
+                                    if let Some((output, surface)) = prepare_surface(surface) {
+                                        prepared.insert(output, surface);
+                                    }
+                                }
+                                (
+                                    prepared,
+                                    rmac_theme::WallpaperColors { outputs },
+                                )
                             })
                             .await;
+                            match rmac_theme::WallpaperColorStore::from_environment()
+                                .and_then(|store| store.publish(&colors))
+                            {
+                                Ok(_) => {}
+                                Err(error) => {
+                                    eprintln!("wallpaper colour publication failed: {error}")
+                                }
+                            }
                             let _ = wallpaper_prepared_tx
                                 .send(PreparedUpdate::Health(health))
                                 .await;

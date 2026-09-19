@@ -123,7 +123,11 @@ impl Materials {
                     fallback: Rgba::from_rgba(0x2a2a2df2),
                 };
                 let sidebar = Material {
-                    tint: Rgba::from_rgba(0x29252ee0),
+                    // Unlike floating glass, the sidebar is one of Task 3's
+                    // explicitly wallpaper-tinted window surfaces. Its
+                    // opaque token carries the measured 0.10 mix; preserve
+                    // the provisional material alpha here.
+                    tint: colors.surface_sidebar_opaque.with_alpha(0xe0),
                     blur: true,
                     border: Rgba::TRANSPARENT,
                     highlight: Rgba::TRANSPARENT,

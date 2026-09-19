@@ -117,7 +117,7 @@ impl FinderView {
             .gap_2()
             .pr_3()
             .relative()
-            .bg(list_bg())
+            .bg(toolbar_bg())
             .when(layout.sidebar_visible, |toolbar| {
                 toolbar.child(
                     div()

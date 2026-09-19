@@ -225,13 +225,13 @@ All sizes are **logical pixels** at scale 1. All colors are `0xRRGGBBAA`.
 
 | Token | Light | Dark | Src |
 |---|---|---|---|
-| `surface.window` | `FFFFFFFF` | `222025FF` | S light / R dark |
-| `surface.chrome` (toolbar/titlebar fallback) | `F6F6F6FF` | `29272CFF` | S light / S dark |
-| `surface.sidebar.opaque` | `F2F2F2FF` | `29252EFF` | S light / R dark |
+| `surface.window` | `FFFFFFFF` | `1E1E20FF` neutral → runtime tint | S light / R dark composite `222025` |
+| `surface.chrome` (toolbar/titlebar fallback) | `F6F6F6FF` | `29292CFF` neutral → runtime tint | S light / S dark |
+| `surface.sidebar.opaque` | `F2F2F2FF` | `242426FF` neutral → runtime tint | S light / R dark composite `29252E` |
 | `surface.raised` (cards, grouped rows) | `FFFFFFFF` | `323236FF` | R |
-| `surface.grouped.background` (Settings detail pane) | `F5F5F7FF` | `222026FF` | S light / R dark |
-| `surface.grouped.row` | `FFFFFFFF` | `29272DFF` | S light / R dark |
-| `surface.sheet` | `FFFFFFFF` | `262227FF` | S light / R dark |
+| `surface.grouped.background` (Settings detail pane) | `F5F5F7FF` | `1C1C1EFF` neutral → runtime tint | S light / R dark composite `222026` |
+| `surface.grouped.row` | `FFFFFFFF` | `2C2C2EFF` neutral → runtime tint | S light / R dark composite `29272D` |
+| `surface.sheet` | `FFFFFFFF` | `2C2C2EFF` neutral → runtime tint | S light / R dark composite `262227` |
 | `field.fill` | `E9E9ECFF` | `181818FF` | S light / R dark |
 | `surface.statusbar` | `F6F6F6FF` | `29272CFF` | S light / R dark |
 | `button.secondary` | `E9E9ECFF` | `363237FF` | S light / R dark |
@@ -282,7 +282,7 @@ Materials are *tint + compositor blur behind the surface only*. The compositor (
 | `material.popover` | `FCFCFCFA` (S) | `232326CC` (S) | yes | same as menu | Control Center, NC, Spotlight, calendar popover | opaque `surface.raised` |
 | `material.hud` | `FFFFFFFC` (S) | `1C1C1EB3` (S) | yes | same | OSD, banners | opaque |
 | `material.dock` | `FFFFFFE8` (S) | `00000033` (S) | yes | 0.5 px `FFFFFF59` outer + `00000014` inner | Dock shelf | `F0F0F0F2` / `2A2A2DF2` |
-| `material.sidebar` | `FCFCFCFA` (S) | `29252EE0` (S) | yes (window rule) | none; right edge `separator` | app sidebars | `surface.sidebar.opaque` |
+| `material.sidebar` | `FCFCFCFA` (S) | runtime `surface.sidebar.opaque` @ `E0` (S alpha) | yes (window rule) | none; right edge `separator` | app sidebars | `surface.sidebar.opaque` |
 | `material.menubar` | `00000000` (fully clear) | `00000000` | no | none | menu bar | `F6F6F6F2` / `1E1E20F2` |
 | `material.tooltip` | `FCFCFCFF` (S) | `2C2C2EF2` (S) | no | 0.5 px separator | tooltips | same |
 
@@ -1145,7 +1145,7 @@ circular glyph badge. Rebuild the ASCII sketch above to match `settings-appearan
 - **General ▸ Login Items & Extensions:** "Open at Login" list (+/− with app picker), "Allow in the Background" list (systemd user units/XDG autostart with switches).
 - **General ▸ Sharing:** Content & Media: File Sharing (Samba if installed), Remote Login (SSH, needs polkit), Remote Management/Screen Sharing (gnome-remote-desktop if installed); Local hostname editable. Rows absent when the service is not installed.
 - **Accessibility:** Vision: Screen reader (Orca switch + shortcut), Zoom (niri has no zoom → omit unless implemented), Display (Increase contrast, Reduce transparency, Reduce motion, Pointer size slider, Differentiate without color, Text size → global TextScale), Spoken Content *(omit)*. Hearing: Audio (Flash the screen when an alert sound occurs), Captions omit. Motor: Keyboard (Sticky keys, Slow keys, Full Keyboard Access switch), Pointer Control (mouse keys *if* supported). General: Shortcut (⌥⌘F5 panel listing enabled toggles).
-- **Appearance (macOS 27 order, measured):** Appearance tiles Light/Dark/Auto (picture previews) · **Liquid Glass** live preview + intensity slider · Theme → **Colour** (Multicolour + 8 dots) · **Text highlight colour** pop-up (Automatic) · **Icon & widget style** tiles (Default/Dark/Clear/Tinted) · Folder color pop-up *(Files feature)*, Sidebar icon size (Small/Medium/Large), Allow wallpaper tinting in windows switch *(omit until material implements it)*, Show scroll bars (Automatically/When scrolling/Always), Click in the scroll bar to (Jump to next page / Jump to spot).
+- **Appearance (macOS 27 order, measured):** Appearance tiles Light/Dark/Auto (picture previews) · **Liquid Glass** live preview + intensity slider · Theme → **Colour** (Multicolour + 8 dots) · **Text highlight colour** pop-up (Automatic) · **Icon & widget style** tiles (Default/Dark/Clear/Tinted) · Folder color pop-up *(Files feature)*, Sidebar icon size (Small/Medium/Large), Allow wallpaper tinting in windows switch (live, default on), Show scroll bars (Automatically/When scrolling/Always), Click in the scroll bar to (Jump to next page / Jump to spot).
 - **Menu Bar (new):** Automatically hide and show the menu bar pop-up, Show menu bar background switch, Recent documents/applications/servers count pop-up, "Menu Bar Controls" list: each control with Show in Menu Bar pop-up (Always/When Active/Never), Clock Options… sheet (3.7 fields), Allow in the Menu Bar list of third-party SNI items with switches.
 - **Search (Spotlight):** Search results categories with switches (Applications, Files, Folders, System Settings, Calculator, Actions, Clipboard history + consent text), "Help Apple improve…" omitted, Search Privacy… sheet (excluded paths +/−, existing), Include removable volumes switch (existing).
 - **Desktop & Dock:** exactly 4.15 fields, then Desktop & Stage Manager: Show items On Desktop (if desktop icons implemented), Click wallpaper to reveal desktop pop-up, Stage Manager **omitted**; Widgets omitted; Default web browser pop-up (xdg-settings); Windows: Prefer tabs when opening documents (Always/In Full Screen/Never — first-party apps honor), Ask to keep changes when closing documents, Close windows when quitting an application, Drag windows to screen edges to tile, Drag windows to menu bar to fill screen, Hold ⌥ key while dragging windows to tile, Tiled windows have margins; Mission Control: Automatically rearrange Spaces based on most recent use (omit unless niri can reorder workspaces), When switching to an application, switch to a Space with open windows, Group windows by application, Displays have separate Spaces (read-only on) ; Shortcuts… sheet; Hot Corners… sheet (4 pop-ups: – / Mission Control / Application Windows / Desktop / Notification Center / Launchpad→Apps / Quick Note (if Notes) / Lock Screen / Put Display to Sleep / Start Screen Saver omitted) — implement hot corners in `rmac-dock`'s pointer barrier watcher or a dedicated 1 px layer surface per corner.

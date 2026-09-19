@@ -58,7 +58,7 @@ pub enum TextScalePreference {
     ExtraLarge,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
     pub color_scheme: SchemePreference,
@@ -66,6 +66,20 @@ pub struct Preferences {
     pub contrast: ContrastPreference,
     pub motion: MotionPreferenceSetting,
     pub text_scale: TextScalePreference,
+    pub allow_wallpaper_tinting: bool,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self {
+            color_scheme: SchemePreference::default(),
+            accent_color: AccentPreference::default(),
+            contrast: ContrastPreference::default(),
+            motion: MotionPreferenceSetting::default(),
+            text_scale: TextScalePreference::default(),
+            allow_wallpaper_tinting: true,
+        }
+    }
 }
 
 impl Preferences {

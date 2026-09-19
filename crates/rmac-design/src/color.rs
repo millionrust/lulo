@@ -70,6 +70,23 @@ impl Rgba {
     }
 }
 
+/// Mix two colours channel-by-channel in encoded sRGB while preserving the
+/// base alpha. Wallpaper tint strengths are measured in this colour space.
+pub fn tint(base: Rgba, wallpaper: Rgba, strength: f32) -> Rgba {
+    let strength = strength.clamp(0.0, 1.0);
+    let mix = |base: u8, wallpaper: u8| {
+        (f32::from(base) * (1.0 - strength) + f32::from(wallpaper) * strength)
+            .round()
+            .clamp(0.0, 255.0) as u32
+    };
+    Rgba::from_rgba(
+        (mix(base.red(), wallpaper.red()) << 24)
+            | (mix(base.green(), wallpaper.green()) << 16)
+            | (mix(base.blue(), wallpaper.blue()) << 8)
+            | u32::from(base.alpha()),
+    )
+}
+
 /// Semantic label, fill, surface, system, and traffic-light colors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Colors {
@@ -260,13 +277,15 @@ impl Colors {
                 row_alternate: Rgba::rgb(0x242427),
                 focus_ring: accent.with_alpha(0x99),
 
-                surface_window: Rgba::rgb(0x222025),
-                surface_chrome: Rgba::rgb(0x29272c),
-                surface_sidebar_opaque: Rgba::rgb(0x29252e),
+                // Neutral bases. Task 3 resolves wallpaper-tinted surfaces
+                // from these values at runtime.
+                surface_window: Rgba::rgb(0x1e1e20),
+                surface_chrome: Rgba::rgb(0x29292c),
+                surface_sidebar_opaque: Rgba::rgb(0x242426),
                 surface_raised: Rgba::rgb(0x323236),
-                surface_grouped_background: Rgba::rgb(0x222026),
-                surface_grouped_row: Rgba::rgb(0x29272d),
-                surface_sheet: Rgba::rgb(0x262227),
+                surface_grouped_background: Rgba::rgb(0x1c1c1e),
+                surface_grouped_row: Rgba::rgb(0x2c2c2e),
+                surface_sheet: Rgba::rgb(0x2c2c2e),
                 field_fill: Rgba::rgb(0x181818),
                 statusbar: Rgba::rgb(0x29272c),
                 button_secondary: Rgba::rgb(0x363237),

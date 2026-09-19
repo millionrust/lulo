@@ -48,6 +48,7 @@ fn explicit_preferences_override_host_values() {
         contrast: ContrastPreference::Normal,
         motion: MotionPreferenceSetting::Full,
         text_scale: TextScalePreference::ExtraLarge,
+        allow_wallpaper_tinting: false,
     };
     let resolved = preferences.resolve(&host()).unwrap();
     assert_eq!(resolved.color_scheme, ResolvedColorScheme::Light);
@@ -66,6 +67,7 @@ fn save_round_trips_versioned_preferences() {
         contrast: ContrastPreference::Higher,
         motion: MotionPreferenceSetting::Reduced,
         text_scale: TextScalePreference::Large,
+        allow_wallpaper_tinting: false,
     };
     store.save(&preferences, &host()).unwrap();
     let loaded = store.load(&host()).unwrap();
@@ -79,6 +81,7 @@ fn version_one_documents_without_text_scale_keep_standard_size() {
     let stored: StoredPreferences =
         serde_json::from_str(r#"{"version":1,"preferences":{"color_scheme":"dark"}}"#).unwrap();
     assert_eq!(stored.preferences.text_scale, TextScalePreference::Standard);
+    assert!(stored.preferences.allow_wallpaper_tinting);
 }
 
 #[test]

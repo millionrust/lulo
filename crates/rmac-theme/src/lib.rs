@@ -5,8 +5,10 @@
 
 mod model;
 mod store;
+mod wallpaper;
 
 pub use model::*;
+pub use wallpaper::*;
 
 #[cfg(test)]
 mod tests;

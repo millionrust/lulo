@@ -29,10 +29,17 @@ in windows", on by default). Measured against a purple wallpaper:
 rmac currently paints flat neutral greys. Against a colourful wallpaper that reads as *dead* —
 it is one of the strongest "this is not a Mac" signals and nobody can name it.
 
-**Implement:** `rmac-design` gains `wallpaper_tint: Rgba` (the dominant hue of the current
-wallpaper, published by the wallpaper service, already computed there for menu-bar luminance) and a
-`tint(base, strength)` helper. Strengths measured here: window/content **0.06**, sidebar **0.10**,
-grouped rows **0.07**, sheets **0.05**. Off when the user disables tinting or picks a solid colour.
+**Implemented in Playbook Task 3:** the wallpaper service downsamples each output's image to 8×8,
+publishes the average sRGB colour and relative luminance to
+`$XDG_RUNTIME_DIR/rmac/wallpaper-colors.json`, and `rmac-design` resolves surfaces with
+`tint(base, wallpaper, strength)`. Strengths: window/content **0.06**, sidebar **0.10**, grouped
+rows **0.07**, sheets **0.05**, and toolbars **0.08**. The Appearance switch disables the mixes.
+Floating glass materials are not recoloured; they reveal the wallpaper through blur. The sidebar is
+the explicit 0.10 window-surface role and retains its provisional material alpha.
+
+The dark neutral bases stored in `rmac-design` are content `1E1E20`, sidebar `242426`, grouped
+background `1C1C1E`, grouped row `2C2C2E`, sheet `2C2C2E`, and toolbar `29292C`. The table below
+records rendered reference composites, not replacements for those neutral bases.
 
 ### 3. Light-mode materials are almost opaque; dark-mode materials are not
 Spotlight's bar in Light measures `FCFCFC` — effectively opaque white. The same bar in Dark measures

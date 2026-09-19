@@ -303,7 +303,21 @@ pub struct ThemeTokens {
 
 impl ThemeTokens {
     pub fn from_appearance(appearance: ResolvedAppearance) -> Self {
-        let design = DesignTokens::resolve(appearance);
+        Self::from_appearance_with_wallpaper(appearance, None)
+    }
+
+    pub fn from_appearance_with_wallpaper(
+        appearance: ResolvedAppearance,
+        wallpaper_tint: Option<[u8; 3]>,
+    ) -> Self {
+        let design = wallpaper_tint.map_or_else(
+            || DesignTokens::resolve(appearance),
+            |[red, green, blue]| {
+                DesignTokens::resolve(appearance).with_wallpaper_tint(Rgba::rgb(
+                    (u32::from(red) << 16) | (u32::from(green) << 8) | u32::from(blue),
+                ))
+            },
+        );
         let light = appearance.color_scheme == ResolvedColorScheme::Light;
         let accent: RgbaColor = design.colors.accent.into();
         let danger: RgbaColor = design.colors.danger.into();
@@ -617,6 +631,23 @@ mod tests {
             assert!(tokens.materials.regular.alpha > tokens.materials.clear.alpha);
             assert!(tokens.materials.hud.alpha > tokens.materials.clear.alpha);
         }
+    }
+
+    #[test]
+    fn wallpaper_color_tints_opaque_surfaces_but_not_glass_materials() {
+        let appearance = appearance(
+            ResolvedColorScheme::Dark,
+            (19.0 / 255.0, 114.0 / 255.0, 249.0 / 255.0),
+            Contrast::Normal,
+            MotionPreference::Full,
+        );
+        let neutral = ThemeTokens::from_appearance(appearance);
+        let tinted = ThemeTokens::from_appearance_with_wallpaper(appearance, Some([192, 64, 224]));
+        assert_ne!(tinted.colors.window, neutral.colors.window);
+        assert_ne!(tinted.colors.sidebar, neutral.colors.sidebar);
+        assert_ne!(tinted.colors.chrome, neutral.colors.chrome);
+        assert_eq!(tinted.materials.regular, neutral.materials.regular);
+        assert_eq!(tinted.materials.clear, neutral.materials.clear);
     }
 
     #[test]

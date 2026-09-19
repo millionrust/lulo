@@ -221,6 +221,23 @@ impl Settings {
                         .children(swatches),
                 ),
         );
+        let tint_view = view.clone();
+        cards.push(card(vec![row_base()
+            .child(text_block(
+                "Allow wallpaper tinting in windows".into(),
+                Some("Subtly mixes the desktop colour into opaque app surfaces.".into()),
+            ))
+            .child(
+                Toggle::new("theme-wallpaper-tinting")
+                    .checked(preferences.allow_wallpaper_tinting)
+                    .disabled(!enabled)
+                    .on_click(move |value, _, cx| {
+                        tint_view.update(cx, |settings, cx| {
+                            settings.apply_theme_change(ThemeChange::WallpaperTinting(*value), cx)
+                        });
+                    }),
+            )
+            .into_any_element()]));
         cards.push(card(vec![
             theme_segment_row(
                 view.clone(),

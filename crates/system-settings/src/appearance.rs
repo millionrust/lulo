@@ -5,6 +5,7 @@ pub(super) enum ThemeChange {
     Contrast(rmac_theme::ContrastPreference),
     Motion(rmac_theme::MotionPreferenceSetting),
     TextScale(rmac_theme::TextScalePreference),
+    WallpaperTinting(bool),
 }
 
 #[derive(Clone, Copy)]
@@ -110,6 +111,7 @@ fn apply_theme_change_to_preferences(
         ThemeChange::Contrast(value) => preferences.contrast = value,
         ThemeChange::Motion(value) => preferences.motion = value,
         ThemeChange::TextScale(value) => preferences.text_scale = value,
+        ThemeChange::WallpaperTinting(value) => preferences.allow_wallpaper_tinting = value,
     }
 }
 
@@ -159,6 +161,7 @@ mod tests {
             contrast: rmac_theme::ContrastPreference::Normal,
             motion: rmac_theme::MotionPreferenceSetting::Full,
             text_scale: rmac_theme::TextScalePreference::Large,
+            allow_wallpaper_tinting: true,
         };
         let mut changed = original.clone();
         apply_theme_change_to_preferences(
@@ -170,5 +173,9 @@ mod tests {
         assert_eq!(changed.accent_color, original.accent_color);
         assert_eq!(changed.motion, original.motion);
         assert_eq!(changed.text_scale, original.text_scale);
+        assert_eq!(
+            changed.allow_wallpaper_tinting,
+            original.allow_wallpaper_tinting
+        );
     }
 }

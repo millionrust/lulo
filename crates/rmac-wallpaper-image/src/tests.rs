@@ -8,6 +8,34 @@ fn target(width: u32, height: u32) -> rmac_compositor::PhysicalSize {
 }
 
 #[test]
+fn color_summary_is_an_eight_by_eight_srgb_average() {
+    let mut rgba = Vec::with_capacity(8 * 8 * 4);
+    for row in 0..8_u8 {
+        for column in 0..8_u8 {
+            rgba.extend_from_slice(&[column * 20, row * 10, 200, 255]);
+        }
+    }
+    let image = Decoded {
+        width: 8,
+        height: 8,
+        rgba: Arc::from(rgba),
+    };
+    let summary = summarize_color(&image).unwrap();
+    assert_eq!(summary.dominant, [70, 35, 200]);
+    assert!((summary.luminance - 0.067).abs() < 0.002);
+}
+
+#[test]
+fn color_summary_rejects_an_invalid_pixel_buffer() {
+    let image = Decoded {
+        width: 8,
+        height: 8,
+        rgba: Arc::from([0_u8; 4]),
+    };
+    assert_eq!(summarize_color(&image), None);
+}
+
+#[test]
 fn procedural_default_is_deterministic_bounded_and_cached_by_target() {
     let cache = Cache::new(1024 * 1024);
     let source = || {

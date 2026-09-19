@@ -380,6 +380,27 @@ The remaining System Monitor card/table redesign and Terminal content padding ar
 remain in their per-surface audit lists. The fresh full-surface run also confirms the shared change
 did not add right-side controls to any other rmac window.
 
+### X5 Wayland boundary correction
+
+The first X5 pass removed the control cluster owned by `gpui-component`, but the ordinary Wayland
+window options still requested the default server decoration. Depending on which package set was
+built together, libdecor could therefore add the same `− □ ×` cluster again. The shared window
+authority now explicitly requests client decorations, because rmac already owns the complete
+titlebar and its traffic lights.
+
+The corrected reference-PC comparisons are:
+
+- `target/evidence/live-surfaces-x5-correction/pairs/app-terminal-after-before.png`
+- `target/evidence/live-surfaces-x5-correction/pairs/app-notes-after-before.png`
+- `target/evidence/live-surfaces-x5-correction/pairs/app-monitor-after-before.png`
+- `target/evidence/live-surfaces-x5-correction/pairs/app-texteditor-after-before.png`
+
+All four current captures contain **3** left traffic lights and **0** right-side platform buttons.
+The audited captures contain **3** left traffic lights and **3** right-side platform buttons, so
+the correction removes exactly **3 controls per window** while changing the traffic-light count by
+**0**. The shared titlebar remains **34 logical px** high; its remaining difference from the
+**38 logical px** design token is still **4 logical px** and is not hidden in this correction.
+
 ## Live-surface X6 — user-safe error presentation
 
 Fresh reference-PC captures are in `target/evidence/live-surfaces-x6/`. The reference-Mac set has

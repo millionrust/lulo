@@ -1,4 +1,4 @@
-use gpui::{SharedString, WindowBounds, WindowOptions};
+use gpui::{SharedString, WindowBounds, WindowDecorations, WindowOptions};
 
 use super::{app_id, native_window_title, window::window_options_for_app_with_bounds};
 
@@ -31,6 +31,14 @@ fn window_options_publish_the_exact_application_id() {
             .app_id,
         Some(app_id::NOTES.to_owned())
     );
+}
+
+#[test]
+fn app_windows_request_only_rmac_client_decorations() {
+    let options =
+        window_options_for_app_with_bounds(app_id::NOTES, 1080.0, 720.0, WindowBounds::default());
+
+    assert_eq!(options.window_decorations, Some(WindowDecorations::Client));
 }
 
 #[test]

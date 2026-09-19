@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use gpui::{
     point, px, size, App, AppContext as _, Bounds, Context, Pixels, Render, SharedString, Size,
-    TitlebarOptions, Window, WindowBounds, WindowOptions,
+    TitlebarOptions, Window, WindowBounds, WindowDecorations, WindowOptions,
 };
 use gpui_component::Root;
 use rmac_window_state::{DisplayBounds, Store as WindowStateStore, WindowMode, WindowState};
@@ -141,6 +141,10 @@ fn window_options_with_bounds(
             // view so our chrome draws to the top edge.
             traffic_light_position: Some(point(px(-200.0), px(0.0))),
         }),
+        // rmac owns the complete titlebar, including its single macOS traffic-
+        // light cluster. Requesting server decorations on Wayland lets
+        // libdecor add a second Linux minimize/maximize/close cluster.
+        window_decorations: Some(WindowDecorations::Client),
         window_min_size: Some(minimum_window_size(width, height)),
         ..Default::default()
     }

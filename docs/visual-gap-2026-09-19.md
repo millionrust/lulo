@@ -240,3 +240,32 @@ macOS geometry gaps from the immediately preceding Finder pair:
 
 The reference PC has one output, so the per-output JSON publication is exercised for `eDP-1` only.
 Multi-output window-local selection remains unclaimed by this evidence.
+
+## Live-surface X1 — window radius and shadows
+
+Fresh reference-PC captures are in `target/evidence/live-surfaces-x1/`. The two direct macOS
+comparisons are:
+
+- `target/evidence/live-surfaces-x1/pairs/app-files-vs-mac.png`
+- `target/evidence/live-surfaces-x1/pairs/app-settings-vs-mac.png`
+
+The capture metadata beside every PNG reports the compositor app IDs. The six normal applications
+were `org.rmac.Files`, `org.rmac.SystemSettings`, `org.rmac.Terminal`, `org.rmac.Notes`,
+`org.rmac.SystemMonitor`, and `org.rmac.TextEditor`. The window rule is deliberately unscoped, so
+all six IDs and third-party IDs receive the same silhouette.
+
+### X1 measurements
+
+- Terminal's captured top-left curve begins **16 px** inside both the top and left bounds; the
+  design-lab window radius is **16 px**, for a **0 px radius difference**.
+- Active shadow offset is **12 px** vs the design-lab **12 px**, a **0 px difference**.
+- Active shadow softness is **32 px** vs the design-lab **32 px**, a **0 px difference**.
+- Inactive shadow offset is **4 px** vs the design-lab **4 px**, a **0 px difference**.
+- Inactive shadow softness is **12 px** vs the design-lab **12 px**, a **0 px difference**.
+- The dark-window top inner edge remains absent: **0 px vs 0.5 px**, a **0.5 px shortfall** to be
+  handled with the shared window material rather than a compositor shadow.
+
+The earlier `target/evidence/live-surfaces/` audit was made while niri had loaded the Ubuntu
+recovery configuration (`~/.config/niri/config.kdl`), so it could not exercise the package-owned
+rmac rule. This recapture temporarily loaded the candidate policy, restored the recovery file
+after capture, and verified every app ID in the emitted `*-windows.json` files.

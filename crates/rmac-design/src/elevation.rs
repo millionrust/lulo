@@ -78,18 +78,18 @@ impl Elevation {
                 alpha: alpha(0.24),
             },
             window_active: WindowShadow {
-                softness: 28.0,
-                spread: 2.0,
-                offset_y: 8.0,
-                color: Rgba::from_rgba(0x00000050)
-                    .with_alpha((0x50 as f32 * scale).min(255.0) as u8),
+                softness: 32.0,
+                spread: 0.0,
+                offset_y: 12.0,
+                color: Rgba::from_rgba(0x00000073)
+                    .with_alpha((0x73 as f32 * scale).min(255.0) as u8),
             },
             window_inactive: WindowShadow {
-                softness: 18.0,
-                spread: 1.0,
+                softness: 12.0,
+                spread: 0.0,
                 offset_y: 4.0,
-                color: Rgba::from_rgba(0x00000030)
-                    .with_alpha((0x30 as f32 * scale).min(255.0) as u8),
+                color: Rgba::from_rgba(0x0000004d)
+                    .with_alpha((0x4d as f32 * scale).min(255.0) as u8),
             },
             dock: ElevationLevel {
                 offset_x: 0.0,

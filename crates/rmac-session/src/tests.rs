@@ -297,16 +297,25 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
 }
 
 #[test]
-fn finder_window_rule_uses_the_measured_document_curve() {
+fn every_window_uses_the_measured_radius_and_active_inactive_shadows() {
     let shell = include_str!("../../../packaging/rmac-session/shell.kdl");
-    let finder = shell
-        .split_once(r##"match app-id=r#"^org\.rmac\.Files$"#"##)
+    let rule = shell
+        .split_once("// macOS uses freely movable, overlapping application windows.")
         .map(|(_, suffix)| suffix)
         .and_then(|suffix| suffix.split_once("\n}\n").map(|(rule, _)| rule))
-        .expect("Finder window rule");
+        .expect("global application window rule");
 
-    assert!(finder.contains("geometry-corner-radius 12"));
-    assert!(!finder.contains("geometry-corner-radius 24"));
+    // This rule deliberately has no app-id matcher: Files, Settings, Terminal,
+    // Notes, System Monitor, Text Editor, and third-party app IDs all receive
+    // the same compositor-owned window silhouette.
+    assert!(!rule.contains("match app-id="));
+    assert!(rule.contains("geometry-corner-radius 16"));
+    assert!(rule.contains("clip-to-geometry true"));
+    assert!(rule.contains("softness 32"));
+    assert!(rule.contains("spread 0"));
+    assert!(rule.contains("offset x=0 y=12"));
+    assert!(rule.contains("color \"#00000073\""));
+    assert!(rule.contains("inactive-color \"#0000004d\""));
 }
 
 #[test]

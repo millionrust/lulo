@@ -208,6 +208,23 @@ mod tests {
     }
 
     #[test]
+    fn window_elevation_matches_the_design_lab_mapping() {
+        let elevation = Tokens::resolve(appearance(
+            ResolvedColorScheme::Dark,
+            Contrast::Normal,
+        ))
+        .elevation;
+        assert_eq!(elevation.window_active.softness, 32.0);
+        assert_eq!(elevation.window_active.spread, 0.0);
+        assert_eq!(elevation.window_active.offset_y, 12.0);
+        assert_eq!(elevation.window_active.color, Rgba::from_rgba(0x00000073));
+        assert_eq!(elevation.window_inactive.softness, 12.0);
+        assert_eq!(elevation.window_inactive.spread, 0.0);
+        assert_eq!(elevation.window_inactive.offset_y, 4.0);
+        assert_eq!(elevation.window_inactive.color, Rgba::from_rgba(0x0000004d));
+    }
+
+    #[test]
     fn text_scale_scales_type_without_touching_geometry() {
         let standard = Tokens::light_default();
         let mut larger = appearance(ResolvedColorScheme::Light, Contrast::Normal);

@@ -375,8 +375,8 @@ the rmac panel; mount an internal disk → rmac polkit dialog; no GNOME dialog a
   high-speed capture: pointer-to-window offset drift < 4 px at 800 px/s.
 - **Magnetic edges:** while dragging, snap to screen edges and to other windows' edges within 8 px
   (disable with ⌘ held).
-- **Shadows** per macOS 27's "more distinct active windows": active `0 12 32 00000059`, inactive
-  `0 4 12 00000033`, and a 0.5 px `FFFFFF1A` top inner edge on dark windows.
+- **Shadows** per macOS 27's "more distinct active windows": active `0 12 32 00000073`, inactive
+  `0 4 12 0000004D`, and a 0.5 px `FFFFFF1A` top inner edge on dark windows.
 - **Resume:** after login, reopen the apps and windows that were open at logout (if "Reopen windows
   when logging back in" was checked) with their exact rects, and restore each app's last document,
   selection, scroll offset and sidebar width. This is `rmac-window-state` plus a per-app

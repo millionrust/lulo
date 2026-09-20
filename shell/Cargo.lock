@@ -4636,6 +4636,7 @@ version = "0.1.0"
 dependencies = [
  "async-channel",
  "rmac-apps",
+ "rmac-locale",
  "zbus",
 ]
 
@@ -4833,6 +4834,10 @@ dependencies = [
  "quick-xml 0.39.4",
  "resvg 0.45.1",
 ]
+
+[[package]]
+name = "rmac-locale"
+version = "0.1.0"
 
 [[package]]
 name = "rmac-network"

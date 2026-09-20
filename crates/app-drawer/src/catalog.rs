@@ -63,6 +63,7 @@ impl From<Category> for ApplicationCategory {
 #[derive(Clone)]
 pub(crate) struct App {
     pub(crate) id: String,
+    pub(crate) first_party: bool,
     pub(crate) name: SharedString,
     pub(crate) generic_name: Option<String>,
     pub(crate) keywords: Vec<String>,
@@ -136,6 +137,7 @@ pub(crate) fn scan() -> (Vec<App>, Option<SharedString>) {
         .into_iter()
         .zip(categories)
         .map(|(application, category)| App {
+            first_party: is_first_party(&application.id),
             search_text: format!(
                 "{}\n{}",
                 application.searchable_text(),

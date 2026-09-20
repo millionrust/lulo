@@ -18,6 +18,7 @@ gpui-component.workspace = true
 gpui-component-assets.workspace = true
 rmac-apps.workspace = true
 rmac-app-launch.workspace = true
+rmac-icon.workspace = true
 rmac-shortcuts.workspace = true
 rmac-shell-activation-runtime.workspace = true
 rmac-ui.workspace = true

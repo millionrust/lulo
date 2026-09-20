@@ -117,6 +117,7 @@ pub struct ColorTokens {
     pub list: RgbaColor,
     pub raised: RgbaColor,
     pub sheet: RgbaColor,
+    pub icon_plate: RgbaColor,
     pub field_fill: RgbaColor,
     pub statusbar: RgbaColor,
     pub button_secondary: RgbaColor,
@@ -311,10 +312,12 @@ impl ThemeTokens {
         appearance: ResolvedAppearance,
         wallpaper_tint: Option<[u8; 3]>,
     ) -> Self {
+        let neutral_design = DesignTokens::resolve(appearance);
+        let icon_plate: RgbaColor = neutral_design.colors.surface_grouped_row.into();
         let design = wallpaper_tint.map_or_else(
-            || DesignTokens::resolve(appearance),
+            || neutral_design,
             |[red, green, blue]| {
-                DesignTokens::resolve(appearance).with_wallpaper_tint(Rgba::rgb(
+                neutral_design.with_wallpaper_tint(Rgba::rgb(
                     (u32::from(red) << 16) | (u32::from(green) << 8) | u32::from(blue),
                 ))
             },
@@ -330,6 +333,7 @@ impl ThemeTokens {
             list: design.colors.surface_window.into(),
             raised: design.colors.surface_raised.into(),
             sheet: design.colors.surface_sheet.into(),
+            icon_plate,
             field_fill: design.colors.field_fill.into(),
             statusbar: design.colors.statusbar.into(),
             button_secondary: design.colors.button_secondary.into(),
@@ -648,8 +652,27 @@ mod tests {
         assert_ne!(tinted.colors.window, neutral.colors.window);
         assert_ne!(tinted.colors.sidebar, neutral.colors.sidebar);
         assert_ne!(tinted.colors.chrome, neutral.colors.chrome);
+        assert_eq!(tinted.colors.icon_plate, neutral.colors.icon_plate);
         assert_eq!(tinted.materials.regular, neutral.materials.regular);
         assert_eq!(tinted.materials.clear, neutral.materials.clear);
+    }
+
+    #[test]
+    fn third_party_icon_plate_uses_the_specified_neutral_for_each_appearance() {
+        let light = ThemeTokens::from_appearance(appearance(
+            ResolvedColorScheme::Light,
+            (0.0, 0.48, 1.0),
+            Contrast::Normal,
+            MotionPreference::Full,
+        ));
+        let dark = ThemeTokens::from_appearance(appearance(
+            ResolvedColorScheme::Dark,
+            (0.0, 0.48, 1.0),
+            Contrast::Normal,
+            MotionPreference::Full,
+        ));
+        assert_eq!(light.colors.icon_plate, RgbaColor::opaque(0xffffff));
+        assert_eq!(dark.colors.icon_plate, RgbaColor::opaque(0x2c2c2e));
     }
 
     #[test]

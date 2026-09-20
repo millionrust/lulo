@@ -2,48 +2,67 @@
 
 use super::*;
 
+const ICON_INSET: f32 = 4.0;
+// design-lab/tokens.css --icon-radius, expressed as a fraction of the plate.
+const ICON_PLATE_RADIUS_RATIO: f32 = 0.225;
+
+fn icon_plate_edge(size: f32) -> f32 {
+    (size - ICON_INSET).max(0.0)
+}
+
+fn third_party_art_edge(size: f32) -> f32 {
+    let scale = rmac_icon::third_party_plate(rmac_icon::IconShape::Other).unwrap_or(1.0);
+    icon_plate_edge(size) * scale
+}
+
 impl AppDrawer {
     pub(super) fn icon_element(&self, app: &App, size: f32) -> gpui::AnyElement {
-        let content = match &app.icon {
-            Some(path) => img(path.clone())
-                .w(px(size - 4.0))
-                .h(px(size - 4.0))
-                .rounded(px((size - 4.0) * 0.22))
-                .into_any_element(),
-            None => {
-                let initial = app
-                    .name
-                    .chars()
-                    .next()
-                    .map(|character| character.to_uppercase().to_string())
-                    .unwrap_or_default();
-                div()
-                    .w(px(size - 4.0))
-                    .h(px(size - 4.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded(px((size - 4.0) * 0.22))
-                    .bg(mac::control_fill())
-                    .text_color(mac::text_secondary())
-                    .text_size(rmac_ui::text_px(size * 0.43))
-                    .child(initial)
-                    .into_any_element()
-            }
-        };
-        div()
+        let plate_edge = icon_plate_edge(size);
+        let frame = div()
             .w(px(size))
             .h(px(size))
             .flex()
             .items_center()
-            .justify_center()
-            .rounded(px(size * 0.23))
-            .bg(mac::raised())
-            .border_1()
-            .border_color(mac::separator())
-            .shadow_md()
-            .overflow_hidden()
-            .child(content)
+            .justify_center();
+
+        if app.first_party {
+            return frame
+                .child(match &app.icon {
+                    Some(path) => img(path.clone())
+                        .w(px(plate_edge))
+                        .h(px(plate_edge))
+                        .object_fit(ObjectFit::Contain)
+                        .into_any_element(),
+                    None => fallback_icon(app, plate_edge, size),
+                })
+                .into_any_element();
+        }
+
+        let art_edge = third_party_art_edge(size);
+        let content = match &app.icon {
+            Some(path) => img(path.clone())
+                .w(px(art_edge))
+                .h(px(art_edge))
+                .object_fit(ObjectFit::Contain)
+                .into_any_element(),
+            None => fallback_icon(app, art_edge, size),
+        };
+        frame
+            .child(
+                div()
+                    .w(px(plate_edge))
+                    .h(px(plate_edge))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(plate_edge * ICON_PLATE_RADIUS_RATIO))
+                    .bg(mac::icon_plate())
+                    .border_1()
+                    .border_color(mac::separator())
+                    .shadow_md()
+                    .overflow_hidden()
+                    .child(content),
+            )
             .into_any_element()
     }
 
@@ -263,5 +282,35 @@ impl AppDrawer {
             ));
         }
         bar
+    }
+}
+
+fn fallback_icon(app: &App, edge: f32, text_basis: f32) -> gpui::AnyElement {
+    let initial = app
+        .name
+        .chars()
+        .next()
+        .map(|character| character.to_uppercase().to_string())
+        .unwrap_or_default();
+    div()
+        .w(px(edge))
+        .h(px(edge))
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_color(mac::text_secondary())
+        .text_size(rmac_ui::text_px(text_basis * 0.43))
+        .child(initial)
+        .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{icon_plate_edge, third_party_art_edge};
+
+    #[test]
+    fn third_party_art_uses_the_measured_seventy_six_percent_scale() {
+        assert_eq!(icon_plate_edge(54.0), 50.0);
+        assert!((third_party_art_edge(54.0) - 38.0).abs() < f32::EPSILON);
     }
 }

@@ -252,5 +252,5 @@ fn concurrent_misses_are_coalesced_into_one_bounded_decode() {
 fn third_party_plate_only_wraps_non_app_icons() {
     assert_eq!(third_party_plate(IconShape::RoundedSquare), None);
     assert_eq!(third_party_plate(IconShape::Other), Some(PLATE_ICON_SCALE));
-    assert!(PLATE_ICON_SCALE > 0.0 && PLATE_ICON_SCALE < 1.0);
+    assert_eq!(PLATE_ICON_SCALE, 0.76);
 }

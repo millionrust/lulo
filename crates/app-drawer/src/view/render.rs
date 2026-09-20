@@ -2,8 +2,8 @@ mod content;
 
 use gpui::{
     div, img, prelude::FluentBuilder as _, px, svg, Context, Div, InteractiveElement as _,
-    IntoElement, MouseButton, MouseDownEvent, ParentElement, Render, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled, Window,
+    IntoElement, MouseButton, MouseDownEvent, ObjectFit, ParentElement, Render, SharedString,
+    Stateful, StatefulInteractiveElement as _, Styled, StyledImage as _, Window,
 };
 use gpui_component::StyledExt as _;
 use rmac_app_drawer::accessibility::{DrawerEmptyState, OPENING_ANNOUNCEMENT};

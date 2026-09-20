@@ -611,3 +611,34 @@ contract of Files consistently rather than mixing both names. The Apps surface r
 wide**, **73 px too tall**, and **60 px too high** using the established X2 measurements. Its raw
 third-party artwork remains assigned to X8. Files' empty-state bug and toolbar differences remain in
 the later Files-specific pass.
+
+## Live-surface X8 — third-party application icon plates
+
+Fresh reference-PC evidence is in `target/evidence/live-surfaces-x8/`. The direct comparison is:
+
+- `target/evidence/live-surfaces-x8/pairs/overlay-app-drawer-vs-mac.png`
+
+The capture was made from the candidate release binary while the installed App Drawer service was
+temporarily stopped, then the installed service was restored. Its compositor inventory contains
+**0** normal App Drawer windows; the surface remains an overlay and therefore does not regress X2.
+
+Every non-rmac catalog entry now receives the dark neutral squircle plate specified by the icon
+rule. Artwork uses `object-fit: contain`, so a non-square icon is never stretched. First-party
+artwork remains unplated because those icons already carry their generated app-icon shape.
+
+### X8 measurements
+
+| Role | Before | Current capture / token | Measured target | Remaining difference |
+|---|---:|---:|---:|---:|
+| Artwork scale inside a third-party plate | 80% | 76% | 76% (`FEEL_SPEC.md` §D.6) | 0 px on the 50 px plate: 38 px now and 38 px target |
+| App-grid plate edge | 50 logical px | 50 logical px | ≈56 px icon artwork (`docs/reference-captures-2026-09-18.md`) | ≈6 px smaller; reference value remains approximate |
+| Normal App Drawer windows | 0 | 0 | 0 | 0 px / 0 windows |
+
+### Remaining measured visual differences
+
+X8 changes icon conformity only. The previously measured Apps geometry remains: the panel is
+**106 px too wide**, **73 px too tall**, and **60 px too high**. The capture also retains the
+non-macOS grid/list switch and the shorter category vocabulary; those belong to the Apps-specific
+pass after the cross-cutting sequence. Plate corner smoothing cannot be recovered as a reliable
+pixel radius from the current compressed Mac reference, so that comparison remains **S** rather
+than inventing a number.

@@ -13,6 +13,10 @@ pub fn raised() -> Hsla {
 pub fn sheet() -> Hsla {
     crate::theme::current().colors.sheet.hsla()
 }
+/// Untinted plate behind non-conforming third-party application artwork.
+pub fn icon_plate() -> Hsla {
+    crate::theme::current().colors.icon_plate.hsla()
+}
 /// Text-entry field fill.
 pub fn field_fill() -> Hsla {
     crate::theme::current().colors.field_fill.hsla()

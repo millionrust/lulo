@@ -133,8 +133,9 @@ pub enum IconShape {
     Other,
 }
 
-/// Fraction of the tile at which a plated icon is drawn (`§4.10`).
-pub const PLATE_ICON_SCALE: f32 = 0.8;
+/// Fraction of the tile at which plated third-party artwork is drawn
+/// (`FEEL_SPEC.md` §D.6).
+pub const PLATE_ICON_SCALE: f32 = 0.76;
 
 /// `Some(scale)` when a third-party icon should be drawn inside a squircle
 /// plate (`scale` of the tile), or `None` when it already reads as an app

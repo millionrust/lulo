@@ -55,18 +55,18 @@ impl FinderView {
 
         let search = div()
             .w(px(layout.search_width))
-            .h(px(28.0))
+            .h(px(rmac_design::metrics().searchfield_height))
             .flex()
             .items_center()
             .gap_1p5()
-            .px_2()
-            .rounded(px(rmac_ui::mac::radius_segmented()))
-            .bg(rmac_ui::mac::field_fill())
+            .px(px(10.0))
+            .rounded(px(rmac_design::metrics().searchfield_height / 2.0))
+            .bg(rmac_ui::mac::control_fill())
             .child(icon("icons/search.svg", 14.0, tertiary()))
             .child(
                 div()
                     .flex_1()
-                    .child(SearchField::new(&self.query).appearance(false)),
+                    .child(SearchField::new(&self.query).appearance(false).small()),
             );
 
         let sidebar_toggle = Button::new("toggle-sidebar", "")

@@ -5,7 +5,8 @@ const TITLE_MIN_WIDTH: f32 = 760.0;
 const VIEW_CONTROL_MIN_WIDTH: f32 = 840.0;
 const WIDE_SEARCH_MIN_WIDTH: f32 = 960.0;
 const COMPACT_SEARCH_WIDTH: f32 = 140.0;
-const WIDE_SEARCH_WIDTH: f32 = 200.0;
+// design-lab/windows.html §1: the Finder toolbar search capsule is 180 px.
+const WIDE_SEARCH_WIDTH: f32 = 180.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct ResponsiveLayout {

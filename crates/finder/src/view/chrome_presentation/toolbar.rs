@@ -55,12 +55,13 @@ impl FinderView {
 
         let search = div()
             .w(px(layout.search_width))
-            .h(px(rmac_design::metrics().searchfield_height))
+            // design-lab/windows.html §1: 28 px tall with a 14 px pill radius.
+            .h(px(28.0))
             .flex()
             .items_center()
             .gap_1p5()
             .px(px(10.0))
-            .rounded(px(rmac_design::metrics().searchfield_height / 2.0))
+            .rounded(px(14.0))
             .bg(rmac_ui::mac::control_fill())
             .child(icon("icons/search.svg", 14.0, tertiary()))
             .child(

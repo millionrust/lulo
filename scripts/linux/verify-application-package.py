@@ -38,7 +38,7 @@ APPLICATIONS = {
         "hidden": False,
     },
     "org.rmac.Files": {
-        "name": "Finder",
+        "name": "Files",
         "generic": "File Manager",
         "summary": "Browse and organize files and folders",
         "keywords": "finder;files;folders;storage;browse;",
@@ -97,7 +97,7 @@ HINDI = {
     "Application Launcher": "अनुप्रयोग लॉन्चर",
     "Browse and launch installed applications": "इंस्टॉल किए गए अनुप्रयोग देखें और चलाएँ",
     "applications;apps;launcher;programs;": "अनुप्रयोग;ऐप्स;लॉन्चर;प्रोग्राम;",
-    "Finder": "फ़ाइंडर",
+    "Files": "फ़ाइलें",
     "File Manager": "फ़ाइल प्रबंधक",
     "Browse and organize files and folders": "फ़ाइलें और फ़ोल्डर देखें और व्यवस्थित करें",
     "finder;files;folders;storage;browse;": "फ़ाइंडर;फ़ाइलें;फ़ोल्डर;स्टोरेज;ब्राउज़;",

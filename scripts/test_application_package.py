@@ -169,7 +169,7 @@ class ApplicationPackageTests(unittest.TestCase):
             catalog = root / catalog_path
             catalog.write_text(
                 catalog.read_text(encoding="utf-8").replace(
-                    'msgstr "फ़ाइंडर"', 'msgstr "बासी अनुवाद"'
+                    'msgstr "फ़ाइलें"', 'msgstr "बासी अनुवाद"'
                 ),
                 encoding="utf-8",
             )

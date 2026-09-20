@@ -159,7 +159,7 @@ impl FinderView {
         }));
         #[cfg(target_os = "linux")]
         places.push(Place {
-            name: "Trash".into(),
+            name: self.file_words.bin().into(),
             path: PathBuf::new(),
             icon: "icons/trash-2.svg",
             tint: accent(),

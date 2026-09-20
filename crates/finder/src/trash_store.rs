@@ -801,6 +801,13 @@ fn list_in_layout(layout: &TrashLayout) -> io::Result<Vec<TrashedItem>> {
         let data_path = layout.root.join("files").join(&name);
         let (original_path, deleted_at, info_identity, info_sha256) =
             parse_trash_info(layout, &info_path)?;
+        // A failed or externally interrupted trash operation can leave valid
+        // freedesktop metadata behind without its matching data item. Keep
+        // validating that metadata, but do not make every other Trash item
+        // unavailable merely because this orphan cannot be restored.
+        if !entry_exists(&data_path)? {
+            continue;
+        }
         path_bytes = path_bytes
             .checked_add(original_path.as_os_str().as_bytes().len())
             .and_then(|bytes| bytes.checked_add(data_path.as_os_str().as_bytes().len()))
@@ -3585,6 +3592,19 @@ mod tests {
         assert_eq!(item.original_path, source);
         assert_eq!(item.deleted_at, "2026-07-29T08:09:10");
         assert!(!format!("{item:?}").contains("report"));
+    }
+
+    #[test]
+    fn listing_ignores_valid_orphan_metadata_without_hiding_trash() {
+        let (_directory, _store, layout) = setup("list-orphan-info");
+        ensure_trash_layout(&layout).unwrap();
+        create_info_file(
+            &layout.root.join("info/report.txt.trashinfo"),
+            b"[Trash Info]\nPath=report.txt\nDeletionDate=2026-07-29T08:09:10\n",
+        )
+        .unwrap();
+
+        assert!(list_in_layout(&layout).unwrap().is_empty());
     }
 
     #[test]

@@ -2,12 +2,14 @@ use super::*;
 
 impl FinderView {
     pub(super) fn select_single(&mut self, index: usize) {
+        self.column_selection = None;
         self.selected.clear();
         self.selected.insert(index);
         self.anchor = Some(index);
     }
 
     pub(super) fn handle_click(&mut self, index: usize, command: bool, shift: bool) {
+        self.column_selection = None;
         if command {
             if !self.selected.remove(&index) {
                 self.selected.insert(index);
@@ -33,11 +35,36 @@ impl FinderView {
     }
 
     pub(super) fn selected_paths(&self) -> Vec<PathBuf> {
+        if self.view == ViewMode::Column && !self.applications_view && !self.trash_view {
+            return self
+                .column_selection
+                .as_ref()
+                .map(|entry| vec![entry.path.clone()])
+                .unwrap_or_default();
+        }
         self.selected
             .iter()
             .filter_map(|&index| self.entries.get(index))
             .map(|entry| entry.path.clone())
             .collect()
+    }
+
+    pub(super) fn selected_entry(&self) -> Option<&Entry> {
+        if self.view == ViewMode::Column && !self.applications_view && !self.trash_view {
+            return self.column_selection.as_ref();
+        }
+        self.selected
+            .iter()
+            .next()
+            .and_then(|index| self.entries.get(*index))
+    }
+
+    pub(super) fn selection_count(&self) -> usize {
+        if self.view == ViewMode::Column && !self.applications_view && !self.trash_view {
+            usize::from(self.column_selection.is_some())
+        } else {
+            self.selected.len()
+        }
     }
 
     pub(super) fn write_clip_text(&self, cx: &mut Context<Self>) {

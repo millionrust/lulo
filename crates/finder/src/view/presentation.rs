@@ -12,19 +12,16 @@ impl Render for FinderView {
             self.sidebar_visible,
             self.sidebar_width,
         );
-        let info = self.info;
+        let info = self.info.clone();
         let multi = self.tabs.len() > 1;
         let menu_at = self.menu_at.clone();
-        let has_sel = !self.selected.is_empty();
+        let menu_purpose = self.menu_purpose;
+        let sort_key = self.sort_key;
+        let has_sel = self.selection_count() > 0;
         let can_open_with = !self.trash_view
             && !self.applications_view
-            && self.selected.len() == 1
-            && self
-                .selected
-                .iter()
-                .next()
-                .and_then(|index| self.entries.get(*index))
-                .is_some_and(|entry| !entry.is_dir);
+            && self.selection_count() == 1
+            && self.selected_entry().is_some_and(|entry| !entry.is_dir);
         let can_paste = !self.clipboard.is_empty();
         let undo_label = self
             .undo_available
@@ -60,6 +57,23 @@ impl Render for FinderView {
         });
         let open_with_dialog = self.render_open_with(cx);
         let quick_look_dialog = self.render_quick_look(cx);
+        let help_dialog = self.help_open.then(|| {
+            rmac_ui::alert(
+                "Files Help",
+                "Use ⌘1–⌘4 to change views, ⌘↑ for the enclosing folder, Space for Quick Look, and Return to rename the selected item.",
+                vec![rmac_ui::dialog_button(
+                    "close-files-help",
+                    "OK",
+                    rmac_ui::DialogButtonKind::Primary,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.help_open = false;
+                    cx.notify();
+                }))
+                .into_any_element()],
+            )
+            .into_any_element()
+        });
         let conflict_dialog = self.render_conflict(cx);
         let recovery_dialog = self.render_recovery(cx);
         #[cfg(any(target_os = "linux", test))]
@@ -76,10 +90,18 @@ impl Render for FinderView {
             .relative()
             .v_flex()
             .bg(list_bg())
-            .rounded(px(rmac_ui::mac::radius_card()))
+            .rounded(px(rmac_ui::mac::radius_large_surface()))
             .overflow_hidden()
             .text_color(label())
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                if this.help_open {
+                    cx.stop_propagation();
+                    if event.keystroke.key.as_str() == "escape" {
+                        this.help_open = false;
+                        cx.notify();
+                    }
+                    return;
+                }
                 if this.quick_look.is_some() {
                     cx.stop_propagation();
                     match event.keystroke.key.as_str() {
@@ -354,10 +376,10 @@ impl Render for FinderView {
                     })
                     .child(self.render_list(cx)),
             )
-            .when_some(info, |el, ix| el.child(self.render_info(ix, cx)))
+            .when_some(info, |el, entry| el.child(self.render_info(&entry, cx)))
             .when_some(menu_at, |el, state| {
-                el.child(
-                    Self::build_context_menu(
+                let menu = match menu_purpose {
+                    MenuPurpose::Context => Self::build_context_menu(
                         state.position(),
                         has_sel,
                         can_open_with,
@@ -365,9 +387,11 @@ impl Render for FinderView {
                         self.trash_view,
                         self.applications_view,
                         undo_label,
-                    )
-                    .render(&state),
-                )
+                        self.file_words,
+                    ),
+                    MenuPurpose::Sort => Self::build_sort_menu(state.position(), sort_key),
+                };
+                el.child(menu.render(&state))
             })
             .when_some(conflict_dialog, |el, dialog| el.child(dialog))
             .when_some(recovery_dialog, |el, dialog| el.child(dialog))
@@ -375,5 +399,6 @@ impl Render for FinderView {
             .when_some(delete_dialog, |el, dialog| el.child(dialog))
             .when_some(open_with_dialog, |el, dialog| el.child(dialog))
             .when_some(quick_look_dialog, |el, dialog| el.child(dialog))
+            .when_some(help_dialog, |el, dialog| el.child(dialog))
     }
 }

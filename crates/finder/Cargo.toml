@@ -18,6 +18,7 @@ gpui-component-assets.workspace = true
 rmac-app-launch.workspace = true
 rmac-apps.workspace = true
 rmac-appearance.workspace = true
+rmac-locale.workspace = true
 rmac-mounts.workspace = true
 rmac-ui.workspace = true
 rmac-search.workspace = true

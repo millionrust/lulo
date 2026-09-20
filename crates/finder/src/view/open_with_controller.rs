@@ -12,14 +12,10 @@ impl FinderView {
             cx.notify();
             return;
         }
-        let mut selected = self
-            .selected
-            .iter()
-            .filter_map(|&index| self.entries.get(index));
-        let Some(entry) = selected.next() else {
+        let Some(entry) = self.selected_entry() else {
             return;
         };
-        if selected.next().is_some() || entry.is_dir {
+        if self.selection_count() != 1 || entry.is_dir {
             self.operation_error =
                 Some("Select one file to choose which application opens it".into());
             cx.notify();

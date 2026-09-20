@@ -107,7 +107,13 @@ actions!(
         PasteItems,
         UndoOperation,
         SelectAll,
+        GoBack,
+        GoForward,
         GoUp,
+        GoHome,
+        GoApplications,
+        GoDownloads,
+        GoTrash,
         ToggleHidden,
         OpenItems,
         OpenWith,
@@ -123,6 +129,9 @@ actions!(
         SortByKind,
         NewTab,
         CloseTab,
+        PreviousTab,
+        NextTab,
+        ShowHelp,
     ]
 );
 
@@ -199,6 +208,12 @@ enum SortKey {
     Kind,
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum MenuPurpose {
+    Context,
+    Sort,
+}
+
 /// One browser tab — its own directory and navigation history.
 #[derive(Clone)]
 struct Tab {
@@ -227,7 +242,9 @@ struct FinderView {
     clip_cut: bool,
     /// Where the right-click context menu is open (window-relative), if any.
     menu_at: Option<rmac_ui::ContextMenuState>,
-    renaming: Option<(usize, gpui::Entity<InputState>)>,
+    menu_purpose: MenuPurpose,
+    help_open: bool,
+    renaming: Option<(PathBuf, gpui::Entity<InputState>)>,
     show_hidden: bool,
     view: ViewMode,
     sidebar_visible: bool,
@@ -235,6 +252,10 @@ struct FinderView {
     resizing_sidebar: bool,
     finder_persistence: FinderPersistence,
     col_stack: Vec<PathBuf>,
+    /// Column view can select an item several directories below `cwd`, so an
+    /// index into `entries` is not sufficient. Keep the selected entry itself
+    /// as the authority for commands and context menus in that view.
+    column_selection: Option<Entry>,
     sort_key: SortKey,
     sort_asc: bool,
     query: gpui::Entity<InputState>,
@@ -242,8 +263,9 @@ struct FinderView {
     icon_size_slider: Entity<SliderState>,
     back: Vec<PathBuf>,
     fwd: Vec<PathBuf>,
+    file_words: rmac_locale::FileVocabulary,
     sections: Vec<Section>,
-    info: Option<usize>,
+    info: Option<Entry>,
     open_with: Option<OpenWithPicker>,
     open_generation: u64,
     quick_look: Option<QuickLookPanel>,

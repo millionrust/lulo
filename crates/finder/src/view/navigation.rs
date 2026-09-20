@@ -81,6 +81,26 @@ impl FinderView {
         self.reload(cx);
     }
 
+    pub(super) fn select_adjacent_tab(&mut self, offset: isize, cx: &mut Context<Self>) {
+        if self.tabs.len() <= 1 {
+            return;
+        }
+        let count = self.tabs.len() as isize;
+        let index = (self.active as isize + offset).rem_euclid(count) as usize;
+        self.select_tab(index, cx);
+    }
+
+    pub(super) fn go_home(&mut self, cx: &mut Context<Self>) {
+        self.navigate(self.home.clone(), cx);
+    }
+
+    pub(super) fn go_downloads(&mut self, cx: &mut Context<Self>) {
+        let downloads = self.home.join("Downloads");
+        if downloads.is_dir() {
+            self.navigate(downloads, cx);
+        }
+    }
+
     pub(super) fn navigate(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if !path.is_dir() || (path == self.cwd && !self.trash_view && !self.applications_view) {
             return;
@@ -178,12 +198,20 @@ impl FinderView {
             self.launch_applications(applications, cx);
             return;
         }
-        let paths: Vec<(bool, PathBuf)> = self
-            .selected
-            .iter()
-            .filter_map(|&index| self.entries.get(index))
-            .map(|entry| (entry.is_dir, entry.path.clone()))
-            .collect();
+        let paths: Vec<(bool, PathBuf)> = if self.view == ViewMode::Column
+            && !self.applications_view
+        {
+            self.column_selection
+                .as_ref()
+                .map(|entry| vec![(entry.is_dir, entry.path.clone())])
+                .unwrap_or_default()
+        } else {
+            self.selected
+                .iter()
+                .filter_map(|&index| self.entries.get(index))
+                .map(|entry| (entry.is_dir, entry.path.clone()))
+                .collect()
+        };
         if let [(true, directory)] = paths.as_slice() {
             self.navigate(directory.clone(), cx);
         } else {

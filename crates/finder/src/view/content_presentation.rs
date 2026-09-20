@@ -1,6 +1,80 @@
 use super::*;
 
+// design-lab/windows.html Files mapping table.
+const STATUS_BAR_HEIGHT: f32 = 24.0;
+const COLUMN_WIDTH: f32 = 220.0;
+
 impl FinderView {
+    fn render_column_preview(&self, entry: &Entry) -> gpui::AnyElement {
+        let visual = entry
+            .application
+            .as_ref()
+            .and_then(|application| application.icon.clone())
+            .map(|path| {
+                img(path)
+                    .max_w(px(256.0))
+                    .max_h(px(256.0))
+                    .rounded(px(rmac_ui::mac::radius_popover()))
+                    .into_any_element()
+            })
+            .or_else(|| {
+                self.thumbs.get(&entry.path).map(|thumbnail| {
+                    img(thumbnail.clone())
+                        .max_w(px(256.0))
+                        .max_h(px(256.0))
+                        .rounded(px(rmac_ui::mac::radius_control()))
+                        .into_any_element()
+                })
+            })
+            .unwrap_or_else(|| {
+                icon("icons/file-fill.svg", 128.0, secondary()).into_any_element()
+            });
+
+        div()
+            .id("column-preview")
+            .min_w(px(COLUMN_WIDTH))
+            .flex_1()
+            .h_full()
+            .v_flex()
+            .items_center()
+            .justify_center()
+            .gap_3()
+            .p_4()
+            .border_r_1()
+            .border_color(sep())
+            .child(
+                div()
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .w_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(visual),
+            )
+            .child(
+                div()
+                    .max_w(px(256.0))
+                    .truncate()
+                    .text_size(rmac_ui::text_px(15.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(label())
+                    .child(entry.name.clone()),
+            )
+            .child(
+                div()
+                    .max_w(px(256.0))
+                    .truncate()
+                    .text_size(rmac_ui::text_px(11.0))
+                    .text_color(secondary())
+                    .child(format!(
+                        "{}  •  {}  •  {}",
+                        entry.kind, entry.size, entry.modified
+                    )),
+            )
+            .into_any_element()
+    }
+
     pub(super) fn render_columns(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         if self.applications_view {
             return self.render_application_columns(cx).into_any_element();
@@ -13,11 +87,11 @@ impl FinderView {
             .bg(list_bg());
         for (ci, dir) in self.col_stack.iter().enumerate() {
             let mut entries = read_entries(dir, self.show_hidden);
-            sort_entries(&mut entries, SortKey::Name, true);
+            sort_entries(&mut entries, self.sort_key, self.sort_asc);
             let selected_child = self.col_stack.get(ci + 1).cloned();
             let mut col = div()
                 .id(SharedString::from(format!("col-{ci}")))
-                .w(px(232.0))
+                .w(px(COLUMN_WIDTH))
                 .h_full()
                 .flex_none()
                 .border_r_1()
@@ -26,9 +100,51 @@ impl FinderView {
                 .v_flex()
                 .py_1();
             for e in entries {
-                let is_sel = selected_child.as_ref() == Some(&e.path);
+                let is_sel = self
+                    .column_selection
+                    .as_ref()
+                    .is_some_and(|selected| selected.path == e.path)
+                    || selected_child.as_ref() == Some(&e.path);
                 let ep = e.path.clone();
+                let open_path = e.path.clone();
                 let is_dir = e.is_dir;
+                let selected_entry = e.clone();
+                let context_entry = e.clone();
+                let rename_entry = e.clone();
+                let name_cell: gpui::AnyElement = match &self.renaming {
+                    Some((rename_path, input)) if rename_path == &e.path => div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .child(TextField::new(input).appearance(true))
+                        .into_any_element(),
+                    _ => div()
+                        .id(SharedString::from(format!("column-name-{ci}-{}", e.name)))
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .text_size(rmac_ui::text_px(13.0))
+                        .truncate()
+                        .text_color(if is_sel { white() } else { label() })
+                        .child(e.name.clone())
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                if is_sel
+                                    && !event.modifiers.platform
+                                    && !event.modifiers.shift
+                                {
+                                    cx.stop_propagation();
+                                    this.column_selection = Some(rename_entry.clone());
+                                    this.rename_start(window, cx);
+                                }
+                            }),
+                        )
+                        .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                            if is_sel {
+                                cx.stop_propagation();
+                            }
+                        }))
+                        .into_any_element(),
+                };
                 let glyph = if is_dir {
                     "icons/folder-artwork.svg"
                 } else {
@@ -47,7 +163,7 @@ impl FinderView {
                         .flex()
                         .items_center()
                         .gap_2()
-                        .h(px(22.0))
+                        .h(px(rmac_ui::mac::list_row_height()))
                         .mx_1()
                         .px_2()
                         .rounded(px(rmac_ui::mac::radius_menu_item()))
@@ -56,14 +172,7 @@ impl FinderView {
                             el.hover(|h| h.bg(rmac_ui::mac::hover()))
                         })
                         .child(icon(glyph, 15.0, icol))
-                        .child(
-                            div()
-                                .flex_1()
-                                .text_size(rmac_ui::text_px(13.0))
-                                .truncate()
-                                .text_color(if is_sel { white() } else { label() })
-                                .child(e.name.clone()),
-                        )
+                        .child(name_cell)
                         .when(is_dir, |el: Stateful<Div>| {
                             el.child(icon(
                                 "icons/chevron-right.svg",
@@ -71,26 +180,84 @@ impl FinderView {
                                 if is_sel { white() } else { tertiary() },
                             ))
                         })
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if is_dir {
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                cx.stop_propagation();
+                                if event.modifiers.control {
+                                    this.open_column_context_menu(
+                                        selected_entry.clone(),
+                                        event.position,
+                                        window,
+                                        cx,
+                                    );
+                                    return;
+                                }
+                                this.selected.clear();
+                                this.anchor = None;
+                                this.column_selection = Some(selected_entry.clone());
                                 this.col_stack.truncate(ci + 1);
-                                this.col_stack.push(ep.clone());
+                                if is_dir {
+                                    this.col_stack.push(ep.clone());
+                                }
+                                window.focus(&this.focus, cx);
                                 cx.notify();
-                            } else {
-                                this.open_paths(vec![ep.clone()], cx);
+                            }),
+                        )
+                        .on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                cx.stop_propagation();
+                                this.open_column_context_menu(
+                                    context_entry.clone(),
+                                    event.position,
+                                    window,
+                                    cx,
+                                );
+                            }),
+                        )
+                        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                            if event.click_count() < 2 || is_dir {
+                                return;
                             }
+                            this.open_paths(vec![open_path.clone()], cx);
                         })),
                 );
             }
             row = row.child(col);
         }
-        row.into_any_element()
+        if let Some(entry) = self
+            .column_selection
+            .as_ref()
+            .filter(|entry| !entry.is_dir)
+        {
+            row = row.child(self.render_column_preview(entry));
+        }
+        row.on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _, window, cx| {
+                this.column_selection = None;
+                this.selected.clear();
+                this.anchor = None;
+                window.focus(&this.focus, cx);
+                cx.notify();
+            }),
+        )
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                cx.stop_propagation();
+                this.column_selection = None;
+                this.open_context_menu(None, event.position, window, cx);
+            }),
+        )
+        .into_any_element()
     }
 
     fn render_application_columns(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let mut applications = div()
             .id("applications-column")
-            .w(px(300.0))
+            .w(px(COLUMN_WIDTH))
             .h_full()
             .flex_none()
             .overflow_y_scroll()
@@ -118,7 +285,7 @@ impl FinderView {
             applications = applications.child(
                 div()
                     .id(("application-column-row", index))
-                    .h(px(32.0))
+                    .h(px(rmac_ui::mac::list_row_height()))
                     .mx_1()
                     .px_2()
                     .flex_none()
@@ -256,7 +423,7 @@ impl FinderView {
     /// macOS-style status bar: item / selection count + free space available.
     pub(super) fn render_status_bar(&self) -> impl IntoElement {
         let n = self.entries.len();
-        let sel = self.selected.len();
+        let sel = self.selection_count();
         let count: SharedString = if sel > 0 {
             format!("{sel} of {n} selected").into()
         } else if let Some(summary) = &self.search_summary {
@@ -268,8 +435,13 @@ impl FinderView {
             .free_bytes
             .map(|b| format!("{} available", human_size(b)))
             .unwrap_or_default();
+        let status: SharedString = if free.is_empty() {
+            count
+        } else {
+            format!("{}, {free}", count.as_ref()).into()
+        };
         div()
-            .h(px(22.0))
+            .h(px(STATUS_BAR_HEIGHT))
             .flex_none()
             .relative()
             .flex()
@@ -281,11 +453,7 @@ impl FinderView {
             .border_color(sep())
             .text_size(rmac_ui::text_px(11.0))
             .text_color(secondary())
-            .child(count)
-            .when(!free.is_empty(), |el| {
-                el.child(div().text_color(tertiary()).child("•"))
-                    .child(free)
-            })
+            .child(status)
             .when(self.view == ViewMode::Icon, |bar| {
                 bar.child(
                     div()

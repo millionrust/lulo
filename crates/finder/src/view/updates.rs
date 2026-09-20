@@ -106,6 +106,7 @@ impl FinderView {
         self.search_summary = None;
         self.search_relevance_order = false;
         self.col_stack = vec![self.cwd.clone()];
+        self.column_selection = None;
         if let Some(t) = self.tabs.get_mut(self.active) {
             t.cwd = self.cwd.clone();
             t.identity = self.cwd_identity;
@@ -197,11 +198,7 @@ impl FinderView {
             .anchor
             .and_then(|index| self.entries.get(index))
             .map(|entry| entry.path.clone());
-        let renaming = self.renaming.as_ref().and_then(|(index, input)| {
-            self.entries
-                .get(*index)
-                .map(|entry| (entry.path.clone(), input.clone()))
-        });
+        let renaming = self.renaming.clone();
         let show_hidden = self.show_hidden;
         let key = self.sort_key;
         let asc = self.sort_asc;
@@ -268,12 +265,10 @@ impl FinderView {
                             })
                             .filter(|index| this.selected.contains(index))
                             .or_else(|| this.selected.iter().next().copied());
-                        this.renaming = renaming.as_ref().and_then(|(path, input)| {
-                            this.entries
-                                .iter()
-                                .position(|entry| &entry.path == path)
-                                .map(|index| (index, input.clone()))
-                        });
+                        this.renaming = renaming
+                            .as_ref()
+                            .filter(|(path, _)| path.exists())
+                            .cloned();
                         cx.notify();
                         this.gen_thumbs(cx);
                     }

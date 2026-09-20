@@ -13,6 +13,7 @@ impl FinderView {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| root_volume_name().to_string());
         let icloud = home.join("Library/Mobile Documents/com~apple~CloudDocs");
+        let file_words = rmac_locale::FileVocabulary::from_environment();
 
         let p =
             |name: &str, path: PathBuf, icon: &'static str, tint: Hsla, kind: PlaceKind| Place {
@@ -140,7 +141,7 @@ impl FinderView {
         }
         #[cfg(target_os = "linux")]
         locations.push(p(
-            "Trash",
+            file_words.bin(),
             PathBuf::new(),
             "icons/trash-2.svg",
             accent(),
@@ -153,7 +154,7 @@ impl FinderView {
                 places: prominent,
             },
             Section {
-                title: "Favorites".into(),
+                title: file_words.favourites().into(),
                 places: favorites,
             },
             Section {
@@ -251,6 +252,8 @@ impl FinderView {
             entries: Vec::new(),
             selected: BTreeSet::new(),
             menu_at: None,
+            menu_purpose: MenuPurpose::Context,
+            help_open: false,
             anchor: None,
             clipboard: Vec::new(),
             clip_cut: false,
@@ -262,6 +265,7 @@ impl FinderView {
             resizing_sidebar: false,
             finder_persistence,
             col_stack: vec![cwd],
+            column_selection: None,
             sort_key: SortKey::Name,
             sort_asc: true,
             query,
@@ -269,6 +273,7 @@ impl FinderView {
             icon_size_slider,
             back: Vec::new(),
             fwd: Vec::new(),
+            file_words,
             sections,
             info: None,
             open_with: None,

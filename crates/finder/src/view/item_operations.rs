@@ -17,7 +17,7 @@ impl FinderView {
             self.reload(cx);
             return;
         };
-        self.entries.push(entry);
+        self.entries.push(entry.clone());
         sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
         let Some(index) = self.entries.iter().position(|entry| entry.path == path) else {
             self.reload(cx);
@@ -26,6 +26,9 @@ impl FinderView {
         self.selected.clear();
         self.selected.insert(index);
         self.anchor = Some(index);
+        if self.view == ViewMode::Column {
+            self.column_selection = Some(entry);
+        }
         self.operation_error = None;
         self.rename_start(window, cx);
     }
@@ -43,7 +46,8 @@ impl FinderView {
                 Some(e) => format!("{stem} copy.{e}"),
                 None => format!("{stem} copy"),
             };
-            let dst = unique_path_avoiding(self.cwd.join(copy_name), &destinations);
+            let destination_dir = src.parent().unwrap_or(self.cwd.as_path());
+            let dst = unique_path_avoiding(destination_dir.join(copy_name), &destinations);
             destinations.insert(dst.clone());
             tasks.push(file_ops::TransferTask {
                 kind: file_ops::TransferKind::Copy,

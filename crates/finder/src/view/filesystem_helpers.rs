@@ -86,6 +86,34 @@ pub(super) fn entry_for_application(application: rmac_apps::Application) -> Entr
     }
 }
 
+pub(super) fn suppress_replaced_applications(
+    catalog: Vec<rmac_apps::Application>,
+) -> Vec<rmac_apps::Application> {
+    let first_party_names = catalog
+        .iter()
+        .filter(|application| {
+            let app_id = application
+                .id
+                .strip_suffix(".desktop")
+                .unwrap_or(&application.id);
+            rmac_apps::identity::ALL.contains(&app_id)
+        })
+        .map(|application| application.name.trim().to_lowercase())
+        .collect::<BTreeSet<_>>();
+
+    catalog
+        .into_iter()
+        .filter(|application| {
+            let app_id = application
+                .id
+                .strip_suffix(".desktop")
+                .unwrap_or(&application.id);
+            rmac_apps::identity::ALL.contains(&app_id)
+                || !first_party_names.contains(&application.name.trim().to_lowercase())
+        })
+        .collect()
+}
+
 pub(super) fn read_entries(dir: &Path, show_hidden: bool) -> Vec<Entry> {
     let mut v: Vec<Entry> = Vec::new();
     if let Ok(rd) = std::fs::read_dir(dir) {

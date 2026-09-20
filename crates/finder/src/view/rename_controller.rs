@@ -5,12 +5,10 @@ impl FinderView {
         if self.block_mutation_during_transfer(cx) {
             return;
         }
-        let Some(&index) = self.selected.iter().next() else {
+        let Some(entry) = self.selected_entry() else {
             return;
         };
-        let Some(entry) = self.entries.get(index) else {
-            return;
-        };
+        let path = entry.path.clone();
         let name = entry.name.to_string();
         let input = cx.new(|cx| InputState::new(window, cx).default_value(name));
         cx.subscribe(&input, |this, _input, event: &InputEvent, cx| match event {
@@ -21,7 +19,7 @@ impl FinderView {
         .detach();
         let focus = input.read(cx).focus_handle(cx);
         window.focus(&focus, cx);
-        self.renaming = Some((index, input));
+        self.renaming = Some((path, input));
         cx.notify();
         // The TextField action handlers exist after the next render. Select
         // the whole generated/current name then so typing replaces it, just
@@ -34,14 +32,18 @@ impl FinderView {
     }
 
     fn rename_commit(&mut self, cx: &mut Context<Self>) {
-        let Some((index, input)) = self.renaming.take() else {
+        let Some((path, input)) = self.renaming.take() else {
             return;
         };
         let new_name = input.read(cx).value().to_string();
-        if let Some(entry) = self.entries.get(index) {
+        if let Some(entry) = entry_for(&path) {
             let new_name = new_name.trim();
             if !new_name.is_empty() && new_name != entry.name.as_ref() {
-                let destination = self.cwd.join(new_name);
+                let destination = entry
+                    .path
+                    .parent()
+                    .unwrap_or(self.cwd.as_path())
+                    .join(new_name);
                 if !destination.exists() {
                     let failures =
                         file_ops::rename(&file_ops::RealFileSystem, &entry.path, &destination)

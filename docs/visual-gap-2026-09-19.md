@@ -642,3 +642,64 @@ non-macOS grid/list switch and the shorter category vocabulary; those belong to 
 pass after the cross-cutting sequence. Plate corner smoothing cannot be recovered as a reliable
 pixel radius from the current compressed Mac reference, so that comparison remains **S** rather
 than inventing a number.
+
+## Files pass — Finder navigation, views, and Trash
+
+Fresh reference-PC evidence is in `target/evidence/files-pass/`. The four home-folder comparisons
+are:
+
+- `target/evidence/files-pass/pairs/files-icon-vs-mac.png`
+- `target/evidence/files-pass/pairs/files-list-vs-mac.png`
+- `target/evidence/files-pass/pairs/files-column-vs-mac.png`
+- `target/evidence/files-pass/pairs/files-gallery-vs-mac.png`
+
+The Applications-folder comparisons are:
+
+- `target/evidence/files-pass/applications-pairs/applications-icon-vs-mac.png`
+- `target/evidence/files-pass/applications-pairs/applications-list-vs-mac.png`
+- `target/evidence/files-pass/applications-pairs/applications-column-vs-mac.png`
+- `target/evidence/files-pass/applications-pairs/applications-gallery-vs-mac.png`
+
+The candidate was driven through its exported application-menu actions on the live Wayland
+session. `GoApplications` opened Applications, and `ViewAsIcons`, `ViewAsList`, `ViewAsColumns`,
+and `ViewAsGallery` changed the same live window before each capture. Column view rendered a real
+navigable column stack instead of its former error state. The final Trash capture is
+`target/evidence/files-pass/files-trash-final.png`; Trash appears in Locations, opens through
+`GoTrash`, and presents its empty state without the earlier full-width failure banner.
+
+### Files measurements
+
+These logical dimensions come from the measured shared tokens or the Finder mapping already
+recorded by the implementation. The current values are those exercised by the candidate capture;
+they are not estimates from a photographed screen.
+
+| Role | Current | Measured target | Remaining difference |
+|---|---:|---:|---:|
+| Toolbar height | 52 logical px | 52 logical px | 0 px |
+| Sidebar width | 180 logical px | 180 logical px | 0 px |
+| Sidebar row height | 28 logical px | 28 logical px | 0 px |
+| List header and row height | 24 logical px | 24 logical px | 0 px |
+| Status-bar height | 24 logical px | 24 logical px | 0 px |
+| Column width | 220 logical px | 220 logical px | 0 px |
+| Applications icon-grid columns at 1920 × 1080 | 10 | 10 in the Mac pair | 0 columns |
+| Duplicate replaced-app names in Applications | 0 | 0 | 0 entries |
+| Trash failure banners | 0 | 0 | 0 banners |
+
+Before suppression, the Applications catalog exposed three duplicate replaced-host identities:
+Files, Terminal, and Text Editor. The final icon capture contains one public identity for each, so
+that duplicate count is **3 → 0**. Valid orphan `.trashinfo` metadata previously made the entire
+Trash view fail; the final live capture contains **0** error banners while preserving fail-closed
+handling for malformed metadata.
+
+### Remaining measured visual differences
+
+- The reference PC exposes **28 applications** while the owner's Mac capture exposes **70**, an
+  inventory difference of **42 applications** rather than a grid-geometry error.
+- Gallery uses a **70 logical px** filmstrip and **250 logical px** inspector, but the current
+  capture has no selected item. Its selected-preview comparison therefore remains **S**.
+- The Mac reference set has no matching empty-Trash capture. The candidate's empty-state geometry,
+  icon, and copy therefore remain **S**; only the removal of the live error banner is claimed.
+- Rename-on-name-click, right-click selection, contextual operations, inline New Folder naming,
+  and nested column navigation are implemented, but a still image cannot prove their event
+  sequences. Their visual timing and intermediate states remain **S** until interaction evidence
+  is captured rather than inferred.

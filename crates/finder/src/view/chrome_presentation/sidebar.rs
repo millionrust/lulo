@@ -92,7 +92,7 @@ impl FinderView {
         if self.view == ViewMode::Column {
             self.view = ViewMode::List;
         }
-        self.result_title = Some("Trash".into());
+        self.result_title = Some(self.file_words.bin().into());
         self.operation_error = None;
         self.reload_trash(cx);
     }
@@ -120,7 +120,7 @@ impl FinderView {
             let result = cx
                 .background_executor()
                 .spawn(async move {
-                    let mut entries = rmac_apps::discover()?
+                    let mut entries = suppress_replaced_applications(rmac_apps::discover()?)
                         .into_iter()
                         .map(entry_for_application)
                         .collect::<Vec<_>>();

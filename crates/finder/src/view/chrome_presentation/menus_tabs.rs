@@ -1,6 +1,29 @@
 use super::*;
 
 impl FinderView {
+    pub(in crate::view) fn build_sort_menu(
+        pos: Point<Pixels>,
+        key: SortKey,
+    ) -> rmac_ui::ContextMenu {
+        let check = |candidate| {
+            if key == candidate {
+                rmac_ui::MenuCheck::On
+            } else {
+                rmac_ui::MenuCheck::None
+            }
+        };
+        rmac_ui::ContextMenu::new(pos)
+            .header("Sort By")
+            .checked_item("Name", check(SortKey::Name), Box::new(SortByName))
+            .checked_item(
+                "Date Modified",
+                check(SortKey::Date),
+                Box::new(SortByDate),
+            )
+            .checked_item("Size", check(SortKey::Size), Box::new(SortBySize))
+            .checked_item("Kind", check(SortKey::Kind), Box::new(SortByKind))
+    }
+
     pub(in crate::view) fn build_context_menu(
         pos: Point<Pixels>,
         has_selection: bool,
@@ -9,6 +32,7 @@ impl FinderView {
         trash_view: bool,
         applications_view: bool,
         undo_label: Option<String>,
+        file_words: rmac_locale::FileVocabulary,
     ) -> rmac_ui::ContextMenu {
         let mut m = rmac_ui::ContextMenu::new(pos);
         if let Some(label) = undo_label {
@@ -59,6 +83,7 @@ impl FinderView {
                 );
         }
         if has_selection {
+            let move_to_bin = format!("Move to {}", file_words.bin());
             m = m.command_item(
                 "Open",
                 rmac_ui::shortcuts::OPEN_SELECTION,
@@ -70,7 +95,7 @@ impl FinderView {
             m = m
                 .separator()
                 .command_item(
-                    "Move to Trash",
+                    move_to_bin,
                     rmac_ui::shortcuts::DELETE,
                     Box::new(MoveToTrash),
                 )

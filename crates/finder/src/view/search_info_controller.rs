@@ -9,7 +9,7 @@ impl FinderView {
             cx.notify();
             return;
         }
-        self.info = self.selected.iter().next().copied();
+        self.info = self.selected_entry().cloned();
         cx.notify();
     }
 
@@ -175,10 +175,7 @@ impl FinderView {
         .detach();
     }
 
-    pub(super) fn render_info(&self, ix: usize, cx: &mut Context<Self>) -> impl IntoElement {
-        let Some(e) = self.entries.get(ix) else {
-            return div();
-        };
+    pub(super) fn render_info(&self, e: &Entry, cx: &mut Context<Self>) -> impl IntoElement {
         let glyph = if e.is_dir {
             "icons/folder-artwork.svg"
         } else {
@@ -220,7 +217,12 @@ impl FinderView {
                     .child(icon(glyph, 56.0, glyph_color))
                     .child(
                         div()
+                            .w_full()
+                            .min_w(px(0.0))
                             .max_w(px(260.0))
+                            .overflow_hidden()
+                            .whitespace_normal()
+                            .line_clamp(2)
                             .text_size(rmac_ui::text_px(15.0))
                             .font_weight(rmac_ui::mac::SEMIBOLD)
                             .text_color(label())
@@ -255,7 +257,7 @@ impl FinderView {
                         div()
                             .flex_1()
                             .min_w(px(0.0))
-                            .overflow_hidden()
+                            .truncate()
                             .text_color(label())
                             .child(v),
                     ),

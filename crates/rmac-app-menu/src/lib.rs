@@ -177,10 +177,40 @@ const FILES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "View",
         items: &[
-            item!("Show Hidden Files", "finder::ToggleHidden", "⇧⌘."),
+            item!("as Icons", "finder::ViewAsIcons", "⌘1"),
+            item!("as List", "finder::ViewAsList", "⌘2"),
+            item!("as Columns", "finder::ViewAsColumns", "⌘3"),
+            item!("as Gallery", "finder::ViewAsGallery", "⌘4"),
+            item!("Sort by Name", "finder::SortByName", "", separator),
+            item!("Sort by Date Modified", "finder::SortByDate", ""),
+            item!("Sort by Size", "finder::SortBySize", ""),
+            item!("Sort by Kind", "finder::SortByKind", ""),
+            item!("Show Hidden Files", "finder::ToggleHidden", "⇧⌘.", separator),
             item!("Quick Look", "finder::QuickLook", "Space"),
-            item!("Enclosing Folder", "finder::GoUp", "⌘↑"),
         ],
+    },
+    MenuSpec {
+        label: "Go",
+        items: &[
+            item!("Back", "finder::GoBack", "⌘["),
+            item!("Forward", "finder::GoForward", "⌘]"),
+            item!("Enclosing Folder", "finder::GoUp", "⌘↑"),
+            item!("Home", "finder::GoHome", "⇧⌘H", separator),
+            item!("Applications", "finder::GoApplications", "⇧⌘A"),
+            item!("Downloads", "finder::GoDownloads", "⌥⌘L"),
+            item!("Trash", "finder::GoTrash", ""),
+        ],
+    },
+    MenuSpec {
+        label: "Window",
+        items: &[
+            item!("Show Previous Tab", "finder::PreviousTab", "⌃⇧⇥"),
+            item!("Show Next Tab", "finder::NextTab", "⌃⇥"),
+        ],
+    },
+    MenuSpec {
+        label: "Help",
+        items: &[item!("Files Help", "finder::ShowHelp", "")],
     },
 ];
 
@@ -237,6 +267,18 @@ pub fn bus_name(app_id: &str) -> Option<&'static str> {
 
 /// Resolve only commands registered in this exact GPUI application binary.
 pub fn definition(app_id: &str, registered_actions: &[&str]) -> Option<Vec<Menu>> {
+    definition_for_vocabulary(
+        app_id,
+        registered_actions,
+        rmac_locale::FileVocabulary::from_environment(),
+    )
+}
+
+fn definition_for_vocabulary(
+    app_id: &str,
+    registered_actions: &[&str],
+    file_words: rmac_locale::FileVocabulary,
+) -> Option<Vec<Menu>> {
     let registered = registered_actions.iter().copied().collect::<BTreeSet<_>>();
     let menus = specs(app_id)?
         .iter()
@@ -246,7 +288,11 @@ pub fn definition(app_id: &str, registered_actions: &[&str]) -> Option<Vec<Menu>
                 .iter()
                 .filter(|item| registered.contains(item.action))
                 .map(|item| Item {
-                    label: item.label.to_owned(),
+                    label: match item.action {
+                        "finder::MoveToTrash" => format!("Move to {}", file_words.bin()),
+                        "finder::GoTrash" => file_words.bin().to_owned(),
+                        _ => item.label.to_owned(),
+                    },
                     action: item.action.to_owned(),
                     shortcut: item.shortcut.to_owned(),
                     enabled: true,
@@ -553,5 +599,45 @@ mod tests {
             .collect::<std::collections::BTreeMap<_, _>>();
         assert_eq!(editor_hints["text_editor::FindPrev"], "⇧⌘G");
         assert_eq!(editor_hints["text_editor::ToggleReplace"], "⌥⌘F");
+    }
+
+    #[test]
+    fn files_exports_working_view_go_and_window_menus() {
+        let menus = definition(
+            rmac_apps::identity::FILES,
+            &[
+                "finder::ViewAsIcons",
+                "finder::SortByName",
+                "finder::GoBack",
+                "finder::GoHome",
+                "finder::PreviousTab",
+                "finder::NextTab",
+                "finder::ShowHelp",
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            menus
+                .iter()
+                .map(|menu| menu.label.as_str())
+                .collect::<Vec<_>>(),
+            ["View", "Go", "Window", "Help"]
+        );
+        assert_eq!(menus[0].items[0].label, "as Icons");
+        assert_eq!(menus[1].items[0].action, "finder::GoBack");
+        assert_eq!(menus[2].items[1].shortcut, "⌃⇥");
+        assert!(validate_menus(&menus).is_ok());
+    }
+
+    #[test]
+    fn files_menu_uses_the_message_locale_file_vocabulary() {
+        let menus = definition_for_vocabulary(
+            rmac_apps::identity::FILES,
+            &["finder::MoveToTrash", "finder::GoTrash"],
+            rmac_locale::FileVocabulary::for_locale("en_GB.UTF-8"),
+        )
+        .unwrap();
+        assert_eq!(menus[0].items[0].label, "Move to Bin");
+        assert_eq!(menus[1].items[0].label, "Bin");
     }
 }

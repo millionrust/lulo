@@ -35,6 +35,7 @@ impl FinderView {
         } else {
             self.query.read(cx).value().to_lowercase()
         };
+        let search_active = self.search_summary.is_some() || !query.trim().is_empty();
         let visible_indices = self
             .entries
             .iter()
@@ -80,8 +81,10 @@ impl FinderView {
         });
         let preview_description = active_entry.map_or_else(
             || {
-                if visible_indices.is_empty() {
+                if visible_indices.is_empty() && search_active {
                     "No matching items. Try a different search."
+                } else if visible_indices.is_empty() {
+                    "This folder is empty. Items added to it will appear here."
                 } else {
                     "Select an item in the filmstrip to preview it."
                 }
@@ -97,6 +100,7 @@ impl FinderView {
         );
         let has_selection = selection_count != 0;
         let can_open_with = selection_count == 1 && active_entry.is_some_and(|entry| !entry.is_dir);
+        let move_to_bin = format!("Move to {}", self.file_words.bin());
         let actions = if self.trash_view {
             vec![
                 dialog_action("gallery-restore", "Restore", DialogActionKind::Default)
@@ -128,7 +132,7 @@ impl FinderView {
                     .disabled(selection_count != 1),
                 dialog_action(
                     "gallery-move-to-trash",
-                    "Move to Trash",
+                    &move_to_bin,
                     DialogActionKind::Normal,
                 )
                 .disabled(!has_selection),
@@ -155,10 +159,8 @@ impl FinderView {
 
     fn accessible_dialogs(&self) -> Vec<AccessibleDialog> {
         let mut dialogs = Vec::new();
-        if let Some(index) = self.info {
-            if let Some(entry) = self.entries.get(index) {
-                dialogs.push(self.accessible_info_dialog(entry));
-            }
+        if let Some(entry) = &self.info {
+            dialogs.push(self.accessible_info_dialog(entry));
         }
         if let Some(dialog) = self.accessible_conflict_dialog() {
             dialogs.push(dialog);

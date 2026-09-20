@@ -172,6 +172,9 @@ impl FinderView {
             return;
         }
         self.view = mode;
+        if mode != ViewMode::Column {
+            self.column_selection = None;
+        }
         self.operation_error = None;
         self.persist_finder_state();
         cx.notify();

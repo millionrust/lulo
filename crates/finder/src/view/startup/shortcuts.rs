@@ -45,6 +45,15 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             Some("Finder"),
         ),
         KeyBinding::new(rmac_ui::shortcuts::GO_UP.keystroke, GoUp, Some("Finder")),
+        KeyBinding::new("cmd-[", GoBack, Some("Finder")),
+        KeyBinding::new("cmd-]", GoForward, Some("Finder")),
+        KeyBinding::new("cmd-shift-h", GoHome, Some("Finder")),
+        KeyBinding::new("cmd-shift-a", GoApplications, Some("Finder")),
+        KeyBinding::new("cmd-alt-l", GoDownloads, Some("Finder")),
+        KeyBinding::new("cmd-1", ViewAsIcons, Some("Finder")),
+        KeyBinding::new("cmd-2", ViewAsList, Some("Finder")),
+        KeyBinding::new("cmd-3", ViewAsColumns, Some("Finder")),
+        KeyBinding::new("cmd-4", ViewAsGallery, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::OPEN_SELECTION.keystroke,
             OpenItems,
@@ -76,5 +85,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             CloseTab,
             Some("Finder"),
         ),
+        KeyBinding::new("ctrl-shift-tab", PreviousTab, Some("Finder")),
+        KeyBinding::new("ctrl-tab", NextTab, Some("Finder")),
     ]);
 }

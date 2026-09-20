@@ -27,32 +27,31 @@ impl FinderView {
                     this.select_view_mode(mode, cx);
                 }))
         };
-        let view_control = div()
-            .flex()
-            .items_center()
-            .gap_0p5()
-            .p_0p5()
-            .rounded(px(rmac_ui::mac::radius_segmented()))
-            .bg(rmac_ui::mac::control_fill())
-            .child(seg(
-                "v-icon",
-                IconName::LayoutDashboard,
-                "Icon View",
-                ViewMode::Icon,
-            ))
-            .child(seg("v-list", IconName::Menu, "List View", ViewMode::List))
-            .child(seg(
-                "v-col",
-                IconName::PanelLeft,
-                "Column View",
-                ViewMode::Column,
-            ))
-            .child(seg(
-                "v-gal",
-                IconName::GalleryVerticalEnd,
-                "Gallery View",
-                ViewMode::Gallery,
-            ));
+        let view_control = rmac_ui::toolbar_group(
+            div()
+                .flex()
+                .items_center()
+                .gap_0p5()
+                .child(seg(
+                    "v-icon",
+                    IconName::LayoutDashboard,
+                    "Icon View",
+                    ViewMode::Icon,
+                ))
+                .child(seg("v-list", IconName::Menu, "List View", ViewMode::List))
+                .child(seg(
+                    "v-col",
+                    IconName::PanelLeft,
+                    "Column View",
+                    ViewMode::Column,
+                ))
+                .child(seg(
+                    "v-gal",
+                    IconName::GalleryVerticalEnd,
+                    "Gallery View",
+                    ViewMode::Gallery,
+                )),
+        );
 
         let search = div()
             .w(px(layout.search_width))
@@ -107,9 +106,51 @@ impl FinderView {
             })
             .when(!layout.sidebar_visible, |leading| leading.w(px(108.0)));
 
+        let navigation_control = rmac_ui::toolbar_group(
+            div()
+                .flex()
+                .items_center()
+                .gap_0p5()
+                .child(
+                    nav(
+                        "back",
+                        IconName::ChevronLeft,
+                        "Back",
+                        self.trash_view || self.applications_view || !self.back.is_empty(),
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
+                )
+                .child(
+                    nav(
+                        "fwd",
+                        IconName::ChevronRight,
+                        "Forward",
+                        !self.fwd.is_empty(),
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| this.go_forward(cx))),
+                ),
+        );
+        let sort_control = rmac_ui::toolbar_group(
+            Button::new("sort", "")
+                .icon(Icon::new(IconName::SortDescending).text_color(rmac_ui::mac::text()))
+                .ghost()
+                .with_size(Size::Small)
+                .tooltip("Sort")
+                .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                    this.menu_purpose = MenuPurpose::Sort;
+                    this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                        event.position(),
+                        &this.focus,
+                        window,
+                        cx,
+                    ));
+                    cx.notify();
+                })),
+        );
+
         div()
             .id("toolbar")
-            .h(px(52.0))
+            .h(px(rmac_ui::mac::toolbar_height()))
             .flex_none()
             .w_full()
             .flex()
@@ -144,30 +185,7 @@ impl FinderView {
                 }
             }))
             .child(leading)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_0p5()
-                    .child(
-                        nav(
-                            "back",
-                            IconName::ChevronLeft,
-                            "Back",
-                            self.trash_view || self.applications_view || !self.back.is_empty(),
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
-                    )
-                    .child(
-                        nav(
-                            "fwd",
-                            IconName::ChevronRight,
-                            "Forward",
-                            !self.fwd.is_empty(),
-                        )
-                        .on_click(cx.listener(|this, _, _, cx| this.go_forward(cx))),
-                    ),
-            )
+            .child(navigation_control)
             .when(layout.title_visible, |toolbar| {
                 toolbar.child(
                     div()
@@ -178,26 +196,30 @@ impl FinderView {
                         .child(self.title()),
                 )
             })
-            .child(div().flex_1())
             .when(layout.view_control_visible, |toolbar| {
-                toolbar.child(view_control)
+                toolbar.child(div().ml(px(16.0)).child(view_control))
             })
+            .when(layout.view_control_visible, |toolbar| toolbar.child(sort_control))
+            .child(div().flex_1())
             // The ⋯ button opens the item context menu (anchored below itself).
             .child(
-                Button::new("more", "")
-                    .icon(Icon::new(IconName::Ellipsis).text_color(rmac_ui::mac::text()))
-                    .ghost()
-                    .with_size(Size::Small)
-                    .tooltip("More Actions")
-                    .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
-                        this.menu_at = Some(rmac_ui::ContextMenuState::open(
-                            ev.position(),
-                            &this.focus,
-                            window,
-                            cx,
-                        ));
-                        cx.notify();
-                    })),
+                rmac_ui::toolbar_group(
+                    Button::new("more", "")
+                        .icon(Icon::new(IconName::Ellipsis).text_color(rmac_ui::mac::text()))
+                        .ghost()
+                        .with_size(Size::Small)
+                        .tooltip("More Actions")
+                        .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
+                            this.menu_purpose = MenuPurpose::Context;
+                            this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                                ev.position(),
+                                &this.focus,
+                                window,
+                                cx,
+                            ));
+                            cx.notify();
+                        })),
+                ),
             )
             .child(search)
     }

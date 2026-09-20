@@ -16,6 +16,27 @@ impl FinderView {
                 self.anchor = None;
             }
         }
+        self.menu_purpose = MenuPurpose::Context;
+        self.menu_at = Some(rmac_ui::ContextMenuState::open(
+            position,
+            &self.focus,
+            window,
+            cx,
+        ));
+        cx.notify();
+    }
+
+    pub(in crate::view) fn open_column_context_menu(
+        &mut self,
+        entry: Entry,
+        position: Point<Pixels>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.selected.clear();
+        self.anchor = None;
+        self.column_selection = Some(entry);
+        self.menu_purpose = MenuPurpose::Context;
         self.menu_at = Some(rmac_ui::ContextMenuState::open(
             position,
             &self.focus,
@@ -54,7 +75,7 @@ impl FinderView {
         let header = div()
             .flex()
             .items_center()
-            .h(px(26.0))
+            .h(px(rmac_ui::mac::list_row_height()))
             .px_2()
             .border_b_1()
             .border_color(sep())
@@ -112,7 +133,7 @@ impl FinderView {
             let has_search_detail = search_detail.is_some();
 
             let name_cell: gpui::AnyElement = match &self.renaming {
-                Some((ri, input)) if *ri == ix => div()
+                Some((rename_path, input)) if rename_path == &e.path => div()
                     .pl(px(6.0))
                     .flex_1()
                     .child(TextField::new(input).appearance(true))
@@ -327,7 +348,7 @@ impl FinderView {
                 let drop_directory = e.path.clone();
                 let is_directory = e.is_dir;
                 let tile_label: gpui::AnyElement = match &self.renaming {
-                    Some((rename_index, input)) if *rename_index == ix => div()
+                    Some((rename_path, input)) if rename_path == &e.path => div()
                         .w(px(label_width))
                         .child(TextField::new(input).appearance(true))
                         .into_any_element(),
@@ -438,6 +459,11 @@ impl FinderView {
         }
 
         let content = if self.trash_view && self.entries.is_empty() {
+            let empty_title = format!("{} is Empty", self.file_words.bin());
+            let empty_message = format!(
+                "Items moved to {} will appear here.",
+                self.file_words.bin()
+            );
             div()
                 .id("trash-empty")
                 .flex_1()
@@ -446,8 +472,7 @@ impl FinderView {
                 .items_center()
                 .justify_center()
                 .child(
-                    rmac_ui::EmptyState::new("Trash is Empty")
-                        .message("Items moved to Trash will appear here."),
+                    rmac_ui::EmptyState::new(empty_title).message(empty_message),
                 )
                 .into_any_element()
         } else {
@@ -531,7 +556,15 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &PasteItems, _, cx| this.paste(cx)))
             .on_action(cx.listener(|this, _: &UndoOperation, _, cx| this.start_undo(cx)))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
+            .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
+            .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
             .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
+            .on_action(cx.listener(|this, _: &GoHome, _, cx| this.go_home(cx)))
+            .on_action(cx.listener(|this, _: &GoApplications, _, cx| {
+                this.applications_click(cx)
+            }))
+            .on_action(cx.listener(|this, _: &GoDownloads, _, cx| this.go_downloads(cx)))
+            .on_action(cx.listener(|this, _: &GoTrash, _, cx| this.trash_click(cx)))
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
             .on_action(cx.listener(|this, _: &OpenWith, _, cx| this.request_open_with(cx)))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
@@ -561,6 +594,16 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &CloseTab, _, cx| {
                 let a = this.active;
                 this.close_tab(a, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PreviousTab, _, cx| {
+                this.select_adjacent_tab(-1, cx)
+            }))
+            .on_action(cx.listener(|this, _: &NextTab, _, cx| {
+                this.select_adjacent_tab(1, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowHelp, _, cx| {
+                this.help_open = true;
+                cx.notify();
             }))
             .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _, cx| {
                 let current = this.anchor.and_then(|anchor| {

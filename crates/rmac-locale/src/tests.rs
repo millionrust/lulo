@@ -206,3 +206,17 @@ fn x11_layout_inventory_is_sorted_deduplicated_and_bounded() {
     assert!(truncated);
     assert!(values.windows(2).all(|pair| pair[0] < pair[1]));
 }
+
+#[test]
+fn file_vocabulary_follows_the_message_language() {
+    let british = FileVocabulary::for_locale("en_GB.UTF-8");
+    assert_eq!(british.favourites(), "Favourites");
+    assert_eq!(british.bin(), "Bin");
+
+    let british_hyphenated = FileVocabulary::for_locale("en-GB@calendar=gregorian");
+    assert_eq!(british_hyphenated, british);
+
+    let american = FileVocabulary::for_locale("en_US.UTF-8");
+    assert_eq!(american.favourites(), "Favorites");
+    assert_eq!(american.bin(), "Trash");
+}

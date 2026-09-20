@@ -5,7 +5,7 @@ impl FinderView {
         #[cfg(any(target_os = "linux", test))]
         {
             self.cancel_search();
-            self.result_title = Some("Trash".into());
+            self.result_title = Some(self.file_words.bin().into());
             self.search_summary = None;
             self.search_relevance_order = false;
             self.selected.clear();

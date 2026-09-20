@@ -1006,7 +1006,6 @@ mod linux_wayland {
                 .flex()
                 .items_center()
                 .px_4()
-                .bg(rgba(tokens::top_bar_tint()))
                 .text_color(rgba(tokens::menubar_text()))
                 .text_size(px(tokens::body_text_size()))
                 .child(

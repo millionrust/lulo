@@ -1,4 +1,19 @@
-use gpui::{FontWeight, Hsla};
+use std::sync::Arc;
+
+use gpui::{FontFeatures, FontWeight, Hsla};
+
+/// Inter features that make changing numeric UI read like macOS.
+///
+/// The reference Inter build exposes all three tags. `tnum` prevents clocks,
+/// badges, tables, and settings values from shifting as digits change; the
+/// two stylistic features bring Inter's figures and `@` closer to SF.
+pub fn tabular_font_features() -> FontFeatures {
+    FontFeatures(Arc::new(vec![
+        ("tnum".into(), 1),
+        ("cv08".into(), 1),
+        ("ss03".into(), 1),
+    ]))
+}
 
 // Surfaces
 /// Window / editor content background.
@@ -375,3 +390,16 @@ pub const REGULAR: FontWeight = FontWeight::NORMAL;
 pub const MEDIUM: FontWeight = FontWeight::MEDIUM;
 pub const SEMIBOLD: FontWeight = FontWeight::SEMIBOLD;
 pub const BOLD: FontWeight = FontWeight::BOLD;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tabular_ui_features_are_explicit() {
+        assert_eq!(
+            tabular_font_features().tag_value_list(),
+            &[("tnum".into(), 1), ("cv08".into(), 1), ("ss03".into(), 1),]
+        );
+    }
+}

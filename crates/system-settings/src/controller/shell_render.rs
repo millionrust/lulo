@@ -38,6 +38,7 @@ impl Render for Settings {
             .id(rmac_system_settings::accessibility::ROOT_ID)
             .size_full()
             .v_flex()
+            .font_features(rmac_ui::mac::tabular_font_features())
             .track_focus(&self.focus)
             .key_context("SystemSettings")
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {

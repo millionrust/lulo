@@ -45,6 +45,7 @@ impl Render for MonitorView {
             }))
             .size_full()
             .v_flex()
+            .font_features(mac::tabular_font_features())
             .bg(mac::window())
             .text_color(mac::text())
             .child(rmac_ui::title_bar("System Monitor"))

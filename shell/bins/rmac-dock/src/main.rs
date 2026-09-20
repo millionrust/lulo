@@ -518,6 +518,7 @@ mod linux_wayland {
                 .size_full()
                 .relative()
                 .flex()
+                .font_features(rmac_shell_ui::tabular_font_features())
                 .on_click(cx.listener(|this, _, _, cx| {
                     if this.context_menu.take().is_some() {
                         this.input_region = None;

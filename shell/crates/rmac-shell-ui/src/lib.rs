@@ -1,9 +1,22 @@
 //! Framework-neutral shell presentation model and the live design tokens
 //! shared by the menu bar, Dock, OSD, and later overlays.
 
+use std::sync::Arc;
 use std::time::Duration;
 
+use gpui::FontFeatures;
+
 pub mod tokens;
+
+/// Stable-width figures and the two measured Inter alternates used by shell
+/// values whose numbers change in place.
+pub fn tabular_font_features() -> FontFeatures {
+    FontFeatures(Arc::new(vec![
+        ("tnum".into(), 1),
+        ("cv08".into(), 1),
+        ("ss03".into(), 1),
+    ]))
+}
 
 /// Delay to the next wall-clock minute without a periodic redraw loop.
 pub fn delay_until_next_minute(epoch_millis: u128) -> Duration {
@@ -211,6 +224,14 @@ fn network_state_label(state: rmac_shell_status::NetworkState) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shell_numbers_use_stable_inter_figures() {
+        assert_eq!(
+            tabular_font_features().tag_value_list(),
+            &[("tnum".into(), 1), ("cv08".into(), 1), ("ss03".into(), 1),]
+        );
+    }
 
     #[test]
     fn minute_delay_is_bounded_and_never_busy_loops() {

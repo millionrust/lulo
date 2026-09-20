@@ -1189,6 +1189,7 @@ mod linux_wayland {
                                 .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(|_, _, cx| dispatch_shortcut("notification-center", cx))
                                 .font_weight(FontWeight::MEDIUM)
+                                .font_features(rmac_shell_ui::tabular_font_features())
                                 .child(clock),
                         ),
                 );

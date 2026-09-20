@@ -703,3 +703,40 @@ handling for malformed metadata.
   and nested column navigation are implemented, but a still image cannot prove their event
   sequences. Their visual timing and intermediate states remain **S** until interaction evidence
   is captured rather than inferred.
+
+## Playbook Task 4 — typography
+
+The installed reference-PC capture is from native package **0.1.0-37**. Evidence is in
+`target/evidence/rmac-2026-09-20-task4/`:
+
+- `pairs/menu-bar-vs-mac.png`
+- `pairs/settings-vs-mac.png`
+- `typography-bluetooth-400.png`
+
+The left half of `typography-bluetooth-400.png` is the live rmac Settings label after normalising
+the reference PC's measured **1.25×** output scale; the right half is the same word in the Mac
+capture. The comparison uses the exact `Bluetooth` label so inventory and copy cannot affect the
+measurement. At a half-opacity glyph-mask threshold, both word masks are **57 logical px wide**:
+**0 px / 0% width difference**. At a one-third-opacity threshold, the vertical `l` stem envelope is
+**2 logical px** in both captures: **0 px stem-width difference**. `fc-match Inter` resolves to
+`Inter-Regular.otf`, and the installed policy explicitly enables `tnum`, `cv08`, and `ss03` while
+retaining grayscale antialiasing and disabled hinting.
+
+Stable numeric features are now applied explicitly to the menu-bar clock, Dock root (including
+badges), Settings values, and System Monitor tables. The package-level Inter policy covers
+third-party surfaces using the same font. The menu-bar app identity remains Semibold rather than
+Bold.
+
+### Remaining measured visual differences
+
+- At the same half-opacity threshold, the `Bluetooth` ink mask is **9 logical px high** in rmac and
+  **10 px** in the Mac capture: rmac remains **1 px shorter**. Width and stem targets pass, so this
+  is recorded rather than changing the measured **13 px** body role by eye.
+- The live Settings window body is approximately **976 × 697 logical px** after normalising the
+  reference PC scale; the Mac Settings window in the paired capture is **740 × 626 px**. The
+  window-specific pass therefore still owns roughly **+236 px width** and **+71 px height**; Task 4
+  does not disguise that geometry difference as a font change.
+- The current capture's selected Wi-Fi row uses the correct measured accent geometry, but its text
+  raster is visibly darker than the Mac selected-row label. That colour/raster mismatch is **S**
+  here because a photographed antialiased glyph has no single reliable fill pixel; it is not used
+  to claim typography completion.

@@ -131,6 +131,11 @@ class SessionPackageTests(unittest.TestCase):
                     for component in Path(path).parts
                 )
             )
+            font_policy = (root / "etc/fonts/conf.d/99-rmac.conf").read_text(
+                encoding="utf-8"
+            )
+            for feature in ("tnum", "cv08", "ss03"):
+                self.assertIn(f"<string>{feature}</string>", font_policy)
 
             wrapper = root / "usr/libexec/rmac/rmac-wayland-session"
             self.assertEqual(stat.S_IMODE(wrapper.stat().st_mode), 0o755)

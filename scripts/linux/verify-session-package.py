@@ -19,6 +19,7 @@ MAX_MANIFEST_BYTES = 64 * 1024
 _CURSOR_THEME = (
     Path(__file__).resolve().parents[2] / "assets" / "cursors" / "rmac"
 )
+_DOCK_SPECIAL_ICONS = ("trash-empty.svg", "trash-full.svg")
 REQUIRED_RMAC_EXECUTABLES = (
     "rmac-session-supervisor",
     "rmac-osd",
@@ -85,6 +86,8 @@ EXPECTED_PATHS = {
 } | {
     Path("usr/share/icons/rmac") / path.name
     for path in _CURSOR_THEME.iterdir()
+} | {
+    Path("usr/share/rmac/dock/icons") / name for name in _DOCK_SPECIAL_ICONS
 }
 
 

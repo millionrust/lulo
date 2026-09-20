@@ -191,6 +191,13 @@ def package_files() -> dict[str, tuple[bytes, int]]:
         if destination in files:
             raise PackageError(f"duplicate package destination: {source.name}")
         files[destination] = (_read_regular(source), 0o644)
+    # Dock special-item artwork must be available independently of the source
+    # tree used to compile the installed binary.
+    dock_icons = REPO_ROOT / "crates" / "rmac-dock" / "assets" / "icons"
+    for name in ("trash-empty.svg", "trash-full.svg"):
+        source = dock_icons / name
+        destination = f"usr/share/rmac/dock/icons/{name}"
+        files[destination] = (_read_regular(source), 0o644)
     return files
 
 

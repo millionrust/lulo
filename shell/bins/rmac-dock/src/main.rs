@@ -1351,14 +1351,19 @@ mod linux_wayland {
     }
 
     fn trash_icon_path(full: bool) -> Option<PathBuf> {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../crates/rmac-dock/assets/icons")
-            .join(if full {
-                "trash-full.svg"
-            } else {
-                "trash-empty.svg"
-            });
-        path.is_file().then_some(path)
+        let file = if full {
+            "trash-full.svg"
+        } else {
+            "trash-empty.svg"
+        };
+        [
+            PathBuf::from("/usr/share/rmac/dock/icons").join(file),
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../crates/rmac-dock/assets/icons")
+                .join(file),
+        ]
+        .into_iter()
+        .find(|path| path.is_file())
     }
 
     fn item_color(app_id: &str, enabled: bool) -> u32 {

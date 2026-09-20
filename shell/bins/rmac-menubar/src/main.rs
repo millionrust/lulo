@@ -1,5 +1,6 @@
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod linux_wayland {
+    use std::borrow::Cow;
     use std::collections::{BTreeMap, BTreeSet};
     use std::env;
     use std::fs::{self, OpenOptions};
@@ -13,10 +14,10 @@ mod linux_wayland {
     use chrono::Local;
     use futures_util::FutureExt as _;
     use gpui::{
-        div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Bounds,
-        Context, DisplayId, Entity, FocusHandle, FontWeight, KeyDownEvent, PlatformDisplay,
-        QuitMode, Role, Size, Subscription, Window, WindowBackgroundAppearance, WindowBounds,
-        WindowKind, WindowOptions,
+        div, layer_shell::*, point, prelude::*, px, rgba, svg, AnyWindowHandle, App, AssetSource,
+        Bounds, Context, DisplayId, Entity, FocusHandle, FontWeight, KeyDownEvent, PlatformDisplay,
+        QuitMode, Role, SharedString, Size, Subscription, Window, WindowBackgroundAppearance,
+        WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use rmac_shell_ui::tokens;
@@ -40,6 +41,56 @@ mod linux_wayland {
     const SYSTEM_MENU_ID: &str = "org.rmac.Desktop.SystemMenu";
     const READY_FILE_ENV: &str = "RMAC_TOP_BAR_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_TOP_BAR_RENDER_COUNT_DIR";
+
+    const STATUS_ASSET_NAMES: [&str; 10] = [
+        "status/battery.svg",
+        "status/bluetooth.svg",
+        "status/control-center.svg",
+        "status/focus.svg",
+        "status/notifications.svg",
+        "status/rmac.svg",
+        "status/sound.svg",
+        "status/spotlight.svg",
+        "status/vpn.svg",
+        "status/wifi.svg",
+    ];
+
+    struct MenuBarAssets;
+
+    impl AssetSource for MenuBarAssets {
+        fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
+            let bytes: Option<&'static [u8]> = match path {
+                "status/battery.svg" => Some(include_bytes!("../../../assets/status/battery.svg")),
+                "status/bluetooth.svg" => {
+                    Some(include_bytes!("../../../assets/status/bluetooth.svg"))
+                }
+                "status/control-center.svg" => {
+                    Some(include_bytes!("../../../assets/status/control-center.svg"))
+                }
+                "status/focus.svg" => Some(include_bytes!("../../../assets/status/focus.svg")),
+                "status/notifications.svg" => {
+                    Some(include_bytes!("../../../assets/status/notifications.svg"))
+                }
+                "status/rmac.svg" => Some(include_bytes!("../../../assets/status/rmac.svg")),
+                "status/sound.svg" => Some(include_bytes!("../../../assets/status/sound.svg")),
+                "status/spotlight.svg" => {
+                    Some(include_bytes!("../../../assets/status/spotlight.svg"))
+                }
+                "status/vpn.svg" => Some(include_bytes!("../../../assets/status/vpn.svg")),
+                "status/wifi.svg" => Some(include_bytes!("../../../assets/status/wifi.svg")),
+                _ => None,
+            };
+            Ok(bytes.map(Cow::Borrowed))
+        }
+
+        fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
+            Ok(STATUS_ASSET_NAMES
+                .iter()
+                .filter(|asset| asset.starts_with(path))
+                .map(|asset| SharedString::from(*asset))
+                .collect())
+        }
+    }
 
     struct ShellStatus {
         update: rmac_shell_runtime::Update,
@@ -988,7 +1039,13 @@ mod linux_wayland {
                                         this.open_menu(0, SYSTEM_MENU_ID.to_owned(), window, cx);
                                     }
                                 }))
-                                .child(img(shell_icon_path("rmac.svg")).w(px(15.0)).h(px(15.0))),
+                                .child(
+                                    svg()
+                                        .path(shell_icon_path("rmac.svg"))
+                                        .w(px(15.0))
+                                        .h(px(15.0))
+                                        .text_color(rgba(tokens::primary_text())),
+                                ),
                         )
                         .child({
                             let app_id = active_app_id.clone().unwrap_or_default();
@@ -1060,7 +1117,13 @@ mod linux_wayland {
                                             dispatch_shortcut("quick-settings", cx)
                                         })
                                         .font_weight(FontWeight::MEDIUM)
-                                        .child(img(icon).w(px(14.0)).h(px(14.0)));
+                                        .child(
+                                            svg()
+                                                .path(icon)
+                                                .w(px(14.0))
+                                                .h(px(14.0))
+                                                .text_color(rgba(tokens::primary_text())),
+                                        );
                                     if !indicator.visible.is_empty() {
                                         item = item.child(indicator.visible);
                                     }
@@ -1082,9 +1145,11 @@ mod linux_wayland {
                                 .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(|_, _, cx| dispatch_shortcut("launcher", cx))
                                 .child(
-                                    img(shell_icon_path("spotlight.svg"))
+                                    svg()
+                                        .path(shell_icon_path("spotlight.svg"))
                                         .w(px(14.0))
-                                        .h(px(14.0)),
+                                        .h(px(14.0))
+                                        .text_color(rgba(tokens::primary_text())),
                                 ),
                         )
                         .child(
@@ -1102,9 +1167,11 @@ mod linux_wayland {
                                 .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(|_, _, cx| dispatch_shortcut("quick-settings", cx))
                                 .child(
-                                    img(shell_icon_path("control-center.svg"))
+                                    svg()
+                                        .path(shell_icon_path("control-center.svg"))
                                         .w(px(15.0))
-                                        .h(px(15.0)),
+                                        .h(px(15.0))
+                                        .text_color(rgba(tokens::primary_text())),
                                 ),
                         )
                         .child(
@@ -1403,7 +1470,7 @@ mod linux_wayland {
         }
     }
 
-    fn indicator_icon_path(kind: TopBarIndicatorKind) -> PathBuf {
+    fn indicator_icon_path(kind: TopBarIndicatorKind) -> &'static str {
         let file = match kind {
             TopBarIndicatorKind::Focus => "focus.svg",
             TopBarIndicatorKind::Vpn => "vpn.svg",
@@ -1416,10 +1483,20 @@ mod linux_wayland {
         shell_icon_path(file)
     }
 
-    fn shell_icon_path(file: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../assets/status")
-            .join(file)
+    fn shell_icon_path(file: &'static str) -> &'static str {
+        match file {
+            "battery.svg" => "status/battery.svg",
+            "bluetooth.svg" => "status/bluetooth.svg",
+            "control-center.svg" => "status/control-center.svg",
+            "focus.svg" => "status/focus.svg",
+            "notifications.svg" => "status/notifications.svg",
+            "rmac.svg" => "status/rmac.svg",
+            "sound.svg" => "status/sound.svg",
+            "spotlight.svg" => "status/spotlight.svg",
+            "vpn.svg" => "status/vpn.svg",
+            "wifi.svg" => "status/wifi.svg",
+            _ => unreachable!("unknown menu-bar icon"),
+        }
     }
 
     fn dispatch_shortcut(shortcut: &'static str, cx: &mut App) {
@@ -1852,7 +1929,9 @@ mod linux_wayland {
     }
 
     pub fn run() {
-        let app = application().with_quit_mode(QuitMode::Explicit);
+        let app = application()
+            .with_assets(MenuBarAssets)
+            .with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
             rmac_shell_ui::tokens::install_appearance_watch(cx);
             let status = start_status(cx);

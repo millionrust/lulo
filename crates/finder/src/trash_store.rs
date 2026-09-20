@@ -2683,6 +2683,14 @@ impl TrashStore {
                     self.finish_record(&record_path)?;
                     continue;
                 }
+                Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                    if !self.rollback_unmoved_trash(&record_path, &record)? {
+                        return Err(changed(
+                            "Trash source or metadata changed after publication failed",
+                        ));
+                    }
+                    return Err(error);
+                }
                 Err(error) => return Err(error),
             }
             sync_directory(
@@ -2898,7 +2906,13 @@ impl TrashStore {
     }
 
     fn resume_info_published(&self, path: &Path, record: &mut TrashRecord) -> io::Result<bool> {
-        rename_noreplace(&record.source(), &record.data_path())?;
+        match rename_noreplace(&record.source(), &record.data_path()) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                return self.rollback_unmoved_trash(path, record);
+            }
+            Err(error) => return Err(error),
+        }
         sync_directory(
             record
                 .data_path()
@@ -2917,6 +2931,18 @@ impl TrashStore {
         record.stage = TrashStage::DataMoved;
         self.persist(path, record, false)?;
         self.finish_undoable_record(path, record)?;
+        Ok(true)
+    }
+
+    fn rollback_unmoved_trash(&self, path: &Path, record: &TrashRecord) -> io::Result<bool> {
+        if !record_source_matches(record)?
+            || entry_exists(&record.data_path())?
+            || !record_info_matches(record)?
+        {
+            return Ok(false);
+        }
+        remove_exact_info(record)?;
+        self.finish_record(path)?;
         Ok(true)
     }
 
@@ -4462,6 +4488,28 @@ mod tests {
         assert!(!source.exists());
         assert_eq!(fs::read(record.data_path()).unwrap(), b"draft");
         assert!(store.read_records().unwrap().is_empty());
+    }
+
+    #[test]
+    fn failed_publication_rolls_back_only_exact_metadata_and_record() {
+        let (directory, store, layout) = setup("publication-permission-denied");
+        let source = write_source(&directory, OsStr::new("protected.txt"), b"system data");
+        let (record_path, mut record, info_bytes) = prepared_record(&store, &layout, &source);
+        record.info_identity = Some(
+            create_info_file(&record.info_path(), &info_bytes)
+                .expect("metadata fixture should be published"),
+        );
+        record.stage = TrashStage::InfoPublished;
+        store.persist(&record_path, &record, false).unwrap();
+
+        assert!(store
+            .rollback_unmoved_trash(&record_path, &record)
+            .expect("exact unmoved transaction should roll back"));
+
+        assert_eq!(fs::read(&source).unwrap(), b"system data");
+        assert!(!record.data_path().exists());
+        assert!(!record.info_path().exists());
+        assert!(!record_path.exists());
     }
 
     #[test]

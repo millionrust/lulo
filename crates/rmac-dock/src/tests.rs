@@ -797,6 +797,38 @@ fn parked_windows_become_minimized_tiles_instead_of_running_apps() {
 }
 
 #[test]
+fn an_active_workspace_named_parking_remains_a_visible_running_workspace() {
+    let catalog = [application("finder.desktop", "Finder")];
+    let mut visible = window(1, "finder.desktop", true, false, 10);
+    visible.workspace = Some(rmac_compositor::WorkspaceId(1));
+    let compositor = rmac_compositor::Snapshot {
+        workspaces: vec![rmac_compositor::Workspace {
+            id: rmac_compositor::WorkspaceId(1),
+            index: 1,
+            name: Some(rmac_compositor::PARKING_WORKSPACE.to_owned()),
+            output: None,
+            urgent: false,
+            active: true,
+            focused: true,
+            active_window: Some(rmac_compositor::WindowId(1)),
+        }],
+        windows: vec![visible],
+        ..Default::default()
+    };
+
+    let model = Model::build(
+        &[rmac_shell_settings::AppId("finder.desktop".into())],
+        &Default::default(),
+        &catalog,
+        &compositor,
+    );
+
+    assert!(model.items[0].running);
+    assert_eq!(model.items[0].windows.len(), 1);
+    assert!(model.minimized.is_empty());
+}
+
+#[test]
 fn minimized_tiles_lead_the_right_group_before_the_trash() {
     let model = Model {
         special_items: vec![SpecialItem {

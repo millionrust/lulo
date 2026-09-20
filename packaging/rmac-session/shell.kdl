@@ -88,6 +88,10 @@ animations {
     }
 }
 
+// Named workspaces initially appear in declaration order. Keep the visible
+// desktop first so a new login never starts inside the hidden parking area.
+workspace "Desktop"
+
 // niri has no native minimize, so the shell hides a window by parking it on
 // this named workspace. It must be declared here for niri to resolve the name
 // in a move-window-to-workspace reference; the shell excludes it from the

@@ -358,7 +358,11 @@ pub(super) fn parking_workspaces(
     compositor
         .workspaces
         .iter()
-        .filter(|workspace| workspace.name.as_deref() == Some(rmac_compositor::PARKING_WORKSPACE))
+        .filter(|workspace| {
+            workspace.name.as_deref() == Some(rmac_compositor::PARKING_WORKSPACE)
+                && !workspace.active
+                && !workspace.focused
+        })
         .map(|workspace| workspace.id)
         .collect()
 }

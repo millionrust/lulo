@@ -139,6 +139,13 @@ class SessionPackageTests(unittest.TestCase):
             ).read_text(encoding="utf-8")
             self.assertIn("/usr/libexec/rmac/rmac-notification-center", unit)
             self.assertNotIn("%h/.local/libexec", unit)
+            shell = (root / "usr/share/rmac/niri/shell.kdl").read_text(
+                encoding="utf-8"
+            )
+            self.assertLess(
+                shell.index('workspace "Desktop"'),
+                shell.index('workspace "rmac-parking"'),
+            )
 
     def test_refuses_live_root_relative_and_nonempty_destinations(self):
         with self.assertRaises(stage_package.PackageError):

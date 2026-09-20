@@ -263,7 +263,7 @@ mod linux_wayland {
                 ],
                 DesktopMenuTarget::Item(_) => vec![
                     menu_row("Open", DesktopCommand::Open, 0),
-                    menu_row("Show in Finder", DesktopCommand::Reveal, 0),
+                    menu_row("Show in Files", DesktopCommand::Reveal, 0),
                     DesktopMenuRow {
                         label: "Move to Trash".into(),
                         command: DesktopCommand::MoveToTrash,

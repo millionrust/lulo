@@ -137,7 +137,7 @@ impl Backend for SystemBackend {
             let path = path.into_os_string().into_string().map_err(|_| {
                 BackendError::new(
                     FailureKind::Unsupported,
-                    "Finder cannot open a directory whose path is not valid UTF-8",
+                    "Files cannot open a directory whose path is not valid UTF-8",
                 )
             })?;
             launch_finder(vec!["--path".into(), path]).await

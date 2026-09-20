@@ -290,9 +290,9 @@ impl Session {
             rows.push(Row {
                 id: RowId::ShowInFinder,
                 section: Section::Organization,
-                label: "Show in Finder".into(),
+                label: "Show in Files".into(),
                 accessible_label: bounded(&format!(
-                    "Show {} in Finder",
+                    "Show {} in Files",
                     bounded(&menu.application_name)
                 )),
                 enabled: true,

@@ -53,7 +53,7 @@ impl fmt::Display for Operation {
             Self::Focus => "focus application window",
             Self::Close => "close application window",
             Self::Restore => "restore minimized window",
-            Self::Reveal => "show application in Finder",
+            Self::Reveal => "show application in Files",
             Self::Terminate => "terminate application",
             Self::UpdatePins => "update pinned applications",
             Self::Resolve => "resolve Dock activation",

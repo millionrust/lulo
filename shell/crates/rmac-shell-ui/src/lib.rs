@@ -77,9 +77,9 @@ pub fn top_bar_active_app_name(snapshot: &rmac_shell_status::Snapshot) -> String
         .as_deref()
         .map(app_display_name)
         .filter(|name| !name.is_empty())
-        // Like macOS Finder, the first-party file manager owns the desktop
+        // The first-party file manager owns the desktop
         // identity when no application window has focus.
-        .unwrap_or_else(|| "Finder".to_owned())
+        .unwrap_or_else(|| "Files".to_owned())
 }
 
 /// The menu-bar name for an app id. Opening a popup temporarily moves keyboard
@@ -253,9 +253,9 @@ mod tests {
     #[test]
     fn focused_application_uses_the_stable_app_identity() {
         let mut snapshot = rmac_shell_status::Snapshot::default();
-        snapshot.focused.app_id = Some("dev.rmac.Finder".into());
+        snapshot.focused.app_id = Some(rmac_apps::identity::FILES.into());
         snapshot.focused.title = Some("Downloads".into());
-        assert_eq!(top_bar_active_app_name(&snapshot), "Finder");
+        assert_eq!(top_bar_active_app_name(&snapshot), "Files");
     }
 
     #[test]
@@ -266,10 +266,10 @@ mod tests {
     }
 
     #[test]
-    fn desktop_without_a_focused_window_is_owned_by_finder() {
+    fn desktop_without_a_focused_window_is_owned_by_files() {
         assert_eq!(
             top_bar_active_app_name(&rmac_shell_status::Snapshot::default()),
-            "Finder"
+            "Files"
         );
     }
 
@@ -285,7 +285,7 @@ mod tests {
     fn an_app_is_named_from_its_id_while_its_popup_holds_focus() {
         // A live popup makes the focused window None; the menu bar still needs
         // the app it belongs to rather than the Finder desktop fallback.
-        assert_eq!(app_display_name(rmac_apps::identity::FILES), "Finder");
+        assert_eq!(app_display_name(rmac_apps::identity::FILES), "Files");
         assert_eq!(app_display_name("org.mozilla.firefox"), "Firefox");
     }
 

@@ -23,7 +23,7 @@ impl FinderView {
 
     pub(super) fn new_tab(&mut self, cx: &mut Context<Self>) {
         if self.tabs.len() >= MAX_RESTORED_TABS {
-            self.operation_error = Some("A Finder window can contain up to 16 tabs".into());
+            self.operation_error = Some("A Files window can contain up to 16 tabs".into());
             cx.notify();
             return;
         }

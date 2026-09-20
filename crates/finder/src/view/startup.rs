@@ -317,7 +317,7 @@ impl FinderView {
             free_bytes: None,
             dragging: false,
             focus,
-            native_window_title: "Finder".into(),
+            native_window_title: "Files".into(),
             watcher,
             filesystem_events: fs_events,
             filesystem_hints: fs_hints.clone(),

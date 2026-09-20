@@ -168,8 +168,9 @@ fn suppress_replaced_applications(
     catalog
         .into_iter()
         .filter(|application| {
-            is_first_party(application.id.as_str())
-                || !replaced_names.contains(&application.name.trim().to_lowercase())
+            !is_app_drawer(application.id.as_str())
+                && (is_first_party(application.id.as_str())
+                    || !replaced_names.contains(&application.name.trim().to_lowercase()))
         })
         .collect()
 }
@@ -177,6 +178,10 @@ fn suppress_replaced_applications(
 fn is_first_party(desktop_id: &str) -> bool {
     let app_id = desktop_id.strip_suffix(".desktop").unwrap_or(desktop_id);
     rmac_apps::identity::ALL.contains(&app_id)
+}
+
+fn is_app_drawer(desktop_id: &str) -> bool {
+    desktop_id.strip_suffix(".desktop").unwrap_or(desktop_id) == rmac_apps::identity::APP_DRAWER
 }
 
 pub(crate) fn signal_change(sender: &async_channel::Sender<()>) {
@@ -336,6 +341,18 @@ mod tests {
         ];
 
         assert_eq!(suppress_replaced_applications(catalog).len(), 2);
+    }
+
+    #[test]
+    fn apps_does_not_list_itself() {
+        let catalog = vec![
+            application("org.rmac.AppDrawer.desktop", "Apps"),
+            application("org.rmac.Files.desktop", "Files"),
+        ];
+
+        let filtered = suppress_replaced_applications(catalog);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, "org.rmac.Files.desktop");
     }
 }
 mod category;

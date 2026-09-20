@@ -578,3 +578,36 @@ assigned to the later app-specific pass. The shared titlebar remains **34 logica
 density in this run because the three panel surfaces remained below the foreground window; those
 surfaces consume the same **13 logical px** token, but their visual delta remains **S** until a valid
 foreground capture exists.
+
+## Live-surface X9 — one public name per application
+
+Fresh reference-PC captures are in `target/evidence/live-surfaces-x9/`. The direct comparisons are:
+
+- `target/evidence/live-surfaces-x9/pairs/app-files-vs-mac.png`
+- `target/evidence/live-surfaces-x9/pairs/overlay-app-drawer-vs-mac.png`
+
+The first-party file manager now publishes **Files** through its desktop entry, compositor title,
+menu-bar identity, and live document title. The Apps catalog removes the Apps launcher itself and
+uses the first-party Files entry to suppress the replaced host file manager by exact display name.
+Opening Apps remains a layer-shell action, so the menu bar keeps the previously focused Files
+identity instead of exposing the internal overlay identity.
+
+### X9 measurements
+
+- The audited Apps grid contained **1 Files tile + 1 Finder tile + 1 Apps self tile**. The fresh
+  capture contains **1 Files tile, 0 Finder tiles, and 0 Apps self tiles**: **2 duplicate/self
+  identities removed**.
+- Files has **1** public desktop identity (`org.rmac.Files`) before and after; its user-facing names
+  fall from **2 variants** (`Files`, `Finder`) to **1** (`Files`).
+- While Apps is open, the normal-window inventory contains **0** Apps windows and the layer
+  inventory contains **1** Apps surface. The menu bar displays **Files** and contains **0** overlay
+  names.
+- X9 changes labels and catalog projection only. Window, grid, and row geometry change by **0 px**.
+
+### Remaining measured visual differences
+
+The macOS reference calls its file manager Finder; X9 follows the audited rmac product-name
+contract of Files consistently rather than mixing both names. The Apps surface remains **106 px too
+wide**, **73 px too tall**, and **60 px too high** using the established X2 measurements. Its raw
+third-party artwork remains assigned to X8. Files' empty-state bug and toolbar differences remain in
+the later Files-specific pass.

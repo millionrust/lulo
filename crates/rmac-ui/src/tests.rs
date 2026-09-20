@@ -44,7 +44,7 @@ fn app_windows_request_only_rmac_client_decorations() {
 #[test]
 fn identified_window_options_publish_stable_native_titles() {
     let cases = [
-        (app_id::FILES, "Finder"),
+        (app_id::FILES, "Files"),
         (app_id::TERMINAL, "Terminal"),
         (app_id::NOTES, "Notes"),
         (app_id::TEXT_EDITOR, "Text Editor"),

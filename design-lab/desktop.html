@@ -65,6 +65,25 @@
                         radius 24 (the gallery's 17 at 112 scaled by 1.52)
     stacks              every non-folder kind forms a stack; folders stay
                         loose after the stacks; the newest item is on top
+    item menu           Open | Move to Trash | Get Info, Rename, Duplicate
+                        (macOS 26's order, as in Finder's File menu:
+                        Get Info, Rename, Compress, Duplicate, Make Alias,
+                        Quick Look). Rename only for one item; Compress,
+                        Make Alias, Quick Look, Copy, Share and Tags have
+                        no rmac backend yet and are left out.
+    rename field        the label box in place: same 12/15 text, 5 side
+                        padding, radius 4, accent fill, white text; wraps
+                        at 90 (100 less the padding) and grows to its
+                        widest line. Selected text white 0.35 over the
+                        accent; caret 1 wide, white, one line tall. The
+                        stem is selected, not the extension.
+    rename alert        260 wide card (panel style), 20 padding, title 13
+                        semibold, body 11, centred; buttons 28 tall,
+                        radius 7, 8 apart, the default one accent (Cancel
+                        for the dot warning). Top at 30% of the screen
+                        height. Wording: Finder's "already taken" and
+                        "can't be used" alerts; the dot warning's text is
+                        not verified against the Mac.
 -->
 <style>
   :root { --font: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif; --accent: #1372F9; }
@@ -148,6 +167,18 @@
   .gallery .foot { position: absolute; left: 0; right: 0; bottom: 0; height: 62px; border-top: 1px solid rgba(255,255,255,.14); display: flex; align-items: center; padding: 0 20px; font: 600 13px var(--font); }
   .done { margin-left: auto; width: 83px; height: 28px; border-radius: 14px; background: var(--accent); display: flex; align-items: center; justify-content: center; font: 500 13px var(--font); }
   .nc-drop { position: absolute; left: 1102px; top: 176px; width: 330px; text-align: center; font: 600 15px/19px var(--font); color: rgba(255,255,255,.9); }
+  /* ---- rename ---- */
+  .item .edit { margin-top: 6px; max-width: 100px; padding: 0 5px; border-radius: 4px; box-sizing: border-box; text-align: center;
+    font-size: 12px; line-height: 15px; color: #fff; background: var(--accent); word-break: break-word; }
+  .item .edit .sel { background: rgba(255,255,255,.35); }
+  .alert { position: absolute; width: 260px; padding: 20px; box-sizing: border-box; border-radius: 12px; text-align: center;
+    background: rgba(28,28,36,.86); backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,.27); box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  .alert h4 { margin: 0 0 16px; font: 600 13px/16px var(--font); }
+  .alert p { margin: -10px 0 16px; font: 400 11px/14px var(--font); color: rgba(255,255,255,.85); }
+  .alert .buttons { display: flex; gap: 8px; }
+  .alert .buttons div { flex: 1; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center;
+    font: 400 13px var(--font); background: rgba(255,255,255,.15); }
+  .alert .buttons div.default { background: var(--accent); }
   .nc-done { position: absolute; left: 1280px; top: 378px; padding: 3px 10px; border-radius: 12px; background: rgba(255,255,255,.15); box-shadow: 0 0 0 1px rgba(255,255,255,.27) inset; font-size: 12px; color: rgba(255,255,255,.75); }
 </style>
 </head>
@@ -158,6 +189,9 @@
 <div class="scene" id="s2"><div class="bar"><b>Files</b><span class="r">Wed 23 Sep 9:16 PM</span></div></div>
 <!-- Scene 3: Edit Widgets gallery -->
 <div class="scene" id="s3"><div class="bar"><b>Files</b><span class="r">Wed 23 Sep 9:18 PM</span></div></div>
+<!-- Scene 4: renaming. The item menu with Rename, a label being edited
+     (stem selected) and the name-taken alert -->
+<div class="scene" id="s4"><div class="bar"><b>Files</b><span class="r">Wed 23 Sep 9:20 PM</span></div></div>
 <script>
 const ICON = { folder: "../assets/icons/folder.svg", doc: "../assets/icons/document.svg" };
 const PITCH = 112, RIGHT = 34, TOP = 41, W = 1470;
@@ -184,7 +218,7 @@ function stack(scene, col, row, name, kinds, sel) {
   d.innerHTML = `<div class="box"><div class="stack">${layers}</div></div><div class="label">${name}</div>`;
   scene.appendChild(d);
 }
-const s1 = document.getElementById("s1"), s2 = document.getElementById("s2"), s3 = document.getElementById("s3");
+const s1 = document.getElementById("s1"), s2 = document.getElementById("s2"), s3 = document.getElementById("s3"), s4 = document.getElementById("s4");
 item(s1, 0, 0, "Projects", "folder");
 item(s1, 0, 1, "Budget 2026.xlsx", "doc", "XLSX");
 item(s1, 0, 2, "Screenshot 2026-09-23 at 21.08.12", "image", "", true);
@@ -253,6 +287,29 @@ s3.insertAdjacentHTML("beforeend", `<div class="nc-drop">Drag widgets here to ad
   <div class="tile" style="left:763px;top:236px;width:112px;height:112px"></div>
   <div class="foot">Drag a widget to place it on the desktop…<div class="done">Done</div></div>
  </div>`);
+
+item(s4, 0, 0, "Projects", "folder");
+item(s4, 0, 2, "Lease agreement.pdf", "doc", "PDF");
+item(s4, 1, 0, "notes.txt", "doc", "TXT", true);
+{
+  // "Budget 2026.xlsx" being renamed: the stem selected, not the extension.
+  const p = slot(0, 1), d = document.createElement("div");
+  d.className = "item sel"; d.style.left = p.left + "px"; d.style.top = p.top + "px";
+  d.innerHTML = `<div class="box">${glyph("doc", "XLSX")}</div><div class="edit"><span class="sel">Budget 2026</span>.xlsx</div>`;
+  s4.appendChild(d);
+}
+s4.insertAdjacentHTML("beforeend", `<div class="menu" style="left:1060px;top:130px;width:176px">
+  ${[["Open","open",0],"|",["Move to Trash","trash"],"|",["Get Info","info"],["Rename","rename",1],["Duplicate","duplicate"]]
+    .map(r => r === "|" ? `<div class="sep"><i></i></div>` :
+      `<div class="row${r[2] ? " hl" : ""}"><span class="ic"><img src="../shell/assets/menu/${r[1]}.svg"></span>${r[0]}</div>`).join("")}
+  </div>`);
+s4.insertAdjacentHTML("beforeend", `<div class="alert" style="left:${(1470 - 260) / 2}px;top:${Math.round(956 * .3)}px">
+  <h4>The name “Projects” is already taken. Please choose a different name.</h4>
+  <div class="buttons"><div class="default">OK</div></div></div>`);
+s4.insertAdjacentHTML("beforeend", `<div class="alert" style="left:${(1470 - 260) / 2 - 300}px;top:${Math.round(956 * .3)}px">
+  <h4>Are you sure you want to use a name that begins with a dot “.”?</h4>
+  <p>Names that begin with a dot are reserved for the system. The item will be hidden.</p>
+  <div class="buttons"><div class="default">Cancel</div><div>Use “.”</div></div></div>`);
 </script>
 </body>
 </html>

@@ -1,0 +1,21 @@
+[package]
+name = "rmac-archive"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# Archive Utility's engine: expand zip, tar, tar.gz/tgz, tar.bz2/tbz2,
+# tar.xz/txz and single .gz/.bz2/.xz files next to the archive, and write
+# Finder-style "Archive.zip" / "name.zip" files. Pure Rust decoders only, so
+# the same code runs on every Ubuntu install without libarchive-tools
+# (bsdtar), unzip or zip, none of which Ubuntu ships by default.
+[dependencies]
+bzip2 = { workspace = true }
+chrono.workspace = true
+flate2.workspace = true
+libc.workspace = true
+lzma-rs = { workspace = true }
+tar = { workspace = true }
+zip = { workspace = true }

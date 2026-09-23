@@ -162,6 +162,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Close Tab", "finder::CloseTab", "⌘W"),
             item!("Move to Trash", "finder::MoveToTrash", "⌘⌫", separator),
             item!("Get Info", "finder::GetInfo", "⌘I"),
+            item!("Compress", "finder::Compress", ""),
         ],
     },
     MenuSpec {

@@ -198,20 +198,19 @@ impl FinderView {
             self.launch_applications(applications, cx);
             return;
         }
-        let paths: Vec<(bool, PathBuf)> = if self.view == ViewMode::Column
-            && !self.applications_view
-        {
-            self.column_selection
-                .as_ref()
-                .map(|entry| vec![(entry.is_dir, entry.path.clone())])
-                .unwrap_or_default()
-        } else {
-            self.selected
-                .iter()
-                .filter_map(|&index| self.entries.get(index))
-                .map(|entry| (entry.is_dir, entry.path.clone()))
-                .collect()
-        };
+        let paths: Vec<(bool, PathBuf)> =
+            if self.view == ViewMode::Column && !self.applications_view {
+                self.column_selection
+                    .as_ref()
+                    .map(|entry| vec![(entry.is_dir, entry.path.clone())])
+                    .unwrap_or_default()
+            } else {
+                self.selected
+                    .iter()
+                    .filter_map(|&index| self.entries.get(index))
+                    .map(|entry| (entry.is_dir, entry.path.clone()))
+                    .collect()
+            };
         if let [(true, directory)] = paths.as_slice() {
             self.navigate(directory.clone(), cx);
         } else {
@@ -220,6 +219,13 @@ impl FinderView {
     }
 
     pub(super) fn open_paths(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+        // Archive Utility's job on the Mac: expand next to the archive.
+        let (archives, paths): (Vec<PathBuf>, Vec<PathBuf>) = paths
+            .into_iter()
+            .partition(|path| rmac_archive::format_of(path).is_some() && path.is_file());
+        if !archives.is_empty() {
+            self.expand_archives(archives, cx);
+        }
         if paths.is_empty() {
             return;
         }

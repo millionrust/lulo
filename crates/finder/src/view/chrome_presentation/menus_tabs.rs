@@ -15,18 +15,16 @@ impl FinderView {
         rmac_ui::ContextMenu::new(pos)
             .header("Sort By")
             .checked_item("Name", check(SortKey::Name), Box::new(SortByName))
-            .checked_item(
-                "Date Modified",
-                check(SortKey::Date),
-                Box::new(SortByDate),
-            )
+            .checked_item("Date Modified", check(SortKey::Date), Box::new(SortByDate))
             .checked_item("Size", check(SortKey::Size), Box::new(SortBySize))
             .checked_item("Kind", check(SortKey::Kind), Box::new(SortByKind))
     }
 
+    /// `compress_label` is Finder's "Compress “x”" / "Compress N Items",
+    /// present exactly when items are selected.
     pub(in crate::view) fn build_context_menu(
         pos: Point<Pixels>,
-        has_selection: bool,
+        compress_label: Option<String>,
         can_open_with: bool,
         can_paste: bool,
         trash_view: bool,
@@ -34,6 +32,7 @@ impl FinderView {
         undo_label: Option<String>,
         file_words: rmac_locale::FileVocabulary,
     ) -> rmac_ui::ContextMenu {
+        let has_selection = compress_label.is_some();
         let mut m = rmac_ui::ContextMenu::new(pos);
         if let Some(label) = undo_label {
             m = m
@@ -100,7 +99,11 @@ impl FinderView {
                     Box::new(MoveToTrash),
                 )
                 .command_item("Get Info", rmac_ui::shortcuts::INFO, Box::new(GetInfo))
-                .command_item("Rename", rmac_ui::shortcuts::ENTER, Box::new(RenameItem))
+                .command_item("Rename", rmac_ui::shortcuts::ENTER, Box::new(RenameItem));
+            if let Some(label) = compress_label {
+                m = m.item(label, Box::new(Compress));
+            }
+            m = m
                 .command_item(
                     "Duplicate",
                     rmac_ui::shortcuts::DUPLICATE,

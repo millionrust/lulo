@@ -18,7 +18,7 @@ impl Render for FinderView {
         let menu_at = self.menu_at.clone();
         let menu_purpose = self.menu_purpose;
         let sort_key = self.sort_key;
-        let has_sel = self.selection_count() > 0;
+        let compress_label = self.compress_menu_label();
         let can_open_with = !self.trash_view
             && !self.applications_view
             && self.selection_count() == 1
@@ -58,6 +58,8 @@ impl Render for FinderView {
         });
         let open_with_dialog = self.render_open_with(cx);
         let quick_look_dialog = self.render_quick_look(cx);
+        let archive_sheet = self.render_archive_job(cx);
+        let archive_alert = self.render_archive_alert(cx);
         let help_dialog = self.help_open.then(|| {
             rmac_ui::alert(
                 "Files Help",
@@ -391,7 +393,7 @@ impl Render for FinderView {
                 let menu = match menu_purpose {
                     MenuPurpose::Context => Self::build_context_menu(
                         state.position(),
-                        has_sel,
+                        compress_label,
                         can_open_with,
                         can_paste,
                         self.trash_view,
@@ -408,6 +410,8 @@ impl Render for FinderView {
             .when_some(trash_recovery_dialog, |el, dialog| el.child(dialog))
             .when_some(delete_dialog, |el, dialog| el.child(dialog))
             .when_some(open_with_dialog, |el, dialog| el.child(dialog))
+            .when_some(archive_sheet, |el, sheet| el.child(sheet))
+            .when_some(archive_alert, |el, dialog| el.child(dialog))
             .when_some(quick_look_dialog, |el, dialog| el.child(dialog))
             .when_some(help_dialog, |el, dialog| el.child(dialog))
     }

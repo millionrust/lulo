@@ -18,6 +18,7 @@ async-channel = "2"
 async-io = "2"
 async-process = "2"
 blocking = "1"
+bzip2 = "0.6"
 chrono = "0.4"
 cosmic-text = "=0.14.2"
 flate2 = "=1.1.9"
@@ -31,6 +32,7 @@ image = { version = "0.25.10", default-features = false }
 kdl = { version = "=6.5.0", features = ["v1-fallback"] }
 libc = "=0.2.186"
 libloading = "=0.8.9"
+lzma-rs = "0.3"
 markdown = "=1.0.0"
 notify = "7"
 objc2 = "0.6"
@@ -41,6 +43,7 @@ rmac-app-launch = { version = "=0.1.0", path = "crates/rmac-app-launch" }
 rmac-app-menu = { version = "=0.1.0", path = "crates/rmac-app-menu" }
 rmac-appearance = { version = "=0.1.0", path = "crates/rmac-appearance" }
 rmac-appearance-portal = { version = "=0.1.0", path = "crates/rmac-appearance-portal" }
+rmac-archive = { version = "=0.1.0", path = "crates/rmac-archive" }
 rmac-bluetooth = { version = "=0.1.0", path = "crates/rmac-bluetooth" }
 rmac-clipboard = { version = "=0.1.0", path = "crates/rmac-clipboard" }
 rmac-clipboard-linux = { version = "=0.1.0", path = "crates/rmac-clipboard-linux" }
@@ -135,6 +138,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10.9"
 sysinfo = "0.33"
+tar = { version = "0.4", default-features = false }
 trash = "5"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
@@ -144,6 +148,7 @@ wayland-protocols = { version = "=0.32.13", features = ["client", "staging"] }
 xkbcommon = { version = "=0.8.0", default-features = false, features = ["wayland"] }
 zbus = { version = "5.16.0", features = ["blocking-api"] }
 zeroize = "=1.9.0"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
 
 [profile.release]
 lto = true

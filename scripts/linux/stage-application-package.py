@@ -19,6 +19,7 @@ PACKAGE_FORMAT = 1
 MAX_SOURCE_BYTES = 1024 * 1024
 APPLICATION_IDS = (
     "org.rmac.AppDrawer",
+    "org.rmac.ArchiveUtility",
     "org.rmac.Calculator",
     "org.rmac.Files",
     "org.rmac.Notes",
@@ -104,6 +105,10 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             _read_regular(localization / filename),
             0o644,
         )
+    files["usr/share/applications/rmac-mimeapps.list"] = (
+        _read_regular(package / "rmac-mimeapps.list"),
+        0o644,
+    )
     files["usr/share/doc/rmac-apps/LICENSES.md"] = (
         _read_regular(package / "LICENSES.md"),
         0o644,

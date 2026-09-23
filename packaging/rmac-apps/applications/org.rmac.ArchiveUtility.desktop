@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Archive Utility
+Name[hi]=आर्काइव यूटिलिटी
+GenericName=Archive Manager
+GenericName[hi]=आर्काइव प्रबंधक
+Comment=Expand zip and tar archives
+Comment[hi]=zip और tar आर्काइव खोलें
+Keywords=archive;zip;tar;expand;uncompress;
+Keywords[hi]=आर्काइव;ज़िप;टार;विस्तार;अनकंप्रेस;
+TryExec=/usr/bin/rmac-archive-utility
+Exec=/usr/bin/rmac-archive-utility %F
+Icon=org.rmac.ArchiveUtility
+Terminal=false
+NoDisplay=true
+Categories=Utility;Archiving;Compression;
+MimeType=application/zip;application/x-tar;application/x-compressed-tar;application/x-bzip2-compressed-tar;application/x-bzip-compressed-tar;application/x-xz-compressed-tar;application/gzip;application/x-bzip2;application/x-bzip;application/x-xz;
+StartupWMClass=org.rmac.ArchiveUtility

@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MIT
+# Defaults for XDG_CURRENT_DESKTOP=rmac (installed as
+# /usr/share/applications/rmac-mimeapps.list). A user's own choice in
+# ~/.config/mimeapps.list still wins. Archives open with Archive Utility,
+# which expands them next to themselves, as on macOS.
+[Default Applications]
+application/zip=org.rmac.ArchiveUtility.desktop
+application/x-tar=org.rmac.ArchiveUtility.desktop
+application/x-compressed-tar=org.rmac.ArchiveUtility.desktop
+application/x-bzip2-compressed-tar=org.rmac.ArchiveUtility.desktop
+application/x-bzip-compressed-tar=org.rmac.ArchiveUtility.desktop
+application/x-xz-compressed-tar=org.rmac.ArchiveUtility.desktop
+application/gzip=org.rmac.ArchiveUtility.desktop
+application/x-bzip2=org.rmac.ArchiveUtility.desktop
+application/x-bzip=org.rmac.ArchiveUtility.desktop
+application/x-xz=org.rmac.ArchiveUtility.desktop

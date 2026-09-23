@@ -48,6 +48,7 @@ class BinaryRecord:
 
 APPLICATION_BINARIES = (
     "rmac-app-drawer",
+    "rmac-archive-utility",
     "rmac-calculator",
     "rmac-files",
     "rmac-notes",
@@ -123,7 +124,7 @@ PACKAGE_SPECS = (
         summary="macOS-inspired applications for the rmac Linux desktop",
         description=(
             "Provides Files, Terminal, Notes, Text Editor, System Monitor, "
-            "Calculator, Preview, Apps, and Settings with their original rmac desktop "
+            "Calculator, Preview, Archive Utility, Apps, and Settings with their original rmac desktop "
             "metadata and assets."
         ),
     ),

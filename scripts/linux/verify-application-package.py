@@ -38,6 +38,21 @@ PREVIEW_MIME_TYPES = (
     "image/bmp",
     "image/tiff",
 )
+# Archive Utility claims the archives rmac-archive expands (shared-mime-info
+# names, including the older bzip spellings still in use).
+ARCHIVE_MIME_TYPES = (
+    "application/zip",
+    "application/x-tar",
+    "application/x-compressed-tar",
+    "application/x-bzip2-compressed-tar",
+    "application/x-bzip-compressed-tar",
+    "application/x-xz-compressed-tar",
+    "application/gzip",
+    "application/x-bzip2",
+    "application/x-bzip",
+    "application/x-xz",
+)
+MIMEAPPS = Path("usr/share/applications/rmac-mimeapps.list")
 APPLICATIONS = {
     "org.rmac.AppDrawer": {
         "name": "Apps",
@@ -47,6 +62,15 @@ APPLICATIONS = {
         "binary": "rmac-app-drawer",
         "categories": "System;",
         "hidden": False,
+    },
+    "org.rmac.ArchiveUtility": {
+        "name": "Archive Utility",
+        "generic": "Archive Manager",
+        "summary": "Expand zip and tar archives",
+        "keywords": "archive;zip;tar;expand;uncompress;",
+        "binary": "rmac-archive-utility",
+        "categories": "Utility;Archiving;Compression;",
+        "hidden": True,
     },
     "org.rmac.Calculator": {
         "name": "Calculator",
@@ -157,6 +181,10 @@ HINDI = {
     "Document Viewer": "दस्तावेज़ दर्शक",
     "View images and PDF documents": "छवियाँ और PDF दस्तावेज़ देखें",
     "preview;image;photo;pdf;viewer;": "प्रीव्यू;छवि;फ़ोटो;पीडीएफ़;दर्शक;",
+    "Archive Utility": "आर्काइव यूटिलिटी",
+    "Archive Manager": "आर्काइव प्रबंधक",
+    "Expand zip and tar archives": "zip और tar आर्काइव खोलें",
+    "archive;zip;tar;expand;uncompress;": "आर्काइव;ज़िप;टार;विस्तार;अनकंप्रेस;",
 }
 LOCALIZATION_FILES = {
     "LINGUAS",
@@ -171,6 +199,7 @@ def _expected_paths() -> set[Path]:
     paths = {
         Path("usr/share/doc/rmac-apps/LICENSES.md"),
         Path("usr/share/doc/rmac-apps/copyright"),
+        MIMEAPPS,
     }
     for identity in APPLICATIONS:
         paths.update(
@@ -302,7 +331,7 @@ def _verify_desktop(root: Path, identity: str, specification: dict[str, object])
     entry = parser["Desktop Entry"]
     binary = str(specification["binary"])
     expected_exec = f"/usr/bin/{binary}"
-    if identity in ("org.rmac.TextEditor", "org.rmac.Preview"):
+    if identity in ("org.rmac.TextEditor", "org.rmac.Preview", "org.rmac.ArchiveUtility"):
         expected_exec += " %F"
     required = {
         "Version": "1.5",
@@ -345,6 +374,11 @@ def _verify_desktop(root: Path, identity: str, specification: dict[str, object])
             raise VerificationError("Preview MIME declarations are invalid")
         if "Actions" in entry:
             raise VerificationError("Preview action inventory is invalid")
+    elif identity == "org.rmac.ArchiveUtility":
+        if entry.get("MimeType") != ";".join(ARCHIVE_MIME_TYPES) + ";":
+            raise VerificationError("Archive Utility MIME declarations are invalid")
+        if "Actions" in entry:
+            raise VerificationError("Archive Utility action inventory is invalid")
     elif any(key in entry for key in ("MimeType", "Actions")) or "%" in entry["Exec"]:
         raise VerificationError(f"desktop entry claims unsupported activation: {identity}")
 
@@ -449,11 +483,27 @@ def _verify_localization(root: Path) -> None:
         raise VerificationError("Hindi translation catalog is stale")
 
 
+def _verify_mimeapps(root: Path) -> None:
+    raw, _mode = _regular_bytes(root / MIMEAPPS, MAX_METADATA_BYTES)
+    parser = configparser.ConfigParser(interpolation=None, strict=True)
+    parser.optionxform = str
+    try:
+        parser.read_string(raw.decode("utf-8"))
+    except (UnicodeDecodeError, configparser.Error) as error:
+        raise VerificationError("rmac MIME defaults are invalid") from error
+    expected = {mime: "org.rmac.ArchiveUtility.desktop" for mime in ARCHIVE_MIME_TYPES}
+    if parser.sections() != ["Default Applications"] or dict(
+        parser["Default Applications"]
+    ) != expected:
+        raise VerificationError("rmac MIME defaults are not exact")
+
+
 def _verify_metadata(root: Path) -> None:
     for identity, specification in APPLICATIONS.items():
         _verify_desktop(root, identity, specification)
         _verify_metainfo(root, identity, specification)
     _verify_localization(root)
+    _verify_mimeapps(root)
     license_text, _ = _regular_bytes(
         root / "usr/share/doc/rmac-apps/copyright", MAX_METADATA_BYTES
     )

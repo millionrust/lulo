@@ -1,4 +1,5 @@
 applications/org.rmac.AppDrawer.desktop
+applications/org.rmac.ArchiveUtility.desktop
 applications/org.rmac.Calculator.desktop
 applications/org.rmac.Files.desktop
 applications/org.rmac.Notes.desktop
@@ -8,6 +9,7 @@ applications/org.rmac.SystemSettings.desktop
 applications/org.rmac.Terminal.desktop
 applications/org.rmac.TextEditor.desktop
 metainfo/org.rmac.AppDrawer.metainfo.xml
+metainfo/org.rmac.ArchiveUtility.metainfo.xml
 metainfo/org.rmac.Calculator.metainfo.xml
 metainfo/org.rmac.Files.metainfo.xml
 metainfo/org.rmac.Notes.metainfo.xml

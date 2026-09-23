@@ -6,6 +6,7 @@
 //! hidden-file toggle, and live directory watching.
 
 mod accessibility;
+mod archive_controller;
 mod chrome_presentation;
 mod conflict_controller;
 mod content_presentation;
@@ -121,6 +122,7 @@ actions!(
         OpenItems,
         OpenWith,
         QuickLook,
+        Compress,
         GetInfo,
         ViewAsIcons,
         ViewAsList,
@@ -276,6 +278,9 @@ struct FinderView {
     open_generation: u64,
     quick_look: Option<QuickLookPanel>,
     quick_look_generation: u64,
+    archive_job: Option<archive_controller::ArchiveJob>,
+    archive_generation: u64,
+    archive_alert: Option<SharedString>,
     result_title: Option<SharedString>,
     search_summary: Option<SharedString>,
     search_relevance_order: bool,

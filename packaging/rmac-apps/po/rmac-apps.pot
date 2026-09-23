@@ -118,3 +118,15 @@ msgstr ""
 
 msgid "preview;image;photo;pdf;viewer;"
 msgstr ""
+
+msgid "Archive Utility"
+msgstr ""
+
+msgid "Archive Manager"
+msgstr ""
+
+msgid "Expand zip and tar archives"
+msgstr ""
+
+msgid "archive;zip;tar;expand;uncompress;"
+msgstr ""

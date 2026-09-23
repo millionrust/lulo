@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<component type="desktop-application">
+  <id>org.rmac.ArchiveUtility</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Archive Utility</name>
+  <name xml:lang="hi">आर्काइव यूटिलिटी</name>
+  <summary>Expand zip and tar archives</summary>
+  <summary xml:lang="hi">zip और tar आर्काइव खोलें</summary>
+  <description>
+    <p>Archive Utility expands zip, tar, tar.gz, tar.bz2 and tar.xz archives next to themselves when another application opens them.</p>
+    <p>It has no main window: slow archives show a small progress window and damaged ones explain what went wrong.</p>
+  </description>
+  <launchable type="desktop-id">org.rmac.ArchiveUtility.desktop</launchable>
+  <icon type="stock">org.rmac.ArchiveUtility</icon>
+  <provides><binary>rmac-archive-utility</binary></provides>
+  <url type="homepage">https://github.com/snehacodex/rmac</url>
+  <developer id="org.rmac"><name>rmac contributors</name></developer>
+  <releases><release version="0.1.0" date="2026-07-25"/></releases>
+  <content_rating type="oars-1.1"/>
+</component>

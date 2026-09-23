@@ -1,0 +1,24 @@
+[package]
+name = "rmac-archive-utility"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# Archive Utility: the handler other apps' "Open" reaches for zip and tar
+# archives (packaging/rmac-apps/applications/org.rmac.ArchiveUtility.desktop).
+# It has no main window: it expands next to each archive, shows a progress
+# window only for slow jobs and the Mac's alert when an archive fails.
+[[bin]]
+name = "rmac-archive-utility"
+path = "src/main.rs"
+
+[dependencies]
+async-channel.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+gpui-component-assets.workspace = true
+rmac-archive.workspace = true
+rmac-ui.workspace = true
+rust-embed.workspace = true

@@ -117,3 +117,15 @@ msgstr "छवियाँ और PDF दस्तावेज़ देखे�
 
 msgid "preview;image;photo;pdf;viewer;"
 msgstr "प्रीव्यू;छवि;फ़ोटो;पीडीएफ़;दर्शक;"
+
+msgid "Archive Utility"
+msgstr "आर्काइव यूटिलिटी"
+
+msgid "Archive Manager"
+msgstr "आर्काइव प्रबंधक"
+
+msgid "Expand zip and tar archives"
+msgstr "zip और tar आर्काइव खोलें"
+
+msgid "archive;zip;tar;expand;uncompress;"
+msgstr "आर्काइव;ज़िप;टार;विस्तार;अनकंप्रेस;"

@@ -180,6 +180,21 @@ impl Model {
         }
     }
 
+    /// The desktop entry that opens files dropped on `app_id`'s tile. As on
+    /// macOS only an application that can open documents takes a drop (and
+    /// highlights under it); the entry's own field codes decide how.
+    pub fn file_drop_handler(&self, app_id: &str) -> Option<PathBuf> {
+        let canonical = canonical_app_id(app_id);
+        let item = self
+            .items
+            .iter()
+            .find(|item| canonical_app_id(&item.id) == canonical)?;
+        if item.mime_types.is_empty() {
+            return None;
+        }
+        item.source.clone()
+    }
+
     pub fn context_menu(&self, app_id: &str) -> Option<ContextMenu> {
         let canonical = canonical_app_id(app_id);
         let index = self
@@ -494,6 +509,9 @@ pub(super) fn build_item(
         source: application.map(|application| application.source.clone()),
         actions: application
             .map(|application| application.actions.clone())
+            .unwrap_or_default(),
+        mime_types: application
+            .map(|application| application.mime_types.clone())
             .unwrap_or_default(),
     }
 }

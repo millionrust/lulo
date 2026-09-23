@@ -231,6 +231,26 @@ fn click_on_an_app_whose_windows_are_all_minimized_restores_the_newest() {
 }
 
 #[test]
+fn only_apps_that_open_documents_take_a_file_drop() {
+    let mut editor = application("editor.desktop", "Editor");
+    editor.mime_types = vec!["text/plain".into()];
+    let catalog = [editor, application("clock.desktop", "Clock")];
+    let pinned = [
+        rmac_shell_settings::AppId("editor.desktop".into()),
+        rmac_shell_settings::AppId("clock.desktop".into()),
+        rmac_shell_settings::AppId("missing.desktop".into()),
+    ];
+    let model = Model::build(&pinned, &Default::default(), &catalog, &Default::default());
+    assert_eq!(
+        model.file_drop_handler("editor"),
+        Some(PathBuf::from("/apps/editor.desktop"))
+    );
+    assert_eq!(model.file_drop_handler("clock.desktop"), None);
+    assert_eq!(model.file_drop_handler("missing.desktop"), None);
+    assert_eq!(model.file_drop_handler("absent.desktop"), None);
+}
+
+#[test]
 fn unsupported_hide_and_missing_pinned_app_are_truthful() {
     let settings = rmac_shell_settings::DockSettings {
         repeated_click: rmac_shell_settings::RepeatedClickBehavior::HideApplication,

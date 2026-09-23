@@ -689,6 +689,7 @@ mod tests {
             launch: None,
             source: None,
             actions: Vec::new(),
+            mime_types: Vec::new(),
         }
     }
 

@@ -28,6 +28,8 @@ pub struct Item {
     pub(super) launch: Option<rmac_apps::LaunchSpec>,
     pub(super) source: Option<PathBuf>,
     pub(super) actions: Vec<rmac_apps::DesktopAction>,
+    /// MIME types the desktop entry says it opens; decides file drops.
+    pub(super) mime_types: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

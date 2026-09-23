@@ -11,9 +11,9 @@ mod linux_wayland {
     use futures_util::FutureExt as _;
     use gpui::{
         canvas, div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App,
-        Bounds, Context, DisplayId, Entity, FontWeight, MouseButton, PathBuilder, PlatformDisplay,
-        QuitMode, Role, Size, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
-        WindowOptions,
+        Bounds, Context, DisplayId, Entity, ExternalPaths, FontWeight, MouseButton, PathBuilder,
+        PlatformDisplay, QuitMode, Role, Size, Window, WindowBackgroundAppearance, WindowBounds,
+        WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use rmac_shell_ui::tokens;
@@ -494,6 +494,95 @@ mod linux_wayland {
                 rmac_dock::menu::Action::Context(rmac_dock::ContextAction::UpdatePins(command)),
                 cx,
             );
+        }
+
+        /// Files dropped on an app's tile open with that app, launching it
+        /// (with its bounce) when it is not running.
+        fn open_dropped_files(
+            &mut self,
+            app_id: &str,
+            desktop_entry: PathBuf,
+            paths: Vec<PathBuf>,
+            cx: &mut Context<Self>,
+        ) {
+            if paths.is_empty() {
+                return;
+            }
+            self.note_launch(app_id);
+            cx.notify();
+            cx.background_executor()
+                .spawn(async move {
+                    // gio interprets the trusted entry's field codes without a
+                    // shell, exactly as Files' Open With does.
+                    let status = std::process::Command::new("gio")
+                        .arg("launch")
+                        .arg(&desktop_entry)
+                        .args(&paths)
+                        .status();
+                    if !status.is_ok_and(|status| status.success()) {
+                        eprintln!("could not open the dropped files");
+                    }
+                })
+                .detach();
+        }
+
+        /// Files dropped on the Trash move to the Trash.
+        fn trash_dropped_files(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+            if paths.is_empty() {
+                return;
+            }
+            cx.background_executor()
+                .spawn(async move {
+                    if let Err(error) = trash::delete_all(&paths) {
+                        eprintln!("could not move the dropped items to the Trash: {error}");
+                    }
+                })
+                .detach();
+        }
+
+        /// An application (.desktop entry) dropped on the Dock is kept in it.
+        fn keep_dropped_applications(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+            let entries: Vec<PathBuf> = paths
+                .into_iter()
+                .filter(|path| {
+                    path.extension()
+                        .is_some_and(|extension| extension == "desktop")
+                })
+                .collect();
+            if entries.is_empty() {
+                return;
+            }
+            cx.background_executor()
+                .spawn(async move {
+                    use rmac_dock_system::Backend as _;
+                    let Ok(catalog) = rmac_apps::discover() else {
+                        eprintln!("could not read the installed applications");
+                        return;
+                    };
+                    let backend = rmac_dock_system::SystemBackend;
+                    for entry in entries {
+                        let file_name = entry
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or_default()
+                            .to_owned();
+                        let Some(application) = catalog.iter().find(|application| {
+                            application.source == entry || application.id == file_name
+                        }) else {
+                            continue;
+                        };
+                        let command = rmac_dock::PinCommand::Pin {
+                            app_id: application.id.clone(),
+                        };
+                        if let Err(error) = backend.update_pins(&command).await {
+                            eprintln!(
+                                "could not keep the application in the Dock: {}",
+                                error.detail
+                            );
+                        }
+                    }
+                })
+                .detach();
         }
 
         /// A launch the Dock starts bounces its tile until a window appears.
@@ -1048,6 +1137,10 @@ mod linux_wayland {
             } else {
                 shelf.flex_col().items_center()
             };
+            // An application dropped anywhere else on the shelf is kept.
+            shelf = shelf.on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
+                this.keep_dropped_applications(paths.paths().to_vec(), cx);
+            }));
             let minimized_children: Vec<gpui::AnyElement> = minimized_entries
                 .iter()
                 .enumerate()
@@ -1199,6 +1292,7 @@ mod linux_wayland {
                                         rmac_dock::reorder::SLIDE_MS,
                                     ))
                         });
+                        let drop_handler = model.file_drop_handler(&app_id);
                         let dragged_here = self
                             .tile_drag
                             .as_ref()
@@ -1286,6 +1380,21 @@ mod linux_wayland {
                                         ),
                                     )
                             });
+                        // A file dragged over an app that can open it darkens
+                        // the icon; dropping opens the file with that app.
+                        if let Some(handler) = drop_handler {
+                            let drop_app_id = app_id.clone();
+                            visual = visual
+                                .drag_over::<ExternalPaths>(|style, _, _, _| style.opacity(0.55))
+                                .on_drop(cx.listener(move |this, paths: &ExternalPaths, _, cx| {
+                                    this.open_dropped_files(
+                                        &drop_app_id,
+                                        handler.clone(),
+                                        paths.paths().to_vec(),
+                                        cx,
+                                    );
+                                }));
+                        }
                         visual = match self.placement {
                             rmac_shell_settings::DockPlacement::Bottom => {
                                 visual.left(px(visual_offset)).bottom(px(lift))
@@ -1441,6 +1550,11 @@ mod linux_wayland {
                                 }
                             }));
                         if trash_available {
+                            trash = trash
+                                .drag_over::<ExternalPaths>(|style, _, _, _| style.opacity(0.55))
+                                .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
+                                    this.trash_dropped_files(paths.paths().to_vec(), cx);
+                                }));
                             trash = trash.cursor_pointer().on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(move |this, _, _, cx| {

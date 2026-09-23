@@ -115,6 +115,19 @@ Three UI surfaces share the four backend crates, matching a real macOS split:
   Control Centre — only through System Settings. This is a documented,
   intentional scope decision (SPEC.md), not a bug; adding a device list to
   Control Centre is an M-sized feature, out of scope for "small" fixes here.
+  Also: `cancel_bluetooth_pairing` in
+  `crates/system-settings/src/controller/bluetooth/pairing.rs` drops the
+  result of `rmac_bluetooth::cancel_pairing(&device_id)` with `let _ =`
+  (the sheet already resets its local state regardless, and BlueZ's own
+  authoritative-snapshot design means a stale cancel self-corrects on the
+  next signal, so this is lower stakes than a connect/pair failure). Left
+  unfixed: this controller has no existing logging convention to route a
+  background-task error through (no `eprintln!`/`tracing` calls anywhere in
+  `controller/bluetooth/`), and reaching back into the live `Settings` entity
+  from a detached `cx.background_executor()` task to show a banner needs the
+  same `cx.spawn(async move |this, cx| …)` + weak-entity pattern the menubar
+  fix above uses — a change to unfamiliar GPUI controller code this task
+  could not compile-check.
 - **Not faked.**
 
 ### List outputs → switch

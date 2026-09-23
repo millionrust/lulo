@@ -114,7 +114,7 @@ are relative to the repo root.
 | Mission Control / App Exposé | p | niri's overview is on Ctrl+↑ (`shell.kdl:182-184`). There is no App Exposé (Ctrl+↓), no Spaces bar with desktop thumbnails, and no rmac choreography. |
 | Stage Manager | A | none. Low priority (off by default on the Mac). |
 | Hot corners | A | `shell.kdl:54` `hot-corners { off }`. The Tahoe default is **bottom-right → Quick Note**. The mappable actions to add are Mission Control, Desktop, Launchpad/Apps, Lock Screen and Notification Center. |
-| Spotlight | p | `crates/launcher-app`, with providers for apps, Settings, files and a calculator. Missing: **unit/currency conversion**, a **file preview pane** on the right, ⌘↩ reveal in Finder, ⌘C copying the file path, "Search in Files", clipboard history (`launcher-app/src/view/render.rs:312`), and Tahoe actions ("Quick Keys"). |
+| Spotlight | p | `crates/launcher-app`, with providers for apps, Settings, files and a calculator. Missing: **unit/currency conversion**, a **file preview pane** on the right, ⌘↩ reveal in Finder, ⌘C copying the file path, "Search in Files", Siri "Suggestions" and Quick Keys. Actions (⌘3: system toggles, Lock Screen, Sleep, Create Note, Settings panes, the frontmost rmac app's menu commands) and Clipboard (⌘4, `rmac-clipboard-service`) exist. |
 | Hide / Hide Others (⌘H / ⌥⌘H) | P | `crates/rmac-compositor/src/actions.rs:304-330` implements these through the parking workspace. Check that ⌘Tab back to the app **un-hides** it. |
 | App-level activation | p | `rmac-shell-activation-runtime`, `rmac-focus-linux`. Clicking a Dock icon should bring *all* of that app's windows forward. The menu bar must follow the focused app. |
 | Window tiling (drag to edge, ⌃🌐 arrows) | A | No snap code. niri's scrolling tiling is a different model. Tahoe has drag-to-top-edge fill, half/quarter snapping, and Window › Move & Resize. Needs a floating-by-default policy plus a snap overlay. |
@@ -140,7 +140,7 @@ are relative to the repo root.
 | Accessibility | p | Contrast, motion and transparency are handled (`rmac-theme/src/model.rs`, `rmac-design/src/material.rs`), with Orca as the screen reader. There is **no Zoom**: niri lacks it (`system-settings/.../screen_reader.rs:124`). Ctrl-scroll zoom is a common Mac habit. |
 | Volume/brightness OSD | P | `shell/bins/rmac-osd`. Recent macOS versions show volume and brightness as a small **top-right** pill near the menu-bar status items rather than a centred square. This was not captured here (it needs a key press), so verify it before changing anything. |
 | Night Shift | A | Can be done with `wlsunset` or the niri gamma API, plus a toggle in Display settings and Control Center. |
-| Clipboard history | A | Not a Mac-native feature before Tahoe, but Tahoe's Spotlight has clipboard history (⌘4 in Spotlight). |
+| Clipboard history | p | `rmac-clipboard-service` (ADR 0010) records text, images and files after the user allows it; Spotlight ⌘4 lists them. The populated Mac list has not been captured, so its rows are estimated. |
 | Recent apps in Dock | p | The rmac Dock shows running apps that aren't pinned. The Mac keeps up to 3 **recently quit** apps without a dot (observed). |
 | Menu Bar settings | p | Tahoe merges the Control Center settings into Settings › Menu Bar, with per-control "Show When Active" and "Menu bar background" off by default. |
 

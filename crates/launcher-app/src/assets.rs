@@ -41,6 +41,8 @@ mod tests {
             "spotlight/search.svg",
             "spotlight/apps.svg",
             "spotlight/folder.svg",
+            "spotlight/shortcuts.svg",
+            "spotlight/clipboard.svg",
         ] {
             assert!(Assets.load(path).unwrap().is_some(), "{path}");
         }

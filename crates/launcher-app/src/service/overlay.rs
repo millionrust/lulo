@@ -90,8 +90,8 @@ fn route_existing(event: &rmac_shortcuts::Event, cx: &mut App) -> bool {
 }
 
 fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut App) {
-    let (token, registry, settings, error, clipboard) =
-        cx.update_global::<LauncherService, _>(|service, _| {
+    let (token, registry, settings, error, clipboard, applications) = cx
+        .update_global::<LauncherService, _>(|service, _| {
             service.next_overlay = service.next_overlay.wrapping_add(1).max(1);
             (
                 service.next_overlay,
@@ -99,6 +99,7 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
                 service.settings.clone(),
                 service.settings_error.clone(),
                 service.clipboard.clone(),
+                service.application_provider.clone(),
             )
         });
     let mut launcher = None;
@@ -114,6 +115,7 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
                     settings,
                     settings_error: error,
                     clipboard,
+                    applications,
                 },
                 window,
                 cx,

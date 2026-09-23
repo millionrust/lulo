@@ -1,6 +1,8 @@
 //! Launcher query, selection, activation, and system-surface controller.
 
+mod actions;
 mod completion;
+mod panel;
 mod render;
 mod surface;
 
@@ -31,6 +33,11 @@ pub(crate) struct LauncherView {
     application_group: Option<ApplicationGroup>,
     application_view: ApplicationView,
     application_options_open: bool,
+    /// The Actions (⌘3) or Clipboard (⌘4) panel, replacing bar and results.
+    panel: Option<panel::Panel>,
+    /// The quick-action circles show only while the pointer is over the bar.
+    bar_hovered: bool,
+    applications: rmac_launcher_providers::ApplicationProvider,
     /// Set by a left press on one of the drawn shapes before the press
     /// bubbles to the transparent surface, which dismisses on its own.
     press_inside: bool,
@@ -73,6 +80,7 @@ pub(crate) struct OverlayEnvironment {
     pub(crate) settings: rmac_shell_settings::ShellSettings,
     pub(crate) settings_error: Option<SharedString>,
     pub(crate) clipboard: async_channel::Sender<String>,
+    pub(crate) applications: rmac_launcher_providers::ApplicationProvider,
 }
 
 impl LauncherView {
@@ -105,6 +113,7 @@ impl LauncherView {
             settings,
             settings_error,
             clipboard,
+            applications,
         } = environment;
         let initial_browse_mode = requested_browse_mode(&event);
         // The placeholder is drawn by the bar itself in the measured label
@@ -114,7 +123,9 @@ impl LauncherView {
         cx.subscribe(&query, move |this, query, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 let value = query.read(cx).value().to_string();
-                let compact = value.is_empty() && this.browse_mode.is_none();
+                this.panel_query_changed();
+                let compact =
+                    value.is_empty() && this.browse_mode.is_none() && this.panel.is_none();
                 if this.compact != compact {
                     this.compact = compact;
                     let (width, height) = if compact {
@@ -177,6 +188,9 @@ impl LauncherView {
             application_group: None,
             application_view: ApplicationView::Grid,
             application_options_open: false,
+            panel: None,
+            bar_hovered: false,
+            applications,
             press_inside: false,
         };
         view.ensure_browse_selection();
@@ -277,6 +291,30 @@ impl LauncherView {
     }
 
     fn handle_key(&mut self, command: KeyCommand, window: &mut Window, cx: &mut Context<Self>) {
+        if self.panel.is_some() {
+            match command {
+                KeyCommand::ArrowDown => self.move_panel_selection(true, cx),
+                KeyCommand::ArrowUp => self.move_panel_selection(false, cx),
+                KeyCommand::Return | KeyCommand::AlternateReturn => {
+                    let selected = self.panel.as_ref().map_or(0, |panel| panel.selected);
+                    self.activate_panel_row(selected, window, cx);
+                }
+                KeyCommand::Escape => {
+                    if self.query_text(cx).is_empty() {
+                        self.dismiss(window, cx);
+                    } else {
+                        self.query
+                            .update(cx, |state, cx| state.set_value("", window, cx));
+                        if let Some(request) = self.coordinator.set_query(String::new()) {
+                            self.dispatch(request, cx);
+                        }
+                        self.panel_query_changed();
+                        cx.notify();
+                    }
+                }
+            }
+            return;
+        }
         if let Some(mode) = self.browse_mode {
             let direction = match command {
                 KeyCommand::ArrowDown => Some(MoveSelection::Next),
@@ -313,6 +351,7 @@ impl LauncherView {
         cx: &mut Context<Self>,
     ) {
         self.browse_mode = Some(mode);
+        self.panel = None;
         self.application_options_open = false;
         self.compact = false;
         window.resize(size(
@@ -391,12 +430,13 @@ impl LauncherView {
     /// full name, as on macOS.
     fn accept_completion(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let value = self.query.read(cx).value().to_string();
-        let Some(title) = self
-            .visible_rows()
-            .into_iter()
-            .next()
-            .map(|row| row.title)
-            .filter(|title| completion::inline_completion(&value, title).is_some())
+        let top_title = if self.panel.is_some() {
+            self.panel_rows(cx).into_iter().next().map(|row| row.title)
+        } else {
+            self.visible_rows().into_iter().next().map(|row| row.title)
+        };
+        let Some(title) =
+            top_title.filter(|title| completion::inline_completion(&value, title).is_some())
         else {
             return false;
         };

@@ -45,6 +45,17 @@ impl ApplicationProvider {
         true
     }
 
+    /// The installed application with this exact id, if any.
+    pub fn application(&self, id: &str) -> Option<rmac_apps::Application> {
+        self.state
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .catalog
+            .iter()
+            .find(|application| application.id == id)
+            .cloned()
+    }
+
     pub fn revision(&self) -> u64 {
         self.state
             .read()

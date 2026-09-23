@@ -1,3 +1,4 @@
+mod mode_panel;
 mod results;
 
 use gpui::prelude::FluentBuilder as _;
@@ -19,6 +20,7 @@ use rmac_launcher_runtime::{KeyCommand, Phase, Row};
 use rmac_ui::{mac, Button, TextField};
 
 use super::completion;
+use super::panel::PanelMode;
 use super::{ApplicationView, BrowseMode, LauncherView};
 
 /// Spotlight geometry in logical points, measured from macOS 26.2 dark
@@ -127,6 +129,12 @@ fn plate() -> Hsla {
     }
 }
 
+#[derive(Clone, Copy)]
+enum QuickTarget {
+    Browse(BrowseMode),
+    Panel(PanelMode),
+}
+
 /// A text layer placed exactly over the query field's text.
 fn text_overlay() -> gpui::Div {
     div()
@@ -159,15 +167,15 @@ fn mode_token(mode: BrowseMode) -> impl IntoElement {
 }
 
 impl LauncherView {
-    /// One of the circular quick actions beside the idle capsule. Only the
-    /// modes rmac can serve are shown: Shortcuts has no actions backend and
-    /// there is no clipboard history, so those two Mac circles are omitted.
+    /// One of the four circular quick actions beside the idle capsule
+    /// (Apps, Files, Actions, Clipboard). As on macOS 26.2 they appear only
+    /// while the pointer is over the bar.
     fn quick_action(
         &self,
         id: &'static str,
         glyph: &'static str,
         tooltip: &'static str,
-        mode: BrowseMode,
+        target: QuickTarget,
         cx: &Context<Self>,
     ) -> AnyElement {
         glass(
@@ -193,44 +201,33 @@ impl LauncherView {
             MouseButton::Left,
             cx.listener(|this, _, _, _| this.press_inside = true),
         )
-        .on_click(cx.listener(move |this, _, window, cx| this.open_browse(mode, window, cx)))
+        .on_click(cx.listener(move |this, _, window, cx| match target {
+            QuickTarget::Browse(mode) => this.open_browse(mode, window, cx),
+            QuickTarget::Panel(mode) => this.open_panel(mode, window, cx),
+        }))
         .into_any_element()
     }
 
-    /// The search capsule: glyph, placeholder or query with the top hit's
-    /// inline completion, and the top hit's icon at the right end.
-    fn search_bar(
+    /// The query text layer shared by the capsule and the mode panel:
+    /// placeholder, typed text, and the top row's inline completion on its
+    /// plate (shown only while the caret is at the end).
+    pub(super) fn query_field(
         &self,
         query: &str,
-        rows: &[Row],
+        placeholder: &'static str,
+        completion_label: Option<String>,
         activating: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
-        let compact = self.compact;
-        let pill_width = if compact {
-            metrics::PILL_WIDTH
-        } else {
-            metrics::GROUP_WIDTH
-        };
         let caret_at_end = {
             let state = self.query.read(cx);
             let selection = state.selected_range();
             selection.is_empty() && selection.end == state.value().len()
         };
-        let top_hit = if query.is_empty() { None } else { rows.first() };
-        let completion_label = top_hit.filter(|_| caret_at_end).and_then(|row| {
-            completion::inline_completion(query, &row.title)
-                .map(|suffix| completion::completion_label(suffix, row.primary_label))
-        });
+        let completion_label = completion_label.filter(|_| caret_at_end);
         let text_size = rmac_ui::text_px(metrics::TEXT_SIZE);
         let line_height = px(metrics::TEXT_LINE);
-        let trailing = if top_hit.is_some() {
-            metrics::TOP_HIT_RIGHT
-        } else {
-            metrics::TEXT_TRAIL
-        };
-
-        let text = div()
+        div()
             .relative()
             .flex_1()
             .min_w_0()
@@ -243,7 +240,7 @@ impl LauncherView {
                 text.child(
                     text_overlay()
                         .text_color(mac::text_tertiary())
-                        .child(QUERY_NAME),
+                        .child(placeholder),
                 )
             })
             .when_some(completion_label, |text, label| {
@@ -280,7 +277,39 @@ impl LauncherView {
                         .text_size(text_size)
                         .line_height(line_height),
                 ),
-            );
+            )
+            .into_any_element()
+    }
+
+    /// The search capsule: glyph, placeholder or query with the top hit's
+    /// inline completion, and the top hit's icon at the right end.
+    fn search_bar(
+        &self,
+        query: &str,
+        rows: &[Row],
+        activating: bool,
+        cx: &Context<Self>,
+    ) -> AnyElement {
+        let compact = self.compact;
+        // The circles show only while the pointer is over the bar; without
+        // them the idle capsule spans the whole group (measured on 26.2).
+        let circles = compact && self.bar_hovered;
+        let pill_width = if circles {
+            metrics::PILL_WIDTH
+        } else {
+            metrics::GROUP_WIDTH
+        };
+        let top_hit = if query.is_empty() { None } else { rows.first() };
+        let completion_label = top_hit.and_then(|row| {
+            completion::inline_completion(query, &row.title)
+                .map(|suffix| completion::completion_label(suffix, row.primary_label))
+        });
+        let trailing = if top_hit.is_some() {
+            metrics::TOP_HIT_RIGHT
+        } else {
+            metrics::TEXT_TRAIL
+        };
+        let text = self.query_field(query, QUERY_NAME, completion_label, activating, cx);
 
         let pill = glass(
             div()
@@ -333,25 +362,46 @@ impl LauncherView {
         });
 
         div()
+            .id("spotlight-bar")
             .flex_none()
             .h(px(metrics::BAR_HEIGHT))
             .flex()
             .items_center()
             .gap(px(metrics::CIRCLE_GAP))
+            .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                if this.bar_hovered != *hovered {
+                    this.bar_hovered = *hovered;
+                    cx.notify();
+                }
+            }))
             .child(pill)
-            .when(compact, |bar| {
+            .when(circles, |bar| {
                 bar.child(self.quick_action(
                     "spotlight-applications",
                     "spotlight/apps.svg",
                     "Apps (Command-1)",
-                    BrowseMode::Applications,
+                    QuickTarget::Browse(BrowseMode::Applications),
                     cx,
                 ))
                 .child(self.quick_action(
                     "spotlight-files",
                     "spotlight/folder.svg",
                     "Files (Command-2)",
-                    BrowseMode::Files,
+                    QuickTarget::Browse(BrowseMode::Files),
+                    cx,
+                ))
+                .child(self.quick_action(
+                    "spotlight-actions",
+                    "spotlight/shortcuts.svg",
+                    "Actions (Command-3)",
+                    QuickTarget::Panel(PanelMode::Actions),
+                    cx,
+                ))
+                .child(self.quick_action(
+                    "spotlight-clipboard",
+                    "spotlight/clipboard.svg",
+                    "Clipboard (Command-4)",
+                    QuickTarget::Panel(PanelMode::Clipboard),
                     cx,
                 ))
             })
@@ -610,14 +660,29 @@ impl Render for LauncherView {
             )
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.modifiers.secondary() {
-                    let mode = match event.keystroke.key.as_str() {
-                        "1" => Some(BrowseMode::Applications),
-                        "2" => Some(BrowseMode::Files),
+                    let target = match event.keystroke.key.as_str() {
+                        "1" => Some(QuickTarget::Browse(BrowseMode::Applications)),
+                        "2" => Some(QuickTarget::Browse(BrowseMode::Files)),
+                        "3" => Some(QuickTarget::Panel(PanelMode::Actions)),
+                        "4" => Some(QuickTarget::Panel(PanelMode::Clipboard)),
                         _ => None,
                     };
-                    if let Some(mode) = mode {
+                    match target {
+                        Some(QuickTarget::Browse(mode)) => {
+                            cx.stop_propagation();
+                            this.open_browse(mode, window, cx);
+                            return;
+                        }
+                        Some(QuickTarget::Panel(mode)) => {
+                            cx.stop_propagation();
+                            this.open_panel(mode, window, cx);
+                            return;
+                        }
+                        None => {}
+                    }
+                    if event.keystroke.key == "backspace" && this.panel.is_some() {
                         cx.stop_propagation();
-                        this.open_browse(mode, window, cx);
+                        this.remove_clipboard_row(cx);
                         return;
                     }
                 }
@@ -649,8 +714,13 @@ impl Render for LauncherView {
                     this.handle_key(command, window, cx);
                 }
             }))
-            .child(self.search_bar(&query, &rows, activating, cx))
-            .when(!compact, |surface| {
+            .when(self.panel.is_none(), |surface| {
+                surface.child(self.search_bar(&query, &rows, activating, cx))
+            })
+            .when(self.panel.is_some(), |surface| {
+                surface.child(self.mode_panel(&query, cx))
+            })
+            .when(!compact && self.panel.is_none(), |surface| {
                 surface.child(self.results_card(
                     &rows,
                     &query,

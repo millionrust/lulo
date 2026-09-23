@@ -1,15 +1,19 @@
-"""Validate the complete original rmac application-icon inventory."""
+"""Validate the complete original rmac icon inventory and its generator."""
 
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 from pathlib import Path
+import re
 import stat
 import unittest
 import xml.etree.ElementTree as ET
 
 
-ICON_DIR = Path(__file__).parents[1] / "packaging/rmac-apps/icons"
+ROOT = Path(__file__).parents[1]
+ICON_DIR = ROOT / "packaging/rmac-apps/icons"
+DOCK_DIR = ROOT / "crates/rmac-dock/assets/icons"
 IDENTITIES = (
     "org.rmac.Files",
     "org.rmac.Terminal",
@@ -21,20 +25,38 @@ IDENTITIES = (
     "org.rmac.Calculator",
     "org.rmac.Preview",
 )
+DOCK_ICONS = ("application", "files", "downloads", "trash-empty", "trash-full", "more")
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
-ALLOWED_ELEMENTS = {"svg", "g", "rect", "path", "circle"}
+ALLOWED_ELEMENTS = {
+    "svg", "defs", "g", "rect", "path", "circle", "linearGradient",
+    "radialGradient", "stop", "clipPath", "filter", "feDropShadow", "feColorMatrix",
+}
+LOCAL_REFERENCE = re.compile(r"^url\(#([A-Za-z][\w-]*)\)$")
 MAX_ICON_BYTES = 16 * 1024
+
+
+def load_generator():
+    spec = importlib.util.spec_from_file_location("build_icons", ROOT / "scripts/build-icons.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def icon_files():
+    return [ICON_DIR / f"{identity}.svg" for identity in IDENTITIES] + [
+        DOCK_DIR / f"{name}.svg" for name in DOCK_ICONS
+    ]
 
 
 class ApplicationIconTests(unittest.TestCase):
     def test_inventory_is_exact_regular_bounded_and_unique(self):
-        expected = {f"{identity}.svg" for identity in IDENTITIES}
-        actual = {path.name for path in ICON_DIR.iterdir()}
-        self.assertEqual(actual, expected)
+        for directory, names in ((ICON_DIR, IDENTITIES), (DOCK_DIR, DOCK_ICONS)):
+            expected = {f"{name}.svg" for name in names}
+            actual = {path.name for path in directory.iterdir()}
+            self.assertEqual(actual, expected)
         hashes = set()
-        for filename in sorted(expected):
-            with self.subTest(filename=filename):
-                path = ICON_DIR / filename
+        for path in icon_files():
+            with self.subTest(path=path.name):
                 metadata = path.lstat()
                 self.assertTrue(stat.S_ISREG(metadata.st_mode))
                 self.assertFalse(path.is_symlink())
@@ -43,14 +65,21 @@ class ApplicationIconTests(unittest.TestCase):
                 self.assertEqual(len(contents), metadata.st_size)
                 self.assertIn(b"Original rmac artwork, MIT licensed.", contents)
                 hashes.add(hashlib.sha256(contents).digest())
-        self.assertEqual(len(hashes), len(expected))
+        # The Dock's Files artwork is the Files application icon itself.
+        self.assertEqual(len(hashes), len(icon_files()) - 1)
+        self.assertEqual(
+            (ICON_DIR / "org.rmac.Files.svg").read_bytes(), (DOCK_DIR / "files.svg").read_bytes()
+        )
 
     def test_icons_are_self_contained_safe_scalable_svg(self):
-        for identity in IDENTITIES:
-            with self.subTest(identity=identity):
-                root = ET.fromstring((ICON_DIR / f"{identity}.svg").read_bytes())
+        for path in icon_files():
+            with self.subTest(path=path.name):
+                root = ET.fromstring(path.read_bytes())
                 self.assertEqual(root.tag, f"{{{SVG_NAMESPACE}}}svg")
-                self.assertEqual(root.attrib, {"viewBox": "0 0 128 128"})
+                self.assertEqual(
+                    root.attrib, {"viewBox": "0 0 1024 1024", "width": "128", "height": "128"}
+                )
+                ids = {element.get("id") for element in root.iter() if element.get("id")}
                 for element in root.iter():
                     local = element.tag.removeprefix(f"{{{SVG_NAMESPACE}}}")
                     self.assertIn(local, ALLOWED_ELEMENTS)
@@ -58,9 +87,34 @@ class ApplicationIconTests(unittest.TestCase):
                     for name, value in element.attrib.items():
                         lowered = name.lower()
                         self.assertFalse(lowered.startswith("on"))
-                        self.assertNotIn(lowered, {"href", "style", "filter"})
-                        self.assertNotIn("url(", value.lower())
+                        self.assertNotIn(lowered, {"href", "style"})
+                        self.assertFalse(lowered.endswith("}href"))
                         self.assertNotIn("javascript:", value.lower())
+                        if "url(" in value:
+                            match = LOCAL_REFERENCE.match(value)
+                            self.assertIsNotNone(match, value)
+                            self.assertIn(match.group(1), ids)
+
+    def test_plates_sit_on_the_measured_squircle_grid(self):
+        generator = load_generator()
+        self.assertEqual((generator.SIZE, generator.PLATE), (1024, 824))
+        plate = generator.squircle_path()
+        numbers = [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", plate)]
+        xs, ys = numbers[0::2], numbers[1::2]
+        self.assertAlmostEqual(min(xs), 100, delta=0.5)
+        self.assertAlmostEqual(max(xs), 924, delta=0.5)
+        self.assertAlmostEqual(min(ys), 100, delta=0.5)
+        self.assertAlmostEqual(max(ys), 924, delta=0.5)
+        for identity in IDENTITIES:
+            with self.subTest(identity=identity):
+                self.assertIn(plate, (ICON_DIR / f"{identity}.svg").read_text())
+
+    def test_every_generated_icon_is_current(self):
+        generator = load_generator()
+        for path, text in generator.outputs().items():
+            with self.subTest(path=str(path.relative_to(ROOT))):
+                self.assertTrue(path.is_file())
+                self.assertEqual(path.read_text(), text)
 
 
 if __name__ == "__main__":

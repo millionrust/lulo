@@ -233,7 +233,7 @@ def package_files() -> dict[str, tuple[bytes, int]]:
     # Dock special-item artwork must be available independently of the source
     # tree used to compile the installed binary.
     dock_icons = REPO_ROOT / "crates" / "rmac-dock" / "assets" / "icons"
-    for name in ("trash-empty.svg", "trash-full.svg"):
+    for name in ("application.svg", "trash-empty.svg", "trash-full.svg"):
         source = dock_icons / name
         destination = f"usr/share/rmac/dock/icons/{name}"
         files[destination] = (_read_regular(source), 0o644)

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Original rmac artwork, MIT licensed. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs><linearGradient id="fback" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4FA8EE" stop-opacity="1"/><stop offset="1" stop-color="#2F7FD6" stop-opacity="1"/></linearGradient><linearGradient id="ffront" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#A6DBFC" stop-opacity="1"/><stop offset="1" stop-color="#5FAEF0" stop-opacity="1"/></linearGradient><linearGradient id="frost" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="1"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.82"/></linearGradient><linearGradient id="edge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.95"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.3"/></linearGradient><filter id="lift" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity=".3"/></filter><filter id="mono"><feColorMatrix type="saturate" values="0"/></filter></defs>
+<g filter="url(#mono)">
+<g>
+  <path d="M150 262c0-35 29-64 64-64h190c20 0 38 9 51 24l34 42h321c35 0 64 29 64 64v428c0 35-29 64-64 64H214c-35 0-64-29-64-64z" fill="url(#fback)"/>
+  <path d="M150 392c0-35 29-64 64-64h596c35 0 64 29 64 64v370c0 35-29 64-64 64H214c-35 0-64-29-64-64z" fill="url(#ffront)" filter="url(#lift)"/>
+  <path d="M150 392c0-35 29-64 64-64h596c35 0 64 29 64 64v370c0 35-29 64-64 64H214c-35 0-64-29-64-64z" fill="none" stroke="url(#edge)" stroke-width="6"/>
+  <path d="M512 456v212M424 584l88 88 88-88" fill="none" stroke="#2A7ED4"
+        stroke-opacity=".8" stroke-width="44" stroke-linecap="round"
+        stroke-linejoin="round"/>
+</g>
+</g>
+</svg>

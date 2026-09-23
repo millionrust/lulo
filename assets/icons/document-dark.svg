@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Original rmac artwork, MIT licensed. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+<defs><linearGradient id="paper" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="1"/><stop offset="1" stop-color="#EDF0F5" stop-opacity="1"/></linearGradient><linearGradient id="frost" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="1"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.82"/></linearGradient><linearGradient id="edge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.95"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.3"/></linearGradient><filter id="lift" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity=".3"/></filter><filter id="dim"><feColorMatrix type="matrix" values=".78 0 0 0 0 0 .78 0 0 0 0 0 .8 0 0 0 0 0 1 0"/></filter></defs>
+<g filter="url(#dim)">
+  <path d="M276 104h318l218 218v538c0 35-29 64-64 64H276c-35 0-64-29-64-64V168c0-35 29-64 64-64z" fill="url(#paper)" filter="url(#lift)"/>
+  <path d="M276 104h318l218 218v538c0 35-29 64-64 64H276c-35 0-64-29-64-64V168c0-35 29-64 64-64z" fill="none" stroke="#C6CCD6" stroke-width="4"/>
+  <path d="M594 104v154c0 35 29 64 64 64h154z" fill="#DCE1EA"/>
+</g>
+</svg>

@@ -19,7 +19,7 @@ MAX_MANIFEST_BYTES = 64 * 1024
 _CURSOR_THEME = (
     Path(__file__).resolve().parents[2] / "assets" / "cursors" / "rmac"
 )
-_DOCK_SPECIAL_ICONS = ("trash-empty.svg", "trash-full.svg")
+_DOCK_SPECIAL_ICONS = ("application.svg", "trash-empty.svg", "trash-full.svg")
 _SOUND_FILES = (
     "alert.wav",
     "drag-drop.wav",

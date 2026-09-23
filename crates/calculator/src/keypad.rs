@@ -200,7 +200,9 @@ pub struct Palette {
     pub pressed_overlay: u32,
 }
 
-/// Measured from the dark-mode capture.
+/// Measured from the dark-mode capture. The capture is in Display P3, where
+/// the operator orange is (255, 146, 0); that lies outside sRGB, so the keys
+/// use its nearest sRGB colour. The greys are inside both gamuts.
 pub const DARK: Palette = Palette {
     window: 0x22252D,
     expression: 0x9B9DA0,
@@ -209,10 +211,10 @@ pub const DARK: Palette = Palette {
     function_label: 0xF6F6F6,
     digit_key: 0x46494E,
     digit_label: 0xF6F6F6,
-    operator_key: 0xFF9200,
+    operator_key: 0xFF8B00,
     operator_label: 0xFFFAF2,
     operator_selected_key: 0xFFFAF2,
-    operator_selected_label: 0xFF9200,
+    operator_selected_label: 0xFF8B00,
     toolbar_button: 0x1C1E23,
     toolbar_glyph: 0xE8E8E8,
     rim: 0xFFFFFF1A,
@@ -229,10 +231,10 @@ pub const LIGHT: Palette = Palette {
     function_label: 0x1D1D1F,
     digit_key: 0xFFFFFF,
     digit_label: 0x1D1D1F,
-    operator_key: 0xFF9200,
+    operator_key: 0xFF8B00,
     operator_label: 0xFFFFFF,
     operator_selected_key: 0xFFFFFF,
-    operator_selected_label: 0xFF9200,
+    operator_selected_label: 0xFF8B00,
     toolbar_button: 0xE4E4E7,
     toolbar_glyph: 0x3A3A3C,
     rim: 0x0000001A,
@@ -329,7 +331,7 @@ mod tests {
 
     #[test]
     fn dark_palette_uses_the_measured_colours() {
-        assert_eq!(DARK.operator_key, 0xFF9200);
+        assert_eq!(DARK.operator_key, 0xFF8B00);
         assert_eq!(DARK.digit_key, 0x46494E);
         assert_eq!(DARK.function_key, 0x727479);
         assert_eq!(LIGHT.operator_key, DARK.operator_key);

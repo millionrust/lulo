@@ -1,5 +1,11 @@
 [org.gnome.login-screen]
-logo='/usr/share/rmac/greeter/rmac-greeter-logo.svg'
+logo=''
+
+[org.gnome.desktop.interface]
+clock-format='12h'
+clock-show-weekday=true
+accent-color='blue'
+font-name='Inter 11'
 
 [org.gnome.desktop.background]
 picture-uri='file:///usr/share/rmac/greeter/rmac-aurora.svg'

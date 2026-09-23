@@ -94,7 +94,6 @@ EXPECTED_PATHS = {
     Path("usr/share/rmac/session/swaylock.conf"),
     Path("usr/share/rmac/session/lock-policy.json"),
     Path("usr/share/rmac/greeter/rmac-aurora.svg"),
-    Path("usr/share/rmac/greeter/rmac-greeter-logo.svg"),
     Path("usr/share/glib-2.0/schemas/90_rmac-greeter.gschema.override"),
     Path("etc/fonts/conf.d/99-rmac.conf"),
     Path("usr/share/xdg-desktop-portal/portals/rmac.portal"),
@@ -254,7 +253,13 @@ def verify_tree(root: Path, *, exact_tree: bool = True) -> None:
     )
     if greeter_mode != 0o644 or greeter_override != (
         b"[org.gnome.login-screen]\n"
-        b"logo='/usr/share/rmac/greeter/rmac-greeter-logo.svg'\n"
+        b"logo=''\n"
+        b"\n"
+        b"[org.gnome.desktop.interface]\n"
+        b"clock-format='12h'\n"
+        b"clock-show-weekday=true\n"
+        b"accent-color='blue'\n"
+        b"font-name='Inter 11'\n"
         b"\n"
         b"[org.gnome.desktop.background]\n"
         b"picture-uri='file:///usr/share/rmac/greeter/rmac-aurora.svg'\n"

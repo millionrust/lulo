@@ -124,10 +124,6 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             _read_regular(package / "greeter" / "rmac-aurora.svg"),
             0o644,
         ),
-        "usr/share/rmac/greeter/rmac-greeter-logo.svg": (
-            _read_regular(package / "greeter" / "rmac-greeter-logo.svg"),
-            0o644,
-        ),
         "usr/share/glib-2.0/schemas/90_rmac-greeter.gschema.override": (
             _read_regular(package / "greeter" / "90_rmac-greeter.gschema.override"),
             0o644,

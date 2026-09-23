@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Spotlight — exact</title>
+<!--
+  Spotlight at 1:1 logical points, measured from the owner's Mac (macOS 26.2
+  Tahoe, dark, 2026-09-23 recording, Retina 2940 × 1912 ÷ 2 = 1470 × 956 pt).
+  Rust (crates/launcher-app) copies these numbers; the glyphs are the same
+  SVG files the launcher loads (crates/launcher-app/assets/spotlight/).
+
+  Idle (frame f026, steady state; f037 is the open animation mid-morph):
+    group             pill + 4 circles = 384 + 4 × (10 + 54) = 640 wide,
+                      horizontally centred on the display (x 415–1055)
+    vertical          pill top y = 190 on a 956 tall display. The older
+                      1080-tall capture had 251. Both equal (H − 576) / 2:
+                      Spotlight centres a 576 tall window (bar + results)
+                      and the bar sits at its top.
+    pill              384 × 56, capsule (radius 28)
+    pill rim          1 pt light rim rgba(255,255,255,.30) (97,99,107 over
+                      22,23,27), then a 0.5 pt near-black hairline outside
+                      it (2,2,3); a faint inner falloff 1 pt inside the rim
+    pill fill         (22,23,27) over the (14,16,21) terminal backdrop; the
+                      backdrop is heavily blurred (text rows behind show as
+                      a soft band, e.g. (29,31,39) over (179,185,244) text)
+    drop shadow       very soft: −2 at 1.5 pt below, fades out by 16 pt;
+                      no visible shadow at the sides beyond 7 pt
+    search glyph      22.5 × 22.5, x 20.5 from the pill edge, centred on
+                      the pill; stroke ≈ 1.8 pt; colour (152,153,156)
+    placeholder       "Spotlight Search", SF Pro Regular 26 pt (ink width
+                      182 pt), ink starts 61 from the pill edge (origin 60),
+                      colour (152,153,156) = label tertiary #98989F
+    caret             appears before the placeholder while it shows (f037)
+    circles           54 diameter, gap 10, same fill, rim and hairline as the
+                      pill; centred on the pill's centre line
+    circle glyphs     App Store "A" 22 × 20, folder 24 × 19.5, Shortcuts
+                      layers 21.5 × 24, two documents 21.5 × 26.5; same
+                      colour as the placeholder; each centred in its circle
+  Typing (design-lab/ref/spotlight-mac.png, 1× capture of the same layout):
+    pill              widens to the whole 640 group width (the circles go
+                      away); same 56 height, glyph and text positions
+    typed text        white 26 pt Regular
+    inline completion the rest of the top hit's name then " — Open" in
+                      white at 73 %, on a selection plate rgba(255,255,255,.20)
+                      32 tall (12 inset top and bottom), radius 6, flush with
+                      the typed text on the left, 8 of padding on the right
+    top-hit icon      26 × 26 app icon, 23 from the pill's right edge
+  Results list (no Tahoe capture yet — estimated, marked S in Rust): a
+  separate glass card 8 below the bar, 640 wide, radius 24, 8 padding;
+  11 pt semibold section headers in label tertiary, 32 pt rows with 22 pt
+  icons, 13 pt titles and a tertiary " — kind" suffix, selected row filled
+  with the accent and white text, radius 10. The card is at most
+  576 − 56 − 8 = 512 tall.
+  Omitted on rmac: Shortcuts (no actions backend) and Clipboard (no
+  clipboard history). rmac keeps the pill where the Mac draws it.
+-->
+<style>
+  :root {
+    --pill-w: 384px; --bar-h: 56px; --circle: 54px; --gap: 10px; --group-w: 640px;
+    --fill: rgba(28, 29, 32, 0.60);
+    --rim: rgba(255, 255, 255, 0.32);
+    --hairline: rgba(0, 0, 0, 0.85);
+    --shadow: 0 3px 12px rgba(0, 0, 0, 0.30);
+    --glyph: #98999C;
+    --text: #FFFFFF;
+    --completion: rgba(255, 255, 255, 0.73);
+    --completion-plate: rgba(255, 255, 255, 0.20);
+    --tertiary: #98989F;
+    --accent: #0A84FF;
+    --font: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+  }
+  html, body { margin: 0; background: #0E1015; }
+  body { width: 720px; font-family: var(--font); -webkit-font-smoothing: antialiased; color: var(--text); }
+  .state { position: relative; width: 720px; background: #0E1015; overflow: hidden; }
+  .state + .state { border-top: 1px solid #333; }
+  .group { position: absolute; left: 40px; top: 20px; width: var(--group-w); display: flex; flex-direction: column; gap: 8px; }
+  .bar { display: flex; gap: var(--gap); height: var(--bar-h); }
+  .glass {
+    background: var(--fill);
+    border: 1px solid var(--rim);
+    box-shadow: 0 0 0 0.5px var(--hairline), var(--shadow);
+    box-sizing: border-box;
+    backdrop-filter: blur(20px);
+  }
+  .pill { position: relative; width: var(--pill-w); height: var(--bar-h); border-radius: 28px; }
+  .pill.wide { width: var(--group-w); }
+  /* The rim is drawn inside the 56 pt box, so positions are measured from the outer edge. */
+  .pill .search { position: absolute; left: 19.5px; top: 15.75px; width: 22.5px; height: 22.5px; color: var(--glyph); }
+  .pill .field { position: absolute; left: 59px; top: 0; bottom: 0; right: 60px; display: flex; align-items: center;
+                 font-size: 26px; font-weight: 400; letter-spacing: 0; white-space: pre; padding-bottom: 3px; box-sizing: border-box; }
+  .placeholder { color: var(--glyph); }
+  .caret { width: 2px; height: 31px; background: #fff; margin-right: -2px; }
+  .completion { color: var(--completion); background: var(--completion-plate); border-radius: 6px;
+                padding-right: 8px; height: 32px; display: flex; align-items: center; }
+  .tophit { position: absolute; right: 22px; top: 14px; width: 26px; height: 26px; border-radius: 6px;
+            background: #1b1b1d; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.25);
+            font: 600 9px/26px ui-monospace, monospace; color: #e8e8e8; text-align: center; }
+  .circle { width: var(--circle); height: var(--circle); border-radius: 50%; margin-top: 1px;
+            display: flex; align-items: center; justify-content: center; color: var(--glyph); }
+  .circle svg { width: 28px; height: 28px; }
+  .results { border-radius: 24px; padding: 8px; }
+  .section { font-size: 11px; font-weight: 600; color: var(--tertiary); height: 24px; line-height: 28px; padding: 0 10px; }
+  .row { height: 32px; border-radius: 10px; display: flex; align-items: center; gap: 10px; padding: 0 10px; font-size: 13px; }
+  .row .icon { width: 22px; height: 22px; border-radius: 5px; flex: none; }
+  .row .kind { color: var(--tertiary); }
+  .row.selected { background: var(--accent); }
+  .row.selected .kind { color: rgba(255,255,255,.75); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="search" viewBox="0 0 22 22"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="9.1" cy="9.1" r="8.2"/><path d="M15.1 15.1 21 21"/></g></symbol>
+    <symbol id="apps" viewBox="0 0 28 28"><g fill="none" stroke="currentColor" stroke-linecap="round"><path stroke-width="3" d="M16.25 5.25 9.9 16.3M7.2 21.2 6.3 23M12.75 5.25 22.4 23.5"/><path stroke-width="2.6" d="M4.55 18H14M19.5 18h4.2"/></g></symbol>
+    <symbol id="folder" viewBox="0 0 28 28"><g fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5.25 5H10l2.5 2h11.25a2 2 0 0 1 2 2v11.75a2 2 0 0 1-2 2H5.25a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z"/><path stroke-width="1.6" d="M5.75 10.25H23.5"/></g></symbol>
+    <symbol id="shortcuts" viewBox="0 0 28 28"><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M12.6 3 4.6 8.5a1.2 1.2 0 0 0 0 2L12.6 16a2.4 2.4 0 0 0 2.8 0l8-5.5a1.2 1.2 0 0 0 0-2l-8-5.5a2.4 2.4 0 0 0-2.8 0Z"/><path d="M7.4 14.6 4.6 16.5a1.2 1.2 0 0 0 0 2l8 5.5a2.4 2.4 0 0 0 2.8 0l8-5.5a1.2 1.2 0 0 0 0-2l-2.8-1.9"/></g></symbol>
+    <symbol id="clipboard" viewBox="0 0 28 28"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M11 5.5V3.9a1.4 1.4 0 0 1 1.4-1.4h5.3l6.3 6.3v9.5a1.4 1.4 0 0 1-1.4 1.4H19"/><path d="M17.7 2.5v4.9a1.4 1.4 0 0 0 1.4 1.4H24"/><path d="M6.4 7.5h6.1l5.5 5.5v11.1a1.4 1.4 0 0 1-1.4 1.4H6.4A1.4 1.4 0 0 1 5 24.1V8.9a1.4 1.4 0 0 1 1.4-1.4Z"/><path d="M12.5 7.5v4.1a1.4 1.4 0 0 0 1.4 1.4H18"/></g></symbol>
+  </defs>
+</svg>
+
+<!-- 1. Idle: compare with f026 crop x 750–2190, y 340–532 (÷ 2 = this 720 × 96 box). -->
+<div class="state" id="idle" style="height:96px">
+  <div class="group">
+    <div class="bar">
+      <div class="pill glass">
+        <svg class="search"><use href="#search"/></svg>
+        <div class="field"><span class="placeholder">Spotlight Search</span></div>
+      </div>
+      <div class="circle glass"><svg><use href="#apps"/></svg></div>
+      <div class="circle glass"><svg><use href="#folder"/></svg></div>
+      <div class="circle glass"><svg><use href="#shortcuts"/></svg></div>
+      <div class="circle glass"><svg><use href="#clipboard"/></svg></div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. Typing "term": inline completion of the top hit, results card below. -->
+<div class="state" id="typing" style="height:372px">
+  <div class="group">
+    <div class="bar">
+      <div class="pill wide glass">
+        <svg class="search"><use href="#search"/></svg>
+        <div class="field"><span>term</span><span class="completion">inal — Open</span></div>
+        <div class="tophit">&gt;_</div>
+      </div>
+    </div>
+    <div class="results glass">
+      <div class="section">Top Hit</div>
+      <div class="row selected"><div class="icon" style="background:#1b1b1d"></div><span>Terminal</span></div>
+      <div class="section">Applications</div>
+      <div class="row"><div class="icon" style="background:#3a7bd5"></div><span>Text Editor</span><span class="kind">— Application</span></div>
+      <div class="section">Settings</div>
+      <div class="row"><div class="icon" style="background:#8e8e93"></div><span>Desktop &amp; Dock</span><span class="kind">— Terminal behaviour</span></div>
+      <div class="section">Files</div>
+      <div class="row"><div class="icon" style="background:#5aa0e6"></div><span>terminal-notes.txt</span><span class="kind">— Documents</span></div>
+      <div class="row"><div class="icon" style="background:#5aa0e6"></div><span>Terminal Themes</span><span class="kind">— Downloads</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 3. Selected result: Down arrow moves the accent plate; the completion stays with the top hit. -->
+<div class="state" id="selected" style="height:372px">
+  <div class="group">
+    <div class="bar">
+      <div class="pill wide glass">
+        <svg class="search"><use href="#search"/></svg>
+        <div class="field"><span>term</span><span class="completion">inal — Open</span></div>
+        <div class="tophit">&gt;_</div>
+      </div>
+    </div>
+    <div class="results glass">
+      <div class="section">Top Hit</div>
+      <div class="row"><div class="icon" style="background:#1b1b1d"></div><span>Terminal</span></div>
+      <div class="section">Applications</div>
+      <div class="row selected"><div class="icon" style="background:#3a7bd5"></div><span>Text Editor</span><span class="kind">— Application</span></div>
+      <div class="section">Settings</div>
+      <div class="row"><div class="icon" style="background:#8e8e93"></div><span>Desktop &amp; Dock</span><span class="kind">— Terminal behaviour</span></div>
+      <div class="section">Files</div>
+      <div class="row"><div class="icon" style="background:#5aa0e6"></div><span>terminal-notes.txt</span><span class="kind">— Documents</span></div>
+      <div class="row"><div class="icon" style="background:#5aa0e6"></div><span>Terminal Themes</span><span class="kind">— Downloads</span></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

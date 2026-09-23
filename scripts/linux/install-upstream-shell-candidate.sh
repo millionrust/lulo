@@ -88,8 +88,11 @@ command -v systemctl >/dev/null 2>&1 || fail "systemctl is required"
   || fail "the pinned upstream GPUI lab is incomplete"
 [[ -d "$repo_root/.git" ]] || fail "run from the rmac source checkout"
 
+# GPUI is pinned by the lockfile (the manifest names the repository only, so
+# the application and shell workspaces share one patched gpui_linux).
 mapfile -t pinned_revisions < <(
-  sed -nE 's/.*rev = "([0-9a-f]{40})".*/\1/p' "$lab_dir/Cargo.toml" | sort -u
+  sed -nE 's|^source = "git\+https://github.com/zed-industries/zed\.git[^#]*#([0-9a-f]{40})"$|\1|p' \
+    "$lab_dir/Cargo.lock" | sort -u
 )
 [[ ${#pinned_revisions[@]} -eq 1 ]] \
   || fail "the upstream GPUI revision is not one exact immutable pin"

@@ -163,3 +163,4 @@ strip = false
 
 [patch."https://github.com/zed-industries/zed.git"]
 ztracing = { path = "shell/compat/ztracing" }
+gpui_linux = { path = "shell/compat/gpui_linux" }

@@ -9,13 +9,16 @@ publish = false
 license = "MIT"
 
 [workspace.dependencies]
+# GPUI is pinned to 76c93968da5b8b8809bdd72e4ad9e7d0e946bad0 by Cargo.lock,
+# the same way as the application workspace, so both can share the patched
+# gpui_linux in compat/ (docs/decisions/0013-gpui-linux-patch.md).
 async-channel = "2"
 async-io = "2"
 blocking = "1"
 chrono = "0.4"
 futures-util = "0.3"
-gpui = { version = "=0.2.2", git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui" }
-gpui_platform = { version = "=0.1.0", git = "https://github.com/zed-industries/zed.git", rev = "76c93968da5b8b8809bdd72e4ad9e7d0e946bad0", package = "gpui_platform", features = ["font-kit"] }
+gpui = { version = "=0.2.2", git = "https://github.com/zed-industries/zed.git", package = "gpui" }
+gpui_platform = { version = "=0.1.0", git = "https://github.com/zed-industries/zed.git", package = "gpui_platform", features = ["font-kit"] }
 image = { version = "0.25", default-features = false }
 rmac-apps = { version = "=0.1.0", path = "../crates/rmac-apps" }
 rmac-app-launch = { version = "=0.1.0", path = "../crates/rmac-app-launch" }
@@ -61,3 +64,4 @@ strip = false
 
 [patch."https://github.com/zed-industries/zed.git"]
 ztracing = { path = "compat/ztracing" }
+gpui_linux = { path = "compat/gpui_linux" }

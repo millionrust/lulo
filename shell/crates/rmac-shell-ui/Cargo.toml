@@ -15,3 +15,4 @@ rmac-design.workspace = true
 rmac-shell-settings.workspace = true
 rmac-shell-status.workspace = true
 rmac-theme.workspace = true
+unicode-segmentation.workspace = true

@@ -147,6 +147,7 @@ sha2 = "0.10.9"
 sysinfo = "0.33"
 tar = { version = "0.4", default-features = false }
 trash = "5"
+unicode-segmentation = "1.13"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
 walkdir = "2"

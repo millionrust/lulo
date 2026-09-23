@@ -6,6 +6,8 @@ use std::time::Duration;
 
 use gpui::FontFeatures;
 
+pub mod text_edit;
+pub mod text_field;
 pub mod tokens;
 
 /// Stable-width figures and the two measured Inter alternates used by shell

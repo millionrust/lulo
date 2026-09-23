@@ -215,25 +215,22 @@ fn route_activation(activation: rmac_shell_activation_runtime::Activation, cx: &
     open_panel(bounds, cx);
 }
 
-/// The component library's icons plus the widget faces' glyphs.
-struct CenterAssets;
+/// The widget faces' glyphs, layered over rmac-ui's shared icons.
+struct WidgetAssets;
 
-impl gpui::AssetSource for CenterAssets {
+impl gpui::AssetSource for WidgetAssets {
     fn load(&self, path: &str) -> gpui::Result<Option<std::borrow::Cow<'static, [u8]>>> {
-        if let Some(bytes) = rmac_desktop_widgets::asset(path) {
-            return Ok(Some(std::borrow::Cow::Borrowed(bytes)));
-        }
-        gpui::AssetSource::load(&gpui_component_assets::Assets, path)
+        Ok(rmac_desktop_widgets::asset(path).map(std::borrow::Cow::Borrowed))
     }
 
-    fn list(&self, path: &str) -> gpui::Result<Vec<gpui::SharedString>> {
-        gpui::AssetSource::list(&gpui_component_assets::Assets, path)
+    fn list(&self, _path: &str) -> gpui::Result<Vec<gpui::SharedString>> {
+        Ok(Vec::new())
     }
 }
 
 fn main() {
     rmac_ui::application()
-        .with_assets(CenterAssets)
+        .with_assets(rmac_ui::layered_assets(WidgetAssets))
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
             cx.set_global(NotificationCenterService {

@@ -103,6 +103,31 @@ fn bounded_failure_enters_persistent_safe_mode() {
 }
 
 #[test]
+fn nonessential_failure_stays_contained_without_safe_mode() {
+    let (root, paths) = paths("contained");
+    let exhausted = HEALTHY
+        .replace("rmac-dock.service", "rmac-osd.service")
+        .replace("Result=success", "Result=start-limit-hit")
+        .replace("NRestarts=1", "NRestarts=3");
+    let mut outputs = vec![output(&exhausted)];
+    outputs.extend(
+        COMPONENT_UNITS
+            .iter()
+            .map(|unit| output(&HEALTHY.replace("rmac-dock.service", unit))),
+    );
+    let supervisor = Supervisor::new(
+        paths,
+        FakeRunner {
+            outputs: Mutex::new(outputs),
+        },
+    );
+
+    assert!(!supervisor.observe_failure("rmac-osd.service").unwrap());
+    assert_eq!(supervisor.load_safe_mode().unwrap(), None);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn rejects_unrecognized_units_before_running_a_command() {
     let (_, paths) = paths("unrecognized");
     let supervisor = Supervisor::new(

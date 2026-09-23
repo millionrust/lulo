@@ -87,7 +87,11 @@ The unit conditions keep future D-phase services inactive—not failed—until
 their executables are installed.
 
 Every terminal component failure invokes the failure observer with a fixed,
-allowlisted unit identity. Three observed restarts or systemd's
+allowlisted unit identity. A component outside the essential set (top bar,
+Dock, global shortcut broker) that exhausts its budget stays down on its own:
+the failure is recorded in the health snapshot and the rest of the desktop
+keeps running, the way a crashed OSD or panel should never blank the screen.
+For an essential component, three observed restarts or systemd's
 `start-limit-hit` result atomically writes
 `$XDG_STATE_HOME/rmac/session/safe-mode.json`, stops the normal target, and
 starts `rmac-safe-mode.target`. Safe mode retains only the health supervisor in

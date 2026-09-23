@@ -16,6 +16,14 @@ pub const COMPONENT_UNITS: [&str; 10] = [
     "rmac-osd.service",
     "rmac-shortcut-broker.service",
 ];
+/// Components without which the desktop cannot be operated. Only these may
+/// stop the session for safe mode; any other component that exhausts its
+/// restart budget stays down on its own while the rest of the desktop runs.
+pub const ESSENTIAL_UNITS: [&str; 3] = [
+    "rmac-top-bar.service",
+    "rmac-dock.service",
+    "rmac-shortcut-broker.service",
+];
 pub const RESTARTS_BEFORE_SAFE_MODE: u32 = 3;
 pub(crate) const SAFE_MODE_VERSION: u32 = 1;
 

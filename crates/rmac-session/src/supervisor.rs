@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::model::SAFE_MODE_VERSION;
 use crate::{
     CommandRunner, ComponentHealth, Error, Operation, ProcessRunner, SafeModeState, SessionHealth,
-    StatePaths, COMPONENT_UNITS,
+    StatePaths, COMPONENT_UNITS, ESSENTIAL_UNITS,
 };
 
 pub struct Supervisor<R = ProcessRunner> {
@@ -82,7 +82,7 @@ impl<R: CommandRunner> Supervisor<R> {
 
     pub fn observe_failure(&self, unit: &str) -> Result<bool, Error> {
         let health = self.component_health(unit)?;
-        if !health.exhausted_restart_budget() {
+        if !health.exhausted_restart_budget() || !ESSENTIAL_UNITS.contains(&unit) {
             self.write_health()?;
             return Ok(false);
         }

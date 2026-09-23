@@ -4,7 +4,10 @@ use std::{
     ptr::NonNull,
     rc::Rc,
     sync::Arc,
+    time::Duration,
 };
+
+use calloop::timer::{TimeoutAction, Timer};
 
 use collections::{FxHashMap, HashMap};
 use futures::channel::oneshot::Receiver;
@@ -124,6 +127,13 @@ pub struct WaylandWindowState {
     renderer_presented: bool,
     in_progress_configure: Option<InProgressConfigure>,
     resize_throttle: bool,
+    /// rmac: idle frame scheduling. A frame callback is only requested while
+    /// frames draw; an idle window re-checks on a backing-off timer instead
+    /// of waking itself and the compositor every vblank.
+    frame_requested: bool,
+    drew_frame: bool,
+    idle_streak: u32,
+    idle_generation: u64,
     in_progress_window_controls: Option<WindowControls>,
     window_controls: WindowControls,
     client_inset: Option<Pixels>,
@@ -569,6 +579,10 @@ impl WaylandWindowState {
             window_bounds: options.bounds,
             in_progress_configure: None,
             resize_throttle: false,
+            frame_requested: false,
+            drew_frame: false,
+            idle_streak: 0,
+            idle_generation: 0,
             client,
             appearance,
             handle,
@@ -744,6 +758,13 @@ impl WaylandWindow {
     }
 }
 
+/// rmac: how long an idle window waits before re-checking for changes that
+/// did not arrive as input (timers, async updates): 16 ms growing to 250 ms.
+fn idle_check_delay(idle_streak: u32) -> Duration {
+    let millis = 16u64 << idle_streak.saturating_sub(2).min(4);
+    Duration::from_millis(millis.min(250))
+}
+
 impl WaylandWindowStatePtr {
     pub fn handle(&self) -> AnyWindowHandle {
         self.state.borrow().handle
@@ -794,20 +815,82 @@ impl WaylandWindowStatePtr {
 
     pub fn frame(&self) {
         let mut state = self.state.borrow_mut();
-        state.surface.frame(&state.globals.qh, state.surface.id());
+        // While frames are drawing, ask for the next vblank before this frame
+        // commits so animations run at the display rate. Once a frame draws
+        // nothing, stop asking; an idle window must not wake itself and the
+        // compositor every vblank (rmac, docs/decisions/0013).
+        let request_now = state.idle_streak == 0;
+        if request_now {
+            state.surface.frame(&state.globals.qh, state.surface.id());
+        }
+        state.frame_requested = request_now;
+        state.drew_frame = false;
+        state.idle_generation = state.idle_generation.wrapping_add(1);
         state.resize_throttle = false;
         let force_render = state.force_render_after_recovery;
         state.force_render_after_recovery = false;
         drop(state);
 
-        let mut cb = self.callbacks.borrow_mut();
-        if let Some(fun) = cb.request_frame.as_mut() {
-            fun(RequestFrameOptions {
-                force_render,
-                ..Default::default()
-            });
-            self.update_ime_enabled();
+        {
+            let mut cb = self.callbacks.borrow_mut();
+            if let Some(fun) = cb.request_frame.as_mut() {
+                fun(RequestFrameOptions {
+                    force_render,
+                    ..Default::default()
+                });
+                self.update_ime_enabled();
+            }
         }
+
+        let mut state = self.state.borrow_mut();
+        if state.drew_frame {
+            state.idle_streak = 0;
+            if !state.frame_requested {
+                // Something became dirty while idle: resume vblank pacing.
+                state.surface.frame(&state.globals.qh, state.surface.id());
+                state.surface.commit();
+                state.frame_requested = true;
+            }
+            return;
+        }
+        state.idle_streak = state.idle_streak.saturating_add(1);
+        if state.frame_requested {
+            // The callback already requested will run the next check.
+            return;
+        }
+        let delay = idle_check_delay(state.idle_streak);
+        let generation = state.idle_generation;
+        let client = state.client.get_client();
+        drop(state);
+        let window = self.clone();
+        let loop_handle = client.borrow().loop_handle.clone();
+        let _ = loop_handle.insert_source(Timer::from_duration(delay), move |_, _, _| {
+            if window.state.borrow().idle_generation == generation {
+                window.frame();
+            }
+            TimeoutAction::Drop
+        });
+    }
+
+    /// Input, resizes and configures can make an idle window dirty; run a
+    /// frame right away instead of waiting for the idle timer.
+    pub fn wake_frame(&self) {
+        let mut state = self.state.borrow_mut();
+        if state.idle_streak < 2 || !state.acknowledged_first_configure {
+            return;
+        }
+        state.idle_streak = 1;
+        state.idle_generation = state.idle_generation.wrapping_add(1);
+        let generation = state.idle_generation;
+        let client = state.client.get_client();
+        drop(state);
+        let window = self.clone();
+        let loop_handle = client.borrow().loop_handle.clone();
+        let _ = loop_handle.insert_idle(move |_| {
+            if window.state.borrow().idle_generation == generation {
+                window.frame();
+            }
+        });
     }
 
     fn update_ime_enabled(&self) {
@@ -1213,6 +1296,7 @@ impl WaylandWindowStatePtr {
     }
 
     pub fn set_size_and_scale(&self, size: Option<Size<Pixels>>, scale: Option<f32>) {
+        self.wake_frame();
         let (size, scale) = {
             let mut state = self.state.borrow_mut();
             if size.is_none_or(|size| size == state.bounds.size)
@@ -1279,6 +1363,7 @@ impl WaylandWindowStatePtr {
         if self.is_blocked() {
             return;
         }
+        self.wake_frame();
         let callback = self.callbacks.borrow_mut().input.take();
         if let Some(mut fun) = callback {
             let result = fun(input.clone());
@@ -1301,6 +1386,7 @@ impl WaylandWindowStatePtr {
     }
 
     pub fn set_focused(&self, focus: bool) {
+        self.wake_frame();
         self.state.borrow_mut().active = focus;
         let callback = self.callbacks.borrow_mut().active_status_change.take();
         if let Some(mut fun) = callback {
@@ -1313,6 +1399,7 @@ impl WaylandWindowStatePtr {
     }
 
     pub fn set_hovered(&self, focus: bool) {
+        self.wake_frame();
         let callback = self.callbacks.borrow_mut().hover_status_change.take();
         if let Some(mut fun) = callback {
             fun(focus);
@@ -1682,6 +1769,7 @@ impl PlatformWindow for WaylandWindow {
         }
 
         state.renderer_presented = state.renderer.draw(scene);
+        state.drew_frame = true;
 
         if state.renderer.needs_redraw() {
             state.force_render_after_recovery = true;
@@ -1693,7 +1781,7 @@ impl PlatformWindow for WaylandWindow {
 
         // Work around a bug in old versions of wlroots where committing without a buffer attached
         // can cause invalid synchronization that leads to graphical corruption.
-        if !state.renderer_presented {
+        if !state.renderer_presented && state.frame_requested {
             state.surface.commit();
         }
 

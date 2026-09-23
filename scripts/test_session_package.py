@@ -12,6 +12,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import wave
 
 
 def load_script(name: str, filename: str):
@@ -81,6 +82,7 @@ def rendered_start_script(root: Path) -> Path:
         str(root / "usr/share/rmac/session"),
     )
     source = source.replace("/usr/bin/", f"{root}/usr/bin/")
+    source = source.replace("/usr/libexec/rmac/", f"{root}/usr/libexec/rmac/")
     script = root / "start-session"
     script.write_text(source, encoding="utf-8")
     script.chmod(0o755)
@@ -136,6 +138,22 @@ class SessionPackageTests(unittest.TestCase):
             )
             for feature in ("tnum", "cv08", "ss03"):
                 self.assertIn(f"<string>{feature}</string>", font_policy)
+            sound_files = sorted(
+                path.name for path in (root / "usr/share/rmac/sounds").glob("*.wav")
+            )
+            self.assertEqual(sound_files, sorted(verify_package._SOUND_FILES))
+            self.assertTrue(
+                all(
+                    (root / "usr/share/rmac/sounds" / name).stat().st_size > 44
+                    for name in sound_files
+                )
+            )
+            for name in sound_files:
+                with wave.open(
+                    str(root / "usr/share/rmac/sounds" / name), "rb"
+                ) as sound:
+                    sound.setpos(sound.getnframes() - 1)
+                    self.assertEqual(sound.readframes(1), b"\0\0")
 
             wrapper = root / "usr/libexec/rmac/rmac-wayland-session"
             self.assertEqual(stat.S_IMODE(wrapper.stat().st_mode), 0o755)

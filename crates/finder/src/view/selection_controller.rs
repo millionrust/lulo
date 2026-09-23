@@ -168,6 +168,7 @@ impl FinderView {
             if self.clip_cut { "Moving" } else { "Copying" },
             tasks,
             self.clip_cut,
+            false,
             cx,
         );
     }

@@ -5569,6 +5569,7 @@ dependencies = [
  "rmac-places-system",
  "rmac-portal",
  "rmac-shell-settings",
+ "rmac-sound",
 ]
 
 [[package]]
@@ -5600,6 +5601,7 @@ dependencies = [
  "rmac-locale",
  "rmac-mounts",
  "rmac-search",
+ "rmac-sound",
  "rmac-storage",
  "rmac-thumbnails",
  "rmac-ui",
@@ -5788,6 +5790,7 @@ dependencies = [
  "pam-sys2",
  "rmac-design",
  "rmac-lock-provider",
+ "rmac-sound",
  "rustix 1.1.4",
  "wayland-client",
  "wayland-protocols",
@@ -5929,6 +5932,7 @@ dependencies = [
  "rmac-notifications-runtime",
  "rmac-notifications-store",
  "rmac-shell-invocation",
+ "rmac-sound",
  "url",
  "zbus",
 ]
@@ -5958,6 +5962,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "rmac-audio",
+ "rmac-sound",
  "serde",
  "serde_json",
  "zbus",
@@ -6086,6 +6091,7 @@ dependencies = [
  "rmac-power",
  "rmac-quick-settings",
  "rmac-shell-settings",
+ "rmac-sound",
 ]
 
 [[package]]
@@ -6195,6 +6201,7 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-shell-status",
  "rmac-shell-status-linux",
+ "rmac-sound",
 ]
 
 [[package]]
@@ -6248,6 +6255,17 @@ dependencies = [
  "serde",
  "serde_json",
  "zbus",
+]
+
+[[package]]
+name = "rmac-sound"
+version = "0.1.0"
+dependencies = [
+ "rmac-audio",
+ "rmac-focus-linux",
+ "rmac-storage",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -6312,6 +6330,7 @@ dependencies = [
  "rmac-sharing-linux",
  "rmac-shell-settings",
  "rmac-shortcuts",
+ "rmac-sound",
  "rmac-storage",
  "rmac-system-info",
  "rmac-theme",
@@ -6363,6 +6382,7 @@ dependencies = [
  "rmac-editor",
  "rmac-print-linux",
  "rmac-recent-documents",
+ "rmac-sound",
  "rmac-storage",
  "rmac-ui",
 ]

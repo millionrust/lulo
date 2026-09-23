@@ -24,6 +24,15 @@ impl Settings {
         let output_volume = Self::audio_slider(cx, 0.0, rmac_audio::DeviceKind::Output);
         let input_volume = Self::audio_slider(cx, 0.0, rmac_audio::DeviceKind::Input);
         let output_balance = Self::audio_balance_slider(cx, 0.0);
+        let (sound_policy, sound_policy_error) = match rmac_sound::load_settings() {
+            Ok(settings) => (settings, None),
+            Err(error) => (
+                rmac_sound::Settings::default(),
+                Some(format!("Could not load interface sound settings: {error}").into()),
+            ),
+        };
+        let alert_volume =
+            Self::sound_policy_volume_slider(cx, f32::from(sound_policy.alert_volume));
 
         Self::start_watchers(cx, catalog_event_rx);
 
@@ -287,6 +296,10 @@ impl Settings {
             output_volume,
             input_volume,
             output_balance,
+            sound_policy,
+            sound_policy_error,
+            sound_policy_generation: 0,
+            alert_volume,
 
             power_loading: true,
             power_busy: false,

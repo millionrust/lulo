@@ -49,6 +49,7 @@ impl FinderView {
             self.operation_error = None;
             self.operation_notice = None;
             self.delete_confirmation = Some(DeleteConfirmation { items });
+            let _ = rmac_sound::play_alert();
             cx.notify();
         }
         #[cfg(not(any(target_os = "linux", test)))]

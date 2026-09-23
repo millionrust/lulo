@@ -37,6 +37,7 @@ rmac-shell-layer = { version = "=0.1.0", path = "crates/rmac-shell-layer" }
 rmac-shell-runtime = { version = "=0.1.0", path = "../crates/rmac-shell-runtime" }
 rmac-shell-settings = { version = "=0.1.0", path = "../crates/rmac-shell-settings" }
 rmac-shell-status = { version = "=0.1.0", path = "../crates/rmac-shell-status" }
+rmac-sound = { version = "=0.1.0", path = "../crates/rmac-sound" }
 rmac-shell-ui = { version = "=0.1.0", path = "crates/rmac-shell-ui" }
 rmac-theme = { version = "=0.1.0", path = "../crates/rmac-theme" }
 rmac-wallpaper = { version = "=0.1.0", path = "../crates/rmac-wallpaper" }

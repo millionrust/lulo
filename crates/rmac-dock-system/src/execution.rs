@@ -202,8 +202,11 @@ pub fn execute_empty_trash(
     backend: &impl rmac_places_system::Backend,
 ) -> Result<Outcome, Error> {
     rmac_places_system::empty_trash(confirmation, backend)
-        .map(|snapshot| Outcome::TrashEmptied {
-            remaining_items: snapshot.item_count,
+        .map(|snapshot| {
+            let _ = rmac_sound::play(rmac_sound::Cue::EmptyTrash);
+            Outcome::TrashEmptied {
+                remaining_items: snapshot.item_count,
+            }
         })
         .map_err(|_| {
             Error::new(

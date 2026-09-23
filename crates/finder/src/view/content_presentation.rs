@@ -26,9 +26,7 @@ impl FinderView {
                         .into_any_element()
                 })
             })
-            .unwrap_or_else(|| {
-                icon("icons/file-fill.svg", 128.0, secondary()).into_any_element()
-            });
+            .unwrap_or_else(|| icon("icons/file-fill.svg", 128.0, secondary()).into_any_element());
 
         div()
             .id("column-preview")
@@ -128,10 +126,7 @@ impl FinderView {
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                                if is_sel
-                                    && !event.modifiers.platform
-                                    && !event.modifiers.shift
-                                {
+                                if is_sel && !event.modifiers.platform && !event.modifiers.shift {
                                     cx.stop_propagation();
                                     this.column_selection = Some(rename_entry.clone());
                                     this.rename_start(window, cx);
@@ -226,11 +221,7 @@ impl FinderView {
             }
             row = row.child(col);
         }
-        if let Some(entry) = self
-            .column_selection
-            .as_ref()
-            .filter(|entry| !entry.is_dir)
-        {
+        if let Some(entry) = self.column_selection.as_ref().filter(|entry| !entry.is_dir) {
             row = row.child(self.render_column_preview(entry));
         }
         row.on_mouse_down(
@@ -483,7 +474,7 @@ impl FinderView {
                 destination: dir.join(name),
             });
         }
-        self.start_transfer_with_conflicts("Moving", tasks, false, cx);
+        self.start_transfer_with_conflicts("Moving", tasks, false, true, cx);
     }
 
     /// Files dropped from another app (Finder, etc.) → copy into the current dir.
@@ -498,6 +489,6 @@ impl FinderView {
                 });
             }
         }
-        self.start_transfer_with_conflicts("Copying", tasks, false, cx);
+        self.start_transfer_with_conflicts("Copying", tasks, false, true, cx);
     }
 }

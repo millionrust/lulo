@@ -164,6 +164,8 @@ binds {
     Ctrl+Right repeat=false hotkey-overlay-title="Next Space" { focus-workspace-down; }
     Ctrl+Up repeat=false hotkey-overlay-title="Mission Control" { toggle-overview; }
     Mod+Ctrl+F repeat=false hotkey-overlay-title="Full Screen" { fullscreen-window; }
+    Mod+Shift+3 repeat=false hotkey-overlay-title="Capture Screen" { spawn "/usr/libexec/rmac/rmac-sound" "screenshot-screen"; }
+    Print repeat=false hotkey-overlay-title="Capture Screen" { spawn "/usr/libexec/rmac/rmac-sound" "screenshot-screen"; }
     XF86AudioRaiseVolume allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "volume-up"; }
     XF86AudioLowerVolume allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "volume-down"; }
     XF86AudioMute allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "toggle-output-mute"; }

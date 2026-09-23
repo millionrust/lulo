@@ -120,6 +120,24 @@ impl Render for Settings {
                 }
             }))
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
+            .on_action(cx.listener(|this, _: &SelectAlert, _, cx| {
+                this.apply_sound_policy_change(
+                    sound::SoundPolicyChange::AlertSound(rmac_sound::Cue::Alert),
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &SelectErrorAlert, _, cx| {
+                this.apply_sound_policy_change(
+                    sound::SoundPolicyChange::AlertSound(rmac_sound::Cue::Error),
+                    cx,
+                )
+            }))
+            .on_action(cx.listener(|this, _: &SelectNotificationAlert, _, cx| {
+                this.apply_sound_policy_change(
+                    sound::SoundPolicyChange::AlertSound(rmac_sound::Cue::Notification),
+                    cx,
+                )
+            }))
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 if this.clock_setting {
                     return;

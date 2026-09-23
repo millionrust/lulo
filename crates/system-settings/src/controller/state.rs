@@ -270,6 +270,10 @@ pub(super) struct Settings {
     pub(super) output_volume: Entity<SliderState>,
     pub(super) input_volume: Entity<SliderState>,
     pub(super) output_balance: Entity<SliderState>,
+    pub(super) sound_policy: rmac_sound::Settings,
+    pub(super) sound_policy_error: Option<SharedString>,
+    pub(super) sound_policy_generation: u64,
+    pub(super) alert_volume: Entity<SliderState>,
 
     // Battery and power profiles
     pub(super) power_loading: bool,

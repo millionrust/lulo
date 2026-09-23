@@ -4781,6 +4781,7 @@ dependencies = [
  "rmac-places-system",
  "rmac-portal",
  "rmac-shell-settings",
+ "rmac-sound",
 ]
 
 [[package]]
@@ -4879,6 +4880,7 @@ dependencies = [
  "rmac-notifications-runtime",
  "rmac-notifications-store",
  "rmac-shell-invocation",
+ "rmac-sound",
  "url",
  "zbus",
 ]
@@ -4908,6 +4910,7 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "rmac-audio",
+ "rmac-sound",
  "serde",
  "serde_json",
  "zbus",
@@ -5165,6 +5168,7 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-shell-status",
  "rmac-shell-status-linux",
+ "rmac-sound",
 ]
 
 [[package]]
@@ -5249,12 +5253,24 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-shell-status",
  "rmac-shell-ui",
+ "rmac-sound",
  "rmac-theme",
  "rmac-wallpaper",
  "rmac-wallpaper-image",
  "rmac-wallpaper-runtime",
  "trash",
  "uuid",
+]
+
+[[package]]
+name = "rmac-sound"
+version = "0.1.0"
+dependencies = [
+ "rmac-audio",
+ "rmac-focus-linux",
+ "rmac-storage",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

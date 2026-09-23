@@ -4,6 +4,14 @@ use super::*;
 
 mod render;
 
+#[derive(Clone, Copy)]
+pub(super) enum SoundPolicyChange {
+    AlertSound(rmac_sound::Cue),
+    InterfaceEffects(bool),
+    VolumeFeedback(bool),
+    LoginSound(bool),
+}
+
 fn audio_choice_row(
     id: SharedString,
     icon: &'static str,
@@ -56,6 +64,74 @@ fn audio_choice_row(
 }
 
 impl Settings {
+    pub(super) fn apply_sound_policy_change(
+        &mut self,
+        change: SoundPolicyChange,
+        cx: &mut Context<Self>,
+    ) {
+        let preview = match change {
+            SoundPolicyChange::AlertSound(cue) => {
+                self.sound_policy.alert_sound = cue;
+                Some(cue)
+            }
+            SoundPolicyChange::InterfaceEffects(enabled) => {
+                self.sound_policy.interface_effects = enabled;
+                None
+            }
+            SoundPolicyChange::VolumeFeedback(enabled) => {
+                self.sound_policy.volume_feedback = enabled;
+                None
+            }
+            SoundPolicyChange::LoginSound(enabled) => {
+                self.sound_policy.login_sound = enabled;
+                None
+            }
+        };
+        if let Some(cue) = preview {
+            let _ = rmac_sound::preview(cue, self.sound_policy.alert_volume);
+        }
+        self.persist_sound_policy(cx);
+    }
+
+    pub(super) fn schedule_sound_policy_volume(&mut self, value: f32, cx: &mut Context<Self>) {
+        self.sound_policy.alert_volume = value.round().clamp(0.0, 100.0) as u8;
+        self.sound_policy_generation = self.sound_policy_generation.wrapping_add(1);
+        let generation = self.sound_policy_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            cx.background_executor()
+                .timer(Duration::from_millis(120))
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if this.sound_policy_generation == generation {
+                    this.persist_current_sound_policy(generation, cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn persist_sound_policy(&mut self, cx: &mut Context<Self>) {
+        self.sound_policy_generation = self.sound_policy_generation.wrapping_add(1);
+        self.persist_current_sound_policy(self.sound_policy_generation, cx);
+    }
+
+    fn persist_current_sound_policy(&mut self, generation: u64, cx: &mut Context<Self>) {
+        let settings = self.sound_policy.clone();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || rmac_sound::save_settings(&settings)).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if this.sound_policy_generation != generation {
+                    return;
+                }
+                this.sound_policy_error = result.err().map(|error| {
+                    format!("Could not save interface sound settings: {error}").into()
+                });
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(super) fn finish_audio_update(
         &mut self,
         result: std::result::Result<rmac_audio::Snapshot, rmac_audio::Error>,

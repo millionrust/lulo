@@ -32,8 +32,21 @@ impl FinderView {
 
     fn apply_mount_snapshot(&mut self, mounts: Vec<rmac_mounts::Mount>, cx: &mut Context<Self>) {
         let disappeared = disappeared_mount_roots(&self.mounts, &mounts);
+        let appeared = mounts.iter().any(|new| {
+            !self.mounts.iter().any(|old| {
+                old.identity == new.identity
+                    && old.path == new.path
+                    && old.ejectable == new.ejectable
+            })
+        });
         self.mounts = mounts;
         self.rebuild_location_places();
+        if appeared {
+            let _ = rmac_sound::play(rmac_sound::Cue::Mount);
+        }
+        if !disappeared.is_empty() {
+            let _ = rmac_sound::play(rmac_sound::Cue::Unmount);
+        }
         if disappeared.is_empty() {
             cx.notify();
             return;

@@ -18,6 +18,7 @@ rmac-places.workspace = true
 rmac-places-system.workspace = true
 rmac-portal.workspace = true
 rmac-shell-settings.workspace = true
+rmac-sound.workspace = true
 
 [dev-dependencies]
 futures-lite.workspace = true

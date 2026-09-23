@@ -96,6 +96,9 @@ if [ "${normal_session}" = false ]; then
     /usr/bin/systemctl --user start rmac-safe-mode.target
 else
     /usr/bin/systemctl --user start rmac-session.target
+    if [ -x /usr/libexec/rmac/rmac-sound ]; then
+        /usr/libexec/rmac/rmac-sound login >/dev/null 2>&1 &
+    fi
     # xdg-desktop-portal reads desktop-specific backend selection at startup.
     # Restart only an already-running frontend after the rmac backend is ready.
     /usr/bin/systemctl --user try-restart xdg-desktop-portal.service

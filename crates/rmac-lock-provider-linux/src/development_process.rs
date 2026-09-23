@@ -49,6 +49,7 @@ pub fn run() -> Result<(), Error> {
             .map_err(|_| Error::new(Operation::NotifySystemd))?;
         let now = Instant::now();
         if became_ready {
+            let _ = rmac_sound::play(rmac_sound::Cue::Lock);
             watchdog
                 .arm(now)
                 .map_err(|_| Error::new(Operation::ResolveWatchdog))?;
@@ -65,7 +66,18 @@ pub fn run() -> Result<(), Error> {
 
         match executed.termination {
             ProcessTermination::Continue => {}
-            ProcessTermination::AuthenticatedUnlock => return Ok(()),
+            ProcessTermination::AuthenticatedUnlock => {
+                // The provider exits after authenticated unlock, so hand the
+                // cue to the short-lived packaged helper instead of losing a
+                // playback thread with this process.
+                let _ = Command::new("/usr/libexec/rmac/rmac-sound")
+                    .arg("unlock")
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn();
+                return Ok(());
+            }
             ProcessTermination::RestartRequired => {
                 return Err(Error::new(match exit {
                     Some(ProviderExit::Denied) => Operation::ProviderDenied,

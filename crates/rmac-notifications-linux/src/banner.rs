@@ -104,12 +104,19 @@ impl SoundPlayer {
     /// notification flood. Dropping a cancelled future returns its permit.
     pub async fn play(&self, cue: &SoundCue) -> Result<(), SoundPlaybackError> {
         let _permit = self.acquire()?;
+        if matches!(cue, SoundCue::Default(_)) {
+            return match rmac_sound::play(rmac_sound::Cue::Notification) {
+                rmac_sound::PlayDisposition::Busy => Err(SoundPlaybackError::Busy),
+                rmac_sound::PlayDisposition::Scheduled
+                | rmac_sound::PlayDisposition::RateLimited => Ok(()),
+            };
+        }
         let sound = match cue {
-            SoundCue::Default(_) => rmac_audio::NotificationSound::Default,
             SoundCue::Custom { sound, .. } => rmac_audio::NotificationSound::Encoded {
                 format: notification_sound_format(sound.format),
                 bytes: sound.bytes(),
             },
+            SoundCue::Default(_) => unreachable!("default cues return above"),
         };
         rmac_audio::play_notification_sound(sound)
             .await

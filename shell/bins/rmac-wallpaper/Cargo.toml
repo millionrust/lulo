@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [features]
 default = []
-wayland = ["gpui_platform/wayland"]
+wayland = ["gpui_platform/wayland", "rmac-shell-layer/wayland"]
 x11 = ["gpui_platform/x11"]
 
 [dependencies]
@@ -40,6 +40,7 @@ rmac-shell-layer.workspace = true
 rmac-shell-runtime.workspace = true
 rmac-shell-settings.workspace = true
 rmac-shell-status.workspace = true
+rmac-sound.workspace = true
 rmac-shell-ui.workspace = true
 rmac-theme.workspace = true
 rmac-wallpaper.workspace = true

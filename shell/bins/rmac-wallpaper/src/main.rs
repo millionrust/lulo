@@ -340,6 +340,7 @@ mod linux_wayland {
                                         Some("The item could not be moved to Trash".into());
                                 } else {
                                     this.selected_item = None;
+                                    let _ = rmac_sound::play(rmac_sound::Cue::Trash);
                                 }
                                 cx.notify();
                             });
@@ -929,10 +930,7 @@ mod linux_wayland {
                                         prepared.insert(output, surface);
                                     }
                                 }
-                                (
-                                    prepared,
-                                    rmac_theme::WallpaperColors { outputs },
-                                )
+                                (prepared, rmac_theme::WallpaperColors { outputs })
                             })
                             .await;
                             match rmac_theme::WallpaperColorStore::from_environment()

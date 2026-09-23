@@ -51,6 +51,7 @@ rmac-shortcuts.workspace = true
 rmac-sharing.workspace = true
 rmac-sharing-linux.workspace = true
 rmac-shell-settings.workspace = true
+rmac-sound.workspace = true
 rmac-system-info.workspace = true
 rmac-theme.workspace = true
 rmac-time.workspace = true

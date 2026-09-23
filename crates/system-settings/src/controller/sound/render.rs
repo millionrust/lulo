@@ -7,29 +7,148 @@ impl Settings {
         let view = cx.entity();
         let out = self.output_volume.read(cx).value().start().round() as i32;
         let input = self.input_volume.read(cx).value().start().round() as i32;
+        let alert = self.alert_volume.read(cx).value().start().round() as i32;
         let refresh_view = view.clone();
-        let mut cards = vec![div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .px_1()
-            .pb_1()
-            .child(
-                div()
-                    .text_size(rmac_ui::text_px(12.0))
-                    .font_weight(rmac_ui::mac::SEMIBOLD)
-                    .text_color(secondary())
-                    .child("System Audio"),
-            )
-            .child(
-                Button::new("audio-refresh", "Refresh")
-                    .ghost()
-                    .busy(self.audio_busy)
-                    .disabled(self.audio_loading || self.audio_busy)
-                    .on_click(move |_, _, cx| {
-                        refresh_view.update(cx, |settings, cx| settings.refresh_audio(cx));
-                    }),
-            )];
+        let alert_sound = self.sound_policy.alert_sound;
+        let preview_view = view.clone();
+        let alert_picker = PopUpButton::new("sound-alert-picker", alert_sound.display_name())
+            .dropdown_menu(|menu, _, _| {
+                menu.menu("Alert", Box::new(SelectAlert))
+                    .menu("Error", Box::new(SelectErrorAlert))
+                    .menu("Notification", Box::new(SelectNotificationAlert))
+            });
+        let output_name: SharedString = self
+            .audio
+            .outputs
+            .iter()
+            .find(|device| device.is_default)
+            .map(|device| SharedString::from(device.name.clone()))
+            .unwrap_or_else(|| "Selected Sound Output Device".into());
+        let interface_view = view.clone();
+        let interface_effects = Toggle::new("sound-interface-effects")
+            .checked(self.sound_policy.interface_effects)
+            .on_click(move |enabled, _, cx| {
+                interface_view.update(cx, |settings, cx| {
+                    settings.apply_sound_policy_change(
+                        SoundPolicyChange::InterfaceEffects(*enabled),
+                        cx,
+                    )
+                });
+            });
+        let feedback_view = view.clone();
+        let volume_feedback = Toggle::new("sound-volume-feedback")
+            .checked(self.sound_policy.volume_feedback)
+            .on_click(move |enabled, _, cx| {
+                feedback_view.update(cx, |settings, cx| {
+                    settings
+                        .apply_sound_policy_change(SoundPolicyChange::VolumeFeedback(*enabled), cx)
+                });
+            });
+        let login_view = view.clone();
+        let login_sound = Toggle::new("sound-login")
+            .checked(self.sound_policy.login_sound)
+            .on_click(move |enabled, _, cx| {
+                login_view.update(cx, |settings, cx| {
+                    settings.apply_sound_policy_change(SoundPolicyChange::LoginSound(*enabled), cx)
+                });
+            });
+
+        let mut cards = vec![section_header("Sound Effects")];
+        cards.push(
+            div()
+                .v_flex()
+                .mb_3()
+                .rounded(px(rmac_ui::mac::radius_menu()))
+                .bg(card_bg())
+                .border_1()
+                .border_color(sep())
+                .child(
+                    row_base()
+                        .child(text_block("Alert sound".into(), None))
+                        .child(alert_picker)
+                        .child(
+                            Button::new("sound-alert-preview", "▶")
+                                .ghost()
+                                .tooltip("Play alert sound")
+                                .on_click(move |_, _, cx| {
+                                    preview_view.update(cx, |settings, _| {
+                                        let _ = rmac_sound::preview(
+                                            alert_sound,
+                                            settings.sound_policy.alert_volume,
+                                        );
+                                    });
+                                }),
+                        ),
+                )
+                .child(div().h(px(1.0)).bg(sep()).mx_3())
+                .child(
+                    row_base()
+                        .child(text_block("Play sound effects through".into(), None))
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(12.0))
+                                .text_color(secondary())
+                                .child(output_name),
+                        ),
+                )
+                .child(div().h(px(1.0)).bg(sep()).mx_3())
+                .child(slider_row(
+                    "Alert volume",
+                    &self.alert_volume,
+                    format!("{alert}%").into(),
+                ))
+                .child(div().h(px(1.0)).bg(sep()).mx_3())
+                .child(
+                    row_base()
+                        .child(text_block(
+                            "Play user interface sound effects".into(),
+                            Some("Trash, screenshots, devices, and system actions".into()),
+                        ))
+                        .child(interface_effects),
+                )
+                .child(div().h(px(1.0)).bg(sep()).mx_3())
+                .child(
+                    row_base()
+                        .child(text_block(
+                            "Play feedback when volume is changed".into(),
+                            None,
+                        ))
+                        .child(volume_feedback),
+                )
+                .child(div().h(px(1.0)).bg(sep()).mx_3())
+                .child(
+                    row_base()
+                        .child(text_block("Play sound on startup".into(), None))
+                        .child(login_sound),
+                ),
+        );
+        if let Some(detail) = &self.sound_policy_error {
+            cards.push(note_card(detail.clone()));
+        }
+        cards.push(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .px_1()
+                .pb_1()
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .font_weight(rmac_ui::mac::SEMIBOLD)
+                        .text_color(secondary())
+                        .child("System Audio"),
+                )
+                .child(
+                    Button::new("audio-refresh", "Refresh")
+                        .ghost()
+                        .busy(self.audio_busy)
+                        .disabled(self.audio_loading || self.audio_busy)
+                        .on_click(move |_, _, cx| {
+                            refresh_view.update(cx, |settings, cx| settings.refresh_audio(cx));
+                        }),
+                ),
+        );
 
         if self.audio_loading {
             cards.push(note_card("Loading audio state from the system…"));
@@ -143,9 +262,6 @@ impl Settings {
             cards.push(self.audio_profile_card(cx));
         }
 
-        cards.push(note_card(
-            "Output, microphone, defaults, ports, and device profiles use the system audio service. Session alert sounds and interface effects stay hidden until the rmac sound policy service exists.",
-        ));
         self.pane(cards)
     }
 

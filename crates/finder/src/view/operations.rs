@@ -43,6 +43,7 @@ impl FinderView {
             tasks,
             keep_unfinished_in_clipboard,
             Vec::new(),
+            false,
             cx,
         );
     }
@@ -53,6 +54,7 @@ impl FinderView {
         tasks: Vec<file_ops::TransferTask>,
         keep_unfinished_in_clipboard: bool,
         retained_clipboard: Vec<PathBuf>,
+        play_drop_sound: bool,
         cx: &mut Context<Self>,
     ) {
         if tasks.is_empty() {
@@ -103,6 +105,7 @@ impl FinderView {
             cancelling: false,
             keep_unfinished_in_clipboard,
             retained_clipboard,
+            play_drop_sound,
         });
         cx.notify();
 
@@ -154,6 +157,12 @@ impl FinderView {
                             recovery_reviews,
                             undo_availability,
                         } => {
+                            let play_drop_sound = this.transfer.as_ref().is_some_and(|transfer| {
+                                transfer.play_drop_sound
+                                    && report.processed != 0
+                                    && report.failures.is_empty()
+                                    && !report.cancelled
+                            });
                             let keep_clipboard = this
                                 .transfer
                                 .as_ref()
@@ -199,6 +208,9 @@ impl FinderView {
                                 this.undo_available = None;
                             }
                             this.record_operation_failures(report.failures, cx);
+                            if play_drop_sound {
+                                let _ = rmac_sound::play(rmac_sound::Cue::DragDrop);
+                            }
                             if this.operation_journal.is_none() {
                                 this.operation_error = Some(
                                     "File-operation recovery data could not be verified; transfers are disabled"

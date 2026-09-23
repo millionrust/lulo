@@ -20,6 +20,7 @@ impl EditorView {
             return;
         }
         self.alert = Some(ActiveAlert::ConfirmSave(pending));
+        let _ = rmac_sound::play_alert();
         cx.notify();
     }
 

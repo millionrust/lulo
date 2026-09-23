@@ -12,7 +12,7 @@ import struct
 
 
 FORMAT_VERSION = 1
-DEBIAN_REVISION = 37
+DEBIAN_REVISION = 38
 MAX_BINARY_BYTES = 1024 * 1024 * 1024
 MAX_SOURCE_DATE_EPOCH = 253_402_300_799
 ARCHITECTURES = {
@@ -58,6 +58,7 @@ APPLICATION_BINARIES = (
 
 SESSION_BINARIES = (
     "rmac-session-supervisor",
+    "rmac-sound",
     "rmac-wallpaper",
     "rmac-top-bar",
     "rmac-dock",

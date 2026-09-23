@@ -23,6 +23,7 @@ rmac-mounts.workspace = true
 rmac-ui.workspace = true
 rmac-search.workspace = true
 rmac-storage.workspace = true
+rmac-sound.workspace = true
 rmac-thumbnails.workspace = true
 chrono.workspace = true
 libc.workspace = true

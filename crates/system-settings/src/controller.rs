@@ -127,8 +127,8 @@ use gpui::{
 use gpui_component::{Icon, IconName, StyledExt as _};
 use navigation_persistence::NavigationPersistence;
 use rmac_ui::{
-    Button, EmptyState, InputState, ListRow, Progress, SearchField, Slider, SliderEvent,
-    SliderState, Tabs, TextField, Toast, ToastKind, Toggle,
+    Button, EmptyState, InputState, ListRow, PopUpButton, Progress, SearchField, Slider,
+    SliderEvent, SliderState, Tabs, TextField, Toast, ToastKind, Toggle,
 };
 
 #[derive(rust_embed::RustEmbed)]
@@ -156,7 +156,15 @@ impl AssetSource for CombinedAssets {
     }
 }
 
-actions!(system_settings, [GoBack]);
+actions!(
+    system_settings,
+    [
+        GoBack,
+        SelectAlert,
+        SelectErrorAlert,
+        SelectNotificationAlert
+    ]
+);
 
 fn hsl(h: u32) -> Hsla {
     gpui::rgb(h).into()

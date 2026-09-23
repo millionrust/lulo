@@ -65,6 +65,9 @@ fn execute_audio(command: Command) -> Result<Presentation, Error> {
     }
 
     let after = rmac_audio::default_device(kind).map_err(|_| Error::new(Operation::ReadAudio))?;
+    if matches!(command, Command::VolumeUp | Command::VolumeDown) {
+        let _ = rmac_sound::play(rmac_sound::Cue::VolumeTick);
+    }
     Presentation::new(
         if kind == DeviceKind::Input {
             Kind::Input

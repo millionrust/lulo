@@ -20,8 +20,25 @@ _CURSOR_THEME = (
     Path(__file__).resolve().parents[2] / "assets" / "cursors" / "rmac"
 )
 _DOCK_SPECIAL_ICONS = ("trash-empty.svg", "trash-full.svg")
+_SOUND_FILES = (
+    "alert.wav",
+    "drag-drop.wav",
+    "empty-trash.wav",
+    "error.wav",
+    "lock.wav",
+    "login.wav",
+    "mount.wav",
+    "notification.wav",
+    "power-plug.wav",
+    "screenshot.wav",
+    "trash.wav",
+    "unlock.wav",
+    "unmount.wav",
+    "volume-tick.wav",
+)
 REQUIRED_RMAC_EXECUTABLES = (
     "rmac-session-supervisor",
+    "rmac-sound",
     "rmac-osd",
     "rmac-launcher",
     "rmac-app-drawer",
@@ -88,6 +105,8 @@ EXPECTED_PATHS = {
     for path in _CURSOR_THEME.iterdir()
 } | {
     Path("usr/share/rmac/dock/icons") / name for name in _DOCK_SPECIAL_ICONS
+} | {
+    Path("usr/share/rmac/sounds") / name for name in _SOUND_FILES
 }
 
 

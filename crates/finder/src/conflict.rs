@@ -28,6 +28,7 @@ pub(crate) struct ConflictBatch {
     pub(crate) reserved_destinations: BTreeSet<PathBuf>,
     pub(crate) skipped_moves: Vec<PathBuf>,
     pub(crate) keep_unfinished_in_clipboard: bool,
+    pub(crate) play_drop_sound: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,6 +67,7 @@ pub(crate) fn prepare_conflict_batch(
     label: &'static str,
     tasks: Vec<file_ops::TransferTask>,
     keep_unfinished_in_clipboard: bool,
+    play_drop_sound: bool,
 ) -> std::io::Result<ConflictBatch> {
     let mut ready = Vec::with_capacity(tasks.len());
     let mut conflicts = VecDeque::new();
@@ -114,6 +116,7 @@ pub(crate) fn prepare_conflict_batch(
         reserved_destinations,
         skipped_moves: Vec::new(),
         keep_unfinished_in_clipboard,
+        play_drop_sound,
     })
 }
 
@@ -279,6 +282,7 @@ mod tests {
                 destination: destination.clone(),
             }],
             false,
+            false,
         )
         .unwrap();
         let conflict = batch.conflicts.front().unwrap();
@@ -327,6 +331,7 @@ mod tests {
                 source: source.clone(),
                 destination: destination.clone(),
             }],
+            false,
             false,
         )
         .unwrap();
@@ -378,6 +383,7 @@ mod tests {
                 },
             ],
             false,
+            false,
         )
         .unwrap();
         let conflict = batch.conflicts.front().unwrap();
@@ -419,6 +425,7 @@ mod tests {
                 destination,
             }],
             true,
+            false,
         )
         .unwrap();
         let conflict = batch.conflicts.front().unwrap();

@@ -6,6 +6,7 @@ impl FinderView {
         label: &'static str,
         tasks: Vec<file_ops::TransferTask>,
         keep_unfinished_in_clipboard: bool,
+        play_drop_sound: bool,
         cx: &mut Context<Self>,
     ) {
         if tasks.is_empty() || self.block_mutation_during_transfer(cx) {
@@ -45,12 +46,17 @@ impl FinderView {
         self.operation_notice = Some("Checking for file-name conflicts…".into());
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let prepared =
-                cx.background_executor()
-                    .spawn(async move {
-                        prepare_conflict_batch(label, tasks, keep_unfinished_in_clipboard)
-                    })
-                    .await;
+            let prepared = cx
+                .background_executor()
+                .spawn(async move {
+                    prepare_conflict_batch(
+                        label,
+                        tasks,
+                        keep_unfinished_in_clipboard,
+                        play_drop_sound,
+                    )
+                })
+                .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 this.conflict_preflight = false;
                 this.operation_notice = None;
@@ -61,6 +67,7 @@ impl FinderView {
                             batch.ready,
                             batch.keep_unfinished_in_clipboard,
                             batch.skipped_moves,
+                            batch.play_drop_sound,
                             cx,
                         );
                     }
@@ -166,6 +173,7 @@ impl FinderView {
                             batch.ready,
                             batch.keep_unfinished_in_clipboard,
                             batch.skipped_moves,
+                            batch.play_drop_sound,
                             cx,
                         );
                     }

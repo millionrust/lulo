@@ -25,5 +25,6 @@ rmac-notifications.workspace = true
 rmac-notifications-runtime.workspace = true
 rmac-notifications-store.workspace = true
 rmac-shell-invocation.workspace = true
+rmac-sound.workspace = true
 url.workspace = true
 zbus.workspace = true

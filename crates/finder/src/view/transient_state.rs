@@ -56,6 +56,7 @@ pub(super) struct ActiveTransfer {
     pub(super) cancelling: bool,
     pub(super) keep_unfinished_in_clipboard: bool,
     pub(super) retained_clipboard: Vec<PathBuf>,
+    pub(super) play_drop_sound: bool,
 }
 
 #[derive(Clone)]

@@ -191,7 +191,7 @@ so the sounds stay reproducible and provably original):
 
 **Settings:** Sound pane gets *Alert sound* (list of the above alert candidates with preview),
 *Alert volume*, *Play user interface sound effects* (default on), *Play feedback when volume is
-changed* (default on), *Play sound on login* (default off).
+changed* (default on), *Play sound on startup* (default off).
 **Verify:** every cue audible on the reference PC, none plays while muted or in Do Not Disturb
 except `alert`; no cue plays twice for one action; idle sound process uses 0% CPU and holds no
 PipeWire stream open when silent.

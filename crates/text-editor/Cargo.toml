@@ -19,6 +19,7 @@ rmac-ui.workspace = true
 rmac-editor.workspace = true
 rmac-recent-documents.workspace = true
 rmac-storage.workspace = true
+rmac-sound.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

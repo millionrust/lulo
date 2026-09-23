@@ -191,6 +191,31 @@ def package_files() -> dict[str, tuple[bytes, int]]:
         if destination in files:
             raise PackageError(f"duplicate package destination: {source.name}")
         files[destination] = (_read_regular(source), 0o644)
+    # Reproducible original interface sounds (FEEL_SPEC.md §D.1).
+    sounds = REPO_ROOT / "assets" / "sounds"
+    expected_sounds = {
+        "alert.wav",
+        "drag-drop.wav",
+        "empty-trash.wav",
+        "error.wav",
+        "lock.wav",
+        "login.wav",
+        "mount.wav",
+        "notification.wav",
+        "power-plug.wav",
+        "screenshot.wav",
+        "trash.wav",
+        "unlock.wav",
+        "unmount.wav",
+        "volume-tick.wav",
+    }
+    actual_sounds = {path.name for path in sounds.glob("*.wav")}
+    if actual_sounds != expected_sounds:
+        raise PackageError("sound source inventory is not exact")
+    for name in sorted(expected_sounds):
+        source = sounds / name
+        destination = f"usr/share/rmac/sounds/{name}"
+        files[destination] = (_read_regular(source), 0o644)
     # Dock special-item artwork must be available independently of the source
     # tree used to compile the installed binary.
     dock_icons = REPO_ROOT / "crates" / "rmac-dock" / "assets" / "icons"

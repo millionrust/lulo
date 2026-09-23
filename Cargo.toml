@@ -100,6 +100,7 @@ rmac-shell-invocation-runtime = { version = "=0.1.0", path = "crates/rmac-shell-
 rmac-shell-status = { version = "=0.1.0", path = "crates/rmac-shell-status" }
 rmac-shell-status-linux = { version = "=0.1.0", path = "crates/rmac-shell-status-linux" }
 rmac-shell-runtime = { version = "=0.1.0", path = "crates/rmac-shell-runtime" }
+rmac-sound = { version = "=0.1.0", path = "crates/rmac-sound" }
 rmac-shortcuts = { version = "=0.1.0", path = "crates/rmac-shortcuts" }
 rmac-sharing = { version = "=0.1.0", path = "crates/rmac-sharing" }
 rmac-sharing-linux = { version = "=0.1.0", path = "crates/rmac-sharing-linux" }

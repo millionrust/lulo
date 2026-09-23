@@ -7,6 +7,7 @@ pub struct Coordinator {
     status: rmac_shell_status::State,
     quick_settings: rmac_quick_settings::Inputs,
     health: HealthSnapshot,
+    last_on_battery: Option<bool>,
 }
 
 impl Coordinator {
@@ -179,6 +180,11 @@ impl Coordinator {
         if let Some(result) = batch.power {
             match result {
                 Ok(snapshot) => {
+                    let on_battery = snapshot.battery.as_ref().map(|battery| battery.on_battery);
+                    if self.last_on_battery == Some(true) && on_battery == Some(false) {
+                        let _ = rmac_sound::play(rmac_sound::Cue::PowerPlug);
+                    }
+                    self.last_on_battery = on_battery;
                     self.quick_settings.power = snapshot.clone();
                     self.status.apply(rmac_shell_status::Event::Power(snapshot));
                     self.health.power = SourceHealth::Healthy;

@@ -24,6 +24,9 @@ impl FinderView {
         failures: Vec<file_ops::Failure>,
         cx: &mut Context<Self>,
     ) {
+        if !failures.is_empty() {
+            let _ = rmac_sound::play(rmac_sound::Cue::Error);
+        }
         self.operation_error = failures.first().map(|first| {
             if failures.len() == 1 {
                 first.to_string().into()

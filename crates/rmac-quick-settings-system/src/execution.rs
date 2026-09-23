@@ -9,6 +9,9 @@ pub fn execute(operation: &Operation, backend: &impl Backend) -> Result<Inputs, 
     let control = operation.command.control();
     mutate(&operation.command, backend)
         .map_err(|detail| Error::new(control, Phase::Mutate, detail))?;
+    if matches!(operation.command, Command::SetOutputVolume(_)) {
+        let _ = rmac_sound::play(rmac_sound::Cue::VolumeTick);
+    }
     refresh(control, backend).map_err(|detail| Error::new(control, Phase::Refresh, detail))
 }
 

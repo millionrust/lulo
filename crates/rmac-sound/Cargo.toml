@@ -1,15 +1,17 @@
 [package]
-name = "rmac-osd"
+name = "rmac-sound"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-publish = false
+
+[[bin]]
+name = "rmac-sound"
+path = "src/bin/sound.rs"
 
 [dependencies]
-libc.workspace = true
 rmac-audio.workspace = true
-rmac-sound.workspace = true
+rmac-focus-linux.workspace = true
+rmac-storage.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-zbus.workspace = true

@@ -117,7 +117,7 @@ def finish(samples: list[float], peak_dbfs: float) -> list[float]:
     fade = int(RATE * FADE_MS / 1000.0)
     n = len(samples)
     for i in range(max(0, n - fade), n):
-        samples[i] *= (n - i) / fade
+        samples[i] *= (n - 1 - i) / fade
     peak = max(abs(v) for v in samples) or 1.0
     target = 10.0 ** (peak_dbfs / 20.0)
     gain = target / peak

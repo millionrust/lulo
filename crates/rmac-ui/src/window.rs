@@ -92,6 +92,28 @@ fn centered_window_bounds(width: f32, height: f32, cx: &App) -> WindowBounds {
     WindowBounds::centered(size(px(width), px(height)), cx)
 }
 
+/// On Wayland the display is only known once the window is mapped, so the
+/// opening size cannot be fitted up front; shrink it on the first frame if it
+/// reaches under the Dock.
+fn fit_to_display_after_first_frame(window: &Window) {
+    window.on_next_frame(|window, cx| {
+        let Some(display) = window.display(cx) else {
+            return;
+        };
+        let screen = display.bounds().size;
+        let current = window.bounds().size;
+        let (width, height) = fit_to_screen(
+            f32::from(current.width),
+            f32::from(current.height),
+            f32::from(screen.width),
+            f32::from(screen.height),
+        );
+        if width < f32::from(current.width) || height < f32::from(current.height) {
+            window.resize(size(px(width), px(height)));
+        }
+    });
+}
+
 /// macOS never opens a new window taller or wider than the space between the
 /// menu bar and the Dock; on a small screen the default size shrinks to fit.
 fn fit_to_screen(width: f32, height: f32, screen_width: f32, screen_height: f32) -> (f32, f32) {
@@ -357,6 +379,7 @@ where
             let options = window_options_unified(width, height, cx);
             cx.open_window(options, move |window, cx| {
                 prepare_surface_window(window, cx);
+                fit_to_display_after_first_frame(window);
                 let view = cx.new(|cx| build(window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             })
@@ -385,6 +408,7 @@ pub fn boot_unified_app_with_assets<A, V, F>(
             let options = window_options_unified_for_app(app_id, width, height, cx);
             cx.open_window(options, move |window, cx| {
                 prepare_surface_window(window, cx);
+                fit_to_display_after_first_frame(window);
                 let view = cx.new(|cx| {
                     observe_window_state(app_id, window, cx);
                     build(window, cx)
@@ -459,6 +483,7 @@ pub fn boot_app_with_assets<A, V, F>(
 
             cx.open_window(options, move |window, cx| {
                 prepare_surface_window(window, cx);
+                fit_to_display_after_first_frame(window);
                 let view = cx.new(|cx| {
                     observe_window_state(app_id, window, cx);
                     build(window, cx)
@@ -499,6 +524,7 @@ pub fn boot_with_assets<A, V, F>(
 
             cx.open_window(options, move |window, cx| {
                 prepare_surface_window(window, cx);
+                fit_to_display_after_first_frame(window);
                 let view = cx.new(|cx| build(window, cx));
                 cx.new(|cx| Root::new(view, window, cx))
             })

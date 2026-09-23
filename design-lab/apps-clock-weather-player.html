@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Clock, Weather and Media Player — exact</title>
+<!--
+  Clock, Weather and Media Player at 1:1 logical points (dark appearance).
+  Render with --allow-file-access-from-files: the page inlines the same SVG
+  assets the Rust apps embed (crates/clock|weather|player/assets).
+
+  CLOCK — measured on the owner's Mac (macOS 26.2, 2026-09-23): AX frames of
+  every tab plus Retina pixels ÷ 2 (target/evidence/mac-2026-09-23/clock.png
+  and four fresh tab captures). The port copies these in
+  crates/clock/src/metrics.rs.
+  Window         1024 × 768, fill #1E1E1E, radius 27 (unified toolbar),
+                 toolbar 52 with no hairline, lights centred (26,26) (49,26)
+                 (72,26).
+  Tabs           radio group x 314 y 7, 396 × 38; capsule fill #272727 with
+                 a 1 px #464646 rim. Segments 98 × 36 at x 315, then 97 × 36
+                 at 414, 513, 611 (y 8); selected fill #3E3E3E, radius 18.
+                 Labels 14 regular white, centred.
+  Add button     38 × 38 circle at (979, 7), fill #272727 + #464646 rim,
+                 13.5 pt "+" glyph. Hidden on Stopwatch.
+  World Clock    map y 52–552 (1024 × 500), equirectangular but taller than
+                 wide: 1024/360 pt per degree of longitude, 3.02 pt per degree
+                 of latitude, equator at map y 258, so 85.4° N to 80.1° S show
+                 (fitted to the capture's land mask, 96.6 % pixel agreement):
+                 ocean #000000, night land #191919, day land #3F3F3F, day edge
+                 1 pt #8A8A8A, meridians every 1024/12 pt 1 pt #303030. City
+                 pin 7 pt dot #F09748, name 13 bold white at +7, time 10 below.
+                 Cards from (15, 567), 186.5 wide, fill #323232, radius 16 (S),
+                 gap 15 (S); face 120 white at card top + 20, numerals 13
+                 medium black (S), second hand #F09748; three centred 13 pt
+                 lines at card top + 165 / 181 / 196: "City, time" white,
+                 "Today, +0 HRS" and "Sunrise: 6:09 AM" #B9B9B9.
+  Alarms         empty: alarm glyph 48.5 × 53 at (487.5, 339.5) #9A9A9A,
+                 "No Alarms" 13 medium #DDDDDD, top 417. List rows (S): 84 tall
+                 inset 15, time 48 light, label 13 #9A9A9A, switch right.
+  Stopwatch      "00:00.00" digits 101 thin white (digit box x 316.5–707,
+                 y 87–160.5, 73.5 tall, 59.5 digit advance). Lap header 11 pt
+                 #565656 at y 205.5: "Lap No." left 353, "Split" centred 511.5,
+                 "Total" right 670.5; rule y 225 x 352–672, 0.5 pt #484848.
+                 Lap rows (S): 28 tall, 13 pt tabular, same columns.
+                 Buttons 150 × 28 radius 14 at (352, 690) and (522, 690):
+                 disabled Lap #262626 / label #5C5C5C, Start #68CE67 / white.
+  Timers         "hr" "min" "sec" 13 #9A9A9A centred x 374 / 512 / 650.5,
+                 top 234; digits as Stopwatch, box y 275–348. Cancel/Start
+                 150 × 28 at (352, 581) and (522, 581). The Mac's "Timer"
+                 sound pop-up (412,406 200 × 24) is omitted: rmac has one
+                 alert cue family, not a timer ringtone library.
+
+  WEATHER — the Mac only showed its location alert (weather.png), so the main
+  window is drawn from macOS 26 Weather as known; every number is S.
+  rmac never geolocates: the first window asks for a city (Open-Meteo
+  geocoding) and the forecast comes from api.open-meteo.com (no key).
+  Window 980 × 720; sidebar 290 (list of city cards, 12 radius, 88 tall);
+  content gradient by condition; header centred: city 34 regular, temperature
+  96 thin, condition 20 medium, "H:27° L:19°" 20 medium. Cards fill
+  rgba(0,0,0,.14) radius 16: hourly strip (24 columns of 56, time 13 medium,
+  icon 26, temperature 17 medium), 10-day list (rows 44: day 17 medium, icon,
+  low 17 55 % white, 104 pt range bar, high 17).
+
+  MEDIA PLAYER — QuickTime Player on the Mac (AX frames + pixels, 2026-09-23).
+  Video window = video size (1280 × 720 sample); the 32 pt title bar and the
+  floating controller overlay the picture and hide together. Controller
+  controls (window coordinates): mute 426,524 24 × 11; volume 450–533
+  (83 × 16) at y 522; rewind 587,524 27 × 11; play 624,520 31 × 20; forward
+  666,524 27 × 11; elapsed 426,564 36 × 17; timeline 477–803 (326 × 17);
+  duration 810,564 43 × 17. HUD plate (S) 459 × 92 at (410, 504), radius 18,
+  dark material. Audio window 350 × 135: lights (16,16); title 13 bold at x
+  100; elapsed 11,39; timeline 61–288 track 6 tall at y 44.5, 20 % white,
+  played part white; duration 295,39; rewind 112,74; play 159,69; forward
+  211,74; mute 11,105; volume 35–337 at y 103, track 6 tall white.
+  AirPlay, Share, picture-in-picture and playback speed are omitted.
+-->
+<style>
+  body { margin: 0; background: #0b0b0c; font-family: Inter, -apple-system, sans-serif; color: #fff; }
+  .stage { padding: 20px; display: flex; flex-direction: column; gap: 24px; }
+  .row { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+  .win { position: relative; overflow: hidden; border-radius: 27px;
+         box-shadow: 0 0 0 1px #0e0e10, inset 0 0 0 1px #4b4c59; }
+  .abs { position: absolute; }
+  .light { position: absolute; width: 14px; height: 14px; border-radius: 50%; top: 19px; box-sizing: border-box; }
+  .icon { display: inline-block; line-height: 0; }
+  .icon svg { width: 100%; height: 100%; }
+  /* Clock */
+  .clock { width: 1024px; height: 768px; background: #1e1e1e; }
+  .seg { position: absolute; left: 314px; top: 7px; width: 396px; height: 38px; border-radius: 19px;
+         background: #272727; box-shadow: inset 0 0 0 1px #464646; }
+  .segb { position: absolute; top: 1px; height: 36px; border-radius: 18px; font-size: 14px;
+          display: flex; align-items: center; justify-content: center; }
+  .segb.on { background: #3e3e3e; }
+  .add { position: absolute; left: 979px; top: 7px; width: 38px; height: 38px; border-radius: 50%;
+         background: #272727; box-shadow: inset 0 0 0 1px #464646; display: flex; align-items: center; justify-content: center; }
+  .card { position: absolute; top: 567px; width: 186.5px; height: 222px; background: #323232; border-radius: 16px; }
+  .digits { position: absolute; left: 0; right: 0; text-align: center; font-weight: 100; font-size: 101px;
+            font-variant-numeric: tabular-nums; letter-spacing: 0; }
+  .btn { position: absolute; width: 150px; height: 28px; border-radius: 14px; font-size: 13px;
+         display: flex; align-items: center; justify-content: center; }
+  .laphdr { position: absolute; top: 205.5px; font-size: 11px; line-height: 13px; color: #565656; }
+  .lap { position: absolute; font-size: 13px; line-height: 28px; font-variant-numeric: tabular-nums; }
+  /* Weather */
+  .weather { width: 980px; height: 720px; background: #1c1c1e; }
+  .wcard { position: absolute; background: rgba(0,0,0,.14); border-radius: 16px; }
+  .cap { font-size: 12px; font-weight: 600; color: rgba(255,255,255,.55); letter-spacing: .2px; }
+  /* Player */
+  .hud { position: absolute; background: rgba(30,30,30,.82); border-radius: 18px;
+         box-shadow: 0 0 0 .5px rgba(255,255,255,.18), 0 10px 30px rgba(0,0,0,.35); }
+  .track { position: absolute; height: 6px; border-radius: 3px; background: rgba(255,255,255,.2); }
+  .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: #fff; }
+  .thumb { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #fff; top: -5px;
+           box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+  .time { position: absolute; font-size: 13px; font-variant-numeric: tabular-nums; color: #fff; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage"></div>
+<script>
+const ASSETS = "../crates/";
+const cache = {};
+async function svg(path) {
+  if (!cache[path]) cache[path] = await (await fetch(ASSETS + path)).text();
+  return cache[path];
+}
+async function icon(path, size, color, x, y, extra = "") {
+  return `<div class="icon abs" style="left:${x}px;top:${y}px;width:${size}px;height:${size}px;color:${color};${extra}">${await svg(path)}</div>`;
+}
+function lights(y = 19, x0 = 19) {
+  return `<div class="light" style="left:${x0}px;top:${y}px;background:#ff5f57;border:.5px solid #e2463f"></div>
+  <div class="light" style="left:${x0 + 23}px;top:${y}px;background:#febc2e;border:.5px solid #e1a116"></div>
+  <div class="light" style="left:${x0 + 46}px;top:${y}px;background:#28c840;border:.5px solid #1aab29"></div>`;
+}
+function tabs(active) {
+  const names = [["World Clock", 1, 98], ["Alarms", 100, 97], ["Stopwatch", 199, 97], ["Timers", 297, 97]];
+  return `<div class="seg">${names.map(([n, x, w], i) =>
+    `<div class="segb${i === active ? " on" : ""}" style="left:${x}px;width:${w}px">${n}</div>`).join("")}</div>`;
+}
+async function addButton() {
+  return `<div class="add">${await icon("clock/assets/icons/clock/plus.svg", 13.5, "#fff", 12.25, 12.25)}</div>`;
+}
+
+// ---- solar geometry (same formulas as crates/clock/src/solar.rs)
+function julianDay(ms) { return ms / 86400000 + 2440587.5; }
+function sun(ms) {
+  const n = julianDay(ms) - 2451545.0;
+  const L = (280.460 + 0.9856474 * n) % 360;
+  const g = ((357.528 + 0.9856003 * n) % 360) * Math.PI / 180;
+  const lambda = (L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * Math.PI / 180;
+  const eps = (23.439 - 0.0000004 * n) * Math.PI / 180;
+  const decl = Math.asin(Math.sin(eps) * Math.sin(lambda));
+  const ra = Math.atan2(Math.cos(eps) * Math.sin(lambda), Math.cos(lambda));
+  const gmst = (18.697374558 + 24.06570982441908 * n) % 24;
+  let subLon = (ra * 180 / Math.PI - gmst * 15) % 360;
+  if (subLon < -180) subLon += 360; if (subLon > 180) subLon -= 360;
+  return { decl, subLon };
+}
+function isDay(lat, lon, s) {
+  const phi = lat * Math.PI / 180, h = (lon - s.subLon) * Math.PI / 180;
+  return Math.sin(phi) * Math.sin(s.decl) + Math.cos(phi) * Math.cos(s.decl) * Math.cos(h) > 0;
+}
+
+async function worldMap(ms, width, height) {
+  const land = await svg("clock/assets/world-land.svg");
+  const path = land.match(/ d="([^"]+)"/)[1];
+  const s = sun(ms);
+  // Day region as a polygon: for each longitude column find the latitude band lit.
+  const pts = [], cols = 256;
+  const lit = [];
+  for (let i = 0; i <= cols; i++) {
+    const lon = -180 + 360 * i / cols; let top = null, bottom = null;
+    for (let j = 0; j <= 360; j++) {
+      const lat = 90 - j * 0.5;
+      if (isDay(lat, lon, s)) { if (top === null) top = j; bottom = j; }
+    }
+    lit.push([i, top, bottom]);
+  }
+  const x = i => i / cols * 3600, y = j => j * 5;
+  const upper = lit.filter(r => r[1] !== null).map(r => `${x(r[0])},${y(r[1])}`);
+  const lower = lit.filter(r => r[1] !== null).reverse().map(r => `${x(r[0])},${y(r[2])}`);
+  const poly = upper.concat(lower).join(" ");
+  let meridians = "";
+  for (let k = 1; k < 12; k++) meridians += `<path d="M${k * 300} 0V1800" stroke="#303030" stroke-width="${3600 / width}"/>`;
+  return `<svg class="abs" style="left:0;top:52px" width="${width}" height="${height}" viewBox="0 45.7 3600 1655.6" preserveAspectRatio="none">
+    <rect width="3600" height="1800" fill="#000"/>${meridians}
+    <defs><clipPath id="day"><polygon points="${poly}"/></clipPath></defs>
+    <path d="${path}" fill="#191919" fill-rule="evenodd"/>
+    <g clip-path="url(#day)"><path d="${path}" fill="#3F3F3F" fill-rule="evenodd"/></g>
+    <polygon points="${poly}" fill="none" stroke="#8A8A8A" stroke-width="${3600 / width}"/>
+  </svg>`;
+}
+
+function face(cx, cy, d, h, m, sec) {
+  const r = d / 2;
+  let nums = "";
+  for (let k = 1; k <= 12; k++) {
+    const a = k * Math.PI / 6, rr = r - 15;
+    nums += `<div class="abs" style="left:${cx + rr * Math.sin(a) - 10}px;top:${cy - rr * Math.cos(a) - 8}px;width:20px;text-align:center;font-size:13px;line-height:16px;font-weight:500;color:#000">${k}</div>`;
+  }
+  const hand = (angle, len, w, col, back = 0) =>
+    `<div class="abs" style="left:${cx - w / 2}px;top:${cy - len}px;width:${w}px;height:${len + back}px;background:${col};border-radius:${w}px;transform-origin:50% ${len}px;transform:rotate(${angle}deg)"></div>`;
+  return `<div class="abs" style="left:${cx - r}px;top:${cy - r}px;width:${d}px;height:${d}px;border-radius:50%;background:#fff"></div>${nums}
+    ${hand((h % 12 + m / 60) * 30, r * 0.5, 3, "#000")}${hand(m * 6, r * 0.8, 2.5, "#000")}${hand(sec * 6, r * 0.88, 1, "#F09748", 12)}
+    <div class="abs" style="left:${cx - 3}px;top:${cy - 3}px;width:6px;height:6px;border-radius:50%;background:#F09748"></div>`;
+}
+
+async function clockWindow(tab) {
+  let body = "";
+  const now = Date.UTC(2026, 8, 23, 6, 44, 30); // 12:14:30 PM in New Delhi
+  if (tab === 0) {
+    body += await worldMap(now, 1024, 500);
+    const lon = 77.21, lat = 28.61, px = (lon + 180) / 360 * 1024, py = 52 + 258 - 3.02 * lat;
+    body += `<div class="abs" style="left:${px - 3.5}px;top:${py - 3.5}px;width:7px;height:7px;border-radius:50%;background:#F09748"></div>
+      <div class="abs" style="left:${px + 7}px;top:${py - 8}px;font-size:13px;line-height:15px;font-weight:700">New Delhi</div>
+      <div class="abs" style="left:${px + 7}px;top:${py + 7}px;font-size:10px;line-height:12px">12:14 PM</div>
+      <div class="card" style="left:15px">${face(93.25, 80, 120, 12, 14, 30)}
+        <div class="abs" style="left:0;right:0;top:157px;text-align:center;font-size:13px;line-height:16px">New Delhi, 12:14 PM</div>
+        <div class="abs" style="left:0;right:0;top:173px;text-align:center;font-size:13px;line-height:16px;color:#B9B9B9">Today, +0 HRS</div>
+        <div class="abs" style="left:0;right:0;top:189px;text-align:center;font-size:13px;line-height:16px;color:#B9B9B9">Sunrise: 6:09 AM</div></div>`;
+  } else if (tab === 1) {
+    body += await icon("clock/assets/icons/clock/alarm.svg", 53, "#9A9A9A", 485.5, 339.5);
+    body += `<div class="abs" style="left:0;right:0;top:414px;text-align:center;font-size:13px;line-height:18px;font-weight:500;color:#DDDDDD">No Alarms</div>`;
+  } else if (tab === 2) {
+    body += `<div class="digits" style="top:61px;line-height:124px">00:00.00</div>
+      <div class="laphdr" style="left:353px">Lap No.</div>
+      <div class="laphdr" style="left:452px;width:120px;text-align:center">Split</div>
+      <div class="laphdr" style="left:552px;width:118.5px;text-align:right">Total</div>
+      <div class="abs" style="left:352px;top:225px;width:320px;height:.5px;background:#484848"></div>
+      <div class="btn" style="left:352px;top:690px;background:#262626;color:#5C5C5C">Lap</div>
+      <div class="btn" style="left:522px;top:690px;background:#68CE67">Start</div>`;
+  } else {
+    body += `<div class="abs" style="left:354px;top:231px;width:40px;text-align:center;font-size:13px;color:#9A9A9A">hr</div>
+      <div class="abs" style="left:492px;top:231px;width:40px;text-align:center;font-size:13px;color:#9A9A9A">min</div>
+      <div class="abs" style="left:630.5px;top:231px;width:40px;text-align:center;font-size:13px;color:#9A9A9A">sec</div>
+      <div class="digits" style="top:249px;line-height:124px">00:15:00</div>
+      <div class="btn" style="left:352px;top:581px;background:#262626;color:#5C5C5C">Cancel</div>
+      <div class="btn" style="left:522px;top:581px;background:#68CE67">Start</div>`;
+  }
+  return `<div class="win clock">${lights()}${tabs(tab)}${tab === 2 ? "" : await addButton()}${body}</div>`;
+}
+
+async function stopwatchRunning() {
+  const laps = [["Lap 3", "00:04.21", "00:12.87"], ["Lap 2", "00:03.95", "00:08.66"], ["Lap 1", "00:04.71", "00:04.71"]];
+  let rows = "";
+  laps.forEach(([n, s, t], i) => {
+    const y = 226 + i * 28, col = i === 1 ? "#68CE67" : i === 2 ? "#EB5545" : "#fff";
+    rows += `<div class="lap" style="left:353px;top:${y}px;color:${col}">${n}</div>
+      <div class="lap" style="left:452px;width:120px;text-align:center;top:${y}px;color:${col}">${s}</div>
+      <div class="lap" style="left:552px;width:118.5px;text-align:right;top:${y}px;color:${col}">${t}</div>
+      <div class="abs" style="left:352px;top:${y + 28}px;width:320px;height:.5px;background:#3A3A3A"></div>`;
+  });
+  return `<div class="win clock">${lights()}${tabs(2)}
+    <div class="digits" style="top:61px;line-height:124px">00:12.87</div>
+    <div class="laphdr" style="left:353px">Lap No.</div>
+    <div class="laphdr" style="left:452px;width:120px;text-align:center">Split</div>
+    <div class="laphdr" style="left:552px;width:118.5px;text-align:right">Total</div>
+    <div class="abs" style="left:352px;top:225px;width:320px;height:.5px;background:#484848"></div>${rows}
+    <div class="btn" style="left:352px;top:690px;background:#3A3A3A">Lap</div>
+    <div class="btn" style="left:522px;top:690px;background:#EB5545">Stop</div></div>`;
+}
+
+async function alarmsList() {
+  const rows = [["7:00", "AM", "Alarm", true], ["8:30", "AM", "Weekdays", false]];
+  let out = "";
+  rows.forEach(([t, ap, label, on], i) => {
+    const y = 60 + i * 84;
+    out += `<div class="abs" style="left:15px;right:15px;top:${y}px;height:84px;border-bottom:.5px solid #3A3A3A">
+      <div class="abs" style="left:4px;top:8px;font-size:48px;font-weight:300;line-height:56px;color:${on ? "#fff" : "#8A8A8A"}">${t}<span style="font-size:26px;margin-left:4px">${ap}</span></div>
+      <div class="abs" style="left:6px;top:62px;font-size:13px;color:#9A9A9A">${label}</div>
+      <div class="abs" style="right:6px;top:30px;width:38px;height:22px;border-radius:11px;background:${on ? "#34C759" : "#4A4A4A"}">
+        <div class="abs" style="top:2px;${on ? "right" : "left"}:2px;width:18px;height:18px;border-radius:50%;background:#fff"></div></div></div>`;
+  });
+  return `<div class="win clock" style="height:400px">${lights()}${tabs(1)}${await addButton()}${out}</div>`;
+}
+
+// ---- Weather
+async function wicon(kind, size, x, y) {
+  const parts = {
+    clear: [["sun", "#FFD60A"]],
+    partly: [["sun-small", "#FFD60A", .1, .02, .55], ["cloud-front", "#fff"]],
+    cloudy: [["cloud", "#fff"]],
+    rain: [["cloud-top", "#fff"], ["rain", "#5AC8FA"]],
+    storm: [["cloud-top", "#fff"], ["bolt", "#FFD60A"]],
+    night: [["moon", "#fff"]],
+  }[kind];
+  let out = "";
+  for (const [name, col, dx = 0, dy = 0, sc = 1] of parts)
+    out += await icon(`weather/assets/icons/weather/${name}.svg`, size * sc, col, x + dx * size, y + dy * size);
+  return out;
+}
+async function weatherWindow() {
+  const W = 980, H = 720, side = 290;
+  let sidebar = `<div class="abs" style="left:0;top:0;width:${side}px;height:${H}px;background:#232325"></div>
+    <div class="abs" style="left:14px;top:52px;width:${side - 28}px;height:28px;border-radius:8px;background:rgba(255,255,255,.08)">
+      ${await icon("weather/assets/icons/weather/search.svg", 14, "rgba(255,255,255,.55)", 8, 7)}
+      <div class="abs" style="left:28px;top:6px;font-size:13px;color:rgba(255,255,255,.45)">Search for a city</div></div>`;
+  const cities = [["Bengaluru", "12:14 PM", "Mostly Cloudy", "24°", "H:27° L:19°", ["#4A6FA5", "#7B97C0"]],
+                  ["London", "7:44 AM", "Light Rain", "13°", "H:16° L:10°", ["#4B5563", "#6B7280"]]];
+  cities.forEach(([c, t, cond, temp, hl, g], i) => {
+    const y = 92 + i * 96;
+    sidebar += `<div class="abs" style="left:10px;top:${y}px;width:${side - 20}px;height:88px;border-radius:12px;background:linear-gradient(180deg,${g[0]},${g[1]});${i === 0 ? "box-shadow:0 0 0 2px rgba(255,255,255,.55)" : ""}">
+      <div class="abs" style="left:12px;top:10px;font-size:17px;font-weight:700">${c}</div>
+      <div class="abs" style="left:12px;top:32px;font-size:12px;font-weight:500;color:rgba(255,255,255,.85)">${t}</div>
+      <div class="abs" style="left:12px;top:62px;font-size:12px;font-weight:500;color:rgba(255,255,255,.85)">${cond}</div>
+      <div class="abs" style="right:12px;top:4px;font-size:40px;font-weight:300">${temp}</div>
+      <div class="abs" style="right:12px;top:62px;font-size:12px;font-weight:500;color:rgba(255,255,255,.85)">${hl}</div></div>`;
+  });
+  const cx = side + (W - side) / 2;
+  let main = `<div class="abs" style="left:${side}px;top:0;right:0;bottom:0;background:linear-gradient(180deg,#4A6FA5 0%,#7B97C0 100%)"></div>
+    <div class="abs" style="left:${side}px;right:0;top:58px;text-align:center;font-size:34px;line-height:40px">Bengaluru</div>
+    <div class="abs" style="left:${side}px;right:0;top:94px;text-align:center;font-size:96px;font-weight:100;line-height:110px">24°</div>
+    <div class="abs" style="left:${side}px;right:0;top:204px;text-align:center;font-size:20px;font-weight:500;line-height:24px;color:rgba(255,255,255,.9)">Mostly Cloudy</div>
+    <div class="abs" style="left:${side}px;right:0;top:230px;text-align:center;font-size:20px;font-weight:500;line-height:24px">H:27°&nbsp;&nbsp;L:19°</div>`;
+  const cardX = side + 30, cardW = W - side - 60;
+  let hourly = `<div class="wcard" style="left:${cardX}px;top:280px;width:${cardW}px;height:150px">
+    <div class="abs" style="left:16px;top:12px;font-size:13px;font-weight:500;color:rgba(255,255,255,.9)">Cloudy conditions expected around 3 PM.</div>
+    <div class="abs" style="left:16px;right:16px;top:38px;height:.5px;background:rgba(255,255,255,.25)"></div>`;
+  const hrs = [["Now", "partly", "24°"], ["1PM", "partly", "25°"], ["2PM", "cloudy", "26°"], ["3PM", "rain", "25°"], ["4PM", "rain", "24°"], ["5PM", "cloudy", "23°"], ["6:24PM", "clear", "Sunset"], ["7PM", "night", "21°"], ["8PM", "night", "20°"], ["9PM", "night", "20°"]];
+  for (let i = 0; i < hrs.length; i++) {
+    const x = 16 + i * 60;
+    hourly += `<div class="abs" style="left:${x}px;top:50px;width:52px;text-align:center;font-size:13px;font-weight:600">${hrs[i][0]}</div>
+      ${await wicon(hrs[i][1], 26, x + 13, 76)}
+      <div class="abs" style="left:${x}px;top:112px;width:52px;text-align:center;font-size:17px;font-weight:500">${hrs[i][2]}</div>`;
+  }
+  hourly += `</div>`;
+  let days = `<div class="wcard" style="left:${cardX}px;top:446px;width:${cardW}px;height:262px">
+    <div class="abs cap" style="left:16px;top:12px">10-DAY FORECAST</div>`;
+  const d = [["Today", "partly", 19, 27], ["Thu", "rain", 19, 26], ["Fri", "storm", 18, 25], ["Sat", "cloudy", 19, 27], ["Sun", "clear", 20, 29]];
+  for (let i = 0; i < d.length; i++) {
+    const y = 36 + i * 44, lo = 17, hi = 30, bx = 330, bw = 104;
+    const a = (d[i][2] - lo) / (hi - lo) * bw, b = (d[i][3] - lo) / (hi - lo) * bw;
+    days += `<div class="abs" style="left:16px;right:16px;top:${y}px;height:.5px;background:rgba(255,255,255,.25)"></div>
+      <div class="abs" style="left:16px;top:${y + 12}px;font-size:17px;font-weight:500">${d[i][0]}</div>
+      ${await wicon(d[i][1], 24, 150, y + 10)}
+      <div class="abs" style="left:250px;width:60px;text-align:right;top:${y + 12}px;font-size:17px;font-weight:500;color:rgba(255,255,255,.55)">${d[i][2]}°</div>
+      <div class="abs" style="left:${bx}px;top:${y + 20}px;width:${bw}px;height:4px;border-radius:2px;background:rgba(0,0,0,.2)">
+        <div class="abs" style="left:${a}px;width:${b - a}px;top:0;height:4px;border-radius:2px;background:linear-gradient(90deg,#8FD16A,#F2C94C,#F29A4C)"></div></div>
+      <div class="abs" style="left:450px;width:40px;text-align:right;top:${y + 12}px;font-size:17px;font-weight:500">${d[i][3]}°</div>`;
+  }
+  days += `</div>`;
+  return `<div class="win weather" style="width:${W}px;height:${H}px">${sidebar}${main}${hourly}${days}${lights()}
+    ${await icon("weather/assets/icons/weather/sidebar.svg", 20, "rgba(255,255,255,.8)", 96, 16)}</div>`;
+}
+async function weatherFirstRun() {
+  return `<div class="win weather" style="width:980px;height:720px;background:linear-gradient(180deg,#2D3F5E,#4A6FA5)">${lights()}
+    ${await icon("weather/assets/icons/weather/location.svg", 44, "#fff", 468, 196)}
+    <div class="abs" style="left:0;right:0;top:256px;text-align:center;font-size:22px;font-weight:600">Choose a Location</div>
+    <div class="abs" style="left:290px;right:290px;top:290px;text-align:center;font-size:13px;line-height:18px;color:rgba(255,255,255,.8)">Weather shows the forecast for the cities you add. It never looks up where this computer is.</div>
+    <div class="abs" style="left:340px;top:342px;width:300px;height:30px;border-radius:15px;background:rgba(255,255,255,.14);box-shadow:inset 0 0 0 1px rgba(255,255,255,.2)">
+      ${await icon("weather/assets/icons/weather/search.svg", 14, "rgba(255,255,255,.7)", 11, 8)}
+      <div class="abs" style="left:32px;top:7px;font-size:13px">Beng<span style="border-left:1.5px solid #fff;margin-left:1px"></span></div></div>
+    <div class="abs" style="left:340px;top:380px;width:300px;border-radius:12px;background:rgba(30,30,32,.92);box-shadow:0 0 0 .5px rgba(255,255,255,.2)">
+      <div style="padding:6px">
+        <div style="height:40px;border-radius:7px;background:#1372F9;padding:4px 10px;box-sizing:border-box"><div style="font-size:13px;font-weight:600">Bengaluru</div><div style="font-size:11px;color:rgba(255,255,255,.8)">Karnataka, India</div></div>
+        <div style="height:40px;padding:4px 10px;box-sizing:border-box"><div style="font-size:13px;font-weight:600">Bengaluru Rural</div><div style="font-size:11px;color:rgba(255,255,255,.6)">Karnataka, India</div></div>
+      </div></div>
+    <div class="abs" style="left:0;right:0;bottom:18px;text-align:center;font-size:11px;color:rgba(255,255,255,.55)">Weather data by Open-Meteo.com</div></div>`;
+}
+
+// ---- Player
+async function controls(played, total, volume, playing, w, x0, y0, compact) {
+  const pi = playing ? "pause" : "play";
+  if (compact) {
+    return `
+      <div class="time" style="left:11px;top:39px">00:00</div>
+      <div class="track" style="left:61px;top:44.5px;width:227px"><div class="fill" style="width:${played / total * 227}px"></div>
+        <div class="thumb" style="left:${played / total * 227 - 8}px"></div></div>
+      <div class="time" style="left:295px;top:39px">00:30</div>
+      ${await icon("player/assets/icons/player/rewind.svg", 22, "#fff", 114.5, 68.5)}
+      ${await icon(`player/assets/icons/player/${pi}.svg`, 30, "#fff", 159.5, 64)}
+      ${await icon("player/assets/icons/player/forward.svg", 22, "#fff", 213.5, 68.5)}
+      ${await icon("player/assets/icons/player/volume.svg", 17, "#fff", 13, 102)}
+      <div class="track" style="left:35px;top:108px;width:302px"><div class="fill" style="width:${volume * 302}px"></div>
+        <div class="thumb" style="left:${volume * 302 - 10}px;width:20px;height:20px;top:-7px"></div></div>`;
+  }
+  return `<div class="hud" style="left:${x0}px;top:${y0}px;width:459px;height:92px">
+      ${await icon("player/assets/icons/player/volume.svg", 17, "#fff", 17, 16)}
+      <div class="track" style="left:40px;top:23px;width:83px"><div class="fill" style="width:${volume * 83}px"></div></div>
+      ${await icon("player/assets/icons/player/rewind.svg", 22, "#fff", 179.5, 13.5)}
+      ${await icon(`player/assets/icons/player/${pi}.svg`, 26, "#fff", 216.5, 11)}
+      ${await icon("player/assets/icons/player/forward.svg", 22, "#fff", 258.5, 13.5)}
+      ${await icon("player/assets/icons/player/fullscreen.svg", 18, "#fff", 419, 18)}
+      <div class="time" style="left:16px;top:60px">00:07</div>
+      <div class="track" style="left:67px;top:65.5px;width:326px"><div class="fill" style="width:${played / total * 326}px"></div>
+        <div class="thumb" style="left:${played / total * 326 - 8}px"></div></div>
+      <div class="time" style="left:400px;top:60px">-00:13</div></div>`;
+}
+async function playerVideo() {
+  const colors = ["#E43B2C", "#62D943", "#F9EE4C", "#0A0AEE", "#E942EE", "#63E5F8"];
+  const bars = colors.map((c, i) => `<div class="abs" style="left:${i * 1280 / 6}px;top:0;width:${1280 / 6 + 1}px;height:720px;background:${c}"></div>`).join("");
+  return `<div class="win" style="width:1280px;height:720px;border-radius:27px;background:#000">${bars}
+    <div class="abs" style="left:0;top:0;right:0;height:32px;background:linear-gradient(180deg,rgba(0,0,0,.45),rgba(0,0,0,0))"></div>
+    ${lights(9, 9)}<div class="abs" style="left:100px;top:8px;font-size:13px;font-weight:700">sample.mp4</div>
+    ${await controls(7, 20, 1, true, 1280, 410, 504, false)}</div>`;
+}
+async function playerAudio() {
+  return `<div class="win" style="width:350px;height:135px;border-radius:14px;background:rgba(38,36,36,.94)">${lights(9, 9)}
+    ${await icon("player/assets/icons/player/audio-file.svg", 16, "#fff", 82, 9)}
+    <div class="abs" style="left:100px;top:8px;font-size:13px;font-weight:700">Test Tone</div>
+    ${await icon("player/assets/icons/player/chevron-down.svg", 10, "rgba(255,255,255,.6)", 168, 12)}
+    ${await controls(0, 30, 1, false, 350, 0, 0, true)}</div>`;
+}
+
+(async () => {
+  const stage = document.getElementById("stage");
+  const html = [];
+  html.push(`<div class="row">${await clockWindow(0)}${await clockWindow(1)}</div>`);
+  html.push(`<div class="row">${await clockWindow(2)}${await clockWindow(3)}</div>`);
+  html.push(`<div class="row">${await stopwatchRunning()}${await alarmsList()}</div>`);
+  html.push(`<div class="row">${await weatherWindow()}${await weatherFirstRun()}</div>`);
+  html.push(`<div class="row">${await playerVideo()}${await playerAudio()}</div>`);
+  stage.innerHTML = html.join("");
+  document.body.dataset.ready = "1";
+})();
+</script>
+</body>
+</html>

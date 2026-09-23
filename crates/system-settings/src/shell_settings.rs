@@ -180,6 +180,7 @@ impl SpotlightAuthority {
 pub(super) enum SpotlightChange {
     ProviderEnabled { id: String, enabled: bool },
     ProviderPrivateContent { id: String, allowed: bool },
+    ProviderNetwork { id: String, allowed: bool },
     IncludeRemovableMounts(bool),
     AddExclusion(String),
     RemoveExclusion(String),
@@ -194,6 +195,11 @@ impl SpotlightChange {
             Self::ProviderPrivateContent { id, allowed } => {
                 update_provider_policy(settings, id, |policy| {
                     policy.allow_private_content = allowed;
+                });
+            }
+            Self::ProviderNetwork { id, allowed } => {
+                update_provider_policy(settings, id, |policy| {
+                    policy.allow_network = allowed;
                 });
             }
             Self::IncludeRemovableMounts(enabled) => {

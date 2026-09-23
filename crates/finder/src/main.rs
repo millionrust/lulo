@@ -28,6 +28,8 @@ enum StartupDestination {
     Default,
     Trash,
     Directory(std::path::PathBuf),
+    /// Spotlight's "Search in Files": search the home folder for this.
+    Search(String),
 }
 
 impl StartupDestination {
@@ -43,7 +45,15 @@ impl StartupDestination {
                     Err("rmac-files --path requires an existing absolute directory")
                 }
             }
-            _ => Err("usage: rmac-files [--trash | --path ABSOLUTE_DIRECTORY]"),
+            (Some(flag), Some(query), None) if flag == "--search" => {
+                let query = query.trim();
+                if query.is_empty() || query.len() > 512 || query.chars().any(char::is_control) {
+                    Err("rmac-files --search requires a short, printable query")
+                } else {
+                    Ok(Self::Search(query.to_owned()))
+                }
+            }
+            _ => Err("usage: rmac-files [--trash | --path ABSOLUTE_DIRECTORY | --search QUERY]"),
         }
     }
 }
@@ -71,6 +81,18 @@ mod tests {
                 .into_iter()
             ),
             Ok(StartupDestination::Directory(std::env::temp_dir()))
+        );
+        assert_eq!(
+            StartupDestination::parse(["--search".to_owned(), " report ".to_owned()].into_iter()),
+            Ok(StartupDestination::Search("report".into()))
+        );
+        assert!(
+            StartupDestination::parse(["--search".to_owned(), "  ".to_owned()].into_iter())
+                .is_err()
+        );
+        assert!(
+            StartupDestination::parse(["--search".to_owned(), "a\nb".to_owned()].into_iter())
+                .is_err()
         );
         assert!(StartupDestination::parse(["trash:///".to_owned()].into_iter()).is_err());
         assert!(

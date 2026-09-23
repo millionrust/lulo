@@ -281,6 +281,32 @@ fn spotlight_provider_changes_are_scoped_and_elide_default_policy() {
 }
 
 #[test]
+fn currency_rates_need_their_own_network_permission() {
+    let mut settings = rmac_shell_settings::ShellSettings::default();
+    let currency = rmac_launcher_providers::CURRENCY_PROVIDER.to_string();
+    SpotlightChange::ProviderNetwork {
+        id: currency.clone(),
+        allowed: true,
+    }
+    .apply(&mut settings);
+    let policy = settings
+        .providers
+        .get(&rmac_shell_settings::ProviderId(currency.clone()))
+        .unwrap();
+    assert!(policy.enabled && policy.allow_network && !policy.allow_private_content);
+    assert_eq!(settings.providers.len(), 1);
+
+    SpotlightChange::ProviderNetwork {
+        id: currency.clone(),
+        allowed: false,
+    }
+    .apply(&mut settings);
+    assert!(!settings
+        .providers
+        .contains_key(&rmac_shell_settings::ProviderId(currency)));
+}
+
+#[test]
 fn spotlight_configuration_requires_the_live_version_two_portal() {
     assert!(shortcut_configuration_available(Some(
         &rmac_shortcuts::BackendStatus::Portal {

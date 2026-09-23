@@ -53,7 +53,9 @@ impl Launcher {
     }
 }
 
-pub(crate) fn score(query: &str, result: &SearchResult) -> Option<u16> {
+/// Textual relevance, category and recency, plus what was learned from
+/// earlier choices (`learned`, at most [`crate::MAX_BOOST`]).
+pub(crate) fn score(query: &str, result: &SearchResult, learned: u16) -> Option<u16> {
     let title = normalize(&result.title);
     let subtitle = result
         .subtitle
@@ -62,6 +64,8 @@ pub(crate) fn score(query: &str, result: &SearchResult) -> Option<u16> {
         .unwrap_or_default();
     let textual = if query.is_empty() {
         100
+    } else if result.category.matches_any_query() {
+        1_000
     } else {
         match_quality(query, &title)
             .or_else(|| match_quality(query, &subtitle).map(|score| score.saturating_sub(80)))?
@@ -69,7 +73,8 @@ pub(crate) fn score(query: &str, result: &SearchResult) -> Option<u16> {
     Some(
         textual
             .saturating_add(result.category.rank())
-            .saturating_add(u16::from(result.recency_rank.min(100))),
+            .saturating_add(u16::from(result.recency_rank.min(100)))
+            .saturating_add(learned.min(crate::MAX_BOOST)),
     )
 }
 

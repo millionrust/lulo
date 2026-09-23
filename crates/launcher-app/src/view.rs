@@ -4,6 +4,7 @@ mod actions;
 mod completion;
 mod panel;
 mod render;
+mod selection;
 mod surface;
 
 use std::process::Command;
@@ -41,6 +42,9 @@ pub(crate) struct LauncherView {
     /// Set by a left press on one of the drawn shapes before the press
     /// bubbles to the transparent surface, which dismisses on its own.
     press_inside: bool,
+    /// The arrow keys moved the selection since the query last changed:
+    /// the selected row turns from the grey top-hit plate to blue.
+    keyboard_selection: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -81,6 +85,8 @@ pub(crate) struct OverlayEnvironment {
     pub(crate) settings_error: Option<SharedString>,
     pub(crate) clipboard: async_channel::Sender<String>,
     pub(crate) applications: rmac_launcher_providers::ApplicationProvider,
+    /// What earlier choices taught (local only).
+    pub(crate) learning: Arc<rmac_launcher::Learning>,
 }
 
 impl LauncherView {
@@ -114,6 +120,7 @@ impl LauncherView {
             settings_error,
             clipboard,
             applications,
+            learning,
         } = environment;
         let initial_browse_mode = requested_browse_mode(&event);
         // The placeholder is drawn by the bar itself in the measured label
@@ -124,6 +131,7 @@ impl LauncherView {
             if matches!(event, InputEvent::Change) {
                 let value = query.read(cx).value().to_string();
                 this.panel_query_changed();
+                this.keyboard_selection = false;
                 let compact =
                     value.is_empty() && this.browse_mode.is_none() && this.panel.is_none();
                 if this.compact != compact {
@@ -164,6 +172,10 @@ impl LauncherView {
         .detach();
 
         let mut coordinator = Coordinator::new(registry.descriptors(), settings.providers.clone());
+        coordinator.set_learning(
+            learning,
+            rmac_launcher_providers::locale::unix_now().max(0) as u64,
+        );
         let ShortcutEffect::Open(opened) = coordinator.handle_shortcut(&event) else {
             unreachable!("a fresh launcher surface starts from one launcher activation")
         };
@@ -192,6 +204,7 @@ impl LauncherView {
             bar_hovered: false,
             applications,
             press_inside: false,
+            keyboard_selection: false,
         };
         view.ensure_browse_selection();
         Self::spawn_dispatch(view.registry.clone(), opened.request, cx);
@@ -340,6 +353,9 @@ impl LauncherView {
                 return;
             }
         }
+        if matches!(command, KeyCommand::ArrowDown | KeyCommand::ArrowUp) {
+            self.keyboard_selection = true;
+        }
         let effect = self.coordinator.handle_key(command);
         self.apply_key_effect(effect, window, cx);
     }
@@ -485,6 +501,10 @@ impl LauncherView {
                     let _ = cx.update_window(window_handle, |_, window, cx| {
                         let _ = this.update(cx, |this, cx| {
                             if this.coordinator.finish_activation(result) {
+                                if let Some((query, id)) = this.coordinator.take_completed_choice()
+                                {
+                                    service::learn(query, id, cx);
+                                }
                                 if !this.coordinator.snapshot().open {
                                     service::release(this.token, cx);
                                     window.remove_window();

@@ -65,6 +65,8 @@ pub struct Row {
     pub category_label: &'static str,
     pub title: String,
     pub subtitle: Option<String>,
+    /// The answer card's third line (time, rate source, dictionary).
+    pub detail: Option<String>,
     pub icon: Option<std::path::PathBuf>,
     pub selected: bool,
     pub primary_label: &'static str,
@@ -81,6 +83,7 @@ impl fmt::Debug for Row {
             .field("application_group", &self.application_group)
             .field("title", &"<redacted>")
             .field("subtitle", &self.subtitle.as_ref().map(|_| "<redacted>"))
+            .field("detail", &self.detail.as_ref().map(|_| "<redacted>"))
             .field("icon", &self.icon.as_ref().map(|_| "<redacted>"))
             .field("selected", &self.selected)
             .field("primary_label", &self.primary_label)
@@ -138,4 +141,8 @@ pub struct Coordinator {
     pub(super) last_shortcut_timestamp_ms: Option<u64>,
     pub(super) application_catalog: CatalogHealth,
     pub(super) application_catalog_revision: u64,
+    /// Query and result of the activation in flight.
+    pub(super) activation_choice: Option<(String, ResultId)>,
+    /// Set when that activation succeeds, for the caller to learn from.
+    pub(super) completed_choice: Option<(String, ResultId)>,
 }

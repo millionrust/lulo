@@ -11,6 +11,7 @@ pub enum Operation {
     OpenFile,
     RevealFile,
     CopyText,
+    SearchFiles,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,6 +65,7 @@ impl fmt::Display for Error {
             Operation::OpenFile => "Could not open the file",
             Operation::RevealFile => "Could not reveal the file",
             Operation::CopyText => "Could not copy the result",
+            Operation::SearchFiles => "Could not open Files",
         })
     }
 }
@@ -78,6 +80,7 @@ pub enum Outcome {
     FileOpened,
     FileRevealed,
     TextCopied,
+    FilesSearched,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

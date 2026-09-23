@@ -183,6 +183,7 @@ impl Provider for ApplicationProvider {
                 application_group: Some(application_group(&application.categories)),
                 title: application.name.clone(),
                 subtitle,
+                detail: None,
                 icon: application.icon.clone(),
                 primary: Action::LaunchApplication {
                     app_id: application.id.clone(),

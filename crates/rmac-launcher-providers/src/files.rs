@@ -198,13 +198,14 @@ fn same_filesystem(_: &Path, _: &Path) -> bool {
 
 fn file_result(path: PathBuf, query: &str) -> Option<SearchResult> {
     let title = path.file_name()?.to_string_lossy().into_owned();
-    let subtitle = path
+    let parent = path
         .parent()
         .map(|parent| parent.to_string_lossy().into_owned());
-    if !rmac_launcher::query_matches(query, &title, subtitle.as_deref()) {
+    if !rmac_launcher::query_matches(query, &title, parent.as_deref()) {
         return None;
     }
     let local = path.to_string_lossy().into_owned();
+    let subtitle = file_details(&path, &Locale::from_environment(), chrono::Local::now());
     Some(SearchResult {
         id: ResultId {
             provider: provider_id(FILES_PROVIDER),
@@ -214,9 +215,92 @@ fn file_result(path: PathBuf, query: &str) -> Option<SearchResult> {
         application_group: None,
         title,
         subtitle,
+        detail: None,
         icon: None,
         primary: Action::OpenFile { path: path.clone() },
         alternate: Some(Action::RevealFile { path }),
         recency_rank: 0,
     })
+}
+
+/// The file row's second line as macOS 26 writes it, less the kind rmac
+/// has no authority for: "24 KB · Today, 9:08 PM · rmac" (the view draws a
+/// folder glyph before the last part). Folders omit the size.
+fn file_details(
+    path: &Path,
+    locale: &Locale,
+    now: chrono::DateTime<chrono::Local>,
+) -> Option<String> {
+    let metadata = std::fs::symlink_metadata(path).ok()?;
+    let size = metadata.is_file().then(|| metadata.len());
+    let modified = metadata
+        .modified()
+        .ok()
+        .map(chrono::DateTime::<chrono::Local>::from);
+    let folder = path
+        .parent()
+        .and_then(Path::file_name)
+        .map(|name| name.to_string_lossy().into_owned());
+    let mut parts = Vec::new();
+    if let Some(size) = size {
+        parts.push(file_size(size));
+    } else if metadata.is_dir() {
+        parts.push("Folder".to_owned());
+    }
+    if let Some(modified) = modified {
+        use chrono::{Datelike as _, Timelike as _};
+        parts.push(file_date(
+            (modified.year(), modified.month(), modified.day()),
+            (modified.hour(), modified.minute()),
+            (now.year(), now.month(), now.day()),
+            now.date_naive()
+                .pred_opt()
+                .map(|yesterday| (yesterday.year(), yesterday.month(), yesterday.day())),
+            locale,
+        ));
+    }
+    parts.extend(folder);
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+/// "926 bytes", "24 KB", "1.3 MB", "2.15 GB": decimal units, as Finder.
+pub fn file_size(bytes: u64) -> String {
+    const KB: f64 = 1_000.0;
+    let value = bytes as f64;
+    if bytes == 1 {
+        "1 byte".into()
+    } else if bytes < 1_000 {
+        format!("{bytes} bytes")
+    } else if value < KB * KB {
+        format!("{} KB", (value / KB).round().max(1.0))
+    } else if value < KB * KB * KB {
+        trim_decimals(format!("{:.1}", value / (KB * KB)), "MB")
+    } else if value < KB.powi(4) {
+        trim_decimals(format!("{:.2}", value / KB.powi(3)), "GB")
+    } else {
+        trim_decimals(format!("{:.2}", value / KB.powi(4)), "TB")
+    }
+}
+
+fn trim_decimals(number: String, unit: &str) -> String {
+    let number = number.trim_end_matches('0').trim_end_matches('.');
+    format!("{number} {unit}")
+}
+
+/// "Today, 9:08 PM", "Yesterday, 8:20 PM" or "17/09/26, 3:33 PM".
+pub fn file_date(
+    date: (i32, u32, u32),
+    time: (u32, u32),
+    today: (i32, u32, u32),
+    yesterday: Option<(i32, u32, u32)>,
+    locale: &Locale,
+) -> String {
+    let day = if date == today {
+        "Today".to_owned()
+    } else if Some(date) == yesterday {
+        "Yesterday".to_owned()
+    } else {
+        locale.short_date(date.0, date.1, date.2)
+    };
+    format!("{day}, {}", crate::locale::time_12h(time.0, time.1))
 }

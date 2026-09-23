@@ -29,6 +29,20 @@ impl Surface for SurfaceBridge {
             .map_err(|error| BackendError::new(FailureKind::Io(error.kind()), error.to_string()))
     }
 
+    /// "Search in Files": Files opens on the home folder searching for the
+    /// query.
+    fn search_files(&self, query: &str) -> Result<(), BackendError> {
+        let executable = std::env::current_exe()
+            .map_err(|error| BackendError::new(FailureKind::Io(error.kind()), error.to_string()))?
+            .with_file_name("rmac-files");
+        Command::new(executable)
+            .arg("--search")
+            .arg(query)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| BackendError::new(FailureKind::Io(error.kind()), error.to_string()))
+    }
+
     fn copy_text(&self, text: &str) -> Result<(), BackendError> {
         self.clipboard.try_send(text.to_owned()).map_err(|_| {
             BackendError::new(FailureKind::Unavailable, "clipboard surface is unavailable")

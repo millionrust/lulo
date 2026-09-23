@@ -7,6 +7,10 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+# File-row dates in local time.
+chrono.workspace = true
+# dictzip (.dict.dz) chunks of installed dictd dictionaries.
+flate2.workspace = true
 rmac-apps.workspace = true
 rmac-launcher.workspace = true
 rmac-search.workspace = true

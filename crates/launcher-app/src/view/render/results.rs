@@ -11,12 +11,18 @@ impl LauncherView {
                 .flex_none()
                 .into_any_element();
         }
+        if let Some(asset) = category_icon(row.category) {
+            return img(asset).size(px(size)).flex_none().into_any_element();
+        }
         let (glyph, color): (&str, Hsla) = match row.category {
             Category::Applications => ("A", mac::system_blue()),
             Category::Settings => ("⚙", mac::system_gray()),
-            Category::Calculator => ("=", mac::system_orange()),
+            Category::Calculator | Category::Clock => ("=", mac::system_orange()),
+            // The Mac shows its red Dictionary icon; rmac has no dictionary
+            // app, so the same "Aa" is drawn on red.
+            Category::Dictionary => ("Aa", mac::system_red()),
             Category::Files => ("▤", mac::system_teal()),
-            Category::Other => ("•", mac::system_indigo()),
+            Category::Other | Category::SearchIn => ("•", mac::system_indigo()),
         };
         div()
             .size(px(size))
@@ -252,6 +258,17 @@ impl LauncherView {
             content = content.child(section_label(group.label())).child(section);
         }
         content.into_any_element()
+    }
+}
+
+/// The rmac app that answers a category, as the Mac shows Calculator,
+/// Clock and Finder beside answers and "Search in Finder".
+pub(super) fn category_icon(category: Category) -> Option<&'static str> {
+    match category {
+        Category::Calculator => Some("spotlight/apps/org.rmac.Calculator.svg"),
+        Category::Clock => Some("spotlight/apps/org.rmac.Clock.svg"),
+        Category::SearchIn => Some("spotlight/apps/org.rmac.Files.svg"),
+        _ => None,
     }
 }
 

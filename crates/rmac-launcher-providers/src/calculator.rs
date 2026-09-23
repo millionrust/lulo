@@ -1,6 +1,18 @@
-//! Deterministic local calculator launcher provider.
+//! Deterministic local calculator and unit-conversion launcher provider.
+//!
+//! Spotlight on macOS 26.2 answers arithmetic ("12*7" = 84, "2^10" =
+//! 1,024, "sqrt(2)" = 1.4142135624) and unit conversions ("5 km in miles"
+//! = 3.11 miles) in the answer card under the bar. Results carry at most
+//! ten decimals with trailing zeros dropped and follow the locale's digit
+//! grouping, as measured on the owner's Mac.
 
 use super::*;
+use crate::conversion;
+use crate::locale::Locale;
+
+/// Decimals a calculation keeps ("1/3" = 0.3333333333).
+const CALCULATION_DECIMALS: usize = 10;
+const MAX_QUERY_BYTES: usize = 256;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CalculatorProvider;
@@ -22,63 +34,220 @@ impl Provider for CalculatorProvider {
         if cancellation.is_cancelled() {
             return Err(cancelled());
         }
-        let Some(value) = evaluate(query) else {
-            return Ok(Vec::new());
-        };
-        let text = format_number(value);
-        Ok(vec![SearchResult {
-            id: ResultId {
-                provider: provider_id(CALCULATOR_PROVIDER),
-                local: query.trim().into(),
-            },
-            category: Category::Calculator,
-            application_group: None,
-            title: text.clone(),
-            subtitle: Some(query.trim().into()),
-            icon: None,
-            primary: Action::CopyText { text },
-            alternate: None,
-            recency_rank: 0,
-        }])
+        Ok(answer(query, &Locale::from_environment())
+            .map(|text| answer_result(CALCULATOR_PROVIDER, query, text, None))
+            .into_iter()
+            .collect())
     }
 }
 
-fn evaluate(input: &str) -> Option<f64> {
-    let input = input.trim();
-    if input.is_empty()
-        || input.len() > 256
-        || !input
-            .chars()
-            .any(|character| matches!(character, '+' | '-' | '*' | '/'))
-    {
+/// The answer card's text for `query`: a unit conversion ("3.11 miles") or
+/// a calculation ("84"), in `locale`'s number format.
+pub fn answer(query: &str, locale: &Locale) -> Option<String> {
+    let query = query.trim();
+    if query.is_empty() || query.len() > MAX_QUERY_BYTES {
         return None;
     }
-    let mut parser = Parser::new(input);
+    conversion::convert(query, locale)
+        .or_else(|| evaluate(query).and_then(|value| locale.format(value, CALCULATION_DECIMALS)))
+}
+
+/// One answer-card result: `text` is the answer, the subtitle echoes the
+/// query ("12*7 ="), and Return copies the answer.
+pub(crate) fn answer_result(
+    provider: &str,
+    query: &str,
+    text: String,
+    detail: Option<String>,
+) -> SearchResult {
+    SearchResult {
+        id: ResultId {
+            provider: provider_id(provider),
+            local: query.trim().into(),
+        },
+        category: Category::Calculator,
+        application_group: None,
+        title: text.clone(),
+        subtitle: Some(query.trim().into()),
+        detail,
+        icon: None,
+        primary: Action::CopyText { text },
+        alternate: None,
+        recency_rank: 0,
+    }
+}
+
+/// Evaluate an arithmetic expression: `+ - * / ^` (also `× ÷ **`),
+/// parentheses, unary signs, `sqrt abs ln log exp` and the constants `pi`
+/// and `e`. A bare number is not a calculation.
+pub fn evaluate(input: &str) -> Option<f64> {
+    let input = input.trim();
+    if input.is_empty() || input.len() > MAX_QUERY_BYTES {
+        return None;
+    }
+    let tokens = tokenize(input)?;
+    let calculation = tokens.iter().any(|token| {
+        matches!(
+            token,
+            Token::Plus
+                | Token::Minus
+                | Token::Times
+                | Token::Divide
+                | Token::Power
+                | Token::Function(_)
+        )
+    });
+    if !calculation {
+        return None;
+    }
+    let mut parser = Parser {
+        tokens: &tokens,
+        position: 0,
+    };
     let value = parser.expression()?;
-    parser.skip_whitespace();
-    (parser.position == parser.input.len() && value.is_finite()).then_some(value)
+    (parser.position == tokens.len() && value.is_finite()).then_some(value)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Token {
+    Number(f64),
+    Plus,
+    Minus,
+    Times,
+    Divide,
+    Power,
+    Open,
+    Close,
+    Function(Function),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Function {
+    Sqrt,
+    Abs,
+    Ln,
+    Log,
+    Exp,
+}
+
+fn tokenize(input: &str) -> Option<Vec<Token>> {
+    let characters = input.chars().collect::<Vec<_>>();
+    let mut tokens = Vec::new();
+    let mut index = 0;
+    while index < characters.len() {
+        let character = characters[index];
+        match character {
+            ' ' | '\t' => index += 1,
+            '+' => {
+                tokens.push(Token::Plus);
+                index += 1;
+            }
+            '-' | '−' => {
+                tokens.push(Token::Minus);
+                index += 1;
+            }
+            '*' | '×' | '·' => {
+                if character == '*' && characters.get(index + 1) == Some(&'*') {
+                    tokens.push(Token::Power);
+                    index += 2;
+                } else {
+                    tokens.push(Token::Times);
+                    index += 1;
+                }
+            }
+            '/' | '÷' => {
+                tokens.push(Token::Divide);
+                index += 1;
+            }
+            '^' => {
+                tokens.push(Token::Power);
+                index += 1;
+            }
+            '(' => {
+                tokens.push(Token::Open);
+                index += 1;
+            }
+            ')' => {
+                tokens.push(Token::Close);
+                index += 1;
+            }
+            'π' => {
+                tokens.push(Token::Number(std::f64::consts::PI));
+                index += 1;
+            }
+            '0'..='9' | '.' => {
+                let start = index;
+                let mut decimal = false;
+                while let Some(&next) = characters.get(index) {
+                    match next {
+                        '0'..='9' => index += 1,
+                        '.' if !decimal => {
+                            decimal = true;
+                            index += 1;
+                        }
+                        _ => break,
+                    }
+                }
+                let text = characters[start..index].iter().collect::<String>();
+                if text == "." {
+                    return None;
+                }
+                tokens.push(Token::Number(text.parse().ok()?));
+            }
+            letter if letter.is_ascii_alphabetic() => {
+                let start = index;
+                while characters
+                    .get(index)
+                    .is_some_and(|next| next.is_ascii_alphabetic())
+                {
+                    index += 1;
+                }
+                let word = characters[start..index]
+                    .iter()
+                    .collect::<String>()
+                    .to_ascii_lowercase();
+                tokens.push(match word.as_str() {
+                    "pi" => Token::Number(std::f64::consts::PI),
+                    "e" => Token::Number(std::f64::consts::E),
+                    "sqrt" => Token::Function(Function::Sqrt),
+                    "abs" => Token::Function(Function::Abs),
+                    "ln" => Token::Function(Function::Ln),
+                    "log" => Token::Function(Function::Log),
+                    "exp" => Token::Function(Function::Exp),
+                    _ => return None,
+                });
+            }
+            _ => return None,
+        }
+    }
+    Some(tokens)
 }
 
 struct Parser<'a> {
-    input: &'a [u8],
+    tokens: &'a [Token],
     position: usize,
 }
 
-impl<'a> Parser<'a> {
-    fn new(input: &'a str) -> Self {
-        Self {
-            input: input.as_bytes(),
-            position: 0,
+impl Parser<'_> {
+    fn peek(&self) -> Option<Token> {
+        self.tokens.get(self.position).copied()
+    }
+
+    fn consume(&mut self, token: Token) -> bool {
+        if self.peek() == Some(token) {
+            self.position += 1;
+            true
+        } else {
+            false
         }
     }
 
     fn expression(&mut self) -> Option<f64> {
         let mut value = self.term()?;
         loop {
-            self.skip_whitespace();
-            if self.consume(b'+') {
+            if self.consume(Token::Plus) {
                 value += self.term()?;
-            } else if self.consume(b'-') {
+            } else if self.consume(Token::Minus) {
                 value -= self.term()?;
             } else {
                 return Some(value);
@@ -87,13 +256,12 @@ impl<'a> Parser<'a> {
     }
 
     fn term(&mut self) -> Option<f64> {
-        let mut value = self.factor()?;
+        let mut value = self.unary()?;
         loop {
-            self.skip_whitespace();
-            if self.consume(b'*') {
-                value *= self.factor()?;
-            } else if self.consume(b'/') {
-                let divisor = self.factor()?;
+            if self.consume(Token::Times) {
+                value *= self.unary()?;
+            } else if self.consume(Token::Divide) {
+                let divisor = self.unary()?;
                 if divisor == 0.0 {
                     return None;
                 }
@@ -104,69 +272,59 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn factor(&mut self) -> Option<f64> {
-        self.skip_whitespace();
-        if self.consume(b'+') {
-            return self.factor();
+    /// Signs bind looser than powers: -2^2 = -4.
+    fn unary(&mut self) -> Option<f64> {
+        if self.consume(Token::Plus) {
+            return self.unary();
         }
-        if self.consume(b'-') {
-            return self.factor().map(|value| -value);
+        if self.consume(Token::Minus) {
+            return self.unary().map(|value| -value);
         }
-        if self.consume(b'(') {
-            let value = self.expression()?;
-            self.skip_whitespace();
-            return self.consume(b')').then_some(value);
-        }
-        self.number()
+        self.power()
     }
 
-    fn number(&mut self) -> Option<f64> {
-        self.skip_whitespace();
-        let start = self.position;
-        let mut decimal = false;
-        while let Some(byte) = self.input.get(self.position) {
-            match byte {
-                b'0'..=b'9' => self.position += 1,
-                b'.' if !decimal => {
-                    decimal = true;
-                    self.position += 1;
-                }
-                _ => break,
+    /// Right-associative: 2^3^2 = 2^9.
+    fn power(&mut self) -> Option<f64> {
+        let base = self.primary()?;
+        if self.consume(Token::Power) {
+            let exponent = self.unary()?;
+            let value = base.powf(exponent);
+            return value.is_finite().then_some(value);
+        }
+        Some(base)
+    }
+
+    fn primary(&mut self) -> Option<f64> {
+        match self.peek()? {
+            Token::Number(value) => {
+                self.position += 1;
+                Some(value)
             }
+            Token::Open => {
+                self.position += 1;
+                let value = self.expression()?;
+                self.consume(Token::Close).then_some(value)
+            }
+            Token::Function(function) => {
+                self.position += 1;
+                if !self.consume(Token::Open) {
+                    return None;
+                }
+                let argument = self.expression()?;
+                if !self.consume(Token::Close) {
+                    return None;
+                }
+                let value = match function {
+                    Function::Sqrt if argument >= 0.0 => argument.sqrt(),
+                    Function::Abs => argument.abs(),
+                    Function::Ln if argument > 0.0 => argument.ln(),
+                    Function::Log if argument > 0.0 => argument.log10(),
+                    Function::Exp => argument.exp(),
+                    _ => return None,
+                };
+                value.is_finite().then_some(value)
+            }
+            _ => None,
         }
-        (self.position > start)
-            .then(|| std::str::from_utf8(&self.input[start..self.position]).ok())
-            .flatten()?
-            .parse()
-            .ok()
-    }
-
-    fn skip_whitespace(&mut self) {
-        while self
-            .input
-            .get(self.position)
-            .is_some_and(u8::is_ascii_whitespace)
-        {
-            self.position += 1;
-        }
-    }
-
-    fn consume(&mut self, byte: u8) -> bool {
-        if self.input.get(self.position) == Some(&byte) {
-            self.position += 1;
-            true
-        } else {
-            false
-        }
-    }
-}
-
-fn format_number(value: f64) -> String {
-    let formatted = format!("{value:.10}");
-    let trimmed = formatted.trim_end_matches('0').trim_end_matches('.');
-    if trimmed == "-0" {
-        "0".into()
-    } else {
-        trimmed.into()
     }
 }

@@ -1,7 +1,9 @@
 //! Launcher service, environment, provider registry, and overlay authority.
 
+mod learning;
 mod overlay;
 mod registry;
+mod world_clock;
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -17,6 +19,7 @@ use gpui::{
 use rmac_launcher_runtime::{CatalogUpdate, Registry, SettingsUpdate};
 
 use crate::view::{LauncherView, OverlayEnvironment};
+pub(crate) use learning::learn;
 pub(crate) use overlay::release;
 #[cfg(target_os = "linux")]
 use overlay::route_activation;
@@ -46,6 +49,8 @@ struct LauncherService {
     active: Option<ActiveOverlay>,
     next_overlay: u64,
     clipboard: async_channel::Sender<String>,
+    /// Choices learned so far; replaced whole on each new choice.
+    learning: Arc<rmac_launcher::Learning>,
 }
 
 impl Global for LauncherService {}
@@ -136,6 +141,7 @@ pub(crate) fn run() {
                 active: None,
                 next_overlay: 0,
                 clipboard: clipboard_tx,
+                learning: Arc::new(learning::load()),
             });
 
             cx.spawn(async move |cx: &mut gpui::AsyncApp| {

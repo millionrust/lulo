@@ -662,6 +662,7 @@ mod tests {
             category_label: category.label(),
             title: title.into(),
             subtitle: Some(format!("Private subtitle for {title}")),
+            detail: None,
             icon: Some(format!("/home/alex/{title}.png").into()),
             selected,
             primary_label: if category == Category::Calculator {

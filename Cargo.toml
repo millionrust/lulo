@@ -47,6 +47,7 @@ rmac-archive = { version = "=0.1.0", path = "crates/rmac-archive" }
 rmac-bluetooth = { version = "=0.1.0", path = "crates/rmac-bluetooth" }
 rmac-clipboard = { version = "=0.1.0", path = "crates/rmac-clipboard" }
 rmac-clipboard-linux = { version = "=0.1.0", path = "crates/rmac-clipboard-linux" }
+rmac-clock = { version = "=0.1.0", path = "crates/clock" }
 rmac-compositor = { version = "=0.1.0", path = "crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.1.0", path = "crates/rmac-compositor-niri" }
 rmac-editor = { version = "=0.1.0", path = "crates/rmac-editor" }

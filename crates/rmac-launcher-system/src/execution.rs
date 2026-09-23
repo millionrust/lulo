@@ -48,6 +48,14 @@ pub async fn execute(
                 .map_err(|error| failure(activation, operation, error))?;
             backend.copy_text(text).await.map(|()| Outcome::TextCopied)
         }
+        rmac_launcher::Action::SearchFiles { query } => {
+            require_nonempty(query, "search query")
+                .map_err(|error| failure(activation, operation, error))?;
+            backend
+                .search_files(query)
+                .await
+                .map(|()| Outcome::FilesSearched)
+        }
     }
     .map_err(|error| failure(activation, operation, error))?;
 
@@ -65,6 +73,7 @@ fn operation(action: &rmac_launcher::Action) -> Operation {
         rmac_launcher::Action::OpenFile { .. } => Operation::OpenFile,
         rmac_launcher::Action::RevealFile { .. } => Operation::RevealFile,
         rmac_launcher::Action::CopyText { .. } => Operation::CopyText,
+        rmac_launcher::Action::SearchFiles { .. } => Operation::SearchFiles,
     }
 }
 

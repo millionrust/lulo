@@ -82,7 +82,12 @@ fn result(id: &str, category: Category, title: &str) -> SearchResult {
         Category::Files => Action::OpenFile {
             path: "/home/alex/report.txt".into(),
         },
-        Category::Calculator | Category::Other => Action::CopyText { text: title.into() },
+        Category::Calculator | Category::Clock | Category::Dictionary | Category::Other => {
+            Action::CopyText { text: title.into() }
+        }
+        Category::SearchIn => Action::SearchFiles {
+            query: title.into(),
+        },
     };
     SearchResult {
         id: ResultId {
@@ -93,6 +98,7 @@ fn result(id: &str, category: Category, title: &str) -> SearchResult {
         application_group: None,
         title: title.into(),
         subtitle: None,
+        detail: None,
         icon: None,
         primary,
         alternate: (category == Category::Files)
@@ -604,4 +610,97 @@ impl rmac_launcher_system::Backend for RejectingBackend {
     {
         Box::pin(async { Err(self.0.clone()) })
     }
+}
+
+#[test]
+fn a_successful_activation_reports_its_choice_once() {
+    let descriptors = vec![descriptor("files", Category::Files, true)];
+    let mut coordinator = Coordinator::new(descriptors, allow_private("files"));
+    let request = coordinator.open().request;
+    let request = coordinator.set_query("alpha").unwrap_or(request);
+    coordinator.apply(batch(
+        &request,
+        "files",
+        Ok(vec![result("files", Category::Files, "Alpha.txt")]),
+    ));
+    let KeyEffect::Activate(activation) = coordinator.handle_key(KeyCommand::Return) else {
+        panic!("return activates the top hit");
+    };
+    assert_eq!(coordinator.take_completed_choice(), None);
+    assert!(
+        coordinator.finish_activation(Ok(rmac_launcher_system::Receipt {
+            activation: activation.id,
+            outcome: rmac_launcher_system::Outcome::FileOpened,
+        }))
+    );
+    let (query, id) = coordinator
+        .take_completed_choice()
+        .expect("the opened row is learned");
+    assert_eq!(query, "alpha");
+    assert_eq!(id.local, "alpha.txt");
+    assert_eq!(coordinator.take_completed_choice(), None);
+}
+
+#[test]
+fn a_failed_activation_teaches_nothing() {
+    let descriptors = vec![descriptor("files", Category::Files, true)];
+    let mut coordinator = Coordinator::new(descriptors, allow_private("files"));
+    let request = coordinator.open().request;
+    coordinator.apply(batch(
+        &request,
+        "files",
+        Ok(vec![result("files", Category::Files, "Alpha.txt")]),
+    ));
+    let KeyEffect::Activate(activation) = coordinator.handle_key(KeyCommand::Return) else {
+        panic!("return activates the top hit");
+    };
+    let error = futures_lite::future::block_on(rmac_launcher_system::execute(
+        activation.id,
+        &activation.action,
+        &RejectingBackend(rmac_launcher_system::BackendError::new(
+            rmac_launcher_system::FailureKind::Rejected,
+            "rejected",
+        )),
+    ))
+    .expect_err("activation fails");
+    assert!(coordinator.finish_activation(Err(error)));
+    assert_eq!(coordinator.take_completed_choice(), None);
+}
+
+#[test]
+fn command_arrows_move_by_section() {
+    let descriptors = vec![
+        descriptor("apps", Category::Applications, false),
+        descriptor("settings", Category::Settings, false),
+    ];
+    let mut coordinator = Coordinator::new(descriptors, BTreeMap::new());
+    let request = coordinator.open().request;
+    let request = coordinator.set_query("s").unwrap_or(request);
+    coordinator.apply(batch(
+        &request,
+        "apps",
+        Ok(vec![
+            result("apps", Category::Applications, "Safari"),
+            result("apps", Category::Applications, "Stickies"),
+        ]),
+    ));
+    coordinator.apply(batch(
+        &request,
+        "settings",
+        Ok(vec![result("settings", Category::Settings, "Sound")]),
+    ));
+    let selected = |coordinator: &Coordinator| {
+        coordinator
+            .snapshot()
+            .rows
+            .iter()
+            .find(|row| row.selected)
+            .map(|row| row.title.clone())
+    };
+    assert_eq!(selected(&coordinator).as_deref(), Some("Safari"));
+    assert!(coordinator.move_selection_by_section(MoveSelection::Next));
+    assert_eq!(selected(&coordinator).as_deref(), Some("Stickies"));
+    assert!(coordinator.move_selection_by_section(MoveSelection::Next));
+    assert_eq!(selected(&coordinator).as_deref(), Some("Sound"));
+    assert!(!coordinator.move_selection_by_section(MoveSelection::Next));
 }

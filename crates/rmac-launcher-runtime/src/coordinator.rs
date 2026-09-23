@@ -18,6 +18,8 @@ impl Coordinator {
             last_shortcut_timestamp_ms: None,
             application_catalog: CatalogHealth::Unmanaged,
             application_catalog_revision: 0,
+            activation_choice: None,
+            completed_choice: None,
         }
     }
 
@@ -116,6 +118,29 @@ impl Coordinator {
             .session_mut()
             .move_selection_in_application_group(group, direction);
         before != self.launcher.session().selected().cloned()
+    }
+
+    /// Command-Down / Command-Up: to the next or previous section's first row.
+    pub fn move_selection_by_section(&mut self, direction: MoveSelection) -> bool {
+        if self.activation.is_some() || !self.launcher.is_open() {
+            return false;
+        }
+        let before = self.launcher.session().selected().cloned();
+        self.launcher
+            .session_mut()
+            .move_selection_by_section(direction);
+        before != self.launcher.session().selected().cloned()
+    }
+
+    /// Rank with what earlier choices taught (`now` in Unix seconds).
+    pub fn set_learning(&mut self, learning: Arc<rmac_launcher::Learning>, now: u64) {
+        self.launcher.session_mut().set_learning(learning, now);
+    }
+
+    /// The query and result of the last activation that succeeded, once:
+    /// what the caller records as a learned choice.
+    pub fn take_completed_choice(&mut self) -> Option<(String, ResultId)> {
+        self.completed_choice.take()
     }
 
     pub fn activate_selected(&mut self, mode: ActivationMode) -> KeyEffect {
@@ -241,9 +266,11 @@ impl Coordinator {
         }
         self.activation = None;
         self.activation_mode = None;
+        let choice = self.activation_choice.take();
         match result {
             Ok(_) => {
                 self.activation_error = None;
+                self.completed_choice = choice;
                 self.launcher.escape();
             }
             Err(error) => self.activation_error = Some(error.to_string()),
@@ -279,6 +306,7 @@ impl Coordinator {
                 category_label: ranked.result.category.label(),
                 title: ranked.result.title.clone(),
                 subtitle: ranked.result.subtitle.clone(),
+                detail: ranked.result.detail.clone(),
                 icon: ranked.result.icon.clone(),
                 selected: selected == Some(&ranked.result.id),
                 primary_label: action_label(&ranked.result.primary),
@@ -325,6 +353,11 @@ impl Coordinator {
         let Some(action) = self.launcher.session().activation(mode) else {
             return KeyEffect::None;
         };
+        let session = self.launcher.session();
+        self.activation_choice = session
+            .selected()
+            .cloned()
+            .map(|id| (session.query().to_owned(), id));
         self.next_activation = self.next_activation.wrapping_add(1).max(1);
         let id = rmac_launcher_system::ActivationId(self.next_activation);
         self.activation = Some(id);
@@ -342,6 +375,7 @@ fn action_label(action: &rmac_launcher::Action) -> &'static str {
         rmac_launcher::Action::RevealApplication { .. }
         | rmac_launcher::Action::RevealFile { .. } => "Show in Folder",
         rmac_launcher::Action::CopyText { .. } => "Copy",
+        rmac_launcher::Action::SearchFiles { .. } => "Search",
     }
 }
 

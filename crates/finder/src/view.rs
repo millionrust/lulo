@@ -353,6 +353,14 @@ pub(crate) fn run(destination: crate::StartupDestination) {
                 crate::StartupDestination::Default => {}
                 crate::StartupDestination::Trash => finder.trash_click(cx),
                 crate::StartupDestination::Directory(path) => finder.navigate(path, cx),
+                crate::StartupDestination::Search(query) => {
+                    // The home folder, searched as Return in the search
+                    // field does.
+                    finder
+                        .query
+                        .update(cx, |state, cx| state.set_value(query, window, cx));
+                    finder.recursive_search(cx);
+                }
             }
             finder
         },

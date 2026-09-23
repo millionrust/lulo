@@ -141,7 +141,13 @@ impl LauncherView {
                     .size(px(pm::GLYPH))
                     .text_color(mac::text_tertiary()),
             )
-            .child(self.query_field(query, mode.name(), completion, false, cx))
+            .child(self.query_field(
+                query,
+                mode.name(),
+                completion.map(Completion::Flush),
+                false,
+                cx,
+            ))
             .when_some(top, |header, row| {
                 header.child(
                     div()

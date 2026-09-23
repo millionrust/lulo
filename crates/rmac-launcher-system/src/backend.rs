@@ -19,12 +19,31 @@ pub trait Backend: Send + Sync + 'static {
     fn reveal_file<'a>(&'a self, path: &'a Path) -> BackendFuture<'a, Result<(), BackendError>>;
 
     fn copy_text<'a>(&'a self, text: &'a str) -> BackendFuture<'a, Result<(), BackendError>>;
+
+    /// Open Files searching for `query` ("Search in Files").
+    fn search_files<'a>(&'a self, query: &'a str) -> BackendFuture<'a, Result<(), BackendError>> {
+        let _ = query;
+        Box::pin(async {
+            Err(BackendError::new(
+                FailureKind::Unavailable,
+                "Files search is unavailable",
+            ))
+        })
+    }
 }
 
 /// UI-owned operations that require the live launcher application context.
 pub trait Surface: Send + Sync + 'static {
     fn open_setting(&self, pane_id: &str) -> Result<(), BackendError>;
     fn copy_text(&self, text: &str) -> Result<(), BackendError>;
+
+    fn search_files(&self, query: &str) -> Result<(), BackendError> {
+        let _ = query;
+        Err(BackendError::new(
+            FailureKind::Unavailable,
+            "Files search is unavailable",
+        ))
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -74,6 +93,10 @@ impl<S: Surface> Backend for SystemBackend<S> {
 
     fn copy_text<'a>(&'a self, text: &'a str) -> BackendFuture<'a, Result<(), BackendError>> {
         Box::pin(async move { self.surface.copy_text(text) })
+    }
+
+    fn search_files<'a>(&'a self, query: &'a str) -> BackendFuture<'a, Result<(), BackendError>> {
+        Box::pin(async move { self.surface.search_files(query) })
     }
 }
 

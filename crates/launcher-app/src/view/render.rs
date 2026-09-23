@@ -1,4 +1,5 @@
 mod mode_panel;
+mod query_panel;
 mod results;
 
 use gpui::prelude::FluentBuilder as _;
@@ -52,7 +53,9 @@ mod metrics {
     pub(super) const COMPLETION_RADIUS: f32 = 6.0;
     pub(super) const COMPLETION_TRAIL: f32 = 8.0;
     pub(super) const TOP_HIT_ICON: f32 = 26.0;
-    pub(super) const TOP_HIT_RIGHT: f32 = 23.0;
+    /// Retina capture 2026-09-23: the icon spans x 1009–1035 in a panel
+    /// ending at 1055 (the older 1× estimate was 23).
+    pub(super) const TOP_HIT_RIGHT: f32 = 20.0;
     pub(super) const MODE_TOKEN_HEIGHT: f32 = 28.0;
     /// S: results card below the bar.
     pub(super) const RESULTS_GAP: f32 = 8.0;
@@ -127,6 +130,35 @@ fn plate() -> Hsla {
     } else {
         gpui::hsla(0.0, 0.0, 0.0, 0.10)
     }
+}
+
+/// The separate completion plate ("=  84"): (57,58,58) over the bar's
+/// (35,35,36) = white 10 %, text (120,120,122).
+fn answer_plate() -> Hsla {
+    if is_dark() {
+        gpui::hsla(0.0, 0.0, 1.0, 0.10)
+    } else {
+        gpui::hsla(0.0, 0.0, 0.0, 0.06)
+    }
+}
+
+fn answer_plate_text() -> Hsla {
+    if is_dark() {
+        Hsla::from(gpui::rgb(0x78787a))
+    } else {
+        mac::text_tertiary()
+    }
+}
+
+/// What the query field shows after the typed text.
+pub(super) enum Completion {
+    /// The rest of the top hit's name, flush with the typed text
+    /// ("term" + "inal — Open").
+    Flush(String),
+    /// A separate plate 4 pt after the typed text: "=  84" for a
+    /// calculation, "—  Tokyo, Japan" or "—  Open" otherwise (measured
+    /// 2026-09-23: 30 tall, radius 6, white 10 %, 15 pt (120,120,122)).
+    Plate { mark: &'static str, text: String },
 }
 
 #[derive(Clone, Copy)]
@@ -215,7 +247,7 @@ impl LauncherView {
         &self,
         query: &str,
         placeholder: &'static str,
-        completion_label: Option<String>,
+        completion: Option<Completion>,
         activating: bool,
         cx: &Context<Self>,
     ) -> AnyElement {
@@ -224,7 +256,12 @@ impl LauncherView {
             let selection = state.selected_range();
             selection.is_empty() && selection.end == state.value().len()
         };
-        let completion_label = completion_label.filter(|_| caret_at_end);
+        let completion = completion.filter(|_| caret_at_end);
+        let (completion_label, completion_plate) = match completion {
+            Some(Completion::Flush(label)) => (Some(label), None),
+            Some(Completion::Plate { mark, text }) => (None, Some((mark, text))),
+            None => (None, None),
+        };
         let text_size = rmac_ui::text_px(metrics::TEXT_SIZE);
         let line_height = px(metrics::TEXT_LINE);
         div()
@@ -266,6 +303,32 @@ impl LauncherView {
                         ),
                 )
             })
+            .when_some(completion_plate, |text, (mark, label)| {
+                text.child(
+                    text_overlay()
+                        .child(
+                            div()
+                                .text_color(gpui::transparent_black())
+                                .child(query.to_owned()),
+                        )
+                        .child(
+                            div()
+                                .ml(px(4.0))
+                                .h(px(30.0))
+                                .flex()
+                                .items_center()
+                                .pl(px(10.5))
+                                .pr(px(10.0))
+                                .rounded(px(metrics::COMPLETION_RADIUS))
+                                .bg(answer_plate())
+                                .text_size(rmac_ui::text_px(15.0))
+                                .line_height(px(19.0))
+                                .text_color(answer_plate_text())
+                                .child(div().mr(px(11.0)).child(mark))
+                                .child(label),
+                        ),
+                )
+            })
             .child(
                 div().id(QUERY_ID).size_full().child(
                     TextField::new(&self.query)
@@ -301,8 +364,9 @@ impl LauncherView {
         };
         let top_hit = if query.is_empty() { None } else { rows.first() };
         let completion_label = top_hit.and_then(|row| {
-            completion::inline_completion(query, &row.title)
-                .map(|suffix| completion::completion_label(suffix, row.primary_label))
+            completion::inline_completion(query, &row.title).map(|suffix| {
+                Completion::Flush(completion::completion_label(suffix, row.primary_label))
+            })
         });
         let trailing = if top_hit.is_some() {
             metrics::TOP_HIT_RIGHT
@@ -625,6 +689,10 @@ impl Render for LauncherView {
         let rows = self.visible_rows();
         let query = snapshot.query.clone();
         let compact = self.compact;
+        // A typed query outside the Apps/Files browse modes: the bar grows
+        // into one results panel, as on macOS 26.
+        let query_mode =
+            !compact && self.panel.is_none() && self.browse_mode.is_none() && !query.is_empty();
 
         div()
             .relative()
@@ -685,6 +753,32 @@ impl Render for LauncherView {
                         this.remove_clipboard_row(cx);
                         return;
                     }
+                    // Query results: ⌘↓/⌘↑ jump between sections, ⌘C copies
+                    // the selected result, ⌘Y shows a file in Quick Look.
+                    if this.panel.is_none()
+                        && this.browse_mode.is_none()
+                        && !this.query_text(cx).is_empty()
+                        && !event.keystroke.modifiers.shift
+                        && !event.keystroke.modifiers.alt
+                    {
+                        let handled = match event.keystroke.key.as_str() {
+                            "down" => {
+                                this.move_by_section(true, cx);
+                                true
+                            }
+                            "up" => {
+                                this.move_by_section(false, cx);
+                                true
+                            }
+                            "c" => this.copy_selected(cx),
+                            "y" => this.quick_look_selected(window, cx),
+                            _ => false,
+                        };
+                        if handled {
+                            cx.stop_propagation();
+                            return;
+                        }
+                    }
                 }
                 if event.keystroke.key == "tab"
                     && !event.keystroke.modifiers.modified()
@@ -714,13 +808,22 @@ impl Render for LauncherView {
                     this.handle_key(command, window, cx);
                 }
             }))
-            .when(self.panel.is_none(), |surface| {
+            .when(self.panel.is_none() && !query_mode, |surface| {
                 surface.child(self.search_bar(&query, &rows, activating, cx))
             })
             .when(self.panel.is_some(), |surface| {
                 surface.child(self.mode_panel(&query, cx))
             })
-            .when(!compact && self.panel.is_none(), |surface| {
+            .when(query_mode, |surface| {
+                surface.child(self.query_panel(
+                    &query,
+                    &rows,
+                    activating,
+                    phase_message.clone(),
+                    cx,
+                ))
+            })
+            .when(!compact && self.panel.is_none() && !query_mode, |surface| {
                 surface.child(self.results_card(
                     &rows,
                     &query,

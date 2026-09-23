@@ -5839,11 +5839,13 @@ dependencies = [
  "rmac-apps",
  "rmac-clipboard",
  "rmac-clipboard-linux",
+ "rmac-clock",
  "rmac-compositor-niri",
  "rmac-launcher",
  "rmac-launcher-providers",
  "rmac-launcher-runtime",
  "rmac-launcher-system",
+ "rmac-quick-look",
  "rmac-quick-settings-system",
  "rmac-shell-activation-runtime",
  "rmac-shell-settings",
@@ -5856,6 +5858,8 @@ dependencies = [
 name = "rmac-launcher-providers"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "flate2",
  "rmac-apps",
  "rmac-launcher",
  "rmac-search",

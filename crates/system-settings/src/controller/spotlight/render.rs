@@ -146,6 +146,7 @@ impl Settings {
         let enabled = !self.shell_settings_busy;
         let policy = |id| spotlight_provider_policy(settings, id);
         let files = policy(rmac_launcher_providers::FILES_PROVIDER);
+        let currency = policy(rmac_launcher_providers::CURRENCY_PROVIDER);
 
         // "Results from System": a heading inside the group, then a 42 pt
         // row with a switch per provider.
@@ -199,6 +200,7 @@ impl Settings {
 
         let private_view = view.clone();
         let removable_view = view.clone();
+        let currency_view = view.clone();
         cards.push(card(vec![
             switch_row(
                 "spotlight-private-files",
@@ -228,6 +230,31 @@ impl Settings {
                     removable_view.update(cx, |settings, cx| {
                         settings.apply_spotlight_change(
                             SpotlightChange::IncludeRemovableMounts(value),
+                            cx,
+                        )
+                    });
+                },
+            ),
+            // Currency answers need the European Central Bank's daily
+            // rates: the only Spotlight feature that uses the network, so
+            // it waits for permission. Queries never leave the computer.
+            switch_row(
+                "spotlight-currency-rates",
+                "Currency conversions",
+                Some(
+                    "Download daily exchange rates from the European Central Bank. \
+                     Searches stay on this computer."
+                        .into(),
+                ),
+                currency.enabled && currency.allow_network,
+                enabled,
+                move |value, _, cx| {
+                    currency_view.update(cx, |settings, cx| {
+                        settings.apply_spotlight_change(
+                            SpotlightChange::ProviderNetwork {
+                                id: rmac_launcher_providers::CURRENCY_PROVIDER.into(),
+                                allowed: value,
+                            },
                             cx,
                         )
                     });

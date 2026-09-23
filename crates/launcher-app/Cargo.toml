@@ -20,6 +20,8 @@ gpui-component.workspace = true
 gpui-component-assets.workspace = true
 rmac-app-menu.workspace = true
 rmac-apps.workspace = true
+# World Clock's city list and time-zone database for "time in tokyo".
+rmac-clock.workspace = true
 rmac-clipboard.workspace = true
 rmac-clipboard-linux.workspace = true
 rmac-compositor-niri.workspace = true
@@ -27,6 +29,8 @@ rmac-launcher.workspace = true
 rmac-launcher-providers.workspace = true
 rmac-launcher-runtime.workspace = true
 rmac-launcher-system.workspace = true
+# ⌘Y on a file result.
+rmac-quick-look.workspace = true
 rmac-quick-settings-system.workspace = true
 rmac-shell-activation-runtime.workspace = true
 rmac-shell-settings.workspace = true

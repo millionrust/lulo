@@ -11,9 +11,17 @@ pub(crate) const DEFAULT_CATEGORY_LIMIT: usize = 12;
 pub enum Category {
     Applications,
     Settings,
+    /// Calculations, unit and currency conversions: the answer card.
     Calculator,
+    /// The time in another city: the answer card.
+    Clock,
+    /// A word's definition from a local dictionary.
+    Dictionary,
     Files,
     Other,
+    /// The fixed "Search in Files" row macOS keeps at the end of every list
+    /// ("Search in Finder").
+    SearchIn,
 }
 
 impl Category {
@@ -22,8 +30,11 @@ impl Category {
             Self::Applications => "Applications",
             Self::Settings => "Settings",
             Self::Calculator => "Calculator",
+            Self::Clock => "World Clock",
+            Self::Dictionary => "Dictionary",
             Self::Files => "Files",
             Self::Other => "Other",
+            Self::SearchIn => "Search",
         }
     }
 
@@ -31,10 +42,28 @@ impl Category {
         match self {
             Self::Applications => 50,
             Self::Settings => 40,
-            Self::Calculator => 30,
+            Self::Calculator | Self::Clock => 30,
             Self::Files => 20,
+            Self::Dictionary => 15,
             Self::Other => 10,
+            Self::SearchIn => 0,
         }
+    }
+
+    /// Answers computed from the query itself ("12*7", "5 km in miles",
+    /// "time in tokyo"). They lead the list, drawn as the Mac's answer card
+    /// under the bar.
+    pub fn is_answer(self) -> bool {
+        matches!(self, Self::Calculator | Self::Clock)
+    }
+
+    /// Rows whose provider alone decides relevance: their titles need not
+    /// contain the query ("define serendipity" → "serendipity").
+    pub(crate) fn matches_any_query(self) -> bool {
+        matches!(
+            self,
+            Self::Calculator | Self::Clock | Self::Dictionary | Self::SearchIn
+        )
     }
 }
 
@@ -135,6 +164,10 @@ pub enum Action {
     CopyText {
         text: String,
     },
+    /// Open Files searching the home folder for `query`.
+    SearchFiles {
+        query: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -146,6 +179,9 @@ pub struct SearchResult {
     pub application_group: Option<ApplicationGroup>,
     pub title: String,
     pub subtitle: Option<String>,
+    /// A third line an answer card shows: the time in a city, the rate
+    /// source for a currency, the dictionary a definition comes from.
+    pub detail: Option<String>,
     /// Optional host-resolved icon for presentation. Providers may omit it;
     /// the surface then uses an original category fallback.
     pub icon: Option<PathBuf>,

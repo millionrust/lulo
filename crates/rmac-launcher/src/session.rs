@@ -1,10 +1,11 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use crate::engine::{normalize, score};
 use crate::{
-    Action, ActivationMode, ApplicationGroup, Cancellation, Category, MoveSelection, Privacy,
-    ProviderDescriptor, ProviderError, RankedResult, Request, ResultId, SearchResult,
+    Action, ActivationMode, ApplicationGroup, Cancellation, Category, Learning, MoveSelection,
+    Privacy, ProviderDescriptor, ProviderError, RankedResult, Request, ResultId, SearchResult,
     DEFAULT_CATEGORY_LIMIT, DEFAULT_LIMIT,
 };
 
@@ -20,9 +21,15 @@ pub struct Session {
     errors: BTreeMap<rmac_shell_settings::ProviderId, ProviderError>,
     ranked: Vec<RankedResult>,
     selected: Option<ResultId>,
+    /// The person moved or picked the selection this query; until then
+    /// it follows the first row as batches arrive.
+    chosen: bool,
     cancellation: Option<Cancellation>,
     limit: usize,
     category_limit: usize,
+    /// What earlier choices taught, and the time it is judged at.
+    learning: Option<Arc<Learning>>,
+    now: u64,
 }
 
 impl Default for Session {
@@ -38,9 +45,12 @@ impl Default for Session {
             errors: BTreeMap::new(),
             ranked: Vec::new(),
             selected: None,
+            chosen: false,
             cancellation: None,
             limit: DEFAULT_LIMIT,
             category_limit: DEFAULT_CATEGORY_LIMIT,
+            learning: None,
+            now: 0,
         }
     }
 }
@@ -58,6 +68,16 @@ impl Session {
             limit,
             category_limit,
             ..Self::default()
+        }
+    }
+
+    /// Rank with what earlier choices taught (`now` in Unix seconds). Takes
+    /// effect for the next batch or query.
+    pub fn set_learning(&mut self, learning: Arc<Learning>, now: u64) {
+        self.learning = Some(learning);
+        self.now = now;
+        if !self.batches.is_empty() {
+            self.rebuild();
         }
     }
 
@@ -88,6 +108,7 @@ impl Session {
         self.errors.clear();
         self.ranked.clear();
         self.selected = None;
+        self.chosen = false;
         let cancellation = Cancellation::default();
         self.cancellation = Some(cancellation.clone());
         Request {
@@ -199,6 +220,7 @@ impl Session {
             (None, MoveSelection::Next) => 0,
         };
         self.selected = Some(self.ranked[index].result.id.clone());
+        self.chosen = true;
         self.selected.as_ref()
     }
 
@@ -232,6 +254,7 @@ impl Session {
             (None, MoveSelection::Next) => 0,
         };
         self.selected = Some(self.ranked[matching[position]].result.id.clone());
+        self.chosen = true;
         self.selected.as_ref()
     }
 
@@ -269,6 +292,47 @@ impl Session {
             (None, MoveSelection::Next) => 0,
         };
         self.selected = Some(self.ranked[matching[position]].result.id.clone());
+        self.chosen = true;
+        self.selected.as_ref()
+    }
+
+    /// Command-Down / Command-Up: the first row of the next section, or of
+    /// the current section (then the previous one) going up. Sections are
+    /// the top hit alone, then each run of one category, as on macOS. The
+    /// selection does not wrap.
+    pub fn move_selection_by_section(&mut self, direction: MoveSelection) -> Option<&ResultId> {
+        let categories = self
+            .ranked
+            .iter()
+            .map(|ranked| ranked.result.category)
+            .collect::<Vec<_>>();
+        let starts = section_starts(&categories);
+        if starts.is_empty() {
+            self.selected = None;
+            return None;
+        }
+        let current = self.selected.as_ref().and_then(|selected| {
+            self.ranked
+                .iter()
+                .position(|ranked| &ranked.result.id == selected)
+        });
+        let index = match (current, direction) {
+            (None, MoveSelection::Next) => 0,
+            (None, MoveSelection::Previous) => starts[starts.len() - 1],
+            (Some(index), MoveSelection::Next) => starts
+                .iter()
+                .copied()
+                .find(|start| *start > index)
+                .unwrap_or(index),
+            (Some(index), MoveSelection::Previous) => starts
+                .iter()
+                .rev()
+                .copied()
+                .find(|start| *start < index)
+                .unwrap_or(index),
+        };
+        self.selected = Some(self.ranked[index].result.id.clone());
+        self.chosen = true;
         self.selected.as_ref()
     }
 
@@ -277,6 +341,7 @@ impl Session {
             && self.selected.as_ref() != Some(id)
         {
             self.selected = Some(id.clone());
+            self.chosen = true;
             true
         } else {
             false
@@ -304,9 +369,16 @@ impl Session {
                 .or_insert_with(|| result.clone());
         }
         let query = normalize(&self.query);
+        let learning = self.learning.clone();
+        let now = self.now;
         let mut ranked: Vec<_> = unique
             .into_values()
-            .filter_map(|result| score(&query, &result).map(|score| RankedResult { result, score }))
+            .filter_map(|result| {
+                let learned = learning
+                    .as_ref()
+                    .map_or(0, |learning| learning.boost(&query, &result.id, now));
+                score(&query, &result, learned).map(|score| RankedResult { result, score })
+            })
             .collect();
         if query.is_empty() {
             // The empty-query renderer presents the application grid before
@@ -323,8 +395,11 @@ impl Session {
                 )
             });
         } else {
+            // Answers lead (the Mac's answer card), the "Search in" rows
+            // close the list, and everything else is ranked between them.
             ranked.sort_by_key(|ranked| {
                 (
+                    list_region(ranked.result.category),
                     Reverse(ranked.score),
                     ranked.result.category,
                     normalize(&ranked.result.title),
@@ -344,16 +419,60 @@ impl Session {
                 true
             }
         });
-        ranked.truncate(self.limit);
+        // The "Search in" rows survive the overall limit: they are the way
+        // on when the list is cut short.
+        let footer = ranked
+            .iter()
+            .filter(|ranked| ranked.result.category == Category::SearchIn)
+            .cloned()
+            .collect::<Vec<_>>();
+        ranked.retain(|ranked| ranked.result.category != Category::SearchIn);
+        ranked.truncate(self.limit.saturating_sub(footer.len()));
+        ranked.extend(footer);
         self.ranked = ranked;
+        // A selection the person made stays put. One that only followed an
+        // earlier first row stays too (no flicker as batches arrive), except
+        // that an answer arriving takes the top, and the "Search in" row
+        // never keeps it once real results exist.
+        let answer_first = self
+            .ranked
+            .first()
+            .is_some_and(|ranked| ranked.result.category.is_answer());
+        let chosen = self.chosen;
         self.selected = previous
             .filter(|selected| {
                 self.ranked
                     .iter()
-                    .any(|ranked| &ranked.result.id == selected)
+                    .find(|ranked| &ranked.result.id == selected)
+                    .is_some_and(|ranked| {
+                        chosen || (!answer_first && ranked.result.category != Category::SearchIn)
+                    })
             })
             .or_else(|| self.ranked.first().map(|ranked| ranked.result.id.clone()));
     }
+}
+
+/// Where a category sits in a query's list: answers, results, "Search in".
+fn list_region(category: Category) -> u8 {
+    if category.is_answer() {
+        0
+    } else if category == Category::SearchIn {
+        2
+    } else {
+        1
+    }
+}
+
+/// First index of each section: the top hit alone, then each run of one
+/// category.
+pub fn section_starts(categories: &[Category]) -> Vec<usize> {
+    let mut starts = Vec::new();
+    for (index, category) in categories.iter().enumerate() {
+        if index <= 1 || categories[index - 1] != *category {
+            starts.push(index);
+        }
+    }
+    starts
 }
 
 fn action_allowed(category: Category, privacy: Privacy, action: &Action) -> bool {
@@ -363,7 +482,11 @@ fn action_allowed(category: Category, privacy: Privacy, action: &Action) -> bool
             Action::LaunchApplication { .. } | Action::RevealApplication { .. },
         )
         | (Category::Settings, Action::OpenSetting { .. })
-        | (Category::Calculator, Action::CopyText { .. }) => true,
+        | (
+            Category::Calculator | Category::Clock | Category::Dictionary,
+            Action::CopyText { .. },
+        )
+        | (Category::SearchIn, Action::SearchFiles { .. }) => true,
         (Category::Files, Action::OpenFile { .. } | Action::RevealFile { .. })
         | (Category::Other, Action::OpenFile { .. } | Action::RevealFile { .. }) => {
             privacy.private_content

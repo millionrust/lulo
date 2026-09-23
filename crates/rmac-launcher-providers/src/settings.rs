@@ -243,6 +243,7 @@ impl Provider for SettingsProvider {
                 application_group: None,
                 title: entry.title.clone(),
                 subtitle: entry.subtitle.clone(),
+                detail: None,
                 icon: None,
                 primary: Action::OpenSetting {
                     pane_id: entry.pane_id.clone(),

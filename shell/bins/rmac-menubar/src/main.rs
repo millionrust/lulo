@@ -42,6 +42,8 @@ mod linux_wayland {
     const STATUS_PAD: f32 = 10.0;
     const CLOCK_DATE_TIME_GAP: f32 = 7.0;
     const SLOT_HEIGHT: f32 = 22.0;
+    /// macOS opens a menu with nothing highlighted until hover or arrow keys.
+    const NO_ITEM: usize = usize::MAX;
     /// Highlight inset from the panel edge and text inset within it.
     const MENU_ROW_INSET: f32 = 5.0;
     const MENU_ROW_PADDING: f32 = 9.0;
@@ -276,7 +278,7 @@ mod linux_wayland {
                 render_count: 0,
                 status,
                 open_menu: None,
-                selected_item: 0,
+                selected_item: NO_ITEM,
                 open_app_id: None,
                 recent_items: Vec::new(),
                 recent_items_loading: false,
@@ -306,7 +308,7 @@ mod linux_wayland {
                 self.recent_submenu_open = false;
                 self.recent_selected_item = 0;
                 self.pending_system_action = None;
-                self.selected_item = 0;
+                self.selected_item = NO_ITEM;
                 window.refresh();
                 cx.notify();
             }
@@ -325,7 +327,7 @@ mod linux_wayland {
             self.open_menu = Some(index);
             self.hide_generation = self.hide_generation.saturating_add(1);
             self.revealed = true;
-            self.selected_item = 0;
+            self.selected_item = NO_ITEM;
             self.open_app_id = Some(app_id);
             self.parking = rmac_compositor::ParkingStore::load_default();
             self.recent_submenu_open = false;
@@ -492,15 +494,19 @@ mod linux_wayland {
             match event.keystroke.key.as_str() {
                 "escape" => self.close_menu(window, cx),
                 "down" => {
-                    self.selected_item = (self.selected_item + 1) % menu.items.len();
+                    self.selected_item = if self.selected_item == NO_ITEM {
+                        0
+                    } else {
+                        (self.selected_item + 1) % menu.items.len()
+                    };
                     self.recent_submenu_open = false;
                     cx.notify();
                 }
                 "up" => {
-                    self.selected_item = self
-                        .selected_item
-                        .checked_sub(1)
-                        .unwrap_or(menu.items.len() - 1);
+                    self.selected_item = match self.selected_item {
+                        NO_ITEM | 0 => menu.items.len() - 1,
+                        index => index - 1,
+                    };
                     self.recent_submenu_open = false;
                     cx.notify();
                 }
@@ -522,7 +528,7 @@ mod linux_wayland {
                         menu_index.checked_sub(1).unwrap_or(menus.len() - 1)
                     };
                     self.open_menu = Some(next);
-                    self.selected_item = 0;
+                    self.selected_item = NO_ITEM;
                     self.recent_submenu_open = false;
                     cx.notify();
                 }
@@ -616,7 +622,7 @@ mod linux_wayland {
             {
                 self.open_menu = None;
                 self.open_app_id = None;
-                self.selected_item = 0;
+                self.selected_item = NO_ITEM;
             }
             let visible = !self.fullscreen || self.revealed || self.open_menu.is_some();
             // Menus are as wide as their widest item, as on macOS, and stay
@@ -769,7 +775,7 @@ mod linux_wayland {
                 };
                 let left = menu_left?;
                 let width = menu_width?;
-                let selected = self.selected_item.min(menu.items.len().saturating_sub(1));
+                let selected = self.selected_item;
                 let mut panel = div()
                     .id(format!("app-menu-panel-{}-{menu_index}", self.display_id))
                     .role(Role::Menu)
@@ -1933,7 +1939,9 @@ mod linux_wayland {
                     anchor: Anchor::TOP | Anchor::LEFT,
                     margin: Some((px(panel.top), px(0.0), px(0.0), px(panel.left))),
                     keyboard_interactivity: KeyboardInteractivity::None,
-                    exclusive_zone: Some(px(0.0)),
+                    // -1 ignores the bar's reserved zone, so the margin is
+                    // measured from the screen top exactly like the menu.
+                    exclusive_zone: Some(px(-1.0)),
                     ..Default::default()
                 }),
                 ..Default::default()

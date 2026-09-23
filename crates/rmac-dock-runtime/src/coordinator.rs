@@ -24,6 +24,7 @@ impl Coordinator {
                 )
             },
         );
+        let model = model.with_recent_applications(&self.recents, &self.catalog);
         let outputs = rmac_dock::surface_outputs(
             &compositor,
             &self.settings.dock.outputs,
@@ -48,6 +49,45 @@ impl Coordinator {
             reduced_motion: self.reduced_motion,
             health: self.health.clone(),
         }
+    }
+
+    /// Record running apps that are not kept in the Dock in the recent-apps
+    /// section. Only installed apps are recorded, since only they can be
+    /// shown again after they quit.
+    fn advance_recents(&mut self) {
+        let model = rmac_dock::Model::build(
+            &self.settings.pinned_apps,
+            &self.settings.dock,
+            &self.catalog,
+            &self.compositor.snapshot(),
+        );
+        let running: Vec<String> = model
+            .items
+            .iter()
+            .filter(|item| !item.pinned && item.running && item.launchable)
+            .map(|item| item.id.clone())
+            .collect();
+        let pinned: Vec<String> = self
+            .settings
+            .pinned_apps
+            .iter()
+            .map(|app| app.0.clone())
+            .collect();
+        let next = rmac_dock::recents::advance(&self.recents, &pinned, &running);
+        if next != self.recents {
+            self.recents = next;
+            self.recents_dirty = true;
+        }
+    }
+
+    /// Load the persisted section before the first snapshot.
+    pub fn restore_recents(&mut self, recents: Vec<String>) {
+        self.recents = recents;
+    }
+
+    /// The section to persist, once per change.
+    pub fn take_dirty_recents(&mut self) -> Option<Vec<String>> {
+        std::mem::take(&mut self.recents_dirty).then(|| self.recents.clone())
     }
 
     pub fn ready(&self) -> bool {
@@ -80,6 +120,9 @@ impl Coordinator {
             _ => self.health.compositor = SourceHealth::Healthy,
         }
         self.compositor.apply(event);
+        if self.ready() {
+            self.advance_recents();
+        }
         before != self.snapshot()
     }
 
@@ -92,6 +135,9 @@ impl Coordinator {
             Ok(settings) => {
                 self.settings = settings;
                 self.health.settings = SourceHealth::Healthy;
+                if self.ready() {
+                    self.advance_recents();
+                }
             }
             Err(detail) => self.health.settings = SourceHealth::Unavailable { detail },
         }

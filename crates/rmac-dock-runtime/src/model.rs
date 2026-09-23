@@ -120,4 +120,7 @@ pub struct Coordinator {
     pub(super) primary_output: Option<rmac_compositor::OutputId>,
     pub(super) reduced_motion: bool,
     pub(super) health: HealthSnapshot,
+    /// The Dock's recent-apps section order (persisted by the consumer).
+    pub(super) recents: Vec<String>,
+    pub(super) recents_dirty: bool,
 }

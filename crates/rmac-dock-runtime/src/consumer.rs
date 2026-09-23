@@ -11,6 +11,7 @@ pub(super) async fn consume(
     appearance: async_channel::Receiver<Result<bool, String>>,
 ) -> Result<(), Error> {
     let mut coordinator = Coordinator::default();
+    coordinator.restore_recents(blocking::unblock(load_recents).await);
     let mut published = None;
     loop {
         let compositor_event = futures_util::FutureExt::fuse(compositor.recv());
@@ -56,6 +57,11 @@ pub(super) async fn consume(
             _ = closed => return Ok(()),
         }
 
+        if let Some(recents) = coordinator.take_dirty_recents() {
+            if let Err(error) = blocking::unblock(move || save_recents(&recents)).await {
+                eprintln!("could not save the Dock's recent apps: {error}");
+            }
+        }
         if !coordinator.ready() {
             continue;
         }
@@ -70,6 +76,40 @@ pub(super) async fn consume(
         }
         published = Some(next);
     }
+}
+
+/// `$XDG_STATE_HOME/rmac/dock-recents`, one application ID per line.
+fn recents_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("XDG_STATE_HOME")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .filter(|path| path.is_absolute())
+                .map(|home| home.join(".local/state"))
+        })
+        .map(|state| state.join("rmac/dock-recents"))
+}
+
+pub(super) fn load_recents() -> Vec<String> {
+    recents_path()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|contents| rmac_dock::recents::decode(&contents))
+        .unwrap_or_default()
+}
+
+pub(super) fn save_recents(recents: &[String]) -> std::io::Result<()> {
+    let Some(path) = recents_path() else {
+        return Ok(());
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    // Write beside and rename so a crash never leaves a torn file.
+    let temporary = path.with_extension("tmp");
+    std::fs::write(&temporary, rmac_dock::recents::encode(recents))?;
+    std::fs::rename(&temporary, &path)
 }
 
 pub(super) fn compositor_event_affects_displays(event: &rmac_compositor::Event) -> bool {

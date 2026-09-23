@@ -162,16 +162,16 @@ mod tests {
             }],
             input_regions: vec![
                 surfaces::InputRegion {
-                    x: 14,
+                    x: 22,
                     y: 0,
-                    width: 332,
+                    width: 316,
                     height: 100,
                 },
                 surfaces::InputRegion {
                     x: 0,
-                    y: 14,
+                    y: 22,
                     width: 360,
-                    height: 72,
+                    height: 56,
                 },
             ],
         }

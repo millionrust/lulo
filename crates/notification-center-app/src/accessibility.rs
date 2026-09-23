@@ -14,9 +14,11 @@ pub const URGENT_LABEL: &str = "Urgent";
 pub const LOADING_LABEL: &str = "Loading Notification Center…";
 pub const UNAVAILABLE_TITLE: &str = "Notification Center Unavailable";
 pub const UNAVAILABLE_MESSAGE: &str = "Use Refresh after the notification service starts";
-pub const EMPTY_TITLE: &str = "No New Notifications";
+pub const EMPTY_TITLE: &str = "No recent notifications";
 pub const EMPTY_MESSAGE: &str = "Notifications you keep will appear here";
 pub const REFRESH_LABEL: &str = "Refresh";
+pub const EDIT_WIDGETS_LABEL: &str = "Edit Widgets";
+pub const SHOW_LESS_LABEL: &str = "Show Less";
 pub const SETTINGS_LABEL: &str = "Notification Settings…";
 pub const MARKING_READ_LABEL: &str = "Marking notifications as read…";
 pub const NOTIFICATION_FALLBACK_NAME: &str = "Notification";
@@ -724,6 +726,7 @@ mod tests {
             priority,
             unread,
             actions,
+            origin: Default::default(),
         }
     }
 

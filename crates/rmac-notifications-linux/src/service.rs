@@ -30,6 +30,7 @@ pub struct HistoryAuthority {
     center: Arc<Mutex<rmac_notifications_store::Center>>,
     store: rmac_notifications_store::Store,
     focus_connection: Option<Connection>,
+    origins: crate::origin::Origins,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,6 +56,7 @@ impl HistoryAuthority {
             center: Arc::new(Mutex::new(center)),
             store,
             focus_connection: Some(focus_connection),
+            origins: crate::origin::Origins::default(),
         })
     }
 
@@ -64,6 +66,7 @@ impl HistoryAuthority {
             center: Arc::new(Mutex::new(rmac_notifications_store::Center::default())),
             store: rmac_notifications_store::Store::at(path),
             focus_connection: None,
+            origins: crate::origin::Origins::default(),
         }
     }
 
@@ -102,6 +105,8 @@ impl HistoryAuthority {
                 } if outcome.delivery.history => {
                     if let Some(notification) = notification {
                         center.upsert(notification.as_ref().clone());
+                        self.origins
+                            .posted(notification.id, crate::origin::unix_ms_now());
                         true
                     } else {
                         false
@@ -219,6 +224,15 @@ impl HistoryAuthority {
         self.finish(changed)
     }
 
+    fn remove(&self, id: NotificationId) -> RecordOutcome {
+        let changed = self
+            .center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(id);
+        self.finish(changed)
+    }
+
     fn set_policy(
         &self,
         app_id: AppId,
@@ -239,11 +253,32 @@ impl HistoryAuthority {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
+        let live: Vec<_> = snapshot
+            .history()
+            .iter()
+            .map(|notification| notification.id)
+            .collect();
+        self.origins.retain(&live, crate::origin::unix_ms_now());
         RecordOutcome {
             indicator: snapshot.indicator(),
             changed,
             persisted: !changed || self.store.save(&snapshot).is_ok(),
         }
+    }
+
+    /// Display-only arrival time and sending application of each record.
+    fn origins(&self) -> Vec<crate::origin::WireOrigin> {
+        self.origins.wire(&self.ids())
+    }
+
+    /// Labels a legacy notification with the process that sent it.
+    fn annotate_sender(
+        &self,
+        id: NotificationId,
+        (desktop_id, executable): (Option<String>, Option<String>),
+    ) {
+        self.origins
+            .sender(id, desktop_id, executable, crate::origin::unix_ms_now());
     }
 
     pub fn indicator(&self) -> rmac_notifications::Indicator {
@@ -326,6 +361,14 @@ impl CenterInterface {
         Ok(self.history.applications())
     }
 
+    fn origins(
+        &self,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<Vec<crate::origin::WireOrigin>> {
+        authenticated_sender(&header)?;
+        Ok(self.history.origins())
+    }
+
     async fn snapshot(
         &self,
         #[zbus(header)] header: Header<'_>,
@@ -388,6 +431,19 @@ impl CenterInterface {
         let app_id = optional_app_id(app_id)?;
         let history = self.history.clone();
         let outcome = blocking::unblock(move || history.clear(app_id.as_ref())).await;
+        complete_center_mutation(&emitter, outcome, false).await
+    }
+
+    async fn remove(
+        &self,
+        id: u32,
+        #[zbus(header)] header: Header<'_>,
+        #[zbus(signal_emitter)] emitter: SignalEmitter<'_>,
+    ) -> fdo::Result<(u32, bool)> {
+        authenticated_sender(&header)?;
+        let id = NotificationId::from_protocol(id).ok_or_else(center_invalid)?;
+        let history = self.history.clone();
+        let outcome = blocking::unblock(move || history.remove(id)).await;
         complete_center_mutation(&emitter, outcome, false).await
     }
 
@@ -719,8 +775,10 @@ impl LegacyInterface {
         hints: HashMap<String, OwnedValue>,
         expire_timeout: i32,
         #[zbus(header)] header: Header<'_>,
+        #[zbus(connection)] connection: &Connection,
     ) -> fdo::Result<u32> {
         let sender = authenticated_sender(&header)?;
+        let origin = crate::origin::sender_origin(connection, &sender).await;
         let request = super::freedesktop(
             sender,
             replaces_id,
@@ -736,6 +794,7 @@ impl LegacyInterface {
             .core
             .post_event(request, policy)
             .map_err(domain_error)?;
+        self.history.annotate_sender(outcome.id, origin);
         publish(
             &self.events,
             RuntimeEvent::Posted {

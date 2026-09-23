@@ -85,10 +85,12 @@ trait Center {
     fn state(&self) -> zbus::Result<(u32, bool)>;
     fn applications(&self) -> zbus::Result<Vec<(String, WireAppPolicy)>>;
     fn snapshot(&self) -> zbus::Result<WireSnapshot>;
+    fn origins(&self) -> zbus::Result<Vec<crate::origin::WireOrigin>>;
     fn invoke(&self, id: u32, selection: u8, index: u8, activation_token: &str)
         -> zbus::Result<()>;
     fn mark_read(&self, app_id: &str) -> zbus::Result<(u32, bool)>;
     fn clear(&self, app_id: &str) -> zbus::Result<(u32, bool)>;
+    fn remove(&self, id: u32) -> zbus::Result<(u32, bool)>;
     fn set_policy(&self, app_id: &str, policy: WireAppPolicy) -> zbus::Result<(u32, bool)>;
 
     #[zbus(signal)]
@@ -112,6 +114,9 @@ pub struct HistoryRecord {
     pub priority: Priority,
     pub unread: bool,
     pub actions: Vec<HistoryAction>,
+    /// Display-only arrival time and sending application; empty for records
+    /// restored after a service restart or from an older service.
+    pub origin: crate::origin::Origin,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -192,7 +197,28 @@ pub fn snapshot() -> Result<Snapshot, Error> {
     let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
     let proxy = CenterProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     let (history, applications) = proxy.snapshot().map_err(call_error)?;
-    decode_snapshot(history, applications)
+    let mut snapshot = decode_snapshot(history, applications)?;
+    // Origins only label cards, so an older service without them still works.
+    attach_origins(&mut snapshot, proxy.origins().unwrap_or_default());
+    Ok(snapshot)
+}
+
+/// Joins display-only origins onto records by notification id. Unknown ids
+/// and duplicates are ignored rather than failing the snapshot.
+pub fn attach_origins(snapshot: &mut Snapshot, origins: Vec<crate::origin::WireOrigin>) {
+    let mut by_id = std::collections::BTreeMap::new();
+    for (id, posted, desktop_id, executable) in
+        origins.into_iter().take(crate::origin::MAX_WIRE_ORIGINS)
+    {
+        by_id
+            .entry(id)
+            .or_insert_with(|| crate::origin::Origin::from_wire(posted, desktop_id, executable));
+    }
+    for record in &mut snapshot.records {
+        if let Some(origin) = by_id.remove(&record.id.get()) {
+            record.origin = origin;
+        }
+    }
 }
 
 fn decode_snapshot(
@@ -250,6 +276,7 @@ fn decode_history(history: Vec<WireHistoryRecord>) -> Result<Vec<HistoryRecord>,
                     priority: decode_priority(priority)?,
                     unread,
                     actions: decoded_actions,
+                    origin: crate::origin::Origin::default(),
                 })
             },
         )
@@ -295,6 +322,11 @@ pub fn mark_read(app_id: Option<&str>) -> Result<Indicator, Error> {
 
 pub fn clear(app_id: Option<&str>) -> Result<Indicator, Error> {
     mutate(|proxy| proxy.clear(app_id.unwrap_or_default()))
+}
+
+/// Removes one record from history, like the × on a single macOS card.
+pub fn remove(id: NotificationId) -> Result<Indicator, Error> {
+    mutate(|proxy| proxy.remove(id.get()))
 }
 
 pub fn set_policy(app_id: &str, policy: AppPolicy) -> Result<Indicator, Error> {
@@ -430,7 +462,8 @@ async fn publish_snapshot(
     sender: &Sender<Result<Snapshot, String>>,
 ) -> Result<(), Error> {
     let (history, applications) = proxy.snapshot().await.map_err(call_error)?;
-    let snapshot = decode_snapshot(history, applications)?;
+    let mut snapshot = decode_snapshot(history, applications)?;
+    attach_origins(&mut snapshot, proxy.origins().await.unwrap_or_default());
     sender.send(Ok(snapshot)).await.map_err(|_| Error::Publish)
 }
 
@@ -652,6 +685,25 @@ mod tests {
         let debug = format!("{:?}", records[0]);
         assert!(!debug.contains("Private"));
         assert!(!debug.contains("org.example"));
+        assert_eq!(records[0].origin, crate::origin::Origin::default());
+
+        let mut snapshot = Snapshot {
+            records,
+            applications: Vec::new(),
+        };
+        attach_origins(
+            &mut snapshot,
+            vec![
+                (99, 1, "org.example.Unknown".into(), String::new()),
+                (7, 1_700, "org.example.Chat".into(), "/usr/bin/chat".into()),
+                (7, 9_999, String::new(), String::new()),
+            ],
+        );
+        let origin = &snapshot.records[0].origin;
+        assert_eq!(origin.posted_unix_ms, Some(1_700));
+        assert_eq!(origin.desktop_id.as_deref(), Some("org.example.Chat"));
+        assert_eq!(origin.executable.as_deref(), Some("/usr/bin/chat"));
+        assert!(!format!("{:?}", snapshot.records[0]).contains("chat"));
 
         assert!(decode_history(vec![(
             0,

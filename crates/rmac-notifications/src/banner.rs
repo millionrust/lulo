@@ -85,10 +85,13 @@ impl Default for Config {
             max_visible_per_output: 3,
             enter_ms: 220,
             exit_ms: 180,
-            top_inset_px: 12,
-            trailing_inset_px: 12,
-            gap_px: 10,
-            width_px: 360,
+            // macOS 26 banner: a 344 pt card, 8 pt under the menu bar and
+            // from the screen edge, 8 pt between stacked banners
+            // (design-lab/notifications.html).
+            top_inset_px: 8,
+            trailing_inset_px: 8,
+            gap_px: 8,
+            width_px: 344,
         }
     }
 }

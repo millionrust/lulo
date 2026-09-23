@@ -9,6 +9,7 @@ pub mod icon;
 pub mod icon_worker;
 pub mod media;
 mod model;
+pub mod origin;
 pub mod service;
 pub mod surface_session;
 pub mod surfaces;

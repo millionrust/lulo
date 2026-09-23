@@ -45,20 +45,37 @@ impl NotificationCenterView {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let catalog = blocking::unblock(rmac_apps::discover).await;
+            let catalog = blocking::unblock(|| {
+                rmac_apps::discover()
+                    .map(|catalog| ApplicationCatalog::new(catalog_entries(catalog)))
+            })
+            .await;
             let _ = this.update(cx, |this, cx| {
                 if let Ok(catalog) = catalog {
-                    this.applications = application_identities(catalog);
+                    this.applications = catalog;
                 }
                 cx.notify();
             });
         })
         .detach();
 
+        // Relative times ("now", "5m ago") advance while the panel is open.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(30))
+                .await;
+            if this.update(cx, |_, cx| cx.notify()).is_err() {
+                break;
+            }
+        })
+        .detach();
+
         Self {
             token,
             snapshot: None,
-            applications: BTreeMap::new(),
+            applications: ApplicationCatalog::default(),
+            expanded: BTreeSet::new(),
+            hovered: None,
             stream_error: None,
             operation_error: None,
             busy: None,
@@ -99,19 +116,6 @@ impl NotificationCenterView {
                     this.operation_error = Some("Could not mark notifications as read".into());
                 }
                 cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    pub(crate) fn refresh(&mut self, cx: &mut Context<Self>) {
-        self.stream_error = None;
-        self.operation_error = None;
-        cx.notify();
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = blocking::unblock(rmac_notifications_linux::center::snapshot).await;
-            let _ = this.update(cx, |this, cx| {
-                this.apply_snapshot(result.map_err(|error| error.to_string()), cx)
             });
         })
         .detach();

@@ -1,21 +1,24 @@
 mod lifecycle;
 
-use std::collections::BTreeMap;
-use std::process::Command;
+use std::collections::BTreeSet;
 
 use gpui::{BorrowAppContext as _, Context, SharedString, Window};
 use rmac_notifications::NotificationId;
 use rmac_notifications_linux::center::{ActionSelection, Snapshot};
 
 use crate::model::{
-    application_identities, fallback_app_name, ApplicationIdentity, Busy, RecordGroup,
+    catalog_entries, group_records, ApplicationCatalog, ApplicationIdentity, Busy, RecordGroup,
 };
 use crate::NotificationCenterService;
 
 pub(crate) struct NotificationCenterView {
     token: u64,
     pub(crate) snapshot: Option<Snapshot>,
-    pub(crate) applications: BTreeMap<String, ApplicationIdentity>,
+    pub(crate) applications: ApplicationCatalog,
+    /// Group keys whose stacks are expanded ("Show Less" collapses them).
+    pub(crate) expanded: BTreeSet<String>,
+    /// The card or stack under the pointer, which shows its × button.
+    pub(crate) hovered: Option<String>,
     pub(crate) stream_error: Option<SharedString>,
     pub(crate) operation_error: Option<SharedString>,
     pub(crate) busy: Option<Busy>,
@@ -39,14 +42,14 @@ impl NotificationCenterView {
             project_notification_center, HeaderText, PanelBusy, PanelStatus,
         };
 
-        let busy = self.busy.as_ref().map(|busy| match busy {
-            Busy::ClearAll => PanelBusy::ClearAll,
-            Busy::ClearApp(app_id) => PanelBusy::ClearApplication(app_id),
-            Busy::DisableApp(app_id) => PanelBusy::DisableApplication(app_id),
-            Busy::Invoke(notification, selection) => PanelBusy::Invoke {
+        let busy = self.busy.as_ref().and_then(|busy| match busy {
+            Busy::ClearGroup(key) => Some(PanelBusy::ClearApplication(key)),
+            Busy::DisableApp(app_id) => Some(PanelBusy::DisableApplication(app_id)),
+            Busy::Remove(_) => None,
+            Busy::Invoke(notification, selection) => Some(PanelBusy::Invoke {
                 notification: *notification,
                 selection: *selection,
-            },
+            }),
         });
         project_notification_center(
             self.snapshot.as_ref(),
@@ -61,19 +64,27 @@ impl NotificationCenterView {
         )
     }
 
-    pub(crate) fn clear(&mut self, app_id: Option<String>, cx: &mut Context<Self>) {
+    /// Clears one displayed stack, which may hold several service
+    /// application IDs (each process that sent through the legacy bus).
+    pub(crate) fn clear_group(
+        &mut self,
+        key: String,
+        app_ids: Vec<String>,
+        cx: &mut Context<Self>,
+    ) {
         if self.busy.is_some() {
             return;
         }
-        self.busy = Some(match &app_id {
-            Some(app_id) => Busy::ClearApp(app_id.clone()),
-            None => Busy::ClearAll,
-        });
+        self.busy = Some(Busy::ClearGroup(key.clone()));
+        self.expanded.remove(&key);
+        self.hovered = None;
         self.operation_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = blocking::unblock(move || {
-                rmac_notifications_linux::center::clear(app_id.as_deref()).map(drop)
+                app_ids.iter().try_for_each(|app_id| {
+                    rmac_notifications_linux::center::clear(Some(app_id.as_str())).map(drop)
+                })
             })
             .await;
             let _ = this.update(cx, |this, cx| {
@@ -81,6 +92,30 @@ impl NotificationCenterView {
                 if result.is_err() {
                     this.operation_error =
                         Some("Could not clear Notification Center history".into());
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Removes a single card, like its × on macOS.
+    pub(crate) fn remove(&mut self, id: NotificationId, cx: &mut Context<Self>) {
+        if self.busy.is_some() {
+            return;
+        }
+        self.busy = Some(Busy::Remove(id));
+        self.hovered = None;
+        self.operation_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result =
+                blocking::unblock(move || rmac_notifications_linux::center::remove(id).map(drop))
+                    .await;
+            let _ = this.update(cx, |this, cx| {
+                this.busy = None;
+                if result.is_err() {
+                    this.operation_error = Some("Could not clear that notification".into());
                 }
                 cx.notify();
             });
@@ -187,55 +222,37 @@ impl NotificationCenterView {
         window.remove_window();
     }
 
-    pub(crate) fn open_settings(&mut self, cx: &mut Context<Self>) {
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = blocking::unblock(|| {
-                let executable = std::env::current_exe()?.with_file_name("rmac-system-settings");
-                Command::new(executable)
-                    .arg("--pane")
-                    .arg("notifications")
-                    .spawn()
-                    .map(drop)
-            })
-            .await;
-            if result.is_err() {
-                let _ = this.update(cx, |this, cx| {
-                    this.operation_error = Some("Could not open Notification Settings".into());
-                    cx.notify();
-                });
-            }
-        })
-        .detach();
-    }
-
     pub(crate) fn groups(&self) -> Vec<RecordGroup<'_>> {
         let Some(snapshot) = &self.snapshot else {
             return Vec::new();
         };
-        let mut positions = BTreeMap::<&str, usize>::new();
-        let mut groups: Vec<RecordGroup<'_>> = Vec::new();
-        for record in &snapshot.records {
-            if let Some(position) = positions.get(record.app_id.as_str()).copied() {
-                groups[position].records.push(record);
-            } else {
-                positions.insert(record.app_id.as_str(), groups.len());
-                groups.push(RecordGroup {
-                    app_id: &record.app_id,
-                    records: vec![record],
-                });
-            }
-        }
-        groups
+        group_records(&snapshot.records, &self.applications)
     }
 
     pub(crate) fn identity(&self, app_id: &str) -> ApplicationIdentity {
-        self.applications
-            .get(app_id)
-            .cloned()
-            .unwrap_or_else(|| ApplicationIdentity {
-                name: fallback_app_name(app_id).into(),
-                icon: None,
-            })
+        self.applications.identity(app_id)
+    }
+
+    pub(crate) fn toggle_expanded(&mut self, key: &str, cx: &mut Context<Self>) {
+        if !self.expanded.remove(key) {
+            self.expanded.insert(key.to_owned());
+        }
+        self.hovered = None;
+        cx.notify();
+    }
+
+    pub(crate) fn set_hovered(&mut self, target: &str, hovered: bool, cx: &mut Context<Self>) {
+        let next = if hovered {
+            Some(target.to_owned())
+        } else if self.hovered.as_deref() == Some(target) {
+            None
+        } else {
+            return;
+        };
+        if self.hovered != next {
+            self.hovered = next;
+            cx.notify();
+        }
     }
 
     // Deferred: the options menu that calls this is not built yet (§5.3).

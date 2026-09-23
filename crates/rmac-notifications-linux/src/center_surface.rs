@@ -3,10 +3,15 @@
 use std::fmt;
 
 pub const NAMESPACE: &str = "rmac-notification-center";
-pub const LOGICAL_WIDTH: f64 = 360.0;
+/// macOS 26 has no panel: cards float in a column whose backdrop dim spans
+/// the right 420 pt of the screen from the bottom of the menu bar (measured
+/// 2026-09-23). The surface opens at the tallest height and the panel then
+/// shrinks it to its content.
+pub const LOGICAL_WIDTH: f64 = 420.0;
 pub const LOGICAL_HEIGHT: f64 = 720.0;
-pub const TOP_MARGIN: f64 = 44.0;
-pub const RIGHT_MARGIN: f64 = 12.0;
+/// Layer-shell margins count from the menu bar's exclusive zone.
+pub const TOP_MARGIN: f64 = 0.0;
+pub const RIGHT_MARGIN: f64 = 0.0;
 pub const MAX_SEAT_ID_BYTES: usize = 128;
 const MAX_SCALE: f64 = 8.0;
 
@@ -748,7 +753,7 @@ mod tests {
         assert_eq!(description.logical_height, LOGICAL_HEIGHT);
 
         let snapshot = rmac_compositor::Snapshot {
-            outputs: vec![output("DP-2", true, 420.0, 740.0)],
+            outputs: vec![output("DP-2", true, 419.0, 740.0)],
             ..Default::default()
         };
         assert_eq!(

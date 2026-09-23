@@ -16,9 +16,11 @@ use crate::banner::Frame;
 pub const NAMESPACE: &str = "rmac-notification-banners";
 pub const MAX_NOTIFICATION_SURFACES: usize = 32;
 pub const MAX_CARDS_PER_SURFACE: usize = 8;
-pub const MIN_CARD_HEIGHT: u16 = 44;
+/// A macOS 26 card is never shorter than 64 pt (one title line and one body
+/// line inside 14 pt padding).
+pub const MIN_CARD_HEIGHT: u16 = 64;
 pub const MAX_CARD_HEIGHT: u16 = 512;
-pub const CARD_CORNER_RADIUS: u16 = 14;
+pub const CARD_CORNER_RADIUS: u16 = 22;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Layer {

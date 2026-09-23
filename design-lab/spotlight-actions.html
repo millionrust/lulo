@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Spotlight Actions and Clipboard — exact</title>
+<!--
+  Spotlight's Actions (⌘3) and Clipboard (⌘4) views at 1:1 logical points,
+  measured on the owner's Mac (macOS 26.2 Tahoe, dark, 2026-09-23, Retina
+  2940 × 1912 ÷ 2 = 1470 × 956 pt). Rust (crates/launcher-app) copies these
+  numbers; the glyphs are the SVG files the launcher embeds
+  (crates/launcher-app/assets/spotlight/).
+
+  Idle bar: the four circles only appear while the pointer is over the bar
+  (captured with and without hover). Order: Apps, Files, Actions
+  (Shortcuts layers glyph), Clipboard (two documents).
+
+  Mode panel (both views): ONE glass panel replaces the capsule and the
+  results card.
+    frame             x 415–1055 (640 wide), top y 190 = the capsule's top
+    corner            continuous corner reaching ≈ 32 pt along each edge;
+                      a 28 pt CSS radius matches it within 1 px
+    fill              (29,29,30) over the dark backdrop, same 1 pt light rim
+                      and near-black hairline as the capsule
+    header            56 tall, exactly the capsule's layout: mode glyph ink
+                      24 × 27 at x 20 (box 31 at 16.5), centred on y 28;
+                      the mode name is the placeholder ("Actions",
+                      "Clipboard") in 26 pt at origin 60, colour (156,156,157)
+    separator         y 56, 1 pt, x 20–620, (64,64,65) = white 15.5 %
+  Actions, no query (6 s after open; the list loads late):
+    section header    14 pt bold white, x 20, baseline 26 below the header
+                      separator; its own 1 pt separator 34 below it
+    rows              56 pitch, first row directly under the section rule;
+                      icon 29 ink in a 32 box at x 20, centred; title 17 pt
+                      white at x 72, baseline 23.7 from the row top; subtitle
+                      (the owning app) 14.5 pt (93,93,95) = white 28 %,
+                      baseline 44 from the row top. Sizes come from ink
+                      widths against this page in the same SF font
+                      ("Create Note" 91 pt, "Notes" 40 pt)
+    panel height      546 (y 190–736.5); the list scrolls inside it
+    Mac-only parts    "Suggestions" (Siri usage ranking) and "Add quick keys"
+                      (Quick Keys store) have no rmac backend and are
+                      omitted, as are the Apple-app sections (Books, Mail)
+  Actions, typed "lock":
+    list              10 pt padding above and below the rows
+    selected row      plate x 11–629 (inset 11), 56 tall, (64,64,64) =
+                      white 15.5 %, radius 12 (S)
+    selected subtitle (129,129,130); menu commands read "Terminal > Edit"
+    bar               typed text white; inline completion " — Num Lock" on
+                      the capsule's completion plate; the top hit's icon at
+                      the right end, as in the search capsule
+    panel height      133 for one row (56 + 1 + 10 + 56 + 10)
+  Actions, no match: "No Results" centred, 17 pt semibold white; panel 149.
+  Clipboard, history not yet allowed (first use):
+    panel height      446.5
+    title             "Allow search results from clipboard", 17 pt
+                      semibold white (ink 279 wide), centred, cap top 173 below the panel top
+    body              13 pt, (152,152,155), 16 pt lines, ≤ 440 wide, centred
+                      (three lines); "Spotlight Settings" in (90,154,248)
+    buttons           110 × 28 capsules, gap 8, top 266 from the panel top:
+                      "Not Now" (52,53,55), "Allow" (52,120,246); 13 pt white
+  Clipboard list: not captured. The owner's Mac has never allowed clipboard
+  history and accepting the prompt would change their privacy settings, so
+  the rows reuse the Actions row (S): preview as title, "Text · 5 min ago"
+  as subtitle, a thumbnail for images and the file icon for files.
+-->
+<style>
+  :root {
+    --bar-h: 56px; --circle: 54px; --gap: 10px; --group-w: 640px;
+    --fill: rgba(28, 29, 32, 0.60);
+    --panel: rgba(31, 31, 33, 0.90);
+    --rim: rgba(255, 255, 255, 0.32);
+    --hairline: rgba(0, 0, 0, 0.85);
+    --shadow: 0 3px 12px rgba(0, 0, 0, 0.30);
+    --glyph: #9C9C9D;
+    --rule: rgba(255, 255, 255, 0.155);
+    --subtitle: rgba(255, 255, 255, 0.28);
+    --subtitle-selected: rgba(255, 255, 255, 0.34);
+    --completion: rgba(255, 255, 255, 0.73);
+    --completion-plate: rgba(255, 255, 255, 0.20);
+    --body: #98989B;
+    --link: #5A9AF8;
+    --not-now: #343537;
+    --allow: #3478F6;
+    --font: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+  }
+  html, body { margin: 0; background: #0E1015; }
+  body { width: 720px; font-family: var(--font); -webkit-font-smoothing: antialiased; color: #fff; }
+  .state { position: relative; width: 720px; background: #0E1015; overflow: hidden; }
+  .state + .state { border-top: 1px solid #333; }
+  .group { position: absolute; left: 40px; top: 20px; width: var(--group-w); }
+  .glass { border: 1px solid var(--rim); box-shadow: 0 0 0 0.5px var(--hairline), var(--shadow);
+           box-sizing: border-box; backdrop-filter: blur(20px); }
+  .bar { display: flex; gap: var(--gap); height: var(--bar-h); }
+  .pill { position: relative; width: 384px; height: var(--bar-h); border-radius: 28px; background: var(--fill); }
+  .circle { width: var(--circle); height: var(--circle); border-radius: 50%; margin-top: 1px; background: var(--fill);
+            display: flex; align-items: center; justify-content: center; }
+  .glyph { background: var(--glyph); -webkit-mask: var(--src) center / contain no-repeat; mask: var(--src) center / contain no-repeat; }
+  .circle .glyph { width: 28px; height: 28px; }
+  .g-search { --src: url(../crates/launcher-app/assets/spotlight/search.svg); }
+  .g-apps { --src: url(../crates/launcher-app/assets/spotlight/apps.svg); }
+  .g-folder { --src: url(../crates/launcher-app/assets/spotlight/folder.svg); }
+  .g-shortcuts { --src: url(../crates/launcher-app/assets/spotlight/shortcuts.svg); }
+  .g-clipboard { --src: url(../crates/launcher-app/assets/spotlight/clipboard.svg); }
+  .pill .g-search { position: absolute; left: 19.5px; top: 15.75px; width: 22.5px; height: 22.5px; }
+  .placeholder { position: absolute; left: 59px; top: 0; height: 56px; display: flex; align-items: center;
+                 font-size: 26px; color: var(--glyph); padding-bottom: 3px; box-sizing: border-box; }
+
+  /* The one-panel mode view. */
+  .panel { position: relative; width: var(--group-w); border-radius: 28px; background: var(--panel); overflow: hidden; }
+  .head { position: relative; height: 56px; }
+  .head .glyph { position: absolute; left: 15.5px; top: 11.5px; width: 31px; height: 31px; }
+  .head .field { position: absolute; left: 59px; top: 0; right: 22px; height: 56px; display: flex; align-items: center;
+                 font-size: 26px; white-space: pre; padding-bottom: 3px; box-sizing: border-box; }
+  .head .field .ph { color: var(--glyph); }
+  .completion { color: var(--completion); background: var(--completion-plate); border-radius: 6px;
+                padding-right: 8px; height: 32px; display: flex; align-items: center; }
+  .tophit { position: absolute; right: 22px; top: 14px; width: 26px; height: 26px; border-radius: 6px;
+            background: #1b1b1d; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.25);
+            font: 600 9px/26px ui-monospace, monospace; color: #e8e8e8; text-align: center; }
+  .rule { height: 1px; margin: 0 19px; background: var(--rule); }
+  .section { height: 33px; padding-left: 19px; font-size: 14px; font-weight: 700; line-height: 18px;
+             padding-top: 11px; box-sizing: border-box; }
+  .list { padding: 10px 0; }
+  .row { position: relative; height: 56px; margin: 0 10px; border-radius: 12px; }
+  .row.selected { background: rgba(255, 255, 255, 0.155); }
+  .row .icon { position: absolute; left: 9.5px; top: 12px; width: 32px; height: 32px; border-radius: 7px; }
+  .row .title { position: absolute; left: 61px; top: 6px; font-size: 17px; line-height: 21px; white-space: nowrap; }
+  .row .sub { position: absolute; left: 61px; top: 28px; font-size: 14.5px; line-height: 18px; color: var(--subtitle); white-space: nowrap; }
+  .row.selected .sub { color: var(--subtitle-selected); }
+  .idle .row { margin: 0; border-radius: 0; }
+  .idle .row .icon { left: 19.5px; }
+  .idle .row .title, .idle .row .sub { left: 71px; }
+  .empty { height: 92px; display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 600; }
+  .prompt { height: 389.5px; position: relative; text-align: center; }
+  .prompt h3 { position: absolute; left: 0; right: 0; top: 112px; margin: 0; font-size: 17px; font-weight: 600; line-height: 22px; }
+  .prompt p { position: absolute; left: 94px; right: 94px; top: 136px; margin: 0; font-size: 13px; line-height: 16px; color: var(--body); }
+  .prompt a { color: var(--link); text-decoration: none; }
+  .buttons { position: absolute; left: 0; right: 0; top: 209px; display: flex; gap: 8px; justify-content: center; }
+  .buttons span { width: 110px; height: 28px; border-radius: 14px; font-size: 13px; font-weight: 500; line-height: 28px; }
+  .i-notes { background: linear-gradient(#FDD94B 0 30%, #fff 30%); }
+  .i-cc { background: #6E6E73; }
+  .i-settings { background: #8E8E93; }
+  .i-terminal { background: #1b1b1d; box-shadow: inset 0 0 0 .5px rgba(255,255,255,.25); }
+  .i-text { background: #F2F2F7; }
+  .i-image { background: linear-gradient(135deg, #5AA0E6, #9B6BD8); }
+  .i-file { background: #5AA0E6; }
+</style>
+</head>
+<body>
+
+<!-- 1. Idle with the pointer over the bar: the four circles. -->
+<div class="state" style="height:96px">
+  <div class="group">
+    <div class="bar">
+      <div class="pill glass"><div class="glyph g-search"></div><div class="placeholder">Spotlight Search</div></div>
+      <div class="circle glass"><div class="glyph g-apps"></div></div>
+      <div class="circle glass"><div class="glyph g-folder"></div></div>
+      <div class="circle glass"><div class="glyph g-shortcuts"></div></div>
+      <div class="circle glass"><div class="glyph g-clipboard"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. Actions, no query: rmac's real actions grouped by the app that owns them. -->
+<div class="state" style="height:586px">
+  <div class="group">
+    <div class="panel glass idle" style="height:546px">
+      <div class="head"><div class="glyph g-shortcuts"></div><div class="field"><span class="ph">Actions</span></div></div>
+      <div class="rule"></div>
+      <div class="section">Notes</div><div class="rule"></div>
+      <div class="row"><div class="icon i-notes"></div><div class="title">Create Note</div><div class="sub">Notes</div></div>
+      <div class="section">Control Center</div><div class="rule"></div>
+      <div class="row"><div class="icon i-cc"></div><div class="title">Turn Wi-Fi Off</div><div class="sub">Control Center</div></div>
+      <div class="row"><div class="icon i-cc"></div><div class="title">Turn Bluetooth On</div><div class="sub">Control Center</div></div>
+      <div class="row"><div class="icon i-cc"></div><div class="title">Turn Do Not Disturb On</div><div class="sub">Control Center</div></div>
+      <div class="section">System</div><div class="rule"></div>
+      <div class="row"><div class="icon i-settings"></div><div class="title">Lock Screen</div><div class="sub">System</div></div>
+      <div class="row"><div class="icon i-settings"></div><div class="title">Sleep</div><div class="sub">System</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- 3. Actions, typed "lock": the frontmost app's menu command is the top hit. -->
+<div class="state" style="height:233px">
+  <div class="group">
+    <div class="panel glass">
+      <div class="head"><div class="glyph g-shortcuts"></div>
+        <div class="field"><span>lock</span><span class="completion"> — Lock Screen</span></div>
+        <div class="tophit">⚙</div></div>
+      <div class="rule"></div>
+      <div class="list">
+        <div class="row selected"><div class="icon i-settings"></div><div class="title">Lock Screen</div><div class="sub">System</div></div>
+        <div class="row"><div class="icon i-settings"></div><div class="title">Open Lock Screen Settings</div><div class="sub">System Settings</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 4. Actions, no match. -->
+<div class="state" style="height:189px">
+  <div class="group">
+    <div class="panel glass">
+      <div class="head"><div class="glyph g-shortcuts"></div><div class="field"><span>lnew</span></div></div>
+      <div class="rule"></div>
+      <div class="empty">No Results</div>
+    </div>
+  </div>
+</div>
+
+<!-- 5. Clipboard before history is allowed. -->
+<div class="state" style="height:487px">
+  <div class="group">
+    <div class="panel glass">
+      <div class="head"><div class="glyph g-clipboard"></div><div class="field"><span class="ph">Clipboard</span></div></div>
+      <div class="rule"></div>
+      <div class="prompt">
+        <h3>Allow search results from clipboard</h3>
+        <p>Spotlight can search and display items you’ve copied to your clipboard. Personal and sensitive
+           information may appear in search results. You can manage Clipboard Search at any time in
+           <a>Spotlight Settings</a>.</p>
+        <div class="buttons"><span style="background:var(--not-now)">Not Now</span><span style="background:var(--allow)">Allow</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 6. Clipboard history (S: rows reuse the Actions row). -->
+<div class="state" style="height:320px">
+  <div class="group">
+    <div class="panel glass">
+      <div class="head"><div class="glyph g-clipboard"></div><div class="field"><span class="ph">Clipboard</span></div></div>
+      <div class="rule"></div>
+      <div class="list">
+        <div class="row selected"><div class="icon i-text"></div><div class="title">cargo test -p rmac-clipboard</div><div class="sub">Text · 1 min ago</div></div>
+        <div class="row"><div class="icon i-image"></div><div class="title">PNG Image</div><div class="sub">Image · 1200 × 800 · 12 min ago</div></div>
+        <div class="row"><div class="icon i-file"></div><div class="title">quarterly-report.pdf</div><div class="sub">File · Documents · 1 hr ago</div></div>
+        <div class="row"><div class="icon i-text"></div><div class="title">https://example.com/</div><div class="sub">Text · 3 hr ago</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

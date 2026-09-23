@@ -65,6 +65,10 @@ mod linux_wayland {
     const MENU_CHEVRON_COLUMN: f32 = 20.0;
     const MENU_SUBMENU_OVERLAP: f32 = 3.0;
     const TOOLTIP_WIDTH: f32 = 240.0;
+    // Badge bubble and progress bar published by apps (rmac values; not yet
+    // measured against a Mac badge).
+    const BADGE_SIZE: f32 = 20.0;
+    const PROGRESS_HEIGHT: f32 = 8.0;
     const TOOLTIP_BOTTOM: f32 = EXCLUSIVE_ZONE + 6.0;
     const READY_FILE_ENV: &str = "RMAC_DOCK_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_DOCK_RENDER_COUNT_DIR";
@@ -77,6 +81,8 @@ mod linux_wayland {
         actions: rmac_dock_system::interaction::State,
         /// Displays whose Dock is auto-hidden; their shelf material hides too.
         hidden_displays: std::collections::BTreeSet<u64>,
+        /// Badges, progress and attention apps publish over LauncherEntry.
+        launcher: rmac_dock::badges::LauncherEntries,
     }
 
     impl DockStatus {
@@ -127,6 +133,7 @@ mod linux_wayland {
                 removed_outputs: std::collections::BTreeSet::new(),
                 actions: rmac_dock_system::interaction::State::default(),
                 hidden_displays: std::collections::BTreeSet::new(),
+                launcher: rmac_dock::badges::LauncherEntries::default(),
             }
         }
 
@@ -968,6 +975,7 @@ mod linux_wayland {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             self.render_count = self.render_count.saturating_add(1);
             record_render_count(window, self.display_id, self.render_count);
+            let launcher = self.status.read(cx).launcher.clone();
             let (dock_settings, model, mut entries, content) = {
                 let status = self.status.read(cx);
                 let snapshot = status
@@ -990,10 +998,15 @@ mod linux_wayland {
                 .filter(|item| item.running)
                 .map(|item| item.id.clone())
                 .collect();
+            // Attention comes from niri urgency or the app's LauncherEntry.
             let attention_apps: std::collections::BTreeSet<String> = model
                 .items
                 .iter()
-                .filter(|item| item.urgent && !item.active)
+                .filter(|item| {
+                    item.running
+                        && !item.active
+                        && (item.urgent || launcher.get(&item.id).is_some_and(|entry| entry.urgent))
+                })
                 .map(|item| item.id.clone())
                 .collect();
             self.bounces.reconcile(&running_apps, &attention_apps, now);
@@ -1687,7 +1700,54 @@ mod linux_wayland {
                             item = item.child(indicator);
                         }
                         // Attention is a bounce on macOS (see the bounce
-                        // tracker), never a dot or badge.
+                        // tracker), never a dot. Badges and progress come
+                        // only from what a running app published.
+                        let published = running.then(|| launcher.get(&app_id).copied()).flatten();
+                        if let Some(progress) = published.and_then(|entry| entry.progress()) {
+                            let inset = (ICON_SIZE - ICON_SIZE * ICON_SQUIRCLE) / 2.0;
+                            let width = ICON_SIZE * ICON_SQUIRCLE * 0.8;
+                            item = item.child(
+                                div()
+                                    .absolute()
+                                    .left(px((ICON_SIZE - width) / 2.0))
+                                    .bottom(px(inset + 4.0 + lift))
+                                    .w(px(width))
+                                    .h(px(PROGRESS_HEIGHT))
+                                    .rounded_full()
+                                    .bg(rgba(0x000000a6))
+                                    .border_1()
+                                    .border_color(rgba(tokens::light_border()))
+                                    .child(
+                                        div()
+                                            .h_full()
+                                            .w(px((width - 2.0) * progress))
+                                            .rounded_full()
+                                            .bg(rgba(0xffffffe6)),
+                                    ),
+                            );
+                        }
+                        if let Some(badge) = published.and_then(|entry| entry.badge()) {
+                            // Centred on the squircle's top-right corner.
+                            let corner = (ICON_SIZE - ICON_SIZE * ICON_SQUIRCLE) / 2.0;
+                            item = item.child(
+                                div()
+                                    .absolute()
+                                    .top(px(corner - BADGE_SIZE / 2.0 - lift))
+                                    .right(px(corner - BADGE_SIZE / 2.0))
+                                    .min_w(px(BADGE_SIZE))
+                                    .h(px(BADGE_SIZE))
+                                    .px(px(6.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded_full()
+                                    .bg(rgba(tokens::system_red()))
+                                    .text_size(px(13.0))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(rgba(0xffffffff))
+                                    .child(badge),
+                            );
+                        }
                         let mut children: Vec<gpui::AnyElement> = Vec::with_capacity(2);
                         if separates_running && index == pinned_count {
                             children.push(dock_separator(self.placement));
@@ -2949,6 +3009,71 @@ mod linux_wayland {
         handle.into()
     }
 
+    type LauncherSignal = (String, rmac_dock::badges::LauncherUpdate);
+
+    /// Follow `com.canonical.Unity.LauncherEntry` badges, progress and
+    /// attention requests on the session bus, reconnecting after failures.
+    async fn watch_launcher_entries(sender: async_channel::Sender<LauncherSignal>) {
+        loop {
+            if let Err(error) = watch_launcher_entries_once(&sender).await {
+                eprintln!("Dock badges are unavailable: {error}");
+            }
+            if sender.is_closed() {
+                return;
+            }
+            async_io::Timer::after(Duration::from_secs(5)).await;
+        }
+    }
+
+    async fn watch_launcher_entries_once(
+        sender: &async_channel::Sender<LauncherSignal>,
+    ) -> zbus::Result<()> {
+        use futures_util::StreamExt as _;
+        let connection = zbus::Connection::session().await?;
+        let rule = zbus::MatchRule::builder()
+            .msg_type(zbus::message::Type::Signal)
+            .interface("com.canonical.Unity.LauncherEntry")?
+            .member("Update")?
+            .build();
+        let mut stream = zbus::MessageStream::for_match_rule(rule, &connection, Some(64)).await?;
+        while let Some(message) = stream.next().await {
+            let message = message?;
+            let Ok((app_uri, properties)) = message.body().deserialize::<(
+                String,
+                std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+            )>() else {
+                continue;
+            };
+            if sender
+                .send((app_uri, launcher_update(&properties)))
+                .await
+                .is_err()
+            {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    fn launcher_update(
+        properties: &std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+    ) -> rmac_dock::badges::LauncherUpdate {
+        let value = |key: &str| properties.get(key).map(|value| &**value);
+        let flag = |key: &str| value(key).and_then(|value| bool::try_from(value).ok());
+        rmac_dock::badges::LauncherUpdate {
+            count: value("count").and_then(|value| {
+                i64::try_from(value)
+                    .ok()
+                    .or_else(|| i32::try_from(value).ok().map(i64::from))
+                    .or_else(|| u32::try_from(value).ok().map(i64::from))
+            }),
+            count_visible: flag("count-visible"),
+            progress: value("progress").and_then(|value| f64::try_from(value).ok()),
+            progress_visible: flag("progress-visible"),
+            urgent: flag("urgent"),
+        }
+    }
+
     pub fn run() {
         let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
@@ -2963,6 +3088,21 @@ mod linux_wayland {
                 .detach();
             let (reconcile_tx, reconcile_rx) = async_channel::bounded(1);
             let status = cx.new(|cx| DockStatus::new(runtime_rx, reconcile_tx.clone(), cx));
+            let (launcher_tx, launcher_rx) = async_channel::bounded::<LauncherSignal>(64);
+            cx.background_executor()
+                .spawn(watch_launcher_entries(launcher_tx))
+                .detach();
+            let launcher_status = status.clone();
+            cx.spawn(async move |cx| {
+                while let Ok((app_uri, update)) = launcher_rx.recv().await {
+                    let _ = launcher_status.update(cx, |status, cx| {
+                        if status.launcher.apply(&app_uri, update) {
+                            cx.notify();
+                        }
+                    });
+                }
+            })
+            .detach();
             let _ = reconcile_tx.try_send(());
             cx.spawn(async move |cx| {
                 let mut windows = DockWindows::default();

@@ -1,6 +1,7 @@
 //! Framework-neutral Dock application and activation model.
 
 pub mod accessibility;
+pub mod badges;
 pub mod bounce;
 mod dock;
 pub mod drag;

@@ -132,50 +132,89 @@ Three UI surfaces share the four backend crates, matching a real macOS split:
 
 ### List outputs → switch
 
-- Backend: `crates/rmac-audio/src/linux.rs` (1458 lines) is **not** D-Bus or
-  a PipeWire client library — every read and mutation shells out to
-  **`wpctl`** (WirePlumber CLI) and parses its text, plus `pw-dump --no-colors`
-  (JSON, still a subprocess) for port/profile/route metadata:
-  - `system_default_device`, `read_default_level`: `wpctl inspect …` /
-    `wpctl get-volume …`, parsed by `parse_wpctl_default_inspect` /
-    `parse_wpctl_level` (`linux.rs:252-282,780-854`).
-  - `machine_devices`: `wpctl list audio sinks|sources`, parsed by
-    `parse_wpctl_list` (`linux.rs:283-296,887-969`).
+- Backend: `crates/rmac-audio/src/linux.rs` is **not** D-Bus or a PipeWire
+  client library — it still shells out — but as of this pass every **read**
+  comes from `pw-dump --no-colors` (JSON, parsed with `serde_json`), and
+  every **mutation** still calls `wpctl`/`pw-cli`, checking only the exit
+  status:
+  - `system_snapshot`, `machine_devices`, `system_default_device`: one
+    `pw-dump --no-colors` call each, parsed into a `GraphMetadata` by
+    `parse_pw_dump_metadata` (`linux.rs:848-992`). Device lists come from
+    `graph_devices` (`linux.rs:816-845`); default-device marking comes from
+    the PipeWire `default` metadata object's `default.audio.sink` /
+    `default.audio.source` keys (`GraphMetadata::default_sink` /
+    `::default_source`, resolved by node name, not node id, since PipeWire
+    only exposes the default by name). Volume/mute come from each node's
+    `Props.channelVolumes`/`mute` (`parse_node_level`, `linux.rs:1252-1272`):
+    `channelVolumes` is linear, so the value is averaged across channels and
+    cube-rooted to match what `wpctl`/pavucontrol display — verified against
+    a real capture from the reference laptop (raw `8e-6` ↔ `wpctl`-displayed
+    `0.02`, i.e. `0.02³ == 8e-6`). This also fixed a latent bug: real
+    ALSA-backed nodes have a *second* `Props` array entry (an ALSA-route
+    entry with no `channelVolumes`), which the old single-entry assumption
+    in balance parsing silently rejected; `volume_props`
+    (`linux.rs:1220-1244`) now finds the one entry that actually advertises
+    `channelVolumes` instead.
   - `system_set_volume`/`system_set_muted`/`system_set_default_device`/
     `system_set_profile`/`system_set_route`/`system_set_balance`: all call
-    `wpctl set-volume|set-mute|set-default|set-profile|set-route` etc.
-    (`linux.rs:313-680`).
-  - The live-update watcher spawns `pw-mon --color=never` and treats **any**
-    stdout byte as a "something changed, re-read the authoritative state"
-    signal (`linux.rs:29-119`) — it does not parse `pw-mon`'s output, only
-    uses it as a change tickler, but it is still a CLI subprocess kept
-    running as the watch mechanism.
-  - This is the one clear violation, for Linux, of the todo's "Use platform
+    `wpctl set-volume|set-mute|set-default|set-profile|set-route` or
+    `pw-cli set-param`, through a shared `pipewire_mutation`/`wpctl_mutation`
+    helper (`linux.rs:314-345`) that checks only the exit status (never
+    stdout text) and appends a recovery hint ("check that PipeWire and
+    WirePlumber are running…") to the error detail on failure.
+  - The live-update watcher now spawns `pw-dump --monitor --no-colors`
+    (JSON stream) instead of `pw-mon --color=never` (`linux.rs:40-52`),
+    per the brief's preference for the machine-readable monitor. It still
+    only treats **any** stdout byte as a "something changed, re-read the
+    authoritative state" trigger and never parses the JSON — the same
+    debounce (`WATCH_QUIET_PERIOD`/`WATCH_MAX_COALESCE`) is unchanged. Two
+    read-only captures on the reference laptop (5 s and 10 s, idle) showed
+    `pw-dump --monitor` emit only the initial dump and nothing further,
+    unlike the "~1100 events/s" `pw-mon` storm logged in
+    `COMPLETION_SPEC.md` §8.6 from an earlier investigation — but that
+    number could not be reproduced from `pw-mon` either in this session, so
+    treat the storm as environment/history-dependent, not something this
+    change is verified to fix. `crates/rmac-shell-status-linux/src/watch.rs`
+    runs a **second**, independent `pw-mon` watcher for the top-bar/menubar
+    and was intentionally left untouched (out of this task's scope, which
+    was `rmac-audio/src/linux.rs` only) — `COMPLETION_SPEC.md` already notes
+    the two watchers should eventually be consolidated.
+  - `wpctl status`/`wpctl inspect` text parsing (`parse_wpctl_list`,
+    `parse_wpctl_default_inspect`, `parse_wpctl_level`) is gone entirely.
+    This was, for Linux, the one clear violation of the todo's "Use platform
     services, not command output… Never parse human-readable CLI output on
-    Linux" rule and of the brief's "flag any backend that parses
-    nmcli/bluetoothctl/pactl/upower text" instruction.
-- **Why not fixed here:** the brief says to do the most-used replacement
-  (Wi-Fi) and document the rest if a replacement is large. Wi-Fi already had
-  no violation to fix (see above), so audio is "the rest." Unlike
-  NetworkManager/BlueZ/UPower, PipeWire has **no D-Bus API**; a real fix means
-  adding a `pipewire` (libpipewire FFI) crate dependency — not present in
-  `Cargo.lock` today — and rewriting the async main-loop integration, device
-  graph model, and every mutation path (~1450 lines) against a different
-  threading model (libpipewire's own loop vs. this crate's
-  `async_process`/thread pattern). That is a multi-week rewrite, not a small
-  fix, and untestable here without cargo. Recommend a dedicated task with
-  laptop build access.
+    Linux" rule; it is now resolved for every read path in this crate.
+- **Why not a full native PipeWire client:** the brief for *this* pass was
+  explicit — make the existing shell-out design JSON-only, without adding a
+  new FFI dependency. `pipewire`/libpipewire FFI (a real fix that also drops
+  the remaining subprocess-per-read cost) is still a multi-week rewrite of
+  the async main-loop integration, device graph model and every mutation
+  path against a different threading model, and remains future work, not
+  done here.
 - Output *switching* specifically: `system_set_default_device` exists and is
   wired to System Settings' Sound pane (`crates/system-settings/src/sound.rs`,
   `controller/sound.rs`), which is the only place a user can actually pick a
   different output device today — Control Centre only has volume/mute
   (`rmac-quick-settings/src/model.rs:38-44`, matching SPEC.md's documented
   scope) and the menubar Sound icon just opens Control Centre.
-- **Parsing correctness:** despite the architecture issue, the existing
-  `wpctl`/`pw-dump` parsers are well covered (`rmac-audio/src/tests.rs`: PSK/
-  volume/mute parsing, malformed/ambiguous list rejection, JSON graph
-  correlation, balance clamping — 20+ tests already present).
-- **Not faked**, just built on CLI text where every other backend uses D-Bus.
+- **Parsing correctness:** the `pw-dump` parsers are well covered
+  (`rmac-audio/src/tests.rs`: cubic volume-scale conversion, default-metadata
+  resolution, multi-entry `Props` array handling, JSON graph correlation,
+  balance clamping, and a real (sanitized) `pw-dump` capture from the
+  reference laptop as a fixture — `rmac-audio/src/fixtures/pw-dump-laptop.json`
+  — 25+ tests total).
+- **Not faked.** Reads are now single atomic `pw-dump` snapshots (one
+  subprocess call instead of the previous `wpctl list` + `wpctl inspect` +
+  `pw-dump` combination), which also removes a race that used to exist
+  between separately-timed reads disagreeing about device identity.
+- **Still to verify on the laptop** (no cargo/build access in this pass):
+  a full `cargo build -p rmac-audio` and `cargo test -p rmac-audio`; that
+  Quick Settings/menubar/Sound pane volume sliders and mute toggles show the
+  same values `wpctl status` reports after this change; that switching
+  default device/profile/route/balance still works end-to-end; and ideally
+  a longer, real idle-vs-active `pw-dump --monitor` event-rate measurement,
+  since the two read-only captures here (5 s and 10 s) could not reproduce
+  the historical `pw-mon` storm either way.
 
 ### Battery percentage and time remaining
 
@@ -227,6 +266,18 @@ Three UI surfaces share the four backend crates, matching a real macOS split:
   which had no direct test even though it's exercised through `render.rs`.
 - Considered and reverted: a "Time Remaining" row in the menubar's
   `battery_menu_rows` (see the battery trace section above for why).
+- `crates/rmac-audio/src/linux.rs`: moved every audio **read**
+  (`system_snapshot`, `machine_devices`, `system_default_device`) from
+  `wpctl list`/`wpctl inspect`/`wpctl get-volume` text parsing to
+  `pw-dump --no-colors` JSON only, resolving the audio violation noted in
+  the "List outputs → switch" section above (see that section for the full
+  detail, including the cubic volume-scale fix and the multi-entry `Props`
+  array bug this also fixed). Mutations still call `wpctl`/`pw-cli`,
+  checking only exit status. The live-update watcher now runs
+  `pw-dump --monitor` instead of `pw-mon`. Added
+  `crates/rmac-audio/src/fixtures/pw-dump-laptop.json`, a sanitized real
+  capture from the reference laptop, plus new/updated unit tests in
+  `rmac-audio/src/tests.rs`.
 
 ## What still needs the reference laptop or the Mac to verify
 
@@ -244,5 +295,15 @@ Three UI surfaces share the four backend crates, matching a real macOS split:
 - Whether macOS Tahoe's Battery dropdown shows a time estimate while
   actively *charging* (the only capture on hand is discharging at 38%) — a
   charging-state capture would confirm or rule out adding that case only.
-- The `rmac-audio` CLI-parsing rewrite needs a full build/test cycle on
-  Linux; it was only documented here, not attempted.
+- The `rmac-audio` JSON-only rewrite (see "Fixes made in this pass" and the
+  "List outputs → switch" section) needs `cargo build -p rmac-audio` and
+  `cargo test -p rmac-audio` on Linux — this pass had no cargo access, so it
+  was verified only by `rustfmt` and manual review, plus real (read-only)
+  `pw-dump`/`wpctl status` captures from the reference laptop used to build
+  and cross-check the fixture and the cubic volume-scale math. After a
+  build, check: Quick Settings/menubar/Sound-pane volume and mute match
+  `wpctl status`; default-device/profile/route/balance switching still
+  works; and, if practical, a longer idle-vs-active `pw-dump --monitor`
+  event-rate measurement (the two short captures taken here did not
+  reproduce the `pw-mon` event storm logged in `COMPLETION_SPEC.md` §8.6,
+  in either direction).

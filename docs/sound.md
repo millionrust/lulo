@@ -35,33 +35,42 @@ cancellation, and the deadline remain reference-PC gates.
 
 ## Current snapshot and mutations
 
-`rmac-audio` runs blocking audio queries and mutations off the UI thread. The
-current Linux adapter uses argument-separated official `wpctl` operations for
-the default sink/source level, mute, device inventory, and default-node change.
-The inventory comes from the tab-separated machine-readable `wpctl list`
-contract: numeric object ID, exact `node.name`, media class, and default marker.
-The private node name is retained only to revalidate a selected node against a
-fresh graph; it is omitted from `Debug` output and never persisted. The numeric
-ID is treated as current-graph identity rather than a stable hardware ID.
-
-`pw-dump --no-colors` supplies friendly descriptions and advertised capability
-metadata. rmac correlates a Node only when its object ID, exact private
-`node.name`, and media class agree with the machine list; an invalid or
-unavailable dump cannot replace that authoritative inventory. Both standard
-output and standard error are drained to process completion while retaining at
-most 4 MiB each, so a large graph cannot deadlock the child or grow memory
-without bound. The dump is held in memory only long enough to extract bounded
-typed state. If it is missing, invalid, oversized, or ambiguous, base audio
-state remains available while profile and port configuration reports a separate
+`rmac-audio` runs blocking audio queries and mutations off the UI thread.
+Every Linux **read** — device inventory, default sink/source, volume, mute,
+device profiles, ports — comes from a single `pw-dump --no-colors` call
+(JSON, parsed with `serde_json` into a `GraphMetadata`); nothing on the read
+path shells out to `wpctl` or parses its text any more. Both standard output
+and standard error are drained to process completion while retaining at most
+4 MiB each, so a large graph cannot deadlock the child or grow memory without
+bound. The dump is held in memory only long enough to extract bounded typed
+state. If it is missing, invalid, oversized, or ambiguous, base audio state
+remains available while profile and port configuration reports a separate
 temporary failure.
 
-Volume reads target the exact advertised default node IDs. Default-device
-mutation re-reads the selected ID and private node name before issuing
-`wpctl set-default`, polls the machine-readable inventory for at most three
-seconds, and returns a complete snapshot only after the same identity is
-advertised as default. Settings consumes that verified snapshot directly;
-command completion alone is never presented as success. Volume and mute
-mutations likewise end in a complete readback.
+Device identity is the object's numeric ID plus its exact private
+`node.name` ("authority name"), never a stable hardware ID; the private name
+is retained only to revalidate a selected node against a fresh graph and is
+omitted from `Debug` output and never persisted. The default sink/source are
+resolved from the PipeWire `default` metadata object's `default.audio.sink`/
+`default.audio.source` keys, matched by node name (PipeWire exposes the
+default by name, not by node ID). Volume and mute come from each node's own
+`Props.channelVolumes`/`mute`; `channelVolumes` is a linear scale, so it is
+averaged across channels and cube-rooted to match the perceptual scale
+`wpctl`/pavucontrol display.
+
+**Mutations** still call the official argument-separated `wpctl` operations
+(`set-volume`, `set-mute`, `set-default`, `set-profile`, `set-route`) or
+`pw-cli set-param` for balance, and check only the mutating command's exit
+status — never its stdout text. A failed mutation's error carries a recovery
+hint ("check that PipeWire and WirePlumber are running…") in addition to the
+command's own stderr detail. Default-device mutation re-reads the selected ID
+and private node name before issuing `wpctl set-default`, polls a fresh
+`pw-dump` read for at most three seconds, and returns a complete snapshot
+only after the same identity is advertised as default. Settings consumes
+that verified snapshot directly; command completion alone is never presented
+as success. `set_volume`/`set_muted` themselves return only success/failure
+(no polled readback loop); callers (`system-settings/src/sound.rs`) take one
+fresh `pw-dump` snapshot immediately after a successful call.
 
 ## Device profiles and ports
 
@@ -108,10 +117,12 @@ authoritative; rmac does not claim or maintain separate balance persistence.
 
 ## Live changes and recovery
 
-On Linux, the audio watcher starts the official `pw-mon --color=never` monitor
-with no shell, null input, bounded captured output, and kill-on-drop ownership.
-It treats monitor output only as a graph-change hint and always rereads the
-complete audio snapshot. A 75 ms quiet period coalesces event bursts, including
+On Linux, the audio watcher starts the official `pw-dump --monitor --no-colors`
+JSON-stream monitor (previously `pw-mon --color=never`) with no shell, null
+input, bounded captured output, and kill-on-drop ownership. It treats monitor
+output only as a graph-change hint — the JSON is never parsed, only its
+arrival — and always rereads the complete audio snapshot with a fresh
+`pw-dump` call. A 75 ms quiet period coalesces event bursts, including
 hotplug and volume changes, into one refresh on a capacity-one channel. Reads
 use a fixed 8 KiB buffer instead of accumulating monitor text, and a 250 ms
 maximum coalescing window prevents a continuously changing graph from starving
@@ -138,7 +149,6 @@ F6 remains open until the Ubuntu/niri reference PC proves:
   idle wakeups, and combined shell behavior.
 
 The implementation follows the official
-[`pw-mon` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-mon_1.html),
 [`pw-dump` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-dump_1.html),
 [`pw-cli` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-cli_1.html),
 [`pw-play` interface](https://pipewire.pages.freedesktop.org/pipewire/page_man_pw-cat_1.html),

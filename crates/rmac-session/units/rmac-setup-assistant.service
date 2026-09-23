@@ -1,0 +1,14 @@
+[Unit]
+Description=rmac Setup Assistant (first login)
+PartOf=rmac-session.target
+After=rmac-session-supervisor.service rmac-top-bar.service rmac-dock.service
+# Runs once: the assistant writes this marker when it finishes, is skipped or
+# is closed (crates/setup-assistant/src/marker.rs).
+ConditionPathExists=!%E/rmac/setup-assistant-complete
+ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-setup-assistant
+
+[Service]
+Type=exec
+ExecStart=%h/.local/libexec/rmac/rmac-setup-assistant --first-login
+Restart=no
+NoNewPrivileges=yes

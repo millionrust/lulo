@@ -6323,6 +6323,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-setup-assistant"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "libc",
+ "rmac-appearance",
+ "rmac-appearance-portal",
+ "rmac-keyboard",
+ "rmac-locale",
+ "rmac-locale-linux",
+ "rmac-network",
+ "rmac-storage",
+ "rmac-theme",
+ "rmac-ui",
+ "rust-embed",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-sharing"
 version = "0.1.0"
 

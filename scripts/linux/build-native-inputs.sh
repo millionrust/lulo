@@ -105,7 +105,8 @@ export CARGO_TARGET_DIR="$target_dir"
     -p rmac-lock-provider-linux --features provider \
       --bin rmac-lock-provider \
     -p rmac-sound --bin rmac-sound \
-    -p rmac-keyboard --bin rmac-mac-keyboard
+    -p rmac-keyboard --bin rmac-mac-keyboard \
+    -p rmac-setup-assistant --bin rmac-setup-assistant
 )
 (
   cd "$lab_dir"

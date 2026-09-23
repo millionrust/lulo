@@ -290,6 +290,13 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     assert!(normal_target.contains("rmac-mac-keyboard.service"));
     assert!(!safe_target.contains("rmac-mac-keyboard.service"));
 
+    let setup = include_str!("../units/rmac-setup-assistant.service");
+    assert!(setup.contains("ConditionPathExists=!%E/rmac/setup-assistant-complete"));
+    assert!(setup.contains("ExecStart=%h/.local/libexec/rmac/rmac-setup-assistant --first-login"));
+    assert!(setup.contains("Restart=no"));
+    assert!(normal_target.contains("rmac-setup-assistant.service"));
+    assert!(!safe_target.contains("rmac-setup-assistant.service"));
+
     let default_policy = include_str!("../lock-policy.json");
     assert!(default_policy.contains("\"version\": 1"));
     assert!(default_policy.contains("\"lock_after_seconds\": 300"));

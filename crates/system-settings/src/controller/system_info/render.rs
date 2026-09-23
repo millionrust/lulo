@@ -51,6 +51,24 @@ impl Settings {
                 pane_nav_row(view, "icons/globe.svg", hsl(0x8e8e93), "Sharing"),
             ]),
         ];
+        let mut cards = cards;
+        // The first-login Setup Assistant, run again on request; offered
+        // only where it is installed.
+        if let Some(program) = setup_assistant_program() {
+            cards.push(footer_buttons(vec![push_button(
+                "general-setup-assistant",
+                "Setup Assistant…",
+            )
+            .on_click(move |_, _, _| {
+                if let Err(error) = std::process::Command::new(program)
+                    .stdin(std::process::Stdio::null())
+                    .spawn()
+                {
+                    eprintln!("could not open Setup Assistant: {error}");
+                }
+            })
+            .into_any_element()]));
+        }
         self.pane(cards)
     }
     /// macOS 26 About: the machine centred over its name, then the Name,
@@ -228,4 +246,21 @@ impl Settings {
                 ),
         )
     }
+}
+
+/// The installed Setup Assistant: the packaged copy, else the development
+/// install under ~/.local/libexec.
+fn setup_assistant_program() -> Option<&'static std::path::Path> {
+    static PROGRAM: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    PROGRAM
+        .get_or_init(|| {
+            let packaged = std::path::PathBuf::from("/usr/libexec/rmac/rmac-setup-assistant");
+            let development = std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .map(|home| home.join(".local/libexec/rmac/rmac-setup-assistant"));
+            std::iter::once(packaged)
+                .chain(development)
+                .find(|path| path.is_file())
+        })
+        .as_deref()
 }

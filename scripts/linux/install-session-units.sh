@@ -55,7 +55,8 @@ esac
     -p rmac-clipboard-linux --bin rmac-clipboard-service \
     -p rmac-file-chooser --bin rmac-file-chooser \
     -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch --bin rmac-locker --bin rmac-lock-coordinator --bin rmac-idle-locker \
-    -p rmac-keyboard --bin rmac-mac-keyboard)
+    -p rmac-keyboard --bin rmac-mac-keyboard \
+    -p rmac-setup-assistant --bin rmac-setup-assistant)
 
 install -d -m 0755 "${unit_dir}"
 install -d -m 0755 "${libexec_dir}"
@@ -76,6 +77,7 @@ install -m 0755 "${target_dir}/release/rmac-locker" "${libexec_dir}/rmac-locker"
 install -m 0755 "${target_dir}/release/rmac-lock-coordinator" "${libexec_dir}/rmac-lock-coordinator"
 install -m 0755 "${target_dir}/release/rmac-idle-locker" "${libexec_dir}/rmac-idle-locker"
 install -m 0755 "${target_dir}/release/rmac-mac-keyboard" "${libexec_dir}/rmac-mac-keyboard"
+install -m 0755 "${target_dir}/release/rmac-setup-assistant" "${libexec_dir}/rmac-setup-assistant"
 install -m 0755 "${script_dir}/start-rmac-session.sh" "${bin_dir}/rmac-session-start"
 install -d -m 0755 "${config_home}/rmac"
 if [ ! -e "${config_home}/rmac/swaylock.conf" ]; then

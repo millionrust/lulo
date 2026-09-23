@@ -3,6 +3,7 @@
 //! Every rmac app depends on this crate so they share one look: macOS-style
 //! window chrome, a common live theme, fonts, and application boot helpers.
 
+mod assets;
 mod chrome;
 mod components;
 mod controls;
@@ -16,6 +17,7 @@ mod text_keys;
 pub mod theme;
 mod window;
 
+pub use assets::{layered_assets, LayeredAssets};
 pub use chrome::{
     body_bg, page, title_bar, title_bar_content, toolbar, toolbar_group, toolbar_title,
     traffic_lights, traffic_lights_active, traffic_lights_fixed_size, traffic_lights_origin,

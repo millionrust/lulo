@@ -1,0 +1,31 @@
+[package]
+name = "rmac-setup-assistant"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rmac-setup-assistant"
+path = "src/main.rs"
+
+[dependencies]
+gpui.workspace = true
+rmac-appearance.workspace = true
+rmac-appearance-portal.workspace = true
+rmac-keyboard.workspace = true
+rmac-locale.workspace = true
+rmac-locale-linux.workspace = true
+rmac-network.workspace = true
+rmac-storage.workspace = true
+rmac-theme.workspace = true
+rmac-ui.workspace = true
+rust-embed.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+zbus.workspace = true

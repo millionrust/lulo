@@ -66,6 +66,7 @@ REQUIRED_RMAC_EXECUTABLES = (
     "rmac-lock-coordinator",
     "rmac-idle-locker",
     "rmac-mac-keyboard",
+    "rmac-setup-assistant",
 )
 EXPECTED_SYSTEMD_UNITS = (
     "rmac-app-drawer.service",
@@ -90,6 +91,7 @@ EXPECTED_SYSTEMD_UNITS = (
     "rmac-screenshot.service",
     "rmac-session-supervisor.service",
     "rmac-session.target",
+    "rmac-setup-assistant.service",
     "rmac-shortcut-broker.service",
     "rmac-top-bar.service",
     "rmac-wallpaper.service",

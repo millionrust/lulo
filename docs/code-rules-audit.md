@@ -199,3 +199,101 @@ exercised code).
   some filesystems/mount options. Low real-world impact (both are
   regenerable preferences, not user content), but worth revisiting with
   cargo access.
+
+## Rule 7 — never parse human-readable CLI output on Linux (added 2026-09-23, separate pass)
+
+`todo.md`'s standing direction: "Use platform services, not command output
+… Never parse human-readable CLI output on Linux." This pass (branch
+`no-cli-text`) fixed the two remaining violations `docs/settings-backend-audit.md`
+had already flagged (`rmac-sharing-linux`'s `ufw status`/`testparm -s`),
+switched `rmac-shell-status-linux`'s second, independent PipeWire watcher off
+`pw-mon` text (the first, in `rmac-audio`, was already fixed in an earlier
+pass — see `docs/journey-7-trace.md`), and re-grepped the whole tree
+(`crates/`, `shell/bins/`, `shell/crates/`; `shell/compat/` excluded as
+vendored) for every other `Command::new`/`async_process::Command::new` whose
+stdout is read.
+
+### Fixed this pass
+
+| Location | Was | Now |
+| --- | --- | --- |
+| `crates/rmac-sharing-linux/src/system.rs` (`firewall_state`) | `Command::new("ufw").arg("status")`, line-parsed prose (`parse_ufw_status`) | Reads UFW's own `ENABLED=yes\|no` key out of `/etc/ufw/ufw.conf` (`parse_ufw_conf_enabled`). Verified live on the reference laptop (Ubuntu 26.04, `ufw` 0.36.2-9build1): no `firewalld`/UFW D-Bus service exists (`busctl list` — nothing), and `ufw status` itself refuses to run unprivileged (`ERROR: You need to be root to run this script`, confirmed by SSH as the unprivileged `jacob` user) — so the old code path was **already always falling back to `Unavailable`** on this exact machine. `/etc/ufw/ufw.conf` is world-readable (0644); the per-rule file `/etc/ufw/user.rules` that would be needed to verify a specific allow rule is root-only (0640, confirmed `ls -la`), so `FirewallState::Allows` can no longer be produced (this crate has no way to see individual rules without root, same as before) — the state now correctly distinguishes Inactive vs. Active-but-unverified vs. Unavailable without needing root at all, which is strictly more informative than the previous always-`Unavailable` reality. |
+| `crates/rmac-sharing-linux/src/system.rs` (`samba_shares`) | `Command::new("testparm").arg("-s")`, bracket-line-parsed prose (`parse_samba_shares`) | Reads `/etc/samba/smb.conf` directly with a small hand-written INI reader (`parse_smb_conf_shares`: `[section]` headers, `#`/`;` comments, an `available = no/false/0` check, same `global`/`printers`/`print$` exclusion as before) plus `net usershare`-created shares from `/var/lib/samba/usershares` (one file per share, filename = share name, per `usershare(8)`). Samba was not installed on the reference laptop (`samba-libs` only, no `smb.conf`, no usershares dir) so the new code path could not be exercised live; it was built from documented `smb.conf`/usershare formats instead. Public API unchanged (`rmac_sharing::{Snapshot, FileSharing, Share, FirewallState}`); `FirewallService` and the crate's other internal helpers are unchanged in shape. |
+| `crates/rmac-shell-status-linux/src/watch.rs` (`watch_audio_once`) | Its own `pw-mon --color=never --print-separator` watcher, parsing `added:`/`changed:`/`removed:`/`id:`/`type:` lines into a `PipeWireObjects` set to decide relevance | `pw-dump --monitor --no-colors`, used exactly like `rmac-audio/src/linux.rs`'s watcher (`watch_once`, already fixed): raw bytes are only a "something changed" trigger, never parsed, same `QUIET_PERIOD` (1 s) debounce as before. `PipeWireObjects` and its 3 unit tests were removed (no longer meaningful — there is nothing left to parse). This crate's two watchers (`rmac-audio` and this one) remain independently spawned processes; consolidating them into one is still open (`COMPLETION_SPEC.md` §8.6 already notes it), unchanged by this pass. |
+
+New unit tests: `ufw_conf_enabled_reads_ufws_own_key_value_setting`,
+`samba_parser_exposes_only_available_share_sections`,
+`samba_parser_share_names_are_bounded` (`rmac-sharing-linux/src/tests.rs`,
+replacing the old `ufw_parser_requires_an_explicit_allow_rule`/
+`samba_parser_exposes_only_bounded_file_share_names`, which tested the now-
+removed prose parsers). `rmac-shell-status-linux` lost 3 tests
+(`pipewire_tests`) and gained none — the new watcher has nothing left to
+unit-test beyond what `rmac-audio`'s equivalent already covers; both crates'
+watchers are structurally identical now.
+
+### Full repo grep — every other `Command::new` reachable on Linux
+
+Grepped `Command::new`/`async_process::Command::new` across the same scope,
+then cross-referenced every hit that calls `.output()`/`.stdout(Stdio::piped())`
+(the rest are pure action invocations — spawn/launch/notify/kill, no data
+read back — and are not this rule's concern). Assessed against the same bar
+`docs/settings-backend-audit.md`'s inventory already established: D-Bus/portal
+> stable machine-readable flag (`--json`, `-t`, `--property=…`, a single
+documented value) > free-text prose scraping.
+
+Already covered by `docs/settings-backend-audit.md` and unchanged here
+(`rmac-locale-linux` `locale -a`/`localectl`, `rmac-gtk-settings` `gsettings`,
+`rmac-audio`'s `wpctl`/`pw-dump`, `rmac-network`'s `nmcli` import/modify
+helpers, `rmac-display`/`rmac-input`'s `niri`, `rmac-keyboard`'s
+`pkexec`/`systemctl`/`keyd`, `rmac-privacy-linux`'s Ubuntu Pro Client/
+`ubuntu-distro-info`, `rmac-system-info`'s `uname`, the macOS-only
+`#[cfg(target_os = "macos")]`-gated modules in `rmac-network`, `rmac-power`,
+`rmac-bluetooth`): no change, see that document for the per-line detail.
+
+New sites checked in this pass, all judged acceptable exceptions or action
+invocations (nothing else needed fixing):
+
+| Location | Command | Reads stdout as data? | Assessment |
+| --- | --- | --- | --- |
+| `crates/finder/src/view/filesystem_helpers.rs:213` | `stat -c "%U\n%G" <path>` (Linux branch) | Yes — two fixed fields | Structured format flag (`-c`), not scraped prose — same category the brief calls out as acceptable (`lsblk --json`/`-t`-style). |
+| `crates/rmac-mounts/src/mutation.rs:26` | `gio mount -u <uri>` | No — stderr/stdout drained only for a bounded error message on failure | Action helper (unmount), matching the `nmcli`/`gio launch` precedent already accepted in the settings-backend audit. |
+| `crates/rmac-apps/src/icons.rs:77` (`gsettings_icon_theme`) | `gsettings get org.gnome.desktop.interface icon-theme` | Yes — one quoted string | Same `gsettings`-is-its-own-CLI exception already granted to `rmac-gtk-settings`; no separate D-Bus service exists for this GNOME setting. |
+| `crates/rmac-gtk-settings/src/toolkit.rs:196-212` | `gsettings get/set` (accent/dark-mode) | Yes — one value, compared/echoed verbatim | Same `gsettings` exception, same crate already covered for `api.rs`/`watch.rs`. |
+| `crates/rmac-apps/src/platform.rs` (`run_xdg_mime`, `query_default_application`) | `xdg-mime query filetype\|default` | Yes — one line (a MIME type or a `.desktop` id) | `xdg-mime` is the sanctioned freedesktop.org CLI for MIME-association queries; there is no D-Bus service for this. Single documented value, not prose. |
+| `crates/rmac-session/src/supervisor.rs:47` (`component_health`) | `systemctl --user show <unit> --no-pager --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,MainPID,ExecMainStatus` | Yes — `Key=Value` lines | `--property=` is systemd's own stable structured output mode (one `Key=Value` per requested property), not free text — same class as `lsblk --json`/`-t`. |
+| `crates/rmac-clipboard-linux/src/wayland.rs:78` (`offered_types`) | `timeout 5 wl-paste --list-types` | Yes — one MIME type per line | `wl-clipboard` is the sanctioned Wayland data-control CLI; compositors deliberately don't expose clipboard content over D-Bus. Listing offered MIME types is the clipboard's own machine-oriented output, not host state being scraped. |
+| `crates/rmac-shortcuts/src/lock.rs` (`supervise`, `supervise_idle`) | `swaylock --config … --ready-fd=1`, `swayidle -w …` | No — waits for a single readiness byte on `--ready-fd`, then only the process exit status; never reads prose | Action/daemon invocations, the standard niri/wlroots lock mechanism (no D-Bus alternative). |
+| `crates/preview/src/render.rs` (`run`) | poppler-utils (`pdftoppm`/`pdftotext`/`pdfinfo`, chosen by `tool`) | Yes — but it's the rendered page image or extracted document text itself, not host/system state | Out of this rule's scope: this is user-document content extraction (the tool's entire purpose), not a human-readable status format being parsed as a substitute for a platform service. |
+| `crates/rmac-search/src/platform.rs:41` (`mdfind`) | `mdfind` | Yes | `#[cfg(target_os = "macos")]` — not compiled on Linux. |
+| `crates/app-drawer/src/catalog.rs` (`sips`, `/usr/libexec/PlistBuddy`), `crates/app-drawer/src/catalog/category.rs:44` (`defaults`) | macOS icon conversion / Info.plist reads | Yes | All under `#[cfg(target_os = "macos")]` — not compiled on Linux, same as the macOS-only modules `docs/settings-backend-audit.md` already lists. |
+
+No new violations found beyond the two fixed above. Every remaining
+stdout-reading `Command::new` on the Linux build either reads a stable,
+documented single value or `Key=Value`/one-per-line machine format with no
+D-Bus alternative (an already-accepted exception category), or is gated out
+of the Linux build entirely.
+
+### Verification
+
+- `rustfmt --edition 2021 crates/rmac-sharing-linux/src/system.rs
+  crates/rmac-sharing-linux/src/tests.rs
+  crates/rmac-shell-status-linux/src/watch.rs` — clean.
+- Plain `rustc --edition 2021 --crate-type lib --emit=metadata` on each
+  changed file in isolation: only the expected `E0432 unresolved
+  crate/module` errors from checking a submodule file outside its crate
+  (no `cargo`, per `AGENTS.md`); no syntax errors in any of the three files.
+- Not run (no cargo, no Linux build in this session): `cargo build -p
+  rmac-sharing-linux -p rmac-shell-status-linux`, `cargo test` for either
+  crate's new/changed unit tests, or an end-to-end check that the Sharing
+  pane's firewall footnote and share list still render sensibly now that
+  `FirewallState::Allows` can never be produced (the UI code at
+  `crates/system-settings/src/controller/sharing/render.rs:197,254` already
+  treats every non-`Allows` state as "show the cautionary footnote", so this
+  is a behavior narrowing — always cautionary now instead of sometimes
+  confidently "allows" — not a crash risk, but it needs an actual Sharing
+  pane screenshot on the laptop to confirm the footnote text still reads
+  sensibly).
+- Samba's new `smb.conf`/usershare reading path could not be exercised
+  against a real Samba install (not present on the reference laptop); only
+  unit-tested against a hand-written fixture built from documented
+  `smb.conf` syntax, not a captured real file.

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Files — Finder views, exact</title>
+<!--
+  Files (crates/finder) at 1:1 logical points, measured from the owner's Mac
+  (macOS 26.2 Tahoe, dark, 2026-09-23). Sources: Accessibility-API frames of a
+  947 × 833 and a 947 × 700 Finder window opened with AppleScript in each of
+  the four views, plus Retina pixels ÷ 2. Rust copies these numbers into
+  crates/finder/src/view/finder_style.rs. Glyphs are the Files SVGs in
+  crates/finder/assets/icons (Lucide-style originals, not Apple artwork).
+  All x/y below are relative to the window's top-left corner.
+
+  Window        toolbar 52; content starts at x 156 (sidebar column) and y 52
+  Sidebar panel floating, x 8 → 156 (148 wide), y 8 → h − 8.5; radius 19
+                (window 27 − inset 8); fill ≈ rgb(30,30,39) = black 10 % over
+                the window; 0.5–1 pt edge rgba(255,255,255,.10). Traffic
+                lights sit inside it (centres 26 / 49 / 72, y 26).
+  Sidebar rows  first row y 52; 32 tall; selection x 18 → 146 (inset 10 in
+                the panel), radius 8, rgba(255,255,255,.062) = rgb(44,44,53);
+                glyph centred 19 in, text 35 in, 13 regular rgb(244,244,253)
+                for both states (Tahoe no longer tints the selection)
+  Section head  13 gap + 19 row; 11 semibold rgb(154,154,165), text 5 in
+  Toolbar       capsules y 8, 36 tall, full radius; fill rgba(255,255,255,.02),
+                edge rgba(255,255,255,.14); 36 × 36 buttons 0.5 in from the
+                capsule edge, glyphs rgb(232,232,234); in-capsule divider
+                1 × 20 rgba(255,255,255,.10) between unselected neighbours
+                back/forward  x 164, 73 wide
+                title         x 249, 15 bold rgb(232,232,234)
+                view control  x w − 405, 148 wide; selected pill 34 × 28 at
+                              (+1, +4), radius 14, rgba(255,255,255,.16)
+                group / sort  x w − 239.5, 47.5 wide (grid + chevron)
+                actions       x w − 172, 107.5 wide (share, tags, …) — Files
+                              only has "…" backed, so its capsule is 36
+                search        36 circle, 9 from the right edge
+                gaps          17.5 view→group, 20 group→actions→search
+  List view     header 28 (11 regular, sorted column 11 semibold
+                rgb(220,220,222), others rgb(155,155,161)), 0.5 hairline
+                rgba(255,255,255,.15) at the bottom, column dividers 1 × 16;
+                rows begin 5 below, 20 tall; odd rows striped
+                rgba(255,255,255,.045) = rgb(43,43,56), inset 10, radius 6,
+                stripes continue into the empty area; disclosure chevron at 11,
+                icon 16 at 26, name at 46 (13 regular rgb(223,223,225));
+                columns Name 382 · Date Modified 181 · Size 97 (right-aligned,
+                5 in) · Kind rest, text 6 in; secondary text rgb(159,159,165)
+  Selection     focused rgb(37,88,201) (Blue accent), white text; window not
+                key: rgb(70,70,70); radius 6, same inset as the stripes
+  Icon view     grid x 11, cell 128 × 116, icon 64 at the cell centre, first
+                row y 24; label 12 regular, 6 below the icon, ≤ 2 lines,
+                ≤ 112 wide; selected: icon plate rgba(255,255,255,.10) radius
+                8 grown 4 around the icon, label pill 17 tall radius 5 in the
+                selection colour
+  Column view   columns 245 incl. a 1 pt black divider; rows y 5, pitch 22;
+                selection inset 10 / radius 6; icon 16 at 17, text at 36,
+                chevron ends 11 from the divider
+  Gallery view  inspector 250 on the right; stage preview centred; filmstrip
+                48 thumbnails, pitch 59, 8 from the left, 56 from the bottom
+  Path bar      optional (View ▸ Show Path Bar, ⌥⌘P; off by default on the
+                Mac); 28 tall above the status bar, 0.5 top hairline
+                rgba(255,255,255,.15); crumbs from x 14: icon 13, gap 5,
+                11 regular rgb(155,155,161), "›" separators with 6 each side
+  Status bar    28 tall, 0.5 top hairline black; 11 regular rgb(155,155,161)
+                centred; icon view adds the size slider 82 wide, 14 from the
+                right
+-->
+<style>
+  :root{
+    --win:rgb(33,33,46); --panel:rgb(30,30,39); --panel-edge:rgba(255,255,255,.10);
+    --text:rgb(223,223,225); --side-text:rgb(244,244,253); --glyph:rgb(232,232,234);
+    --sec:rgb(159,159,165); --head:rgb(154,154,165); --path:rgb(155,155,161);
+    --stripe:rgba(255,255,255,.045); --hair:rgba(255,255,255,.15);
+    --sel:rgb(37,88,201); --sel-off:rgb(70,70,70); --side-sel:rgba(255,255,255,.062);
+    --cap:rgba(255,255,255,.02); --cap-edge:rgba(255,255,255,.14); --cap-on:rgba(255,255,255,.16);
+    --font:-apple-system,"SF Pro Text",Inter,system-ui,sans-serif;
+  }
+  body{margin:0;background:#111;font:13px var(--font);color:var(--text);-webkit-font-smoothing:antialiased}
+  .stage{padding:24px;display:flex;flex-direction:column;gap:24px}
+  .win{position:relative;width:947px;height:700px;background:var(--win);border-radius:27px;overflow:hidden;
+       box-shadow:0 0 0 .5px rgba(0,0,0,.9),inset 0 0 0 1px rgba(255,255,255,.14)}
+  .ico{display:inline-block;background:currentColor;-webkit-mask:var(--m) center/contain no-repeat;mask:var(--m) center/contain no-repeat;flex:none}
+  /* sidebar */
+  .panel{position:absolute;left:8px;top:8px;bottom:8.5px;width:148px;border-radius:19px;background:var(--panel);
+         box-shadow:inset 0 0 0 1px var(--panel-edge)}
+  .tl{position:absolute;top:19px;width:14px;height:14px;border-radius:50%}
+  .rows{position:absolute;left:10px;top:44px;width:128px}
+  .row{height:32px;display:flex;align-items:center;position:relative;color:var(--side-text)}
+  .row.sel{background:var(--side-sel);border-radius:8px}
+  .row .ico{position:absolute;left:8px;width:22px;height:22px;color:var(--side-text)}
+  .row .dot{position:absolute;left:13px;width:12px;height:12px;border-radius:50%}
+  .row span{position:absolute;left:35px}
+  .hd{height:19px;margin-top:13px;padding:2px 0 0 5px;font:600 11px/17px var(--font);color:var(--head)}
+  /* toolbar */
+  .cap{position:absolute;top:8px;height:36px;border-radius:18px;background:var(--cap);box-shadow:inset 0 0 0 1px var(--cap-edge);display:flex;align-items:center;padding:0 .5px;color:var(--glyph)}
+  .cap b{width:36px;height:36px;display:flex;align-items:center;justify-content:center;position:relative}
+  .cap b.on::before{content:"";position:absolute;left:1px;top:4px;width:34px;height:28px;border-radius:14px;background:var(--cap-on)}
+  .cap b .ico{position:relative}
+  .cap i.div{width:1px;height:20px;background:rgba(255,255,255,.10);margin:0 -.5px}
+  .title{position:absolute;left:249px;top:0;height:52px;display:flex;align-items:center;font:700 15px var(--font);color:var(--glyph)}
+  /* content */
+  .content{position:absolute;left:156px;top:52px;right:0;bottom:28px;overflow:hidden}
+  .status{position:absolute;left:156px;right:0;bottom:0;height:28px;box-shadow:inset 0 .5px 0 rgba(0,0,0,1);
+          display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--path)}
+  .pathbar{position:absolute;left:156px;right:0;bottom:28px;height:28px;box-shadow:inset 0 .5px 0 var(--hair);
+           display:flex;align-items:center;padding-left:14px;font-size:11px;color:var(--path)}
+  .pathbar .c{display:flex;align-items:center;gap:5px}
+  .pathbar .sep{margin:0 6px;font-size:12px}
+  /* list */
+  .lh{position:absolute;left:0;right:0;top:0;height:28px;box-shadow:inset 0 -.5px 0 var(--hair);font-size:11px;color:var(--path)}
+  .lh span{position:absolute;top:6.5px}
+  .lh .vd{position:absolute;top:6px;width:1px;height:16px;background:rgba(255,255,255,.10)}
+  .lr{position:absolute;left:10px;right:10px;height:20px;border-radius:6px;display:flex;align-items:center}
+  .lr.odd{background:var(--stripe)}
+  .lr.sel{background:var(--sel)} .lr.sel *{color:#fff!important}
+  .lr.selx{background:var(--sel-off)}
+  .lr > *{position:absolute}
+  .lr .n{left:36px;color:var(--text)} .lr .d{left:378px;color:var(--sec)} .lr .s{left:553px;width:92px;text-align:right;color:var(--sec)} .lr .k{left:656px;color:var(--sec)}
+  /* icon grid */
+  .cell{position:absolute;width:128px;height:116px;display:flex;flex-direction:column;align-items:center}
+  .cell .plate{position:relative;width:64px;height:64px;margin-top:0}
+  .cell.sel .plate::before{content:"";position:absolute;inset:-4px;border-radius:8px;background:rgba(255,255,255,.10)}
+  .cell .lab{margin-top:6px;max-width:112px;text-align:center;font-size:12px;line-height:15px;padding:1px 5px;border-radius:5px;color:var(--text)}
+  .cell.sel .lab{background:var(--sel);color:#fff}
+  /* columns */
+  .col{position:absolute;top:0;bottom:0;width:245px;box-shadow:inset -1px 0 0 #000}
+  .cr{position:absolute;left:10px;width:224px;height:22px;border-radius:6px;display:flex;align-items:center}
+  .cr.sel{background:var(--sel)} .cr.sel *{color:#fff!important}
+  .cr .ico.f{position:absolute;left:7px}
+  .cr .n{position:absolute;left:26px}
+  .cr .chev{position:absolute;right:2px;color:var(--sec)}
+  .folder{--m:url(../crates/finder/assets/icons/folder-artwork.svg);color:rgb(110,190,240)}
+  .cap-label{font:600 12px var(--font);color:#999;margin:0 0 6px}
+</style>
+</head>
+<body>
+<div class="stage" id="stage"></div>
+<script>
+const I = n => `url(../crates/finder/assets/icons/${n}.svg)`;
+const ico = (n, s, extra = '', st = '') => `<i class="ico ${extra}" style="--m:${I(n)};width:${s}px;height:${s}px;${st}"></i>`;
+const folders = ['Applications','Desktop','Documents','Downloads','Library','Movies','Music','Pictures','Projects','Public'];
+const dates = ['1 May 2026 at 7:27 PM','Yesterday at 1:15 PM','13 Apr 2026 at 9:53 AM','Today at 12:15 PM','2 Mar 2026 at 8:10 AM','12 Nov 2024 at 8:39 PM','29 Apr 2024 at 10:36 AM','28 Feb 2024 at 11:05 PM','17 Sep 2026 at 3:32 PM','21 May 2025 at 8:14 AM'];
+
+function sidebar(sel){
+  const r = (i, n, s) => `<div class="row${s ? ' sel' : ''}">${ico(i, 22)}<span>${n}</span></div>`;
+  return `<div class="panel">
+    <i class="tl" style="left:11px;background:#ff5f57"></i><i class="tl" style="left:34px;background:#febc2e"></i><i class="tl" style="left:57px;background:#28c840"></i>
+    <div class="rows">
+      ${r('clock','Recents')}${r('shared-folder','Shared')}
+      <div class="hd">Favourites</div>
+      ${r('layout-grid','Applications')}${r('circle-arrow-down','Downloads')}${r('file','Documents')}${r('desktop','Desktop')}${r('folder','Projects')}
+      <div class="hd">Locations</div>
+      ${r('house','user', sel)}${r('hard-drive','Computer')}${r('trash-2','Bin')}
+    </div></div>`;
+}
+function toolbar(view, title){
+  const v = (n, m) => `<b class="${view === m ? 'on' : ''}">${ico(n, 20)}</b>`;
+  const modes = ['icon','list','column','gallery'];
+  const glyphs = ['layout-grid','list','columns-3','gallery'];
+  let seg = '';
+  modes.forEach((m, i) => {
+    if (i) seg += (view === m || view === modes[i - 1]) ? '<i class="div" style="opacity:0"></i>' : '<i class="div"></i>';
+    seg += v(glyphs[i], m);
+  });
+  return `<div class="cap" style="left:164px;width:73px"><b>${ico('chevron-left', 22)}</b><i class="div"></i><b style="opacity:.35">${ico('chevron-right', 22)}</b></div>
+    <div class="title">${title}</div>
+    <div class="cap" style="left:${947 - 405}px;width:148px">${seg}</div>
+    <div class="cap" style="left:${947 - 239.5}px;width:47.5px;justify-content:center;gap:1px">${ico('group', 20)}${ico('chevron-down', 12)}</div>
+    <div class="cap" style="left:${947 - 172 + 71.5}px;width:36px"><b>${ico('ellipsis', 20)}</b></div>
+    <div class="cap" style="left:${947 - 45}px;width:36px"><b>${ico('search', 18)}</b></div>`;
+}
+function status(text, slider){
+  return `<div class="status">${text}${slider ? '<i style="position:absolute;right:14px;width:82px;height:4px;border-radius:2px;background:rgba(255,255,255,.2)"></i><i style="position:absolute;right:62px;width:14px;height:14px;border-radius:50%;background:#ccc"></i>' : ''}</div>`;
+}
+function pathbar(){
+  const c = (i, n) => `<span class="c">${ico(i, 13)}${n}</span>`;
+  return `<div class="pathbar">${c('hard-drive','Computer')}<span class="sep">›</span>${c('folder','home')}<span class="sep">›</span>${c('house','user')}<span class="sep">›</span>${c('folder','Public')}</div>`;
+}
+function list(selIx, focused){
+  let h = `<div class="lh"><span style="left:46px;color:rgb(220,220,222);font-weight:600">Name</span>${ico('chevron-up', 11, '', 'position:absolute;left:363px;top:9px;color:var(--path)')}
+    <i class="vd" style="left:382px"></i><span style="left:388px">Date Modified</span><i class="vd" style="left:563px"></i><span style="left:569px">Size</span><i class="vd" style="left:660px"></i><span style="left:666px">Kind</span></div>`;
+  for (let i = 0; i < 30; i++) {
+    const y = 33 + i * 20;
+    const cls = i === selIx ? (focused ? ' sel' : ' selx') : (i % 2 ? ' odd' : '');
+    const f = folders[i];
+    h += `<div class="lr${cls}" style="top:${y}px">${f ? `${ico('chevron-right', 12, '', 'left:3px;color:var(--path)')}<i class="ico folder" style="left:16px;width:16px;height:16px"></i><span class="n">${f}</span><span class="d">${dates[i]}</span><span class="s">--</span><span class="k">Folder</span>` : ''}</div>`;
+  }
+  return h;
+}
+function icons(selIx){
+  let h = '';
+  folders.forEach((f, i) => {
+    const x = 11 + (i % 6) * 128, y = 24 + Math.floor(i / 6) * 116;
+    h += `<div class="cell${i === selIx ? ' sel' : ''}" style="left:${x}px;top:${y}px"><div class="plate"><i class="ico folder" style="width:64px;height:64px"></i></div><div class="lab">${f}</div></div>`;
+  });
+  return h;
+}
+function columns(selIx){
+  let h = '<div class="col" style="left:0">';
+  folders.forEach((f, i) => {
+    h += `<div class="cr${i === selIx ? ' sel' : ''}" style="top:${5 + i * 22}px"><i class="ico folder f" style="width:16px;height:16px"></i><span class="n">${f}</span>${ico('chevron-right', 12, 'chev')}</div>`;
+  });
+  h += '</div><div class="col" style="left:245px"><div class="cr" style="top:5px"><i class="ico folder f" style="width:16px;height:16px"></i><span class="n">Drop Box</span>' + ico('chevron-right', 12, 'chev') + '</div></div>';
+  return h;
+}
+function gallery(){
+  let h = `<div style="position:absolute;left:0;top:0;bottom:0;right:250px;box-shadow:inset -1px 0 0 rgba(0,0,0,1)">
+    <i class="ico folder" style="position:absolute;left:47px;top:119px;width:447px;height:447px"></i>`;
+  folders.forEach((f, i) => { h += `<i class="ico folder" style="position:absolute;left:${8 + i * 59}px;bottom:28px;width:48px;height:48px${i === 0 ? ';outline:3px solid rgba(255,255,255,.25);outline-offset:1px;border-radius:6px' : ''}"></i>`; });
+  h += `</div><div style="position:absolute;right:0;top:0;bottom:0;width:250px;padding:19px 9px">
+    <div style="display:flex;gap:9px;align-items:center"><i class="ico folder" style="width:50px;height:50px"></i><div><div style="font:600 15px var(--font)">Applications</div><div style="color:var(--sec)">Folder – 2.5 MB</div></div></div>
+    <div style="margin-top:20px;font-weight:700">Information</div>
+    <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:12px"><span style="color:var(--sec)">Created</span><b>28 February 2024 at 2:43 PM</b></div>
+    <div style="display:flex;justify-content:space-between;margin-top:7px;font-size:12px"><span style="color:var(--sec)">Modified</span><b>1 May 2026 at 7:27 PM</b></div></div>`;
+  return h;
+}
+const views = [
+  ['icon', 'user', icons(9), '1 of 10 selected, 68.14 GB available', true, false],
+  ['list', 'user', list(9, true), '1 of 10 selected, 68.14 GB available', false, true],
+  ['column', 'Public', columns(9), '1 item, 68.14 GB available', false, true],
+  ['gallery', 'user', gallery(), '1 of 10 selected, 68.14 GB available', false, false],
+];
+document.getElementById('stage').innerHTML = views.map(([m, t, body, st, slider, path]) =>
+  `<div><p class="cap-label">${m} view</p><div class="win" id="v-${m}">${sidebar(true)}${toolbar(m, t)}
+   <div class="content" style="bottom:${path ? 56 : 28}px">${body}</div>${path ? pathbar() : ''}${status(st, slider)}</div></div>`).join('');
+</script>
+</body>
+</html>

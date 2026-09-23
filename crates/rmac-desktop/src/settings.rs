@@ -279,7 +279,7 @@ mod tests {
         let weather = settings
             .add_widget(
                 WidgetKind::Weather,
-                WidgetSize::Medium,
+                WidgetSize::Small,
                 WidgetLocation::NotificationCenter,
             )
             .unwrap();

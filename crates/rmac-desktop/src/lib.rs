@@ -309,7 +309,8 @@ pub fn duplicate_file(path: &Path) -> Result<PathBuf, Error> {
     Ok(target)
 }
 
-fn sort_items(items: &mut [Item], sort: SortOrder) {
+/// Orders items as Sort By and Clean Up By do.
+pub fn sort_items(items: &mut [Item], sort: SortOrder) {
     items.sort_by(|left, right| {
         let order = match sort {
             SortOrder::Name => left.name.to_lowercase().cmp(&right.name.to_lowercase()),

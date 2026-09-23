@@ -7,9 +7,9 @@ mod history;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    canvas, div, img, linear_color_stop, linear_gradient, px, rgba, size, AnyElement, Context,
-    InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, ParentElement as _, Render,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    canvas, div, img, linear_color_stop, linear_gradient, px, rgba, size, AnyElement, App, Context,
+    Entity, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
 };
 use gpui_component::{IconName, StyledExt as _};
 use rmac_notification_center_app::accessibility::{
@@ -89,7 +89,43 @@ fn backdrop() -> impl IntoElement {
         )
 }
 
-fn empty_state(title: &'static str, show_edit: bool) -> impl IntoElement {
+/// "Edit Widgets" asks the wallpaper process for the widget gallery, with
+/// Notification Centre as the place new widgets go, and closes the Center.
+fn edit_widgets(
+    view: Entity<NotificationCenterView>,
+) -> impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static {
+    move |_, window, cx| {
+        cx.stop_propagation();
+        if let Err(error) = rmac_desktop::settings::request_gallery(
+            rmac_desktop::settings::GalleryTarget::NotificationCenter,
+        ) {
+            eprintln!("the widget gallery could not be requested: {error}");
+        }
+        view.update(cx, |this, cx| this.dismiss(window, cx));
+    }
+}
+
+fn edit_pill(view: Entity<NotificationCenterView>) -> gpui::Div {
+    div()
+        .w(px(EDIT_WIDTH))
+        .h(px(EDIT_HEIGHT))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_full()
+        .bg(rgba(EDIT_FILL))
+        .border_1()
+        .border_color(rgba(EDIT_BORDER))
+        .text_size(rmac_ui::text_px(12.0))
+        .text_color(rgba(EDIT_TEXT))
+        .on_mouse_down(MouseButton::Left, edit_widgets(view))
+        .child(EDIT_WIDGETS_LABEL)
+}
+
+fn empty_state(
+    title: &'static str,
+    edit: Option<Entity<NotificationCenterView>>,
+) -> impl IntoElement {
     div()
         .absolute()
         .top_0()
@@ -110,29 +146,38 @@ fn empty_state(title: &'static str, show_edit: bool) -> impl IntoElement {
                 .text_color(rgba(EMPTY_TITLE_COLOUR))
                 .child(title),
         )
-        .when(show_edit, |state| {
-            // There are no widgets yet, so the pill is shown as on the Mac
-            // but has nothing to edit.
+        .when_some(edit, |state, view| {
             state.child(
-                div()
+                edit_pill(view)
                     .absolute()
                     .top(px(EDIT_TOP))
-                    .right(px(EDIT_CENTRE - EDIT_WIDTH / 2.0))
-                    .w(px(EDIT_WIDTH))
-                    .h(px(EDIT_HEIGHT))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .bg(rgba(EDIT_FILL))
-                    .border_1()
-                    .border_color(rgba(EDIT_BORDER))
-                    .text_size(rmac_ui::text_px(12.0))
-                    .text_color(rgba(EDIT_TEXT))
-                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .child(EDIT_WIDGETS_LABEL),
+                    .right(px(EDIT_CENTRE - EDIT_WIDTH / 2.0)),
             )
         })
+}
+
+/// Notification Centre widgets: small faces two to a row across the
+/// 344-point column (170 + 4 + 170).
+fn widget_rows(
+    widgets: &[rmac_desktop::widgets::Widget],
+    data: &rmac_desktop_widgets::WidgetData,
+) -> Vec<AnyElement> {
+    let gap = card::WIDTH - 2.0 * rmac_desktop::widgets::SMALL;
+    widgets
+        .chunks(2)
+        .map(|row| {
+            div()
+                .flex()
+                .gap(px(gap))
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .children(
+                    row.iter().map(|widget| {
+                        rmac_desktop_widgets::face(widget.kind, widget.size, 1.0, data)
+                    }),
+                )
+                .into_any_element()
+        })
+        .collect()
 }
 
 fn notice(message: SharedString) -> impl IntoElement {
@@ -169,6 +214,9 @@ impl Render for NotificationCenterView {
             .map(notice)
             .collect::<Vec<_>>();
         let dismiss_view = cx.entity();
+        let edit_view = cx.entity();
+        let has_widgets = !self.widgets.is_empty();
+        let widget_elements = widget_rows(&self.widgets, &self.widget_data);
 
         // Shrinks (or grows) the layer surface to the column's natural
         // height after layout, as macOS sizes Notification Center to its cards.
@@ -202,9 +250,11 @@ impl Render for NotificationCenterView {
             })
             .text_color(mac::text())
             .child(backdrop())
-            .when(empty, |root| root.child(empty_state(EMPTY_TITLE, true)))
+            .when(empty, |root| {
+                root.child(empty_state(EMPTY_TITLE, Some(edit_view.clone())))
+            })
             .when(unavailable, |root| {
-                root.child(empty_state(UNAVAILABLE_TITLE, false))
+                root.child(empty_state(UNAVAILABLE_TITLE, None))
             })
             .child(
                 div()
@@ -215,7 +265,13 @@ impl Render for NotificationCenterView {
                     .w(px(card::WIDTH + COLUMN_LEFT_ROOM))
                     .max_h(px(panel_height(f32::MAX)))
                     .overflow_y_scroll()
-                    .pt(px(COLUMN_TOP))
+                    // Below the empty state's title and pill when there are
+                    // only widgets to show.
+                    .pt(px(if empty && has_widgets {
+                        EDIT_TOP + EDIT_HEIGHT + 16.0
+                    } else {
+                        COLUMN_TOP
+                    }))
                     .pb(px(COLUMN_BOTTOM))
                     .pl(px(COLUMN_LEFT_ROOM))
                     .child(
@@ -226,6 +282,15 @@ impl Render for NotificationCenterView {
                             .gap(px(card::GAP))
                             .children(notices)
                             .children(group_elements)
+                            .children(widget_elements)
+                            .when(has_widgets && !empty, |column| {
+                                column.child(
+                                    div()
+                                        .flex()
+                                        .justify_center()
+                                        .child(edit_pill(edit_view.clone())),
+                                )
+                            })
                             .child(measure),
                     ),
             )

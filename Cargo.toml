@@ -73,6 +73,7 @@ rmac-audio = { version = "=0.1.0", path = "crates/rmac-audio" }
 rmac-display = { version = "=0.1.0", path = "crates/rmac-display" }
 rmac-design = { version = "=0.1.0", path = "crates/rmac-design" }
 rmac-desktop = { version = "=0.1.0", path = "crates/rmac-desktop" }
+rmac-desktop-widgets = { version = "=0.1.0", path = "crates/rmac-desktop-widgets" }
 rmac-dock = { version = "=0.1.0", path = "crates/rmac-dock" }
 rmac-dock-system = { version = "=0.1.0", path = "crates/rmac-dock-system" }
 rmac-dock-runtime = { version = "=0.1.0", path = "crates/rmac-dock-runtime" }

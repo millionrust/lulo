@@ -59,6 +59,65 @@ impl NotificationCenterView {
         })
         .detach();
 
+        // The widgets added here, read from the desktop's saved state. The
+        // Weather face shows the cache the wallpaper process keeps fresh.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            use rmac_desktop::widgets::WidgetKind;
+            let (widgets, data) = blocking::unblock(|| {
+                let widgets = rmac_desktop::settings::load()
+                    .map(|settings| {
+                        settings
+                            .notification_center_widgets()
+                            .copied()
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let mut data = rmac_desktop_widgets::WidgetData::default();
+                if widgets
+                    .iter()
+                    .any(|widget| widget.kind == WidgetKind::Battery)
+                {
+                    let (battery, none) = rmac_desktop_widgets::read_battery();
+                    data.battery = battery;
+                    data.no_battery = none;
+                }
+                if widgets
+                    .iter()
+                    .any(|widget| widget.kind == WidgetKind::Weather)
+                {
+                    data.weather = Some(rmac_desktop_widgets::read_weather(false));
+                }
+                (widgets, data)
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| {
+                this.widgets = widgets;
+                this.widget_data = data;
+                cx.notify();
+            });
+        })
+        .detach();
+
+        // The Clock widget's second hand.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(1))
+                .await;
+            let alive = this.update(cx, |this, cx| {
+                if this
+                    .widgets
+                    .iter()
+                    .any(|widget| widget.kind == rmac_desktop::widgets::WidgetKind::Clock)
+                {
+                    cx.notify();
+                }
+            });
+            if alive.is_err() {
+                break;
+            }
+        })
+        .detach();
+
         // Relative times ("now", "5m ago") advance while the panel is open.
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
             cx.background_executor()
@@ -81,6 +140,8 @@ impl NotificationCenterView {
             busy: None,
             marking_read: false,
             was_active: false,
+            widgets: Vec::new(),
+            widget_data: rmac_desktop_widgets::WidgetData::default(),
         }
     }
 

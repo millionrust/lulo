@@ -46,11 +46,10 @@ impl WidgetKind {
         }
     }
 
+    /// Sizes rmac draws. Medium and Large need data rmac does not have yet
+    /// (a per-widget hourly forecast, other devices' batteries, events).
     pub fn sizes(self) -> &'static [WidgetSize] {
-        match self {
-            Self::Clock | Self::Calendar => &[WidgetSize::Small],
-            Self::Battery | Self::Weather => &[WidgetSize::Small, WidgetSize::Medium],
-        }
+        &[WidgetSize::Small]
     }
 }
 
@@ -331,7 +330,11 @@ mod tests {
         assert!(widget.is_valid());
         widget.size = WidgetSize::Medium;
         assert!(!widget.is_valid());
-        widget.kind = WidgetKind::Weather;
-        assert!(widget.is_valid());
+        widget.size = WidgetSize::Small;
+        widget.location = WidgetLocation::Desktop {
+            left: f32::NAN,
+            top: 40.0,
+        };
+        assert!(!widget.is_valid());
     }
 }

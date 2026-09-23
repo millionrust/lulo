@@ -1,0 +1,17 @@
+[package]
+name = "rmac-desktop-widgets"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# The widget faces drawn on the desktop (shell/bins/rmac-wallpaper), in the
+# widget gallery and in Notification Centre, with plain GPUI elements so
+# both the shell and the application workspace can use them.
+[dependencies]
+chrono.workspace = true
+gpui.workspace = true
+rmac-desktop.workspace = true
+rmac-power.workspace = true
+rmac-weather.workspace = true

@@ -29,6 +29,7 @@ rmac-compositor = { version = "=0.1.0", path = "../crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.1.0", path = "../crates/rmac-compositor-niri" }
 rmac-design = { version = "=0.1.0", path = "../crates/rmac-design" }
 rmac-desktop = { version = "=0.1.0", path = "../crates/rmac-desktop" }
+rmac-desktop-widgets = { version = "=0.1.0", path = "../crates/rmac-desktop-widgets" }
 rmac-dock = { version = "=0.1.0", path = "../crates/rmac-dock" }
 rmac-dock-runtime = { version = "=0.1.0", path = "../crates/rmac-dock-runtime" }
 rmac-dock-system = { version = "=0.1.0", path = "../crates/rmac-dock-system" }
@@ -50,6 +51,8 @@ rmac-theme = { version = "=0.1.0", path = "../crates/rmac-theme" }
 rmac-wallpaper = { version = "=0.1.0", path = "../crates/rmac-wallpaper" }
 rmac-wallpaper-image = { version = "=0.1.0", path = "../crates/rmac-wallpaper-image" }
 rmac-wallpaper-runtime = { version = "=0.1.0", path = "../crates/rmac-wallpaper-runtime" }
+# The library alone; the Weather app's window stack stays out of the shell.
+rmac-weather = { version = "=0.1.0", path = "../crates/weather", default-features = false }
 trash = "5"
 uuid = { version = "1", features = ["v5"] }
 wayland-client = "0.31"

@@ -19,15 +19,26 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
 
 ## Accessibility limits
 
-- The Dock's layer-shell surface runs with `keyboard_interactive: false` (no
-  compositor surface ever receives keyboard focus there), so there is no
-  keyboard-only path into it yet -- macOS reaches the Dock with Control-F3,
-  then arrow keys and Return. Making the Dock keyboard-reachable needs a
-  layer-shell keyboard-interactivity mode switch, a new global shortcut, an
-  arrow-key selection state machine, a visible focus ring, and an Escape
-  route back to the previous focus: a cross-crate feature, not a small
-  follow-up to the AT-SPI Click-action fix in the Dock and Spotlight
-  (todo.md "Accessibility gates").
+- The Dock is keyboard-reachable with Control-F3 (niri runs
+  `rmac-dock focus`): arrows and Tab move, Return/Space open, Up opens the
+  tile's menu, Escape refocuses the previous window. The Dock's own layer
+  surface still has no keyboard interactivity -- GPUI cannot change a mapped
+  layer surface's interactivity, and re-creating the Dock would reflow every
+  window -- so an invisible 1x1 overlay surface with an exclusive keyboard
+  holds the keys while the Dock is focused and carries the AccessKit focus.
+  Not yet verified on the laptop with Orca. Known gaps: while focused, the
+  Dock captures one click anywhere (as its menus do) to end keyboard mode;
+  a Dock surface re-created mid-navigation (an app launching changes the
+  shelf length) leaves the focus surface until the next key; the focused
+  minimized-window tile's look was not captured on the Mac; the name bubble
+  still uses the older rmac pill rather than the measured bubble in
+  design-lab/dock.html (scene 3); Fn may be needed for F3 on keyboards
+  whose top row defaults to media keys.
+- Control-F2 (move focus to the menu bar) is not implemented. The top bar's
+  surface is on-demand (niri focuses it only on click) and its key handling
+  runs only while a menu is open, so it needs the Dock's invisible focus
+  surface, a command endpoint, a "title highlighted, no menu open" state
+  and its accessible focus -- the same mechanism, but not a small addition.
 - AT-SPI's `EditableText` interface (needed to type into Spotlight's search
   field without a keyboard injector) is not implemented by the pinned
   `accesskit_unix`/`accesskit_atspi_common` versions at all -- confirmed

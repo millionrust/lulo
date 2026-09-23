@@ -7,7 +7,7 @@ StartLimitBurst=4
 ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-file-chooser
 
 # D-Bus activated by the first Open/Save request; the session target never
-# starts it. No PrivateTmp: the panel must browse the real /tmp.
+# starts it. It keeps the real /tmp (no private one) so the panel can browse it.
 [Service]
 Type=dbus
 BusName=org.freedesktop.impl.portal.desktop.rmac.filechooser

@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Open and Save panels — exact</title>
+<!--
+  rmac's Open/Save panel (xdg-desktop-portal FileChooser backend,
+  crates/rmac-file-chooser) at 1:1 logical points, measured from the owner's
+  Mac (macOS 26.2 Tahoe, dark mode, 2026-09-23): TextEdit ⌘O and ⌘S, Retina
+  screenshots ÷ 2 and Accessibility frames. Rust copies these numbers from
+  crates/rmac-file-chooser/src/metrics.rs; the colours are the dark `Palette`.
+  M = measured, S = not measurable here (stated beside it).
+
+  OPEN PANEL (window 880 × 448, AX)
+    window            radius 16 (fit), 1 pt rim #4D4D58, fill #21212E
+    sidebar pane      x 8  y 8  119 × 432 (height = panel − 16), radius 8
+                      (concentric 16 − 8), fill #21212A, 0.5 pt rim #3F3F51
+      rows            32 tall, 99-wide selection pill at pane x 10, radius 7
+                      (fit 6.6), pill #303038; first row at pane y 10
+      icon            ≈ 18 pt glyph centred at pane x 29
+      label           pane x 45, 13 pt, #F3F3FB; selected label + icon #1892FF
+      section header  19 tall, 13 gap above it, text pane x 15, 11 pt
+                      semibold #9E9EA6. Sections: (none) · Favourites ·
+                      Locations · Tags (Tags omitted: no Linux tag store)
+    toolbar row       y 19, controls 26 tall (visible plate 24 at +1, radius 6)
+      back/forward    x 146 w 49, glyphs #64646E disabled / #E0E0E2 enabled,
+                      1 pt divider between them
+      view mode       x 201 w 69 (glyph + chevron.down)
+      sort/group      x 276 w 66
+      Where popup     x 387 w 232 (Open) · w 200 + disclosure 26 at x 593 (Save)
+                      folder glyph 16 at +15, title at +32 (13 pt #DFDFE1),
+                      chevron.up.chevron.down 15 from the right edge
+      search          x 664 w 196, no fill, 1 pt border #2A2A37, capsule,
+                      magnifier at +7, placeholder “Search” at +26 #9B9BA1
+    hairlines         #373742, 0.5 pt, at toolbar + 45.5 and at panel − 65
+    content           x 127 → 880, between the hairlines (Open: 65 → 383)
+      icon view       64 icons, first at content +38/+24, pitch 122.5 × 130,
+                      label 13 pt #DDDDDF, 2 lines, line 16, top = icon + 6;
+                      image dimensions line in accent #5A9AF8 (omitted: no
+                      thumbnail metadata yet)
+    bottom row        y = panel − 45, buttons 26 (plate 24, radius 6 fit 5.1)
+      Cancel          w 76 at x 703, fill #31313E, text #DFDFE1
+      Open            w 76 at x 785 (right margin 19); disabled #292936/#5E5E68,
+                      default #3478F6 / #FFFFFF
+      accessory       app accessory (TextEdit: New Document / Show Options) at
+                      x 146 — rmac puts the portal's filter pop-up and choices here
+
+  GO TO FOLDER (⇧⌘G) sheet 460 × 183, centred in the panel, radius 24 (fit)
+    field row         fill #22222E, title/field at x 15 y 7, 344 × 22,
+                      15 pt, placeholder “Go to Folder” #595962
+    close             18 × 18 circle at x 427 y 9, #9C9CA1
+    hairline          #383842, 1 pt, at y 34.5
+    suggestions       y 36 → 183, fill #262632 (matching folders)
+
+  SAVE — COMPACT (sheet 390 × 218 on the Mac with Tags + File Format)
+    radius 24 (fit 23.6), fill #22212E, rim like the window
+    rows              pitch 36: Save As y 19, Tags y 55 (omitted in rmac),
+                      File Format y 92, Where y 128  →  rmac: Save As 19,
+                      Format 55 (only with >1 filter), Where next
+    labels            right-aligned, x 39 w 73, 13 pt #9B9BA1
+    fields            x 118 w 232 h 26; Save As focus ring ≈ 3 pt #3E6998,
+                      name selected up to the extension
+    Where popup       x 118 w 200, disclosure (chevron.down) x 324 26 × 26
+    buttons           Where + 45: Cancel x 212, Save x 294 (w 76), bottom 19
+
+  SAVE — EXPANDED (880 × 448 on the Mac)
+    header rows       same y as compact; labels x 308 w 73; fields x 387 w 232
+    toolbar           last header row + 44; Where w 200 + chevron.up at 593
+    content           toolbar + 46 → panel − 65 (Mac: column view; rmac: list)
+    New Folder        x 146 w 95, bottom row
+
+  KEYBOARD (macOS behaviour, all implemented)
+    ⇧⌘G Go to Folder · ⇧⌘D Desktop · ⇧⌘H Home · ⌘↑ enclosing folder ·
+    ⌘[ ⌘] back/forward · ⌘1 icons ⌘2 list · ↑↓←→ move · Return default
+    button (opens a folder when a folder is selected in Open) · Esc Cancel ·
+    type-to-select (1 s buffer) · ⌘F search · Tab moves Save As → list
+-->
+<style>
+  :root {
+    --font: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+    --panel: #21212E;  --sidebar: #21212A;  --sidebar-rim: #3F3F51;
+    --rim: #4D4D58;    --hair: #373742;     --control: #31313E;
+    --pill: #303038;   --text: #DFDFE1;     --text-side: #F3F3FB;
+    --text-file: #DDDDDF; --label: #9B9BA1; --section: #9E9EA6;
+    --side-sel: #1892FF;  --glyph-off: #64646E; --glyph-on: #E0E0E2;
+    --search-rim: #2A2A37; --default: #3478F6; --default-off: #292936;
+    --text-off: #5E5E68; --sheet: #22212E; --field-rim: #2B2A37;
+    --ring: #3E6998; --goto-head: #22222E; --goto-list: #262632;
+    --goto-hair: #383842; --goto-ph: #595962; --close: #9C9CA1;
+    --folder: #0091FF;
+  }
+  html, body { margin: 0; background: #0e1015; }
+  body { font-family: var(--font); -webkit-font-smoothing: antialiased; color: var(--text);
+         font-size: 13px; padding: 40px; width: 960px; }
+  h2 { font: 600 13px var(--font); color: #8a8a90; margin: 28px 0 10px; }
+  .stage { position: relative; }
+  .panel { position: relative; background: var(--panel); border-radius: 16px;
+           box-shadow: inset 0 0 0 1px var(--rim), 0 12px 32px rgba(0,0,0,.45); overflow: hidden; }
+  .sheet { border-radius: 24px; background: var(--sheet); }
+  .abs { position: absolute; }
+  .ico { display: inline-block; background: currentColor;
+         -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; }
+  .pane { position: absolute; left: 8px; top: 8px; width: 119px; background: var(--sidebar);
+          border-radius: 8px; box-shadow: inset 0 0 0 .5px var(--sidebar-rim); }
+  .row { position: absolute; left: 10px; width: 99px; height: 32px; border-radius: 7px; }
+  .row.sel { background: var(--pill); color: var(--side-sel); }
+  .row .ico { position: absolute; left: 10px; top: 7px; width: 18px; height: 18px; color: var(--text-side); }
+  .row.sel .ico { color: var(--side-sel); }
+  .row .t { position: absolute; left: 35px; right: 4px; top: 7px; line-height: 18px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-side); }
+  .row.sel .t { color: var(--side-sel); }
+  .hdr { position: absolute; left: 15px; height: 19px; line-height: 19px; font-size: 11px;
+         font-weight: 600; color: var(--section); }
+  .ctl { position: absolute; height: 26px; }
+  .ctl > .plate { position: absolute; left: 1px; top: 1px; right: 1px; bottom: 1px;
+                  background: var(--control); border-radius: 6px; }
+  .ctl .ico { position: absolute; }
+  .search { border-radius: 13px; box-shadow: inset 0 0 0 1px var(--search-rim); }
+  .hair { position: absolute; height: .5px; background: var(--hair); }
+  .btn { position: absolute; height: 26px; width: 76px; }
+  .btn > .plate { position: absolute; left: 1px; top: 1px; right: 1px; bottom: 1px;
+                  border-radius: 6px; background: var(--control); display: flex;
+                  align-items: center; justify-content: center; color: var(--text); }
+  .btn.def > .plate { background: var(--default); color: #fff; }
+  .btn.off > .plate { background: var(--default-off); color: var(--text-off); }
+  .tile { position: absolute; width: 112px; text-align: center; }
+  .tile .ico { width: 64px; height: 64px; color: var(--folder); }
+  .tile .ico.file { color: #9B9BA1; }
+  .tile .n { margin-top: 6px; line-height: 16px; color: var(--text-file);
+             display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .lab { position: absolute; width: 73px; text-align: right; color: var(--label); line-height: 18px; }
+  .field { position: absolute; height: 26px; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--field-rim);
+           line-height: 26px; padding-left: 7px; box-sizing: border-box; color: #fff; }
+  .field.focus { box-shadow: 0 0 0 3px var(--ring); }
+  .field.focus .selx { background: #3F638E; }
+  .list-row { position: absolute; left: 0; right: 0; height: 24px; line-height: 24px; }
+  .list-row .ico { position: absolute; left: 22px; top: 4px; width: 16px; height: 16px; color: var(--folder); }
+  .list-row .ico.file { color: #9B9BA1; }
+  .list-row .c { position: absolute; top: 0; white-space: nowrap; }
+</style>
+</head>
+<body>
+<!-- The icon-mask URLs point at the SVGs the Rust embeds (crates/finder/assets/icons). -->
+<h2>1 · Open panel (icon view) — 880 × 448</h2>
+<div class="stage" id="open"></div>
+<h2>2 · Go to Folder (⇧⌘G) over the Open panel</h2>
+<div class="stage" id="goto"></div>
+<h2>3 · Save — compact, one filter row (Tags omitted) — 390 × 182</h2>
+<div class="stage" id="save"></div>
+<h2>4 · Save — expanded (list view) — 880 × 412</h2>
+<div class="stage" id="savex"></div>
+
+<script>
+const I = n => `url(../crates/finder/assets/icons/${n}.svg)`;
+const ico = (n, cls='', style='') => `<span class="ico ${cls}" style="--m:${I(n)};${style}"></span>`;
+// Neutral sample names; never the owner's files.
+const FILES = [
+  ['Projects', true], ['Receipts', true], ['Budget 2026.xlsx', false], ['Holiday.jpg', false],
+  ['Invoice 0142.pdf', false], ['Meeting Notes.txt', false], ['Draft Proposal.docx', false],
+  ['Readme.md', false], ['Archive.zip', false], ['Screenshot 2026-09-23.png', false],
+  ['Recipes', true], ['Travel Plan.pdf', false]];
+
+function sidebar(height, selected) {
+  const sections = [
+    ['', [['Recents', 'clock'], ['Shared', 'users']]],
+    ['Favourites', [['Documents', 'folder'], ['Downloads', 'download'], ['Desktop', 'folder'],
+                    ['Movies', 'folder'], ['Projects', 'folder']]],
+    ['Locations', [['jake', 'house'], ['Computer', 'hard-drive']]]];
+  let y = 10, html = '';
+  sections.forEach(([title, rows], i) => {
+    if (i > 0) { y += 13; html += `<div class="hdr" style="top:${y}px">${title}</div>`; y += 19; }
+    rows.forEach(([name, glyph]) => {
+      html += `<div class="row ${name === selected ? 'sel' : ''}" style="top:${y}px">${ico(glyph)}<span class="t">${name}</span></div>`;
+      y += 32;
+    });
+  });
+  return `<div class="pane" style="height:${height - 16}px">${html}</div>`;
+}
+
+function toolbar(y, where, expanded) {
+  const whereW = expanded === undefined ? 232 : 200;
+  let h = `
+  <div class="ctl" style="left:146px;top:${y}px;width:49px"><div class="plate"></div>
+    ${ico('chevron-left', '', 'left:8px;top:6px;width:14px;height:14px;color:var(--glyph-off)')}
+    <span class="abs" style="left:24px;top:6px;width:1px;height:14px;background:#4A4A55"></span>
+    ${ico('chevron-right', '', 'left:28px;top:6px;width:14px;height:14px;color:var(--glyph-off)')}</div>
+  <div class="ctl" style="left:201px;top:${y}px;width:69px"><div class="plate"></div>
+    ${ico(expanded === undefined ? 'layout-grid' : 'list', '', 'left:14px;top:5px;width:16px;height:16px;color:var(--glyph-on)')}
+    ${ico('chevron-down', '', 'left:46px;top:7px;width:12px;height:12px;color:var(--glyph-on)')}</div>
+  <div class="ctl" style="left:276px;top:${y}px;width:66px"><div class="plate"></div>
+    ${ico('ellipsis', '', 'left:14px;top:5px;width:16px;height:16px;color:var(--glyph-on)')}
+    ${ico('chevron-down', '', 'left:44px;top:7px;width:12px;height:12px;color:var(--glyph-on)')}</div>
+  <div class="ctl" style="left:387px;top:${y}px;width:${whereW}px"><div class="plate"></div>
+    ${ico('folder-artwork', '', 'left:15px;top:6px;width:16px;height:14px;color:var(--folder)')}
+    <span class="abs" style="left:34px;top:4px;line-height:18px;color:var(--text)">${where}</span>
+    ${ico('chevron-up', '', `right:13px;top:4px;width:10px;height:9px;color:var(--text)`)}
+    ${ico('chevron-down', '', `right:13px;top:13px;width:10px;height:9px;color:var(--text)`)}</div>`;
+  if (expanded !== undefined)
+    h += `<div class="ctl" style="left:593px;top:${y}px;width:26px"><div class="plate"></div>
+      ${ico('chevron-up', '', 'left:7px;top:7px;width:12px;height:12px;color:var(--text)')}</div>`;
+  h += `<div class="ctl search" style="left:664px;top:${y}px;width:196px">
+    ${ico('search', '', 'left:8px;top:6px;width:14px;height:14px;color:var(--label)')}
+    <span class="abs" style="left:26px;top:4px;line-height:18px;color:var(--label)">Search</span></div>`;
+  return h;
+}
+
+function iconGrid(top, bottom) {
+  let h = `<div class="abs" style="left:127px;top:${top}px;width:753px;height:${bottom - top}px;overflow:hidden">`;
+  FILES.forEach(([n, dir], i) => {
+    const col = i % 6, row = Math.floor(i / 6);
+    h += `<div class="tile" style="left:${38 + col * 122.5 - 24}px;top:${24 + row * 130}px">
+      ${ico(dir ? 'folder-artwork' : 'file-fill', dir ? '' : 'file')}<div class="n">${n}</div></div>`;
+  });
+  return h + '</div>';
+}
+
+function listView(top, bottom, saving) {
+  let h = `<div class="abs" style="left:127px;top:${top}px;width:753px;height:${bottom - top}px;overflow:hidden">`;
+  FILES.forEach(([n, dir], i) => {
+    const dim = saving && !dir ? 'opacity:.4' : '';
+    h += `<div class="list-row" style="top:${6 + i * 24}px;${i % 2 ? 'background:rgba(255,255,255,.03)' : ''};${dim}">
+      ${ico(dir ? 'folder-artwork' : 'file-fill', dir ? '' : 'file')}
+      <span class="c" style="left:46px;color:var(--text-file)">${n}</span>
+      <span class="c" style="left:420px;color:var(--label)">Today at 09:41</span>
+      <span class="c" style="left:600px;color:var(--label)">${dir ? '--' : '24 KB'}</span></div>`;
+  });
+  return h + '</div>';
+}
+
+function button(x, y, label, cls = '', w = 76) {
+  return `<div class="btn ${cls}" style="left:${x}px;top:${y}px;width:${w}px"><div class="plate">${label}</div></div>`;
+}
+
+// 1 — Open panel
+const W = 880, H = 448;
+const openHTML = `<div class="panel" style="width:${W}px;height:${H}px">
+  ${sidebar(H, 'Downloads')}${toolbar(19, 'Downloads')}
+  <div class="hair" style="left:127px;right:0;top:64.5px"></div>
+  ${iconGrid(65, H - 65)}
+  <div class="hair" style="left:127px;right:0;top:${H - 65}px"></div>
+  <div class="ctl" style="left:146px;top:${H - 45}px;width:200px"><div class="plate"></div>
+    <span class="abs" style="left:12px;top:4px;line-height:18px">All Documents</span>
+    ${ico('chevron-down', '', 'right:12px;top:7px;width:12px;height:12px;color:var(--text)')}</div>
+  ${button(703, H - 45, 'Cancel')}${button(785, H - 45, 'Open', 'off')}
+</div>`;
+document.getElementById('open').innerHTML = openHTML;
+
+// 2 — Go to Folder
+document.getElementById('goto').innerHTML = openHTML +
+  `<div class="abs" style="left:0;top:0;width:${W}px;height:${H}px;border-radius:16px;background:rgba(0,0,0,.1)"></div>
+   <div class="abs sheet" style="left:210px;top:132px;width:460px;height:183px;overflow:hidden;
+        background:var(--goto-list);box-shadow:inset 0 0 0 1px var(--rim),0 12px 32px rgba(0,0,0,.45)">
+     <div class="abs" style="left:0;top:0;right:0;height:35px;background:var(--goto-head)"></div>
+     <span class="abs" style="left:15px;top:7px;line-height:22px;font-size:15px;color:var(--goto-ph)">Go to Folder</span>
+     <span class="abs" style="left:427px;top:9px;width:18px;height:18px;border-radius:9px;background:var(--close)"></span>
+     <span class="abs" style="left:431px;top:9px;line-height:18px;font-size:12px;font-weight:700;color:var(--goto-head)">✕</span>
+     <div class="abs" style="left:0;right:0;top:34.5px;height:1px;background:var(--goto-hair)"></div>
+   </div>`;
+
+// 3 — compact Save (Save As, File Format, Where)
+const SW = 390, rows = [19, 55, 91], SH = rows[2] + 45 + 26 + 19;
+document.getElementById('save').innerHTML = `<div class="panel sheet" style="width:${SW}px;height:${SH}px">
+  <span class="lab" style="left:39px;top:${rows[0] + 4}px">Save As:</span>
+  <div class="field focus" style="left:118px;top:${rows[0]}px;width:232px"><span class="selx">Untitled</span>.txt</div>
+  <span class="lab" style="left:39px;top:${rows[1] + 4}px">File Format:</span>
+  <div class="ctl" style="left:118px;top:${rows[1]}px;width:232px"><div class="plate"></div>
+    <span class="abs" style="left:12px;top:4px;line-height:18px">Plain Text</span>
+    ${ico('chevron-up', '', 'right:13px;top:4px;width:10px;height:9px;color:var(--text)')}
+    ${ico('chevron-down', '', 'right:13px;top:13px;width:10px;height:9px;color:var(--text)')}</div>
+  <span class="lab" style="left:39px;top:${rows[2] + 4}px">Where:</span>
+  <div class="ctl" style="left:118px;top:${rows[2]}px;width:200px"><div class="plate"></div>
+    ${ico('folder-artwork', '', 'left:15px;top:6px;width:16px;height:14px;color:var(--folder)')}
+    <span class="abs" style="left:34px;top:4px;line-height:18px">Downloads</span>
+    ${ico('chevron-up', '', 'right:13px;top:4px;width:10px;height:9px;color:var(--text)')}
+    ${ico('chevron-down', '', 'right:13px;top:13px;width:10px;height:9px;color:var(--text)')}</div>
+  <div class="ctl" style="left:324px;top:${rows[2]}px;width:26px"><div class="plate"></div>
+    ${ico('chevron-down', '', 'left:7px;top:7px;width:12px;height:12px;color:var(--text)')}</div>
+  ${button(212, rows[2] + 45, 'Cancel')}${button(294, rows[2] + 45, 'Save', 'def')}
+</div>`;
+
+// 4 — expanded Save (Save As, File Format, toolbar, list)
+const XH = 448 - 36, tb = rows[1] + 44;
+document.getElementById('savex').innerHTML = `<div class="panel sheet" style="width:${W}px;height:${XH}px">
+  ${sidebar(XH, 'Downloads')}
+  <span class="lab" style="left:308px;top:${rows[0] + 4}px">Save As:</span>
+  <div class="field focus" style="left:387px;top:${rows[0]}px;width:232px"><span class="selx">Untitled</span>.txt</div>
+  <span class="lab" style="left:308px;top:${rows[1] + 4}px">File Format:</span>
+  <div class="ctl" style="left:387px;top:${rows[1]}px;width:232px"><div class="plate"></div>
+    <span class="abs" style="left:12px;top:4px;line-height:18px">Plain Text</span>
+    ${ico('chevron-up', '', 'right:13px;top:4px;width:10px;height:9px;color:var(--text)')}
+    ${ico('chevron-down', '', 'right:13px;top:13px;width:10px;height:9px;color:var(--text)')}</div>
+  ${toolbar(tb, 'Downloads', true)}
+  <div class="hair" style="left:127px;right:0;top:${tb + 45.5}px"></div>
+  ${listView(tb + 46, XH - 65, true)}
+  <div class="hair" style="left:127px;right:0;top:${XH - 65}px"></div>
+  ${button(146, XH - 45, 'New Folder', '', 95)}
+  ${button(703, XH - 45, 'Cancel')}${button(785, XH - 45, 'Save', 'def')}
+</div>`;
+</script>
+</body>
+</html>

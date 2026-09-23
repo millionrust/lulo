@@ -470,6 +470,43 @@ impl LauncherView {
         true
     }
 
+    /// Sets the query from assistive technology (AccessKit's `SetValue` or
+    /// `ReplaceSelectedText`, e.g. AT-SPI `EditableText`): the field is a
+    /// single line with no meaningful "insert at the caret" for a screen
+    /// reader's virtual keyboard, so both actions replace the whole value,
+    /// then run the same query-changed path a typed keystroke takes.
+    pub(crate) fn set_query_from_assistive_technology(
+        &mut self,
+        text: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.query
+            .update(cx, |state, cx| state.set_value(text.clone(), window, cx));
+        self.panel_query_changed();
+        self.keyboard_selection = false;
+        let compact = text.is_empty() && self.browse_mode.is_none() && self.panel.is_none();
+        if self.compact != compact {
+            self.compact = compact;
+            let (width, height) = if compact {
+                (
+                    rmac_launcher::surface::LOGICAL_WIDTH as f32,
+                    rmac_launcher::surface::LOGICAL_HEIGHT as f32,
+                )
+            } else {
+                (
+                    rmac_launcher::surface::EXPANDED_LOGICAL_WIDTH as f32,
+                    rmac_launcher::surface::EXPANDED_LOGICAL_HEIGHT as f32,
+                )
+            };
+            window.resize(size(px(width), px(height)));
+        }
+        if let Some(request) = self.coordinator.set_query(text) {
+            self.dispatch(request, cx);
+        }
+        cx.notify();
+    }
+
     fn select_and_activate(
         &mut self,
         id: ResultId,

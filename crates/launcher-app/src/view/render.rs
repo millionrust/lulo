@@ -4,9 +4,9 @@ mod results;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, img, px, svg, AnyElement, BoxShadow, Context, Hsla, InteractiveElement as _, IntoElement,
-    KeyDownEvent, MouseButton, ParentElement as _, Render, SharedString,
-    StatefulInteractiveElement as _, Styled, Window,
+    accesskit, div, img, px, svg, AccessibleAction, AnyElement, BoxShadow, Context, Hsla,
+    InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, ParentElement as _, Render,
+    Role, SharedString, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::scroll::ScrollableElement as _;
 use gpui_component::tooltip::Tooltip;
@@ -330,18 +330,52 @@ impl LauncherView {
                 )
             })
             .child(
-                div().id(QUERY_ID).size_full().child(
-                    TextField::new(&self.query)
-                        .appearance(false)
-                        .disabled(activating)
-                        .px_0()
-                        .py_0()
-                        .h(px(metrics::BAR_HEIGHT - 2.0 * metrics::RIM))
-                        .text_size(text_size)
-                        .line_height(line_height),
-                ),
+                div()
+                    .id(QUERY_ID)
+                    .role(Role::TextInput)
+                    .aria_label(QUERY_NAME)
+                    .aria_value(SharedString::from(query.to_owned()))
+                    .size_full()
+                    .child(
+                        TextField::new(&self.query)
+                            .appearance(false)
+                            .disabled(activating)
+                            .px_0()
+                            .py_0()
+                            .h(px(metrics::BAR_HEIGHT - 2.0 * metrics::RIM))
+                            .text_size(text_size)
+                            .line_height(line_height),
+                    )
+                    .on_a11y_action(
+                        AccessibleAction::SetValue,
+                        self.assistive_query_listener(cx),
+                    )
+                    .on_a11y_action(
+                        AccessibleAction::ReplaceSelectedText,
+                        self.assistive_query_listener(cx),
+                    ),
             )
             .into_any_element()
+    }
+
+    /// A listener that runs a query AT-SPI (via AccessKit) sends as `SetValue`
+    /// or `ReplaceSelectedText` data through the same path typing does. Both
+    /// actions are handled identically: see
+    /// [`LauncherView::set_query_from_assistive_technology`].
+    fn assistive_query_listener(
+        &self,
+        cx: &Context<Self>,
+    ) -> impl FnMut(Option<&accesskit::ActionData>, &mut Window, &mut gpui::App) + 'static {
+        let view = cx.entity();
+        move |data, window, cx| {
+            let Some(accesskit::ActionData::Value(text)) = data else {
+                return;
+            };
+            let text = text.to_string();
+            view.update(cx, |this, cx| {
+                this.set_query_from_assistive_technology(text, window, cx);
+            });
+        }
     }
 
     /// The search capsule: glyph, placeholder or query with the top hit's

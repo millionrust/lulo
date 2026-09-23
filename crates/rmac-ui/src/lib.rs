@@ -18,6 +18,7 @@ mod window;
 
 pub use chrome::{
     body_bg, page, title_bar, toolbar, toolbar_group, traffic_lights, traffic_lights_active,
+    traffic_lights_fixed_size,
 };
 pub use components::{
     alert, dialog, dialog_button, type_select_match, ContextMenu, ContextMenuState,
@@ -43,7 +44,8 @@ pub use window::*;
 /// Stable Linux desktop identities matching desktop files and Wayland app IDs.
 pub mod app_id {
     pub use rmac_apps::identity::{
-        APP_DRAWER, FILES, NOTES, SYSTEM_MONITOR, SYSTEM_SETTINGS, TERMINAL, TEXT_EDITOR,
+        APP_DRAWER, CALCULATOR, FILES, NOTES, SYSTEM_MONITOR, SYSTEM_SETTINGS, TERMINAL,
+        TEXT_EDITOR,
     };
 }
 

@@ -5467,6 +5467,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-calculator"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "rmac-ui",
+ "rust-embed",
+]
+
+[[package]]
 name = "rmac-component-gallery"
 version = "0.1.0"
 dependencies = [

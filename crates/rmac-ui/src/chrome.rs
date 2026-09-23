@@ -166,6 +166,16 @@ pub fn traffic_lights() -> impl IntoElement {
 /// [`traffic_lights`] for an inactive window: the three buttons share the
 /// inactive gray pair and do not reveal glyphs on hover.
 pub fn traffic_lights_active(active: bool) -> impl IntoElement {
+    traffic_light_cluster(active, true)
+}
+
+/// [`traffic_lights`] for a fixed-size window such as Calculator: macOS draws
+/// the zoom button in the inactive gray and it does nothing.
+pub fn traffic_lights_fixed_size(active: bool) -> impl IntoElement {
+    traffic_light_cluster(active, false)
+}
+
+fn traffic_light_cluster(active: bool, zoom_enabled: bool) -> impl IntoElement {
     let (close_fill, close_border) = if active {
         mac::traffic_close()
     } else {
@@ -176,7 +186,7 @@ pub fn traffic_lights_active(active: bool) -> impl IntoElement {
     } else {
         mac::traffic_inactive()
     };
-    let (zoom_fill, zoom_border) = if active {
+    let (zoom_fill, zoom_border) = if active && zoom_enabled {
         mac::traffic_zoom()
     } else {
         mac::traffic_inactive()
@@ -210,8 +220,11 @@ pub fn traffic_lights_active(active: bool) -> impl IntoElement {
             zoom_border,
             "+",
             "Zoom",
-            active,
+            active && zoom_enabled,
             move |alt, _, cx| {
+                if !zoom_enabled {
+                    return;
+                }
                 send_window_action(
                     if alt {
                         WindowAction::Fill

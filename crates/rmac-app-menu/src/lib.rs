@@ -185,7 +185,12 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Sort by Date Modified", "finder::SortByDate", ""),
             item!("Sort by Size", "finder::SortBySize", ""),
             item!("Sort by Kind", "finder::SortByKind", ""),
-            item!("Show Hidden Files", "finder::ToggleHidden", "⇧⌘.", separator),
+            item!(
+                "Show Hidden Files",
+                "finder::ToggleHidden",
+                "⇧⌘.",
+                separator
+            ),
             item!("Quick Look", "finder::QuickLook", "Space"),
         ],
     },
@@ -241,6 +246,20 @@ const SETTINGS_MENUS: &[MenuSpec] = &[MenuSpec {
     items: &[item!("Back", "system_settings::GoBack", "⌘[")],
 }];
 
+const CALCULATOR_MENUS: &[MenuSpec] = &[
+    MenuSpec {
+        label: "Edit",
+        items: &[
+            item!("Copy", "calculator::Copy", "⌘C"),
+            item!("Paste", "calculator::Paste", "⌘V"),
+        ],
+    },
+    MenuSpec {
+        label: "View",
+        items: &[item!("Basic", "calculator::ShowBasic", "⌘1")],
+    },
+];
+
 fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
     match app_id {
         rmac_apps::identity::FILES => Some(FILES_MENUS),
@@ -249,6 +268,7 @@ fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
         rmac_apps::identity::TEXT_EDITOR => Some(TEXT_EDITOR_MENUS),
         rmac_apps::identity::SYSTEM_MONITOR => Some(MONITOR_MENUS),
         rmac_apps::identity::SYSTEM_SETTINGS => Some(SETTINGS_MENUS),
+        rmac_apps::identity::CALCULATOR => Some(CALCULATOR_MENUS),
         _ => None,
     }
 }
@@ -261,6 +281,7 @@ pub fn bus_name(app_id: &str) -> Option<&'static str> {
         rmac_apps::identity::TEXT_EDITOR => Some("org.rmac.TextEditor.Menu"),
         rmac_apps::identity::SYSTEM_MONITOR => Some("org.rmac.SystemMonitor.Menu"),
         rmac_apps::identity::SYSTEM_SETTINGS => Some("org.rmac.SystemSettings.Menu"),
+        rmac_apps::identity::CALCULATOR => Some("org.rmac.Calculator.Menu"),
         _ => None,
     }
 }
@@ -626,6 +647,34 @@ mod tests {
         assert_eq!(menus[0].items[0].label, "as Icons");
         assert_eq!(menus[1].items[0].action, "finder::GoBack");
         assert_eq!(menus[2].items[1].shortcut, "⌃⇥");
+        assert!(validate_menus(&menus).is_ok());
+    }
+
+    #[test]
+    fn calculator_exports_edit_and_view_menus() {
+        assert_eq!(
+            bus_name(rmac_apps::identity::CALCULATOR),
+            Some("org.rmac.Calculator.Menu")
+        );
+        let menus = definition(
+            rmac_apps::identity::CALCULATOR,
+            &[
+                "calculator::Copy",
+                "calculator::Paste",
+                "calculator::ShowBasic",
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            menus
+                .iter()
+                .map(|menu| menu.label.as_str())
+                .collect::<Vec<_>>(),
+            ["Edit", "View"]
+        );
+        assert_eq!(menus[0].items[0].shortcut, "⌘C");
+        assert_eq!(menus[0].items[1].shortcut, "⌘V");
+        assert_eq!(menus[1].items[0].label, "Basic");
         assert!(validate_menus(&menus).is_ok());
     }
 

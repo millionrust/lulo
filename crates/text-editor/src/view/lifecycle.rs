@@ -209,8 +209,9 @@ impl EditorView {
             replace_input,
             matches: Vec::new(),
             current: 0,
-            mono: false,
-            font_size: 15.0,
+            // TextEdit's plain-text default: Menlo 11 (JetBrains Mono here).
+            mono: true,
+            font_size: 11.0,
             rtf_runs: None,
             focus: cx.focus_handle(),
             native_window_title: "Text Editor".into(),

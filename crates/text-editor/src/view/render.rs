@@ -20,9 +20,23 @@ use crate::{
 };
 
 use super::{
-    can_begin_print, responsive_layout::EditorLayout, ActiveAlert, EditorView, ExternalChange,
-    Pending, CTX,
+    responsive_layout::EditorLayout, ActiveAlert, EditorView, ExternalChange, Pending, CTX,
 };
+
+/// Text origin from the window's left edge (the Mac's caret sits at x 9).
+const TEXT_INSET_X: f32 = 10.0;
+/// Menlo 11 sets 13 pt lines in TextEdit.
+const PLAIN_LINE_RATIO: f32 = 13.0 / 11.0;
+
+/// NSTextView's text background: #1E1E1E in dark mode (measured), white in
+/// light, untinted by the wallpaper unlike the title bar.
+pub(super) fn text_background() -> gpui::Hsla {
+    if mac::window().l < 0.5 {
+        gpui::rgb(0x1e1e1e).into()
+    } else {
+        gpui::rgb(0xffffff).into()
+    }
+}
 
 impl Render for EditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -44,6 +58,7 @@ impl Render for EditorView {
             rmac_ui::UI_FONT
         };
         let size = self.font_size;
+        let line_height = (size * PLAIN_LINE_RATIO).round();
         let recovery_loading = self.recovery_loading;
         let recovery_error = self.recovery_error.clone();
         let status_notice = self.status_notice.clone();
@@ -103,7 +118,7 @@ impl Render for EditorView {
             }))
             .bg(mac::window())
             .text_color(mac::text())
-            .child(self.render_toolbar(cx))
+            .child(self.render_title_bar(cx))
             .when(recovery_loading, |editor| {
                 editor.child(
                     div()
@@ -232,24 +247,27 @@ impl Render for EditorView {
             .child(if self.rtf_runs.is_some() {
                 self.render_rtf_preview(layout, cx).into_any_element()
             } else {
+                // TextEdit's plain-text view: #1E1E1E edge to edge, the text
+                // origin 10 from the left and flush with the top, Menlo 11 on
+                // a 13 pt pitch (JetBrains Mono stands in for Menlo).
                 div()
                     .flex_1()
                     .min_h(px(0.0))
-                    .px(px(layout.content_padding))
-                    .py(px(20.0))
-                    .font_family(font_family)
-                    .text_size(px(size))
-                    .line_height(px(size * 1.5))
+                    .bg(text_background())
                     .child(
                         TextField::new(&self.input)
                             .h_full()
                             .appearance(false)
-                            .disabled(recovery_loading || self.print_busy),
+                            .disabled(recovery_loading || self.print_busy)
+                            .font_family(font_family)
+                            .text_size(px(size))
+                            .line_height(px(line_height))
+                            .pl(px(TEXT_INSET_X))
+                            .pr(px(TEXT_INSET_X))
+                            .pt(px(0.0))
+                            .pb(px(0.0)),
                     )
                     .into_any_element()
-            })
-            .when(self.rtf_runs.is_none(), |d| {
-                d.child(self.render_status_bar(cx))
             })
             .when_some(self.alert.clone(), |d, alert| {
                 d.child(self.render_alert(alert, cx))

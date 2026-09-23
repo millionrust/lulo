@@ -2,8 +2,9 @@
 
 use super::*;
 
-const WINDOW_WIDTH: f32 = 860.0;
-const WINDOW_HEIGHT: f32 = 640.0;
+/// A new TextEdit document window on macOS 26.2 (measured).
+const WINDOW_WIDTH: f32 = 586.0;
+const WINDOW_HEIGHT: f32 = 488.0;
 const MAX_STARTUP_DOCUMENTS: usize = 32;
 
 #[derive(Debug, Eq, PartialEq)]

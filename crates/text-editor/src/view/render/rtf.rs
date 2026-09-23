@@ -8,12 +8,10 @@ impl EditorView {
         layout: EditorLayout,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let base = if self.mono {
-            rmac_ui::MONO_FONT
-        } else {
-            rmac_ui::UI_FONT
-        };
-        let size = self.font_size;
+        // Rich text opens in TextEdit's Helvetica 12 (UI font here), one
+        // point above the plain-text Menlo 11 default.
+        let base = rmac_ui::UI_FONT;
+        let size = self.font_size + 1.0;
         let runs = self.rtf_runs.as_deref().unwrap_or(&[]);
 
         let mut text = String::new();
@@ -87,7 +85,7 @@ impl EditorView {
             .px(px(layout.content_padding))
             .py(px(20.0))
             .text_size(px(size))
-            .line_height(px(size * 1.5))
+            .line_height(px((size * 1.25).round()))
             .child(banner)
             .child(StyledText::new(text).with_runs(text_runs))
     }

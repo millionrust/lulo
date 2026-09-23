@@ -5,6 +5,7 @@ pub mod badges;
 pub mod bounce;
 mod dock;
 pub mod drag;
+pub mod keyboard;
 pub mod menu;
 mod model;
 pub mod motion;

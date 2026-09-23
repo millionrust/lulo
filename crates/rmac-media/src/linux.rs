@@ -120,7 +120,12 @@ fn write_last_active(bus_name: &str) {
         return;
     };
     if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+        if let Err(error) = std::fs::create_dir_all(parent) {
+            eprintln!("could not create the media runtime directory: {error}");
+            return;
+        }
     }
-    let _ = std::fs::write(path, bus_name);
+    if let Err(error) = std::fs::write(&path, bus_name) {
+        eprintln!("could not save the last active media player: {error}");
+    }
 }

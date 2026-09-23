@@ -359,7 +359,9 @@ pub fn observe_window_state<V: 'static>(app_id: &str, window: &mut Window, cx: &
                 while events.try_recv().is_ok() {}
                 let state = pending.lock().ok().and_then(|mut pending| pending.take());
                 if let Some(state) = state {
-                    let _ = store.save(state);
+                    if let Err(error) = store.save(state) {
+                        eprintln!("could not save the window state: {error}");
+                    }
                 }
             }
         })

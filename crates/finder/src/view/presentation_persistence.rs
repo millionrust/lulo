@@ -140,7 +140,9 @@ impl FinderPersistence {
                         .ok()
                         .and_then(|mut pending| pending.take());
                     if let Some(state) = state {
-                        let _ = store.save(&state);
+                        if let Err(error) = store.save(&state) {
+                            eprintln!("could not save the Finder window state: {error}");
+                        }
                     }
                 }
             })

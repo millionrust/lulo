@@ -88,6 +88,9 @@ jobs:
       - name: Check gpui_component migration boundary
         run: bash scripts/check-gpui-component-imports.sh
 
+      - name: Check that no macOS screenshots are tracked
+        run: bash scripts/check-no-mac-captures.sh
+
       - name: Check design token boundary
         run: bash scripts/check-design-tokens.sh
 

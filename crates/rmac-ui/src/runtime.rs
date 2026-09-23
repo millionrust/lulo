@@ -208,14 +208,17 @@ pub fn prepare_surface_window(window: &mut Window, cx: &mut App) {
 }
 
 /// Root for a shell surface such as Spotlight or Control Center. The surface
-/// draws its own rounded material, so the root must stay clear; the default
-/// root paints the opaque window background over the whole layer surface.
+/// draws its own rounded material, so the root must stay clear: the default
+/// root paints the opaque window background and, on Linux, a square
+/// client-side window border and shadow over the whole layer surface.
 pub fn shell_surface_root(
     view: impl Into<AnyView>,
     window: &mut Window,
     cx: &mut Context<gpui_component::Root>,
 ) -> gpui_component::Root {
-    gpui_component::Root::new(view, window, cx).bg(gpui::transparent_black())
+    gpui_component::Root::new(view, window, cx)
+        .bordered(false)
+        .bg(gpui::transparent_black())
 }
 
 /// Scales an application-owned text size with the live rmac accessibility

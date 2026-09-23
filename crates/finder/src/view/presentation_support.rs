@@ -49,12 +49,20 @@ impl AssetSource for CombinedAssets {
         if let Some(f) = AppAssets::get(path) {
             return Ok(Some(f.data));
         }
+        if let Some(data) = rmac_quick_look::asset(path) {
+            return Ok(Some(data));
+        }
         gpui_component_assets::Assets.load(path)
     }
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
         let mut v: Vec<SharedString> = AppAssets::iter()
             .filter(|p| p.starts_with(path))
             .map(|p| SharedString::from(p.to_string()))
+            .chain(
+                rmac_quick_look::asset_paths(path)
+                    .into_iter()
+                    .map(SharedString::from),
+            )
             .collect();
         if let Ok(mut o) = gpui_component_assets::Assets.list(path) {
             v.append(&mut o);

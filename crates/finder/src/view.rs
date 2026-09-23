@@ -85,7 +85,7 @@ use crate::watchers::{
 };
 #[cfg(target_os = "linux")]
 use crate::watchers::{next_mount_watch_retry, MountWatchHealth, MountWatchNotice};
-use crate::{directory_state, file_ops, operation_journal, pasteboard, quick_look, undo_journal};
+use crate::{directory_state, file_ops, operation_journal, pasteboard, undo_journal};
 use filesystem_helpers::*;
 use finder_behaviour::*;
 use finder_style::*;
@@ -277,7 +277,6 @@ struct FinderView {
     open_with: Option<OpenWithPicker>,
     open_generation: u64,
     quick_look: Option<QuickLookPanel>,
-    quick_look_generation: u64,
     archive_job: Option<archive_controller::ArchiveJob>,
     archive_generation: u64,
     archive_alert: Option<SharedString>,

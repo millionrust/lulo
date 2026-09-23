@@ -221,7 +221,6 @@ impl FinderView {
             open_with: None,
             open_generation: 0,
             quick_look: None,
-            quick_look_generation: 0,
             archive_job: None,
             archive_generation: 0,
             archive_alert: None,

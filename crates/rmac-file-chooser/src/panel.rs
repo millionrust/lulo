@@ -134,6 +134,8 @@ pub struct Panel {
     search_cancel: Option<Arc<AtomicBool>>,
     /// The folder a search started from, so clearing the field returns there.
     search_origin: Option<PathBuf>,
+    /// Quick Look opened with Space from the file list.
+    quick_look: Option<rmac_quick_look::Handle>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -292,6 +294,7 @@ impl Panel {
             goto: None,
             menu: None,
             replace: None,
+            quick_look: None,
             notice: None,
             focus,
             pending_select,
@@ -713,6 +716,10 @@ impl Panel {
         }
         let keystroke = &event.keystroke;
         let modifiers = keystroke.modifiers;
+        if keystroke.key == "space" && !modifiers.platform && !modifiers.control && !modifiers.alt {
+            self.toggle_quick_look(cx);
+            return true;
+        }
         let columns = match self.browser.view {
             ViewMode::Icons => self.icon_columns(content_width) as isize,
             ViewMode::List => 1,
@@ -747,6 +754,22 @@ impl Panel {
             }
         }
         false
+    }
+
+    /// Space: Quick Look on the selection, as in Finder (Space again closes).
+    pub fn toggle_quick_look(&mut self, cx: &mut Context<Self>) {
+        if let Some(handle) = self.quick_look.take() {
+            if handle.is_open() {
+                handle.close(cx);
+                return;
+            }
+        }
+        let paths = self.browser.selected_paths();
+        if paths.is_empty() {
+            return;
+        }
+        self.quick_look = rmac_quick_look::open(paths, 0, rmac_quick_look::Options::default(), cx)
+            .map(|(handle, _)| handle);
     }
 
     // ---- toolbar ----------------------------------------------------------

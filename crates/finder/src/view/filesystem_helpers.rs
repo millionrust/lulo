@@ -1,17 +1,5 @@
 use super::*;
 
-pub(super) fn quick_look_error_message(error: &std::io::Error) -> &'static str {
-    match error.kind() {
-        std::io::ErrorKind::NotFound => "This item is no longer available.",
-        std::io::ErrorKind::PermissionDenied => {
-            "Files does not have permission to preview this item."
-        }
-        std::io::ErrorKind::WouldBlock => "This item changed while its preview was loading.",
-        std::io::ErrorKind::Interrupted => "Preview loading was cancelled.",
-        _ => "Files could not safely render a preview for this item.",
-    }
-}
-
 #[cfg(any(target_os = "linux", test))]
 pub(super) fn permanent_delete_prompt(count: usize, name: Option<&str>) -> String {
     if count == 1 {

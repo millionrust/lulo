@@ -9,11 +9,11 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use crate::document::{self, Kind};
+use crate::layout::Rotation;
+use crate::poppler::{self, PdfInfo, TextPage};
 use gpui::RenderImage;
 use image::{ImageDecoder as _, ImageReader, RgbaImage};
-use rmac_preview::document::{self, Kind};
-use rmac_preview::layout::Rotation;
-use rmac_preview::poppler::{self, PdfInfo, TextPage};
 
 /// Longest image side kept in memory; larger images are downsampled once so
 /// a single texture stays within what low-end GPUs accept.

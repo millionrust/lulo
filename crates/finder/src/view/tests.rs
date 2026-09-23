@@ -231,16 +231,3 @@ fn ranked_search_entry_presents_match_reason_without_private_absolute_path() {
     assert_eq!(detail, "Contents · the needle line");
     assert!(!detail.contains(root.0.to_string_lossy().as_ref()));
 }
-
-#[test]
-fn quick_look_errors_expose_state_without_private_diagnostics() {
-    let error = std::io::Error::other("/home/private/document.pdf: decoder failed");
-
-    let message = quick_look_error_message(&error);
-
-    assert_eq!(
-        message,
-        "Files could not safely render a preview for this item."
-    );
-    assert!(!message.contains("/home/private"));
-}

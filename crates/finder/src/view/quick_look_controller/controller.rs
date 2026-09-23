@@ -1,7 +1,17 @@
 use super::*;
 
 impl FinderView {
+    /// Space: open the floating Quick Look panel on the selection, or close
+    /// it when it is already open (Space toggles, as on the Mac).
     pub(in crate::view) fn quick_look(&mut self, cx: &mut Context<Self>) {
+        if self
+            .quick_look
+            .as_ref()
+            .is_some_and(|panel| panel.handle.is_open())
+        {
+            self.close_quick_look(cx);
+            return;
+        }
         if self.applications_view {
             self.operation_error = Some("Quick Look is unavailable for applications".into());
             cx.notify();
@@ -19,88 +29,44 @@ impl FinderView {
         self.menu_at = None;
         self.info = None;
         self.open_with = None;
-        self.quick_look = Some(QuickLookPanel {
-            paths,
-            current: 0,
-            content: None,
-            error: None,
-            cancel: Arc::new(AtomicBool::new(false)),
-        });
-        self.load_quick_look(cx);
-    }
-
-    fn load_quick_look(&mut self, cx: &mut Context<Self>) {
-        let Some(panel) = self.quick_look.as_mut() else {
-            return;
-        };
-        let Some(path) = panel.paths.get(panel.current).cloned() else {
-            panel.cancel.store(true, Ordering::Release);
-            self.quick_look = None;
+        let options = rmac_quick_look::Options { uncompress: true };
+        let Some((handle, panel)) = rmac_quick_look::open(paths.clone(), 0, options, cx) else {
+            self.operation_error = Some("Quick Look could not open its window".into());
             cx.notify();
             return;
         };
-        panel.cancel.store(true, Ordering::Release);
-        let cancel = Arc::new(AtomicBool::new(false));
-        panel.cancel = cancel.clone();
-        panel.content = None;
-        panel.error = None;
-        self.quick_look_generation = self.quick_look_generation.wrapping_add(1);
-        let generation = self.quick_look_generation;
+        let events = cx.subscribe(
+            &panel,
+            |this, _, event: &rmac_quick_look::Event, cx| match event {
+                rmac_quick_look::Event::Current(_) => {}
+                rmac_quick_look::Event::Uncompress(path) => {
+                    this.expand_archives(vec![path.clone()], cx)
+                }
+            },
+        );
+        let released = cx.observe_release(&panel, |this, _, cx| {
+            this.quick_look = None;
+            cx.notify();
+        });
+        self.quick_look = Some(QuickLookPanel {
+            handle,
+            paths,
+            _subscriptions: [events, released],
+        });
         cx.notify();
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn({
-                    let path = path.clone();
-                    async move { quick_look::load_cancellable(&path, &cancel) }
-                })
-                .await;
-            let _ = this.update(cx, |this: &mut FinderView, cx| {
-                if this.quick_look_generation != generation {
-                    return;
-                }
-                let Some(panel) = this.quick_look.as_mut() else {
-                    return;
-                };
-                if panel.paths.get(panel.current) != Some(&path) {
-                    return;
-                }
-                match result {
-                    Ok(content) => panel.content = Some(content),
-                    Err(error) => {
-                        panel.error = Some(quick_look_error_message(&error).into());
-                    }
-                }
-                cx.notify();
-            });
-        })
-        .detach();
     }
 
+    /// ← / → pressed while Files still has the keyboard.
     pub(in crate::view) fn move_quick_look(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let Some(panel) = self.quick_look.as_mut() else {
-            return;
-        };
-        if panel.paths.len() < 2 {
-            return;
+        if let Some(panel) = &self.quick_look {
+            panel.handle.step(delta, cx);
         }
-        let next = panel
-            .current
-            .saturating_add_signed(delta)
-            .min(panel.paths.len() - 1);
-        if next == panel.current {
-            return;
-        }
-        panel.current = next;
-        self.load_quick_look(cx);
     }
 
     pub(in crate::view) fn close_quick_look(&mut self, cx: &mut Context<Self>) {
-        self.quick_look_generation = self.quick_look_generation.wrapping_add(1);
-        if let Some(panel) = &self.quick_look {
-            panel.cancel.store(true, Ordering::Release);
+        if let Some(panel) = self.quick_look.take() {
+            panel.handle.close(cx);
         }
-        self.quick_look = None;
         cx.notify();
     }
 }

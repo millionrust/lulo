@@ -92,7 +92,9 @@ rmac-privacy = { version = "=0.1.0", path = "crates/rmac-privacy" }
 rmac-privacy-linux = { version = "=0.1.0", path = "crates/rmac-privacy-linux" }
 rmac-quick-settings = { version = "=0.1.0", path = "crates/rmac-quick-settings" }
 rmac-quick-settings-system = { version = "=0.1.0", path = "crates/rmac-quick-settings-system" }
+rmac-quick-look = { version = "=0.1.0", path = "crates/rmac-quick-look" }
 rmac-portal = { version = "=0.1.0", path = "crates/rmac-portal" }
+rmac-preview = { version = "=0.1.0", path = "crates/preview" }
 rmac-print = { version = "=0.1.0", path = "crates/rmac-print" }
 rmac-print-linux = { version = "=0.1.0", path = "crates/rmac-print-linux" }
 rmac-places = { version = "=0.1.0", path = "crates/rmac-places" }

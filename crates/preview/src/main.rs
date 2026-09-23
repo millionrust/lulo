@@ -1,6 +1,5 @@
 //! rmac Preview: macOS Preview for images and PDF documents.
 
-mod render;
 mod view;
 
 use std::borrow::Cow;
@@ -10,6 +9,7 @@ use gpui::{App, AppContext as _, AssetSource, KeyBinding, Result, SharedString};
 use gpui_component::Root;
 use rmac_preview::document::{self, Kind};
 use rmac_preview::metrics;
+use rmac_preview::render;
 use rmac_ui::app_id::PREVIEW;
 
 use crate::view::PreviewView;

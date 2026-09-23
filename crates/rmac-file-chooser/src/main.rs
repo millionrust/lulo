@@ -41,6 +41,9 @@ impl AssetSource for CombinedAssets {
         if let Some(asset) = FilesAssets::get(path) {
             return Ok(Some(asset.data));
         }
+        if let Some(asset) = rmac_quick_look::asset(path) {
+            return Ok(Some(asset));
+        }
         gpui_component_assets::Assets.load(path)
     }
 
@@ -48,6 +51,11 @@ impl AssetSource for CombinedAssets {
         let mut assets = FilesAssets::iter()
             .filter(|asset| asset.starts_with(path))
             .map(|asset| SharedString::from(asset.to_string()))
+            .chain(
+                rmac_quick_look::asset_paths(path)
+                    .into_iter()
+                    .map(SharedString::from),
+            )
             .collect::<Vec<_>>();
         if let Ok(mut component_assets) = gpui_component_assets::Assets.list(path) {
             assets.append(&mut component_assets);

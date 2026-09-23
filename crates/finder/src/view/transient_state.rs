@@ -94,11 +94,10 @@ pub(super) struct OpenWithPicker {
     pub(super) error: Option<SharedString>,
 }
 
-#[derive(Clone)]
+/// The floating Quick Look window this Files window opened.
 pub(super) struct QuickLookPanel {
+    pub(super) handle: rmac_quick_look::Handle,
     pub(super) paths: Vec<PathBuf>,
-    pub(super) current: usize,
-    pub(super) content: Option<quick_look::Content>,
-    pub(super) error: Option<SharedString>,
-    pub(super) cancel: Arc<AtomicBool>,
+    /// Panel events and the release observer that clears this state.
+    pub(super) _subscriptions: [gpui::Subscription; 2],
 }

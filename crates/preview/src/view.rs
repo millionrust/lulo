@@ -19,12 +19,12 @@ use rmac_preview::poppler::{self, Match, TextPage};
 use rmac_preview::zoom::{self, ContentKind, Zoom};
 use rmac_ui::{mac, InputEvent, InputState};
 
-use crate::render::{self, Content, Loaded};
 use crate::{
     ActualSize, CloseWindow, Copy, Find, FindNext, FindPrevious, HideSidebar, NextItem,
     PreviousItem, RotateLeft, RotateRight, ShowInspector, ShowThumbnails, ZoomIn, ZoomOut,
     ZoomToFit,
 };
+use rmac_preview::render::{self, Content, Loaded};
 
 /// pdftoppm processes allowed at once (a low-end PC has few cores).
 const MAX_RENDERS: usize = 2;

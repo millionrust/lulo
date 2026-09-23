@@ -334,5 +334,4 @@ mod tests {
         );
         assert_eq!(compress_menu_label(&[]), None);
     }
-
 }

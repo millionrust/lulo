@@ -20,7 +20,8 @@
     of the corner), content radius ≈ 15. 1 pt rim rgb(108,108,125) →
     rgb(93,93,105); body under the content edge rgb(31,31,39).
     Title-bar fill rgb(29..32,29..32,46) — translucent glass over the desktop
-    (S: rmac draws it opaque; no compositor blur).
+    (S: rmac draws rgb(30,30,45) at 86 % over niri's blur, app id
+    org.rmac.QuickLook in packaging/rmac-session/shell.kdl).
   SIZE (M)
     Image shown 1:1 when it fits. Larger content is scaled to fit a box whose
     longest side is 721 on the 1470 × 956 screen (600×800 PNG → 541 × 721;
@@ -59,8 +60,9 @@
     content top; rows 60 apart, each row as tall as its tallest item, items
     centred in the row. Current item: 4 pt inner border rgb(36,88,202).
   KEYS (M)  Space / Esc close · ← → previous/next (wraps) · ⌥Space full screen
-  ANIMATION (S)  the Mac zooms from the file's icon; rmac cannot place a
-    window at a screen point under niri, so it fades/scales in place.
+  ANIMATION (S)  the Mac zooms from the file's icon; rmac cannot place or
+    animate a window from a point on another window under niri, so the panel
+    opens in place, centred on the screen (omitted, not faked).
 -->
 <style>
   body { margin: 0; background: #151518; font-family: -apple-system, "SF Pro Text", Inter, sans-serif;
@@ -157,7 +159,7 @@ Line two</div>
       <div class="bar" style="background:rgb(28,29,36)"></div>
       <div class="g14" style="left:11px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/close.svg"></div>
       <div class="g14" style="left:31px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/full-screen.svg"></div>
-      <div class="open" style="right:7px;top:6px;height:26px;line-height:26px;border-radius:13px;width:79px;text-align:center;background:rgb(52,53,60)">Uncompress</div>
+      <div class="open" style="right:7px;top:6px;height:26px;line-height:26px;border-radius:13px;width:103px;text-align:center;background:rgb(52,53,60);padding:0">Uncompress</div>
       <img class="abs" style="left:20px;top:48px;width:256px;height:256px;filter:invert(90%)" src="../crates/rmac-quick-look/assets/icons/quick-look/document.svg">
       <div class="meta">
         <div class="name">Bundle.zip</div>

@@ -1,0 +1,23 @@
+[package]
+name = "rmac-quick-look"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# Quick Look: the floating preview panel Files and the Open/Save panel show
+# for Space. PDFs and images go through Preview's renderer (rmac-preview),
+# media posters through rmac-thumbnails.
+[dependencies]
+chrono.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+libc.workspace = true
+rmac-app-launch.workspace = true
+rmac-apps.workspace = true
+rmac-archive.workspace = true
+rmac-preview.workspace = true
+rmac-thumbnails.workspace = true
+rmac-ui.workspace = true
+rust-embed.workspace = true

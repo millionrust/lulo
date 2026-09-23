@@ -57,7 +57,6 @@ impl Render for FinderView {
             )
         });
         let open_with_dialog = self.render_open_with(cx);
-        let quick_look_dialog = self.render_quick_look(cx);
         let archive_sheet = self.render_archive_job(cx);
         let archive_alert = self.render_archive_alert(cx);
         let help_dialog = self.help_open.then(|| {
@@ -412,7 +411,6 @@ impl Render for FinderView {
             .when_some(open_with_dialog, |el, dialog| el.child(dialog))
             .when_some(archive_sheet, |el, sheet| el.child(sheet))
             .when_some(archive_alert, |el, dialog| el.child(dialog))
-            .when_some(quick_look_dialog, |el, dialog| el.child(dialog))
             .when_some(help_dialog, |el, dialog| el.child(dialog))
     }
 }

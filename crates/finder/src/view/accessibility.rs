@@ -179,9 +179,6 @@ impl FinderView {
         if let Some(dialog) = self.accessible_open_with_dialog() {
             dialogs.push(dialog);
         }
-        if let Some(dialog) = self.accessible_quick_look_dialog() {
-            dialogs.push(dialog);
-        }
         dialogs
     }
 
@@ -462,109 +459,6 @@ impl FinderView {
                 DialogFocus::Action(0)
             },
             document_text: None,
-            status,
-        })
-    }
-
-    fn accessible_quick_look_dialog(&self) -> Option<AccessibleDialog> {
-        let panel = self.quick_look.as_ref()?;
-        let path = panel.paths.get(panel.current)?;
-        let name = path
-            .file_name()
-            .map(|name| sanitize_dialog_name(&name.to_string_lossy()))
-            .unwrap_or_else(|| root_volume_name().into());
-        let count = panel.paths.len();
-        let position = panel.current + 1;
-        let mut document_text = None;
-        let (description, status) = if let Some(error) = &panel.error {
-            (
-                error.to_string(),
-                Some(assertive_status("quick-look-error", error.as_ref())),
-            )
-        } else {
-            match panel.content.as_ref() {
-                None => (
-                    "Loading preview…".to_string(),
-                    Some(polite_status("quick-look-status", "Loading preview…")),
-                ),
-                Some(quick_look::Content::Image { .. }) => ("Image preview".to_string(), None),
-                Some(quick_look::Content::Media { kind, .. }) => (
-                    match kind {
-                        rmac_thumbnails::MediaKind::Pdf => "PDF · first page",
-                        rmac_thumbnails::MediaKind::Video => "Video · preview frame",
-                        rmac_thumbnails::MediaKind::Audio => "Audio waveform · first 30 seconds",
-                    }
-                    .to_string(),
-                    None,
-                ),
-                Some(quick_look::Content::MediaUnavailable { kind }) => (
-                    format!("{} preview capability unavailable", kind.label()),
-                    None,
-                ),
-                Some(quick_look::Content::Text { text, truncated }) => {
-                    document_text = Some(text.clone());
-                    (
-                        if *truncated {
-                            "Showing the first 64 KB of text"
-                        } else {
-                            "Text preview"
-                        }
-                        .to_string(),
-                        None,
-                    )
-                }
-                Some(quick_look::Content::Folder { items, truncated }) => (
-                    if *truncated {
-                        format!("At least {items} items. Folder summary")
-                    } else {
-                        format!(
-                            "{items} item{}. Folder summary",
-                            if *items == 1 { "" } else { "s" }
-                        )
-                    },
-                    None,
-                ),
-                Some(quick_look::Content::Link { target }) => {
-                    (format!("Symbolic link to\n{target}"), None)
-                }
-                Some(quick_look::Content::Unsupported) => (
-                    "No Preview Available. Press Return after closing Quick Look to open the item."
-                        .to_string(),
-                    None,
-                ),
-            }
-        };
-        let mut actions = vec![dialog_action(
-            "quick-look-close",
-            "Close",
-            DialogActionKind::Normal,
-        )];
-        if count > 1 {
-            actions.push(
-                dialog_action(
-                    "quick-look-previous",
-                    "Previous item",
-                    DialogActionKind::Normal,
-                )
-                .disabled(panel.current == 0),
-            );
-            actions.push(
-                dialog_action("quick-look-next", "Next item", DialogActionKind::Normal)
-                    .disabled(position >= count),
-            );
-        }
-        Some(AccessibleDialog {
-            kind: DialogKind::QuickLook,
-            title: name,
-            description: if count > 1 {
-                format!("{position} of {count}. {description}")
-            } else {
-                description
-            },
-            actions,
-            options: Vec::new(),
-            initial_focus: DialogFocus::Action(0),
-            document_text,
             status,
         })
     }

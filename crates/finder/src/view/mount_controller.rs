@@ -89,11 +89,9 @@ impl FinderView {
                 .iter()
                 .any(|path| directory_state::lies_under_any(path, &disappeared))
         }) {
-            self.quick_look_generation = self.quick_look_generation.wrapping_add(1);
-            if let Some(panel) = &self.quick_look {
-                panel.cancel.store(true, Ordering::Release);
+            if let Some(panel) = self.quick_look.take() {
+                panel.handle.close(cx);
             }
-            self.quick_look = None;
         }
 
         if current_lost {

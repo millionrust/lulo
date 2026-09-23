@@ -8,11 +8,8 @@ and out of scope). Excluded because other agents are actively editing them:
 and the top bar / Control Centre crates (`rmac-top-bar*`,
 `rmac-quick-settings*`).
 
-Note on the brief: `todo.md` has no "Code rules to check" or "Files safety
-rules" sections — its only content is the Lulo OS rename and install/update
-plan. Those section names don't appear anywhere in the repo (`git log
---follow -- todo.md` shows one commit). The six rules audited below are the
-ones given directly in this task's instructions.
+The six rules are the "Code rules to check" and "Files safety rules" in
+`todo.md`.
 
 ## Rule 1 — no destructive-operation error dropped with `let _ = ...`
 

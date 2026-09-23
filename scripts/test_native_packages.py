@@ -68,8 +68,8 @@ class NativePackageContractTests(unittest.TestCase):
 
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
         self.assertEqual(len(contract.APPLICATION_BINARIES), 9)
-        self.assertEqual(len(contract.SESSION_BINARIES), 22)
-        self.assertEqual(len(contract.ALL_BINARIES), 29)
+        self.assertEqual(len(contract.SESSION_BINARIES), 23)
+        self.assertEqual(len(contract.ALL_BINARIES), 30)
         self.assertEqual(
             set(contract.ALL_BINARIES),
             set(contract.APPLICATION_BINARIES) | set(contract.SESSION_BINARIES),
@@ -85,6 +85,7 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("rmac-apps (= {version})", session.static_dependencies)
         self.assertIn("niri", session.static_dependencies)
         self.assertIn("swaylock", session.static_dependencies)
+        self.assertIn("wl-clipboard", session.static_dependencies)
         self.assertNotIn("libpam0g", session.static_dependencies)
         self.assertIn("swayidle", session.static_dependencies)
         self.assertNotIn("brightnessctl", session.static_dependencies)
@@ -97,6 +98,7 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("rmac-screenshot", session.binaries)
         self.assertIn("grim", session.static_dependencies)
         self.assertIn("wl-clipboard", session.static_dependencies)
+        self.assertIn("rmac-clipboard-service", session.binaries)
         self.assertIn("rmac-lock-provider", session.binaries)
         self.assertIn("rmac-sound", session.binaries)
 

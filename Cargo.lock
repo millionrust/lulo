@@ -5478,6 +5478,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-clipboard"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "rmac-clipboard-linux"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "blocking",
+ "futures-util",
+ "rmac-clipboard",
+ "serde",
+ "serde_json",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-component-gallery"
 version = "0.1.0"
 dependencies = [

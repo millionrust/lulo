@@ -35,6 +35,7 @@ NORMAL_UNITS = (
     "rmac-osd.service",
     "rmac-app-switcher.service",
     "rmac-screenshot.service",
+    "rmac-clipboard.service",
     "rmac-shortcut-broker.service",
 )
 SAFE_UNITS = (

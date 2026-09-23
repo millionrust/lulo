@@ -75,6 +75,7 @@ SESSION_BINARIES = (
     "rmac-system-settings",
     "rmac-notification-center",
     "rmac-focus-service",
+    "rmac-clipboard-service",
     "rmac-shortcut-broker",
     "rmac-shortcut-dispatch",
     "rmac-locker",

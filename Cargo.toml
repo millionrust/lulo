@@ -42,6 +42,8 @@ rmac-app-menu = { version = "=0.1.0", path = "crates/rmac-app-menu" }
 rmac-appearance = { version = "=0.1.0", path = "crates/rmac-appearance" }
 rmac-appearance-portal = { version = "=0.1.0", path = "crates/rmac-appearance-portal" }
 rmac-bluetooth = { version = "=0.1.0", path = "crates/rmac-bluetooth" }
+rmac-clipboard = { version = "=0.1.0", path = "crates/rmac-clipboard" }
+rmac-clipboard-linux = { version = "=0.1.0", path = "crates/rmac-clipboard-linux" }
 rmac-compositor = { version = "=0.1.0", path = "crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.1.0", path = "crates/rmac-compositor-niri" }
 rmac-editor = { version = "=0.1.0", path = "crates/rmac-editor" }

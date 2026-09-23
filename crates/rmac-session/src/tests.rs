@@ -153,6 +153,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
         include_str!("../units/rmac-osd.service"),
         include_str!("../units/rmac-app-switcher.service"),
         include_str!("../units/rmac-screenshot.service"),
+        include_str!("../units/rmac-clipboard.service"),
         include_str!("../units/rmac-shortcut-broker.service"),
     ];
     for unit in resident_units {
@@ -190,6 +191,9 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     let focus = include_str!("../units/rmac-focus.service");
     assert!(focus.contains("Type=dbus"));
     assert!(focus.contains("BusName=org.rmac.Focus1"));
+    let clipboard = include_str!("../units/rmac-clipboard.service");
+    assert!(clipboard.contains("Type=dbus"));
+    assert!(clipboard.contains("BusName=org.rmac.Clipboard1"));
     let launcher = include_str!("../units/rmac-launcher.service");
     let app_drawer = include_str!("../units/rmac-app-drawer.service");
     let quick_settings = include_str!("../units/rmac-quick-settings.service");
@@ -260,6 +264,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     assert!(normal_target.contains("rmac-osd.service"));
     assert!(normal_target.contains("rmac-app-switcher.service"));
     assert!(normal_target.contains("rmac-screenshot.service"));
+    assert!(normal_target.contains("rmac-clipboard.service"));
     assert!(safe_target
         .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
 

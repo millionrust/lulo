@@ -50,6 +50,7 @@ REQUIRED_RMAC_EXECUTABLES = (
     "rmac-system-settings",
     "rmac-notification-center",
     "rmac-focus-service",
+    "rmac-clipboard-service",
     "rmac-shortcut-broker",
     "rmac-shortcut-dispatch",
     "rmac-locker",
@@ -60,6 +61,7 @@ REQUIRED_RMAC_EXECUTABLES = (
 EXPECTED_SYSTEMD_UNITS = (
     "rmac-app-drawer.service",
     "rmac-app-switcher.service",
+    "rmac-clipboard.service",
     "rmac-component-failure@.service",
     "rmac-dock.service",
     "rmac-focus.service",

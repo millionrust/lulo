@@ -51,6 +51,7 @@ esac
     -p rmac-system-settings --bin rmac-system-settings \
     -p rmac-notification-center-app --bin rmac-notification-center \
     -p rmac-focus-linux --bin rmac-focus-service \
+    -p rmac-clipboard-linux --bin rmac-clipboard-service \
     -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch --bin rmac-locker --bin rmac-lock-coordinator --bin rmac-idle-locker)
 
 install -d -m 0755 "${unit_dir}"
@@ -64,6 +65,7 @@ install -m 0755 "${target_dir}/release/rmac-notification-center-panel" "${libexe
 install -m 0755 "${target_dir}/release/rmac-system-settings" "${libexec_dir}/rmac-system-settings"
 install -m 0755 "${target_dir}/release/rmac-notification-center" "${libexec_dir}/rmac-notification-center"
 install -m 0755 "${target_dir}/release/rmac-focus-service" "${libexec_dir}/rmac-focus-service"
+install -m 0755 "${target_dir}/release/rmac-clipboard-service" "${libexec_dir}/rmac-clipboard-service"
 install -m 0755 "${target_dir}/release/rmac-shortcut-broker" "${libexec_dir}/rmac-shortcut-broker"
 install -m 0755 "${target_dir}/release/rmac-shortcut-dispatch" "${libexec_dir}/rmac-shortcut-dispatch"
 install -m 0755 "${target_dir}/release/rmac-locker" "${libexec_dir}/rmac-locker"

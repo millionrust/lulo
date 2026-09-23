@@ -230,6 +230,17 @@ ICONS: dict[str, tuple[tuple[str, str] | None, str, str]] = {
     <circle cx="632" cy="622" r="32"/><circle cx="632" cy="702" r="32"/>
   </g>"""),
 
+    "archive-utility": (("#C9A06A", "#7E5A2E"), grad("box", "#F4E4C4", "#DCC39A"), """
+  <path d="M300 364h424v332c0 29-23 52-52 52H352c-29 0-52-23-52-52z" fill="url(#box)"
+        stroke="#FFFFFF" stroke-opacity=".35" stroke-width="5" filter="url(#lift)"/>
+  <path d="M276 300c0-22 18-40 40-40h392c22 0 40 18 40 40v64H276z" fill="#FBF0D8"
+        filter="url(#lift)"/>
+  <rect x="488" y="260" width="48" height="488" fill="#6A4B26" fill-opacity=".85"/>
+  <path d="M488 312h48M488 376h48M488 440h48M488 504h48M488 568h48"
+        stroke="#F4E4C4" stroke-width="14"/>
+  <rect x="470" y="600" width="84" height="72" rx="18" fill="#3E2B14"/>
+  <circle cx="512" cy="636" r="14" fill="#C9A06A"/>"""),
+
     "preview": (("#6BA8F8", "#2A60D0"), grad("sky", "#A6D5FF", "#5C9DF0")
                 + grad("hill", "#58B26E", "#2F7F48") + """
   <clipPath id="photo"><rect x="336" y="284" width="292" height="190" rx="20"/></clipPath>""",
@@ -327,6 +338,7 @@ PACKAGED = {
     "org.rmac.Clock": "clock",
     "org.rmac.Weather": "weather",
     "org.rmac.Player": "player",
+    "org.rmac.ArchiveUtility": "archive-utility",
 }
 
 # The Dock's embedded artwork -> icon name (Application is the fallback for

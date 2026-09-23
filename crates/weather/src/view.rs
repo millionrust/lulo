@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use gpui::{
     div, linear_color_stop, linear_gradient, prelude::FluentBuilder as _, px, rgb, rgba, svg,
-    AnyElement, ClickEvent, Context, Entity, FocusHandle, FontWeight, Hsla,
+    AnyElement, AppContext as _, ClickEvent, Context, Entity, FocusHandle, FontWeight, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
     StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
 };
@@ -1142,7 +1142,12 @@ impl Render for WeatherView {
                     .w_full()
                     .h(px(m::TOOLBAR_HEIGHT - 8.0))
                     .window_control_area(WindowControlArea::Drag)
-                    .on_double_click(|_, window, _| window.zoom_window()),
+                    .on_click(|event, window, _| {
+                        // Double-clicking the title area zooms, as on macOS.
+                        if event.click_count() >= 2 {
+                            window.zoom_window();
+                        }
+                    }),
             )
             .child(
                 div()

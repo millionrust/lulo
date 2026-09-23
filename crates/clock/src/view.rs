@@ -5,10 +5,11 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use gpui::{
-    canvas, div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, Bounds, ClickEvent,
-    Context, Entity, FocusHandle, FontWeight, Hsla, InteractiveElement as _, IntoElement,
-    KeyDownEvent, ParentElement as _, PathBuilder, Pixels, Render, RenderImage, ScrollWheelEvent,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
+    canvas, div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AppContext as _,
+    Bounds, ClickEvent, Context, Entity, FocusHandle, FontWeight, Hsla, InteractiveElement as _,
+    IntoElement, KeyDownEvent, ParentElement as _, PathBuilder, Pixels, Render, RenderImage,
+    ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    WindowControlArea,
 };
 use rmac_clock::alarms::{Alarm, Days};
 use rmac_clock::changes::Change;
@@ -453,7 +454,12 @@ impl ClockView {
                     .absolute()
                     .size_full()
                     .window_control_area(WindowControlArea::Drag)
-                    .on_double_click(|_, window, _| window.zoom_window()),
+                    .on_click(|event, window, _| {
+                        // Double-clicking the title area zooms, as on macOS.
+                        if event.click_count() >= 2 {
+                            window.zoom_window();
+                        }
+                    }),
             )
             .child(
                 div()

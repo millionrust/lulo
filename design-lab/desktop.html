@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Desktop — icons, Stacks, menu, widgets</title>
+<!--
+  The macOS 26 desktop at 1:1 logical points on the owner's 1470 × 956 Mac
+  (macOS 26.2 Tahoe, dark). Rust copies these numbers into
+  crates/rmac-desktop (grid, stacks, widgets) and shell/bins/rmac-wallpaper.
+
+  Measured on 2026-09-23 (Finder desktop window captured alone with
+  `screencapture -l`, AX frames read through System Events, Retina ÷ 2).
+  Finder prefs: iconSize 64, gridSpacing 54, textSize 12, labelOnBottom,
+  showIconPreview, arrangeBy none.
+    icon box            64 × 64 (AX frame of every desktop item)
+    first icon          x 1372 → right edge 34 from the screen edge
+                        (centre 66 from the right), top y 41
+    row pitch           112 (AX tops 41, 153, 265, 377, 489, 601)
+    label               12 pt regular white with a soft black shadow; cap
+                        band y 115.5–124 under a 41-top icon → a 15-line
+                        text box whose top is 111 (6 below the icon box)
+    video preview       a 16:9 poster drawn inside the 64 box (56 × 27.5)
+    desktop menu        202 wide × 283 tall for 10 rows + 3 separators:
+                        row 24, separator 11, padding 4, border 1 (the menu
+                        bar menus' geometry). Icon column centre 24 from the
+                        outer left edge (glyphs ≈ 12 wide), label at 39,
+                        chevron right edge 18 from the outer right edge.
+                        Label colour #DCDCDE. Rows, in order:
+                          New Folder | Get Info, Change Wallpaper…,
+                          Edit Widgets… | Use Stacks, Sort By ›, Clean Up,
+                          Clean Up By ›, Show View Options |
+                          Import from iPhone ›
+                        Icons on New Folder, Get Info, Use Stacks, Sort By,
+                        Clean Up, Show View Options, Import from iPhone.
+    widget gallery      window 41,404 → 1027 × 552 (to the screen bottom).
+                        Sidebar 240 wide (x 41–281) with a 1 pt separator;
+                        search field ≈ 202 × 30 at 60,423; source rows 40
+                        pitch with 26 icons, "All Widgets" selected pill
+                        210 × 40. Header card y 424–596 at x 311–1057:
+                        "Widgets on Desktop" 15 semibold + 13 regular body.
+                        "Suggestions" 13 semibold. Tiles: small 112, gap
+                        11.5, large 236 (two rows 640–752, 764–876), corner
+                        ≈ 17 (circle fit), fill #1A2459 with a light rim.
+                        Footer from y 894 (separator at 893): "Drag a widget
+                        to place it on the desktop…" 13 semibold at x 61,
+                        Done 83 × 28 accent pill at x 964.
+                        Notification Centre column shows "Drag widgets here
+                        to add them to Notification Centre" and a Done pill.
+    Edit Widgets pill   (Notification Centre) 87 × 24 at 1222,185.
+    battery tile        ring centre (30, 30) in a 112 tile, outer radius 22,
+                        stroke 3, green arc, laptop glyph, bolt when
+                        charging; "52%" ≈ 29 pt at x 10, baseline 11 from
+                        the bottom.
+    clock tile          white face inset 6 in a 112 tile, black hour and
+                        minute hands, orange second hand and hub.
+
+  S = not measured (no test files may be added to the owner's Desktop, and
+  it holds a single column):
+    column pitch        112 (same as the row pitch)
+    label width         2 lines, 100 wide max
+    selection           icon backdrop 72 × 72 radius 6 black 0.35; label
+                        pill accent #1372F9 radius 4, 5 side padding
+    marquee             fill white 0.12, 1 pt border white 0.50
+    widget sizes        small 170 × 170, medium 364 × 170 (Apple HIG),
+                        radius 24 (the gallery's 17 at 112 scaled by 1.52)
+    stacks              every non-folder kind forms a stack; folders stay
+                        loose after the stacks; the newest item is on top
+-->
+<style>
+  :root { --font: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif; --accent: #1372F9; }
+  html, body { margin: 0; background: #000; }
+  body { width: 1470px; font: 400 13px/1.2 var(--font); -webkit-font-smoothing: antialiased; color: #fff; }
+  .scene { position: relative; width: 1470px; height: 956px; overflow: hidden;
+    background:
+      radial-gradient(70% 60% at 80% 30%, rgba(160,170,230,.55) 0%, transparent 60%),
+      radial-gradient(60% 80% at 10% 15%, #7b4fd6 0%, transparent 60%),
+      linear-gradient(160deg, #6a3fd0 0%, #2d3ec8 45%, #1b2a9c 100%); }
+  .scene + .scene { border-top: 1px solid #000; }
+  .bar { position: absolute; left: 0; right: 0; top: 0; height: 33px; display: flex; align-items: center;
+    padding: 0 20px; gap: 22px; font-size: 13px; font-weight: 500; text-shadow: 0 0 2px rgba(0,0,0,.3); }
+  .bar b { font-weight: 700; }
+  .bar .r { margin-left: auto; }
+
+  /* ---- icons ---- */
+  .item { position: absolute; width: 112px; display: flex; flex-direction: column; align-items: center; }
+  .item .box { position: relative; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; }
+  .item.sel .box::before { content: ""; position: absolute; inset: -4px; border-radius: 6px; background: rgba(0,0,0,.35); }
+  .item .box img { position: relative; max-width: 64px; max-height: 64px; }
+  .item .box .ext { position: absolute; bottom: 12px; font: 600 8px/1 var(--font); color: #6b6b73; letter-spacing: .02em; }
+  .item .label { margin-top: 6px; max-width: 100px; padding: 0 5px; border-radius: 4px; text-align: center;
+    font-size: 12px; line-height: 15px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.65);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; word-break: break-word; }
+  .item.sel .label { background: var(--accent); text-shadow: none; }
+  .poster { width: 56px; height: 31.5px; border-radius: 3px; background: linear-gradient(135deg,#314a6e,#0d1320);
+    box-shadow: 0 0 0 1px rgba(255,255,255,.55), 0 1px 3px rgba(0,0,0,.45); }
+  .stack { position: relative; width: 60px; height: 60px; }
+  .stack > * { position: absolute; left: 50%; top: 50%; transform-origin: 50% 50%; }
+  .marquee { position: absolute; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.5); }
+
+  /* ---- menu ---- */
+  .menu { position: absolute; width: 202px; padding: 4px; border-radius: 10px; color: #DCDCDE;
+    background: rgba(28,28,36,.86); backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,.27);
+    box-shadow: 0 0 0 .5px #000, 0 10px 30px rgba(0,0,0,.35); box-sizing: border-box; }
+  .menu .row { position: relative; height: 24px; display: flex; align-items: center; padding-left: 34px; border-radius: 6px; white-space: nowrap; }
+  .menu .row .ic { position: absolute; left: 13px; width: 13px; height: 13px; display: flex; align-items: center; justify-content: center; }
+  .menu .row .ic img { width: 13px; height: 13px; opacity: .87; }
+  .menu .row .chev { position: absolute; right: 12px; width: 9px; height: 12px; }
+  .menu .row.hl { background: var(--accent); color: #fff; }
+  .menu .sep { height: 11px; display: flex; align-items: center; padding: 0 11px; }
+  .menu .sep i { flex: 1; height: 1px; background: rgba(255,255,255,.14); }
+
+  /* ---- widgets (170 small / 364 medium) ---- */
+  .w { position: absolute; box-sizing: border-box; border-radius: 24px; overflow: hidden; box-shadow: 0 0 0 .5px rgba(255,255,255,.28) inset, 0 8px 24px rgba(0,0,0,.25); }
+  .w.s { width: 170px; height: 170px; }
+  .w.m { width: 364px; height: 170px; }
+  .glass { background: rgba(26,36,89,.78); backdrop-filter: blur(30px); }
+  .clock .face { position: absolute; inset: 9px; border-radius: 50%; background: #fff; }
+  .clock .hand { position: absolute; left: 50%; bottom: 50%; transform-origin: 50% 100%; border-radius: 3px; background: #111; }
+  .clock .sec { background: #F29A34; width: 1.5px; }
+  .clock .hub { position: absolute; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px; border-radius: 50%; background: #F29A34; }
+  .cal { padding: 14px 13px; }
+  .cal .mon { color: #FF453A; font: 700 11px/13px var(--font); letter-spacing: .03em; }
+  .cal .grid { margin-top: 6px; display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 3px; text-align: center; font: 600 10px/17px var(--font); }
+  .cal .grid .dow { color: rgba(255,255,255,.55); font-weight: 700; font-size: 9px; }
+  .cal .grid .today { background: #FF453A; border-radius: 50%; width: 17px; margin: 0 auto; }
+  .weather { padding: 15px 16px; }
+  .weather .city { font: 600 14px/17px var(--font); display: flex; gap: 4px; align-items: center; }
+  .weather .temp { font: 300 44px/50px var(--font); letter-spacing: -.5px; }
+  .weather .foot { position: absolute; left: 16px; bottom: 15px; font: 600 12px/15px var(--font); }
+  .weather .age { font-weight: 500; color: rgba(255,255,255,.7); font-size: 11px; }
+  .battery .ring { position: absolute; left: 13px; top: 12px; width: 67px; height: 67px; }
+  .battery .pct { position: absolute; left: 15px; bottom: 14px; font: 400 44px/1 var(--font); color: #EDEDF2; }
+
+  /* ---- gallery ---- */
+  .gallery { position: absolute; left: 41px; top: 404px; width: 1027px; height: 552px; border-radius: 26px 26px 0 0;
+    background: rgba(34,48,125,.82); backdrop-filter: blur(40px); box-shadow: 0 0 0 1px rgba(255,255,255,.18) inset, 0 20px 60px rgba(0,0,0,.4); overflow: hidden; }
+  .gallery .side { position: absolute; left: 0; top: 0; width: 240px; bottom: 62px; border-right: 1px solid rgba(255,255,255,.14); }
+  .gallery .search { position: absolute; left: 19px; top: 19px; width: 202px; height: 30px; border-radius: 15px; background: #1F212B;
+    box-shadow: 0 0 0 2px #3C7BF0; display: flex; align-items: center; padding-left: 30px; color: rgba(255,255,255,.55); font-size: 13px; box-sizing: border-box; }
+  .gallery .src { position: absolute; left: 15px; width: 210px; height: 40px; border-radius: 10px; display: flex; align-items: center; gap: 10px; padding-left: 8px; box-sizing: border-box; font-size: 13px; }
+  .gallery .src.on { background: rgba(255,255,255,.2); }
+  .gallery .src i { width: 26px; height: 26px; border-radius: 7px; display: block; }
+  .gallery .header { position: absolute; left: 270px; top: 20px; width: 746px; height: 172px; border-radius: 16px; background: rgba(255,255,255,.08); padding: 60px 44px; box-sizing: border-box; }
+  .gallery .header h3 { margin: 0 0 6px; font: 600 15px/18px var(--font); }
+  .gallery .header p { margin: 0; width: 500px; font: 400 13px/15px var(--font); color: rgba(255,255,255,.88); }
+  .gallery .sugg { position: absolute; left: 269px; top: 211px; font: 600 13px/16px var(--font); color: #8FA6FF; }
+  .gallery .tile { position: absolute; border-radius: 17px; overflow: hidden; box-shadow: 0 0 0 .5px rgba(255,255,255,.35) inset; background: #1A2459; }
+  .gallery .foot { position: absolute; left: 0; right: 0; bottom: 0; height: 62px; border-top: 1px solid rgba(255,255,255,.14); display: flex; align-items: center; padding: 0 20px; font: 600 13px var(--font); }
+  .done { margin-left: auto; width: 83px; height: 28px; border-radius: 14px; background: var(--accent); display: flex; align-items: center; justify-content: center; font: 500 13px var(--font); }
+  .nc-drop { position: absolute; left: 1102px; top: 176px; width: 330px; text-align: center; font: 600 15px/19px var(--font); color: rgba(255,255,255,.9); }
+  .nc-done { position: absolute; left: 1280px; top: 378px; padding: 3px 10px; border-radius: 12px; background: rgba(255,255,255,.15); box-shadow: 0 0 0 1px rgba(255,255,255,.27) inset; font-size: 12px; color: rgba(255,255,255,.75); }
+</style>
+</head>
+<body>
+<!-- Scene 1: loose icons (one selected), a marquee, widgets and the desktop menu -->
+<div class="scene" id="s1"><div class="bar"><b>Files</b><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span><span class="r">Wed 23 Sep 9:16 PM</span></div></div>
+<!-- Scene 2: Use Stacks with the Images stack expanded -->
+<div class="scene" id="s2"><div class="bar"><b>Files</b><span class="r">Wed 23 Sep 9:16 PM</span></div></div>
+<!-- Scene 3: Edit Widgets gallery -->
+<div class="scene" id="s3"><div class="bar"><b>Files</b><span class="r">Wed 23 Sep 9:18 PM</span></div></div>
+<script>
+const ICON = { folder: "../assets/icons/folder.svg", doc: "../assets/icons/document.svg" };
+const PITCH = 112, RIGHT = 34, TOP = 41, W = 1470;
+function slot(col, row) { return { left: W - RIGHT - 32 - PITCH / 2 - col * PITCH, top: TOP + row * PITCH }; }
+function glyph(kind, ext) {
+  if (kind === "folder") return `<img src="${ICON.folder}" width="64" height="64">`;
+  if (kind === "movie") return `<div class="poster"></div>`;
+  if (kind === "image") return `<div class="poster" style="width:60px;height:38px;background:linear-gradient(160deg,#8fb7ff,#4f5fd6 55%,#1d2a8c)"></div>`;
+  return `<img src="${ICON.doc}" width="64" height="64"><span class="ext">${ext}</span>`;
+}
+function item(scene, col, row, name, kind, ext, sel) {
+  const p = slot(col, row), d = document.createElement("div");
+  d.className = "item" + (sel ? " sel" : ""); d.style.left = p.left + "px"; d.style.top = p.top + "px";
+  d.innerHTML = `<div class="box">${glyph(kind, ext)}</div><div class="label">${name}</div>`;
+  scene.appendChild(d);
+}
+function stack(scene, col, row, name, kinds, sel) {
+  const p = slot(col, row), d = document.createElement("div");
+  d.className = "item" + (sel ? " sel" : ""); d.style.left = p.left + "px"; d.style.top = p.top + "px";
+  const layers = kinds.slice(0, 3).map((k, i) => {
+    const r = [-8, 6, 0][i] ?? 0, dx = [-3, 3, 0][i] ?? 0;
+    return `<div style="transform:translate(calc(-50% + ${dx}px),-50%) rotate(${r}deg) scale(.8)">${glyph(k, "")}</div>`;
+  }).join("");
+  d.innerHTML = `<div class="box"><div class="stack">${layers}</div></div><div class="label">${name}</div>`;
+  scene.appendChild(d);
+}
+const s1 = document.getElementById("s1"), s2 = document.getElementById("s2"), s3 = document.getElementById("s3");
+item(s1, 0, 0, "Projects", "folder");
+item(s1, 0, 1, "Budget 2026.xlsx", "doc", "XLSX");
+item(s1, 0, 2, "Screenshot 2026-09-23 at 21.08.12", "image", "", true);
+item(s1, 0, 3, "demo.mov", "movie");
+item(s1, 0, 4, "Lease agreement.pdf", "doc", "PDF");
+item(s1, 1, 0, "notes.txt", "doc", "TXT");
+s1.insertAdjacentHTML("beforeend", `<div class="marquee" style="left:1180px;top:520px;width:170px;height:120px"></div>`);
+
+function clockW(left, top) {
+  const h = 9, m = 16, s = 38;
+  const ang = [((h % 12) + m / 60) * 30, (m + s / 60) * 6, s * 6];
+  return `<div class="w s glass clock" style="left:${left}px;top:${top}px"><div class="face">
+    <div class="hand" style="width:5px;height:38px;margin-left:-2.5px;transform:rotate(${ang[0]}deg)"></div>
+    <div class="hand" style="width:5px;height:56px;margin-left:-2.5px;transform:rotate(${ang[1]}deg)"></div>
+    <div class="hand sec" style="height:66px;margin-left:-.75px;transform:rotate(${ang[2]}deg)"></div>
+    <div class="hub"></div></div></div>`;
+}
+function calW(left, top) {
+  const days = []; const first = 2; /* Sept 2026 starts on a Tuesday */
+  for (let i = 0; i < first; i++) days.push("");
+  for (let d = 1; d <= 30; d++) days.push(d);
+  const cells = ["S","M","T","W","T","F","S"].map(x => `<div class="dow">${x}</div>`).join("") +
+    days.map(d => `<div class="${d === 23 ? "today" : ""}">${d}</div>`).join("");
+  return `<div class="w s glass cal" style="left:${left}px;top:${top}px"><div class="mon">SEPTEMBER</div><div class="grid">${cells}</div></div>`;
+}
+function weatherW(left, top) {
+  return `<div class="w s weather" style="left:${left}px;top:${top}px;background:linear-gradient(180deg,#3D83D3,#74ABE6)">
+    <div class="city">Bengaluru</div><div class="temp">24°</div>
+    <div class="foot"><div>☁︎ Partly Cloudy</div><div>H:27° L:19°</div></div></div>`;
+}
+function batteryW(left, top) {
+  const r = 30.75, c = 2 * Math.PI * r, f = .52;
+  return `<div class="w s glass battery" style="left:${left}px;top:${top}px">
+    <svg class="ring" viewBox="0 0 67 67"><circle cx="33.5" cy="33.5" r="${r}" fill="none" stroke="rgba(255,255,255,.2)" stroke-width="4.5"/>
+    <circle cx="33.5" cy="33.5" r="${r}" fill="none" stroke="#5DD05F" stroke-width="4.5" stroke-linecap="round" stroke-dasharray="${c * f} ${c}" transform="rotate(-90 33.5 33.5)"/>
+    <rect x="21" y="25" width="25" height="15" rx="2" fill="none" stroke="#fff" stroke-width="2"/><rect x="17" y="41" width="33" height="2.5" rx="1.2" fill="#fff"/></svg>
+    <div class="pct">52%</div></div>`;
+}
+s1.insertAdjacentHTML("beforeend", clockW(20, 53) + calW(214, 53) + weatherW(20, 247) + batteryW(214, 247));
+s1.insertAdjacentHTML("beforeend", `<div class="menu" style="left:736px;top:472px">
+  ${[["New Folder","new-folder"],"|",["Get Info","info"],["Change Wallpaper…"],["Edit Widgets…"],"|",
+     ["Use Stacks","stacks"],["Sort By","sort",1],["Clean Up","stacks"],["Clean Up By",null,1],["Show View Options","gear"]]
+    .map(r => r === "|" ? `<div class="sep"><i></i></div>` :
+      `<div class="row"><span class="ic">${r[1] ? `<img src="../shell/assets/menu/${r[1]}.svg">` : ""}</span>${r[0]}${r[2] ? `<img class="chev" src="../shell/assets/menu/chevron-right.svg" style="opacity:.87">` : ""}</div>`).join("")}
+  </div>`);
+
+stack(s2, 0, 0, "Documents", ["doc","doc","doc"]);
+stack(s2, 0, 1, "Images", ["image","image","image"], true);
+item(s2, 0, 2, "Screenshot 2026-09-23 at 21.08.12", "image");
+item(s2, 0, 3, "wallpaper-draft.png", "image");
+stack(s2, 0, 4, "Movies", ["movie","movie"]);
+stack(s2, 0, 5, "PDF Documents", ["doc","doc"]);
+item(s2, 1, 0, "Projects", "folder");
+
+s3.insertAdjacentHTML("beforeend", `<div class="nc-drop">Drag widgets here to add them to Notification Centre</div><div class="nc-done">Done</div>
+ <div class="gallery">
+  <div class="side"><div class="search">Search Widgets</div>
+   ${[["All Widgets","#5163B3",1],["Batteries","#5DD05F"],["Calendar","#fff"],["Clock","#fff"],["Weather","#3D83D3"]].map((s, i) =>
+     `<div class="src${s[2] ? " on" : ""}" style="top:${68 + i * 40}px"><i style="background:${s[1]}"></i>${s[0]}</div>`).join("")}
+  </div>
+  <div class="header"><h3>Widgets on Desktop</h3><p>Place widgets directly on the desktop by dragging them from the widget gallery.</p></div>
+  <div class="sugg">Suggestions</div>
+  <div class="tile" style="left:269px;top:236px;width:112px;height:112px"></div>
+  <div class="tile" style="left:392.5px;top:236px;width:112px;height:112px"></div>
+  <div class="tile" style="left:516px;top:236px;width:236px;height:112px;background:linear-gradient(180deg,#3D83D3,#74ABE6)"></div>
+  <div class="tile" style="left:763px;top:236px;width:112px;height:112px"></div>
+  <div class="foot">Drag a widget to place it on the desktop…<div class="done">Done</div></div>
+ </div>`);
+</script>
+</body>
+</html>

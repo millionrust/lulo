@@ -526,9 +526,20 @@ impl BannerHost {
             if self.surfaces.contains_key(&output) {
                 continue;
             }
-            if let Some(handle) = surface::open(output.clone(), host.clone(), cx) {
-                self.surfaces.insert(output, handle);
-            }
+            // Opening a window renders its first frame, which reads this
+            // host; do it after the current update so the read cannot
+            // re-enter the entity being updated.
+            let host = host.clone();
+            cx.defer(move |cx| {
+                if host.read(cx).surfaces.contains_key(&output) {
+                    return;
+                }
+                if let Some(handle) = surface::open(output.clone(), host.clone(), cx) {
+                    host.update(cx, |this, _| {
+                        this.surfaces.entry(output).or_insert(handle);
+                    });
+                }
+            });
         }
     }
 

@@ -85,6 +85,9 @@ impl FinderView {
                         processed += 1;
                         let _ = events.try_send(TrashEvent::Progress { processed, total });
                     }
+                    if completed > 0 && !cfg!(test) {
+                        let _ = rmac_sound::play(rmac_sound::Cue::Trash);
+                    }
                     let recovery = store.recover_and_review();
                     let undo_availability = store.undo_store().latest();
                     let _ = events.send_blocking(TrashEvent::Finished(TrashCompletion {

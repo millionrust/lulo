@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><title>rmac design lab</title>
+<link rel="stylesheet" href="lab.css">
+<style>
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;max-width:1000px}
+  .cards a{display:block;padding:16px;border:1px solid #26262c;border-radius:10px;text-decoration:none;
+           background:#131318;color:#e8e8ea}
+  .cards a:hover{border-color:#3a3a44;background:#17171d}
+  .cards b{display:block;font-size:14px;margin-bottom:4px}
+  .cards span{font-size:12px;color:#8b8b93}
+  ol{max-width:820px;font-size:13px;line-height:1.8}
+  ol code{color:#7fd1ff}
+</style>
+</head>
+<body>
+<header class="lab">
+  <h1>rmac design lab</h1>
+  <nav>
+    <a href="index.html" class="on">Overview</a>
+    <a href="shell.html">Shell</a>
+    <a href="overlays.html">Overlays</a>
+    <a href="windows.html">Windows &amp; controls</a>
+    <a href="icons.html">Icons</a>
+    <a href="compare.html">A/B compare</a>
+  </nav>
+</header>
+
+<section class="surface">
+  <h2>What this is</h2>
+  <p class="note">Every rmac surface, drawn in HTML and CSS at the <b>measured</b> macOS 27 values. It is a ruler,
+     not a runtime — rmac still ships as Rust and GPUI. The point is the loop: changing a number here takes one
+     second, changing it in Rust takes ten minutes. Get it right here, then port it.</p>
+
+  <div class="cards">
+    <a href="shell.html"><b>Shell</b><span>Desktop, transparent menu bar, open menu, Dock, lock screen</span></a>
+    <a href="overlays.html"><b>Overlays</b><span>Search, Control Centre, banners, Notification Centre, OSD, Apps</span></a>
+    <a href="windows.html"><b>Windows &amp; controls</b><span>Files, sheets, System Settings, every control state</span></a>
+    <a href="icons.html"><b>Icons</b><span>All eight icons in default, dark, clear and tinted</span></a>
+    <a href="compare.html"><b>A/B compare</b><span>Cross-fade a CSS mock against the real macOS screenshot</span></a>
+  </div>
+</section>
+
+<section class="surface">
+  <h2>How the agent uses it</h2>
+  <ol>
+    <li>Open a page. Read the <b>table at the bottom of each section</b> — it maps every CSS value to its
+        <code>crates/rmac-design</code> field.</li>
+    <li>Port those values. Never retype a number by eye; copy it from the table.</li>
+    <li>Rebuild rmac, run <code>scripts/linux/capture-shell-evidence.sh</code> on the reference PC.</li>
+    <li>Put the rmac capture and this page side by side. List what still differs, in pixels.</li>
+    <li>Fix the top five. Repeat.</li>
+  </ol>
+  <p class="note">All tokens live in one place: <code>design-lab/tokens.css</code>. That file is the mirror of
+     <code>crates/rmac-design</code>. If the two ever disagree, the measured captures in
+     <code>docs/measured-colors-2026-09-19.md</code> and <code>docs/reference-captures-2026-09-18.md</code> decide.</p>
+</section>
+
+<section class="surface">
+  <h2>The six fixes that close most of the gap</h2>
+  <p class="note">Taken from comparing <code>target/evidence/rmac-current.png</code> with these pages.
+     In priority order, because each one is visible from across the room:</p>
+  <table class="map">
+    <tr><th>#</th><th>Fix</th><th>Where</th></tr>
+    <tr><td>1</td><td><b>Menu bar must be fully transparent</b> and 29 px, not an opaque 40 px panel</td><td><a href="shell.html">Shell §1</a></td></tr>
+    <tr><td>2</td><td><b>Real app menus</b> after the bold app name — an empty menu bar is uncanny</td><td><a href="shell.html">Shell §2</a></td></tr>
+    <tr><td>3</td><td><b>Layered squircle icons</b> instead of flat glyphs — the single biggest tell</td><td><a href="icons.html">Icons</a></td></tr>
+    <tr><td>4</td><td><b>Running dots and a Bin tile</b>; shelf padding that hugs the icons</td><td><a href="shell.html">Shell §1</a></td></tr>
+    <tr><td>5</td><td><b>Shelf glass</b>: .5 px bright top edge, radius 29, shadow, blur 40 + saturate 180%</td><td><a href="shell.html">Shell §1</a></td></tr>
+    <tr><td>6</td><td><b>Clock format</b> “Fri 18 Sep 11:30 am” with tabular numerals</td><td><a href="shell.html">Shell §1</a></td></tr>
+  </table>
+</section>
+
+<section class="surface">
+  <h2>Honest limits of this lab</h2>
+  <p class="note">
+    CSS <code>backdrop-filter</code> is not niri's <code>ext-background-effect</code>; blur radii transfer
+    approximately, not exactly. The squircle here is a CSS radius approximation, while the icons themselves are
+    true superellipses. Font rendering differs between WebKit and GPUI, so trust the <b>metrics</b> from this lab and the
+    <b>colours</b> from the measured docs — and always confirm against a real capture from the reference PC.
+  </p>
+</section>
+
+</body>
+</html>

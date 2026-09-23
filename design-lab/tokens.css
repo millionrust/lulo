@@ -1,0 +1,176 @@
+/* rmac design tokens — measured from macOS 27.0 on the reference Mac.
+   This file is the single source of truth for the design lab.
+   Every value here maps 1:1 to a field in crates/rmac-design.
+
+   M = measured from a capture (docs/measured-colors-2026-09-19.md,
+       docs/reference-captures-2026-09-18.md)
+   S = starting value, still to be measured — never claim it is exact
+*/
+
+:root {
+  /* ---------- accent & system palette (M: #1372F9 from two captures) --- */
+  --accent:            #1372F9;
+  --accent-hover:      #2A80FA;
+  --on-accent:         #FFFFFF;
+  --sys-red:           #FF453A;
+  --sys-orange:        #FF9F0A;
+  --sys-yellow:        #FFD60A;
+  --sys-green:         #30D158;
+  --sys-teal:          #40C8E0;
+  --sys-indigo:        #5E5CE6;
+  --sys-purple:        #BF5AF2;
+  --sys-pink:          #FF375F;
+  --sys-gray:          #8E8E93;
+
+  /* ---------- dark surfaces (M — note the wallpaper tint baked in) ----- */
+  --window:            #222025;   /* M Finder content, tinted 0.06 */
+  --sidebar:           #29252E;   /* M Finder + Settings sidebar, tinted 0.10 */
+  --grouped-bg:        #222026;   /* M Settings detail pane */
+  --grouped-row:       #29272D;   /* M Settings grouped row */
+  --sheet:             #262227;   /* M save sheet */
+  --field:             #181818;   /* M text field inside a sheet */
+  --statusbar:         #29272C;   /* M Finder status bar */
+  --btn-secondary:     #363237;   /* M sheet Cancel */
+  --btn-destructive:   #812E25;   /* M sheet Delete */
+
+  /* ---------- labels ---------- */
+  --label:             #F5F5F7;
+  --label-2:           #B9B9BF;
+  --label-3:           #98989F;
+  --label-4:           rgba(255,255,255,.25);
+  --separator:         rgba(255,255,255,.12);
+  --separator-strong:  rgba(255,255,255,.20);
+  --hover:             rgba(255,255,255,.07);
+  --selection-off:     rgba(255,255,255,.11);
+  --fill-control:      #3A3A3E;
+
+  /* ---------- materials (dark = genuinely translucent) ---------------- */
+  --mat-menu:          rgba(44,44,50,.80);
+  --mat-menu-blur:     50px;
+  --mat-popover:       rgba(40,42,48,.78);
+  --mat-hud:           rgba(28,28,32,.72);
+  --mat-dock:          rgba(255,255,255,.14);
+  --mat-dock-border:   rgba(255,255,255,.35);
+  --mat-spot:          rgba(120,132,150,.42);   /* M composite #3E4958 */
+  --mat-cc-module:     rgba(84,96,116,.40);     /* M composite #36414E */
+  --blur:              40px;
+  --sat:               180%;
+
+  /* ---------- menu bar (M) ---------- */
+  --menubar-h:         29px;
+  --menubar-lead:      12px;
+  --menubar-trail:     10px;
+  --menubar-font:      13px;
+  --menubar-weight:    600;
+  --menubar-gap:       18px;
+  --menubar-icon:      16px;
+  --menubar-hit:       22px;
+
+  /* ---------- menu panel (M: 269 wide, 24 px pitch) ------------------- */
+  --menu-w:            269px;
+  --menu-row:          24px;
+  --menu-pad:          5px;
+  --menu-radius:       10px;
+  --menu-item-radius:  6px;
+  --menu-font:         13px;
+
+  /* ---------- dock (M: tile 64, pitch 76 → gap 12) -------------------- */
+  --dock-tile:         64px;
+  --dock-gap:          12px;
+  --dock-pad:          5px;
+  --dock-radius:       29px;
+  --dock-bottom:       18px;
+  --dock-dot:          4px;
+  --icon-radius:       22.5%;   /* squircle approximation in CSS */
+
+  /* ---------- search (M: 642 × 59 at 23.2 % height) ------------------- */
+  --search-w:          642px;
+  --search-h:          59px;
+  --search-radius:     29.5px;
+  --search-top:        23.2%;
+  --search-font:       22px;
+
+  /* ---------- control centre (M: 287 wide) ---------------------------- */
+  --cc-w:              287px;
+  --cc-top:            34px;
+  --cc-right:          20px;
+  --cc-pad:            12px;
+  --cc-gap:            10px;
+  --cc-module-radius:  26px;
+  --cc-toggle:         36px;
+  --cc-slider-h:       28px;
+
+  /* ---------- notification centre & banners --------------------------- */
+  --nc-w:              356px;
+  --card-radius:       18px;
+
+  /* ---------- windows ---------- */
+  --win-radius:        16px;     /* macOS 27 standardised this */
+  --toolbar-h:         52px;
+  --titlebar-h:        28px;
+  --traffic:           12px;
+  --traffic-gap:       8px;
+  --traffic-lead:      20px;
+  --win-shadow:        0 12px 32px rgba(0,0,0,.45), 0 0 0 .5px rgba(255,255,255,.06);
+  --win-shadow-off:    0 4px 12px rgba(0,0,0,.30);
+  --sidebar-w:         180px;
+  --settings-sidebar:  248px;
+
+  /* ---------- controls ---------- */
+  --ctl-h:             24px;
+  --ctl-radius:        8px;
+  --switch-w:          38px;
+  --switch-h:          22px;
+  --switch-thumb:      20px;
+  --slider-track:      4px;
+  --slider-knob:       20px;
+  --row-h:             36px;      /* settings grouped row */
+  --list-row:          24px;      /* file list row */
+  --card:              12px;      /* grouped box radius */
+
+  /* ---------- type ---------- */
+  --font: "Inter", -apple-system, system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --t-body:      13px;
+  --t-callout:   12px;
+  --t-sub:       11px;
+  --t-foot:      10px;
+  --t-head:      13px;   /* semibold */
+  --t-title3:    15px;
+  --t-title2:    17px;
+  --t-title1:    22px;
+  --t-large:     26px;
+
+  /* ---------- motion ---------- */
+  --ease:        cubic-bezier(.4,0,.2,1);
+  --ease-out:    cubic-bezier(.2,0,0,1);
+  --fast:        120ms;
+  --standard:    200ms;
+  --deliberate:  350ms;
+}
+
+/* ---------- light appearance (S — recapture Light to confirm) -------- */
+:root.light {
+  --window:            #FFFFFF;
+  --sidebar:           #F2F2F4;
+  --grouped-bg:        #F5F5F7;
+  --grouped-row:       #FFFFFF;
+  --sheet:             #ECECEE;
+  --field:             #FFFFFF;
+  --statusbar:         #F6F6F8;
+  --btn-secondary:     #E9E9EC;
+  --label:             #1D1D1F;
+  --label-2:           #66666C;
+  --label-3:           #86868B;
+  --separator:         rgba(0,0,0,.10);
+  --hover:             rgba(0,0,0,.05);
+  --selection-off:     rgba(0,0,0,.08);
+  --fill-control:      #E9E9EC;
+  --mat-menu:          rgba(246,246,248,.86);
+  --mat-popover:       rgba(244,244,246,.84);
+  --mat-hud:           rgba(255,255,255,.80);
+  --mat-dock:          rgba(255,255,255,.40);
+  --mat-spot:          rgba(252,252,252,.92);   /* M: #FCFCFC ≈ opaque */
+  --mat-cc-module:     rgba(255,255,255,.55);
+  --win-shadow:        0 12px 32px rgba(0,0,0,.18), 0 0 0 .5px rgba(0,0,0,.06);
+}

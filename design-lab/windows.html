@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><title>rmac design lab — windows &amp; controls</title>
+<link rel="stylesheet" href="lab.css">
+</head>
+<body>
+<header class="lab">
+  <h1>rmac design lab</h1>
+  <nav>
+    <a href="index.html">Overview</a>
+    <a href="shell.html">Shell</a>
+    <a href="overlays.html">Overlays</a>
+    <a href="windows.html" class="on">Windows &amp; controls</a>
+    <a href="icons.html">Icons</a>
+  </nav>
+  <span class="spacer"></span>
+  <button class="t" onclick="document.documentElement.classList.toggle('light')">Light / Dark</button>
+</header>
+
+<!-- ============================ FILES WINDOW ============================ -->
+<section class="surface">
+  <h2>1 · Files <span style="font-weight:400;color:#8b8b93">— window radius 16, toolbar 52, edge-to-edge sidebar</span></h2>
+  <p class="note">macOS 27 standardised the window radius and pushed sidebars to the window edge.
+     Traffic lights live <b>inside the sidebar area</b>, 20 px from the left, vertically centred in the toolbar.
+     The owner's Mac opens Files in <b>List view with the status bar on</b>.</p>
+
+  <div class="desk">
+    <div class="menubar"><span class="app">Files</span>
+      <span class="menus"><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span></span></div>
+
+    <div class="win" style="left:120px;top:60px;width:900px;height:540px">
+      <div style="display:flex;flex:1;min-height:0">
+        <div class="sidebar" style="display:flex;flex-direction:column">
+          <div class="toolbar" style="border-bottom:none;padding-left:0">
+            <div class="traffic"><i class="c"></i><i class="m"></i><i class="z"></i></div>
+          </div>
+          <div class="h">Favourites</div>
+          <div class="r">🕘 Recents</div>
+          <div class="r sel">📁 Applications</div>
+          <div class="r">📄 Documents</div>
+          <div class="r">⬇ Downloads</div>
+          <div class="r">🖥 Desktop</div>
+          <div class="h">Locations</div>
+          <div class="r">💽 Macintosh HD</div>
+          <div class="r">🗑 Bin</div>
+          <div class="h">Tags</div>
+          <div class="r"><span style="width:10px;height:10px;border-radius:50%;background:#FF453A"></span> Red</div>
+          <div class="r"><span style="width:10px;height:10px;border-radius:50%;background:#30D158"></span> Green</div>
+        </div>
+
+        <div style="flex:1;display:flex;flex-direction:column;min-width:0">
+          <div class="toolbar" style="padding:0 14px">
+            <span style="color:var(--label-2)">‹ ›</span>
+            <span class="title">Applications</span>
+            <span class="tgroup" style="margin-left:24px">
+              <b>▦</b><b class="on">☰</b><b>⫴</b><b>▭</b>
+            </span>
+            <span class="tgroup"><b>⊞</b></span>
+            <span class="tgroup"><b>↑</b><b>🏷</b><b>⋯</b></span>
+            <span style="margin-left:auto;display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;
+                         border-radius:14px;background:var(--fill-control);color:var(--label-3);font-size:12px;width:180px">
+              ⌕ Search</span>
+          </div>
+
+          <div style="flex:1;overflow:hidden;font-size:var(--t-body)">
+            <div style="display:flex;height:24px;align-items:center;padding:0 14px;color:var(--label-2);
+                        font-size:var(--t-sub);border-bottom:.5px solid var(--separator)">
+              <span style="flex:1">Name</span><span style="width:170px">Date Modified</span>
+              <span style="width:90px">Size</span><span style="width:110px">Kind</span>
+            </div>
+            <div style="padding:0">
+              <div style="display:flex;height:24px;align-items:center;padding:0 14px;background:var(--accent);color:#fff">
+                <span style="flex:1">Terminal.app</span><span style="width:170px">3 Sep 2026 at 4:04 pm</span>
+                <span style="width:90px">12.7 MB</span><span style="width:110px">Application</span></div>
+              <div style="display:flex;height:24px;align-items:center;padding:0 14px">
+                <span style="flex:1">Notes.app</span><span style="width:170px">3 Sep 2026 at 4:04 pm</span>
+                <span style="width:90px">8.7 MB</span><span style="width:110px">Application</span></div>
+              <div style="display:flex;height:24px;align-items:center;padding:0 14px;background:rgba(255,255,255,.03)">
+                <span style="flex:1">Text Editor.app</span><span style="width:170px">3 Sep 2026 at 4:04 pm</span>
+                <span style="width:90px">5.1 MB</span><span style="width:110px">Application</span></div>
+              <div style="display:flex;height:24px;align-items:center;padding:0 14px">
+                <span style="flex:1">System Settings.app</span><span style="width:170px">3 Sep 2026 at 4:04 pm</span>
+                <span style="width:90px">21.6 MB</span><span style="width:110px">Application</span></div>
+            </div>
+          </div>
+          <div class="statusbar">4 items, 74.97 GB available</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <table class="map">
+    <tr><th>What to copy</th><th>Value</th><th>Rust field</th></tr>
+    <tr><td>Window radius / shadow</td><td><code>16</code> · active <code>0 12 32 rgba(0,0,0,.45)</code>, inactive <code>0 4 12 rgba(0,0,0,.30)</code></td><td><code>radii.window, elevation.window_*</code></td></tr>
+    <tr><td>Traffic lights</td><td><code>12px</code>, gap 8, 20 px from the left, colours <code>#FF5F57 / #FEBC2E / #28C840</code>; inactive <code>#4E4E50</code></td><td><code>metrics.traffic_*</code></td></tr>
+    <tr><td>Toolbar</td><td><code>52px</code>, control groups as 32 px glass capsules radius 16</td><td><code>metrics.toolbar_height</code></td></tr>
+    <tr><td>Sidebar</td><td><code>180px</code>, material <code>#29252E</code> (wallpaper-tinted 0.10), rows 28, selected = accent</td><td><code>colors.sidebar</code></td></tr>
+    <tr><td>List rows</td><td><code>24px</code>, alternating <code>rgba(255,255,255,.03)</code>, header 24 px</td><td><code>metrics.list_row</code></td></tr>
+    <tr><td>Status bar</td><td><code>24px</code>, <code>#29272C</code>, centred 11 px secondary text</td><td><code>colors.statusbar</code></td></tr>
+  </table>
+</section>
+
+<!-- ============================ SHEET ============================ -->
+<section class="surface">
+  <h2>2 · Sheet <span style="font-weight:400;color:#8b8b93">— slides out of the title bar, never a floating box</span></h2>
+  <p class="note">Measured from the real save sheet: destructive action bottom-<b>left</b> in red, Cancel and the default
+     action bottom-right. The default button is filled with the accent. The parent window dims while the sheet is open.</p>
+
+  <div class="desk small">
+    <div class="menubar"><span class="app">Text Editor</span></div>
+    <div class="win" style="left:200px;top:56px;width:620px;height:330px">
+      <div class="toolbar" style="padding-left:0">
+        <div class="traffic"><i class="c"></i><i class="m"></i><i class="z"></i></div>
+        <span class="title" style="margin-left:12px">Untitled — Edited</span>
+      </div>
+      <div style="flex:1;position:relative;background:var(--window)">
+        <div style="position:absolute;inset:0;background:rgba(0,0,0,.28)"></div>
+        <div class="sheet" style="position:absolute;left:50%;top:0;transform:translateX(-50%)">
+          <h3>Do you want to keep this new document “Untitled.rtf”?</h3>
+          <p>You can choose to save your changes or delete this document immediately. You can't undo this action.</p>
+          <div class="row"><span class="lbl">Save As:</span><span class="field" style="flex:1">Untitled.rtf</span></div>
+          <div class="row"><span class="lbl">Where:</span><span class="btn" style="flex:1;justify-content:space-between">Desktop <span style="opacity:.6">⌄</span></span></div>
+          <div class="buttons">
+            <span class="btn destructive" style="margin-right:auto">Delete</span>
+            <span class="btn">Cancel</span>
+            <span class="btn primary">Save</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ SETTINGS ============================ -->
+<section class="surface">
+  <h2>3 · System Settings <span style="font-weight:400;color:#8b8b93">— sidebar 248, grouped rows 36</span></h2>
+  <p class="note">Detail pane content is centred with a max width around 480. Every row is a grouped box with
+     inset separators. Selected sidebar row is a filled accent capsule — that is where <code>#1372F9</code> was measured.</p>
+
+  <div class="desk">
+    <div class="menubar"><span class="app">System Settings</span></div>
+    <div class="win" style="left:190px;top:56px;width:760px;height:560px">
+      <div style="display:flex;flex:1;min-height:0">
+        <div class="sidebar" style="width:248px;display:flex;flex-direction:column">
+          <div class="toolbar" style="border-bottom:none;padding-left:0">
+            <div class="traffic"><i class="c"></i><i class="m"></i><i class="z"></i></div>
+          </div>
+          <div style="margin:0 10px 10px;height:28px;border-radius:7px;background:var(--fill-control);
+                      display:flex;align-items:center;padding:0 10px;color:var(--label-3);font-size:12px">⌕ Search</div>
+          <div class="r" style="height:52px"><span class="avatar" style="width:40px;height:40px;border-radius:50%;
+               background:var(--sys-indigo);display:flex;align-items:center;justify-content:center;font-weight:600">JS</span>
+            <span><div style="font-weight:600">Jacob Samas</div><div style="font-size:11px;color:var(--label-2)">Local Account</div></span></div>
+          <div class="r"><span style="width:20px;height:20px;border-radius:6px;background:var(--accent)"></span> Wi-Fi</div>
+          <div class="r"><span style="width:20px;height:20px;border-radius:6px;background:#0A84FF"></span> Bluetooth</div>
+          <div class="r"><span style="width:20px;height:20px;border-radius:6px;background:var(--sys-gray)"></span> Network</div>
+          <div class="r"><span style="width:20px;height:20px;border-radius:6px;background:var(--sys-green)"></span> Battery</div>
+          <div class="r" style="margin-top:8px"><span style="width:20px;height:20px;border-radius:6px;background:var(--sys-gray)"></span> General</div>
+          <div class="r"><span style="width:20px;height:20px;border-radius:6px;background:var(--sys-indigo)"></span> Accessibility</div>
+          <div class="r sel"><span style="width:20px;height:20px;border-radius:6px;background:rgba(255,255,255,.25)"></span> Appearance</div>
+          <div class="r"><span style="width:20px;height:20px;border-radius:6px;background:var(--sys-purple)"></span> Menu Bar</div>
+          <div class="r"><span style="width:20px;height:20px;border-radius:6px;background:var(--sys-teal)"></span> Desktop &amp; Dock</div>
+        </div>
+
+        <div style="flex:1;background:var(--grouped-bg);display:flex;flex-direction:column;min-width:0">
+          <div class="toolbar" style="padding:0 16px"><span style="color:var(--label-2)">‹ ›</span>
+            <span class="title" style="margin-left:10px">Appearance</span></div>
+          <div style="padding:18px 22px;display:flex;flex-direction:column;gap:18px;overflow:hidden">
+            <div>
+              <div style="display:flex;gap:16px;align-items:flex-start">
+                <span style="width:120px;font-size:13px">Appearance</span>
+                <span style="display:flex;gap:14px">
+                  <span style="text-align:center;font-size:11px;color:var(--label-2)">
+                    <span style="display:block;width:84px;height:54px;border-radius:8px;background:#EDEDF0;margin-bottom:6px"></span>Light</span>
+                  <span style="text-align:center;font-size:11px;color:var(--label)">
+                    <span style="display:block;width:84px;height:54px;border-radius:8px;background:#1C1C1E;
+                                 box-shadow:0 0 0 3px var(--accent);margin-bottom:6px"></span>Dark</span>
+                  <span style="text-align:center;font-size:11px;color:var(--label-2)">
+                    <span style="display:block;width:84px;height:54px;border-radius:8px;
+                                 background:linear-gradient(90deg,#EDEDF0 50%,#1C1C1E 50%);margin-bottom:6px"></span>Auto</span>
+                </span>
+              </div>
+            </div>
+
+            <div style="display:flex;gap:16px;align-items:center">
+              <span style="width:120px;font-size:13px">Liquid Glass</span>
+              <span class="slider-h" style="flex:1"><span class="fill" style="width:55%"></span><i style="left:55%"></i></span>
+            </div>
+
+            <div style="display:flex;gap:16px;align-items:center">
+              <span style="width:120px;font-size:13px">Colour</span>
+              <span style="display:flex;gap:8px">
+                <span style="width:22px;height:22px;border-radius:50%;background:conic-gradient(#FF453A,#FFD60A,#30D158,#1372F9,#BF5AF2,#FF453A);box-shadow:0 0 0 2px var(--accent)"></span>
+                <span style="width:22px;height:22px;border-radius:50%;background:#1372F9"></span>
+                <span style="width:22px;height:22px;border-radius:50%;background:#BF5AF2"></span>
+                <span style="width:22px;height:22px;border-radius:50%;background:#FF375F"></span>
+                <span style="width:22px;height:22px;border-radius:50%;background:#FF453A"></span>
+                <span style="width:22px;height:22px;border-radius:50%;background:#FF9F0A"></span>
+                <span style="width:22px;height:22px;border-radius:50%;background:#FFD60A"></span>
+                <span style="width:22px;height:22px;border-radius:50%;background:#30D158"></span>
+                <span style="width:22px;height:22px;border-radius:50%;background:#8E8E93"></span>
+              </span>
+            </div>
+
+            <div class="grouped">
+              <div class="r">Allow wallpaper tinting in windows <span class="sp"><span class="switch on"><i></i></span></span></div>
+              <div class="r">Show scroll bars <span class="sp">Automatically ⌄</span></div>
+              <div class="r">Sidebar icon size <span class="sp">Medium ⌄</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ CONTROLS ============================ -->
+<section class="surface">
+  <h2>4 · Controls</h2>
+  <p class="note">Every control in one place, in all its states. If a control in rmac does not match one of these,
+     it is wrong. Toggle Light/Dark in the header and check both.</p>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:22px;max-width:1100px">
+    <div>
+      <div style="color:#8b8b93;font-size:12px;margin-bottom:8px">Buttons — 24 px, radius 8</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <span class="btn primary">Save</span><span class="btn">Cancel</span>
+        <span class="btn destructive">Delete</span>
+        <span class="btn" style="opacity:.4">Disabled</span>
+      </div>
+    </div>
+
+    <div>
+      <div style="color:#8b8b93;font-size:12px;margin-bottom:8px">Switch — 38 × 22, thumb 20</div>
+      <div style="display:flex;gap:14px;align-items:center">
+        <span class="switch on"><i></i></span><span class="switch"><i></i></span>
+        <span class="switch on" style="opacity:.4"><i></i></span>
+      </div>
+    </div>
+
+    <div>
+      <div style="color:#8b8b93;font-size:12px;margin-bottom:8px">Slider — track 4, knob 20</div>
+      <span class="slider-h"><span class="fill" style="width:62%"></span><i style="left:62%"></i></span>
+    </div>
+
+    <div>
+      <div style="color:#8b8b93;font-size:12px;margin-bottom:8px">Segmented — 24 px, radius 7</div>
+      <span class="seg"><b class="on">Icons</b><b>List</b><b>Columns</b></span>
+    </div>
+
+    <div>
+      <div style="color:#8b8b93;font-size:12px;margin-bottom:8px">Text field — 24 px, focus ring 3 px accent</div>
+      <span class="field" style="display:flex;height:24px;width:200px;border-radius:6px;background:var(--field);
+            border:.5px solid var(--separator);align-items:center;padding:0 8px;box-shadow:0 0 0 3px rgba(19,114,249,.35)">Untitled.rtf</span>
+    </div>
+
+    <div>
+      <div style="color:#8b8b93;font-size:12px;margin-bottom:8px">Grouped rows — 36 px, radius 12</div>
+      <div class="grouped" style="width:280px">
+        <div class="r">Wi-Fi <span class="sp"><span class="switch on"><i></i></span></span></div>
+        <div class="r">Show percentage <span class="sp"><span class="switch"><i></i></span></span></div>
+        <div class="r">Appearance <span class="sp">Dark ⌄</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

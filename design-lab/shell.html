@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><title>rmac design lab — shell</title>
+<link rel="stylesheet" href="lab.css">
+</head>
+<body>
+<header class="lab">
+  <h1>rmac design lab</h1>
+  <nav>
+    <a href="index.html">Overview</a>
+    <a href="shell.html" class="on">Shell</a>
+    <a href="overlays.html">Overlays</a>
+    <a href="windows.html">Windows &amp; controls</a>
+    <a href="icons.html">Icons</a>
+  </nav>
+  <span class="spacer"></span>
+  <button class="t" onclick="document.documentElement.classList.toggle('light')">Light / Dark</button>
+</header>
+
+<!-- ============================ DESKTOP ============================ -->
+<section class="surface">
+  <h2>1 · The desktop at rest</h2>
+  <p class="note">Everything rmac shows when nothing is open: wallpaper, a <b>transparent</b> menu bar, and the Dock.
+     Compare with <code>target/evidence/rmac-current.png</code> — today rmac paints an opaque black bar 40 px tall
+     and flat glyph icons. Those two things alone account for most of the missing Mac feeling.</p>
+
+  <div class="desk">
+    <!-- menu bar: no background layer at all -->
+    <div class="menubar">
+      <svg class="mark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+        <circle cx="8" cy="8" r="6.6"/><path d="M5.4 11.2V4.8h2.7a2 2 0 010 4H5.4m3.1 0l2.4 2.4"/>
+      </svg>
+      <span class="app">Finder</span>
+      <span class="menus"><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span></span>
+      <span class="right">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+          <path d="M1.4 5.6a9.5 9.5 0 0113.2 0M3.9 8.5a6 6 0 018.2 0M6.3 11.3a2.6 2.6 0 013.4 0"/>
+          <circle cx="8" cy="13.6" r=".9" fill="currentColor" stroke="none"/></svg>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round">
+          <path d="M8 1.8v12.4l3.6-3.2L4.4 5.4m7.2 0L4.4 10.9l3.6 3.3"/></svg>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35">
+          <rect x="1.4" y="4.4" width="10.4" height="7.2" rx="2.2"/>
+          <path d="M13.6 6.6v2.8" stroke-linecap="round"/><rect x="3" y="6" width="5" height="4" rx="1" fill="currentColor" stroke="none"/></svg>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+          <circle cx="7" cy="7" r="4.4"/><path d="M10.4 10.4L14 14" stroke-linecap="round"/></svg>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3">
+          <path d="M2 5h12M2 11h12"/><circle cx="6" cy="5" r="1.9" fill="currentColor" stroke="none"/>
+          <circle cx="10.4" cy="11" r="1.9" fill="currentColor" stroke="none"/></svg>
+        <span class="clock">Fri 18 Sep&nbsp;&nbsp;11:30 am</span>
+      </span>
+    </div>
+
+    <!-- dock -->
+    <div class="dockwrap">
+      <div class="dock">
+        <span class="tile running"><img src="../assets/icons/files.svg" alt="Files"></span>
+        <span class="tile"><img src="../assets/icons/apps.svg" alt="Apps"></span>
+        <span class="tile running"><img src="../assets/icons/notes.svg" alt="Notes"></span>
+        <span class="tile"><img src="../assets/icons/text-editor.svg" alt="Text Editor"></span>
+        <span class="tile running"><img src="../assets/icons/terminal.svg" alt="Terminal"></span>
+        <span class="tile"><img src="../assets/icons/system-settings.svg" alt="System Settings"><i class="badge">1</i></span>
+        <span class="tile"><img src="../assets/icons/system-monitor.svg" alt="System Monitor"></span>
+        <span class="sep"></span>
+        <span class="tile"><img src="../assets/icons/trash.svg" alt="Bin"></span>
+      </div>
+    </div>
+  </div>
+
+  <table class="map">
+    <tr><th>What to copy</th><th>Value</th><th>Rust field</th></tr>
+    <tr><td>Menu bar height</td><td><code>29px</code></td><td><code>metrics.menubar_height</code></td></tr>
+    <tr><td>Menu bar material</td><td><b>none</b> — fully transparent, wallpaper shows through</td><td><code>materials.menubar = transparent</code></td></tr>
+    <tr><td>Menu bar text</td><td><code>#FFFFFF</code>, 13 px, app name 600, 2 px soft shadow</td><td><code>colors.menubar_label</code></td></tr>
+    <tr><td>Dock tile / gap / padding</td><td><code>64 / 12 / 5</code> (pitch 76)</td><td><code>metrics.dock_*</code></td></tr>
+    <tr><td>Dock shelf radius / bottom margin</td><td><code>29 / 18</code></td><td><code>radii.dock, metrics.dock_bottom</code></td></tr>
+    <tr><td>Dock material</td><td><code>rgba(255,255,255,.14)</code> + blur 40 + saturate 180% + <code>.5px</code> border <code>rgba(255,255,255,.35)</code></td><td><code>materials.dock</code></td></tr>
+    <tr><td>Running dot</td><td><code>4px</code>, 9 px below the tile, <code>rgba(255,255,255,.9)</code></td><td><code>metrics.dock_indicator</code></td></tr>
+    <tr><td>Badge</td><td><code>#FF453A</code>, min 20 px, top-right, 11 px semibold</td><td><code>colors.badge</code></td></tr>
+  </table>
+</section>
+
+<!-- ============================ MENU ============================ -->
+<section class="surface">
+  <h2>2 · An open menu</h2>
+  <p class="note">Measured: panel <b>269 px</b> wide, item pitch <b>24 px</b>. macOS 27 removed icons from ordinary
+     menu rows. Menus open <b>instantly</b> — no fade in; on selection the row blinks once, then the menu fades out over 150 ms.</p>
+
+  <div class="desk small">
+    <div class="menubar">
+      <svg class="mark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4">
+        <circle cx="8" cy="8" r="6.6"/><path d="M5.4 11.2V4.8h2.7a2 2 0 010 4H5.4m3.1 0l2.4 2.4"/></svg>
+      <span class="app">Finder</span>
+      <span class="menus"><span class="open">File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span></span>
+    </div>
+    <div style="position:absolute;left:52px;top:30px">
+      <div class="menu">
+        <div class="row">New Finder Window<span class="key">⌘N</span></div>
+        <div class="row">New Folder<span class="key">⇧⌘N</span></div>
+        <div class="row off">New Folder with Selection<span class="key">⌃⌘N</span></div>
+        <div class="row">New Smart Folder</div>
+        <div class="row">New Tab<span class="key">⌘T</span></div>
+        <div class="row sel">Open<span class="key">⌘O</span></div>
+        <div class="row off">Open With<span class="chev">›</span></div>
+        <div class="row">Close Window<span class="key">⌘W</span></div>
+        <div class="sep"></div>
+        <div class="row">Get Info<span class="key">⌘I</span></div>
+        <div class="row off">Rename</div>
+        <div class="row off">Compress</div>
+        <div class="row">Duplicate<span class="key">⌘D</span></div>
+        <div class="row">Make Alias<span class="key">⌃⌘A</span></div>
+        <div class="row">Quick Look “Projects”<span class="key">⌘Y</span></div>
+        <div class="sep"></div>
+        <div class="row off">Move to Bin<span class="key">⌘⌫</span></div>
+        <div class="row off">Eject<span class="key">⌘E</span></div>
+      </div>
+    </div>
+  </div>
+
+  <table class="map">
+    <tr><th>What to copy</th><th>Value</th><th>Rust field</th></tr>
+    <tr><td>Panel width / row pitch</td><td><code>269 / 24</code></td><td><code>metrics.menu_width, menu_row</code></td></tr>
+    <tr><td>Panel material</td><td><code>rgba(44,44,50,.80)</code> + blur 50</td><td><code>materials.menu</code></td></tr>
+    <tr><td>Radius panel / row</td><td><code>10 / 6</code></td><td><code>radii.menu, menu_item</code></td></tr>
+    <tr><td>Highlight</td><td><code>#1372F9</code>, white text, shortcut at 85% white</td><td><code>colors.accent</code></td></tr>
+    <tr><td>Disabled row</td><td><code>rgba(255,255,255,.25)</code>, no hover</td><td><code>colors.label_disabled</code></td></tr>
+    <tr><td>Separator</td><td><code>1px rgba(255,255,255,.12)</code>, inset 10, 4 px above/below</td><td><code>colors.separator</code></td></tr>
+    <tr><td>Icons in rows</td><td><b>none</b> (macOS 27 removed them)</td><td>—</td></tr>
+  </table>
+</section>
+
+<!-- ============================ LOCK ============================ -->
+<section class="surface">
+  <h2>3 · Lock screen</h2>
+  <p class="note">Values marked <b>S</b> until the owner photographs the real lock screen — it cannot be screenshotted
+     from inside a session. Structure is certain: blurred wallpaper, date above a very large clock at the top,
+     avatar and password field at the bottom.</p>
+
+  <div class="desk small">
+    <div class="lock">
+      <div class="clockbox">
+        <div class="date">Friday 18 September</div>
+        <div class="time">11:30</div>
+      </div>
+      <div class="user">
+        <div class="avatar">JS</div>
+        <div style="font-size:13px;font-weight:600">Jacob Samas</div>
+        <div class="field">Enter Password</div>
+      </div>
+    </div>
+  </div>
+
+  <table class="map">
+    <tr><th>What to copy</th><th>Value</th><th>Rust field</th></tr>
+    <tr><td>Clock / date</td><td><code>96px</code> semibold tabular / <code>20px</code> medium <b>S</b></td><td><code>type.lock_time, lock_date</code></td></tr>
+    <tr><td>Avatar</td><td><code>64px</code> circle, initials fallback <b>S</b></td><td><code>metrics.lock_avatar</code></td></tr>
+    <tr><td>Field</td><td><code>200 × 30</code>, radius 15, <code>rgba(255,255,255,.20)</code> <b>S</b></td><td><code>metrics.lock_field</code></td></tr>
+    <tr><td>Background</td><td>wallpaper, Gaussian blur 30, darkened <code>#00000033</code>, computed once per lock</td><td><code>materials.lock_backdrop</code></td></tr>
+    <tr><td>Wrong password</td><td>shake 3 × 8 px over 400 ms, then clear the field</td><td><code>motion.shake</code></td></tr>
+  </table>
+</section>
+
+</body>
+</html>

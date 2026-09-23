@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>rmac design lab</title>
+<style>
+  :root{
+    /* ---- TOKENS UNDER TEST — these are what get ported to rmac-design ---- */
+    --menubar-h: 29px;
+    --menubar-text: #FFFFFF;
+    --menubar-font: 13px;
+    --menubar-weight: 600;
+    --menubar-lead: 12px;
+    --menubar-gap: 8px;
+
+    --dock-tile: 64px;
+    --dock-gap: 12px;
+    --dock-pad: 5px;
+    --dock-radius: 29px;
+    --dock-bottom: 18px;
+    --dock-tint: rgba(255,255,255,.14);
+    --dock-border: rgba(255,255,255,.35);
+    --dock-blur: 40px;
+    --dock-shadow: 0 8px 24px rgba(0,0,0,.20);
+    --dot: 4px;
+
+    --spot-w: 642px;
+    --spot-h: 59px;
+    --spot-radius: 29.5px;
+    --spot-tint: rgba(120,132,150,.42);
+    --spot-blur: 42px;
+
+    --accent: #1372F9;
+    --font: -apple-system, "Inter", system-ui, sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#101014;color:#e8e8ea;font:13px/1.5 var(--font)}
+  header{padding:14px 20px;border-bottom:1px solid #2a2a30;display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+  h1{font-size:15px;margin:0;font-weight:600}
+  header p{margin:0;color:#9a9aa2;font-size:12px}
+  .panel{padding:20px;border-bottom:1px solid #2a2a30}
+  .panel h2{font-size:13px;margin:0 0 4px;font-weight:600}
+  .panel .hint{color:#8b8b93;font-size:12px;margin:0 0 14px}
+
+  /* stage: a 1920-wide viewport that shows one strip of a screenshot,
+     with the CSS mock drawn on top at the same coordinates */
+  .stage{position:relative;width:1920px;transform-origin:top left;overflow:hidden;
+         border:1px solid #2a2a30;border-radius:6px;background:#000}
+  .stage .ref{position:absolute;inset:0;background-repeat:no-repeat;background-size:1920px 1080px}
+  .stage .mock{position:absolute;inset:0}
+  .wrap{overflow-x:auto;padding-bottom:6px}
+
+  .controls{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:12px 0 4px}
+  .controls label{display:flex;gap:6px;align-items:center;color:#a8a8b0;font-size:12px}
+  input[type=range]{width:150px}
+  button{background:#22222a;color:#e8e8ea;border:1px solid #33333c;border-radius:6px;
+         padding:5px 10px;font:12px var(--font);cursor:pointer}
+  button:hover{background:#2c2c36}
+  kbd{background:#22222a;border:1px solid #33333c;border-radius:4px;padding:1px 5px;font-size:11px}
+
+  /* ---------- menu bar mock ---------- */
+  .menubar{position:absolute;left:0;right:0;top:0;height:var(--menubar-h);
+    display:flex;align-items:center;padding:0 10px 0 var(--menubar-lead);
+    color:var(--menubar-text);font-size:var(--menubar-font);
+    /* macOS 27: fully transparent. No background at all. */
+    background:transparent;text-shadow:0 0 2px rgba(0,0,0,.35)}
+  .menubar .mark{width:16px;height:16px;margin-right:14px;opacity:.95}
+  .menubar .app{font-weight:var(--menubar-weight);margin-right:14px}
+  .menubar .menus{display:flex;gap:18px;opacity:.95}
+  .menubar .right{margin-left:auto;display:flex;gap:14px;align-items:center}
+  .menubar .right .glyph{width:16px;height:16px;opacity:.95}
+  .menubar .clock{font-variant-numeric:tabular-nums;letter-spacing:.02em}
+
+  /* ---------- dock mock ---------- */
+  .dockwrap{position:absolute;left:0;right:0;bottom:var(--dock-bottom);display:flex;justify-content:center}
+  .dock{display:flex;align-items:flex-end;gap:var(--dock-gap);padding:var(--dock-pad);
+    border-radius:var(--dock-radius);background:var(--dock-tint);
+    backdrop-filter:blur(var(--dock-blur)) saturate(180%);
+    -webkit-backdrop-filter:blur(var(--dock-blur)) saturate(180%);
+    border:.5px solid var(--dock-border);box-shadow:var(--dock-shadow)}
+  .tile{width:var(--dock-tile);height:var(--dock-tile);border-radius:calc(var(--dock-tile)*.225);
+    position:relative;display:block;
+    box-shadow:0 1px 2px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.22)}
+  .tile.running::after{content:"";position:absolute;left:50%;bottom:calc(var(--dock-tile)*-.14);
+    width:var(--dot);height:var(--dot);border-radius:50%;background:rgba(255,255,255,.85);transform:translateX(-50%)}
+  .sep{width:1px;align-self:stretch;margin:6px 4px;background:rgba(255,255,255,.22)}
+
+  /* ---------- spotlight mock ---------- */
+  .spot{position:absolute;left:50%;top:23.2%;transform:translateX(-50%);
+    width:var(--spot-w);height:var(--spot-h);border-radius:var(--spot-radius);
+    background:var(--spot-tint);backdrop-filter:blur(var(--spot-blur)) saturate(180%);
+    -webkit-backdrop-filter:blur(var(--spot-blur)) saturate(180%);
+    border:.5px solid rgba(255,255,255,.22);box-shadow:0 12px 40px rgba(0,0,0,.35);
+    display:flex;align-items:center;padding:0 14px;gap:12px;color:#fff;font-size:22px}
+  .spot .mag{width:22px;height:22px;opacity:.85}
+  .spot .typed{font-weight:400}
+  .spot .completion{opacity:.55}
+  .spot .plate{margin-left:auto;width:34px;height:34px;border-radius:9px;background:rgba(255,255,255,.16);
+    display:flex;align-items:center;justify-content:center;font-size:15px}
+
+  table{border-collapse:collapse;font-size:12px;margin-top:10px}
+  td,th{border:1px solid #2a2a30;padding:4px 8px;text-align:left}
+  th{color:#9a9aa2;font-weight:500}
+  code{color:#7fd1ff}
+</style>
+</head>
+<body>
+<header>
+  <h1>rmac design lab</h1>
+  <p>CSS mock on top, real macOS 27 screenshot underneath. Drag <b>fade</b> to cross-check.
+     Tune the sliders until the mock disappears into the photo, then port the numbers to
+     <code>crates/rmac-design</code>. This page is a ruler, not a runtime.</p>
+</header>
+
+<!-- ============ MENU BAR ============ -->
+<section class="panel">
+  <h2>1 · Menu bar <span style="color:#8b8b93;font-weight:400">— target 29 px, fully transparent</span></h2>
+  <p class="hint">rmac today paints an opaque black bar 40 px tall. macOS paints nothing: the wallpaper runs edge to edge and only the glyphs sit on top.</p>
+  <div class="controls">
+    <label>fade <input type="range" min="0" max="100" value="55" oninput="fade('mb',this.value)"></label>
+    <label>height <input type="range" min="20" max="44" value="29" oninput="setVar('--menubar-h',this.value+'px',this)"><span id="v-mb-h">29px</span></label>
+    <label>font <input type="range" min="10" max="16" value="13" oninput="setVar('--menubar-font',this.value+'px',this)"><span id="v-mb-f">13px</span></label>
+    <label>weight <input type="range" min="400" max="700" step="100" value="600" oninput="setVar('--menubar-weight',this.value,this)"><span id="v-mb-w">600</span></label>
+    <label><input type="checkbox" onchange="document.getElementById('mb-mock').style.filter=this.checked?'invert(1)':''"> difference</label>
+  </div>
+  <div class="wrap"><div class="stage" id="st-mb" style="height:29px;transform:scale(.98)">
+    <div class="ref" style="background-image:url('ref/mac.png');background-position:0 0"></div>
+    <div class="mock" id="mb-mock">
+      <div class="menubar">
+        <svg class="mark" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5 11V5h2.6a2 2 0 010 4H5m3.2 0L11 11" stroke="currentColor" stroke-width="1.4" fill="none"/></svg>
+        <span class="app">Finder</span>
+        <span class="menus"><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span></span>
+        <span class="right">
+          <svg class="glyph" viewBox="0 0 16 16"><path d="M1 5.5a10 10 0 0114 0M3.5 8.5a6.5 6.5 0 019 0M6 11.5a3 3 0 014 0" stroke="currentColor" fill="none" stroke-width="1.3" stroke-linecap="round"/><circle cx="8" cy="13.6" r="1" fill="currentColor"/></svg>
+          <svg class="glyph" viewBox="0 0 16 16"><path d="M8 1.5v13l4-3.5-8-6m8 0l-8 6 4 3.5" stroke="currentColor" fill="none" stroke-width="1.3" stroke-linejoin="round"/></svg>
+          <svg class="glyph" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.6" stroke="currentColor" fill="none" stroke-width="1.4"/><path d="M10.6 10.6L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <svg class="glyph" viewBox="0 0 16 16"><path d="M2 4.5h12M2 11.5h12" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="4.5" r="2" fill="currentColor"/><circle cx="10.5" cy="11.5" r="2" fill="currentColor"/></svg>
+          <span class="clock">Fri 18 Sep&nbsp;&nbsp;11:30 am</span>
+        </span>
+      </div>
+    </div>
+  </div></div>
+</section>
+
+<!-- ============ DOCK ============ -->
+<section class="panel">
+  <h2>2 · Dock <span style="color:#8b8b93;font-weight:400">— tile 64, gap 12, pitch 76, bottom margin 18</span></h2>
+  <p class="hint">The tiles below are flat colour plates standing in for real icons. Even so, compare the <b>shelf</b>: its height, radius, padding, edge highlight and how tightly it hugs the icons. rmac's shelf is too tall, too wide, and has no bright edge.</p>
+  <div class="controls">
+    <label>fade <input type="range" min="0" max="100" value="55" oninput="fade('dk',this.value)"></label>
+    <label>tile <input type="range" min="40" max="96" value="64" oninput="setVar('--dock-tile',this.value+'px',this)"><span id="v-dk-t">64px</span></label>
+    <label>gap <input type="range" min="0" max="24" value="12" oninput="setVar('--dock-gap',this.value+'px',this)"><span id="v-dk-g">12px</span></label>
+    <label>pad <input type="range" min="0" max="16" value="5" oninput="setVar('--dock-pad',this.value+'px',this)"><span id="v-dk-p">5px</span></label>
+    <label>radius <input type="range" min="8" max="44" value="29" oninput="setVar('--dock-radius',this.value+'px',this)"><span id="v-dk-r">29px</span></label>
+    <label>bottom <input type="range" min="0" max="40" value="18" oninput="setVar('--dock-bottom',this.value+'px',this)"><span id="v-dk-b">18px</span></label>
+  </div>
+  <div class="wrap"><div class="stage" id="st-dk" style="height:120px;transform:scale(.98)">
+    <div class="ref" style="background-image:url('ref/mac.png');background-position:0 -960px"></div>
+    <div class="mock" id="dk-mock" style="top:-960px;height:1080px">
+      <div class="dockwrap">
+        <div class="dock">
+          <span class="tile running" style="background:linear-gradient(160deg,#4FC3F7,#1E88E5)"></span>
+          <span class="tile" style="background:linear-gradient(160deg,#FFFFFF,#DCDCE2)"></span>
+          <span class="tile" style="background:linear-gradient(160deg,#FFD66B,#F6B93B)"></span>
+          <span class="tile running" style="background:linear-gradient(160deg,#8E7BEF,#6C5CE7)"></span>
+          <span class="tile" style="background:linear-gradient(160deg,#2B2B2F,#111114)"></span>
+          <span class="tile running" style="background:linear-gradient(160deg,#5AC8FA,#0A84FF)"></span>
+          <span class="tile" style="background:linear-gradient(160deg,#C9C9CE,#8E8E93)"></span>
+          <span class="sep"></span>
+          <span class="tile" style="background:linear-gradient(160deg,#E9E9EE,#BFBFC6)"></span>
+        </div>
+      </div>
+    </div>
+  </div></div>
+</section>
+
+<!-- ============ SPOTLIGHT ============ -->
+<section class="panel">
+  <h2>3 · Search <span style="color:#8b8b93;font-weight:400">— 642 × 59 pill at 23.2 % height, inline completion</span></h2>
+  <p class="hint">Note what macOS does with the query: <b>terminal.app — Open</b> completes inside the bar, with the app's glyph on a plate at the right end. No result list for a single hit.</p>
+  <div class="controls">
+    <label>fade <input type="range" min="0" max="100" value="55" oninput="fade('sp',this.value)"></label>
+    <label>width <input type="range" min="480" max="820" value="642" oninput="setVar('--spot-w',this.value+'px',this)"><span id="v-sp-w">642px</span></label>
+    <label>height <input type="range" min="40" max="80" value="59" oninput="setVar('--spot-h',this.value+'px',this)"><span id="v-sp-h">59px</span></label>
+    <label>radius <input type="range" min="8" max="40" value="29" step=".5" oninput="setVar('--spot-radius',this.value+'px',this)"><span id="v-sp-r">29.5px</span></label>
+  </div>
+  <div class="wrap"><div class="stage" id="st-sp" style="height:420px;transform:scale(.98)">
+    <div class="ref" style="background-image:url('ref/mac.png');background-position:0 -120px"></div>
+    <div class="mock" id="sp-mock" style="top:-120px;height:1080px">
+      <div class="spot">
+        <svg class="mag" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.6" stroke="currentColor" fill="none" stroke-width="1.5"/><path d="M10.6 10.6L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        <span><span class="typed">term</span><span class="completion">inal.app — Open</span></span>
+        <span class="plate">&gt;_</span>
+      </div>
+    </div>
+  </div></div>
+</section>
+
+<section class="panel">
+  <h2>4 · Export</h2>
+  <p class="hint">When a mock disappears into the photo, press this and paste the result into the task you are working on. These are the values that go into <code>crates/rmac-design</code>.</p>
+  <button onclick="exportTokens()">Copy tokens as Rust</button>
+  <pre id="out" style="white-space:pre-wrap;color:#9ad;font-size:12px"></pre>
+  <table>
+    <tr><th>Rule</th><th>Why</th></tr>
+    <tr><td>The mock never gets a background the photo does not have</td><td>macOS 27's menu bar is fully transparent; adding a panel is the single most Linux-looking mistake</td></tr>
+    <tr><td>Blur lives on the surface, never on the whole screen</td><td><code>backdrop-filter</code> here maps to niri's <code>background-effect</code> there</td></tr>
+    <tr><td>Numbers only leave this page through the export button</td><td>so nobody types a guess into Rust</td></tr>
+  </table>
+</section>
+
+<script>
+function fade(id,v){
+  const mock = document.getElementById(id+'-mock');
+  mock.style.opacity = v/100;
+}
+function setVar(name,val,el){
+  document.documentElement.style.setProperty(name,val);
+  const span = el.parentElement.querySelector('span');
+  if(span) span.textContent = val;
+}
+function exportTokens(){
+  const s = getComputedStyle(document.documentElement);
+  const g = n => s.getPropertyValue(n).trim();
+  const px = n => parseFloat(g(n));
+  const out = `// design-lab export ${new Date().toISOString().slice(0,10)}
+menubar.height        = ${px('--menubar-h')};
+menubar.font          = ${px('--menubar-font')};
+menubar.weight        = ${g('--menubar-weight')};
+menubar.material      = transparent;   // macOS 27: no background
+dock.tile             = ${px('--dock-tile')};
+dock.gap              = ${px('--dock-gap')};
+dock.padding          = ${px('--dock-pad')};
+dock.radius           = ${px('--dock-radius')};
+dock.bottom_margin    = ${px('--dock-bottom')};
+dock.indicator        = ${px('--dot')};
+search.width          = ${px('--spot-w')};
+search.height         = ${px('--spot-h')};
+search.radius         = ${px('--spot-radius')};
+accent                = ${g('--accent')};`;
+  document.getElementById('out').textContent = out;
+  navigator.clipboard && navigator.clipboard.writeText(out);
+}
+// start with the mocks half-faded so both layers are visible
+['mb','dk','sp'].forEach(id=>fade(id,55));
+</script>
+</body>
+</html>

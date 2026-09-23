@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><title>Third-party GTK apps — rmac theme</title>
+<!--
+  How GTK 3, GTK 4 and libadwaita apps look under the original "rmac" GTK
+  theme (packaging/rmac-session/themes/rmac, MIT like the rest of rmac). Each
+  row puts the Mac control (numbers from design-lab/chrome.html and
+  menus.html) next to the GTK widget as the theme draws it, at 1:1 logical
+  pixels, dark first and light below.
+
+  Every number is the Mac measurement unless marked S (starting value):
+
+  Header bar (unified toolbar)  52 tall; lights' circles 14, pitch 23, first
+                                centre 26 from the left; title 15 bold; buttons
+                                are 36 tall glass capsules (28 circles inside).
+  Plain title bar (dialogs)     32 tall; first light centred at 16; title 13
+                                bold, #9F9EAB active / #64636F inactive.
+  Traffic lights (dark)         close #EC6765 ring #DE2F2C, minimise #F2CA44
+                                ring #E5B102, zoom #65C466 ring #2CA92F,
+                                inactive #454551 ring #4F4F5C; glyphs black
+                                50 % on hovering the group.
+  Push button                   24 tall, radius 6, white 6.5 % over the surface,
+                                label 13 regular; default = accent.
+  Text field                    24 tall, radius 6, 1 px border, focus ring 3.
+  Switch                        36 × 16 track, 21 × 13 capsule thumb inset 1.5;
+                                off #3D3D46 / thumb #E2E2E4, on accent / #E1EBFE.
+  Check box / radio             14, radius 4 / round, off #3E3F49, dot 6.
+  Slider                        track 6, knob 20 × 16 capsule #DFDFE1.
+  Overlay scroller (measured    thumb 6 wide, fully round, 3 in from the window
+  2026-09-23, TextEdit)         edge; #9A9A9A on #1E1E1E = white 55 %. The
+                                hover-widened scroller and the light-scheme
+                                thumb are S (not captured).
+  Menu                          radius 12, 5 top/bottom, 24 rows inset 5 with
+                                radius 7, text rgba(255,255,255,.85), shortcuts
+                                .25, separators 1 pt .14 inset 16, highlight
+                                accent.
+  Accent                        #1372F9 (rmac-design system_blue, two captures).
+  Font                          Inter at 13 px = "Inter 9.75" in GTK points.
+
+  What GTK cannot copy, and the theme therefore approximates:
+  - the title is centred (GTK lays it out; CSS cannot move it left);
+  - the switch thumb is 21 × 14 with 1 px insets (GTK sizes are whole pixels);
+  - window-control glyphs are the icon theme's symbolic ×, − and ⤢ images,
+    not drawn paths;
+  - menus are opaque: GTK popovers cannot blur what is behind them;
+  - window corners and shadows come from niri (shell.kdl), not from GTK.
+-->
+<link rel="stylesheet" href="lab.css">
+<style>
+  :root{
+    --g-bg:#1E1E20; --g-chrome:#29292C; --g-sidebar:#242426; --g-fg:#F5F5F7; --g-fg2:#B9B9BF;
+    --g-sep:rgba(255,255,255,.125); --g-btn:rgba(255,255,255,.065); --g-btn-hover:rgba(255,255,255,.10);
+    --g-field:#1E1E20; --g-field-border:rgba(255,255,255,.10); --g-accent:#1372F9;
+    --g-focus:rgba(19,114,249,.5); --g-check-off:#3E3F49; --g-switch-off:#3D3D46; --g-thumb:#E2E2E4;
+    --g-thumb-on:#E1EBFE; --g-trough:#3D3D47; --g-knob:#DFDFE1; --g-scroll:rgba(255,255,255,.55);
+    --g-menu:#1E1F24; --g-menu-fg:rgba(255,255,255,.85); --g-menu-dim:rgba(255,255,255,.25);
+    --g-menu-sep:rgba(255,255,255,.14); --g-menu-rim:rgba(255,255,255,.30);
+    --g-title:#E9E9EA; --g-title-plain:#9F9EAB; --g-cap:rgba(255,255,255,.045); --g-cap-rim:rgba(255,255,255,.12);
+    --g-close:#EC6765; --g-close-r:#DE2F2C; --g-min:#F2CA44; --g-min-r:#E5B102; --g-zoom:#65C466; --g-zoom-r:#2CA92F;
+    --g-sel-off:rgba(255,255,255,.11);
+  }
+  .light{
+    --g-bg:#FFFFFF; --g-chrome:#F6F6F6; --g-sidebar:#F2F2F2; --g-fg:#1D1D1F; --g-fg2:#66666C;
+    --g-sep:rgba(0,0,0,.094); --g-btn:#FFFFFF; --g-btn-hover:#F4F4F6;
+    --g-field:#FFFFFF; --g-field-border:rgba(0,0,0,.14); --g-focus:rgba(19,114,249,.5);
+    --g-check-off:#FFFFFF; --g-switch-off:#E3E3E6; --g-thumb:#FFFFFF; --g-thumb-on:#FFFFFF;
+    --g-trough:#E3E3E6; --g-knob:#FFFFFF; --g-scroll:rgba(0,0,0,.45);
+    --g-menu:#F6F6F8; --g-menu-fg:rgba(0,0,0,.85); --g-menu-dim:rgba(0,0,0,.25);
+    --g-menu-sep:rgba(0,0,0,.10); --g-menu-rim:rgba(0,0,0,.10);
+    --g-title:#1D1D1F; --g-title-plain:#4D4D52; --g-cap:rgba(0,0,0,.035); --g-cap-rim:rgba(255,255,255,.9);
+    --g-close:#FF5F57; --g-close-r:#E0443E; --g-min:#FEBC2E; --g-min-r:#DEA123; --g-zoom:#28C840; --g-zoom-r:#1AAB29;
+    --g-sel-off:rgba(0,0,0,.08);
+  }
+  body{background:#0d0d10}
+  h2{font:600 14px var(--font);color:#e8e8ea;margin:24px 24px 8px}
+  p.n{margin:0 24px 10px;color:#8b8b93;font-size:12px;max-width:900px}
+  .pair{display:flex;gap:24px;padding:0 24px}
+  .pair > div{flex:none}
+  .cap-l{font:12px var(--font);color:#8b8b93;margin:0 0 6px}
+  /* the GTK window */
+  .gw{position:relative;width:560px;border-radius:16px;overflow:hidden;background:var(--g-bg);
+      color:var(--g-fg);font:13px/16px var(--font);box-shadow:0 16px 42px rgba(0,0,0,.6)}
+  .gw.tb27{border-radius:27px}
+  .hb{height:52px;background:var(--g-chrome);display:flex;align-items:center;padding:0 8px;position:relative;
+      border-bottom:1px solid var(--g-sep)}
+  .hb.plain{height:32px;border-bottom:none}
+  .hb .title{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;font:700 15px/20px var(--font);color:var(--g-title);pointer-events:none}
+  .hb.plain .title{font-size:13px;color:var(--g-title-plain)}
+  .wc{display:flex;gap:9px;margin:0 12px 0 11px}
+  .hb.plain .wc{margin-left:1px}
+  .wc i{width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+        font:700 9px/1 var(--font);font-style:normal;color:transparent}
+  .wc:hover i,.wc.hover i{color:rgba(0,0,0,.5)}
+  .wc .c{background:var(--g-close);box-shadow:inset 0 0 0 .5px var(--g-close-r)}
+  .wc .m{background:var(--g-min);box-shadow:inset 0 0 0 .5px var(--g-min-r)}
+  .wc .z{background:var(--g-zoom);box-shadow:inset 0 0 0 .5px var(--g-zoom-r)}
+  .hbtn{height:36px;min-width:36px;border-radius:18px;background:var(--g-cap);box-shadow:inset 0 1px 0 var(--g-cap-rim);
+        display:inline-flex;align-items:center;justify-content:center;padding:0 10px;color:var(--g-fg);margin-right:6px}
+  .linked{display:inline-flex;margin-right:6px}
+  .linked .hbtn{margin:0;border-radius:0}
+  .linked .hbtn:first-child{border-radius:18px 0 0 18px}
+  .linked .hbtn:last-child{border-radius:0 18px 18px 0}
+  .end{margin-left:auto;display:flex}
+  .body{display:flex;height:250px}
+  .side{width:180px;background:var(--g-sidebar);padding:8px 0;border-right:1px solid var(--g-sep)}
+  .side .row{height:28px;margin:0 10px;padding:0 8px;border-radius:6px;display:flex;align-items:center}
+  .side .row.sel{background:var(--g-sel-off)}
+  .main{flex:1;position:relative;padding:14px 16px;display:grid;grid-template-columns:auto 1fr;gap:12px 14px;align-content:start;align-items:center}
+  .k{color:var(--g-fg2);font-size:12px}
+  .b{height:24px;padding:0 12px;border-radius:6px;background:var(--g-btn);display:inline-flex;align-items:center;margin-right:6px}
+  .light .b{box-shadow:0 0 0 .5px rgba(0,0,0,.14),0 .5px 1px rgba(0,0,0,.12)}
+  .b.def{background:var(--g-accent);color:#fff;box-shadow:none}
+  .e{width:120px;height:24px;border-radius:6px;border:1px solid var(--g-field-border);background:var(--g-field);
+     display:inline-flex;align-items:center;padding:0 7px;margin-right:12px}
+  .e.focus{box-shadow:0 0 0 3px var(--g-focus);border-color:transparent}
+  .sw{width:36px;height:16px;border-radius:8px;background:var(--g-switch-off);position:relative;display:inline-block;margin-right:10px;vertical-align:middle}
+  .sw i{position:absolute;top:1px;left:1px;width:21px;height:14px;border-radius:7px;background:var(--g-thumb);
+        box-shadow:0 .5px 1.5px rgba(0,0,0,.3)}
+  .sw.on{background:var(--g-accent)} .sw.on i{left:14px;background:var(--g-thumb-on)}
+  .ck{width:14px;height:14px;border-radius:4px;background:var(--g-check-off);display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-right:4px}
+  .light .ck{box-shadow:inset 0 0 0 .5px rgba(0,0,0,.25)}
+  .ck.on{background:var(--g-accent);box-shadow:none}
+  .rd{width:14px;height:14px;border-radius:7px;background:var(--g-check-off);display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin:0 4px 0 10px}
+  .light .rd{box-shadow:inset 0 0 0 .5px rgba(0,0,0,.25)}
+  .rd.on{background:var(--g-accent);box-shadow:none} .rd.on::after{content:"";width:6px;height:6px;border-radius:3px;background:#fff}
+  .sc{width:160px;height:6px;border-radius:3px;background:var(--g-trough);position:relative;display:inline-block;vertical-align:middle}
+  .sc .f{position:absolute;left:0;top:0;bottom:0;width:45%;background:var(--g-accent);border-radius:3px}
+  .sc i{position:absolute;left:45%;top:-5px;width:20px;height:16px;margin-left:-10px;border-radius:8px;background:var(--g-knob);box-shadow:0 .5px 2px rgba(0,0,0,.35)}
+  .scroll{position:absolute;right:3px;top:30px;width:6px;height:70px;border-radius:3px;background:var(--g-scroll)}
+  /* menu */
+  .menu{position:absolute;width:210px;padding:5px 0;border-radius:12px;background:var(--g-menu);color:var(--g-menu-fg);
+        box-shadow:inset 0 0 0 1px var(--g-menu-rim),0 0 0 .5px rgba(0,0,0,.85),0 10px 32px rgba(0,0,0,.35);font:13px/16px var(--font)}
+  .light .menu{box-shadow:inset 0 0 0 .5px var(--g-menu-rim),0 0 0 .5px rgba(0,0,0,.2),0 10px 32px rgba(0,0,0,.2)}
+  .menu .r{height:24px;margin:0 5px;padding:0 9px 0 11px;border-radius:7px;display:flex;align-items:center}
+  .menu .r span{margin-left:auto;color:var(--g-menu-dim)}
+  .menu .r.hl{background:var(--g-accent);color:#fff} .menu .r.hl span{color:#fff}
+  .menu .r.off{color:var(--g-menu-dim)}
+  .menu .s{height:1px;margin:5px 16px;background:var(--g-menu-sep)}
+  /* Mac reference controls (chrome.html values) */
+  .mac{width:300px;background:#22232E;border-radius:12px;padding:14px 16px;display:grid;grid-template-columns:auto 1fr;gap:12px 14px;align-items:center;font:13px/16px var(--font);color:#E1E1E3}
+  .mac .b{background:rgba(255,255,255,.065)} .mac .b.def{background:#3478F6}
+  .mac .e{background:#22232E;border-color:#32333E} .mac .e.focus{box-shadow:0 0 0 2px #3C6794;border-color:#3C6794}
+  .mac .sw i{top:1.5px;left:1.5px;height:13px;border-radius:6.5px} .mac .sw.on i{left:13.5px}
+  .mac .sw.on,.mac .ck.on,.mac .rd.on,.mac .sc .f{background:#397CF7}
+</style>
+</head>
+<body>
+<h2>1 · Unified header bar (Files / Text Editor / Settings) — dark</h2>
+<p class="n">52 pt header, lights at the Mac's (26, 26) centre, capsule buttons. niri rounds GNOME apps at 27 like Mac toolbar windows.</p>
+<div class="pair" id="dark">
+  <div>
+    <p class="cap-l">GTK 4 / libadwaita under rmac</p>
+    <div class="gw tb27">
+      <div class="hb">
+        <div class="wc"><i class="c">×</i><i class="m">−</i><i class="z">+</i></div>
+        <span class="linked"><span class="hbtn">‹</span><span class="hbtn">›</span></span>
+        <span class="title">Documents</span>
+        <span class="end"><span class="hbtn">⌕</span><span class="hbtn">☰</span></span>
+      </div>
+      <div class="body">
+        <div class="side"><div class="row">Recent</div><div class="row sel">Documents</div><div class="row">Downloads</div></div>
+        <div class="main">
+          <span class="k">buttons</span><span><span class="b">Cancel</span><span class="b def">Save</span></span>
+          <span class="k">entry</span><span><span class="e focus">Report</span><span class="e" style="width:70px">24</span></span>
+          <span class="k">switch</span><span><span class="sw on"><i></i></span><span class="sw"><i></i></span></span>
+          <span class="k">check / radio</span><span><span class="ck on"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1.8 5.2L4 7.4L8.2 2.4" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>On<span class="rd on"></span>A<span class="rd"></span>B</span>
+          <span class="k">scale</span><span class="sc"><span class="f"></span><i></i></span>
+          <span class="scroll"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="cap-l">Mac (chrome.html, macOS 26.2 dark)</p>
+    <div class="mac">
+      <span class="k">buttons</span><span><span class="b">Cancel</span><span class="b def">Save</span></span>
+      <span class="k">field</span><span><span class="e focus">Report</span></span>
+      <span class="k">switch</span><span><span class="sw on"><i></i></span><span class="sw"><i></i></span></span>
+      <span class="k">check / radio</span><span><span class="ck on"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1.8 5.2L4 7.4L8.2 2.4" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>On<span class="rd on"></span>A</span>
+      <span class="k">slider</span><span class="sc"><span class="f"></span><i></i></span>
+    </div>
+  </div>
+</div>
+
+<h2>2 · Plain title bar (a GTK dialog) and a popover menu — dark</h2>
+<div class="pair" id="dark-menu">
+  <div style="position:relative;height:200px;width:560px">
+    <div class="gw" style="height:140px">
+      <div class="hb plain">
+        <div class="wc hover"><i class="c">×</i><i class="m">−</i><i class="z">+</i></div>
+        <span class="title">Preferences</span>
+      </div>
+    </div>
+    <div class="menu" style="left:300px;top:20px">
+      <div class="r">New Window<span>Ctrl N</span></div>
+      <div class="r hl">Open…<span>Ctrl O</span></div>
+      <div class="r off">Revert</div>
+      <div class="s"></div>
+      <div class="r">Preferences<span>Ctrl ,</span></div>
+      <div class="r">About</div>
+    </div>
+  </div>
+</div>
+
+<h2>3 · Light appearance (S — the Mac was captured in Dark only)</h2>
+<div class="pair light" id="light">
+  <div>
+    <div class="gw tb27">
+      <div class="hb">
+        <div class="wc"><i class="c">×</i><i class="m">−</i><i class="z">+</i></div>
+        <span class="linked"><span class="hbtn">‹</span><span class="hbtn">›</span></span>
+        <span class="title">Documents</span>
+        <span class="end"><span class="hbtn">⌕</span><span class="hbtn">☰</span></span>
+      </div>
+      <div class="body">
+        <div class="side"><div class="row">Recent</div><div class="row sel">Documents</div><div class="row">Downloads</div></div>
+        <div class="main">
+          <span class="k">buttons</span><span><span class="b">Cancel</span><span class="b def">Save</span></span>
+          <span class="k">entry</span><span><span class="e focus">Report</span><span class="e" style="width:70px">24</span></span>
+          <span class="k">switch</span><span><span class="sw on"><i></i></span><span class="sw"><i></i></span></span>
+          <span class="k">check / radio</span><span><span class="ck on"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1.8 5.2L4 7.4L8.2 2.4" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>On<span class="rd on"></span>A<span class="rd"></span>B</span>
+          <span class="k">scale</span><span class="sc"><span class="f"></span><i></i></span>
+          <span class="scroll"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="position:relative;width:240px">
+    <div class="menu" style="left:0;top:0">
+      <div class="r">New Window<span>Ctrl N</span></div>
+      <div class="r hl">Open…<span>Ctrl O</span></div>
+      <div class="r off">Revert</div>
+      <div class="s"></div>
+      <div class="r">About</div>
+    </div>
+  </div>
+</div>
+<div style="height:40px"></div>
+</body>
+</html>

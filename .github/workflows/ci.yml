@@ -85,6 +85,9 @@ jobs:
       - name: Check shared-control boundary
         run: bash scripts/check-shared-controls.sh
 
+      - name: Check gpui_component migration boundary
+        run: bash scripts/check-gpui-component-imports.sh
+
       - name: Check design token boundary
         run: bash scripts/check-design-tokens.sh
 

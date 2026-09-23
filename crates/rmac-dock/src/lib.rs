@@ -9,6 +9,7 @@ mod model;
 pub mod motion;
 mod pins;
 pub mod presentation;
+pub mod reorder;
 mod surfaces;
 #[cfg(test)]
 mod tests;

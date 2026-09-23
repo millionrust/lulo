@@ -179,6 +179,24 @@ mod linux_wayland {
             + 2.0 * SHELF_PADDING
     }
 
+    struct TileDragUi {
+        app_id: String,
+        drag: rmac_dock::reorder::TileDrag,
+        /// Kept-app order when the press began; a drop is applied only while
+        /// the settings still hold exactly this order.
+        pinned: Vec<String>,
+        /// Pointer in surface coordinates and its offset inside the icon.
+        pointer: (f32, f32),
+        grab: (f32, f32),
+        icon: Option<PathBuf>,
+    }
+
+    struct RemovedTile {
+        icon: Option<PathBuf>,
+        origin: (f32, f32),
+        started_ms: u64,
+    }
+
     struct DockMenu {
         anchor: f32,
         session: rmac_dock::menu::Session,
@@ -201,10 +219,18 @@ mod linux_wayland {
         overview_visible: bool,
         visibility_policy: Option<(bool, bool)>,
         hide_generation: u64,
-        surface_description: Option<rmac_dock::SurfaceDescription>,
         content: rmac_dock::presentation::ShelfContent,
-        drag: Option<rmac_dock::drag::DragSession>,
-        drag_order: Option<Vec<String>>,
+        /// A pressed kept app, becoming a drag once the pointer moves.
+        tile_drag: Option<TileDragUi>,
+        /// Neighbours sliding into place: (offset along the axis, start ms).
+        slides: std::collections::BTreeMap<String, (f32, u64)>,
+        /// Kept-app order shown until the settings watcher confirms a drop.
+        pending_pins: Option<(Vec<String>, u64)>,
+        /// An icon dragged off the Dock, fading out where it was dropped.
+        removing: Option<RemovedTile>,
+        /// Resting geometry of the last frame, for drags that start on it.
+        shelf_start: f32,
+        surface_size: (f32, f32),
         /// Clock for tile animations (bounce, slide, fade).
         epoch: std::time::Instant,
         bounces: rmac_dock::bounce::BounceTracker,
@@ -240,10 +266,13 @@ mod linux_wayland {
                 overview_visible: surface.overview_visible,
                 visibility_policy: None,
                 hide_generation: 0,
-                surface_description: surface.description.clone(),
                 content: rmac_dock::presentation::ShelfContent::default(),
-                drag: None,
-                drag_order: None,
+                tile_drag: None,
+                slides: std::collections::BTreeMap::new(),
+                pending_pins: None,
+                removing: None,
+                shelf_start: 0.0,
+                surface_size: (0.0, 0.0),
                 epoch: std::time::Instant::now(),
                 bounces: rmac_dock::bounce::BounceTracker::default(),
                 pressed: None,
@@ -254,6 +283,217 @@ mod linux_wayland {
 
         fn now_ms(&self) -> u64 {
             u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
+        }
+
+        /// Distance of a surface point beyond the shelf's inner edge (towards
+        /// the screen centre); negative inside the shelf.
+        fn lift_of(&self, x: f32, y: f32) -> f32 {
+            let (width, height) = self.surface_size;
+            let depth = SHELF_BOTTOM_MARGIN + SHELF_THICKNESS;
+            match self.placement {
+                rmac_shell_settings::DockPlacement::Bottom => height - depth - y,
+                rmac_shell_settings::DockPlacement::Left => x - depth,
+                rmac_shell_settings::DockPlacement::Right => width - depth - x,
+            }
+        }
+
+        fn axis_of(&self, x: f32, y: f32) -> f32 {
+            match self.placement {
+                rmac_shell_settings::DockPlacement::Bottom => x,
+                _ => y,
+            }
+        }
+
+        /// Resting centre of kept-app tile `index` along the Dock axis.
+        fn pinned_center(&self, index: usize) -> f32 {
+            self.shelf_start
+                + SHELF_PADDING
+                + ICON_SIZE / 2.0
+                + index as f32 * (ICON_SIZE + ICON_GAP)
+        }
+
+        fn begin_tile_drag(
+            &mut self,
+            app_id: &str,
+            icon: Option<PathBuf>,
+            position: (f32, f32),
+            cx: &mut Context<Self>,
+        ) {
+            let Some(model) = self.model_snapshot(cx) else {
+                return;
+            };
+            let pinned: Vec<String> = model
+                .items
+                .iter()
+                .take_while(|item| item.pinned)
+                .map(|item| item.id.clone())
+                .collect();
+            let order = self
+                .pending_pins
+                .as_ref()
+                .map(|(order, _)| order.clone())
+                .unwrap_or_else(|| pinned.clone());
+            if order != pinned {
+                // A previous drop is still being saved.
+                return;
+            }
+            let Some(source) = pinned.iter().position(|id| id == app_id) else {
+                return;
+            };
+            let centers: Vec<f32> = (0..pinned.len())
+                .map(|index| self.pinned_center(index))
+                .collect();
+            let axis = self.axis_of(position.0, position.1);
+            let lift = self.lift_of(position.0, position.1);
+            let Some(drag) =
+                rmac_dock::reorder::TileDrag::begin(source, centers, axis, lift, ICON_SIZE, true)
+            else {
+                return;
+            };
+            // Where the pointer sits inside the icon, so the lifted icon
+            // does not jump to the pointer.
+            let center = self.pinned_center(source);
+            let (width, height) = self.surface_size;
+            let tile_origin = match self.placement {
+                rmac_shell_settings::DockPlacement::Bottom => (
+                    center - ICON_SIZE / 2.0,
+                    height - SHELF_BOTTOM_MARGIN - SHELF_PADDING - ICON_SIZE,
+                ),
+                rmac_shell_settings::DockPlacement::Left => (
+                    SHELF_BOTTOM_MARGIN + SHELF_PADDING,
+                    center - ICON_SIZE / 2.0,
+                ),
+                rmac_shell_settings::DockPlacement::Right => (
+                    width - SHELF_BOTTOM_MARGIN - SHELF_PADDING - ICON_SIZE,
+                    center - ICON_SIZE / 2.0,
+                ),
+            };
+            self.tile_drag = Some(TileDragUi {
+                app_id: app_id.to_owned(),
+                drag,
+                pinned,
+                pointer: position,
+                grab: (position.0 - tile_origin.0, position.1 - tile_origin.1),
+                icon,
+            });
+        }
+
+        fn update_tile_drag(&mut self, position: (f32, f32), cx: &mut Context<Self>) {
+            let axis = self.axis_of(position.0, position.1);
+            let lift = self.lift_of(position.0, position.1);
+            let now = self.now_ms();
+            let Some(ui) = self.tile_drag.as_mut() else {
+                return;
+            };
+            let before = ui.drag.preview_order();
+            let was_active = ui.drag.is_active();
+            let state = ui.drag.update(axis, lift);
+            ui.pointer = position;
+            if !state.active {
+                return;
+            }
+            if !was_active {
+                // The label goes away and the drag owns the whole output.
+                self.hovered_item = None;
+                self.input_region = None;
+            }
+            let after = ui.drag.preview_order();
+            if before != after {
+                // Neighbours slide from where they were to their new slot.
+                let pitch = ICON_SIZE + ICON_GAP;
+                for (new_slot, original) in after.iter().enumerate() {
+                    if *original == ui.drag.source() {
+                        continue;
+                    }
+                    let Some(old_slot) = before.iter().position(|index| index == original) else {
+                        continue;
+                    };
+                    if old_slot != new_slot {
+                        let id = ui.pinned[*original].clone();
+                        let current = self
+                            .slides
+                            .get(&id)
+                            .map(|(offset, started)| {
+                                offset
+                                    * (1.0
+                                        - rmac_dock::reorder::ease_out(
+                                            now - started,
+                                            rmac_dock::reorder::SLIDE_MS,
+                                        ))
+                            })
+                            .unwrap_or(0.0);
+                        let offset = (old_slot as f32 - new_slot as f32) * pitch + current;
+                        self.slides.insert(id, (offset, now));
+                    }
+                }
+            }
+            cx.notify();
+        }
+
+        fn finish_tile_drag(&mut self, platform: bool, cx: &mut Context<Self>) {
+            let Some(ui) = self.tile_drag.take() else {
+                return;
+            };
+            self.input_region = None;
+            self.slides.clear();
+            cx.notify();
+            let current: Option<Vec<String>> = self.model_snapshot(cx).map(|model| {
+                model
+                    .items
+                    .iter()
+                    .take_while(|item| item.pinned)
+                    .map(|item| item.id.clone())
+                    .collect()
+            });
+            let command = match ui.drag.finish() {
+                rmac_dock::reorder::TileDrop::Click => {
+                    self.activate_entry(&ui.app_id, platform, cx);
+                    return;
+                }
+                rmac_dock::reorder::TileDrop::NoChange => return,
+                rmac_dock::reorder::TileDrop::Move { from, to } => {
+                    let mut order = ui.pinned.clone();
+                    let moved = order.remove(from);
+                    order.insert(to, moved);
+                    (
+                        rmac_dock::PinCommand::MoveTo {
+                            app_id: ui.app_id.clone(),
+                            index: to,
+                        },
+                        order,
+                    )
+                }
+                rmac_dock::reorder::TileDrop::Remove => {
+                    self.removing = Some(RemovedTile {
+                        icon: ui.icon.clone(),
+                        origin: (ui.pointer.0 - ui.grab.0, ui.pointer.1 - ui.grab.1),
+                        started_ms: self.now_ms(),
+                    });
+                    let order = ui
+                        .pinned
+                        .iter()
+                        .filter(|id| **id != ui.app_id)
+                        .cloned()
+                        .collect();
+                    (
+                        rmac_dock::PinCommand::Unpin {
+                            app_id: ui.app_id.clone(),
+                        },
+                        order,
+                    )
+                }
+            };
+            // Apply only against the exact order the user manipulated.
+            if current.as_ref() != Some(&ui.pinned) {
+                eprintln!("the kept apps changed during the drag; the drop was not applied");
+                return;
+            }
+            let (command, order) = command;
+            self.pending_pins = Some((order, self.now_ms()));
+            self.dispatch_action(
+                rmac_dock::menu::Action::Context(rmac_dock::ContextAction::UpdatePins(command)),
+                cx,
+            );
         }
 
         /// A launch the Dock starts bounces its tile until a window appears.
@@ -470,23 +710,16 @@ mod linux_wayland {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             self.render_count = self.render_count.saturating_add(1);
             record_render_count(window, self.display_id, self.render_count);
-            let (dock_settings, model, mut entries, content, description) = {
+            let (dock_settings, model, mut entries, content) = {
                 let status = self.status.read(cx);
                 let snapshot = status
                     .snapshot()
                     .expect("a Dock surface is opened only after runtime readiness");
-                let description = snapshot.surface_plan.as_ref().ok().and_then(|surfaces| {
-                    surfaces
-                        .iter()
-                        .find(|surface| Some(&surface.output) == self.output.as_ref())
-                        .cloned()
-                });
                 (
                     snapshot.settings.clone(),
                     snapshot.model.clone(),
                     snapshot.content.applications.clone(),
                     snapshot.content.clone(),
-                    description,
                 )
             };
             self.content = content;
@@ -509,7 +742,6 @@ mod linux_wayland {
             if self.bounces.is_animating(now) {
                 window.request_animation_frame();
             }
-            self.surface_description = description;
             let effective_autohide = dock_settings.autohide || self.fullscreen;
             let visibility_policy = (effective_autohide, self.overview_visible);
             if self.visibility_policy != Some(visibility_policy) {
@@ -544,16 +776,65 @@ mod linux_wayland {
             let trash_available = model.activate_special(rmac_dock::SpecialItemKind::Trash)
                 == rmac_dock::SpecialActivation::OpenTrash;
             let pinned_count = model.items.iter().take_while(|item| item.pinned).count();
-            if let Some(order) = self.drag_order.clone() {
-                if pinned_count > 0 {
-                    entries[..pinned_count].sort_by_key(|entry| match &entry.id {
-                        rmac_dock::presentation::EntryId::Application(app_id) => order
-                            .iter()
-                            .position(|candidate| candidate == app_id)
-                            .unwrap_or(usize::MAX),
-                        _ => usize::MAX,
-                    });
-                }
+            // Kept apps are drawn in the drag preview order, or in the order a
+            // drop asked for until the settings watcher confirms it.
+            let model_pinned: Vec<String> = model
+                .items
+                .iter()
+                .take_while(|item| item.pinned)
+                .map(|item| item.id.clone())
+                .collect();
+            if self.pending_pins.as_ref().is_some_and(|(order, started)| {
+                *order == model_pinned || now.saturating_sub(*started) > 2_000
+            }) {
+                self.pending_pins = None;
+            }
+            let shown_pinned: Option<Vec<String>> = match (&self.tile_drag, &self.pending_pins) {
+                (Some(ui), _) if ui.drag.is_active() && ui.pinned == model_pinned => Some(
+                    ui.drag
+                        .preview_order()
+                        .into_iter()
+                        .map(|index| ui.pinned[index].clone())
+                        .collect(),
+                ),
+                (_, Some((order, _))) => Some(order.clone()),
+                _ => None,
+            };
+            if self
+                .tile_drag
+                .as_ref()
+                .is_some_and(|ui| ui.pinned != model_pinned)
+            {
+                // The kept apps changed under the drag: abandon it.
+                self.tile_drag = None;
+                self.slides.clear();
+            }
+            let mut pinned_count = pinned_count;
+            if let Some(order) = shown_pinned {
+                let unpinned = entries.split_off(pinned_count.min(entries.len()));
+                let mut kept: Vec<_> = order
+                    .iter()
+                    .filter_map(|id| {
+                        entries.iter().find(|entry| {
+                            matches!(&entry.id, rmac_dock::presentation::EntryId::Application(app_id) if app_id == id)
+                        })
+                    })
+                    .cloned()
+                    .collect();
+                pinned_count = kept.len();
+                kept.extend(unpinned);
+                entries = kept;
+            }
+            self.slides.retain(|_, (_, started)| {
+                now.saturating_sub(*started) < rmac_dock::reorder::SLIDE_MS
+            });
+            if self.removing.as_ref().is_some_and(|removed| {
+                now.saturating_sub(removed.started_ms) >= rmac_dock::reorder::REMOVE_FADE_MS
+            }) {
+                self.removing = None;
+            }
+            if !self.slides.is_empty() || self.removing.is_some() {
+                window.request_animation_frame();
             }
             let separates_running = pinned_count > 0 && pinned_count < entries.len();
             let separator_count = usize::from(separates_running) + usize::from(!entries.is_empty());
@@ -574,6 +855,8 @@ mod linux_wayland {
                 + ICON_GAP * child_count.saturating_sub(1) as f32
                 + 2.0 * SHELF_PADDING;
             let shelf_start = (axis - shelf_extent) / 2.0;
+            self.shelf_start = shelf_start;
+            self.surface_size = (surface_width, surface_height);
             let trash_center = shelf_extent - SHELF_PADDING - ICON_SIZE / 2.0;
             let menu_anchor = self.context_menu.as_ref().map(|menu| menu.anchor);
             // (menu start along the Dock axis, pointer tip from that start,
@@ -586,7 +869,11 @@ mod linux_wayland {
                 let start = (tip - MENU_ANCHOR_INSET).clamp(8.0, (axis - width - 8.0).max(8.0));
                 (start, tip - start, width)
             });
-            let modal = menu_geometry.is_some() || self.trash_review.is_some();
+            let dragging = self
+                .tile_drag
+                .as_ref()
+                .is_some_and(|ui| ui.drag.is_active());
+            let modal = menu_geometry.is_some() || self.trash_review.is_some() || dragging;
             let input_region = (shelf_start, shelf_extent, self.hidden, modal);
             if self.input_region != Some(input_region) {
                 let shelf_bounds = match (self.placement, self.hidden) {
@@ -633,47 +920,48 @@ mod linux_wayland {
                 window.set_input_region(Some(&regions));
                 self.input_region = Some(input_region);
             }
-            let tooltip = (!self.hidden
-                && self.context_menu.is_none()
-                && self.drag_order.is_none())
-            .then_some(self.hovered_item.as_ref())
-            .flatten()
-            .map(|(relative_center, label)| {
-                let icon_center = shelf_start + *relative_center;
-                let tooltip_bottom = TOOLTIP_BOTTOM.max(
-                    magnified_icon_size(*relative_center, Some(*relative_center), &dock_settings)
-                        + 36.0,
-                );
-                let tooltip = div()
-                    .absolute()
-                    .w(px(TOOLTIP_WIDTH))
-                    .flex()
-                    .justify_center()
-                    .child(
-                        div()
-                            .px_3()
-                            .py_1()
-                            .rounded(px(tokens::tooltip_radius()))
-                            .bg(rgba(tokens::tooltip_tint()))
-                            .border_1()
-                            .border_color(rgba(tokens::light_border()))
-                            .shadow_lg()
-                            .text_sm()
-                            .text_color(rgba(tokens::primary_text()))
-                            .child(label.clone()),
+            let tooltip = (!self.hidden && self.context_menu.is_none() && !dragging)
+                .then_some(self.hovered_item.as_ref())
+                .flatten()
+                .map(|(relative_center, label)| {
+                    let icon_center = shelf_start + *relative_center;
+                    let tooltip_bottom = TOOLTIP_BOTTOM.max(
+                        magnified_icon_size(
+                            *relative_center,
+                            Some(*relative_center),
+                            &dock_settings,
+                        ) + 36.0,
                     );
-                match self.placement {
-                    rmac_shell_settings::DockPlacement::Bottom => tooltip
-                        .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
-                        .bottom(px(tooltip_bottom)),
-                    rmac_shell_settings::DockPlacement::Left => tooltip
-                        .left(px(EXCLUSIVE_ZONE + 8.0))
-                        .top(px(icon_center - 18.0)),
-                    rmac_shell_settings::DockPlacement::Right => tooltip
-                        .right(px(EXCLUSIVE_ZONE + 8.0))
-                        .top(px(icon_center - 18.0)),
-                }
-            });
+                    let tooltip = div()
+                        .absolute()
+                        .w(px(TOOLTIP_WIDTH))
+                        .flex()
+                        .justify_center()
+                        .child(
+                            div()
+                                .px_3()
+                                .py_1()
+                                .rounded(px(tokens::tooltip_radius()))
+                                .bg(rgba(tokens::tooltip_tint()))
+                                .border_1()
+                                .border_color(rgba(tokens::light_border()))
+                                .shadow_lg()
+                                .text_sm()
+                                .text_color(rgba(tokens::primary_text()))
+                                .child(label.clone()),
+                        );
+                    match self.placement {
+                        rmac_shell_settings::DockPlacement::Bottom => tooltip
+                            .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
+                            .bottom(px(tooltip_bottom)),
+                        rmac_shell_settings::DockPlacement::Left => tooltip
+                            .left(px(EXCLUSIVE_ZONE + 8.0))
+                            .top(px(icon_center - 18.0)),
+                        rmac_shell_settings::DockPlacement::Right => tooltip
+                            .right(px(EXCLUSIVE_ZONE + 8.0))
+                            .top(px(icon_center - 18.0)),
+                    }
+                });
             let autohide = effective_autohide;
             let root = div()
                 .id(format!("dock-{}", self.display_id))
@@ -691,13 +979,28 @@ mod linux_wayland {
                 }))
                 .on_mouse_up(
                     MouseButton::Left,
-                    cx.listener(|this, _: &gpui::MouseUpEvent, _, cx| {
+                    cx.listener(|this, event: &gpui::MouseUpEvent, _, cx| {
                         if this.pressed.take().is_some() {
                             cx.notify();
                         }
+                        this.finish_tile_drag(event.modifiers.platform, cx);
                     }),
                 )
                 .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                    if this.tile_drag.is_some() {
+                        if event.pressed_button == Some(MouseButton::Left) {
+                            this.update_tile_drag(
+                                (f32::from(event.position.x), f32::from(event.position.y)),
+                                cx,
+                            );
+                        } else {
+                            // The release happened somewhere we never saw.
+                            this.tile_drag = None;
+                            this.slides.clear();
+                            this.input_region = None;
+                            cx.notify();
+                        }
+                    }
                     if this.option_held != event.modifiers.alt {
                         this.option_held = event.modifiers.alt;
                         if this.context_menu.is_some() {
@@ -745,67 +1048,6 @@ mod linux_wayland {
             } else {
                 shelf.flex_col().items_center()
             };
-            // The shelf owns pointer frames for an in-progress tile drag, so the
-            // reorder keeps tracking even when the pointer leaves the tile.
-            shelf = shelf
-                .on_mouse_move(
-                    cx.listener(move |this, event: &gpui::MouseMoveEvent, _, cx| {
-                        if event.pressed_button != Some(MouseButton::Left) {
-                            return;
-                        }
-                        let axis = match this.placement {
-                            rmac_shell_settings::DockPlacement::Bottom => {
-                                f32::from(event.position.x)
-                            }
-                            _ => f32::from(event.position.y),
-                        };
-                        let active_order = {
-                            let Some(session) = this.drag.as_mut() else {
-                                return;
-                            };
-                            match session.update(axis) {
-                                Ok(update) if update.active => Some(update.preview_order.to_vec()),
-                                _ => None,
-                            }
-                        };
-                        if let Some(order) = active_order {
-                            this.drag_order = Some(order);
-                            cx.notify();
-                        }
-                    }),
-                )
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(move |this, event: &gpui::MouseUpEvent, _, cx| {
-                        let Some(session) = this.drag.take() else {
-                            return;
-                        };
-                        this.drag_order = None;
-                        match session.finish() {
-                            rmac_dock::drag::DropOutcome::Click { entry } => {
-                                if let rmac_dock::presentation::EntryId::Application(app_id) = entry
-                                {
-                                    this.activate_entry(&app_id, event.modifiers.platform, cx);
-                                }
-                            }
-                            rmac_dock::drag::DropOutcome::Reorder(intent) => {
-                                let model = this.model_snapshot(cx);
-                                if let Some(revalidated) =
-                                    model.as_ref().and_then(|model| intent.revalidate(model))
-                                {
-                                    let command = revalidated.command().clone();
-                                    this.dispatch_action(
-                                        rmac_dock::menu::Action::Context(
-                                            rmac_dock::ContextAction::UpdatePins(command),
-                                        ),
-                                        cx,
-                                    );
-                                }
-                            }
-                            _ => cx.notify(),
-                        }
-                    }),
-                );
             let minimized_children: Vec<gpui::AnyElement> = minimized_entries
                 .iter()
                 .enumerate()
@@ -949,6 +1191,18 @@ mod linux_wayland {
                         );
                         let visual_offset = (ICON_SIZE - visual_size) / 2.0;
                         let lift = self.bounces.lift(&app_id, now, ICON_SIZE);
+                        let slide = self.slides.get(&app_id).map_or(0.0, |(offset, started)| {
+                            offset
+                                * (1.0
+                                    - rmac_dock::reorder::ease_out(
+                                        now.saturating_sub(*started),
+                                        rmac_dock::reorder::SLIDE_MS,
+                                    ))
+                        });
+                        let dragged_here = self
+                            .tile_drag
+                            .as_ref()
+                            .is_some_and(|ui| ui.drag.is_active() && ui.app_id == app_id);
                         let activate_app_id = app_id.clone();
                         let mut item = div()
                             .id(format!("dock-item-{}-{index}", self.display_id))
@@ -963,7 +1217,18 @@ mod linux_wayland {
                             .text_color(rgba(tokens::primary_text()))
                             .text_lg()
                             .font_weight(FontWeight::BOLD)
-                            .opacity(if available { 1.0 } else { 0.58 });
+                            .opacity(if dragged_here {
+                                0.0
+                            } else if available {
+                                1.0
+                            } else {
+                                0.58
+                            });
+                        item = if horizontal {
+                            item.left(px(slide))
+                        } else {
+                            item.top(px(slide))
+                        };
                         let mut visual = div()
                             .id(format!("dock-visual-{}-{index}", self.display_id))
                             .absolute()
@@ -974,126 +1239,48 @@ mod linux_wayland {
                             .justify_center()
                             .rounded(px(tokens::dock_tile_radius(visual_size)))
                             .when(actionable, |visual| {
-                                let drag_entry =
-                                    rmac_dock::presentation::EntryId::Application(app_id.clone());
                                 let press_app_id = app_id.clone();
+                                let press_icon = icon_path.clone();
                                 visual
                                     .cursor_pointer()
-                                                .on_mouse_down(
+                                    .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(
                                             move |this, event: &gpui::MouseDownEvent, _, cx| {
                                                 cx.stop_propagation();
                                                 this.pressed = Some(press_app_id.clone());
                                                 cx.notify();
-                                                if index >= pinned_count {
-                                                    return;
-                                                }
-                                                let axis = match this.placement {
-                                                    rmac_shell_settings::DockPlacement::Bottom => {
-                                                        f32::from(event.position.x)
-                                                    }
-                                                    _ => f32::from(event.position.y),
-                                                };
-                                                let Some(description) =
-                                                    this.surface_description.clone()
-                                                else {
-                                                    return;
-                                                };
-                                                let Ok(plan) =
-                                                    this.content.prepare_layout(&description)
-                                                else {
-                                                    return;
-                                                };
-                                                let Some(model) = this.model_snapshot(cx) else {
-                                                    return;
-                                                };
-                                                if let Ok(session) =
-                                                    rmac_dock::drag::DragSession::begin(
-                                                        &model,
-                                                        &plan,
-                                                        &drag_entry,
-                                                        axis,
-                                                    )
-                                                {
-                                                    this.drag = Some(session);
-                                                    this.drag_order = None;
-                                                    cx.notify();
+                                                if index < pinned_count {
+                                                    this.begin_tile_drag(
+                                                        &press_app_id,
+                                                        press_icon.clone(),
+                                                        (
+                                                            f32::from(event.position.x),
+                                                            f32::from(event.position.y),
+                                                        ),
+                                                        cx,
+                                                    );
                                                 }
                                             },
                                         ),
                                     )
-                                    .on_mouse_move(cx.listener(
-                                        move |this, event: &gpui::MouseMoveEvent, _, cx| {
-                                            if event.pressed_button != Some(MouseButton::Left) {
-                                                return;
-                                            }
-                                            let axis = match this.placement {
-                                                rmac_shell_settings::DockPlacement::Bottom => {
-                                                    f32::from(event.position.x)
-                                                }
-                                                _ => f32::from(event.position.y),
-                                            };
-                                            let active_order = {
-                                                let Some(session) = this.drag.as_mut() else {
-                                                    return;
-                                                };
-                                                match session.update(axis) {
-                                                    Ok(update) if update.active => {
-                                                        Some(update.preview_order.to_vec())
-                                                    }
-                                                    _ => None,
-                                                }
-                                            };
-                                            if let Some(order) = active_order {
-                                                this.drag_order = Some(order);
-                                                cx.notify();
-                                            }
-                                        },
-                                    ))
                                     .on_mouse_up(
                                         MouseButton::Left,
                                         cx.listener(
                                             move |this, event: &gpui::MouseUpEvent, _, cx| {
-                                                let platform = event.modifiers.platform;
-                                                let Some(session) = this.drag.take() else {
+                                                // Kept apps finish on the root, which
+                                                // sees drags that left the tile.
+                                                if this.tile_drag.is_some() {
+                                                    return;
+                                                }
+                                                if this.pressed.as_deref()
+                                                    == Some(activate_app_id.as_str())
+                                                {
                                                     this.activate_entry(
                                                         &activate_app_id,
-                                                        platform,
+                                                        event.modifiers.platform,
                                                         cx,
                                                     );
-                                                    return;
-                                                };
-                                                this.drag_order = None;
-                                                match session.finish() {
-                                                    rmac_dock::drag::DropOutcome::Click { .. } => {
-                                                        this.activate_entry(
-                                                            &activate_app_id,
-                                                            platform,
-                                                            cx,
-                                                        );
-                                                    }
-                                                    rmac_dock::drag::DropOutcome::Reorder(
-                                                        intent,
-                                                    ) => {
-                                                        let model = this.model_snapshot(cx);
-                                                        if let Some(revalidated) = model
-                                                            .as_ref()
-                                                            .and_then(|model| {
-                                                                intent.revalidate(model)
-                                                            })
-                                                        {
-                                                            let command =
-                                                                revalidated.command().clone();
-                                                            this.dispatch_action(
-                                                                rmac_dock::menu::Action::Context(
-                                                                    rmac_dock::ContextAction::UpdatePins(command),
-                                                                ),
-                                                                cx,
-                                                            );
-                                                        }
-                                                    }
-                                                    _ => cx.notify(),
                                                 }
                                             },
                                         ),
@@ -1240,7 +1427,7 @@ mod linux_wayland {
                             .items_center()
                             .justify_center()
                             .rounded(px(tokens::dock_tile_radius(ICON_SIZE)))
-                                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                 if *hovered {
                                     this.hovered_item = Some((trash_center, "Trash".into()));
                                     cx.notify();
@@ -1325,6 +1512,76 @@ mod linux_wayland {
                         trash
                     }),
             )
+            .children(
+                self.tile_drag
+                    .as_ref()
+                    .filter(|ui| ui.drag.is_active())
+                    .map(|ui| {
+                        let state = ui.drag.state();
+                        let left = ui.pointer.0 - ui.grab.0;
+                        let top = ui.pointer.1 - ui.grab.1;
+                        let art = ICON_SIZE * ICON_ART_SCALE;
+                        let inset = (ICON_SIZE - art) / 2.0;
+                        div()
+                            .absolute()
+                            .left(px(left))
+                            .top(px(top))
+                            .w(px(ICON_SIZE))
+                            .h(px(ICON_SIZE))
+                            .children(ui.icon.clone().map(|path| {
+                                img(path)
+                                    .absolute()
+                                    .left(px(inset))
+                                    .top(px(inset))
+                                    .w(px(art))
+                                    .h(px(art))
+                            }))
+                            .when(state.remove_armed, |icon| {
+                                icon.child(
+                                    div()
+                                        .absolute()
+                                        .left(px(ICON_SIZE / 2.0 - TOOLTIP_WIDTH / 2.0))
+                                        .bottom(px(ICON_SIZE + 12.0))
+                                        .w(px(TOOLTIP_WIDTH))
+                                        .flex()
+                                        .justify_center()
+                                        .child(
+                                            div()
+                                                .px_3()
+                                                .py_1()
+                                                .rounded(px(tokens::tooltip_radius()))
+                                                .bg(rgba(tokens::tooltip_tint()))
+                                                .border_1()
+                                                .border_color(rgba(tokens::light_border()))
+                                                .text_sm()
+                                                .text_color(rgba(tokens::primary_text()))
+                                                .child("Remove"),
+                                        ),
+                                )
+                            })
+                    }),
+            )
+            .children(self.removing.as_ref().map(|removed| {
+                let fade = 1.0
+                    - (now.saturating_sub(removed.started_ms) as f32
+                        / rmac_dock::reorder::REMOVE_FADE_MS as f32)
+                        .min(1.0);
+                let art = ICON_SIZE * ICON_ART_SCALE;
+                let inset = (ICON_SIZE - art) / 2.0;
+                div()
+                    .absolute()
+                    .left(px(removed.origin.0 + inset))
+                    .top(px(removed.origin.1 + inset))
+                    .w(px(art))
+                    .h(px(art))
+                    .opacity(fade)
+                    .children(
+                        removed
+                            .icon
+                            .clone()
+                            .map(|path| img(path).w(px(art)).h(px(art))),
+                    )
+            }))
             .children(self.trash_review.as_ref().map(|review| {
                 render_empty_trash_alert(
                     review.item_count(),

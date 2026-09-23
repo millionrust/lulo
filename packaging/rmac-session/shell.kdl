@@ -264,6 +264,9 @@ binds {
     // the keyboard and activates the selection when ⌘ is released.
     Mod+Tab hotkey-overlay-title="Switch Applications" { spawn "/usr/libexec/rmac/rmac-app-switcher" "next"; }
     Mod+Shift+Tab hotkey-overlay-title="Switch Applications Backwards" { spawn "/usr/libexec/rmac/rmac-app-switcher" "previous"; }
+    // ⌃F3 moves keyboard focus to the Dock, as on macOS. The resident Dock
+    // holds the keyboard until Esc, an activation or a click.
+    Ctrl+F3 repeat=false hotkey-overlay-title="Move Focus to the Dock" { spawn "/usr/libexec/rmac/rmac-dock" "focus"; }
 }
 
 // Super+grave keeps niri's MRU cycle restricted to the current app's

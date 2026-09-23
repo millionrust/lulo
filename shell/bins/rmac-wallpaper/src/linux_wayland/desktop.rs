@@ -1,14 +1,18 @@
 //! Desktop items on the wallpaper: Finder's icon grid, selection and the
 //! marquee, moving and snapping icons, dropping them on folders, Stacks,
-//! desktop widgets, Get Info and View Options. Measured numbers live in
-//! rmac_desktop::grid; the rest is marked S in design-lab/desktop.html.
+//! desktop widgets, renaming in place, Get Info and View Options. Measured
+//! numbers live in rmac_desktop::grid; the rest is marked S in
+//! design-lab/desktop.html.
 
 use super::menu::{Command, DesktopMenu, MenuTarget};
 use super::*;
+use gpui::{Focusable as _, Subscription};
 use rmac_desktop::grid::{Grid, Placement, ViewOptions, LABEL_GAP, LABEL_MAX_WIDTH};
+use rmac_desktop::rename::{self as naming, NameCheck};
 use rmac_desktop::stacks::{self, StackKind, Tile};
 use rmac_desktop::widgets::{self as desk_widgets, Widget};
-use rmac_desktop::{Item, ItemKind};
+use rmac_desktop::{Item, ItemKind, RenameError};
+use rmac_shell_ui::text_field::{TextField, TextFieldEvent, TextFieldStyle};
 
 /// A press that moves further than this starts a drag.
 const DRAG_THRESHOLD: f32 = 3.0;
@@ -35,6 +39,18 @@ const PANEL_TOP: f32 = 60.0;
 const PANEL_INSET: f32 = 20.0;
 const TRACK_WIDTH: f32 = OPTIONS_WIDTH - 2.0 * PANEL_INSET;
 const CLOSE_RED: u32 = 0xFF5F57FF;
+/// Rename (S): a second click on a selected icon's label starts editing
+/// after this pause, longer than the 400 ms double-click interval, so a
+/// double-click still opens. Selected text is white 0.35 over the accent.
+const RENAME_DELAY: Duration = Duration::from_millis(500);
+const RENAME_SELECTION: u32 = 0xFFFFFF59;
+/// Rename alerts (S): a 260-wide card 30% down the screen.
+const ALERT_WIDTH: f32 = 260.0;
+const ALERT_PADDING: f32 = 20.0;
+const ALERT_TOP: f32 = 0.3;
+const ALERT_BUTTON: f32 = 28.0;
+const ALERT_BUTTON_RADIUS: f32 = 7.0;
+const ALERT_BUTTON_FILL: u32 = 0xFFFFFF26;
 
 #[derive(Default)]
 pub(crate) struct DeskState {
@@ -43,6 +59,39 @@ pub(crate) struct DeskState {
     pub drag: Option<Drag>,
     pub expanded: BTreeSet<StackKind>,
     pub panel: Option<Panel>,
+    pub rename: Option<Rename>,
+    /// Counts presses and keys, so a pending click-to-rename can tell it
+    /// was followed by something else (a double-click opens instead).
+    pub rename_click: u64,
+}
+
+/// An icon's name being edited in place.
+pub(crate) struct Rename {
+    path: PathBuf,
+    name: String,
+    field: Entity<TextField>,
+    _events: Subscription,
+    /// The rename is running on the file system.
+    pending: bool,
+    alert: Option<RenameAlert>,
+}
+
+enum RenameAlert {
+    Taken(String),
+    Invalid(String),
+    /// The new name begins with a dot: Cancel or Use ".".
+    Hidden,
+    Failed(std::io::ErrorKind),
+}
+
+/// What a finished rename needs to update the selection and positions.
+struct Renamed {
+    old_path: PathBuf,
+    old_name: String,
+    new_name: String,
+    /// Every loose icon's spot when the rename started (None when the
+    /// desktop is stacked or sorted, where icons don't keep spots).
+    placements: Option<Vec<(String, Placement)>>,
 }
 
 pub(crate) enum Drag {
@@ -52,6 +101,9 @@ pub(crate) enum Drag {
         moved: bool,
         pressed: PathBuf,
         additive: bool,
+        /// A plain click on the label of the only selected icon: renaming
+        /// starts after a pause unless another click follows.
+        rename_on_release: bool,
     },
     Marquee {
         start: Point<Pixels>,
@@ -306,6 +358,7 @@ impl Wallpaper {
         self.note_display(cx);
         self.dismiss_app_drawer(cx);
         self.desk.drag = None;
+        self.desk.rename_click = self.desk.rename_click.wrapping_add(1);
         self.desk.menu = Some(DesktopMenu::new(position, target));
         window.focus(&self.focus, cx);
         cx.notify();
@@ -319,8 +372,10 @@ impl Wallpaper {
     ) {
         self.note_display(cx);
         self.dismiss_app_drawer(cx);
+        // Focusing the desktop ends any rename in progress (it commits).
         window.focus(&self.focus, cx);
         self.desk.menu = None;
+        self.desk.rename_click = self.desk.rename_click.wrapping_add(1);
         self.action_error = None;
         let additive = event.modifiers.platform || event.modifiers.shift;
         let base = if additive {
@@ -356,8 +411,10 @@ impl Wallpaper {
     ) {
         self.note_display(cx);
         self.dismiss_app_drawer(cx);
+        let was_active = self.focus.contains_focused(window, cx);
         window.focus(&self.focus, cx);
         self.desk.menu = None;
+        self.desk.rename_click = self.desk.rename_click.wrapping_add(1);
         self.action_error = None;
         let layout = self.desk_layout(window, cx);
         let Some(placed) = layout.placed.get(index) else {
@@ -382,6 +439,15 @@ impl Wallpaper {
                     return;
                 }
                 let additive = event.modifiers.platform || event.modifiers.shift;
+                let on_label =
+                    f32::from(event.position.y) >= placed.top + layout.grid.options.icon_size;
+                let rename_on_release = event.click_count == 1
+                    && !additive
+                    && was_active
+                    && on_label
+                    && self.desk.rename.is_none()
+                    && self.desk.selection.len() == 1
+                    && self.desk.selection.contains(&path);
                 if additive {
                     if !self.desk.selection.remove(&path) {
                         self.desk.selection.insert(path.clone());
@@ -395,6 +461,7 @@ impl Wallpaper {
                     moved: false,
                     pressed: path,
                     additive,
+                    rename_on_release,
                 });
             }
         }
@@ -502,9 +569,13 @@ impl Wallpaper {
                 moved,
                 pressed,
                 additive,
+                rename_on_release,
                 ..
             } => {
                 if !moved {
+                    if rename_on_release {
+                        self.schedule_rename(pressed.clone(), window, cx);
+                    }
                     if !additive {
                         self.desk.selection = BTreeSet::from([pressed]);
                     }
@@ -667,13 +738,31 @@ impl Wallpaper {
         cx: &mut Context<Self>,
     ) -> bool {
         let key = event.keystroke.key.as_str();
+        self.desk.rename_click = self.desk.rename_click.wrapping_add(1);
         if self.desk.menu.is_some() {
             self.menu_key(key, window, cx);
+            return true;
+        }
+        if let Some(rename) = &self.desk.rename {
+            if rename.alert.is_none() {
+                // The rename field handles its own keys.
+                return false;
+            }
+            // Return picks the default button and Escape cancels; both
+            // are the first button.
+            if matches!(key, "enter" | "escape") {
+                self.rename_alert_choice(false, window, cx);
+            }
             return true;
         }
         let modifiers = &event.keystroke.modifiers;
         let command = modifiers.platform;
         match key {
+            "enter" if !command && self.desk.selection.len() == 1 => {
+                if let Some(path) = self.desk.selection.iter().next().cloned() {
+                    self.begin_rename(path, window, cx);
+                }
+            }
             "escape" => {
                 if self.desk.panel.take().is_none() {
                     self.desk.selection.clear();
@@ -853,6 +942,11 @@ impl Wallpaper {
                 })
                 .detach();
             }
+            Command::Rename => {
+                if let [path] = selection.as_slice() {
+                    self.begin_rename(path.clone(), window, cx);
+                }
+            }
             Command::Duplicate => {
                 if selection.is_empty() {
                     return;
@@ -907,13 +1001,26 @@ impl Wallpaper {
                 status.widgets.clone(),
             )
         };
-        let active = self.focus.is_focused(window);
+        let active = self.focus.contains_focused(window, cx);
         let mut children = Vec::new();
         for widget in widgets {
             children.push(self.render_widget(widget, &data, cx));
         }
-        for (index, placed) in layout.placed.iter().enumerate() {
-            let visual = self.tile_visual(placed, &layout, active);
+        // The icon being renamed is drawn last, so its field's extra lines
+        // lie over the icons below it.
+        let renaming = self.desk.rename.as_ref().and_then(|rename| {
+            layout.placed.iter().position(|placed| {
+                layout
+                    .item(placed)
+                    .is_some_and(|item| item.path == rename.path)
+            })
+        });
+        let order = (0..layout.placed.len())
+            .filter(|index| Some(*index) != renaming)
+            .chain(renaming);
+        for index in order {
+            let placed = &layout.placed[index];
+            let visual = self.tile_visual(placed, &layout, active, true);
             children.push(
                 visual
                     .id(("desktop-tile", index))
@@ -956,7 +1063,7 @@ impl Wallpaper {
                         top: placed.top + dy,
                     };
                     children.push(
-                        self.tile_visual(&ghost, &layout, active)
+                        self.tile_visual(&ghost, &layout, active, false)
                             .opacity(0.6)
                             .into_any_element(),
                     );
@@ -989,6 +1096,7 @@ impl Wallpaper {
         if let Some(menu) = self.render_menu(window, cx) {
             children.push(menu);
         }
+        children.extend(self.render_rename_alert(window, cx));
         children
     }
 
@@ -1044,7 +1152,15 @@ impl Wallpaper {
             .into_any_element()
     }
 
-    fn tile_visual(&self, placed: &Placed, layout: &DeskLayout, active: bool) -> gpui::Div {
+    /// An icon and its label; with `editing`, the label of the icon being
+    /// renamed is its edit field.
+    fn tile_visual(
+        &self,
+        placed: &Placed,
+        layout: &DeskLayout,
+        active: bool,
+        editing: bool,
+    ) -> gpui::Div {
         let options = layout.grid.options;
         let icon = options.icon_size;
         let pitch = options.pitch();
@@ -1065,6 +1181,14 @@ impl Wallpaper {
                 ),
                 None => (String::new(), div().into_any_element(), false),
             },
+        };
+        let field = match (&placed.tile, &self.desk.rename) {
+            (Tile::Item { index, .. }, Some(rename)) if editing => layout
+                .items
+                .get(*index)
+                .filter(|item| item.path == rename.path)
+                .map(|_| rename.field.clone()),
+            _ => None,
         };
         div()
             .absolute()
@@ -1094,8 +1218,9 @@ impl Wallpaper {
                     })
                     .child(glyph),
             )
-            .child(
-                div()
+            .child(match field {
+                Some(field) => div().mt(px(LABEL_GAP)).child(field).into_any_element(),
+                None => div()
                     .mt(px(LABEL_GAP))
                     .max_w(px(LABEL_MAX_WIDTH))
                     .px(px(LABEL_PAD))
@@ -1112,8 +1237,357 @@ impl Wallpaper {
                             LABEL_INACTIVE
                         }))
                     })
-                    .child(label),
+                    .child(label)
+                    .into_any_element(),
+            })
+    }
+
+    /// Clicking a selected icon's label again: rename after a pause, unless
+    /// another click or key comes first.
+    fn schedule_rename(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        self.desk.rename_click = self.desk.rename_click.wrapping_add(1);
+        let click = self.desk.rename_click;
+        cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(RENAME_DELAY).await;
+            // An error only means the desktop closed meanwhile.
+            this.update_in(cx, |this, window, cx| {
+                let undisturbed = this.desk.rename_click == click
+                    && this.desk.menu.is_none()
+                    && this.desk.selection.len() == 1
+                    && this.desk.selection.contains(&path);
+                if undisturbed {
+                    this.begin_rename(path, window, cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Turns the icon's label into an edit field with the name's stem
+    /// selected (all of it for folders and names without an extension).
+    pub(crate) fn begin_rename(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.desk.rename.is_some() {
+            return;
+        }
+        let layout = self.desk_layout(window, cx);
+        let Some(item) = layout.items.iter().find(|item| item.path == path).cloned() else {
+            return;
+        };
+        let options = layout.grid.options;
+        let style = TextFieldStyle {
+            text_size: options.text_size,
+            line_height: options.label_line(),
+            wrap_width: LABEL_MAX_WIDTH - 2.0 * LABEL_PAD,
+            padding_x: LABEL_PAD,
+            radius: LABEL_RADIUS,
+            background: tokens::accent(),
+            text: 0xFFFFFFFF,
+            selection: RENAME_SELECTION,
+            caret: 0xFFFFFFFF,
+            centered: true,
+        };
+        let selection = naming::editable_stem(&item.name, item.kind == ItemKind::Directory);
+        let field = cx.new(|cx| {
+            TextField::new(
+                "desktop-rename",
+                format!("Rename {}", item.name),
+                &item.name,
+                selection,
+                style,
+                window,
+                cx,
             )
+        });
+        let events = cx.subscribe_in(
+            &field,
+            window,
+            |this, _, event: &TextFieldEvent, window, cx| this.rename_event(*event, window, cx),
+        );
+        let handle = field.read(cx).focus_handle(cx);
+        self.desk.menu = None;
+        self.desk.drag = None;
+        self.desk.selection = BTreeSet::from([path.clone()]);
+        self.desk.rename = Some(Rename {
+            path,
+            name: item.name,
+            field,
+            _events: events,
+            pending: false,
+            alert: None,
+        });
+        window.focus(&handle, cx);
+        cx.notify();
+    }
+
+    fn rename_event(&mut self, event: TextFieldEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(rename) = &self.desk.rename else {
+            return;
+        };
+        // Focus moves to an alert while it shows; that is not a commit.
+        if rename.pending || rename.alert.is_some() {
+            return;
+        }
+        match event {
+            TextFieldEvent::Cancel => self.end_rename(window, cx),
+            TextFieldEvent::Submit | TextFieldEvent::Blur => self.commit_rename(false, window, cx),
+        }
+    }
+
+    /// Return, a click elsewhere or focus leaving the desktop: check the
+    /// name, then rename on a background thread.
+    fn commit_rename(
+        &mut self,
+        hidden_confirmed: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(rename) = self.desk.rename.as_ref() else {
+            return;
+        };
+        let path = rename.path.clone();
+        let old_name = rename.name.clone();
+        let new_name = rename.field.read(cx).text().to_owned();
+        let alert = match naming::check_name(&old_name, &new_name) {
+            NameCheck::Unchanged | NameCheck::Empty => {
+                self.end_rename(window, cx);
+                return;
+            }
+            NameCheck::Invalid => Some(RenameAlert::Invalid(new_name.clone())),
+            NameCheck::Hidden if !hidden_confirmed => Some(RenameAlert::Hidden),
+            NameCheck::Hidden | NameCheck::Valid => None,
+        };
+        if let Some(alert) = alert {
+            self.show_rename_alert(alert, window, cx);
+            return;
+        }
+        // Where every loose icon is now, so the renamed one keeps its spot.
+        let free = {
+            let settings = &self.status.read(cx).settings;
+            !settings.use_stacks && !settings.arrangement.is_sorted()
+        };
+        let placements = if free {
+            Some(self.desk_layout(window, cx).item_placements())
+        } else {
+            None
+        };
+        if let Some(rename) = &mut self.desk.rename {
+            rename.pending = true;
+        }
+        let (old_path, target) = (path.clone(), new_name.clone());
+        cx.spawn_in(window, async move |this, cx| {
+            let result = blocking::unblock(move || rmac_desktop::rename_item(&path, &target)).await;
+            let finished = this.update_in(cx, |this, window, cx| {
+                let renamed = Renamed {
+                    old_path,
+                    old_name,
+                    new_name,
+                    placements,
+                };
+                this.finish_rename(result, renamed, window, cx)
+            });
+            if finished.is_err() {
+                eprintln!("a Desktop rename finished after the desktop closed");
+            }
+        })
+        .detach();
+        cx.notify();
+    }
+
+    fn finish_rename(
+        &mut self,
+        result: Result<PathBuf, RenameError>,
+        renamed: Renamed,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(rename) = &mut self.desk.rename {
+            rename.pending = false;
+        }
+        let Renamed {
+            old_path,
+            old_name,
+            new_name,
+            placements,
+        } = renamed;
+        match result {
+            Ok(path) => {
+                if let Some(mut placements) = placements {
+                    for entry in &mut placements {
+                        if entry.0 == old_name {
+                            entry.0 = new_name.clone();
+                        }
+                    }
+                    self.save_positions(placements, cx);
+                }
+                // A click elsewhere may have changed the selection since.
+                if self.desk.selection.remove(&old_path) {
+                    self.desk.selection.insert(path);
+                }
+                self.end_rename(window, cx);
+            }
+            Err(RenameError::Taken) => {
+                self.show_rename_alert(RenameAlert::Taken(new_name), window, cx)
+            }
+            Err(RenameError::Invalid) => {
+                self.show_rename_alert(RenameAlert::Invalid(new_name), window, cx)
+            }
+            Err(RenameError::Io(error)) => {
+                self.show_rename_alert(RenameAlert::Failed(error), window, cx)
+            }
+        }
+    }
+
+    fn show_rename_alert(
+        &mut self,
+        alert: RenameAlert,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(rename) = &mut self.desk.rename else {
+            return;
+        };
+        rename.alert = Some(alert);
+        // Keys go to the alert while it shows.
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    /// OK or Cancel keeps editing (Finder lets you fix the name); Use "."
+    /// renames; after a failure, OK ends the rename.
+    fn rename_alert_choice(&mut self, proceed: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(alert) = self
+            .desk
+            .rename
+            .as_mut()
+            .and_then(|rename| rename.alert.take())
+        else {
+            return;
+        };
+        match alert {
+            RenameAlert::Hidden if proceed => self.commit_rename(true, window, cx),
+            RenameAlert::Failed(_) => self.end_rename(window, cx),
+            _ => {
+                if let Some(rename) = &self.desk.rename {
+                    let handle = rename.field.read(cx).focus_handle(cx);
+                    window.focus(&handle, cx);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn end_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.desk.rename.take().is_some() {
+            window.focus(&self.focus, cx);
+        }
+        cx.notify();
+    }
+
+    fn render_rename_alert(&self, window: &Window, cx: &Context<Self>) -> Option<AnyElement> {
+        let rename = self.desk.rename.as_ref()?;
+        let alert = rename.alert.as_ref()?;
+        let (title, body) = match alert {
+            RenameAlert::Taken(name) => (naming::taken_message(name), None),
+            RenameAlert::Invalid(name) => {
+                let (title, body) = naming::invalid_message(name);
+                (title, Some(body))
+            }
+            RenameAlert::Hidden => (naming::HIDDEN_TITLE.to_owned(), Some(naming::HIDDEN_BODY)),
+            RenameAlert::Failed(error) => {
+                let (title, body) = naming::failed_message(&rename.name, *error);
+                (title, Some(body))
+            }
+        };
+        // The first button is the default (Return and Escape).
+        let buttons: &[(&'static str, bool)] = match alert {
+            RenameAlert::Hidden => &[("Cancel", false), ("Use “.”", true)],
+            _ => &[("OK", false)],
+        };
+        let size = window.viewport_size();
+        let left = ((f32::from(size.width) - ALERT_WIDTH) / 2.0).max(8.0);
+        let top = (f32::from(size.height) * ALERT_TOP).round();
+        let buttons = buttons.iter().enumerate().map(|(index, (label, proceed))| {
+            let proceed = *proceed;
+            div()
+                .id(("desktop-rename-alert-button", index))
+                .role(Role::Button)
+                .aria_label(*label)
+                .flex_1()
+                .h(px(ALERT_BUTTON))
+                .rounded(px(ALERT_BUTTON_RADIUS))
+                .flex()
+                .items_center()
+                .justify_center()
+                .bg(rgba(if index == 0 {
+                    tokens::accent()
+                } else {
+                    ALERT_BUTTON_FILL
+                }))
+                .child(*label)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    cx.stop_propagation();
+                    this.rename_alert_choice(proceed, window, cx);
+                }))
+        });
+        Some(
+            // Modal: clicks outside the alert do nothing.
+            div()
+                .id("desktop-rename-alert-scrim")
+                .absolute()
+                .inset_0()
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
+                .child(
+                    div()
+                        .id("desktop-rename-alert")
+                        .role(Role::AlertDialog)
+                        .aria_label(SharedString::from(title.clone()))
+                        .absolute()
+                        .left(px(left))
+                        .top(px(top))
+                        .w(px(ALERT_WIDTH))
+                        .p(px(ALERT_PADDING))
+                        .rounded(px(PANEL_RADIUS))
+                        .bg(rgba(tokens::regular_dark_tint()))
+                        .border_1()
+                        .border_color(rgba(tokens::light_border()))
+                        .shadow_lg()
+                        .text_color(rgba(tokens::primary_text()))
+                        .text_size(px(13.0))
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .text_center()
+                        .child(
+                            div()
+                                .line_height(px(16.0))
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(title),
+                        )
+                        .children(body.map(|body| {
+                            div()
+                                .mt(px(6.0))
+                                .text_size(px(11.0))
+                                .line_height(px(14.0))
+                                .child(body)
+                        }))
+                        .child(
+                            div()
+                                .mt(px(16.0))
+                                .w_full()
+                                .flex()
+                                .gap(px(8.0))
+                                .children(buttons),
+                        ),
+                )
+                .into_any_element(),
+        )
     }
 
     fn close_button(id: &'static str, cx: &Context<Self>) -> AnyElement {

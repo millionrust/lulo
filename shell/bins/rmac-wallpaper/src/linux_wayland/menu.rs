@@ -48,6 +48,7 @@ pub(crate) enum Command {
     ViewOptions,
     Open,
     MoveToTrash,
+    Rename,
     Duplicate,
     RemoveWidget(u64),
     ShowSubmenu(Submenu),
@@ -122,7 +123,9 @@ impl DesktopMenu {
 }
 
 /// The macOS 26 desktop menus. Rows without an rmac backend (Import from
-/// iPhone, Group Stacks By, Quick Look, Tags, Share) are left out.
+/// iPhone, Group Stacks By, Compress, Make Alias, Quick Look, Copy, Tags,
+/// Share) are left out, and so is Rename for several items (Finder's batch
+/// rename).
 pub(crate) fn rows(target: &MenuTarget, settings: &DesktopSettings, files: bool) -> Vec<Row> {
     let free = !settings.use_stacks && !settings.arrangement.is_sorted();
     match target {
@@ -150,12 +153,20 @@ pub(crate) fn rows(target: &MenuTarget, settings: &DesktopSettings, files: bool)
             .enabled(free),
             Row::new("Show View Options", Some("gear"), Command::ViewOptions, 2),
         ],
-        MenuTarget::Items(_) => vec![
-            Row::new("Open", Some("open"), Command::Open, 0),
-            Row::new("Move to Trash", Some("trash"), Command::MoveToTrash, 1),
-            Row::new("Get Info", Some("info"), Command::GetInfo, 2),
-            Row::new("Duplicate", Some("duplicate"), Command::Duplicate, 2).enabled(files),
-        ],
+        MenuTarget::Items(paths) => {
+            let mut rows = vec![
+                Row::new("Open", Some("open"), Command::Open, 0),
+                Row::new("Move to Trash", Some("trash"), Command::MoveToTrash, 1),
+                Row::new("Get Info", Some("info"), Command::GetInfo, 2),
+            ];
+            if paths.len() == 1 {
+                rows.push(Row::new("Rename", Some("rename"), Command::Rename, 2));
+            }
+            rows.push(
+                Row::new("Duplicate", Some("duplicate"), Command::Duplicate, 2).enabled(files),
+            );
+            rows
+        }
         MenuTarget::Widget(id) => vec![
             Row::new("Remove Widget", None, Command::RemoveWidget(*id), 0),
             Row::new("Edit Widgets…", None, Command::EditWidgets, 1),
@@ -557,5 +568,24 @@ mod tests {
         // omitted): 9 × 24 + 2 × 11.
         assert_eq!(rows_height(&rows), 238.0);
         assert_eq!(next_enabled(&rows, Some(8), true), Some(0));
+    }
+
+    #[test]
+    fn item_menu_has_rename_after_get_info_for_one_item() {
+        let settings = DesktopSettings::default();
+        let labels = |paths: Vec<PathBuf>| {
+            rows(&MenuTarget::Items(paths), &settings, true)
+                .iter()
+                .map(|row| row.label.to_string())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            labels(vec![PathBuf::from("/d/a.txt")]),
+            ["Open", "Move to Trash", "Get Info", "Rename", "Duplicate"]
+        );
+        assert_eq!(
+            labels(vec![PathBuf::from("/d/a.txt"), PathBuf::from("/d/b.txt")]),
+            ["Open", "Move to Trash", "Get Info", "Duplicate"]
+        );
     }
 }

@@ -67,6 +67,7 @@ menu_icons!(
     "info",
     "new-folder",
     "open",
+    "rename",
     "sort",
     "stacks",
     "trash",

@@ -29,6 +29,7 @@ crates/quick-settings-app/src/main.rs:2
 crates/rmac-editor/src/lib.rs:1
 crates/rmac-file-chooser/src/main.rs:3
 crates/rmac-quick-look/src/panel.rs:1
+crates/rmac-ui/src/assets.rs:2
 crates/rmac-ui/src/chrome.rs:1
 crates/rmac-ui/src/components.rs:1
 crates/rmac-ui/src/controls.rs:4

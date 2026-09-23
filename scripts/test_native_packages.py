@@ -175,8 +175,7 @@ class NativePackageContractTests(unittest.TestCase):
         ).decode("utf-8")
         self.assertIn("Package: rmac-session\n", control)
         self.assertIn("Architecture: arm64\n", control)
-        self.assertIn("Recommends: gdm3, keyd, pkexec, qt6-gtk-platformtheme
-", control)
+        self.assertIn("Recommends: gdm3, keyd, pkexec, qt6-gtk-platformtheme\n", control)
         self.assertTrue(control.endswith("\n"))
         with self.assertRaisesRegex(contract.ContractError, "unsupported relation"):
             contract.dependency_entries("libc6; touch /tmp/not-allowed")

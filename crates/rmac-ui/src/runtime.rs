@@ -1,6 +1,6 @@
 use std::{env, fs};
 
-use gpui::{px, App, AppContext as _, SharedString, Window};
+use gpui::{px, AnyView, App, AppContext as _, Context, SharedString, Styled as _, Window};
 
 use crate::{components, theme};
 
@@ -204,6 +204,17 @@ pub fn prepare_surface_window(window: &mut Window, cx: &mut App) {
     apply_window_text_scale(window, theme::current().text_scale);
     gpui_component::theme::Theme::change(current_component_theme_mode(), Some(window), cx);
     mark_benchmark_first_frame(window);
+}
+
+/// Root for a shell surface such as Spotlight or Control Center. The surface
+/// draws its own rounded material, so the root must stay clear; the default
+/// root paints the opaque window background over the whole layer surface.
+pub fn shell_surface_root(
+    view: impl Into<AnyView>,
+    window: &mut Window,
+    cx: &mut Context<gpui_component::Root>,
+) -> gpui_component::Root {
+    gpui_component::Root::new(view, window, cx).bg(gpui::transparent_black())
 }
 
 /// Scales an application-owned text size with the live rmac accessibility

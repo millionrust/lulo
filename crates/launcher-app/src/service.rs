@@ -14,7 +14,6 @@ use gpui::{
     px, size, AnyWindowHandle, App, AppContext as _, BorrowAppContext as _, ClipboardItem, Global,
     SharedString, WeakEntity, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
 };
-use gpui_component::Root;
 use rmac_launcher_runtime::{CatalogUpdate, Registry, SettingsUpdate};
 
 use crate::view::{LauncherView, OverlayEnvironment};

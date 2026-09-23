@@ -10,7 +10,6 @@ use gpui::{
     point, px, size, AnyWindowHandle, App, AppContext as _, BorrowAppContext as _, Bounds, Global,
     Pixels, WeakEntity, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
 };
-use gpui_component::Root;
 
 use crate::view::NotificationCenterView;
 
@@ -152,7 +151,7 @@ fn open_panel(bounds: Bounds<Pixels>, cx: &mut App) {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| NotificationCenterView::new(token, window, cx));
         panel = Some(view.downgrade());
-        cx.new(|cx| Root::new(view, window, cx))
+        cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     });
     if let (Ok(handle), Some(view)) = (handle, panel) {
         cx.update_global::<NotificationCenterService, _>(|service, _| {

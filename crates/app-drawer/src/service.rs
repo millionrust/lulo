@@ -5,7 +5,6 @@ use gpui::{
     Bounds, Global, KeyBinding, Pixels, WeakEntity, WindowBackgroundAppearance, WindowBounds,
     WindowKind, WindowOptions,
 };
-use gpui_component::Root;
 
 use crate::view::{AppDrawer, DRAWER_HEIGHT, DRAWER_WIDTH};
 
@@ -166,7 +165,7 @@ fn open_drawer(bounds: Bounds<Pixels>, cx: &mut GpuiApp) {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| AppDrawer::new(Some(token), window, cx));
         drawer = Some(view.downgrade());
-        cx.new(|cx| Root::new(view, window, cx))
+        cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     });
     if let (Ok(handle), Some(view)) = (handle, drawer) {
         cx.update_global::<AppDrawerService, _>(|service, _| {

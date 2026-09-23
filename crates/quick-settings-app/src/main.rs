@@ -12,7 +12,6 @@ use gpui::{
     Bounds, Global, Pixels, Result, SharedString, WeakEntity, WindowBackgroundAppearance,
     WindowBounds, WindowKind, WindowOptions,
 };
-use gpui_component::Root;
 
 use crate::view::QuickSettingsView;
 
@@ -165,7 +164,7 @@ fn open_popover(bounds: Bounds<Pixels>, cx: &mut App) {
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| QuickSettingsView::new(token, window, cx));
         popover = Some(view.downgrade());
-        cx.new(|cx| Root::new(view, window, cx))
+        cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     });
     if let (Ok(handle), Some(view)) = (handle, popover) {
         cx.update_global::<QuickSettingsService, _>(|service, _| {

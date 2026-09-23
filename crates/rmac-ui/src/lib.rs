@@ -34,7 +34,9 @@ pub use feedback::{
     ToastKind, Tooltip,
 };
 pub use gpui_component::{ActiveTheme, StyledExt};
-pub use runtime::{init_application, install_app_menu, prepare_surface_window, text_px};
+pub use runtime::{
+    init_application, install_app_menu, prepare_surface_window, shell_surface_root, text_px,
+};
 pub use window::*;
 
 /// Stable Linux desktop identities matching desktop files and Wayland app IDs.

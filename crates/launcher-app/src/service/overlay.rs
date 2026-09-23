@@ -114,7 +114,7 @@ fn open_launcher(event: rmac_shortcuts::Event, options: WindowOptions, cx: &mut 
             )
         });
         launcher = Some(view.downgrade());
-        cx.new(|cx| Root::new(view, window, cx))
+        cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
     });
     if let (Ok(handle), Some(view)) = (handle, launcher) {
         cx.update_global::<LauncherService, _>(|service, _| {

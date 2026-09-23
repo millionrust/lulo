@@ -4,7 +4,7 @@ use rmac_shell_settings::RecoveryState;
 use rmac_storage::Failure;
 use serde::{Deserialize, Serialize};
 
-pub const COMPONENT_UNITS: [&str; 10] = [
+pub const COMPONENT_UNITS: [&str; 11] = [
     "rmac-top-bar.service",
     "rmac-dock.service",
     "rmac-launcher.service",
@@ -14,6 +14,7 @@ pub const COMPONENT_UNITS: [&str; 10] = [
     "rmac-focus.service",
     "rmac-wallpaper.service",
     "rmac-osd.service",
+    "rmac-app-switcher.service",
     "rmac-shortcut-broker.service",
 ];
 /// Components without which the desktop cannot be operated. Only these may

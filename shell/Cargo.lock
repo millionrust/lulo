@@ -4995,6 +4995,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-shell-app-switcher"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "gpui",
+ "gpui_platform",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-shell-layer",
+ "rmac-shell-ui",
+ "uuid",
+]
+
+[[package]]
 name = "rmac-shell-dock"
 version = "0.1.0"
 dependencies = [

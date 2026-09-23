@@ -140,7 +140,7 @@ A compiler error, failing test, flaky runtime, or missing API is **not** a reaso
 
 ### 1.4 Behavior facts
 
-- Global shortcuts actually registered: only `Mod+Space` (launcher) and `Mod+Ctrl+Q` (lock), plus niri binds in `shell.kdl` (Ctrl+←/→ spaces, Ctrl+↑ overview, Mod+Ctrl+F fullscreen, media keys → `rmac-osd`, Mod+Tab / Mod+grave MRU).
+- Global shortcuts actually registered: only `Mod+Space` (launcher) and `Mod+Ctrl+Q` (lock), plus niri binds in `shell.kdl` (Ctrl+←/→ spaces, Ctrl+↑ overview, Mod+Ctrl+F fullscreen, media keys → `rmac-osd`, Mod+Tab / Mod+Shift+Tab → `rmac-app-switcher`, Mod+grave MRU).
 - First-party app shortcuts use GPUI's portable modifier (`cmd-*` → **Ctrl on Linux**), while menus print `⌘`. Mismatch.
 - `rmac-shell-settings::ShellSettings::default().pinned_apps` = Files, App Drawer, Firefox, Terminal, Notes, System Settings.
 - `DockSettings` has: placement, outputs, autohide, magnification(+scale), reserve_space, repeated_click. **Missing:** tile size, show recent apps, show indicators, minimize effect, minimize-into-app-icon, animate opening apps, double-click titlebar action, show suggested/recent in Dock.
@@ -970,8 +970,8 @@ circular glyph badge. Rebuild the ASCII sketch above to match `settings-appearan
 
 ### 5.7 App switcher (⌘Tab) and window cycling (⌘`)
 
-- New bin `rmac-switcher` (overlay layer, exclusive keyboard). Holding Super, Tab advances; ⇧Tab back; release Super activates; Escape cancels; Q quits selected app; H hides it; ↑/↓ shows App Exposé for the selected app.
-- Look: centered glass panel, radius 22, icons 96 with 12 px gaps, selected app gets `FFFFFF 33` rounded 20 plate, name `body` under the selected icon.
+- [~] Bin `rmac-app-switcher` (overlay layer, exclusive keyboard; ADR 0009). Holding Super, Tab advances; ⇧Tab back; release Super activates; Escape cancels; Q quits selected app; H hides it. Still to do: ↑/↓ App Exposé for the selected app.
+- Look (measured on the Mac, `design-lab/switcher-osd.html`): centered glass panel 176 tall, radius 56, padding 24, icons 128 with 6 gaps, selected app gets a white ≈ 30 % 120 × 120 plate with radius 32, name 13 semibold under the selected icon.
 - Order: most-recently-used **applications** (not windows), including hidden/minimized apps. Replace niri `recent-windows` binds `Mod+Tab` in `shell.kdl` with the rmac switcher; keep `Mod+grave` (window cycling within app) through niri `recent-windows filter="app-id"`.
 
 ### 5.8 Force Quit, screenshots, logout dialog hosts

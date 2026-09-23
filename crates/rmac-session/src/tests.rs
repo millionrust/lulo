@@ -151,6 +151,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
         include_str!("../units/rmac-focus.service"),
         include_str!("../units/rmac-wallpaper.service"),
         include_str!("../units/rmac-osd.service"),
+        include_str!("../units/rmac-app-switcher.service"),
         include_str!("../units/rmac-shortcut-broker.service"),
     ];
     for unit in resident_units {
@@ -256,6 +257,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     assert!(normal_target.contains("rmac-notification-center-panel.service"));
     assert!(normal_target.contains("rmac-app-drawer.service"));
     assert!(normal_target.contains("rmac-osd.service"));
+    assert!(normal_target.contains("rmac-app-switcher.service"));
     assert!(safe_target
         .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
 
@@ -350,7 +352,12 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     assert!(!shell.contains("shortcuts-fallback.kdl"));
     assert!(shell.contains("Ctrl+Up repeat=false hotkey-overlay-title=\"Mission Control\""));
     assert!(shell.contains("Mod+Ctrl+F repeat=false hotkey-overlay-title=\"Full Screen\""));
-    assert!(shell.contains("Mod+Tab { next-window; }"));
+    // ⌘Tab is the per-application rmac switcher, not niri's window MRU.
+    assert!(!shell.contains("Mod+Tab { next-window; }"));
+    assert!(shell.contains(
+        "Mod+Tab hotkey-overlay-title=\"Switch Applications\" { spawn \"/usr/libexec/rmac/rmac-app-switcher\" \"next\"; }"
+    ));
+    assert!(shell.contains("{ spawn \"/usr/libexec/rmac/rmac-app-switcher\" \"previous\"; }"));
     assert!(shell.contains("Mod+grave { next-window filter=\"app-id\"; }"));
     assert!(fallback.contains("Mod+Space repeat=false"));
     assert!(fallback.contains("Mod+Ctrl+Q repeat=false allow-when-locked=true"));

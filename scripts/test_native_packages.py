@@ -47,7 +47,13 @@ class NativePackageContractTests(unittest.TestCase):
     def test_shipping_shell_hosts_are_explicit_and_runtime_backed(self):
         self.assertEqual(
             set(contract.SHIPPING_SHELL_SOURCES),
-            {"rmac-wallpaper", "rmac-top-bar", "rmac-dock", "rmac-osd"},
+            {
+                "rmac-wallpaper",
+                "rmac-top-bar",
+                "rmac-dock",
+                "rmac-osd",
+                "rmac-app-switcher",
+            },
         )
         self.assertTrue(
             set(contract.SHIPPING_SHELL_SOURCES).issubset(contract.SESSION_BINARIES)
@@ -61,8 +67,8 @@ class NativePackageContractTests(unittest.TestCase):
 
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
         self.assertEqual(len(contract.APPLICATION_BINARIES), 8)
-        self.assertEqual(len(contract.SESSION_BINARIES), 20)
-        self.assertEqual(len(contract.ALL_BINARIES), 26)
+        self.assertEqual(len(contract.SESSION_BINARIES), 21)
+        self.assertEqual(len(contract.ALL_BINARIES), 27)
         self.assertEqual(
             set(contract.ALL_BINARIES),
             set(contract.APPLICATION_BINARIES) | set(contract.SESSION_BINARIES),
@@ -86,6 +92,7 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("rmac-top-bar", session.binaries)
         self.assertIn("rmac-dock", session.binaries)
         self.assertIn("rmac-osd", session.binaries)
+        self.assertIn("rmac-app-switcher", session.binaries)
         self.assertIn("rmac-lock-provider", session.binaries)
         self.assertIn("rmac-sound", session.binaries)
 

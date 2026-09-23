@@ -41,6 +41,7 @@ REQUIRED_RMAC_EXECUTABLES = (
     "rmac-sound",
     "rmac-media",
     "rmac-osd",
+    "rmac-app-switcher",
     "rmac-launcher",
     "rmac-app-drawer",
     "rmac-quick-settings",
@@ -57,6 +58,7 @@ REQUIRED_RMAC_EXECUTABLES = (
 )
 EXPECTED_SYSTEMD_UNITS = (
     "rmac-app-drawer.service",
+    "rmac-app-switcher.service",
     "rmac-component-failure@.service",
     "rmac-dock.service",
     "rmac-focus.service",

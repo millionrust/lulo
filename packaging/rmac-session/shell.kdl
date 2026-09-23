@@ -197,14 +197,39 @@ binds {
     XF86AudioStop allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-media" "stop"; }
     XF86MonBrightnessUp allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-up"; }
     XF86MonBrightnessDown allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-down"; }
+    // ⌘Tab is the per-application rmac switcher (docs/decisions/0009). Each
+    // press forwards one word to the resident service, whose overlay holds
+    // the keyboard and activates the selection when ⌘ is released.
+    Mod+Tab hotkey-overlay-title="Switch Applications" { spawn "/usr/libexec/rmac/rmac-app-switcher" "next"; }
+    Mod+Shift+Tab hotkey-overlay-title="Switch Applications Backwards" { spawn "/usr/libexec/rmac/rmac-app-switcher" "previous"; }
 }
 
-// niri 26.04 owns the compositor-level MRU UI. Super+Tab follows the macOS
-// recent-window flow; Super+grave restricts the cycle to the current app.
+// Super+grave keeps niri's MRU cycle restricted to the current app's
+// windows, like ⌘` on the Mac. Listing binds here replaces niri's defaults,
+// so its per-window Alt/Super+Tab switcher stays off.
 recent-windows {
     binds {
-        Mod+Tab { next-window; }
         Mod+grave { next-window filter="app-id"; }
+        Mod+Shift+grave { previous-window filter="app-id"; }
+    }
+}
+
+// The ⌘Tab panel: 176 tall with a 56 pt radius, centred on the output.
+layer-rule {
+    match namespace=r#"^rmac-app-switcher$"#
+    geometry-corner-radius 56
+    shadow {
+        on
+        softness 40
+        spread 0
+        offset x=0 y=12
+        color "#00000059"
+    }
+    background-effect {
+        xray false
+        blur true
+        noise 0.02
+        saturation 1.4
     }
 }
 

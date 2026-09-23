@@ -17,8 +17,8 @@ pub(crate) fn release(token: u64, cx: &mut App) {
 }
 
 #[cfg(target_os = "linux")]
-fn overlay_options(bounds: WindowBounds) -> WindowOptions {
-    use gpui::layer_shell::{KeyboardInteractivity, Layer, LayerShellOptions};
+fn overlay_options(bounds: WindowBounds, margin_top: f64) -> WindowOptions {
+    use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
 
     let size = bounds.get_bounds().size;
     WindowOptions {
@@ -32,14 +32,16 @@ fn overlay_options(bounds: WindowBounds) -> WindowOptions {
         kind: WindowKind::LayerShell(LayerShellOptions {
             namespace: "rmac-launcher".into(),
             layer: Layer::Overlay,
+            // Top edge only: centred horizontally, bar top at the planned
+            // margin, results growing downwards without moving the bar.
+            anchor: Anchor::TOP,
+            margin: Some((px(margin_top as f32), px(0.0), px(0.0), px(0.0))),
             keyboard_interactivity: KeyboardInteractivity::Exclusive,
             ..Default::default()
         }),
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
-        // The compact surface matches the visible Spotlight bounds, so its
-        // client-requested blur cannot spill over the desktop.
         // Several separate glass shapes share this surface, and compositor
         // blur covers the whole surface as one square rectangle.
         window_background: WindowBackgroundAppearance::Transparent,
@@ -48,8 +50,10 @@ fn overlay_options(bounds: WindowBounds) -> WindowOptions {
     }
 }
 
+/// Development hosts place the window from `bounds`; only the Linux layer
+/// surface takes a top margin.
 #[cfg(not(target_os = "linux"))]
-fn overlay_options(bounds: WindowBounds) -> WindowOptions {
+fn overlay_options(bounds: WindowBounds, _margin_top: f64) -> WindowOptions {
     WindowOptions {
         window_bounds: Some(bounds),
         titlebar: None,
@@ -68,7 +72,7 @@ fn overlay_options(bounds: WindowBounds) -> WindowOptions {
 
 #[cfg(not(target_os = "linux"))]
 fn fallback_options(cx: &App) -> WindowOptions {
-    overlay_options(WindowBounds::centered(size(px(WIDTH), px(HEIGHT)), cx))
+    overlay_options(WindowBounds::centered(size(px(WIDTH), px(HEIGHT)), cx), 0.0)
 }
 
 fn route_existing(event: &rmac_shortcuts::Event, cx: &mut App) -> bool {
@@ -173,5 +177,9 @@ pub(super) fn route_activation(
                 return;
             }
         };
-    open_launcher(event, overlay_options(WindowBounds::Windowed(bounds)), cx);
+    open_launcher(
+        event,
+        overlay_options(WindowBounds::Windowed(bounds), description.margin_top),
+        cx,
+    );
 }

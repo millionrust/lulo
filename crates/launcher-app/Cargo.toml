@@ -25,3 +25,4 @@ rmac-shell-activation-runtime.workspace = true
 rmac-shell-settings.workspace = true
 rmac-shortcuts.workspace = true
 rmac-ui.workspace = true
+rust-embed.workspace = true

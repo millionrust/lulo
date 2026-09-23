@@ -3,7 +3,7 @@
 use super::*;
 
 impl LauncherView {
-    fn result_icon(row: &Row, size: f32) -> AnyElement {
+    pub(super) fn result_icon(row: &Row, size: f32) -> AnyElement {
         if let Some(icon) = row.icon.clone() {
             return img(icon)
                 .size(px(size))
@@ -67,69 +67,82 @@ impl LauncherView {
             .into_any_element()
     }
 
+    /// One Spotlight result row: icon, name and a tertiary " — kind" suffix
+    /// on one line; the selected row takes the accent fill.
     fn list_row(&self, row: &Row, index: usize, cx: &Context<Self>) -> AnyElement {
         let primary_id = row.id.clone();
         let alternate_id = row.id.clone();
+        let selected = row.selected;
+        let title_color = if selected {
+            mac::on_accent()
+        } else {
+            mac::text()
+        };
+        let detail_color = if selected {
+            mac::on_accent().opacity(0.75)
+        } else {
+            mac::text_tertiary()
+        };
         div()
             .id(SharedString::from(format!("launcher-row-{index}")))
-            .h(px(56.0))
+            .h(px(metrics::ROW_HEIGHT))
             .w_full()
+            .flex_none()
             .flex()
             .items_center()
-            .gap_3()
-            .px_3()
-            .rounded(px(mac::radius_control()))
+            .gap(px(metrics::ROW_GAP))
+            .px(px(metrics::ROW_INSET))
+            .rounded(px(metrics::ROW_RADIUS))
             .cursor_pointer()
-            .when(row.selected, |item| item.bg(mac::accent_subtle()))
-            .when(!row.selected, |item| {
-                item.hover(|hover| hover.bg(mac::hover()))
-            })
-            .child(Self::result_icon(row, 36.0))
+            .text_size(rmac_ui::text_px(metrics::ROW_TEXT))
+            .when(selected, |item| item.bg(mac::accent()))
+            .when(!selected, |item| item.hover(|hover| hover.bg(mac::hover())))
+            .child(Self::result_icon(row, metrics::ROW_ICON))
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
-                    .v_flex()
-                    .gap_0p5()
+                    .flex()
+                    .items_center()
+                    .gap(px(5.0))
+                    .overflow_hidden()
+                    .whitespace_nowrap()
                     .child(
                         div()
+                            .flex_shrink_0()
+                            .max_w(px(metrics::ROW_TITLE_MAX))
+                            .overflow_hidden()
                             .text_ellipsis()
-                            .whitespace_nowrap()
-                            .text_size(rmac_ui::text_px(13.0))
-                            .font_weight(mac::MEDIUM)
-                            .text_color(mac::text())
+                            .text_color(title_color)
                             .child(row.title.clone()),
                     )
                     .when_some(row.subtitle.clone(), |text, subtitle| {
                         text.child(
                             div()
+                                .min_w_0()
+                                .overflow_hidden()
                                 .text_ellipsis()
-                                .whitespace_nowrap()
-                                .text_size(rmac_ui::text_px(11.0))
-                                .text_color(mac::text_secondary())
-                                .child(subtitle),
+                                .text_color(detail_color)
+                                .child(format!("— {subtitle}")),
                         )
                     }),
             )
-            .child(
-                div()
-                    .text_size(rmac_ui::text_px(10.0))
-                    .text_color(mac::text_tertiary())
-                    .child(row.category_label),
-            )
             .when(
-                row.has_alternate && self.browse_mode != Some(BrowseMode::Applications),
+                selected && row.has_alternate && self.browse_mode != Some(BrowseMode::Applications),
                 |item| {
                     item.child(
                         div()
                             .id(SharedString::from(format!("launcher-alternate-{index}")))
-                            .size(px(28.0))
+                            .size(px(22.0))
+                            .flex_none()
                             .flex()
                             .items_center()
                             .justify_center()
-                            .rounded(px(mac::radius_control()))
-                            .bg(mac::control_fill())
-                            .hover(|hover| hover.bg(mac::control_fill_hover()))
+                            .rounded(px(6.0))
+                            .bg(mac::on_accent().opacity(0.18))
+                            .hover(|hover| hover.bg(mac::on_accent().opacity(0.28)))
+                            .text_size(rmac_ui::text_px(11.0))
+                            .text_color(mac::on_accent())
                             .child("•••")
                             .on_click(cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
@@ -189,14 +202,17 @@ impl LauncherView {
                 .into_any_element();
         }
 
-        let mut content = div().v_flex().gap_2();
-        let mut last_category = None;
-        for (index, row) in rows.iter().enumerate() {
-            if last_category != Some(row.category) {
-                content = content.child(section_label(row.category_label));
-                last_category = Some(row.category);
+        let labels = rows
+            .iter()
+            .map(|row| row.category_label)
+            .collect::<Vec<_>>();
+        let mut content = div().v_flex();
+        for (label, range) in completion::query_sections(&labels) {
+            content = content.child(section_label(label));
+            let start = range.start;
+            for (offset, row) in rows[range].iter().enumerate() {
+                content = content.child(self.list_row(row, start + offset, cx));
             }
-            content = content.child(self.list_row(row, index, cx));
         }
         content.into_any_element()
     }
@@ -239,11 +255,16 @@ impl LauncherView {
     }
 }
 
+/// Section header: 11 pt semibold label tertiary, set on the row inset.
 fn section_label(label: impl Into<SharedString>) -> impl IntoElement {
     div()
-        .pt_1()
-        .px_2()
-        .text_size(rmac_ui::text_px(10.0))
+        .h(px(metrics::SECTION_HEIGHT))
+        .flex_none()
+        .flex()
+        .items_end()
+        .pb(px(4.0))
+        .px(px(metrics::ROW_INSET))
+        .text_size(rmac_ui::text_px(11.0))
         .font_weight(mac::SEMIBOLD)
         .text_color(mac::text_tertiary())
         .child(label.into())

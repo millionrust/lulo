@@ -1,15 +1,30 @@
-//! Exact placement and lifecycle for the centered launcher overlay.
+//! Exact placement and lifecycle for the Spotlight launcher overlay.
+//!
+//! Geometry is measured from macOS 26.2 (see `design-lab/spotlight.html`):
+//! the search bar and its quick-action circles form a 640 × 56 pt group,
+//! centred horizontally. Spotlight vertically centres a 576 pt tall window
+//! (bar plus the largest results list) and draws the bar at its top, so the
+//! bar's top edge sits at `(output height − 576) / 2`.
 
 use std::fmt;
 
 pub const NAMESPACE: &str = "rmac-launcher";
-/// The idle Spotlight surface contains the search capsule and four browse
-/// mode controls used by macOS 26.
-pub const LOGICAL_WIDTH: f64 = 644.0;
-pub const LOGICAL_HEIGHT: f64 = 60.0;
-/// Search results expand in place without opening a second surface.
-pub const EXPANDED_LOGICAL_WIDTH: f64 = 720.0;
-pub const EXPANDED_LOGICAL_HEIGHT: f64 = 540.0;
+/// Width of the bar group: the 384 pt capsule plus four 54 pt circles 10 pt
+/// apart. The capsule widens to this width while a query is typed.
+pub const GROUP_WIDTH: f64 = 640.0;
+/// Height of the search capsule and of the quick-action circles' row.
+pub const BAR_HEIGHT: f64 = 56.0;
+/// Height Spotlight reserves for the bar plus its results.
+pub const WINDOW_HEIGHT: f64 = 576.0;
+/// Clear margin around the drawn shapes so their shadows are not clipped by
+/// the transparent layer surface.
+pub const SHADOW_GUTTER: f64 = 16.0;
+/// The idle surface holds only the bar group.
+pub const LOGICAL_WIDTH: f64 = GROUP_WIDTH + 2.0 * SHADOW_GUTTER;
+pub const LOGICAL_HEIGHT: f64 = BAR_HEIGHT + 2.0 * SHADOW_GUTTER;
+/// Search results extend downwards in place; the bar does not move.
+pub const EXPANDED_LOGICAL_WIDTH: f64 = LOGICAL_WIDTH;
+pub const EXPANDED_LOGICAL_HEIGHT: f64 = WINDOW_HEIGHT + 2.0 * SHADOW_GUTTER;
 pub const MAX_SEAT_ID_BYTES: usize = 128;
 const MAX_SCALE: f64 = 8.0;
 
@@ -177,20 +192,33 @@ pub fn plan(
         },
         namespace: NAMESPACE,
         layer: Layer::Overlay,
-        anchor_top: false,
+        // Anchored to the top edge only: centred horizontally, and the bar
+        // stays put while results grow downwards.
+        anchor_top: true,
         anchor_right: false,
         anchor_bottom: false,
         anchor_left: false,
         logical_width: LOGICAL_WIDTH,
         logical_height: LOGICAL_HEIGHT,
         output_scale: logical.scale,
-        margin_top: 0.0,
+        margin_top: top_margin(logical.size.height),
         margin_right: 0.0,
         margin_bottom: 0.0,
         margin_left: 0.0,
         exclusive_zone: 0,
         keyboard_interactivity: KeyboardInteractivity::Exclusive,
     })
+}
+
+/// Layer-surface top margin that puts the bar's top edge where macOS draws
+/// it: `(output height − 576) / 2`, less the shadow gutter, in whole points.
+pub fn top_margin(output_height: f64) -> f64 {
+    if !output_height.is_finite() {
+        return 0.0;
+    }
+    ((output_height - WINDOW_HEIGHT) / 2.0 - SHADOW_GUTTER)
+        .round()
+        .max(0.0)
 }
 
 pub fn plan_invocation(
@@ -663,7 +691,7 @@ impl Session {
 fn valid_description(description: &Description) -> bool {
     description.namespace == NAMESPACE
         && description.layer == Layer::Overlay
-        && !description.anchor_top
+        && description.anchor_top
         && !description.anchor_right
         && !description.anchor_bottom
         && !description.anchor_left
@@ -672,7 +700,8 @@ fn valid_description(description: &Description) -> bool {
         && description.output_scale.is_finite()
         && description.output_scale > 0.0
         && description.output_scale <= MAX_SCALE
-        && description.margin_top == 0.0
+        && description.margin_top.is_finite()
+        && description.margin_top >= 0.0
         && description.margin_right == 0.0
         && description.margin_bottom == 0.0
         && description.margin_left == 0.0
@@ -758,8 +787,11 @@ mod tests {
         let invocation = rmac_shell_invocation::global_shortcut(&snapshot, &seats).unwrap();
         let description = plan_invocation(&invocation, &snapshot).unwrap();
         assert_eq!(description.invocation.output.0, "DP-2");
-        assert!(!description.anchor_top);
+        assert!(description.anchor_top);
         assert!(!description.anchor_right);
+        assert!(!description.anchor_left);
+        // (1080 − 576) / 2 − 16: the bar's top edge lands at 252.
+        assert_eq!(description.margin_top, 236.0);
         assert_eq!(
             description.keyboard_interactivity,
             KeyboardInteractivity::Exclusive
@@ -777,6 +809,21 @@ mod tests {
             plan(&"DP-2".into(), SeatId::new("seat-main").unwrap(), &snapshot),
             Err(PlanError::DoesNotFit)
         );
+    }
+
+    #[test]
+    fn bar_sits_where_macos_draws_it() {
+        assert_eq!(LOGICAL_WIDTH, 672.0);
+        assert_eq!(LOGICAL_HEIGHT, 88.0);
+        assert_eq!(EXPANDED_LOGICAL_HEIGHT, 608.0);
+        // The owner's 956 pt tall Mac display draws the bar top at y = 190.
+        assert_eq!(top_margin(956.0) + SHADOW_GUTTER, 190.0);
+        // The results surface always ends on the output.
+        for height in [608.0, 720.0, 864.0, 1080.0, 1440.0] {
+            assert!(top_margin(height) + EXPANDED_LOGICAL_HEIGHT <= height);
+        }
+        assert_eq!(top_margin(500.0), 0.0);
+        assert_eq!(top_margin(f64::NAN), 0.0);
     }
 
     #[test]
@@ -828,7 +875,7 @@ mod tests {
         );
         assert!(rejected.snapshot.desired.is_some());
         let mut forged = planned("B", "seat-b").unwrap();
-        forged.anchor_top = true;
+        forged.anchor_left = true;
         assert_eq!(
             session.open(&Ok(forged)).snapshot.lifecycle_error,
             Some(LifecycleError::InvalidDescription)

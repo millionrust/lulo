@@ -1,5 +1,6 @@
 //! Launcher query, selection, activation, and system-surface controller.
 
+mod completion;
 mod render;
 mod surface;
 
@@ -9,7 +10,7 @@ use std::sync::Arc;
 use gpui::{px, size, AppContext as _, Context, Entity, Focusable as _, SharedString, Window};
 use rmac_launcher::{ActivationMode, ApplicationGroup, Category, MoveSelection, ResultId};
 use rmac_launcher_runtime::{
-    CatalogUpdate, Coordinator, KeyCommand, KeyEffect, Registry, ShortcutEffect,
+    CatalogUpdate, Coordinator, KeyCommand, KeyEffect, Registry, Row, ShortcutEffect,
 };
 use rmac_launcher_system::{BackendError, FailureKind, Surface, SystemBackend};
 use rmac_ui::{InputEvent, InputState};
@@ -30,6 +31,9 @@ pub(crate) struct LauncherView {
     application_group: Option<ApplicationGroup>,
     application_view: ApplicationView,
     application_options_open: bool,
+    /// Set by a left press on one of the drawn shapes before the press
+    /// bubbles to the transparent surface, which dismisses on its own.
+    press_inside: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -103,10 +107,9 @@ impl LauncherView {
             clipboard,
         } = environment;
         let initial_browse_mode = requested_browse_mode(&event);
-        let query = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder(rmac_launcher_runtime::accessibility::QUERY_NAME)
-        });
+        // The placeholder is drawn by the bar itself in the measured label
+        // colour; the component's placeholder uses a lighter muted colour.
+        let query = cx.new(|cx| InputState::new(window, cx));
         let window_handle = window.window_handle();
         cx.subscribe(&query, move |this, query, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
@@ -174,6 +177,7 @@ impl LauncherView {
             application_group: None,
             application_view: ApplicationView::Grid,
             application_options_open: false,
+            press_inside: false,
         };
         view.ensure_browse_selection();
         Self::spawn_dispatch(view.registry.clone(), opened.request, cx);
@@ -361,6 +365,53 @@ impl LauncherView {
         {
             self.coordinator.select(&row.id);
         }
+    }
+
+    /// Rows the current mode shows, in result order.
+    pub(crate) fn visible_rows(&self) -> Vec<Row> {
+        self.coordinator
+            .snapshot()
+            .rows
+            .iter()
+            .filter(|row| {
+                self.browse_mode
+                    .is_none_or(|mode| row.category == mode.category())
+            })
+            .filter(|row| {
+                self.browse_mode != Some(BrowseMode::Applications)
+                    || self
+                        .application_group
+                        .is_none_or(|group| row.application_group == Some(group))
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Tab accepts the inline completion: the field takes the top hit's
+    /// full name, as on macOS.
+    fn accept_completion(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let value = self.query.read(cx).value().to_string();
+        let Some(title) = self
+            .visible_rows()
+            .into_iter()
+            .next()
+            .map(|row| row.title)
+            .filter(|title| completion::inline_completion(&value, title).is_some())
+        else {
+            return false;
+        };
+        if title == value {
+            return false;
+        }
+        self.query
+            .update(cx, |state, cx| state.set_value(title.clone(), window, cx));
+        // `set_value` does not emit a change event, so the query is
+        // forwarded here.
+        if let Some(request) = self.coordinator.set_query(title) {
+            self.dispatch(request, cx);
+        }
+        cx.notify();
+        true
     }
 
     fn select_and_activate(

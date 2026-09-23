@@ -119,7 +119,7 @@ fn apply_settings_update(update: SettingsUpdate, cx: &mut App) {
 
 pub(crate) fn run() {
     rmac_ui::application()
-        .with_assets(gpui_component_assets::Assets)
+        .with_assets(crate::assets::Assets)
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
 

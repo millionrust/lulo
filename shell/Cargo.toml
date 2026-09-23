@@ -48,5 +48,14 @@ uuid = { version = "1", features = ["v5"] }
 wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
+# Optimised but quick to relink, for trying changes on the reference PC:
+# `cargo build --profile iterate`. Release keeps fat LTO for shipping.
+[profile.iterate]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+strip = false
+
 [patch."https://github.com/zed-industries/zed.git"]
 ztracing = { path = "compat/ztracing" }

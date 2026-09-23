@@ -105,6 +105,10 @@
                 rgb(27,28,35), 32 pt rows; content group 430 wide at x 228,
                 y 20; footer rule at y 403, buttons 24 tall 12 from the
                 bottom-right (Done #3478F6)
+  PC Keyboard   rmac-only group (the Mac has no PC keys), knowledge-based, S:
+                ordinary switch/pop-up rows in Keyboard's grammar; Caps Lock
+                choices copy the Mac's Modifier Keys sheet minus Globe.
+                docs/decisions/0017-mac-keyboard.md
   Omitted here and in rmac because rmac has no backend for them: every
   Mac-only row (Firewall, Notification Centre previews, Alert Style, Focus
   sharing and status, display sleep and login-window options, Dictation,
@@ -409,6 +413,11 @@ Object.assign(PANES,{
   'Keyboard':['Keyboard',
     g(`<div class="r" style="gap:30px;align-items:flex-start;min-height:75px"><div style="flex:1"><b style="font-weight:400">Key repeat rate</b>${steps(5,3,'Slow','Fast')}</div><div style="flex:1"><b style="font-weight:400">Delay until repeat</b>${steps(5,3,'Long','Short')}</div></div>`),
     g(sw('Use Num Lock on startup',false),btnrow('Keyboard Shortcuts…')),
+    h('PC Keyboard'),
+    g(sw('Use Mac shortcuts in all apps',false,'⌘C, ⌘V and the other ⌘ shortcuts work in apps made for PC keyboards. Terminals keep ⌃C for interrupting.'),
+      sw('⌘ Command next to the space bar',true,'Alt works as ⌘ Command and the Windows key as ⌥ Option'),
+      pop('Caps Lock key','⇪ Caps Lock'),
+      sw('⌥ Option types special characters',false,'Uses the Mac version of your layout: ⌥E then E types é')),
     h('Text Input'),
     g(valbtn('Input Sources','us · intl','Edit…')),
     btns('Refresh')],

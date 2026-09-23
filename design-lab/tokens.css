@@ -104,27 +104,65 @@
   --nc-w:              356px;
   --card-radius:       18px;
 
-  /* ---------- windows ---------- */
-  --win-radius:        16px;     /* macOS 27 standardised this */
-  --toolbar-h:         52px;
-  --titlebar-h:        28px;
-  --traffic:           12px;
-  --traffic-gap:       8px;
-  --traffic-lead:      20px;
-  --win-shadow:        0 12px 32px rgba(0,0,0,.45), 0 0 0 .5px rgba(255,255,255,.06);
-  --win-shadow-off:    0 4px 12px rgba(0,0,0,.30);
-  --sidebar-w:         180px;
+  /* ---------- windows (M 2026-09-23, design-lab/chrome.html) ---------
+     AX frames of the close/minimise/zoom buttons on TextEdit, Terminal,
+     Finder, Calculator and System Settings: 16 × 16 hit boxes, 23 apart,
+     the first centred (16, 16) on title-bar windows and (26, 26) on
+     toolbar windows. Corners fitted on 2× captures. */
+  --win-radius:           27px;   /* M toolbar window (Finder, Calculator, Settings) */
+  --win-radius-titlebar:  16px;   /* M title-bar-only window (TextEdit, Terminal) */
+  --toolbar-h:            52px;   /* M AX toolbar frame */
+  --titlebar-h:           32px;   /* M lights centred 16 from the top */
+  --traffic:              14px;   /* M visible circle */
+  --traffic-hit:          16px;   /* M AX button frame */
+  --traffic-pitch:        23px;   /* M centre to centre */
+  --traffic-gap:          7px;    /* pitch − hit box */
+  --traffic-center-toolbar:  26px;  /* M first centre from the left and top */
+  --traffic-center-titlebar: 16px;
+  --title-toolbar:        15px;   /* M bold, label colour */
+  --title-titlebar:       13px;   /* M bold, left after the lights */
+  --title-gap:            13px;   /* M lights' hit boxes to the title */
+  --toolbar-group-h:      36px;   /* M Finder capsules, Settings back/forward */
+  --win-shadow:        0 16px 42px rgba(0,0,0,.74), 0 0 0 .5px rgba(255,255,255,.06);
+  --win-shadow-off:    0 8px 26px rgba(0,0,0,.46);
+  --sidebar-w:         220px;
   --settings-sidebar:  248px;
 
-  /* ---------- controls ---------- */
+  /* ---------- tiling popover (M: green-button hover, TextEdit) --------- */
+  --tile-w:            229px;
+  --tile-h:            193px;
+  --tile-radius:       13px;
+  --tile-icon-w:       25px;
+  --tile-icon-h:       20px;
+  --tile-pitch:        51.5px;
+
+  /* ---------- alert (M: NSAlert, dark) --------------------------------- */
+  --alert-w:           260px;
+  --alert-radius:      27px;
+  --alert-pad:         16px;    /* buttons to the edges */
+  --alert-icon:        64px;
+  --alert-btn-h:       28px;
+  --alert-btn-gap:     8px;
+
+  /* ---------- controls (M: TextEdit Settings, System Settings) --------- */
   --ctl-h:             24px;
-  --ctl-radius:        8px;
-  --switch-w:          38px;
-  --switch-h:          22px;
-  --switch-thumb:      20px;
-  --slider-track:      4px;
-  --slider-knob:       20px;
-  --row-h:             36px;      /* settings grouped row */
+  --ctl-radius:        6px;
+  --switch-w:          36px;
+  --switch-h:          16px;
+  --switch-thumb:      13px;    /* capsule thumb height */
+  --switch-thumb-w:    21px;
+  --slider-track:      6px;
+  --slider-knob:       16px;    /* capsule knob height */
+  --slider-knob-w:     20px;
+  --checkbox:          14px;
+  --checkbox-radius:   4px;
+  --radio:             14px;
+  --radio-dot:         6px;
+  --popup-chevron:     20px;    /* Settings pop-up: circle with ⌃⌄ */
+  --seg-h:             24px;
+  --seg-radius:        6px;
+  --focus-ring:        3px;
+  --row-h:             38px;      /* settings grouped row */
   --list-row:          24px;      /* file list row */
   --card:              12px;      /* grouped box radius */
 

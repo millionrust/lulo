@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><title>Window chrome and controls — exact</title>
+<!--
+  Window chrome and standard controls at 1:1 logical points, macOS 26.2 dark.
+  Ported to crates/rmac-design (geometry.rs, color.rs), crates/rmac-ui
+  (chrome.rs, controls.rs, components.rs) and packaging/rmac-session/shell.kdl.
+
+  Measured 2026-09-23 on the owner's Mac (AX frames read through System
+  Events; pixels from 2× screencapture, divided by 2):
+
+  Traffic lights (TextEdit, Terminal, Finder, Calculator, System Settings)
+    AX button frames   16 × 16, x = 8 / 31 / 54 from the window's left on
+                       title-bar windows (TextEdit 154/177/200 in a window at
+                       146; Terminal 412/435/458 at 404) and 18 / 41 / 64 on
+                       toolbar windows (Finder 28/51/74 at 10; Calculator
+                       1210/1233/1256 at 1192; Settings 718/741/764 at 700).
+                       y = 8 (title bar) / 18 (toolbar) from the top.
+                       → circle 14, pitch 23, first centre (16,16) / (26,26).
+    colours (dark)     close #EC6765 ring #DE2F2C · minimise #F2CA44 ring
+                       #E5B102 · zoom #65C466 ring #2CA92F · inactive #454551
+                       ring #4F4F5C (all three, and the disabled zoom button).
+    hover              hovering the *group* reveals ×, − and the full-screen
+                       arrows on all three at once, glyphs black 50 %. An
+                       inactive window's lights regain their colours on hover.
+                       × arms ±3.5, − 8 wide, arrows are two right triangles
+                       with 4.75 legs at the outer corners (±3.25).
+  Window corners      circle fit on 2× edges: Calculator 54 px, Settings /
+                       Finder alike → 27; TextEdit 32–34 px → 16.
+  Title bar           32 tall (lights centred at 16). Title left-aligned 13
+                       after the last hit box (TextEdit x+82): 13 bold
+                       ("Untitled" ink 50 pt = SF 13 bold 52.0), colour
+                       #9F9EAB active, #64636F inactive on #22222E chrome.
+  Toolbar window      toolbar 52 (AX). Title 15 bold #E9E9EA ("jake" ink
+                       28.5 pt). Glass capsules 36 tall, 8 from the top, fill
+                       #272838 on #20212D with a lighter top rim #444669.
+  Window shadow       profile below TextEdit's bottom edge on a flat
+                       #20212E backdrop: active darkens 0.56 at the edge,
+                       0.31 at 20 pt, 0.10 at 40 pt → Gaussian fit 0 16 42 α .74;
+                       inactive 0.32 / 0.20 at 10 / 0.08 at 20 → 0 8 26 α .46.
+  Green-button menu   popover 229 × 193, radius ≈13, 1 px black outer + light
+                       rim #69696B, fill #1D1D1F, 10 pt arrow at the button.
+                       Header "Move & Resize" 13 semibold #777777 inset 17;
+                       icons 25 × 20 on a 51.5 pitch, rows centred at 51.5
+                       and 130.5; separators at 78.5 and 157.5; "Full Screen ›"
+                       row centred at 176, 13 regular #DCDCDC.
+  Alert (NSAlert)     260 wide (521 px), radius ≈27, fill #1F1F25, 1 px
+                       black + #69696B rim. Icon 64 at (20, 20). Title 13 bold
+                       #DDDDDE, body 13 regular, both at x 22, text column
+                       171–196 wide (wraps "…what | will") → 180. Buttons 28 tall
+                       pills, 110 wide, 8 apart, 16 from the sides and bottom;
+                       Cancel #2D2D2E, default #3478F6, labels 13 regular.
+  Controls            (TextEdit Settings = AppKit regular; System Settings form)
+    push button        24 tall, radius 6, fill white ≈6 % over the surface
+                       (#2D2E39 on #22232E), label 13 regular #E1E1E3.
+    default button     accent fill #3478F6 / #397CF7.
+    pop-up (form)      value text then a 20 pt circle #383843 holding ⌃⌄.
+    switch             AX 36 × 16; track 36 × 16 fully round; thumb a 21 × 13
+                       capsule inset 1.5; on #397BF5 thumb #E1EBFE; off
+                       #3D3D46 thumb #E2E2E4.
+    slider             track 6 thick, fill accent, rest #3D3D47; knob a
+                       20 × 16 capsule #DFDFE1.
+    checkbox           14 (AppKit) / 16 (Settings form), radius 4, on accent
+                       with a white tick, off #3E3F49.
+    radio              14, dot 5–6 white, off #3E3F48.
+    segmented          24 tall, radius 6, track #32333E, selected accent.
+    text field         24 tall, radius 6, 1 px #32333E border, fill = window;
+                       focus ring 3 wide (2 outside, 1 inside), composited
+                       #3C6794 on #22232E.
+    form rows          38 pitch (separators at 414.5 / 491.5 / 567.5 px).
+-->
+<link rel="stylesheet" href="lab.css">
+<style>
+  body{background:#0d0d10}
+  .stage{position:relative;background:#20212E;overflow:hidden}
+  .w{position:absolute;background:#1E1E1E;display:flex;flex-direction:column;
+     box-shadow:0 16px 42px rgba(0,0,0,.74);outline:1px solid rgba(0,0,0,.85);
+     border-radius:var(--win-radius-titlebar);overflow:hidden}
+  .w::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;
+     box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+  .w.toolbarwin{border-radius:var(--win-radius)}
+  .w.off{box-shadow:0 8px 26px rgba(0,0,0,.46)}
+  .tb{height:var(--titlebar-h);flex:none;background:#22222E;display:flex;align-items:center;position:relative}
+  .tb .title{position:absolute;left:calc(var(--traffic-center-titlebar) - var(--traffic-hit)/2 + 3*var(--traffic-hit) + 2*var(--traffic-gap) + var(--title-gap));
+     font:700 var(--title-titlebar)/16px var(--font);color:#9F9EAB}
+  .w.off .tb .title{color:#64636F}
+  .tl{position:absolute;display:flex;gap:var(--traffic-gap)}
+  .tb .tl{left:calc(var(--traffic-center-titlebar) - var(--traffic-hit)/2);top:calc(var(--traffic-center-titlebar) - var(--traffic-hit)/2)}
+  .tbar .tl{left:calc(var(--traffic-center-toolbar) - var(--traffic-hit)/2);top:calc(var(--traffic-center-toolbar) - var(--traffic-hit)/2)}
+  .tl span{width:var(--traffic-hit);height:var(--traffic-hit);display:flex;align-items:center;justify-content:center}
+  .tl svg{width:var(--traffic);height:var(--traffic);display:block}
+  .tl .g{opacity:0}
+  .tl:hover .g,.tl.hover .g{opacity:1}
+  .tl .c circle{fill:#EC6765;stroke:#DE2F2C}
+  .tl .m circle{fill:#F2CA44;stroke:#E5B102}
+  .tl .z circle{fill:#65C466;stroke:#2CA92F}
+  .tl.gray:not(:hover):not(.hover) circle,.tl .z.disabled circle{fill:#454551;stroke:#4F4F5C}
+  .tl .z.disabled .g{opacity:0!important}
+  .tl circle{stroke-width:.5}
+  .tl .g{stroke:rgba(0,0,0,.5);fill:rgba(0,0,0,.5)}
+  .tbar{height:var(--toolbar-h);flex:none;display:flex;align-items:center;position:relative;background:#20212D}
+  .tbar .title{font:700 var(--title-toolbar)/20px var(--font);color:#E9E9EA}
+  .cap{height:var(--toolbar-group-h);border-radius:calc(var(--toolbar-group-h)/2);background:#272838;
+     box-shadow:inset 0 1px 0 #444669;display:flex;align-items:center;padding:0 6px;gap:4px;color:#D8D8DE}
+  .cap b{width:28px;height:28px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:400}
+  .cap b.on{background:rgba(255,255,255,.12)}
+  .circ{width:var(--toolbar-group-h);height:var(--toolbar-group-h);border-radius:50%;background:#1C1C25;
+     box-shadow:inset 0 1px 0 #36384C;display:flex;align-items:center;justify-content:center;color:#D8D8DE}
+  .body{flex:1;background:#1E1E1E}
+  /* tiling popover */
+  .tile{position:absolute;width:var(--tile-w);height:var(--tile-h);border-radius:var(--tile-radius);
+     background:#1D1D1F;outline:1px solid #000;box-shadow:inset 0 0 0 1px #4A4A4C,0 10px 30px rgba(0,0,0,.45);
+     font:13px/16px var(--font);color:#DCDCDC}
+  .tile .arrow{position:absolute;top:-10px;left:18px;width:20px;height:10px}
+  .tile .h{position:absolute;left:17px;font-weight:600;color:#777}
+  .tile .row{position:absolute;left:0;right:0;display:flex;justify-content:space-between;padding:0 23px 0 22.5px}
+  .tile .row svg{width:var(--tile-icon-w);height:var(--tile-icon-h)}
+  .tile .sep{position:absolute;left:14px;right:14px;height:1px;background:#3D3D3E}
+  .tile .fs{position:absolute;left:17px;right:17px;display:flex;align-items:center;gap:8px}
+  .tile .dim{opacity:.35}
+  /* alert */
+  .alert{position:absolute;width:var(--alert-w);border-radius:var(--alert-radius);background:#1F1F25;
+     outline:1px solid #000;box-shadow:inset 0 0 0 1px #69696B,0 16px 42px rgba(0,0,0,.74);
+     padding:20px var(--alert-pad) var(--alert-pad);font:13px/16px var(--font);color:#DDDDDE}
+  .alert .icon{width:var(--alert-icon);height:var(--alert-icon);margin-left:4px;border-radius:14px;
+     background:linear-gradient(#73C2F2,#5FA9E0)}
+  .alert h3{margin:16px 6px 0;max-width:180px;font:700 13px/16px var(--font)}
+  .alert p{margin:9px 6px 0;max-width:180px;font:400 13px/16px var(--font)}
+  .alert .btns{display:flex;gap:var(--alert-btn-gap);margin-top:16px}
+  .alert .btns span{flex:1;height:var(--alert-btn-h);border-radius:calc(var(--alert-btn-h)/2);background:#2D2D2E;
+     display:flex;align-items:center;justify-content:center;color:#DFDFDF}
+  .alert .btns span.def{background:#3478F6;color:#fff}
+  /* controls gallery */
+  .gal{display:grid;grid-template-columns:160px 1fr;gap:14px 20px;align-items:center;padding:24px;
+     background:#22232E;font:13px var(--font);color:#E1E1E3;width:760px}
+  .gal > *{justify-self:start}
+  .gal .k{color:#8b8b93;font-size:12px}
+  .pb{height:var(--ctl-h);padding:0 12px;border-radius:var(--ctl-radius);background:rgba(255,255,255,.065);
+     display:inline-flex;align-items:center;margin-right:8px}
+  .pb.def{background:#3478F6;color:#fff}
+  .pop{display:inline-flex;align-items:center;gap:8px}
+  .pop i{width:var(--popup-chevron);height:var(--popup-chevron);border-radius:50%;background:#383843;
+     display:flex;align-items:center;justify-content:center;font-style:normal;font-size:9px;line-height:7px;flex-direction:column}
+  .cb{width:var(--checkbox);height:var(--checkbox);border-radius:var(--checkbox-radius);background:#3E3F49;
+     display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;margin-right:6px}
+  .cb.on{background:var(--accent-m)}
+  .rd{width:var(--radio);height:var(--radio);border-radius:50%;background:#3E3F48;display:inline-flex;
+     align-items:center;justify-content:center;vertical-align:middle;margin-right:6px}
+  .rd.on{background:var(--accent-m)}
+  .rd.on::after{content:"";width:var(--radio-dot);height:var(--radio-dot);border-radius:50%;background:#fff}
+  .sg{display:inline-flex;height:var(--seg-h);border-radius:var(--seg-radius);background:#32333E}
+  .sg b{padding:0 13px;border-radius:var(--seg-radius);display:flex;align-items:center;font-weight:400}
+  .sg b.on{background:var(--accent-m);color:#fff}
+  .tf{width:120px;height:var(--ctl-h);border-radius:var(--ctl-radius);border:1px solid #32333E;
+     background:#22232E;display:inline-flex;align-items:center;padding:0 7px;margin-right:16px}
+  .tf.focus{box-shadow:0 0 0 2px #3C6794,inset 0 0 0 0 #3C6794;border-color:#3C6794}
+  .form{border-radius:var(--card);background:#282833;width:420px}
+  .form .r{height:var(--row-h);display:flex;align-items:center;padding:0 10px;margin:0 0;position:relative}
+  .form .r + .r::before{content:"";position:absolute;top:0;left:10px;right:10px;height:1px;background:#32323D}
+  .form .r .sp{margin-left:auto}
+  :root{--accent-m:#397CF7}  /* M: switch, checkbox, segmented, radio on dark */
+  .gal .switch.on,.gal .slider-h .fill{background:var(--accent-m)}
+  h2{font:600 14px var(--font);color:#e8e8ea;margin:24px 24px 8px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <g id="g-close"><path d="M3.5 3.5L10.5 10.5M10.5 3.5L3.5 10.5" stroke-width="1.5" stroke-linecap="round" fill="none"/></g>
+    <g id="g-min"><path d="M3 7H11" stroke-width="1.75" stroke-linecap="round" fill="none"/></g>
+    <g id="g-full"><path d="M3.75 3.75H8.5L3.75 8.5ZM10.25 10.25H5.5L10.25 5.5Z" stroke="none"/></g>
+    <g id="g-plus"><path d="M7 3.5V10.5M3.5 7H10.5" stroke-width="1.5" stroke-linecap="round" fill="none"/></g>
+  </defs>
+</svg>
+
+<h2>1 · Title-bar window (TextEdit) — active, same 706 × 620 region as the Mac capture</h2>
+<div class="stage" id="te" style="width:706px;height:620px">
+  <div class="w" style="left:60px;top:50px;width:586px;height:488px">
+    <div class="tb">
+      <div class="tl">
+        <span class="c"><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75"/><use class="g" href="#g-close"/></svg></span>
+        <span class="m"><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75"/><use class="g" href="#g-min"/></svg></span>
+        <span class="z"><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75"/><use class="g" href="#g-full"/></svg></span>
+      </div>
+      <span class="title">Untitled</span>
+    </div>
+    <div class="body" style="background:#22222E;flex:none;height:118px"></div>
+    <div class="body"></div>
+  </div>
+</div>
+
+<h2>2 · Same window inactive</h2>
+<div class="stage" style="width:706px;height:620px">
+  <div class="w off" style="left:60px;top:50px;width:586px;height:488px">
+    <div class="tb">
+      <div class="tl gray">
+        <span class="c"><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75"/><use class="g" href="#g-close"/></svg></span>
+        <span class="m"><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75"/><use class="g" href="#g-min"/></svg></span>
+        <span class="z"><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75"/><use class="g" href="#g-full"/></svg></span>
+      </div>
+      <span class="title">Untitled</span>
+    </div>
+    <div class="body" style="background:#22222E;flex:none;height:118px"></div>
+    <div class="body"></div>
+  </div>
+</div>
+
+<h2>3 · Hover on the group (120 × 50 region, like te-hover-close) and the green-button menu</h2>
+<div class="stage" id="hover" style="width:360px;height:330px">
+  <div class="w" style="left:6px;top:6px;width:586px;height:488px">
+    <div class="tb">
+      <div class="tl hover">
+        <span class="c"><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75"/><use class="g" href="#g-close"/></svg></span>
+        <span class="m"><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75"/><use class="g" href="#g-min"/></svg></span>
+        <span class="z"><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75"/><use class="g" href="#g-full"/></svg></span>
+      </div>
+      <span class="title">Untitled</span>
+    </div>
+    <div class="body"></div>
+  </div>
+  <!-- popover: left edge 40.5, top 41.5 in this region; arrow tip under the zoom centre (68,22) -->
+  <div class="tile" style="left:40.5px;top:41.5px">
+    <svg class="arrow" viewBox="0 0 20 10"><path d="M0 10L9 1Q10 0 11 1L20 10" fill="#1D1D1F" stroke="#4A4A4C"/></svg>
+    <span class="h" style="top:12px">Move &amp; Resize</span>
+    <div class="row" style="top:41.5px">
+      <svg viewBox="0 0 25 20"><rect x=".75" y=".75" width="23.5" height="18.5" rx="4" fill="none" stroke="#DCDCDC" stroke-width="1.5"/><rect x="3" y="3" width="8.5" height="14" rx="1.5" fill="#DCDCDC"/></svg>
+      <svg viewBox="0 0 25 20"><rect x=".75" y=".75" width="23.5" height="18.5" rx="4" fill="none" stroke="#DCDCDC" stroke-width="1.5"/><rect x="13.5" y="3" width="8.5" height="14" rx="1.5" fill="#DCDCDC"/></svg>
+      <svg viewBox="0 0 25 20"><rect x=".75" y=".75" width="23.5" height="18.5" rx="4" fill="none" stroke="#DCDCDC" stroke-width="1.5"/><rect x="3" y="3" width="19" height="6" rx="1.5" fill="#DCDCDC"/></svg>
+      <svg viewBox="0 0 25 20"><rect x=".75" y=".75" width="23.5" height="18.5" rx="4" fill="none" stroke="#DCDCDC" stroke-width="1.5"/><rect x="3" y="11" width="19" height="6" rx="1.5" fill="#DCDCDC"/></svg>
+    </div>
+    <div class="sep" style="top:78.5px"></div>
+    <span class="h" style="top:91px">Fill &amp; Arrange</span>
+    <!-- rmac draws only Fill: the multi-window arrangements need an arranger rmac does not have yet -->
+    <div class="row" style="top:120.5px;justify-content:flex-start">
+      <svg viewBox="0 0 25 20"><rect x=".75" y=".75" width="23.5" height="18.5" rx="4" fill="none" stroke="#DCDCDC" stroke-width="1.5"/><rect x="3" y="3" width="19" height="14" rx="1.5" fill="#DCDCDC"/></svg>
+    </div>
+    <div class="sep" style="top:157.5px"></div>
+    <div class="fs" style="top:168px">
+      <svg width="16" height="12" viewBox="0 0 16 12"><rect x=".75" y=".75" width="14.5" height="10.5" rx="2.5" fill="none" stroke="#DCDCDC" stroke-width="1.5"/><path d="M6 1V11" stroke="#DCDCDC" stroke-width="1.5"/></svg>
+      <span>Full Screen</span>
+    </div>
+  </div>
+</div>
+
+<h2>4 · Toolbar window (Finder-like): radius 27, toolbar 52, lights at (26, 26), 36 pt capsules</h2>
+<div class="stage" id="finder" style="width:1000px;height:170px">
+  <div class="w toolbarwin" style="left:10px;top:10px;width:947px;height:240px">
+    <div class="tbar">
+      <div class="tl">
+        <span class="c"><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75"/><use class="g" href="#g-close"/></svg></span>
+        <span class="m"><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75"/><use class="g" href="#g-min"/></svg></span>
+        <span class="z"><svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.75"/><use class="g" href="#g-full"/></svg></span>
+      </div>
+      <span class="cap" style="position:absolute;left:164px;top:8px;width:73px"><b>‹</b><b>›</b></span>
+      <span class="title" style="position:absolute;left:249px;top:16px">jake</span>
+      <span class="cap" style="position:absolute;left:543px;top:8px"><b>▦</b><b>☰</b><b class="on">▥</b><b>▭</b></span>
+      <span class="circ" style="position:absolute;left:903px;top:8px">⌕</span>
+    </div>
+    <div class="body" style="background:#1F202C"></div>
+  </div>
+</div>
+
+<h2>5 · Alert (260 wide)</h2>
+<div class="stage" id="alert" style="width:300px;height:260px">
+  <div class="alert" style="left:20px;top:20px">
+    <div class="icon"></div>
+    <h3>Title of the alert</h3>
+    <p>Body text that explains what will happen.</p>
+    <div class="btns"><span>Cancel</span><span class="def">OK</span></div>
+  </div>
+</div>
+
+<h2>6 · Controls (dark, on a #22232E surface)</h2>
+<div class="gal" id="controls">
+  <span class="k">push buttons 24 / r6</span>
+  <span><span class="pb">Change…</span><span class="pb">Restore All Defaults</span><span class="pb def">OK</span></span>
+  <span class="k">pop-up (form)</span>
+  <span class="pop">Bottom <i>⌃<br>⌄</i></span>
+  <span class="k">switch 36 × 16</span>
+  <span><span class="switch on"><i></i></span>&nbsp;&nbsp;&nbsp;<span class="switch"><i></i></span></span>
+  <span class="k">slider track 6, knob 20 × 16</span>
+  <span class="slider-h" style="width:196px"><span class="fill" style="width:44%"></span><i style="left:44%"></i></span>
+  <span class="k">checkbox 14 / radio 14</span>
+  <span><span class="cb on"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1.8 5.2L4 7.4L8.2 2.4" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>On
+     &nbsp;&nbsp;<span class="cb"></span>Off &nbsp;&nbsp;&nbsp;<span class="rd on"></span>Rich text &nbsp;&nbsp;<span class="rd"></span>Plain text</span>
+  <span class="k">segmented 24 / r6</span>
+  <span class="sg"><b class="on">New Document</b><b>Open and Save</b></span>
+  <span class="k">text field 24 / r6, focus ring 3</span>
+  <span><span class="tf focus">96</span><span class="tf">30</span></span>
+  <span class="k">form rows 38</span>
+  <div class="form">
+    <div class="r">Dock position on screen<span class="sp pop">Bottom <i>⌃<br>⌄</i></span></div>
+    <div class="r">Minimise windows into application icon<span class="sp"><span class="switch"><i></i></span></span></div>
+    <div class="r">Animate opening applications<span class="sp"><span class="switch on"><i></i></span></span></div>
+  </div>
+</div>
+</body>
+</html>

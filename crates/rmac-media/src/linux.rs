@@ -13,9 +13,12 @@ const LAST_ACTIVE_FILE: &str = "media-last-player";
 
 pub(crate) fn players() -> Result<Vec<Player>, Error> {
     let connection = session()?;
+    let unavailable =
+        |error: &dyn std::fmt::Display| Error::new(ErrorKind::Unavailable, error.to_string());
     let names = DBusProxy::new(&connection)
-        .and_then(|proxy| proxy.list_names())
-        .map_err(|error| Error::new(ErrorKind::Unavailable, error.to_string()))?;
+        .map_err(|error| unavailable(&error))?
+        .list_names()
+        .map_err(|error| unavailable(&error))?;
     let mut players = names
         .iter()
         .map(|name| name.as_str())

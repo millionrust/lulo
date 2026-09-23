@@ -18,7 +18,6 @@ crates/notes/src/main.rs:1
 crates/notes/src/presentation.rs:1
 crates/notification-center-app/src/daemon/main.rs:1
 crates/notification-center-app/src/daemon/surface.rs:2
-crates/notification-center-app/src/main.rs:1
 crates/notification-center-app/src/render.rs:1
 crates/notification-center-app/src/render/history.rs:1
 crates/platform-lab/src/lab.rs:8

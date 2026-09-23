@@ -60,7 +60,7 @@ impl Settings {
         let Some(snapshot) = &self.time else {
             return self.pane(vec![
                 card(vec![row_base()
-                    .child(tile("icons/clock.svg", secondary(), 22.0))
+                    .child(tile("icons/clock.svg", secondary(), style::ROW_ICON))
                     .child(text_block(
                         "System date and time".into(),
                         Some("systemd-timedated".into()),
@@ -79,7 +79,7 @@ impl Settings {
             let save_view = view.clone();
             let cancel_view = view.clone();
             row_base()
-                .child(tile("icons/globe.svg", accent(), 22.0))
+                .child(tile("icons/globe.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Time zone".into(),
                     Some("Enter an exact system zone such as Asia/Kolkata".into()),
@@ -106,7 +106,7 @@ impl Settings {
         } else {
             let edit_view = view.clone();
             row_base()
-                .child(tile("icons/globe.svg", accent(), 22.0))
+                .child(tile("icons/globe.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Time zone".into(),
                     Some("Validated against zones installed on this system".into()),
@@ -137,7 +137,7 @@ impl Settings {
             let review_view = view.clone();
             let cancel_view = view.clone();
             row_base()
-                .child(tile("icons/clock.svg", accent(), 22.0))
+                .child(tile("icons/clock.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Set date and time".into(),
                     Some("Use YYYY-MM-DD HH:MM:SS ±HH:MM".into()),
@@ -163,7 +163,7 @@ impl Settings {
         } else {
             let edit_view = view.clone();
             row_base()
-                .child(tile("icons/clock.svg", accent(), 22.0))
+                .child(tile("icons/clock.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Set date and time".into(),
                     Some(
@@ -229,7 +229,7 @@ impl Settings {
                     synchronization.into(),
                 ),
                 row_base()
-                    .child(tile("icons/refresh-cw.svg", accent(), 22.0))
+                    .child(tile("icons/refresh-cw.svg", accent(), style::ROW_ICON))
                     .child(text_block(
                         "Set time automatically".into(),
                         Some(if snapshot.can_ntp {
@@ -256,7 +256,7 @@ impl Settings {
                     .into(),
                 ),
                 row_base()
-                    .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+                    .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
                     .child(text_block(
                         "Authoritative state".into(),
                         Some("Live timedated changes · refresh on demand".into()),

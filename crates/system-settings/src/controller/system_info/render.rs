@@ -32,9 +32,24 @@ impl Settings {
                     SubPage::Storage,
                 ),
             ]),
-            note_card(
-                "Device continuity and media-receiver controls are hidden until rmac has reviewed Linux service authorities for them.",
-            ),
+            // macOS 26 files these panes under General rather than in the
+            // sidebar; each row opens the pane itself.
+            card(vec![
+                pane_nav_row(view.clone(), "icons/clock.svg", accent(), "Date & Time"),
+                pane_nav_row(
+                    view.clone(),
+                    "icons/languages.svg",
+                    accent(),
+                    "Language & Region",
+                ),
+                pane_nav_row(
+                    view.clone(),
+                    "icons/app-window.svg",
+                    hsl(0x8e8e93),
+                    "Login Items",
+                ),
+                pane_nav_row(view, "icons/globe.svg", hsl(0x8e8e93), "Sharing"),
+            ]),
         ];
         self.pane(cards)
     }
@@ -45,7 +60,7 @@ impl Settings {
             let save_view = view.clone();
             let cancel_view = view.clone();
             row_base()
-                .child(tile("icons/info.svg", secondary(), 22.0))
+                .child(tile("icons/info.svg", secondary(), style::ROW_ICON))
                 .child(text_block(
                     "Hostname".into(),
                     Some("Letters, numbers, and hyphens · 63 bytes maximum".into()),
@@ -72,7 +87,7 @@ impl Settings {
         } else {
             let edit_view = view.clone();
             row_base()
-                .child(tile("icons/info.svg", secondary(), 22.0))
+                .child(tile("icons/info.svg", secondary(), style::ROW_ICON))
                 .child(text_block(
                     "Hostname".into(),
                     si.hostname_unavailable_reason.clone().map(Into::into),
@@ -174,7 +189,7 @@ impl Settings {
         let diagnostics_view = view.clone();
         let diagnostics = card(vec![
             row_base()
-                .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+                .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
                 .child(text_block(
                     "System information".into(),
                     Some("Refresh facts changed outside rmac".into()),
@@ -190,7 +205,7 @@ impl Settings {
                 )
                 .into_any_element(),
             row_base()
-                .child(tile("icons/info.svg", accent(), 22.0))
+                .child(tile("icons/info.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "System report".into(),
                     Some(

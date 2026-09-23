@@ -15,7 +15,7 @@ impl Settings {
         let Some(snapshot) = &self.sharing else {
             return self.pane(vec![
                 card(vec![row_base()
-                    .child(tile("icons/globe.svg", secondary(), 22.0))
+                    .child(tile("icons/globe.svg", secondary(), style::ROW_ICON))
                     .child(text_block(
                         "Host sharing services".into(),
                         Some("systemd and firewall authority".into()),
@@ -46,7 +46,7 @@ impl Settings {
             section_header("Remote Login"),
             card(vec![
                 row_base()
-                    .child(tile("icons/key.svg", accent(), 22.0))
+                    .child(tile("icons/key.svg", accent(), style::ROW_ICON))
                     .child(text_block(
                         "Remote Login (SSH)".into(),
                         Some(if remote.available {
@@ -77,7 +77,7 @@ impl Settings {
                     remote.firewall.label("SSH").into(),
                 ),
                 row_base()
-                    .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+                    .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
                     .child(text_block(
                         "Authoritative state".into(),
                         Some("Live ssh.service · systemd · UFW files".into()),
@@ -96,7 +96,11 @@ impl Settings {
                 "Turn off Remote Login? Existing SSH sessions may be disconnected, and remote access can be lost. This stops and disables the system SSH service after administrator authorization."
             }));
             cards.push(card(vec![row_base()
-                .child(tile("icons/info.svg", rmac_ui::mac::warning_text(), 22.0))
+                .child(tile(
+                    "icons/info.svg",
+                    rmac_ui::mac::warning_text(),
+                    style::ROW_ICON,
+                ))
                 .child(text_block(
                     if enabled {
                         "Confirm enabling Remote Login"
@@ -152,7 +156,7 @@ impl Settings {
             });
         cards.push(card(vec![
             row_base()
-                .child(tile("icons/hard-drive.svg", accent(), 22.0))
+                .child(tile("icons/hard-drive.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "SMB File Sharing".into(),
                     Some(if file.available {
@@ -217,7 +221,11 @@ impl Settings {
                 "Turn off File Sharing? Connected SMB clients may lose access immediately. This stops and disables Samba after administrator authorization without deleting share definitions."
             }));
             cards.push(card(vec![row_base()
-                .child(tile("icons/info.svg", rmac_ui::mac::warning_text(), 22.0))
+                .child(tile(
+                    "icons/info.svg",
+                    rmac_ui::mac::warning_text(),
+                    style::ROW_ICON,
+                ))
                 .child(text_block(
                     if enabled {
                         "Confirm enabling File Sharing"

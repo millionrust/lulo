@@ -24,20 +24,24 @@ pub(super) use sound::*;
 pub(super) use storage::*;
 // ---- row / control builders ----------------------------------------------
 
+/// A grouped-form row: 37 tall with 10 of padding, so rows plus their 1 pt
+/// separators fall on the Mac's 38 pt pitch (design-lab/settings.html).
 pub(super) fn row_base() -> Div {
     div()
         .flex()
         .items_center()
-        .gap_3()
-        .min_h(px(44.0))
-        .px_3()
-        .py_2()
+        .gap(px(8.0))
+        .min_h(px(style::ROW_HEIGHT))
+        .px(px(style::ROW_PADDING))
+        .py(px(style::ROW_PADDING - 0.5))
 }
 
+/// Label (13 pt on a 16 pt line) with an optional 11 pt subtitle 2 below.
 pub(super) fn text_block(title: SharedString, sub: Option<SharedString>) -> Div {
-    let mut b = div().v_flex().flex_1().child(
+    let mut b = div().v_flex().flex_1().min_w_0().gap(px(2.0)).child(
         div()
             .text_size(rmac_ui::text_px(13.0))
+            .line_height(px(16.0))
             .text_color(label())
             .child(title),
     );
@@ -45,6 +49,7 @@ pub(super) fn text_block(title: SharedString, sub: Option<SharedString>) -> Div 
         b = b.child(
             div()
                 .text_size(rmac_ui::text_px(11.0))
+                .line_height(px(14.0))
                 .text_color(secondary())
                 .child(s),
         );
@@ -52,24 +57,106 @@ pub(super) fn text_block(title: SharedString, sub: Option<SharedString>) -> Div 
     b
 }
 
-/// A plain card-section label row (no control).
-pub(super) fn label_row(title: &'static str, value: Option<SharedString>) -> Div {
-    let mut r = row_base().child(
-        div()
-            .flex_1()
-            .text_size(rmac_ui::text_px(13.0))
-            .text_color(label())
-            .child(title),
-    );
-    if let Some(v) = value {
-        r = r.child(
-            div()
-                .text_size(rmac_ui::text_px(13.0))
-                .text_color(secondary())
-                .child(v),
-        );
-    }
-    r
+/// One entry of a [`form_popup`] menu: its label, whether it is the current
+/// value, and the change it applies.
+pub(super) type PopupChoice = (SharedString, bool, Rc<dyn Fn(&mut Window, &mut App)>);
+
+/// Build a [`PopupChoice`].
+pub(super) fn choice(
+    label: impl Into<SharedString>,
+    checked: bool,
+    apply: impl Fn(&mut Window, &mut App) + 'static,
+) -> PopupChoice {
+    (label.into(), checked, Rc::new(apply))
+}
+
+/// The Tahoe grouped-form pop-up: the current value then the ⌃⌄ circle,
+/// opening a menu with the current value ticked. `current` is shown when no
+/// choice is selected (a saved value outside the presets).
+pub(super) fn form_popup(
+    id: impl Into<ElementId>,
+    current: SharedString,
+    choices: Vec<PopupChoice>,
+    enabled: bool,
+) -> PopUpButton {
+    let choices = Rc::new(choices);
+    PopUpButton::new(id, current)
+        .form()
+        .disabled(!enabled)
+        .dropdown_menu(move |mut menu, _, _| {
+            for (label, checked, apply) in choices.iter() {
+                let apply = apply.clone();
+                menu = menu.item(
+                    PopupMenuItem::new(label.clone())
+                        .checked(*checked)
+                        .on_click(move |_, window, cx| apply(window, cx)),
+                );
+            }
+            menu
+        })
+}
+
+/// A form row with a label (and optional subtitle) and a trailing pop-up.
+pub(super) fn popup_row(
+    id: impl Into<ElementId>,
+    title: impl Into<SharedString>,
+    subtitle: Option<SharedString>,
+    current: SharedString,
+    choices: Vec<PopupChoice>,
+    enabled: bool,
+) -> AnyElement {
+    row_base()
+        .when(subtitle.is_some(), |row| row.items_start())
+        .child(text_block(title.into(), subtitle))
+        .child(form_popup(id, current, choices, enabled))
+        .into_any_element()
+}
+
+/// The label of the selected choice, or `fallback` when none is selected.
+pub(super) fn popup_value(choices: &[PopupChoice], fallback: &str) -> SharedString {
+    choices
+        .iter()
+        .find(|(_, checked, _)| *checked)
+        .map(|(label, _, _)| label.clone())
+        .unwrap_or_else(|| SharedString::from(fallback.to_owned()))
+}
+
+/// Right-aligned push buttons under the last group, the way the Mac places
+/// "Advanced…", "Options…" and similar pane actions.
+pub(super) fn footer_buttons(buttons: Vec<AnyElement>) -> Div {
+    div()
+        .flex()
+        .justify_end()
+        .items_center()
+        .gap(px(10.0))
+        .mb(px(style::GROUP_GAP))
+        .children(buttons)
+}
+
+/// Explanatory text under a group: 11 pt secondary, aligned with row labels
+/// (the Mac's Mission Control and Bluetooth "discoverable" notes).
+pub(super) fn footnote(text: impl Into<SharedString>) -> Div {
+    div()
+        .px(px(style::ROW_PADDING))
+        .mb(px(style::GROUP_GAP))
+        .text_size(rmac_ui::text_px(11.0))
+        .line_height(px(14.0))
+        .text_color(secondary())
+        .child(text.into())
+}
+
+/// A grouped-form push button: 24 tall, radius 6, the measured fill.
+pub(super) fn push_button(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Button {
+    Button::new(id, label)
+        .h(px(24.0))
+        .px(px(10.0))
+        .bg(style::control_fill())
+        .border_0()
+        .text_color(label_color())
+}
+
+fn label_color() -> Hsla {
+    label()
 }
 
 /// A read-only row with a right-aligned value.
@@ -80,7 +167,7 @@ pub(super) fn value_row(
     value: SharedString,
 ) -> AnyElement {
     row_base()
-        .child(tile(icon, color, 22.0))
+        .child(tile(icon, color, style::ROW_ICON))
         .child(text_block(title, None))
         .child(
             div()
@@ -98,10 +185,10 @@ pub(super) fn note_card(text: impl Into<SharedString>) -> Div {
         .flex()
         .items_center()
         .gap_2()
-        .mb_3()
-        .px_3()
-        .py_2p5()
-        .rounded(px(rmac_ui::mac::radius_card()))
+        .mb(px(style::GROUP_GAP))
+        .px(px(style::ROW_PADDING))
+        .py(px(style::ROW_PADDING))
+        .rounded(px(style::GROUP_RADIUS))
         .bg(rmac_ui::mac::warning_background())
         .border_1()
         .border_color(rmac_ui::mac::warning_border())
@@ -115,16 +202,24 @@ pub(super) fn note_card(text: impl Into<SharedString>) -> Div {
         )
 }
 
-/// A section header above a card (gray small caps-ish title).
+/// A section head above a group: 13 pt bold, 10 in, 30 below the previous
+/// group (its own 10 gap plus 20) and 10 above the next.
 pub(super) fn section_header(title: impl Into<SharedString>) -> Div {
     div()
-        .px_1()
-        .pt_2()
-        .pb_1()
-        .text_size(rmac_ui::text_px(12.0))
-        .font_weight(rmac_ui::mac::SEMIBOLD)
-        .text_color(secondary())
+        .px(px(style::ROW_PADDING))
+        .pt(px(style::SECTION_TOP))
+        .pb(px(style::SECTION_BOTTOM))
+        .text_size(rmac_ui::text_px(13.0))
+        .line_height(px(16.0))
+        .font_weight(rmac_ui::mac::BOLD)
+        .text_color(style::heading_text())
         .child(title.into())
+}
+
+/// The first section head of a pane sits 3 below the toolbar instead of 30
+/// below a group.
+pub(super) fn first_section_header(title: impl Into<SharedString>) -> Div {
+    section_header(title).pt(px(0.0))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -163,11 +258,11 @@ pub(super) fn application_icon(
 ) -> AnyElement {
     match icon {
         Some(icon) => img(icon.clone())
-            .w(px(22.0))
-            .h(px(22.0))
+            .w(px(style::ROW_ICON))
+            .h(px(style::ROW_ICON))
             .flex_none()
             .into_any_element(),
-        None => tile(fallback_icon, fallback_color, 22.0).into_any_element(),
+        None => tile(fallback_icon, fallback_color, style::ROW_ICON).into_any_element(),
     }
 }
 
@@ -186,7 +281,7 @@ pub(super) fn application_nav_row(
         .w_full()
         .flex()
         .items_center()
-        .gap_3()
+        .gap(px(style::NAV_ICON_GAP))
         .child(application_icon(
             icon,
             "icons/bell.svg",
@@ -201,15 +296,13 @@ pub(super) fn application_nav_row(
         )
         .child(glyph(
             "icons/chevron-right.svg",
-            14.0,
-            rmac_ui::mac::text_tertiary(),
+            style::NAV_CHEVRON,
+            style::chevron(),
         ));
-    ListRow::new(
+    nav_list_row(
         SharedString::from(format!("notification-app-{app_id}")),
         content,
     )
-    .h(px(52.0))
-    .px_3()
     .on_activate(move |_, _, cx| {
         let target = target.clone();
         target_view.update(cx, |settings, cx| settings.push(target, cx));
@@ -227,12 +320,46 @@ pub(super) fn nav_row(
     target: SubPage,
 ) -> AnyElement {
     let id = ElementId::from(SharedString::from(format!("nav-{title}")));
+    nav_list_row(id, nav_content(icon, color, title, value))
+        .on_activate(move |_, _, cx| {
+            let target = target.clone();
+            view.update(cx, |s, cx| s.push(target, cx));
+        })
+        .into_any_element()
+}
+
+/// A General-style row that opens another pane (Date & Time, Sharing, …)
+/// filed under General on macOS 26.
+pub(super) fn pane_nav_row(
+    view: Entity<Settings>,
+    icon: &'static str,
+    color: Hsla,
+    title: &'static str,
+) -> AnyElement {
+    let id = ElementId::from(SharedString::from(format!("pane-{title}")));
+    nav_list_row(id, nav_content(icon, color, title.into(), None))
+        .on_activate(move |_, _, cx| {
+            view.update(cx, |s, cx| {
+                s.sidebar_focused = false;
+                s.select_category(title, cx);
+            });
+        })
+        .into_any_element()
+}
+
+/// Icon tile 20 at 10, label at 40, optional value, chevron 14 from the edge.
+fn nav_content(
+    icon: &'static str,
+    color: Hsla,
+    title: SharedString,
+    value: Option<SharedString>,
+) -> Div {
     let mut content = div()
         .w_full()
         .flex()
         .items_center()
-        .gap_3()
-        .child(tile(icon, color, 22.0))
+        .gap(px(style::NAV_ICON_GAP))
+        .child(tile(icon, color, style::ROW_ICON))
         .child(text_block(title, None));
     if let Some(v) = value {
         content = content.child(
@@ -242,35 +369,44 @@ pub(super) fn nav_row(
                 .child(v),
         );
     }
-    content = content.child(glyph(
+    content.child(glyph(
         "icons/chevron-right.svg",
-        14.0,
-        rmac_ui::mac::text_tertiary(),
-    ));
-    ListRow::new(id, content)
-        .h(px(52.0))
-        .px_3()
-        .on_activate(move |_, _, cx| {
-            let target = target.clone();
-            view.update(cx, |s, cx| s.push(target, cx));
-        })
-        .into_any_element()
+        style::NAV_CHEVRON,
+        style::chevron(),
+    ))
 }
 
-/// Build a rounded white card from rows, inserting inset separators.
+/// A 42 pt navigation row with no fill of its own (the group supplies it).
+fn nav_list_row(id: impl Into<ElementId>, content: impl IntoElement) -> ListRow {
+    ListRow::new(id, content)
+        .selected(true)
+        .bg(gpui::transparent_black())
+        .rounded(px(0.0))
+        .h(px(style::NAV_ROW_HEIGHT))
+        .pl(px(style::ROW_PADDING))
+        .pr(px(style::NAV_TRAILING))
+}
+
+/// A grouped-form box: radius 12, the measured fill, no border, 10 below;
+/// rows are divided by 1 pt separators inset 10 on both sides.
 pub(super) fn card(rows: Vec<AnyElement>) -> Div {
     let mut c = div()
         .v_flex()
-        .mb_3()
-        .rounded(px(rmac_ui::mac::radius_card()))
+        .mb(px(style::GROUP_GAP))
+        .rounded(px(style::GROUP_RADIUS))
         .bg(card_bg())
-        .border_1()
-        .border_color(sep());
+        .overflow_hidden();
     let n = rows.len();
     for (i, r) in rows.into_iter().enumerate() {
         c = c.child(r);
         if i + 1 < n {
-            c = c.child(div().h(px(1.0)).bg(sep()).mx_3());
+            c = c.child(
+                div()
+                    .h(px(style::SEPARATOR))
+                    .flex_none()
+                    .bg(sep())
+                    .mx(px(style::ROW_PADDING)),
+            );
         }
     }
     c

@@ -18,7 +18,7 @@ impl Settings {
         let Some(snapshot) = &self.locale else {
             return self.pane(vec![
                 card(vec![row_base()
-                    .child(tile("icons/languages.svg", secondary(), 22.0))
+                    .child(tile("icons/languages.svg", secondary(), style::ROW_ICON))
                     .child(text_block(
                         "System language and formats".into(),
                         Some("systemd-localed".into()),
@@ -37,7 +37,7 @@ impl Settings {
             let cancel_view = view.clone();
             let apply_view = view.clone();
             row_base()
-                .child(tile("icons/languages.svg", accent(), 22.0))
+                .child(tile("icons/languages.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Language".into(),
                     Some("Enter an exact locale installed on this computer".into()),
@@ -63,7 +63,7 @@ impl Settings {
         } else {
             let edit_view = view.clone();
             row_base()
-                .child(tile("icons/languages.svg", accent(), 22.0))
+                .child(tile("icons/languages.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Language".into(),
                     Some("Validated against the system's installed locales".into()),
@@ -94,7 +94,7 @@ impl Settings {
             let cancel_view = view.clone();
             let apply_view = view.clone();
             row_base()
-                .child(tile("icons/globe.svg", accent(), 22.0))
+                .child(tile("icons/globe.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Region".into(),
                     Some("Sets date, number, currency, and regional formats".into()),
@@ -125,7 +125,7 @@ impl Settings {
                 snapshot.region_locale().to_owned()
             };
             row_base()
-                .child(tile("icons/globe.svg", accent(), 22.0))
+                .child(tile("icons/globe.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Region".into(),
                     Some("System-wide formats, independent of display language".into()),
@@ -197,7 +197,7 @@ impl Settings {
         self.append_locale_input_sources(view.clone(), snapshot, &mut cards);
 
         let mut authority_rows = vec![row_base()
-            .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+            .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
             .child(text_block(
                 "Authoritative state".into(),
                 Some(
@@ -214,7 +214,7 @@ impl Settings {
             let revert_view = view.clone();
             authority_rows.push(
                 row_base()
-                    .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+                    .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
                     .child(text_block(
                         "Previous locale assignments".into(),
                         Some("Reverts only if the complete applied state is still current".into()),

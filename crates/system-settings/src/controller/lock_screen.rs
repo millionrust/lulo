@@ -19,7 +19,7 @@ fn lock_policy_choice_row(
         .flex()
         .items_center()
         .gap_3()
-        .child(tile(icon, secondary_foreground, 22.0))
+        .child(tile(icon, secondary_foreground, style::ROW_ICON))
         .child(
             div()
                 .v_flex()

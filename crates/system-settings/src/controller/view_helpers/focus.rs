@@ -23,7 +23,7 @@ pub(in crate::controller) fn focus_schedule_row(
     });
     let edit_view = view.clone();
     row_base()
-        .child(tile("icons/clock.svg", accent(), 22.0))
+        .child(tile("icons/clock.svg", accent(), style::ROW_ICON))
         .child(text_block(
             mode_name.to_owned().into(),
             Some(focus_schedule_summary(schedule).into()),
@@ -65,7 +65,7 @@ pub(in crate::controller) fn focus_schedule_toggle_row(
         });
     });
     row_base()
-        .child(tile("icons/moon.svg", accent(), 22.0))
+        .child(tile("icons/moon.svg", accent(), style::ROW_ICON))
         .child(text_block(
             mode_name.to_owned().into(),
             Some("Turn this schedule on automatically".into()),

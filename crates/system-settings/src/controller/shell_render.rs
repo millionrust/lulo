@@ -37,7 +37,8 @@ impl Render for Settings {
         div()
             .id(rmac_system_settings::accessibility::ROOT_ID)
             .size_full()
-            .v_flex()
+            .relative()
+            .flex()
             .font_features(rmac_ui::mac::tabular_font_features())
             .track_focus(&self.focus)
             .key_context("SystemSettings")
@@ -120,6 +121,7 @@ impl Render for Settings {
                 }
             }))
             .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
+            .on_action(cx.listener(|t, _: &GoForward, _, cx| t.go_forward(cx)))
             .on_action(cx.listener(|this, _: &SelectAlert, _, cx| {
                 this.apply_sound_policy_change(
                     sound::SoundPolicyChange::AlertSound(rmac_sound::Cue::Alert),
@@ -216,74 +218,78 @@ impl Render for Settings {
             }))
             .bg(pane_bg())
             .text_color(label())
-            .child(self.render_topbar(layout, cx))
-            .when_some(settings_error, |settings, message| {
-                settings.child(
-                    Toast::new(
-                        rmac_system_settings::accessibility::GLOBAL_ERROR_ID,
-                        ToastKind::Error,
-                        rmac_system_settings::accessibility::GLOBAL_ERROR_TITLE,
-                    )
-                    .message(message)
-                    .rounded(px(rmac_ui::mac::radius_none()))
-                    .border_l_0()
-                    .border_r_0()
-                    .on_dismiss(cx.listener(|this, _, _, cx| {
-                        this.system_data_error = None;
-                        this.system_data_stream_error = None;
-                        this.updates_error = None;
-                        this.updates_stream_error = None;
-                        this.storage_error = None;
-                        this.storage_stream_error = None;
-                        this.time_error = None;
-                        this.time_stream_error = None;
-                        this.locale_error = None;
-                        this.locale_stream_error = None;
-                        this.login_items_error = None;
-                        this.login_items_stream_error = None;
-                        this.sharing_error = None;
-                        this.sharing_stream_error = None;
-                        this.wifi_error = None;
-                        this.wifi_stream_error = None;
-                        this.bluetooth_error = None;
-                        this.bluetooth_stream_error = None;
-                        this.network_error = None;
-                        this.network_stream_error = None;
-                        this.vpn_error = None;
-                        this.vpn_stream_error = None;
-                        this.audio_error = None;
-                        this.audio_stream_error = None;
-                        this.power_error = None;
-                        this.power_stream_error = None;
-                        this.display_error = None;
-                        this.input_error = None;
-                        this.input_stream_error = None;
-                        this.theme_error = None;
-                        this.theme_store_stream_error = None;
-                        this.theme_portal_stream_error = None;
-                        this.shell_settings_error = None;
-                        this.shell_settings_stream_error = None;
-                        this.wallpaper_error = None;
-                        this.spotlight_error = None;
-                        this.gtk_text_error = None;
-                        this.gtk_text_stream_error = None;
-                        this.privacy_error = None;
-                        this.privacy_stream_error = None;
-                        cx.notify();
-                    })),
+            .when(layout.sidebar_visible, |root| {
+                root.child(self.render_sidebar(layout, window, cx))
+            })
+            .when(layout.detail_visible, |root| {
+                root.child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
+                        .v_flex()
+                        .child(self.render_toolbar(layout, cx))
+                        .when_some(settings_error, |settings, message| {
+                            settings.child(
+                                Toast::new(
+                                    rmac_system_settings::accessibility::GLOBAL_ERROR_ID,
+                                    ToastKind::Error,
+                                    rmac_system_settings::accessibility::GLOBAL_ERROR_TITLE,
+                                )
+                                .message(message)
+                                .rounded(px(rmac_ui::mac::radius_none()))
+                                .border_l_0()
+                                .border_r_0()
+                                .on_dismiss(cx.listener(
+                                    |this, _, _, cx| {
+                                        this.system_data_error = None;
+                                        this.system_data_stream_error = None;
+                                        this.updates_error = None;
+                                        this.updates_stream_error = None;
+                                        this.storage_error = None;
+                                        this.storage_stream_error = None;
+                                        this.time_error = None;
+                                        this.time_stream_error = None;
+                                        this.locale_error = None;
+                                        this.locale_stream_error = None;
+                                        this.login_items_error = None;
+                                        this.login_items_stream_error = None;
+                                        this.sharing_error = None;
+                                        this.sharing_stream_error = None;
+                                        this.wifi_error = None;
+                                        this.wifi_stream_error = None;
+                                        this.bluetooth_error = None;
+                                        this.bluetooth_stream_error = None;
+                                        this.network_error = None;
+                                        this.network_stream_error = None;
+                                        this.vpn_error = None;
+                                        this.vpn_stream_error = None;
+                                        this.audio_error = None;
+                                        this.audio_stream_error = None;
+                                        this.power_error = None;
+                                        this.power_stream_error = None;
+                                        this.display_error = None;
+                                        this.input_error = None;
+                                        this.input_stream_error = None;
+                                        this.theme_error = None;
+                                        this.theme_store_stream_error = None;
+                                        this.theme_portal_stream_error = None;
+                                        this.shell_settings_error = None;
+                                        this.shell_settings_stream_error = None;
+                                        this.wallpaper_error = None;
+                                        this.spotlight_error = None;
+                                        this.gtk_text_error = None;
+                                        this.gtk_text_stream_error = None;
+                                        this.privacy_error = None;
+                                        this.privacy_stream_error = None;
+                                        cx.notify();
+                                    },
+                                )),
+                            )
+                        })
+                        .child(self.render_detail(cx)),
                 )
             })
-            .child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .when(layout.sidebar_visible, |body| {
-                        body.child(self.render_sidebar(layout.compact, cx))
-                    })
-                    .when(layout.detail_visible, |body| {
-                        body.child(self.render_detail(cx))
-                    }),
-            )
             .when_some(wifi_password_dialog, |root, dialog| root.child(dialog))
             .when_some(wifi_enterprise_dialog, |root, dialog| root.child(dialog))
             .when_some(wifi_forget_dialog, |root, dialog| root.child(dialog))

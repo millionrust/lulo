@@ -67,8 +67,31 @@ impl Settings {
         true
     }
 
+    /// Back pops a subpage, or leaves a pane that macOS files under General
+    /// (Date & Time, Sharing, …) for General itself.
+    pub(super) fn can_go_back(&self) -> bool {
+        !self.nav.is_empty() || category_parent(self.current().name.as_ref()).is_some()
+    }
+
+    pub(super) fn can_go_forward(&self) -> bool {
+        !self.forward.is_empty()
+    }
+
     pub(super) fn go_back(&mut self, cx: &mut Context<Self>) {
-        self.nav.pop();
+        if let Some(page) = self.nav.pop() {
+            self.forward.push(page);
+        } else if let Some(parent) = category_parent(self.current().name.as_ref()) {
+            self.select_category(parent, cx);
+        }
+        cx.notify();
+    }
+
+    pub(super) fn go_forward(&mut self, cx: &mut Context<Self>) {
+        if let Some(page) = self.forward.pop() {
+            if self.nav.len() < rmac_system_settings::accessibility::MAX_NAVIGATION_DEPTH {
+                self.nav.push(page);
+            }
+        }
         cx.notify();
     }
 
@@ -77,6 +100,8 @@ impl Settings {
             return;
         }
         self.nav.push(sub);
+        self.forward.clear();
+        self.sidebar_focused = false;
         cx.notify();
     }
 
@@ -109,6 +134,7 @@ impl Settings {
         };
         self.selected = target;
         self.nav.clear();
+        self.forward.clear();
         self.compact_sidebar_open = false;
         self.navigation_persistence.schedule(pane_id);
         cx.notify();

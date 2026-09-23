@@ -8,7 +8,7 @@ impl Settings {
         let view = cx.entity();
         let refresh_view = view.clone();
         let mut body = div().v_flex().child(card(vec![row_base()
-            .child(tile("icons/hard-drive.svg", accent(), 22.0))
+            .child(tile("icons/hard-drive.svg", accent(), style::ROW_ICON))
             .child(text_block(
                 "Mounted volumes".into(),
                 Some("System, removable, and network volumes".into()),
@@ -39,7 +39,7 @@ impl Settings {
             body = body.child(section_header(volume.mount.name.clone()));
             let Some(usage) = volume.usage else {
                 body = body.child(card(vec![row_base()
-                    .child(tile("icons/hard-drive.svg", hsl(0xff9500), 22.0))
+                    .child(tile("icons/hard-drive.svg", hsl(0xff9500), style::ROW_ICON))
                     .child(text_block(
                         volume.mount.name.clone().into(),
                         volume.usage_error.as_ref().map(|error| {

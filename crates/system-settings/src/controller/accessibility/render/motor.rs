@@ -15,7 +15,7 @@ impl Settings {
         cards.push(section_header("Motor"));
         cards.push(card(vec![
             row_base()
-                .child(tile("icons/keyboard.svg", secondary(), 22.0))
+                .child(tile("icons/keyboard.svg", secondary(), style::ROW_ICON))
                 .child(text_block(
                     "Keyboard".into(),
                     Some("Repeat timing and layout controls backed by niri".into()),
@@ -28,7 +28,7 @@ impl Settings {
                 )
                 .into_any_element(),
             row_base()
-                .child(tile("icons/mouse.svg", secondary(), 22.0))
+                .child(tile("icons/mouse.svg", secondary(), style::ROW_ICON))
                 .child(text_block(
                     "Pointer".into(),
                     Some("Speed, acceleration, handedness, and scroll controls".into()),

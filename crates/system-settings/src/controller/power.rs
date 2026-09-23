@@ -4,37 +4,6 @@ mod render;
 
 use super::*;
 
-fn power_profile_row(profile: rmac_power::PowerProfile, selected: bool, disabled: bool) -> ListRow {
-    let foreground = if selected { on_accent() } else { label() };
-    let secondary_foreground = if selected { on_accent() } else { secondary() };
-    ListRow::new(
-        ElementId::from(SharedString::from(format!(
-            "power-profile-{}",
-            profile.id()
-        ))),
-        div()
-            .w_full()
-            .flex()
-            .items_center()
-            .gap_3()
-            .child(tile("icons/power.svg", secondary_foreground, 22.0))
-            .child(
-                div()
-                    .flex_1()
-                    .text_size(rmac_ui::text_px(13.0))
-                    .text_color(foreground)
-                    .child(profile.label()),
-            )
-            .when(selected, |row| {
-                row.child(glyph("icons/check.svg", 14.0, on_accent()))
-            }),
-    )
-    .selected(selected)
-    .disabled(disabled)
-    .h(px(44.0))
-    .px_3()
-}
-
 impl Settings {
     pub(super) fn finish_power_update(
         &mut self,

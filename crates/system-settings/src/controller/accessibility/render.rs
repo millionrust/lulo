@@ -11,7 +11,7 @@ impl Settings {
         let refresh_view = view.clone();
         let gtk_refresh_view = view.clone();
         let mut cards = vec![card(vec![row_base()
-            .child(tile("icons/accessibility.svg", accent(), 22.0))
+            .child(tile("icons/accessibility.svg", accent(), style::ROW_ICON))
             .child(text_block(
                 "Visual preferences".into(),
                 Some("Live across rmac apps and shell surfaces".into()),
@@ -96,7 +96,7 @@ impl Settings {
 
         cards.push(section_header("GTK Application Text"));
         cards.push(card(vec![row_base()
-            .child(tile("icons/app-window.svg", secondary(), 22.0))
+            .child(tile("icons/app-window.svg", secondary(), style::ROW_ICON))
             .child(text_block(
                 "GTK text scaling".into(),
                 Some("GNOME interface authority; separate from rmac and display scale".into()),

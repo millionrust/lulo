@@ -1,4 +1,6 @@
-//! Desktop & Dock pane rendering.
+//! Desktop & Dock pane rendering, laid out like macOS 26
+//! (design-lab/settings.html): a "Dock" section of grouped rows with
+//! pop-ups and switches, then the displays the Dock appears on.
 
 use super::*;
 
@@ -7,54 +9,36 @@ impl Settings {
         let view = cx.entity();
         let refresh_view = view.clone();
         let revert_view = view.clone();
-        let mut cards = vec![div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .px_1()
-            .pb_1()
-            .child(
-                div()
-                    .text_size(rmac_ui::text_px(12.0))
-                    .font_weight(rmac_ui::mac::SEMIBOLD)
-                    .text_color(secondary())
-                    .child("rmac Dock"),
+        let footer = footer_buttons(vec![
+            push_button("dock-revert", "Revert")
+                .disabled(
+                    self.shell_settings_loading
+                        || self.shell_settings_busy
+                        || self.shell_settings_revert.is_none(),
+                )
+                .on_click(move |_, _, cx| {
+                    revert_view.update(cx, |settings, cx| settings.revert_dock_change(cx));
+                })
+                .into_any_element(),
+            push_button(
+                "dock-refresh",
+                if self.shell_settings_busy {
+                    "Applying…"
+                } else if self.shell_settings_loading {
+                    "Loading…"
+                } else {
+                    "Refresh"
+                },
             )
-            .child(
-                div()
-                    .flex()
-                    .gap_2()
-                    .child(
-                        Button::new("dock-revert", "Revert")
-                            .disabled(
-                                self.shell_settings_loading
-                                    || self.shell_settings_busy
-                                    || self.shell_settings_revert.is_none(),
-                            )
-                            .on_click(move |_, _, cx| {
-                                revert_view
-                                    .update(cx, |settings, cx| settings.revert_dock_change(cx));
-                            }),
-                    )
-                    .child(
-                        Button::new(
-                            "dock-refresh",
-                            if self.shell_settings_busy {
-                                "Applying…"
-                            } else if self.shell_settings_loading {
-                                "Loading…"
-                            } else {
-                                "Refresh"
-                            },
-                        )
-                        .disabled(self.shell_settings_loading || self.shell_settings_busy)
-                        .on_click(move |_, _, cx| {
-                            refresh_view.update(cx, |settings, cx| {
-                                settings.refresh_shell_settings(false, cx)
-                            });
-                        }),
-                    ),
-            )];
+            .disabled(self.shell_settings_loading || self.shell_settings_busy)
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| {
+                    settings.refresh_shell_settings(false, cx)
+                });
+            })
+            .into_any_element(),
+        ]);
+        let mut cards = Vec::new();
 
         if self.shell_settings_loading && self.shell_settings.is_none() {
             cards.push(note_card("Loading the authoritative Dock settings…"));
@@ -64,6 +48,7 @@ impl Settings {
             cards.push(note_card(
                 "The versioned rmac shell-settings authority is unavailable. No Dock preference can be changed until it is readable again.",
             ));
+            cards.push(footer);
             return self.pane(cards);
         };
         let dock = &snapshot.settings.dock;
@@ -71,7 +56,7 @@ impl Settings {
         let outputs_live =
             self.dock_compositor.connection == rmac_compositor::ConnectionState::Connected;
 
-        cards.push(section_header("Position and visibility"));
+        cards.push(first_section_header("Dock"));
         cards.push(card(vec![
             dock_segment_row(
                 view.clone(),
@@ -89,7 +74,7 @@ impl Settings {
                 view.clone(),
                 "dock-autohide",
                 "Automatically hide and show the Dock",
-                Some("Reveal uses deliberate edge pressure so it does not steal focus".into()),
+                None,
                 dock.autohide,
                 enabled,
                 DockChange::Autohide,
@@ -98,20 +83,19 @@ impl Settings {
                 view.clone(),
                 "dock-reserve-space",
                 "Reserve screen space",
-                Some("Keep tiled windows outside the visible Dock area".into()),
+                Some("Keep tiled windows outside the visible Dock area.".into()),
                 dock.reserve_space,
                 enabled,
                 DockChange::ReserveSpace,
             ),
         ]));
 
-        cards.push(section_header("Magnification"));
         cards.push(card(vec![
             dock_switch_row(
                 view.clone(),
                 "dock-magnification",
-                "Magnify icons",
-                Some("Reduced Motion overrides this effect at runtime".into()),
+                "Magnification",
+                Some("Reduce Motion overrides this effect.".into()),
                 dock.magnification,
                 enabled,
                 DockChange::Magnification,
@@ -137,7 +121,6 @@ impl Settings {
             )));
         }
 
-        cards.push(section_header("Application clicks"));
         cards.push(card(vec![dock_segment_row(
             view.clone(),
             "dock-repeated-click",
@@ -157,43 +140,63 @@ impl Settings {
         }
 
         cards.push(section_header("Displays"));
-        let mut output_rows = vec![dock_output_row(
-            &view,
-            "all",
-            "All displays".into(),
-            Some("Follow every enabled niri output".into()),
+        // The displays the Dock appears on, as one pop-up: every enabled niri
+        // output is a choice while niri is connected.
+        let mut output_choices: Vec<PopupChoice> = Vec::new();
+        let all_view = view.clone();
+        output_choices.push(choice(
+            "All Displays",
             dock.outputs == rmac_shell_settings::OutputScope::All,
-            enabled,
-            rmac_shell_settings::OutputScope::All,
-        )];
-        for output in self
-            .dock_compositor
-            .outputs
-            .values()
-            .filter(|output| output.enabled())
-        {
-            let output_id = output.id.0.clone();
-            let display_name = format!("{} {}", output.make, output.model)
-                .trim()
-                .to_owned();
-            let title = if display_name.is_empty() {
-                output_id.clone()
-            } else {
-                display_name
-            };
-            let selected =
-                dock.outputs == rmac_shell_settings::OutputScope::Named(output_id.clone());
-            output_rows.push(dock_output_row(
-                &view,
-                &format!("named-{output_id}"),
-                title.into(),
-                Some(format!("niri output {output_id}").into()),
-                selected,
-                enabled && outputs_live,
-                rmac_shell_settings::OutputScope::Named(output_id),
-            ));
+            move |_, cx| {
+                all_view.update(cx, |settings, cx| {
+                    settings.apply_dock_change(
+                        DockChange::Outputs(rmac_shell_settings::OutputScope::All),
+                        cx,
+                    )
+                });
+            },
+        ));
+        if outputs_live {
+            for output in self
+                .dock_compositor
+                .outputs
+                .values()
+                .filter(|output| output.enabled())
+            {
+                let output_id = output.id.0.clone();
+                let display_name = format!("{} {}", output.make, output.model)
+                    .trim()
+                    .to_owned();
+                let title = if display_name.is_empty() {
+                    output_id.clone()
+                } else {
+                    display_name
+                };
+                let selected =
+                    dock.outputs == rmac_shell_settings::OutputScope::Named(output_id.clone());
+                let output_view = view.clone();
+                output_choices.push(choice(title, selected, move |_, cx| {
+                    let scope = rmac_shell_settings::OutputScope::Named(output_id.clone());
+                    output_view.update(cx, |settings, cx| {
+                        settings.apply_dock_change(DockChange::Outputs(scope), cx)
+                    });
+                }));
+            }
         }
-        cards.push(card(output_rows));
+        let saved_output = match &dock.outputs {
+            rmac_shell_settings::OutputScope::All => "All Displays".to_owned(),
+            rmac_shell_settings::OutputScope::Primary => "Primary Display".to_owned(),
+            rmac_shell_settings::OutputScope::Named(name) => name.clone(),
+        };
+        let current = popup_value(&output_choices, &saved_output);
+        cards.push(card(vec![popup_row(
+            "dock-outputs",
+            "Show the Dock on",
+            None,
+            current,
+            output_choices,
+            enabled,
+        )]));
 
         match &dock.outputs {
             rmac_shell_settings::OutputScope::Primary => cards.push(note_card(
@@ -213,39 +216,6 @@ impl Settings {
             _ => {}
         }
 
-        let connection = match self.dock_compositor.connection {
-            rmac_compositor::ConnectionState::Connected => "Connected",
-            rmac_compositor::ConnectionState::Connecting => "Connecting",
-            rmac_compositor::ConnectionState::Reconnecting => "Reconnecting",
-            rmac_compositor::ConnectionState::Disconnected => "Unavailable",
-        };
-        let enabled_outputs = self
-            .dock_compositor
-            .outputs
-            .values()
-            .filter(|output| output.enabled())
-            .count();
-        cards.push(section_header("Authority"));
-        cards.push(card(vec![
-            value_row(
-                "icons/settings.svg",
-                accent(),
-                "Saved preferences".into(),
-                "C4 shell settings".into(),
-            ),
-            value_row(
-                "icons/monitor.svg",
-                secondary(),
-                "niri event stream".into(),
-                connection.into(),
-            ),
-            value_row(
-                "icons/app-window.svg",
-                secondary(),
-                "Enabled outputs".into(),
-                enabled_outputs.to_string().into(),
-            ),
-        ]));
         if snapshot.recovered_from_last_good || snapshot.migrated_from.is_some() {
             cards.push(note_card(snapshot.detail.clone().unwrap_or_else(|| {
                 snapshot.migrated_from.map_or_else(
@@ -254,14 +224,12 @@ impl Settings {
                 )
             })));
         }
-        if self.dock_compositor.connection != rmac_compositor::ConnectionState::Connected {
+        if !outputs_live {
             cards.push(note_card(
                 "niri is not connected in this process. Output-specific choices are limited to currently known outputs; saved Dock policy remains editable and is applied when the rmac niri session is available.",
             ));
         }
-        cards.push(note_card(
-            "These controls configure only the original rmac Dock. They do not modify GNOME or third-party docks, and niri continues to own workspace and window-layout rules.",
-        ));
+        cards.push(footer);
         self.pane(cards)
     }
 }

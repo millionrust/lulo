@@ -15,26 +15,19 @@ pub(in crate::controller) fn theme_segment_row(
     selected: usize,
     enabled: bool,
 ) -> AnyElement {
-    let labels = options.iter().map(|(label, _)| *label).collect::<Vec<_>>();
-    let control = Tabs::new(id, labels)
-        .selected(selected)
-        .disabled(!enabled)
-        .on_change(move |index, _, cx| {
-            if let Some((_, change)) = options.get(*index).copied() {
-                view.update(cx, |settings, cx| settings.apply_theme_change(change, cx));
-            }
+    let choices: Vec<PopupChoice> = options
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, (option_label, change))| {
+            let option_view = view.clone();
+            choice(option_label, selected == index, move |_, cx| {
+                option_view.update(cx, |settings, cx| settings.apply_theme_change(change, cx));
+            })
         })
-        .w(px(290.0));
-    row_base()
-        .child(
-            div()
-                .flex_1()
-                .text_size(rmac_ui::text_px(13.0))
-                .text_color(label())
-                .child(title),
-        )
-        .child(control)
-        .into_any_element()
+        .collect();
+    let current = popup_value(&choices, "Automatic");
+    popup_row(id, title, None, current, choices, enabled)
 }
 
 pub(in crate::controller) fn gtk_text_scale_row(
@@ -42,33 +35,26 @@ pub(in crate::controller) fn gtk_text_scale_row(
     selected: Option<usize>,
     enabled: bool,
 ) -> AnyElement {
-    let mut control = div().flex().gap_1().w(px(290.0));
-    for (index, (option_label, factor)) in GTK_TEXT_SCALE_OPTIONS.iter().copied().enumerate() {
-        let option_view = view.clone();
-        control = control.child(
-            Button::new(
-                ElementId::from(SharedString::from(format!("gtk-text-scale-{index}"))),
-                option_label,
-            )
-            .flex_1()
-            .h(px(26.0))
-            .selected(selected == Some(index))
-            .disabled(!enabled)
-            .on_click(move |_, _, cx| {
+    let choices: Vec<PopupChoice> = GTK_TEXT_SCALE_OPTIONS
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, (option_label, factor))| {
+            let option_view = view.clone();
+            choice(option_label, selected == Some(index), move |_, cx| {
                 option_view.update(cx, |settings, cx| settings.set_gtk_text_scale(factor, cx));
-            }),
-        );
-    }
-    row_base()
-        .child(
-            div()
-                .flex_1()
-                .text_size(rmac_ui::text_px(13.0))
-                .text_color(label())
-                .child("GTK application text"),
-        )
-        .child(control)
-        .into_any_element()
+            })
+        })
+        .collect();
+    let current = popup_value(&choices, "Custom");
+    popup_row(
+        "gtk-text-scale",
+        "GTK application text",
+        None,
+        current,
+        choices,
+        enabled,
+    )
 }
 
 pub(in crate::controller) fn input_segment_row(
@@ -79,33 +65,19 @@ pub(in crate::controller) fn input_segment_row(
     selected: Option<usize>,
     enabled: bool,
 ) -> AnyElement {
-    let mut control = div().flex().gap_1().w(px(290.0));
-    for (index, (option_label, change)) in options.iter().copied().enumerate() {
-        let option_view = view.clone();
-        control = control.child(
-            Button::new(
-                ElementId::from(SharedString::from(format!("{id}-{index}"))),
-                option_label,
-            )
-            .flex_1()
-            .h(px(26.0))
-            .selected(selected == Some(index))
-            .disabled(!enabled)
-            .on_click(move |_, _, cx| {
+    let choices: Vec<PopupChoice> = options
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(index, (option_label, change))| {
+            let option_view = view.clone();
+            choice(option_label, selected == Some(index), move |_, cx| {
                 option_view.update(cx, |settings, cx| settings.apply_input_change(change, cx));
-            }),
-        );
-    }
-    row_base()
-        .child(
-            div()
-                .flex_1()
-                .text_size(rmac_ui::text_px(13.0))
-                .text_color(label())
-                .child(title),
-        )
-        .child(control)
-        .into_any_element()
+            })
+        })
+        .collect();
+    let current = popup_value(&choices, "Custom");
+    popup_row(id, title, None, current, choices, enabled)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -128,7 +100,7 @@ pub(in crate::controller) fn input_switch_row(
             });
         });
     row_base()
-        .child(tile(icon, secondary(), 22.0))
+        .child(tile(icon, secondary(), style::ROW_ICON))
         .child(text_block(title.into(), subtitle.map(Into::into)))
         .child(switch)
         .into_any_element()

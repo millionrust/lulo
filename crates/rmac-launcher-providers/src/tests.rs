@@ -112,7 +112,7 @@ fn settings_provider_matches_keywords_and_deduplicates_panes() {
 #[test]
 fn system_settings_catalog_has_stable_unique_panes_and_linux_synonyms() {
     let entries = system_settings_entries();
-    assert_eq!(entries.len(), 24);
+    assert_eq!(entries.len(), 25);
     let unique: BTreeSet<_> = entries.iter().map(|entry| &entry.pane_id).collect();
     assert_eq!(unique.len(), entries.len());
     let provider = SettingsProvider::system_settings();

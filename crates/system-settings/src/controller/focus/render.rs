@@ -125,11 +125,12 @@ impl Settings {
             } else {
                 cards.push(
                     div()
-                        .text_size(rmac_ui::text_px(12.0))
-                        .font_weight(rmac_ui::mac::SEMIBOLD)
-                        .text_color(secondary())
-                        .mt_3()
-                        .mb_1()
+                        .text_size(rmac_ui::text_px(13.0))
+                        .font_weight(rmac_ui::mac::BOLD)
+                        .text_color(style::heading_text())
+                        .mt(px(style::SECTION_TOP))
+                        .mb(px(style::SECTION_BOTTOM))
+                        .px(px(style::ROW_PADDING))
                         .px_1()
                         .child("Schedules"),
                 );

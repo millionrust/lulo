@@ -118,6 +118,18 @@ pub fn system_settings_entries() -> Vec<SettingEntry> {
             &["monitor", "screen", "resolution", "scaling", "brightness"],
         ),
         (
+            "menu-bar",
+            "Menu Bar",
+            "Status items, battery percentage, and clock seconds",
+            &[
+                "menu bar",
+                "status bar",
+                "battery percentage",
+                "clock",
+                "seconds",
+            ],
+        ),
+        (
             "spotlight",
             "Spotlight",
             "Search providers, privacy, exclusions, and shortcut",

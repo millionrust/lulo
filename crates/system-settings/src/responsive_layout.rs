@@ -1,6 +1,8 @@
 //! Width-driven System Settings master/detail policy.
 
-const SPLIT_VIEW_MIN_WIDTH: f32 = 760.0;
+/// The Mac opens Settings 723 pt wide with both columns, so the split holds
+/// down to 680 pt before collapsing to one surface.
+const SPLIT_VIEW_MIN_WIDTH: f32 = 680.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SettingsLayout {

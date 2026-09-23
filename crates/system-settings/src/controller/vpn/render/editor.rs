@@ -59,7 +59,7 @@ impl Settings {
         if editor.configuration.supports_vpn_options {
             rows.push(
                 row_base()
-                    .child(tile("icons/key.svg", secondary(), 22.0))
+                    .child(tile("icons/key.svg", secondary(), style::ROW_ICON))
                     .child(text_block(
                         "Saved Authentication".into(),
                         Some(

@@ -59,7 +59,7 @@ impl Settings {
         }
         let lock_view = view.clone();
         cards.push(card(vec![row_base()
-            .child(tile("icons/lock.svg", accent(), 22.0))
+            .child(tile("icons/lock.svg", accent(), style::ROW_ICON))
             .child(text_block(
                 "Test Lock Screen".into(),
                 Some(

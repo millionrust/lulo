@@ -93,13 +93,18 @@ pub(super) struct Settings {
     pub(super) selected: (usize, usize),
     pub(super) navigation_persistence: NavigationPersistence,
     pub(super) nav: Vec<SubPage>,
+    /// Subpages popped by Back, replayed by Forward; cleared by any new
+    /// navigation, as in the Mac toolbar.
+    pub(super) forward: Vec<SubPage>,
+    /// The sidebar last took a click, so its selection draws in the accent
+    /// (grey once the detail is used or the window is not key).
+    pub(super) sidebar_focused: bool,
     pub(super) search: Entity<InputState>,
     pub(super) search_selection: usize,
     pub(super) compact_sidebar_open: bool,
     pub(super) focus: FocusHandle,
     pub(super) native_window_title: String,
     pub(super) focused_once: bool,
-    pub(super) dragging: bool,
     pub(super) wifi_error: Option<SharedString>,
     pub(super) wifi_stream_error: Option<SharedString>,
     pub(super) bluetooth_error: Option<SharedString>,

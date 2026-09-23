@@ -25,7 +25,7 @@ impl Settings {
         let Some(snapshot) = &self.login_items else {
             return self.pane(vec![
                 card(vec![row_base()
-                    .child(tile("icons/app-window.svg", secondary(), 22.0))
+                    .child(tile("icons/app-window.svg", secondary(), style::ROW_ICON))
                     .child(text_block(
                         "Open at login".into(),
                         Some("XDG autostart directories".into()),
@@ -52,7 +52,11 @@ impl Settings {
                     .iter()
                     .map(|issue| {
                         row_base()
-                            .child(tile("icons/info.svg", rmac_ui::mac::warning_text(), 22.0))
+                            .child(tile(
+                                "icons/info.svg",
+                                rmac_ui::mac::warning_text(),
+                                style::ROW_ICON,
+                            ))
                             .child(text_block(
                                 issue.file.clone().into(),
                                 Some(issue.detail.clone().into()),
@@ -63,7 +67,7 @@ impl Settings {
             ));
         }
         let refresh_row = row_base()
-            .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+            .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
             .child(text_block(
                 "Authoritative state".into(),
                 Some("Live XDG files · systemd user unit changes".into()),

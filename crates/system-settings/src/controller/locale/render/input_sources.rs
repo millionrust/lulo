@@ -35,7 +35,7 @@ impl Settings {
             let apply_view = view.clone();
             vec![
                 row_base()
-                    .child(tile("icons/keyboard.svg", accent(), 22.0))
+                    .child(tile("icons/keyboard.svg", accent(), style::ROW_ICON))
                     .child(text_block(
                         "XKB layouts".into(),
                         Some("Comma-separated installed names, in switch order".into()),
@@ -43,7 +43,7 @@ impl Settings {
                     .child(div().w(px(190.0)).child(TextField::new(layout).small()))
                     .into_any_element(),
                 row_base()
-                    .child(tile("icons/settings.svg", secondary(), 22.0))
+                    .child(tile("icons/settings.svg", secondary(), style::ROW_ICON))
                     .child(text_block(
                         "Variants".into(),
                         Some("One entry per layout; empty entries are allowed".into()),
@@ -51,7 +51,7 @@ impl Settings {
                     .child(div().w(px(190.0)).child(TextField::new(variant).small()))
                     .into_any_element(),
                 row_base()
-                    .child(tile("icons/settings.svg", secondary(), 22.0))
+                    .child(tile("icons/settings.svg", secondary(), style::ROW_ICON))
                     .child(text_block(
                         "Switching options".into(),
                         Some("For example grp:ctrl_space_toggle".into()),
@@ -82,7 +82,7 @@ impl Settings {
         } else {
             let edit_view = view.clone();
             vec![row_base()
-                .child(tile("icons/keyboard.svg", accent(), 22.0))
+                .child(tile("icons/keyboard.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Keyboard layouts".into(),
                     Some("systemd-localed default and switch order".into()),
@@ -130,7 +130,7 @@ impl Settings {
             let revert_view = view.clone();
             keyboard_rows.push(
                 row_base()
-                    .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+                    .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
                     .child(text_block(
                         "Previous keyboard layout".into(),
                         Some("Exact model, layouts, variants, and options".into()),

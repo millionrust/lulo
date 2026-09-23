@@ -12,7 +12,7 @@ impl Settings {
         let choose_view = view.clone();
         cards.push(section_header("Open at login"));
         cards.push(card(vec![row_base()
-            .child(tile("icons/app-window.svg", accent(), 22.0))
+            .child(tile("icons/app-window.svg", accent(), style::ROW_ICON))
             .child(text_block(
                 "Add application entry".into(),
                 Some("Choose a local .desktop file to review".into()),
@@ -40,14 +40,18 @@ impl Settings {
                 }
             )));
             cards.push(card(vec![row_base()
-                .child(tile("icons/info.svg", rmac_ui::mac::warning_text(), 22.0))
+                .child(tile(
+                    "icons/info.svg",
+                    rmac_ui::mac::warning_text(),
+                    style::ROW_ICON,
+                ))
                 .child(text_block(
                     "Command at sign-in".into(),
                     Some(preview.command.clone().into()),
                 ))
                 .into_any_element()]));
             cards.push(card(vec![row_base()
-                .child(tile("icons/info.svg", secondary(), 22.0))
+                .child(tile("icons/info.svg", secondary(), style::ROW_ICON))
                 .child(text_block(
                     if preview.replacing {
                         "Replace existing login item"
@@ -108,7 +112,7 @@ impl Settings {
                         }
                     });
                     row_base()
-                        .child(tile("icons/app-window.svg", accent(), 22.0))
+                        .child(tile("icons/app-window.svg", accent(), style::ROW_ICON))
                         .child(text_block(item.name.clone().into(), Some(subtitle.into())))
                         .when(item.user_owned && !item.managed_override, |row| {
                             row.child(
@@ -178,7 +182,11 @@ impl Settings {
                 preview.name
             )));
             cards.push(card(vec![row_base()
-                .child(tile("icons/info.svg", rmac_ui::mac::warning_text(), 22.0))
+                .child(tile(
+                    "icons/info.svg",
+                    rmac_ui::mac::warning_text(),
+                    style::ROW_ICON,
+                ))
                 .child(text_block(
                     "Confirm removal".into(),
                     Some("This does not delete the application itself".into()),

@@ -13,7 +13,7 @@ pub(in crate::controller) fn locale_preview_row(
     example: Option<&str>,
 ) -> AnyElement {
     row_base()
-        .child(tile(icon, secondary(), 22.0))
+        .child(tile(icon, secondary(), style::ROW_ICON))
         .child(text_block(
             title.into(),
             Some(format!("Locale: {source}").into()),

@@ -67,7 +67,18 @@ or an excuse to imply that Linux exposes a capability it does not provide.
   section order under filtering.
 - Search filters immediately. Empty results leave Search and the account
   context present and announce the truthful match count.
-- The Back control appears only while a typed subpage is active. Escape closes
+- Geometry follows macOS 26 as measured in `design-lab/settings.html`: a
+  723 × 832 window, a 215 pt floating sidebar panel holding the traffic lights,
+  a 73 × 36 back/forward capsule with the pane title, and 460 pt grouped forms
+  (radius 12, 37 pt rows, 1 pt inset separators, bold 13 pt section heads).
+  The sidebar selection is the accent only while the sidebar has focus in the
+  key window, grey otherwise. Choices use the form pop-up (value plus ⌃⌄),
+  not segmented buttons.
+- Date & Time, Language & Region, Login Items and Sharing are filed under
+  General, as on the Mac: the sidebar hides them outside a search and keeps
+  General selected while one is open, and Back returns to General.
+- The Back segment is enabled while a typed subpage or a General child pane is
+  open; Forward (⌘]) replays a subpage left with Back. Escape closes
   transient overlays first; it must not silently discard a reviewed mutation.
 - Loading, unavailable, degraded, busy, success, and failure states remain
   visually distinct. An error never fabricates an empty authoritative state.

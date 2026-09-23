@@ -12,6 +12,7 @@ impl Settings {
         let alert_sound = self.sound_policy.alert_sound;
         let preview_view = view.clone();
         let alert_picker = PopUpButton::new("sound-alert-picker", alert_sound.display_name())
+            .form()
             .dropdown_menu(|menu, _, _| {
                 menu.menu("Alert", Box::new(SelectAlert))
                     .menu("Error", Box::new(SelectErrorAlert))
@@ -53,23 +54,35 @@ impl Settings {
                 });
             });
 
-        let mut cards = vec![section_header("Sound Effects")];
+        let mut cards = vec![first_section_header("Sound Effects")];
         cards.push(
             div()
                 .v_flex()
-                .mb_3()
-                .rounded(px(rmac_ui::mac::radius_menu()))
+                .mb(px(style::GROUP_GAP))
+                .rounded(px(style::GROUP_RADIUS))
                 .bg(card_bg())
-                .border_1()
-                .border_color(sep())
                 .child(
                     row_base()
                         .child(text_block("Alert sound".into(), None))
                         .child(alert_picker)
+                        // The Mac's circled ▶ plays the chosen alert.
                         .child(
-                            Button::new("sound-alert-preview", "▶")
-                                .ghost()
-                                .tooltip("Play alert sound")
+                            div()
+                                .id("sound-alert-preview")
+                                .size(px(style::INFO_BUTTON + 2.0))
+                                .flex_none()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .rounded_full()
+                                .border_1()
+                                .border_color(label())
+                                .cursor_pointer()
+                                .tooltip(|window, cx| {
+                                    gpui_component::tooltip::Tooltip::new("Play alert sound")
+                                        .build(window, cx)
+                                })
+                                .child(glyph("icons/play.svg", 9.0, label()))
                                 .on_click(move |_, _, cx| {
                                     preview_view.update(cx, |settings, _| {
                                         let _ = rmac_sound::preview(
@@ -80,24 +93,39 @@ impl Settings {
                                 }),
                         ),
                 )
-                .child(div().h(px(1.0)).bg(sep()).mx_3())
+                .child(
+                    div()
+                        .h(px(style::SEPARATOR))
+                        .bg(sep())
+                        .mx(px(style::ROW_PADDING)),
+                )
                 .child(
                     row_base()
                         .child(text_block("Play sound effects through".into(), None))
                         .child(
                             div()
-                                .text_size(rmac_ui::text_px(12.0))
+                                .text_size(rmac_ui::text_px(13.0))
                                 .text_color(secondary())
                                 .child(output_name),
                         ),
                 )
-                .child(div().h(px(1.0)).bg(sep()).mx_3())
+                .child(
+                    div()
+                        .h(px(style::SEPARATOR))
+                        .bg(sep())
+                        .mx(px(style::ROW_PADDING)),
+                )
                 .child(slider_row(
                     "Alert volume",
                     &self.alert_volume,
                     format!("{alert}%").into(),
                 ))
-                .child(div().h(px(1.0)).bg(sep()).mx_3())
+                .child(
+                    div()
+                        .h(px(style::SEPARATOR))
+                        .bg(sep())
+                        .mx(px(style::ROW_PADDING)),
+                )
                 .child(
                     row_base()
                         .child(text_block(
@@ -106,7 +134,12 @@ impl Settings {
                         ))
                         .child(interface_effects),
                 )
-                .child(div().h(px(1.0)).bg(sep()).mx_3())
+                .child(
+                    div()
+                        .h(px(style::SEPARATOR))
+                        .bg(sep())
+                        .mx(px(style::ROW_PADDING)),
+                )
                 .child(
                     row_base()
                         .child(text_block(
@@ -115,7 +148,12 @@ impl Settings {
                         ))
                         .child(volume_feedback),
                 )
-                .child(div().h(px(1.0)).bg(sep()).mx_3())
+                .child(
+                    div()
+                        .h(px(style::SEPARATOR))
+                        .bg(sep())
+                        .mx(px(style::ROW_PADDING)),
+                )
                 .child(
                     row_base()
                         .child(text_block("Play sound on startup".into(), None))
@@ -125,30 +163,7 @@ impl Settings {
         if let Some(detail) = &self.sound_policy_error {
             cards.push(note_card(detail.clone()));
         }
-        cards.push(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .px_1()
-                .pb_1()
-                .child(
-                    div()
-                        .text_size(rmac_ui::text_px(12.0))
-                        .font_weight(rmac_ui::mac::SEMIBOLD)
-                        .text_color(secondary())
-                        .child("System Audio"),
-                )
-                .child(
-                    Button::new("audio-refresh", "Refresh")
-                        .ghost()
-                        .busy(self.audio_busy)
-                        .disabled(self.audio_loading || self.audio_busy)
-                        .on_click(move |_, _, cx| {
-                            refresh_view.update(cx, |settings, cx| settings.refresh_audio(cx));
-                        }),
-                ),
-        );
+        cards.push(section_header("Output & Input"));
 
         if self.audio_loading {
             cards.push(note_card("Loading audio state from the system…"));
@@ -171,11 +186,9 @@ impl Settings {
                     });
                 let mut output_card = div()
                     .v_flex()
-                    .mb_3()
-                    .rounded(px(rmac_ui::mac::radius_menu()))
+                    .mb(px(style::GROUP_GAP))
+                    .rounded(px(style::GROUP_RADIUS))
                     .bg(card_bg())
-                    .border_1()
-                    .border_color(sep())
                     .child(slider_row(
                         "Output volume",
                         &self.output_volume,
@@ -188,15 +201,27 @@ impl Settings {
                     .any(|device| device.is_default && device.balance.is_some())
                 {
                     output_card = output_card
-                        .child(div().h(px(1.0)).bg(sep()).mx_3())
+                        .child(
+                            div()
+                                .h(px(style::SEPARATOR))
+                                .bg(sep())
+                                .mx(px(style::ROW_PADDING)),
+                        )
                         .child(balance_slider_row(&self.output_balance));
                 }
-                output_card = output_card.child(div().h(px(1.0)).bg(sep()).mx_3()).child(
-                    row_base()
-                        .child(tile("icons/volume-2.svg", secondary(), 22.0))
-                        .child(text_block("Mute output".into(), None))
-                        .child(output_mute),
-                );
+                output_card = output_card
+                    .child(
+                        div()
+                            .h(px(style::SEPARATOR))
+                            .bg(sep())
+                            .mx(px(style::ROW_PADDING)),
+                    )
+                    .child(
+                        row_base()
+                            .child(tile("icons/volume-2.svg", secondary(), style::ROW_ICON))
+                            .child(text_block("Mute output".into(), None))
+                            .child(output_mute),
+                    );
                 cards.push(output_card);
             } else {
                 cards.push(note_card("No output device is currently active."));
@@ -205,11 +230,9 @@ impl Settings {
             if self.audio.has_input {
                 let mut input_card = div()
                     .v_flex()
-                    .mb_3()
-                    .rounded(px(rmac_ui::mac::radius_menu()))
+                    .mb(px(style::GROUP_GAP))
+                    .rounded(px(style::GROUP_RADIUS))
                     .bg(card_bg())
-                    .border_1()
-                    .border_color(sep())
                     .child(slider_row(
                         "Input volume",
                         &self.input_volume,
@@ -224,12 +247,19 @@ impl Settings {
                                 settings.set_audio_muted(rmac_audio::DeviceKind::Input, *muted, cx)
                             });
                         });
-                    input_card = input_card.child(div().h(px(1.0)).bg(sep()).mx_3()).child(
-                        row_base()
-                            .child(tile("icons/volume-2.svg", secondary(), 22.0))
-                            .child(text_block("Mute microphone".into(), None))
-                            .child(input_mute),
-                    );
+                    input_card = input_card
+                        .child(
+                            div()
+                                .h(px(style::SEPARATOR))
+                                .bg(sep())
+                                .mx(px(style::ROW_PADDING)),
+                        )
+                        .child(
+                            row_base()
+                                .child(tile("icons/volume-2.svg", secondary(), style::ROW_ICON))
+                                .child(text_block("Mute microphone".into(), None))
+                                .child(input_mute),
+                        );
                 }
                 cards.push(input_card);
             } else {
@@ -262,6 +292,16 @@ impl Settings {
             cards.push(self.audio_profile_card(cx));
         }
 
+        cards.push(footer_buttons(vec![push_button(
+            "audio-refresh",
+            "Refresh",
+        )
+        .busy(self.audio_busy)
+        .disabled(self.audio_loading || self.audio_busy)
+        .on_click(move |_, _, cx| {
+            refresh_view.update(cx, |settings, cx| settings.refresh_audio(cx));
+        })
+        .into_any_element()]));
         self.pane(cards)
     }
 

@@ -31,7 +31,7 @@ impl Settings {
                     let revealing = self.login_item_busy.as_deref() == Some(reveal_key.as_str());
                     let subtitle = format!("{} · {}", service.detail, service.state.label());
                     row_base()
-                        .child(tile("icons/settings.svg", secondary(), 22.0))
+                        .child(tile("icons/settings.svg", secondary(), style::ROW_ICON))
                         .child(text_block(
                             service.name.clone().into(),
                             Some(subtitle.into()),

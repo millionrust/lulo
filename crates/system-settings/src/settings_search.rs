@@ -134,6 +134,15 @@ pub(crate) fn terms_for_pane(name: &str) -> &'static [&'static str] {
             "reserve screen space",
             "application clicks",
         ],
+        "Menu Bar" => &[
+            "menu bar items",
+            "status items",
+            "battery percentage",
+            "show seconds",
+            "menu bar Wi-Fi",
+            "menu bar Bluetooth",
+            "menu bar volume",
+        ],
         "Displays" => &[
             "display arrangement",
             "main display",

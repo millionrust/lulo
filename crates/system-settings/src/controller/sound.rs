@@ -21,9 +21,11 @@ fn audio_choice_row(
     selected: bool,
     disabled: bool,
 ) -> ListRow {
+    // macOS 26 marks the chosen device like a table selection: a grey row,
+    // text unchanged, rather than an accent fill.
     let has_detail = detail.is_some();
-    let foreground = if selected { on_accent() } else { label() };
-    let secondary_foreground = if selected { on_accent() } else { secondary() };
+    let foreground = label();
+    let secondary_foreground = secondary();
     let mut text = div().v_flex().flex_1().child(
         div()
             .text_size(rmac_ui::text_px(13.0))
@@ -43,7 +45,7 @@ fn audio_choice_row(
         .flex()
         .items_center()
         .gap_3()
-        .child(tile(icon, secondary_foreground, 22.0))
+        .child(tile(icon, secondary_foreground, style::ROW_ICON))
         .child(text)
         .when_some(status, |row, status| {
             row.child(
@@ -54,13 +56,23 @@ fn audio_choice_row(
             )
         })
         .when(selected, |row| {
-            row.child(glyph("icons/check.svg", 13.0, on_accent()))
+            row.child(glyph("icons/check.svg", 13.0, foreground))
         });
     ListRow::new(ElementId::from(id), content)
-        .selected(selected)
+        .selected(true)
+        .bg(if selected {
+            gpui::hsla(0.0, 0.0, 1.0, 0.08)
+        } else {
+            gpui::transparent_black()
+        })
+        .rounded(px(0.0))
         .disabled(disabled)
-        .h(px(if has_detail { 60.0 } else { 44.0 }))
-        .px_3()
+        .h(px(if has_detail {
+            style::NAV_ROW_HEIGHT + 10.0
+        } else {
+            style::ROW_HEIGHT
+        }))
+        .px(px(style::ROW_PADDING))
 }
 
 impl Settings {

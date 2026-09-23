@@ -23,7 +23,7 @@ impl Settings {
                 self.sysinfo.operating_system.clone().into(),
             ),
             row_base()
-                .child(tile("icons/refresh-cw.svg", accent(), 22.0))
+                .child(tile("icons/refresh-cw.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Package updates".into(),
                     Some("PackageKit · configured repositories".into()),
@@ -45,7 +45,7 @@ impl Settings {
                         .mb_3(),
                 )
                 .child(card(vec![row_base()
-                    .child(tile("icons/shield.svg", accent(), 22.0))
+                    .child(tile("icons/shield.svg", accent(), style::ROW_ICON))
                     .child(text_block(
                         "Verifying dependencies".into(),
                         Some("No package changes have started".into()),
@@ -93,7 +93,7 @@ impl Settings {
                 .is_some_and(rmac_updates::Cancellation::is_cancelled);
             let cancel_view = view.clone();
             return body.child(progress_element).child(card(vec![row_base()
-                .child(tile("icons/refresh-cw.svg", accent(), 22.0))
+                .child(tile("icons/refresh-cw.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Installing trusted updates".into(),
                     Some("PackageKit owns the transaction; do not turn off this computer".into()),
@@ -175,7 +175,7 @@ impl Settings {
 
         if snapshot.can_prepare_install() {
             body = body.child(card(vec![row_base()
-                .child(tile("icons/shield.svg", accent(), 22.0))
+                .child(tile("icons/shield.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Install all trusted updates".into(),
                     Some("Refresh, simulate dependencies, then confirm the exact plan".into()),

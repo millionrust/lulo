@@ -174,6 +174,38 @@ impl Settings {
         .detach();
     }
 
+    /// Save a Menu Bar pane change through the same versioned shell-settings
+    /// store the menu bar watches. The Dock's revert point is left alone.
+    pub(super) fn apply_menu_bar_change(&mut self, change: MenuBarChange, cx: &mut Context<Self>) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            return;
+        };
+        let mut next = snapshot.settings.clone();
+        change.apply(&mut next);
+        if next == snapshot.settings {
+            return;
+        }
+
+        self.shell_settings_busy = true;
+        self.shell_settings_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                persist_shell_settings_mutation(ShellSettingsMutation::MenuBar(change))
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                let dock_revert = this.shell_settings_revert.clone();
+                this.finish_shell_settings_mutation(result, dock_revert);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(super) fn revert_dock_change(&mut self, cx: &mut Context<Self>) {
         if self.shell_settings_loading || self.shell_settings_busy {
             return;

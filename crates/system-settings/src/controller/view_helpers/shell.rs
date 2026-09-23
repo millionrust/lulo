@@ -10,34 +10,21 @@ pub(in crate::controller) fn dock_segment_row(
     selected: Option<usize>,
     enabled: bool,
 ) -> AnyElement {
-    let mut control = div().flex().gap_1().w(px(290.0));
-    for (index, (option_label, change)) in options.iter().cloned().enumerate() {
-        let option_view = view.clone();
-        control = control.child(
-            Button::new(
-                ElementId::from(SharedString::from(format!("{id}-{index}"))),
-                option_label,
-            )
-            .flex_1()
-            .selected(selected == Some(index))
-            .disabled(!enabled)
-            .on_click(move |_, _, cx| {
+    let choices: Vec<PopupChoice> = options
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(index, (option_label, change))| {
+            let option_view = view.clone();
+            choice(option_label, selected == Some(index), move |_, cx| {
                 option_view.update(cx, |settings, cx| {
                     settings.apply_dock_change(change.clone(), cx)
                 });
-            }),
-        );
-    }
-    row_base()
-        .child(
-            div()
-                .flex_1()
-                .text_size(rmac_ui::text_px(13.0))
-                .text_color(label())
-                .child(title),
-        )
-        .child(control)
-        .into_any_element()
+            })
+        })
+        .collect();
+    let current = popup_value(&choices, "Custom");
+    popup_row(id, title, None, current, choices, enabled)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -65,69 +52,29 @@ pub(in crate::controller) fn dock_switch_row(
         .into_any_element()
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(in crate::controller) fn dock_output_row(
-    view: &Entity<Settings>,
-    id: &str,
-    title: SharedString,
-    subtitle: Option<SharedString>,
-    selected: bool,
-    enabled: bool,
-    scope: rmac_shell_settings::OutputScope,
-) -> AnyElement {
-    let output_view = view.clone();
-    row_base()
-        .child(text_block(title, subtitle))
-        .child(
-            Button::new(
-                ElementId::from(SharedString::from(format!("dock-output-{id}"))),
-                if selected { "Selected" } else { "Use" },
-            )
-            .selected(selected)
-            .disabled(!enabled || selected)
-            .on_click(move |_, _, cx| {
-                output_view.update(cx, |settings, cx| {
-                    settings.apply_dock_change(DockChange::Outputs(scope.clone()), cx)
-                });
-            }),
-        )
-        .into_any_element()
-}
-
+/// The wallpaper's fit, labelled with the wallpaper's name as the Mac labels
+/// its variant pop-up ("Tahoe · Automatic").
 pub(in crate::controller) fn wallpaper_fit_row(
     view: Entity<Settings>,
+    title: SharedString,
     selected: rmac_shell_settings::WallpaperFit,
     enabled: bool,
 ) -> AnyElement {
-    let mut control = div().flex().gap_1().w(px(380.0));
-    for (index, (label, fit)) in WALLPAPER_FIT_OPTIONS.iter().copied().enumerate() {
-        let fit_view = view.clone();
-        control = control.child(
-            Button::new(
-                ElementId::from(SharedString::from(format!("wallpaper-fit-{index}"))),
-                label,
-            )
-            .flex_1()
-            .selected(selected == fit)
-            .disabled(!enabled)
-            .on_click(move |_, _, cx| {
+    let choices: Vec<PopupChoice> = WALLPAPER_FIT_OPTIONS
+        .iter()
+        .copied()
+        .map(|(label, fit)| {
+            let fit_view = view.clone();
+            choice(label, selected == fit, move |_, cx| {
                 fit_view.update(cx, |settings, cx| {
                     let target = settings.wallpaper_target.clone();
                     settings.apply_wallpaper_change(target, WallpaperChange::Fit(fit), cx);
                 });
-            }),
-        );
-    }
-    row_base()
-        .child(
-            div()
-                .flex_1()
-                .text_size(rmac_ui::text_px(13.0))
-                .text_color(label())
-                .child("Display mode"),
-        )
-        .child(control)
-        .into_any_element()
+            })
+        })
+        .collect();
+    let current = popup_value(&choices, "Fill");
+    popup_row("wallpaper-fit", title, None, current, choices, enabled)
 }
 
 pub(in crate::controller) fn shortcut_configuration_available(

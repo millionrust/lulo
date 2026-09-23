@@ -1,4 +1,6 @@
-//! Bluetooth pane presentation.
+//! Bluetooth pane presentation, laid out like macOS 26
+//! (design-lab/settings.html): a header card with the Bluetooth switch and
+//! discoverability, then My Devices and Nearby Devices.
 
 use super::*;
 
@@ -7,12 +9,12 @@ mod dialogs;
 impl Settings {
     pub(in crate::controller) fn render_bluetooth(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
-        let power_subtitle = if self.bluetooth_loading {
-            Some("Reading system state…".into())
+        let description: SharedString = if self.bluetooth_loading {
+            "Reading system state…".into()
         } else if self.bluetooth_busy {
-            Some("Applying change…".into())
+            "Applying change…".into()
         } else {
-            self.bluetooth_adapter_name.clone().map(Into::into)
+            "Connect to accessories you can use for activities such as streaming music, typing and gaming.".into()
         };
         let power_view = view.clone();
         let power = Toggle::new("bluetooth-power")
@@ -23,11 +25,39 @@ impl Settings {
                     settings.set_bluetooth_powered(*powered, cx)
                 });
             });
-        let mut cards = vec![card(vec![row_base()
-            .child(tile("icons/bluetooth.svg", accent(), 22.0))
-            .child(text_block("Bluetooth".into(), power_subtitle))
+        let mut header_rows = vec![row_base()
+            .items_start()
+            .gap(px(12.0))
+            .child(tile("icons/bluetooth.svg", accent(), style::HEADER_ICON))
+            .child(text_block("Bluetooth".into(), Some(description)))
             .child(power)
-            .into_any_element()])];
+            .into_any_element()];
+        if self.bluetooth_on && self.bluetooth_available && !self.bluetooth_loading {
+            let discoverable_view = view.clone();
+            let discoverable = Toggle::new("bluetooth-discoverable")
+                .checked(self.bt_discoverable)
+                .disabled(self.bluetooth_busy || self.bluetooth_discovering)
+                .on_click(move |enabled, _, cx| {
+                    discoverable_view.update(cx, |settings, cx| {
+                        settings.set_bluetooth_discoverable(*enabled, cx)
+                    });
+                });
+            let subtitle: SharedString = match (&self.bluetooth_adapter_name, self.bt_discoverable)
+            {
+                (Some(name), true) => {
+                    format!("This computer is discoverable as \u{201c}{name}\u{201d}.").into()
+                }
+                _ => "Allow nearby devices to find this computer.".into(),
+            };
+            header_rows.push(
+                row_base()
+                    .items_start()
+                    .child(text_block("Discoverable".into(), Some(subtitle)))
+                    .child(discoverable)
+                    .into_any_element(),
+            );
+        }
+        let mut cards = vec![card(header_rows)];
 
         if self.bluetooth_loading {
             cards.push(note_card("Loading Bluetooth state from the system…"));
@@ -41,91 +71,23 @@ impl Settings {
         }
 
         if self.bluetooth_on {
-            let discoverable_view = view.clone();
-            let discoverable = Toggle::new("bluetooth-discoverable")
-                .checked(self.bt_discoverable)
-                .disabled(self.bluetooth_busy || self.bluetooth_discovering)
-                .on_click(move |enabled, _, cx| {
-                    discoverable_view.update(cx, |settings, cx| {
-                        settings.set_bluetooth_discoverable(*enabled, cx)
-                    });
-                });
-            cards.push(card(vec![row_base()
-                .child(tile("icons/bluetooth.svg", secondary(), 22.0))
-                .child(text_block(
-                    "Discoverable".into(),
-                    Some("Allow nearby devices to find this computer.".into()),
-                ))
-                .child(discoverable)
-                .into_any_element()]));
-
-            let refresh_view = view.clone();
-            let refresh_label = if self.bluetooth_busy || self.bluetooth_discovering {
-                "Scanning…"
-            } else {
-                "Refresh"
+            let row = |device: &rmac_bluetooth::Device| {
+                bluetooth_device_row(
+                    &view,
+                    device,
+                    self.bluetooth_busy,
+                    self.bluetooth_forgetting.as_deref() == Some(device.id.as_str()),
+                )
             };
-            cards.push(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_1()
-                    .pt_2()
-                    .pb_1()
-                    .child(
-                        div()
-                            .text_size(rmac_ui::text_px(12.0))
-                            .font_weight(rmac_ui::mac::SEMIBOLD)
-                            .text_color(secondary())
-                            .child("Devices"),
-                    )
-                    .child(
-                        Button::new("bluetooth-refresh", refresh_label)
-                            .ghost()
-                            .busy(self.bluetooth_busy || self.bluetooth_discovering)
-                            .disabled(self.bluetooth_busy || self.bluetooth_discovering)
-                            .on_click(move |_, _, cx| {
-                                refresh_view
-                                    .update(cx, |settings, cx| settings.refresh_bluetooth(cx));
-                            }),
-                    ),
-            );
-
-            let connected: Vec<AnyElement> = self
+            let mine: Vec<AnyElement> = self
                 .bt_devices
                 .iter()
-                .filter(|device| device.connected)
-                .map(|device| {
-                    bluetooth_device_row(
-                        &view,
-                        device,
-                        self.bluetooth_busy,
-                        self.bluetooth_forgetting.as_deref() == Some(device.id.as_str()),
-                    )
-                })
+                .filter(|device| device.paired || device.connected)
+                .map(row)
                 .collect();
-            if !connected.is_empty() {
-                cards.push(section_header("Connected"));
-                cards.push(card(connected));
-            }
-
-            let known: Vec<AnyElement> = self
-                .bt_devices
-                .iter()
-                .filter(|device| device.paired && !device.connected)
-                .map(|device| {
-                    bluetooth_device_row(
-                        &view,
-                        device,
-                        self.bluetooth_busy,
-                        self.bluetooth_forgetting.as_deref() == Some(device.id.as_str()),
-                    )
-                })
-                .collect();
-            if !known.is_empty() {
-                cards.push(section_header("Known Devices"));
-                cards.push(card(known));
+            if !mine.is_empty() {
+                cards.push(section_header("My Devices"));
+                cards.push(card(mine));
             }
 
             let nearby: Vec<AnyElement> = self
@@ -134,17 +96,42 @@ impl Settings {
                 .filter(|device| !device.paired && !device.connected)
                 .map(|device| bluetooth_device_row(&view, device, self.bluetooth_busy, false))
                 .collect();
-            if !nearby.is_empty() {
-                cards.push(section_header("Nearby Devices"));
+            cards.push(section_header("Nearby Devices"));
+            if nearby.is_empty() {
+                cards.push(card(vec![row_base()
+                    .justify_center()
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(13.0))
+                            .text_color(secondary())
+                            .child(if self.bluetooth_discovering {
+                                "Searching…"
+                            } else {
+                                "No nearby devices found"
+                            }),
+                    )
+                    .into_any_element()]));
+            } else {
                 cards.push(card(nearby));
             }
-            if self.bt_devices.is_empty() {
-                cards.push(note_card(
-                    "No Bluetooth devices found. Refresh to scan again.",
-                ));
-            }
-            cards.push(note_card(
-                "Pairing uses a one-transaction confirmation agent. Confirm that displayed codes match; paired devices become trusted only after BlueZ reports success.",
+
+            let refresh_view = view.clone();
+            cards.push(footer_buttons(vec![push_button(
+                "bluetooth-refresh",
+                if self.bluetooth_busy || self.bluetooth_discovering {
+                    "Scanning…"
+                } else {
+                    "Refresh"
+                },
+            )
+            .busy(self.bluetooth_busy || self.bluetooth_discovering)
+            .disabled(self.bluetooth_busy || self.bluetooth_discovering)
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| settings.refresh_bluetooth(cx));
+            })
+            .into_any_element()]));
+            cards.push(footnote(
+                "Confirm that pairing codes match on both devices. A device becomes trusted only after BlueZ reports that pairing succeeded.",
             ));
         }
         self.pane(cards)

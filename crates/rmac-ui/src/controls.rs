@@ -304,6 +304,7 @@ pub struct PopUpButton {
     label: SharedString,
     disabled: bool,
     selected: bool,
+    form: bool,
     menu: Option<MenuBuilder>,
     style: StyleRefinement,
 }
@@ -315,9 +316,18 @@ impl PopUpButton {
             label: label.into(),
             disabled: false,
             selected: false,
+            form: false,
             menu: None,
             style: StyleRefinement::default(),
         }
+    }
+
+    /// The grouped-form pop-up of macOS 26 System Settings: the value in
+    /// plain 13 pt text followed by a 20 pt circle holding ⌃⌄, with no
+    /// bezel (design-lab/chrome.html, design-lab/settings.html).
+    pub fn form(mut self) -> Self {
+        self.form = true;
+        self
     }
 
     pub fn disabled(mut self, disabled: bool) -> Self {
@@ -347,6 +357,63 @@ impl Styled for PopUpButton {
 
 impl RenderOnce for PopUpButton {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        if self.form {
+            let metrics = rmac_design::Metrics::default();
+            let circle = metrics.popup_chevron;
+            let text = if self.disabled {
+                mac::text_tertiary()
+            } else {
+                mac::text()
+            };
+            let content = div()
+                .flex()
+                .items_center()
+                .gap(px(6.0))
+                .child(
+                    div()
+                        .text_size(crate::text_px(13.0))
+                        .text_color(text)
+                        .whitespace_nowrap()
+                        .child(self.label),
+                )
+                .child(
+                    div()
+                        .size(px(circle))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_full()
+                        .bg(mac::button_secondary())
+                        .child(
+                            gpui::svg()
+                                .path("icons/chevrons-up-down.svg")
+                                .size(px(12.0))
+                                .text_color(text),
+                        ),
+                );
+            let transparent = rgba(0x00000000).into();
+            let button = painted(
+                ComponentButton::new(self.id)
+                    .compact()
+                    .disabled(self.disabled)
+                    .child(content),
+                transparent,
+                text,
+                None,
+                self.disabled,
+                cx,
+            )
+            .h(px(metrics.control_height_regular))
+            .px(px(2.0))
+            .refine_style(&self.style);
+            return match self.menu {
+                Some(builder) if !self.disabled => button
+                    .dropdown_menu(move |menu, window, cx| builder(menu, window, cx))
+                    .into_any_element(),
+                _ => button.into_any_element(),
+            };
+        }
         let fill = if self.selected {
             mac::control_fill_hover()
         } else {
@@ -369,7 +436,7 @@ impl RenderOnce for PopUpButton {
         if self.disabled {
             dropdown = dropdown.disabled(true);
         }
-        dropdown.refine_style(&self.style)
+        dropdown.refine_style(&self.style).into_any_element()
     }
 }
 

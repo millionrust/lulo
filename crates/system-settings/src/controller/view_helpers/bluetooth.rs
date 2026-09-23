@@ -8,21 +8,15 @@ pub(in crate::controller) fn bluetooth_device_row(
     busy: bool,
     forgetting: bool,
 ) -> AnyElement {
-    let mut details = Vec::new();
-    if !device.kind.is_empty() {
-        details.push(device.kind.clone());
-    }
-    if !device.address.is_empty() {
-        details.push(device.address.clone());
-    }
-    if device.paired {
-        details.push(if device.trusted {
-            "Trusted".into()
-        } else {
-            "Not trusted".into()
-        });
-    }
-    let subtitle = (!details.is_empty()).then(|| details.join(" · ").into());
+    // The Mac shows only the connection state under a known device, and
+    // the device kind under a nearby one.
+    let subtitle: Option<SharedString> = if device.connected {
+        Some("Connected".into())
+    } else if device.paired {
+        Some("Not Connected".into())
+    } else {
+        (!device.kind.is_empty()).then(|| device.kind.clone().into())
+    };
     let connect_id = device.id.clone();
     let pair_id = device.id.clone();
     let pair_name = SharedString::from(device.name.clone());
@@ -40,6 +34,7 @@ pub(in crate::controller) fn bluetooth_device_row(
         "Pair"
     };
     row_base()
+        .min_h(px(style::NAV_ROW_HEIGHT + 15.0))
         .child(tile(
             "icons/bluetooth.svg",
             if device.connected {
@@ -47,7 +42,7 @@ pub(in crate::controller) fn bluetooth_device_row(
             } else {
                 secondary()
             },
-            22.0,
+            style::HEADER_ICON,
         ))
         .child(text_block(device.name.clone().into(), subtitle))
         .child(
@@ -56,11 +51,10 @@ pub(in crate::controller) fn bluetooth_device_row(
                 .items_center()
                 .gap_2()
                 .child(
-                    Button::new(
+                    push_button(
                         SharedString::from(format!("bluetooth-device-action-{connect_id}")),
                         action,
                     )
-                    .xsmall()
                     .disabled(busy)
                     .when(device.paired, |button| {
                         button.on_click(move |_, _, cx| {
@@ -88,11 +82,10 @@ pub(in crate::controller) fn bluetooth_device_row(
                 )
                 .when(device.paired, |actions| {
                     actions.child(
-                        Button::new(
+                        push_button(
                             SharedString::from(format!("bluetooth-device-forget-{forget_id}")),
                             "Forget…",
                         )
-                        .xsmall()
                         .busy(forgetting)
                         .disabled(busy)
                         .on_click(move |_, _, cx| {

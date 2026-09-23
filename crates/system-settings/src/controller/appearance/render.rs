@@ -1,33 +1,33 @@
-//! System Settings Appearance pane presentation.
+//! System Settings Appearance pane presentation, laid out like macOS 26
+//! (design-lab/settings.html): the Appearance thumbnails, then a Theme
+//! group with the accent colours and wallpaper tinting, then contrast and
+//! motion pop-ups.
 
 use super::*;
+
+/// macOS 26: Appearance thumbnails are 74 × 65 buttons on an 82 pt pitch
+/// (a 68 × 44 picture, its label 11 pt below); accent swatches are 24 pt
+/// circles in 32 pt hit boxes on a 35.5 pt pitch.
+const THUMB_WIDTH: f32 = 68.0;
+const THUMB_HEIGHT: f32 = 44.0;
+const THUMB_BUTTON: f32 = 74.0;
+const THUMB_GAP: f32 = 8.0;
+const SWATCH: f32 = 24.0;
+const SWATCH_BUTTON: f32 = 32.0;
+const SWATCH_GAP: f32 = 3.5;
 
 impl Settings {
     pub(in crate::controller) fn render_appearance(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let refresh_view = view.clone();
-        let mut cards = vec![div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .px_1()
-            .pb_1()
-            .child(
-                div()
-                    .text_size(rmac_ui::text_px(12.0))
-                    .font_weight(rmac_ui::mac::SEMIBOLD)
-                    .text_color(secondary())
-                    .child("rmac Appearance"),
-            )
-            .child(
-                Button::new("theme-refresh", "Refresh")
-                    .ghost()
-                    .disabled(self.theme_loading || self.theme_busy || self.theme_stream_refreshing)
-                    .busy(self.theme_busy || self.theme_stream_refreshing)
-                    .on_click(move |_, _, cx| {
-                        refresh_view.update(cx, |settings, cx| settings.refresh_theme(cx));
-                    }),
-            )];
+        let refresh = footer_buttons(vec![push_button("theme-refresh", "Refresh")
+            .disabled(self.theme_loading || self.theme_busy || self.theme_stream_refreshing)
+            .busy(self.theme_busy || self.theme_stream_refreshing)
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| settings.refresh_theme(cx));
+            })
+            .into_any_element()]);
+        let mut cards = Vec::new();
         if self.theme_loading {
             cards.push(note_card("Loading appearance preferences…"));
             return self.pane(cards);
@@ -36,208 +36,178 @@ impl Settings {
             cards.push(note_card(
                 "The rmac theme preference service is unavailable.",
             ));
+            cards.push(refresh);
             return self.pane(cards);
         };
         let enabled = !self.theme_busy && !self.theme_stream_refreshing;
         let preferences = &theme.preferences;
-        let scheme_card = {
-            let option = |id: &'static str,
-                          name: &'static str,
-                          preference: rmac_theme::SchemePreference,
-                          swatch: Hsla| {
-                let selected = preferences.color_scheme == preference;
-                let option_view = view.clone();
-                let content = div()
-                    .v_flex()
-                    .items_center()
-                    .gap_1p5()
-                    .child(
-                        div()
-                            .w(px(64.0))
-                            .h(px(40.0))
-                            .rounded(px(rmac_ui::mac::radius_menu_item()))
-                            .bg(swatch)
-                            .border_2()
-                            .border_color(if selected { accent() } else { sep() }),
-                    )
-                    .child(
-                        div()
-                            .text_size(rmac_ui::text_px(12.0))
-                            .text_color(if selected { accent() } else { label() })
-                            .child(name),
-                    );
-                ListRow::new(ElementId::from(id), content)
-                    .selected(selected)
-                    .disabled(!enabled)
-                    .on_activate(move |_, _, cx| {
+
+        let thumbnail = |id: &'static str,
+                         name: &'static str,
+                         preference: rmac_theme::SchemePreference,
+                         picture: Div| {
+            let selected = preferences.color_scheme == preference;
+            let option_view = view.clone();
+            div()
+                .id(id)
+                .w(px(THUMB_BUTTON))
+                .v_flex()
+                .items_center()
+                .gap(px(5.0))
+                .when(enabled, |option| option.cursor_pointer())
+                .child(
+                    picture
+                        .w(px(THUMB_WIDTH))
+                        .h(px(THUMB_HEIGHT))
+                        .rounded(px(6.0))
+                        .overflow_hidden()
+                        .when(selected, |picture| {
+                            picture.border_2().border_color(accent())
+                        })
+                        .when(!selected, |picture| picture.border_1().border_color(sep())),
+                )
+                .child(
+                    div()
+                        .text_size(rmac_ui::text_px(11.0))
+                        .line_height(px(14.0))
+                        .font_weight(if selected {
+                            rmac_ui::mac::BOLD
+                        } else {
+                            rmac_ui::mac::REGULAR
+                        })
+                        .text_color(if selected { label() } else { secondary() })
+                        .child(name),
+                )
+                .when(enabled, |option| {
+                    option.on_click(move |_, _, cx| {
                         option_view.update(cx, |settings, cx| {
                             settings.apply_theme_change(ThemeChange::Scheme(preference), cx)
                         });
                     })
-                    .w(px(84.0))
-                    .h(px(68.0))
-                    .justify_center()
-            };
-            div()
-                .flex()
-                .gap_5()
-                .justify_center()
-                .p_4()
-                .rounded(px(rmac_ui::mac::radius_menu()))
-                .mb_3()
-                .bg(card_bg())
-                .border_1()
-                .border_color(sep())
-                .child(option(
-                    "theme-light",
-                    "Light",
-                    rmac_theme::SchemePreference::Light,
-                    hsl(0xf5f5f7),
-                ))
-                .child(option(
-                    "theme-dark",
-                    "Dark",
-                    rmac_theme::SchemePreference::Dark,
-                    hsl(0x2c2c2e),
-                ))
-                .child(option(
-                    "theme-auto",
-                    "Automatic",
-                    rmac_theme::SchemePreference::Automatic,
-                    hsl(0x8e8e93),
-                ))
+                })
         };
-        cards.push(scheme_card);
+        let light = || div().bg(hsl(0xe8e8ed));
+        let dark = || div().bg(hsl(0x2c2c2e));
+        cards.push(card(vec![row_base()
+            .items_start()
+            .child(text_block("Appearance".into(), None))
+            .child(
+                div()
+                    .flex()
+                    .gap(px(THUMB_GAP))
+                    .child(thumbnail(
+                        "theme-auto",
+                        "Auto",
+                        rmac_theme::SchemePreference::Automatic,
+                        div()
+                            .flex()
+                            .child(light().flex_1().h_full())
+                            .child(dark().flex_1().h_full()),
+                    ))
+                    .child(thumbnail(
+                        "theme-light",
+                        "Light",
+                        rmac_theme::SchemePreference::Light,
+                        light(),
+                    ))
+                    .child(thumbnail(
+                        "theme-dark",
+                        "Dark",
+                        rmac_theme::SchemePreference::Dark,
+                        dark(),
+                    )),
+            )
+            .into_any_element()]));
 
-        let mut swatches = Vec::new();
+        // Theme: the accent colours, Multicolour (automatic) first, with the
+        // chosen colour's name under the row as on the Mac.
         let automatic_selected =
             preferences.accent_color == rmac_theme::AccentPreference::Automatic;
-        let auto_view = view.clone();
-        swatches.push(
-            ListRow::new(
-                "theme-accent-auto",
-                div()
-                    .h(px(24.0))
-                    .px_2()
-                    .rounded(px(rmac_ui::mac::radius_menu_item()))
-                    .flex()
-                    .items_center()
-                    .text_size(rmac_ui::text_px(11.0))
-                    .text_color(if automatic_selected {
-                        on_accent()
-                    } else {
-                        label()
+        let swatch = |id: SharedString, fill: gpui::Background, selected: bool, preference| {
+            let swatch_view = view.clone();
+            div()
+                .id(id)
+                .size(px(SWATCH_BUTTON))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .when(selected, |button| button.border_2().border_color(accent()))
+                .when(enabled, |button| button.cursor_pointer())
+                .child(div().size(px(SWATCH)).rounded_full().bg(fill))
+                .when(enabled, |button| {
+                    button.on_click(move |_, _, cx| {
+                        swatch_view.update(cx, |settings, cx| {
+                            settings.apply_theme_change(ThemeChange::Accent(preference), cx)
+                        });
                     })
-                    .bg(if automatic_selected {
-                        accent()
-                    } else {
-                        rmac_ui::mac::control_fill()
-                    })
-                    .child("Automatic"),
-            )
-            .selected(automatic_selected)
-            .disabled(!enabled)
-            .on_activate(move |_, _, cx| {
-                auto_view.update(cx, |settings, cx| {
-                    settings.apply_theme_change(
-                        ThemeChange::Accent(rmac_theme::AccentPreference::Automatic),
-                        cx,
-                    )
-                });
-            })
-            .w(px(84.0))
-            .h(px(30.0))
-            .justify_center()
-            .into_any_element(),
-        );
+                })
+        };
+        let mut swatches = div().flex().gap(px(SWATCH_GAP)).child(swatch(
+            "theme-accent-auto".into(),
+            gpui::linear_gradient(
+                135.0,
+                gpui::linear_color_stop(hsl(0xff375f), 0.0),
+                gpui::linear_color_stop(hsl(0x0a84ff), 1.0),
+            ),
+            automatic_selected,
+            rmac_theme::AccentPreference::Automatic,
+        ));
+        let mut selected_name: SharedString = "Multicolour".into();
         for (index, (name, hex)) in ACCENTS.iter().copied().enumerate() {
             let preference = accent_preference(hex);
             let selected = preferences.accent_color == preference;
-            let swatch_foreground = swatch_foreground(hex);
-            let swatch_view = view.clone();
-            let content = div()
-                .w(px(48.0))
-                .v_flex()
-                .items_center()
-                .gap_1()
+            if selected {
+                selected_name = name.into();
+            }
+            swatches = swatches.child(swatch(
+                SharedString::from(format!("theme-accent-{index}")),
+                hsl(hex).into(),
+                selected,
+                preference,
+            ));
+        }
+        let tint_view = view.clone();
+        cards.push(section_header("Theme"));
+        cards.push(card(vec![
+            row_base()
+                .items_start()
+                .child(text_block("Colour".into(), None))
                 .child(
                     div()
-                        .w(px(24.0))
-                        .h(px(24.0))
-                        .rounded_full()
-                        .bg(hsl(hex))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .when(selected, |element| {
-                            element
-                                .border_2()
-                                .border_color(swatch_foreground)
-                                .shadow_sm()
-                                .child(glyph("icons/check.svg", 12.0, swatch_foreground))
+                        .v_flex()
+                        .items_end()
+                        .gap(px(3.0))
+                        .child(swatches)
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .line_height(px(14.0))
+                                .text_color(secondary())
+                                .child(selected_name),
+                        ),
+                )
+                .into_any_element(),
+            row_base()
+                .items_start()
+                .child(text_block(
+                    "Tint window background with wallpaper colour".into(),
+                    Some("Subtly mixes the desktop colour into opaque app surfaces.".into()),
+                ))
+                .child(
+                    Toggle::new("theme-wallpaper-tinting")
+                        .checked(preferences.allow_wallpaper_tinting)
+                        .disabled(!enabled)
+                        .on_click(move |value, _, cx| {
+                            tint_view.update(cx, |settings, cx| {
+                                settings
+                                    .apply_theme_change(ThemeChange::WallpaperTinting(*value), cx)
+                            });
                         }),
                 )
-                .child(
-                    div()
-                        .text_size(rmac_ui::text_px(10.0))
-                        .text_color(secondary())
-                        .child(name),
-                );
-            swatches.push(
-                ListRow::new(
-                    ElementId::from(SharedString::from(format!("theme-accent-{index}"))),
-                    content,
-                )
-                .selected(selected)
-                .disabled(!enabled)
-                .on_activate(move |_, _, cx| {
-                    swatch_view.update(cx, |settings, cx| {
-                        settings.apply_theme_change(ThemeChange::Accent(preference), cx)
-                    });
-                })
-                .w(px(52.0))
-                .h(px(48.0))
-                .justify_center()
                 .into_any_element(),
-            );
-        }
-        cards.push(
-            div()
-                .v_flex()
-                .mb_3()
-                .rounded(px(rmac_ui::mac::radius_menu()))
-                .bg(card_bg())
-                .border_1()
-                .border_color(sep())
-                .child(label_row("Accent color", None))
-                .child(div().h(px(1.0)).bg(sep()).mx_3())
-                .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .items_center()
-                        .flex_wrap()
-                        .p_3()
-                        .children(swatches),
-                ),
-        );
-        let tint_view = view.clone();
-        cards.push(card(vec![row_base()
-            .child(text_block(
-                "Allow wallpaper tinting in windows".into(),
-                Some("Subtly mixes the desktop colour into opaque app surfaces.".into()),
-            ))
-            .child(
-                Toggle::new("theme-wallpaper-tinting")
-                    .checked(preferences.allow_wallpaper_tinting)
-                    .disabled(!enabled)
-                    .on_click(move |value, _, cx| {
-                        tint_view.update(cx, |settings, cx| {
-                            settings.apply_theme_change(ThemeChange::WallpaperTinting(*value), cx)
-                        });
-                    }),
-            )
-            .into_any_element()]));
+        ]));
+        cards.push(section_header("Accessibility"));
         cards.push(card(vec![
             theme_segment_row(
                 view.clone(),
@@ -265,29 +235,6 @@ impl Settings {
             ),
         ]));
 
-        let host_scheme = if self.host_appearance.capabilities.color_scheme {
-            self.host_appearance.color_scheme.label()
-        } else {
-            "Not exposed"
-        };
-        cards.push(section_header("Authority"));
-        cards.push(card(vec![
-            value_row(
-                "icons/info.svg",
-                secondary(),
-                "Host preference".into(),
-                host_scheme.into(),
-            ),
-            value_row(
-                "icons/palette.svg",
-                accent(),
-                "Effective appearance".into(),
-                match theme.effective.color_scheme {
-                    rmac_appearance::ResolvedColorScheme::Light => "Light".into(),
-                    rmac_appearance::ResolvedColorScheme::Dark => "Dark".into(),
-                },
-            ),
-        ]));
         if let Some(detail) = theme.detail.clone() {
             cards.push(note_card(detail));
         }
@@ -296,6 +243,7 @@ impl Settings {
                 "The Linux Settings portal is unavailable here. Automatic values use safe rmac defaults; explicit choices remain writable.",
             ));
         }
+        cards.push(refresh);
         self.pane(cards)
     }
 }

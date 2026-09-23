@@ -22,7 +22,7 @@ impl Settings {
             "PackageKit security status unavailable".to_string()
         };
         cards.push(card(vec![row_base()
-            .child(tile("icons/refresh-cw.svg", secondary(), 22.0))
+            .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
             .child(text_block(
                 "Available security updates".into(),
                 Some(security_status.into()),
@@ -38,7 +38,7 @@ impl Settings {
 
         cards.push(section_header("Ubuntu Security Coverage"));
         cards.push(card(vec![row_base()
-            .child(tile("icons/shield.svg", accent(), 22.0))
+            .child(tile("icons/shield.svg", accent(), style::ROW_ICON))
             .child(text_block(
                 "Installed package security".into(),
                 Some("Ubuntu Pro Client · local machine-readable authorities".into()),

@@ -16,13 +16,13 @@ impl Settings {
             .flex()
             .items_center()
             .justify_between()
-            .px_1()
-            .pb_1()
+            .px(px(style::ROW_PADDING))
+            .pb(px(style::SECTION_BOTTOM))
             .child(
                 div()
-                    .text_size(rmac_ui::text_px(12.0))
-                    .font_weight(rmac_ui::mac::SEMIBOLD)
-                    .text_color(secondary())
+                    .text_size(rmac_ui::text_px(13.0))
+                    .font_weight(rmac_ui::mac::BOLD)
+                    .text_color(style::heading_text())
                     .child("rmac Search"),
             )
             .child(

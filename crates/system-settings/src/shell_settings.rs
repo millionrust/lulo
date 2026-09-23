@@ -28,6 +28,38 @@ impl DockChange {
     }
 }
 
+/// A Menu Bar pane change: which status items the rmac menu bar shows, and
+/// the clock's seconds. `rmac-shell-status` reads exactly these fields.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum MenuBarChange {
+    Network(bool),
+    Vpn(bool),
+    Bluetooth(bool),
+    Sound(bool),
+    Power(bool),
+    BatteryPercentage(bool),
+    Notifications(bool),
+    Focus(bool),
+    ShowSeconds(bool),
+}
+
+impl MenuBarChange {
+    pub(super) fn apply(self, settings: &mut rmac_shell_settings::ShellSettings) {
+        let indicators = &mut settings.indicators;
+        match self {
+            Self::Network(value) => indicators.network = value,
+            Self::Vpn(value) => indicators.vpn = value,
+            Self::Bluetooth(value) => indicators.bluetooth = value,
+            Self::Sound(value) => indicators.sound = value,
+            Self::Power(value) => indicators.power = value,
+            Self::BatteryPercentage(value) => indicators.battery_percentage = value,
+            Self::Notifications(value) => indicators.notifications = value,
+            Self::Focus(value) => indicators.focus = value,
+            Self::ShowSeconds(value) => settings.clock.show_seconds = value,
+        }
+    }
+}
+
 pub(super) enum ShellSettingsStreamUpdate {
     Snapshot(Box<rmac_shell_settings::Snapshot>),
     Unavailable(String),
@@ -159,6 +191,7 @@ pub(super) enum ShellSettingsMutation {
     RestoreWallpaper(rmac_shell_settings::WallpaperSettings),
     Spotlight(SpotlightChange),
     RestoreSpotlight(SpotlightAuthority),
+    MenuBar(MenuBarChange),
 }
 
 impl ShellSettingsMutation {
@@ -172,6 +205,7 @@ impl ShellSettingsMutation {
             Self::RestoreWallpaper(wallpaper) => settings.wallpaper = wallpaper,
             Self::Spotlight(change) => change.apply(settings),
             Self::RestoreSpotlight(spotlight) => spotlight.apply_to(settings),
+            Self::MenuBar(change) => change.apply(settings),
         }
     }
 }

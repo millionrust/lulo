@@ -21,6 +21,7 @@ mod input;
 mod locale;
 mod lock_screen;
 mod login_items;
+mod menu_bar;
 mod navigation_accessibility;
 mod navigation_persistence;
 mod navigation_state;
@@ -28,6 +29,7 @@ mod network;
 mod notifications;
 mod power;
 mod privacy_security;
+mod settings_style;
 mod sharing;
 mod shell_render;
 mod shell_settings;
@@ -42,11 +44,13 @@ mod vpn;
 mod wallpaper;
 mod wifi;
 
+use settings_style as style;
 use state::Settings;
 use view_helpers::*;
 
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::appearance::{
@@ -73,8 +77,8 @@ use crate::input::{
     MOUSE_PRECISION_PRESETS, MOUSE_PROFILES, MOUSE_SPEEDS, TOUCHPAD_PROFILES, TOUCHPAD_SPEEDS,
 };
 use crate::navigation::{
-    categories, category_has_dedicated_renderer, category_name_for_pane_id, category_position,
-    pane_id_for_category_name, Category, SubPage, GENERAL_DESTINATIONS,
+    categories, category_has_dedicated_renderer, category_name_for_pane_id, category_parent,
+    category_position, pane_id_for_category_name, Category, SubPage, GENERAL_DESTINATIONS,
 };
 use crate::notifications::{policy_with as notification_policy_with, NotificationPolicyChange};
 use crate::power::{
@@ -107,7 +111,7 @@ use crate::shell_settings::composite_wallpaper_pixel;
 use crate::shell_settings::{
     persist_shell_settings_mutation, render_wallpaper_preview, spotlight_provider_policy,
     validate_search_exclusion, validate_wallpaper_choice, wallpaper_selection,
-    wallpaper_source_name, watch_shell_settings, DockChange, ShellSettingsMutation,
+    wallpaper_source_name, watch_shell_settings, DockChange, MenuBarChange, ShellSettingsMutation,
     ShellSettingsStreamUpdate, SpotlightAuthority, SpotlightChange, WallpaperChange,
     WallpaperTarget,
 };
@@ -118,17 +122,17 @@ use crate::system_environment::{
     gather_screen_reader_capability, gather_system_snapshot, ScreenReaderCapability, SystemSnapshot,
 };
 use gpui::{
-    actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, AppContext as _,
+    actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, App, AppContext as _,
     AssetSource, ClipboardItem, Context, Div, ElementId, Entity, FocusHandle, Focusable as _, Hsla,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, ObjectFit,
     ParentElement, Render, Result, SharedString, StatefulInteractiveElement as _, Styled,
     StyledImage as _, Svg, Window,
 };
-use gpui_component::{Icon, IconName, StyledExt as _};
+use gpui_component::{menu::PopupMenuItem, Icon, IconName, StyledExt as _};
 use navigation_persistence::NavigationPersistence;
 use rmac_ui::{
-    Button, EmptyState, InputState, ListRow, PopUpButton, Progress, SearchField, Slider,
-    SliderEvent, SliderState, Tabs, TextField, Toast, ToastKind, Toggle,
+    Button, Checkbox, EmptyState, InputState, ListRow, PopUpButton, Progress, SearchField, Slider,
+    SliderEvent, SliderState, TextField, Toast, ToastKind, Toggle,
 };
 
 #[derive(rust_embed::RustEmbed)]
@@ -160,6 +164,7 @@ actions!(
     system_settings,
     [
         GoBack,
+        GoForward,
         SelectAlert,
         SelectErrorAlert,
         SelectNotificationAlert
@@ -169,26 +174,23 @@ actions!(
 fn hsl(h: u32) -> Hsla {
     gpui::rgb(h).into()
 }
-fn sidebar_bg() -> Hsla {
-    rmac_ui::mac::sidebar()
-}
 fn pane_bg() -> Hsla {
-    rmac_ui::mac::window()
+    style::window_fill()
 }
 fn card_bg() -> Hsla {
-    rmac_ui::mac::raised()
+    style::group_fill()
 }
 fn accent() -> Hsla {
     rmac_ui::mac::accent()
 }
 fn label() -> Hsla {
-    rmac_ui::mac::text()
+    style::label_text()
 }
 fn secondary() -> Hsla {
-    rmac_ui::mac::text_secondary()
+    style::secondary_text()
 }
 fn sep() -> Hsla {
-    rmac_ui::mac::separator()
+    style::group_separator()
 }
 fn white() -> Hsla {
     gpui::white()
@@ -217,6 +219,8 @@ fn glyph(path: &'static str, size: f32, color: Hsla) -> Svg {
 }
 
 /// A colored rounded-square icon tile (SF-symbol-on-color, like Settings).
+/// Near-black tiles (Appearance, Desktop & Dock, Lock Screen) carry the
+/// faint light rim the Mac draws so they still read on the dark panel.
 fn tile(path: &'static str, bg: Hsla, size: f32) -> impl IntoElement {
     div()
         .w(px(size))
@@ -227,6 +231,10 @@ fn tile(path: &'static str, bg: Hsla, size: f32) -> impl IntoElement {
         .justify_center()
         .rounded(px(size * 0.28))
         .bg(bg)
+        .when(bg.l < 0.2, |tile| {
+            tile.border_1()
+                .border_color(gpui::hsla(0.0, 0.0, 1.0, 0.18))
+        })
         .child(glyph(path, size * 0.62, white()))
 }
 
@@ -275,20 +283,22 @@ const WALLPAPER_FIT_OPTIONS: [(&str, rmac_shell_settings::WallpaperFit); 5] = [
     ("Tile", rmac_shell_settings::WallpaperFit::Tile),
 ];
 
-const SIDEBAR_W: f32 = 248.0;
-
 pub(crate) fn run() {
     rmac_ui::boot_unified_app_with_assets(
         rmac_ui::app_id::SYSTEM_SETTINGS,
         CombinedAssets,
-        1000.0,
-        720.0,
+        style::WINDOW_WIDTH,
+        style::WINDOW_HEIGHT,
         |window, cx| {
-            cx.bind_keys([KeyBinding::new(
-                rmac_ui::shortcuts::BACK.keystroke,
-                GoBack,
-                Some("SystemSettings"),
-            )]);
+            cx.bind_keys([
+                KeyBinding::new(
+                    rmac_ui::shortcuts::BACK.keystroke,
+                    GoBack,
+                    Some("SystemSettings"),
+                ),
+                // ⌘] replays a page left with Back, as on the Mac.
+                KeyBinding::new("cmd-]", GoForward, Some("SystemSettings")),
+            ]);
             Settings::new(window, cx)
         },
     );

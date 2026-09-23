@@ -23,38 +23,34 @@ pub(in crate::controller) fn network_ip_method_row(
             ("Off", rmac_network::IpMethod::Disabled),
         ],
     };
-    let mut control = div().flex().gap_1().w(px(390.0));
-    for (index, (label, method)) in options.into_iter().enumerate() {
-        let method_view = view.clone();
-        let chosen = method.clone();
-        control = control.child(
-            Button::new(
-                ElementId::from(SharedString::from(format!(
-                    "network-{}-method-{index}",
-                    match family {
-                        rmac_network::IpFamily::V4 => "ipv4",
-                        rmac_network::IpFamily::V6 => "ipv6",
-                    }
-                ))),
-                label,
-            )
-            .flex_1()
-            .selected(*selected == method)
-            .disabled(!enabled)
-            .on_click(move |_, window, cx| {
+    let choices: Vec<PopupChoice> = options
+        .into_iter()
+        .map(|(label, method)| {
+            let method_view = view.clone();
+            let checked = *selected == method;
+            choice(label, checked, move |window, cx| {
+                let method = method.clone();
                 method_view.update(cx, |settings, cx| {
-                    settings.set_network_ip_method(family, chosen.clone(), window, cx)
+                    settings.set_network_ip_method(family, method, window, cx)
                 });
-            }),
-        );
-    }
-    row_base()
-        .child(text_block(
-            "Configure".into(),
-            Some("Choose how this connection receives addresses".into()),
-        ))
-        .child(control)
-        .into_any_element()
+            })
+        })
+        .collect();
+    let current = popup_value(&choices, "Custom");
+    popup_row(
+        SharedString::from(format!(
+            "network-{}-method",
+            match family {
+                rmac_network::IpFamily::V4 => "ipv4",
+                rmac_network::IpFamily::V6 => "ipv6",
+            }
+        )),
+        "Configure",
+        Some("Choose how this connection receives addresses".into()),
+        current,
+        choices,
+        enabled,
+    )
 }
 
 pub(in crate::controller) fn network_field_row(
@@ -106,37 +102,29 @@ pub(in crate::controller) fn network_proxy_method_row(
     selected: rmac_network::ProxyMethod,
     enabled: bool,
 ) -> AnyElement {
-    let mut control = div().flex().gap_1().w(px(390.0));
-    for (index, (label, method)) in [
+    let choices: Vec<PopupChoice> = [
         ("Off", rmac_network::ProxyMethod::None),
         ("Automatic", rmac_network::ProxyMethod::Automatic),
     ]
     .into_iter()
-    .enumerate()
-    {
+    .map(|(label, method)| {
         let method_view = view.clone();
-        control = control.child(
-            Button::new(
-                ElementId::from(SharedString::from(format!("network-proxy-method-{index}"))),
-                label,
-            )
-            .flex_1()
-            .selected(selected == method)
-            .disabled(!enabled)
-            .on_click(move |_, window, cx| {
-                method_view.update(cx, |settings, cx| {
-                    settings.set_network_proxy_method(method, window, cx)
-                });
-            }),
-        );
-    }
-    row_base()
-        .child(text_block(
-            "Configure".into(),
-            Some("Use a proxy auto-configuration source".into()),
-        ))
-        .child(control)
-        .into_any_element()
+        choice(label, selected == method, move |window, cx| {
+            method_view.update(cx, |settings, cx| {
+                settings.set_network_proxy_method(method, window, cx)
+            });
+        })
+    })
+    .collect();
+    let current = popup_value(&choices, "Off");
+    popup_row(
+        "network-proxy-method",
+        "Configure",
+        Some("Use a proxy auto-configuration source".into()),
+        current,
+        choices,
+        enabled,
+    )
 }
 
 pub(in crate::controller) fn network_proxy_browser_row(

@@ -6,7 +6,7 @@ impl Settings {
     pub(super) fn append_portal_permissions(&self, view: Entity<Self>, cards: &mut Vec<Div>) {
         let refresh_view = view.clone();
         cards.push(card(vec![row_base()
-            .child(tile("icons/shield.svg", accent(), 22.0))
+            .child(tile("icons/shield.svg", accent(), style::ROW_ICON))
             .child(text_block(
                 "Portal permission decisions".into(),
                 Some("Camera and microphone decisions stored by XDG portals".into()),
@@ -77,7 +77,7 @@ impl Settings {
                                 },
                             );
                             row_base()
-                                .child(tile("icons/app-window.svg", secondary(), 22.0))
+                                .child(tile("icons/app-window.svg", secondary(), style::ROW_ICON))
                                 .child(text_block(display_name.into(), Some(detail.into())))
                                 .child(
                                     Button::new(

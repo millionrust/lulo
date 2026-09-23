@@ -1,14 +1,38 @@
-//! System Settings display arrangement preview projection.
+//! System Settings display arrangement well.
 
 use super::*;
+
+/// macOS 26 opens Displays with a full-width darker well (≈160 pt) under the
+/// toolbar showing the displays as pictures with their names; rmac draws
+/// each enabled output to scale from its niri logical geometry.
+const WELL_HEIGHT: f32 = 160.0;
+const ARRANGEMENT_WIDTH: f32 = 300.0;
+const ARRANGEMENT_HEIGHT: f32 = 96.0;
 
 pub(in crate::controller) fn display_layout_preview(outputs: &[rmac_display::Output]) -> Div {
     let enabled = outputs
         .iter()
         .filter_map(|output| Some((output, output.logical.as_ref()?)))
         .collect::<Vec<_>>();
+    let well = div()
+        .mx(px(-style::DETAIL_INSET))
+        .mt(px(-style::FIRST_SECTION_TOP))
+        .mb(px(style::DETAIL_INSET))
+        .h(px(WELL_HEIGHT))
+        .v_flex()
+        .items_center()
+        .justify_center()
+        .gap(px(10.0))
+        .bg(style::well_fill())
+        .border_b_1()
+        .border_color(sep());
     let Some(min_x) = enabled.iter().map(|(_, logical)| logical.x).min() else {
-        return note_card("No enabled display layout is available.");
+        return well.child(
+            div()
+                .text_size(rmac_ui::text_px(13.0))
+                .text_color(secondary())
+                .child("No enabled display layout is available."),
+        );
     };
     let min_y = enabled
         .iter()
@@ -27,26 +51,18 @@ pub(in crate::controller) fn display_layout_preview(outputs: &[rmac_display::Out
         .unwrap_or(1);
     let span_x = (max_x - i64::from(min_x)).max(1) as f32;
     let span_y = (max_y - i64::from(min_y)).max(1) as f32;
-    let scale = (440.0 / span_x).min(130.0 / span_y);
-    let mut canvas = div()
-        .relative()
-        .w_full()
-        .h(px(150.0))
-        .rounded(px(rmac_ui::mac::radius_menu()))
-        .bg(rmac_ui::mac::control_fill())
-        .border_1()
-        .border_color(sep())
-        .overflow_hidden();
-    for (index, (output, logical)) in enabled.into_iter().enumerate() {
-        let left = 10.0 + (logical.x - min_x) as f32 * scale;
-        let top = 10.0 + (logical.y - min_y) as f32 * scale;
+    let scale = (ARRANGEMENT_WIDTH / span_x).min(ARRANGEMENT_HEIGHT / span_y);
+    let single = enabled.len() == 1;
+    let mut canvas = div().relative().w(px(span_x * scale)).h(px(span_y * scale));
+    let mut caption: Option<String> = None;
+    for (output, logical) in enabled {
+        let left = (logical.x - min_x) as f32 * scale;
+        let top = (logical.y - min_y) as f32 * scale;
         let width = (logical.width as f32 * scale).max(24.0);
         let height = (logical.height as f32 * scale).max(18.0);
-        let title = if output.primary {
-            format!("{} · Main", index + 1)
-        } else {
-            format!("{} · {}", index + 1, output.name)
-        };
+        if single {
+            caption = Some(output.detail.clone().unwrap_or_else(|| output.name.clone()));
+        }
         canvas = canvas.child(
             div()
                 .absolute()
@@ -58,25 +74,31 @@ pub(in crate::controller) fn display_layout_preview(outputs: &[rmac_display::Out
                 .items_center()
                 .justify_center()
                 .px_1()
-                .rounded(px(rmac_ui::mac::radius_menu_item()))
+                .rounded(px(4.0))
                 .border_2()
-                .border_color(if output.primary { accent() } else { sep() })
-                .bg(if output.primary { accent() } else { card_bg() })
-                .text_size(rmac_ui::text_px(11.0))
-                .text_color(if output.primary {
-                    hsl(0xffffff)
+                .border_color(if output.primary {
+                    accent()
                 } else {
-                    label()
+                    rmac_ui::mac::text_tertiary()
                 })
+                .bg(gpui::linear_gradient(
+                    160.0,
+                    gpui::linear_color_stop(hsl(0x3b5ea6), 0.0),
+                    gpui::linear_color_stop(hsl(0x1f3a5a), 1.0),
+                ))
+                .text_size(rmac_ui::text_px(11.0))
+                .text_color(hsl(0xffffff))
                 .overflow_hidden()
-                .child(title),
+                .when(!single, |display| display.child(output.name.clone())),
         );
     }
-    div()
-        .p_2()
-        .rounded(px(rmac_ui::mac::radius_menu()))
-        .bg(card_bg())
-        .border_1()
-        .border_color(sep())
-        .child(canvas)
+    well.child(canvas).when_some(caption, |well, caption| {
+        well.child(
+            div()
+                .text_size(rmac_ui::text_px(13.0))
+                .font_weight(rmac_ui::mac::BOLD)
+                .text_color(label())
+                .child(caption),
+        )
+    })
 }

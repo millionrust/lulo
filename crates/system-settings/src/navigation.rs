@@ -25,7 +25,7 @@ pub(super) enum SubPage {
 }
 
 pub(super) const GENERAL_DESTINATIONS: [&str; 3] = ["About", "Software Update", "Storage"];
-pub(super) const PANE_ROUTES: [(&str, &str); 24] = [
+pub(super) const PANE_ROUTES: [(&str, &str); 25] = [
     ("wifi", "Wi-Fi"),
     ("bluetooth", "Bluetooth"),
     ("network", "Network"),
@@ -40,6 +40,7 @@ pub(super) const PANE_ROUTES: [(&str, &str); 24] = [
     ("appearance", "Appearance"),
     ("desktop-dock", "Desktop & Dock"),
     ("displays", "Displays"),
+    ("menu-bar", "Menu Bar"),
     ("spotlight", "Spotlight"),
     ("wallpaper", "Wallpaper"),
     ("notifications", "Notifications"),
@@ -107,7 +108,7 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
                 "General",
                 "icons/settings.svg",
                 gray,
-                "View system information, update status, and storage.",
+                "Manage your overall setup and preferences, such as software updates, date and time, language and sharing.",
             ),
             cat(
                 "Date & Time",
@@ -148,7 +149,7 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
             cat(
                 "Desktop & Dock",
                 "icons/app-window.svg",
-                gray,
+                color(0x1d1d1f),
                 "Choose authoritative rmac Dock behavior and display placement.",
             ),
             cat(
@@ -158,9 +159,15 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
                 "Arrange displays and adjust resolution.",
             ),
             cat(
+                "Menu Bar",
+                "icons/panel-top.svg",
+                gray,
+                "Choose the status items and clock details the menu bar shows.",
+            ),
+            cat(
                 "Spotlight",
                 "icons/search.svg",
-                gray,
+                blue,
                 "Choose search results, file privacy, and excluded folders.",
             ),
             cat(
@@ -184,6 +191,30 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
                 "Adjust sound effects and output.",
             ),
             cat(
+                "Focus",
+                "icons/moon.svg",
+                indigo,
+                "Stay focused by silencing notifications.",
+            ),
+        ],
+        vec![
+            cat(
+                "Lock Screen",
+                "icons/lock.svg",
+                color(0x1d1d1f),
+                "Adjust your lock screen and login.",
+            ),
+            cat(
+                "Privacy & Security",
+                "icons/shield.svg",
+                blue,
+                "Control what the system and applications can access.",
+            ),
+        ],
+        // macOS 26 lists the input devices in the last group, after
+        // Lock Screen and Privacy & Security.
+        vec![
+            cat(
                 "Keyboard",
                 "icons/keyboard.svg",
                 gray,
@@ -201,28 +232,19 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
                 gray,
                 "Adjust tracking, tapping, scrolling, and gestures.",
             ),
-            cat(
-                "Focus",
-                "icons/moon.svg",
-                indigo,
-                "Stay focused by silencing notifications.",
-            ),
-        ],
-        vec![
-            cat(
-                "Lock Screen",
-                "icons/lock.svg",
-                gray,
-                "Adjust your lock screen and login.",
-            ),
-            cat(
-                "Privacy & Security",
-                "icons/shield.svg",
-                blue,
-                "Control what the system and applications can access.",
-            ),
         ],
     ]
+}
+
+/// Panes that macOS 26 lists inside General rather than in the sidebar. They
+/// keep their own routes and renderers; the sidebar hides them (outside a
+/// search), highlights General while one is open, and Back returns there.
+pub(super) fn category_parent(name: &str) -> Option<&'static str> {
+    matches!(
+        name,
+        "Date & Time" | "Language & Region" | "Login Items" | "Sharing"
+    )
+    .then_some("General")
 }
 
 pub(super) fn category_name_for_pane_id(pane_id: &str) -> Option<&'static str> {
@@ -266,6 +288,7 @@ pub(super) fn category_has_dedicated_renderer(name: &str) -> bool {
             | "Appearance"
             | "Desktop & Dock"
             | "Displays"
+            | "Menu Bar"
             | "Spotlight"
             | "Wallpaper"
             | "Notifications"
@@ -323,6 +346,15 @@ mod tests {
         }
         assert!(category_name_for_pane_id("assistant").is_none());
         assert!(category_name_for_pane_id("screen-time").is_none());
+    }
+
+    #[test]
+    fn general_children_have_general_as_their_parent() {
+        for name in ["Date & Time", "Language & Region", "Login Items", "Sharing"] {
+            assert_eq!(category_parent(name), Some("General"));
+        }
+        assert_eq!(category_parent("General"), None);
+        assert_eq!(category_parent("Wi-Fi"), None);
     }
 
     #[test]

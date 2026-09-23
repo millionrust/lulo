@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TextEdit, Terminal, Activity Monitor, Notes — exact</title>
+<!--
+  Four document apps at 1:1 logical points, measured on the owner's Mac
+  (macOS 26.2 Tahoe, dark, 2026-09-23) from Retina captures ÷ 2 and the
+  Accessibility frames of each window. M = measured, S = not measurable
+  (stated beside it). Window chrome (lights, 32/52 bars, radii) is the shared
+  rmac-ui chrome in design-lab/chrome.html; only app content is new here.
+  Wallpaper-tinted surfaces are shown with the owner's tint (#1E202C); rmac
+  draws them from mac::window() which carries the same tint.
+
+  TEXTEDIT, plain-text document (M; new document, ⌘N, the Mac's default is
+  plain text here, so there is no ruler or format bar)
+    window         586 × 488 (new Untitled), radius 16, title-bar window
+    title bar      32 incl. 1 pt base line #232323; fill = window tint #22212E
+    proxy icon     18 × 18 frame at x 81 y 6 (document page, light grey)
+    title          13 bold at x 100, #E8E8EA; " — Edited" follows in the
+                   tertiary colour when dirty (te-a capture)
+    ▾ menu button  the title + chevron form one 55 × 18 "document actions"
+                   button at x 172 (Untitled). rmac fills it with the
+                   document's encoding and line-ending choices (backed by
+                   rmac's saver); the Mac's Rename/Move/Duplicate/Revert/Lock
+                   are omitted — no backend.
+    text           bg #1E1E1E edge to edge. Menlo 11 → JetBrains Mono 11
+                   (advance 6.6), line pitch 13; caret x 9, first line top 0,
+                   so text origin x 10, y 0. Caret #3478F6 2 × 13.
+    no toolbar, no status bar (both removed; every action is in the menu bar)
+
+  TERMINAL, new window, Basic profile in dark (M)
+    window         580 × 385 = 80 × 24; title bar 32 (1 pt #232323 base)
+    title          folder proxy icon x 81 (18), "jake — -zsh — 80×24" 13 bold
+                   #9A9CA8 at x 100
+    cells          7.0 × 14.0 → JetBrains Mono 11.67 (0.6 em advance);
+                   80 × 7 + 2 × 10 = 580; 24 × 14 + 7 top + 10 bottom = 353
+    colours        bg #1E1E1E, text #FFFFFF, block cursor #9C9D9D (grey
+                   while the window's shell is idle), title-bar tint #1E202C
+    tabs (⌘T)      window grows 36: title bar 0–32, tab track 32–60
+                   (x 8 → 537, 28 tall, radius 14, fill white 5 %), 7 pt gap,
+                   1 pt base at 67, grid from 68. Tabs share the track
+                   equally; active tab = 24 tall pill inset 2, fill white
+                   17 % + 1 pt top/bottom highlight #6A6D82, title 13 bold
+                   #E5E5E5; inactive title 13 regular #7C7C7C. New-tab
+                   button: 28 circle at x 544 y 32, 1 pt ring #3E4567,
+                   "+" #AEAFB4.
+
+  ACTIVITY MONITOR (M; 960 × 640 window, 52 unified toolbar, radius 27)
+    title          "Activity Monitor" 13 bold #E8E8E9 at x 111, centre y 19;
+                   subtitle 11 #8E8F95 centre y 34 ("My Processes" /
+                   "All Processes" — rmac always lists all processes)
+    capsules       y 8.5, h 35, fill #212332, 1 pt rim #3C4062 (top) :
+                   ⊗ ⓘ   x 258 w 70 (two 35 slots)
+                   ⋯▾    x 340 w 46
+                   tabs  x 403 w 387 (5 × 77), selected pill 27 tall inset 4,
+                         fill #444655, labels 13 #E8E9EA
+                   search 38 circle, right edge 8 from the window
+    table          header 52–79, labels 13 bold #FFFFFF, 1 pt base #383A45 at
+                   79; 5 pt gap; rows 24 from y 85, text 13 #DDDDDF,
+                   alternate rows #292A36 (first row plain), full width
+    bottom panel   1 pt top line at 523 (#A6A6A6 at 2×), panel 523–640.
+                   Box x 190–770 (580), y 536–625, fill #272934, 1 pt rim
+                   #A6A6A6; cells 198 | 184 | 198. Stat rows 13 #DEDEE0,
+                   20 pitch, hairlines x+9 inset (first row 23 incl. 4 top);
+                   graph title 10 bold caps #9E9FA3, underline at y 559.
+                   CPU LOAD: user #6DD0F9 over #3C5B6F, system #EB534D over
+                   #715865. System value #EB534D, User value #6DD0F9.
+    per tab (rmac backs): CPU System/User/Idle + graph + Threads/Processes
+                   (threads from /proc/loadavg); Memory pressure graph +
+                   Physical / Used / Cached / Swap (Wired, Compressed, App
+                   Memory omitted — no Linux equivalent); Energy graph only
+                   (battery omitted); Disk data read/written per second;
+                   Network data received/sent + rates.
+
+  NOTES (S — the owner's Notes holds private data and was not opened; every
+  number is from platform knowledge and marked S)
+    window 1000 × 640 S, 52 toolbar S; sidebar 210 S (section "On My Mac"
+    11 bold secondary, rows 28, yellow folder glyph, count right);
+    list 300 S (date section headers 13 bold, rows title 13 bold + date 12 +
+    snippet 12 secondary, hairlines inset 12, selected row notes-yellow);
+    editor: centred date 12 secondary, title 24 bold, body 14/20,
+    checklists as 18 circles (filled yellow with a check when done).
+-->
+<style>
+  body{margin:0;background:#151518;font-family:Inter,-apple-system,sans-serif;color:#E8E8EA}
+  .stage{padding:24px;display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+  h2{width:100%;margin:8px 0 0;font:600 14px Inter,-apple-system,sans-serif;color:#8b8b93}
+  .win{position:relative;overflow:hidden;background:#1E202C;flex:none;
+       box-shadow:0 0 0 1px #4B4D56,0 18px 50px rgba(0,0,0,.55)}
+  .r16{border-radius:16px}.r27{border-radius:27px}
+  .abs{position:absolute}
+  .tl{position:absolute;display:flex;gap:7px}
+  .tl i{width:16px;height:16px;display:flex;align-items:center;justify-content:center}
+  .tl i b{width:14px;height:14px;border-radius:7px;display:block}
+  .tl .c b{background:#EC6765;box-shadow:inset 0 0 0 .5px #DE2F2C}
+  .tl .m b{background:#F2CA44;box-shadow:inset 0 0 0 .5px #E5B102}
+  .tl .z b{background:#65C466;box-shadow:inset 0 0 0 .5px #2CA92F}
+  .tb32 .tl{left:8px;top:8px}.tb52 .tl{left:18px;top:18px}
+  .bar32{position:absolute;left:0;right:0;top:0;height:31px;border-bottom:1px solid #232323}
+  .title{position:absolute;top:7px;height:18px;line-height:18px;font:700 13px/18px Inter,-apple-system,sans-serif;white-space:nowrap}
+  .doc{position:absolute;left:84px;top:8px;width:12px;height:15px;border-radius:1.5px;background:#D9D9DC}
+  .doc:after{content:"";position:absolute;left:3px;right:3px;top:5px;height:5px;
+             border-top:1px solid #9a9aa0;border-bottom:1px solid #9a9aa0}
+  .fold{position:absolute;left:82px;top:10px;width:16px;height:12px;border-radius:2px;background:#6FB6F2}
+  .fold:before{content:"";position:absolute;left:0;top:-2px;width:7px;height:4px;border-radius:1.5px 1.5px 0 0;background:#6FB6F2}
+  .mono{font-family:"JetBrains Mono",Menlo,monospace}
+  /* TextEdit */
+  .te-text{position:absolute;left:0;right:0;top:32px;bottom:0;background:#1E1E1E;padding:0 10px;
+           font-size:11px;line-height:13px;white-space:pre;color:#fff}
+  .caret{display:inline-block;width:2px;height:13px;background:#3478F6;vertical-align:top;margin-left:-1px}
+  /* Terminal */
+  .tm-body{position:absolute;left:0;right:0;bottom:0;background:#1E1E1E;padding:7px 10px 10px;
+           font-size:11.67px;line-height:14px;white-space:pre;color:#fff}
+  .cur{display:inline-block;width:7px;height:14px;background:#9C9D9D;vertical-align:top}
+  .track{position:absolute;left:8px;top:32px;width:529px;height:28px;border-radius:14px;
+         background:rgba(255,255,255,.05);display:flex}
+  .track span{flex:1;display:flex;align-items:center;justify-content:center;font:400 13px Inter,-apple-system,sans-serif;color:#7C7C7C}
+  .track span.on{margin:2px;border-radius:12px;background:rgba(255,255,255,.17);
+                 box-shadow:inset 0 1px 0 #6A6D82,inset 0 -1px 0 #6A6D82;color:#E5E5E5;font-weight:700}
+  .plus{position:absolute;left:544px;top:32px;width:28px;height:28px;border-radius:14px;
+        box-shadow:inset 0 0 0 1px #3E4567;display:flex;align-items:center;justify-content:center;color:#AEAFB4;font-size:20px}
+  /* Activity Monitor */
+  .cap{position:absolute;top:8.5px;height:35px;border-radius:17.5px;background:#212332;
+       box-shadow:inset 0 1px 0 #3C4062,inset 0 0 0 1px #2F344D;display:flex;align-items:center;color:#626473}
+  .cap .seg{width:77px;height:27px;display:flex;align-items:center;justify-content:center;font:13px Inter,-apple-system,sans-serif;color:#E8E9EA}
+  .cap .seg.on{background:#444655;border-radius:13.5px;color:#ECECEE}
+  .ic{width:35px;display:flex;justify-content:center;font-size:17px}
+  .srch{position:absolute;right:8px;top:7px;width:38px;height:38px;border-radius:19px;background:#212332;
+        box-shadow:inset 0 1px 0 #3E4266;display:flex;align-items:center;justify-content:center;color:#E8E9EA;font-size:17px}
+  .thead{position:absolute;left:0;right:0;top:52px;height:27px;border-bottom:1px solid #383A45;
+         font:700 13px/27px Inter,-apple-system,sans-serif;color:#fff}
+  .thead span,.row span{position:absolute;white-space:nowrap}
+  .rows{position:absolute;left:0;right:0;top:85px}
+  .row{position:relative;height:24px;font:13px/24px Inter,-apple-system,sans-serif;color:#DDDDDF}
+  .row:nth-child(even){background:#292A36}
+  .r{text-align:right}
+  .panel{position:absolute;left:0;right:0;top:523px;bottom:0;border-top:1px solid #A6A6A6}
+  .box{position:absolute;left:190px;top:13px;width:578px;height:87px;background:#272934;border:1px solid #A6A6A6;display:flex}
+  .cell{position:relative;height:100%}
+  .cell+.cell{border-left:1px solid #A6A6A6}
+  .st{position:absolute;left:9px;right:9px;height:20px;display:flex;justify-content:space-between;
+      font:13px/20px Inter,-apple-system,sans-serif;color:#DEDEE0;border-bottom:1px solid #A6A6A6}
+  .st.last{border-bottom:0}
+  .gt{position:absolute;left:12px;right:12px;top:4px;height:18px;border-bottom:1px solid #A6A6A6;
+      text-align:center;font:700 10px/18px Inter,-apple-system,sans-serif;color:#9E9FA3;letter-spacing:.3px}
+  .graph{position:absolute;left:3px;right:3px;bottom:2px;height:40px}
+  /* Notes (S) */
+  .ns-side{position:absolute;left:8px;top:8px;bottom:8px;width:202px;border-radius:18px;background:rgba(255,255,255,.06)}
+  .ns-h{font:700 11px/20px Inter,-apple-system,sans-serif;color:#8E8F95;padding:60px 14px 2px}
+  .ns-row{height:28px;margin:0 8px;border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 8px;font:13px Inter,-apple-system,sans-serif}
+  .ns-row.on{background:rgba(255,255,255,.12)}
+  .ns-row .f{width:16px;height:12px;border-radius:2px;border:1.5px solid #FFD60A;box-sizing:border-box}
+  .ns-row .n{margin-left:auto;color:#8E8F95;font-size:12px}
+  .ns-list{position:absolute;left:218px;top:52px;bottom:0;width:300px;border-right:1px solid rgba(255,255,255,.08)}
+  .ns-sec{font:700 13px/28px Inter,-apple-system,sans-serif;padding:4px 20px 0}
+  .ns-note{margin:0 10px;padding:8px 10px;border-radius:8px;border-bottom:1px solid rgba(255,255,255,.08)}
+  .ns-note.on{background:#A68A00;border-color:transparent}
+  .ns-note b{display:block;font:700 13px/17px Inter,-apple-system,sans-serif}
+  .ns-note i{font:12px/16px Inter,-apple-system,sans-serif;font-style:normal;color:#8E8F95}
+  .ns-note i em{font-style:normal;color:#E8E8EA;margin-right:6px}
+  .ns-ed{position:absolute;left:519px;right:0;top:52px;bottom:0;background:#1E1E1E;padding:0 44px}
+  .ns-date{text-align:center;font:12px/32px Inter,-apple-system,sans-serif;color:#8E8F95}
+  .ns-title{font:700 24px/30px Inter,-apple-system,sans-serif}
+  .ns-body{font:14px/20px Inter,-apple-system,sans-serif;margin-top:6px}
+  .chk{display:flex;align-items:center;gap:8px;margin:4px 0}
+  .chk i{width:18px;height:18px;border-radius:9px;box-shadow:inset 0 0 0 1.5px #6E6E73;flex:none}
+  .chk i.done{background:#FFD60A;box-shadow:none;position:relative}
+  .chk i.done:after{content:"✓";position:absolute;left:4px;top:0;font:700 12px/18px Inter,-apple-system,sans-serif;color:#1E1E1E}
+  .chk span.done{color:#8E8F95}
+  .ns-tb .cap{color:#E8E9EA}
+</style>
+</head>
+<body>
+<div class="stage">
+<h2>TextEdit — new plain-text document (586 × 488)</h2>
+<div class="win r16 tb32" style="width:586px;height:488px">
+  <div class="bar32" style="background:#22212E"></div>
+  <div class="tl"><i class="c"><b></b></i><i class="m"><b></b></i><i class="z"><b></b></i></div>
+  <div class="doc"></div>
+  <div class="title" style="left:100px;color:#E8E8EA">Untitled <span style="color:#6E6F78;font-weight:600">— Edited</span> <span style="color:#8E8F95;font-weight:400">⌄</span></div>
+  <div class="te-text mono"><span class="caret"></span>The quick brown fox jumps over the lazy dog.
+Line two.</div>
+</div>
+
+<h2>Terminal — new window, Basic (580 × 385) and with two tabs (580 × 421)</h2>
+<div class="win r16 tb32" style="width:580px;height:385px">
+  <div class="bar32"></div>
+  <div class="tl"><i class="c"><b></b></i><i class="m"><b></b></i><i class="z"><b></b></i></div>
+  <div class="fold"></div>
+  <div class="title" style="left:100px;color:#9A9CA8">jake — -zsh — 80×24</div>
+  <div class="tm-body mono" style="top:32px">user@host ~ % <span class="cur"></span></div>
+</div>
+<div class="win r16 tb32" style="width:580px;height:421px">
+  <div class="tl"><i class="c"><b></b></i><i class="m"><b></b></i><i class="z"><b></b></i></div>
+  <div class="fold"></div>
+  <div class="title" style="left:100px;color:#9A9CA8">jake — -zsh — 80×24</div>
+  <div class="track"><span>~ — -zsh</span><span class="on">~ — -zsh</span></div>
+  <div class="plus">+</div>
+  <div class="abs" style="left:0;right:0;top:67px;height:1px;background:#232323"></div>
+  <div class="tm-body mono" style="top:68px">user@host ~ % <span class="cur"></span></div>
+</div>
+
+<h2>Activity Monitor — CPU (960 × 640)</h2>
+<div class="win r27 tb52" style="width:960px;height:640px">
+  <div class="tl"><i class="c"><b></b></i><i class="m"><b></b></i><i class="z"><b></b></i></div>
+  <div class="abs" style="left:111px;top:10px;font:700 13px/18px Inter,-apple-system,sans-serif;color:#E8E8E9">Activity Monitor</div>
+  <div class="abs" style="left:111px;top:27px;font:11px/14px Inter,-apple-system,sans-serif;color:#8E8F95">All Processes</div>
+  <div class="cap" style="left:258px;width:70px"><span class="ic">⊗</span><span class="ic">ⓘ</span></div>
+  <div class="cap" style="left:340px;width:46px"><span class="ic" style="width:46px;color:#E8E9EA">⋯⌄</span></div>
+  <div class="cap" style="left:403px;width:387px;padding:0 1.5px;box-sizing:border-box">
+    <span class="seg on">CPU</span><span class="seg">Memory</span><span class="seg">Energy</span><span class="seg">Disk</span><span class="seg">Network</span></div>
+  <div class="srch">⌕</div>
+  <div class="thead"><span style="left:29px">Process Name</span><span class="r" style="right:680px">% CPU ⌄</span>
+    <span class="r" style="right:597px">CPU Time</span><span class="r" style="right:520px">PID</span><span style="left:460px">User</span></div>
+  <div class="rows">
+    <div class="row"><span style="left:54px">process-a</span><span class="r" style="right:690px">12.0</span><span class="r" style="right:597px">2:01.88</span><span class="r" style="right:520px">38121</span><span style="left:460px">user</span></div>
+    <div class="row"><span style="left:54px">process-b</span><span class="r" style="right:690px">7.3</span><span class="r" style="right:597px">34.39</span><span class="r" style="right:520px">45485</span><span style="left:460px">user</span></div>
+    <div class="row"><span style="left:54px">process-c</span><span class="r" style="right:690px">4.8</span><span class="r" style="right:597px">30.30</span><span class="r" style="right:520px">711</span><span style="left:460px">user</span></div>
+    <div class="row"><span style="left:54px">process-d</span><span class="r" style="right:690px">4.6</span><span class="r" style="right:597px">7:38.61</span><span class="r" style="right:520px">604</span><span style="left:460px">user</span></div>
+  </div>
+  <div class="panel">
+    <div class="box">
+      <div class="cell" style="width:198px">
+        <div class="st" style="top:3px"><span>System:</span><span style="color:#EB534D">3.53%</span></div>
+        <div class="st" style="top:23px"><span>User:</span><span style="color:#6DD0F9">23.15%</span></div>
+        <div class="st last" style="top:43px"><span>Idle:</span><span>73.32%</span></div>
+      </div>
+      <div class="cell" style="width:183px">
+        <div class="gt">CPU LOAD</div>
+        <svg class="graph" viewBox="0 0 177 40" preserveAspectRatio="none">
+          <path d="M0 40 L0 18 L20 22 L40 16 L60 24 L80 18 L100 22 L120 14 L140 24 L160 20 L177 12 L177 40 Z" fill="#3C5B6F"/>
+          <path d="M0 18 L20 22 L40 16 L60 24 L80 18 L100 22 L120 14 L140 24 L160 20 L177 12" fill="none" stroke="#6DD0F9" stroke-width="1"/>
+          <path d="M0 40 L0 34 L40 36 L80 33 L120 36 L177 32 L177 40 Z" fill="#715865"/>
+          <path d="M0 34 L40 36 L80 33 L120 36 L177 32" fill="none" stroke="#EB534D" stroke-width="1"/>
+        </svg>
+      </div>
+      <div class="cell" style="width:197px">
+        <div class="st" style="top:3px"><span>Threads:</span><span>3,159</span></div>
+        <div class="st" style="top:23px"><span>Processes:</span><span>763</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>Activity Monitor — Memory bottom panel</h2>
+<div class="win" style="width:960px;height:117px;border-radius:0 0 27px 27px">
+  <div class="panel" style="top:0">
+    <div class="box">
+      <div class="cell" style="width:193px">
+        <div class="gt">MEMORY PRESSURE</div>
+        <svg class="graph" viewBox="0 0 187 40" preserveAspectRatio="none"><path d="M0 40 L0 10 L60 9 L120 10 L187 9 L187 40 Z" fill="#3F7D3D"/></svg>
+      </div>
+      <div class="cell" style="width:190px">
+        <div class="st" style="top:3px"><span>Physical Memory:</span><span>8.00 GB</span></div>
+        <div class="st" style="top:23px"><span>Memory Used:</span><span>6.69 GB</span></div>
+        <div class="st" style="top:43px"><span>Cached Files:</span><span>1.31 GB</span></div>
+        <div class="st last" style="top:63px"><span>Swap Used:</span><span>215.5 MB</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2>Notes (S — described, not captured)</h2>
+<div class="win r27 tb52 ns-tb" style="width:1000px;height:640px;background:#1E1E1E">
+  <div class="ns-side">
+    <div class="ns-h">On My Mac</div>
+    <div class="ns-row on"><span class="f"></span>Notes<span class="n">12</span></div>
+    <div class="ns-row"><span class="f"></span>Ideas<span class="n">3</span></div>
+    <div class="ns-row"><span class="f" style="border-color:#8E8F95"></span>Recently Deleted<span class="n">1</span></div>
+  </div>
+  <div class="tl"><i class="c"><b></b></i><i class="m"><b></b></i><i class="z"><b></b></i></div>
+  <div class="cap" style="left:228px;width:70px"><span class="ic">↕</span><span class="ic">🗑</span></div>
+  <div class="cap" style="left:470px;width:40px"><span class="ic">✎</span></div>
+  <div class="cap" style="left:530px;width:105px"><span class="ic">☑</span><span class="ic">▣</span><span class="ic">⌘</span></div>
+  <div class="srch" style="width:200px;border-radius:19px;justify-content:flex-start;padding-left:12px;box-sizing:border-box;color:#8E8F95">⌕ Search</div>
+  <div class="ns-list">
+    <div class="ns-sec">Today</div>
+    <div class="ns-note on"><b>Shopping</b><i><em>5:14 PM</em>Milk, bread</i></div>
+    <div class="ns-note"><b>Meeting notes</b><i><em>11:02 AM</em>Agenda for Friday</i></div>
+    <div class="ns-sec">Previous 7 Days</div>
+    <div class="ns-note"><b>Books</b><i><em>Monday</em>The Left Hand of Darkness</i></div>
+  </div>
+  <div class="ns-ed">
+    <div class="ns-date">23 September 2026 at 5:14 PM</div>
+    <div class="ns-title">Shopping</div>
+    <div class="ns-body">
+      <div class="chk"><i class="done"></i><span class="done">Milk</span></div>
+      <div class="chk"><i></i><span>Bread</span></div>
+      <div class="chk"><i></i><span>Coffee</span></div>
+    </div>
+  </div>
+</div>
+</div>
+</body>
+</html>

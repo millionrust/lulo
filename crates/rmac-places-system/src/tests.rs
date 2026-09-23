@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::*;
-use crate::snapshot::candidate_watch_targets;
+use crate::snapshot::{candidate_interests, candidate_watch_targets};
 
 struct FakeBackend {
     home: Option<PathBuf>,
@@ -291,17 +291,52 @@ fn watch_targets_cover_config_place_parents_and_every_known_trash_bin() {
         Some(&mounts),
     );
     for expected in [
-        config,
-        home,
-        downloads_parent,
-        data,
+        config.clone(),
+        home.clone(),
+        downloads_parent.clone(),
+        data.clone(),
         trash.join("files"),
         trash.join("info"),
-        mounts,
+        mounts.clone(),
     ] {
         assert!(targets.contains(&expected), "missing {expected:?}");
     }
     assert_eq!(targets.iter().collect::<BTreeSet<_>>().len(), targets.len());
+
+    let interests = candidate_interests(
+        &report,
+        &config,
+        &data,
+        std::slice::from_ref(&trash),
+        Some(&mounts),
+    );
+    for relevant in [
+        config.join("user-dirs.dirs"),
+        downloads_parent.join("Downloads"),
+        trash.join("files/report.pdf"),
+        trash.join("info/report.pdf.trashinfo"),
+        data.join("Trash"),
+        data.join("Trash/files/old.txt"),
+        mounts.clone(),
+    ] {
+        assert!(
+            interests.wants_any(&[relevant.clone()]),
+            "ignored {relevant:?}"
+        );
+    }
+    for unrelated in [
+        home.join(".bash_history"),
+        home.join("build.log"),
+        config.join("app/settings.json"),
+        config.join("monitors.xml"),
+        downloads_parent.join("Downloads/movie.mkv"),
+    ] {
+        assert!(
+            !interests.wants_any(&[unrelated.clone()]),
+            "rescanned for {unrelated:?}"
+        );
+    }
+    assert!(interests.wants_any(&[]));
     std::fs::remove_dir_all(root).unwrap();
 }
 

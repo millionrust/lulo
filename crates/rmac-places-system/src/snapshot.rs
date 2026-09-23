@@ -83,11 +83,16 @@ pub fn watch(
 ) -> Result<Watcher, Error> {
     use notify::Watcher as _;
 
+    let (targets, interests) = system_watch_plan(report);
     let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
         let event = match event {
             // Complete resampling reads the watched authorities. Access-only
             // hints must not recursively trigger another resample.
             Ok(event) if matches!(event.kind, notify::EventKind::Access(_)) => return,
+            // Home and the config directory are watched only to see a few
+            // named entries appear or vanish; ordinary file writes there must
+            // not rescan every mount's Trash.
+            Ok(event) if !interests.wants_any(&event.paths) => return,
             Ok(_) => WatchEvent::Changed,
             Err(error) => WatchEvent::Failed {
                 detail: error.to_string(),
@@ -97,7 +102,6 @@ pub fn watch(
     })
     .map_err(|error| Error::message(Operation::WatchPlaces, None, error.to_string()))?;
 
-    let targets = system_watch_targets(report);
     let mut watched = 0usize;
     let mut last_error = None;
     for target in targets {
@@ -116,7 +120,7 @@ pub fn watch(
     Ok(Watcher { _watcher: watcher })
 }
 
-fn system_watch_targets(report: &Report) -> Vec<PathBuf> {
+fn system_watch_plan(report: &Report) -> (Vec<PathBuf>, Interests) {
     let home = &report.snapshot.home.path;
     let config_home = std::env::var_os("XDG_CONFIG_HOME")
         .filter(|value| !value.is_empty())
@@ -144,13 +148,72 @@ fn system_watch_targets(report: &Report) -> Vec<PathBuf> {
         not(target_os = "android")
     )))]
     let trash_folders = Vec::new();
-    candidate_watch_targets(
-        report,
-        &config_home,
-        &data_home,
-        &trash_folders,
-        cfg!(target_os = "linux").then_some(Path::new("/proc/self/mounts")),
+    let mounts_file = cfg!(target_os = "linux").then_some(Path::new("/proc/self/mounts"));
+    (
+        candidate_watch_targets(
+            report,
+            &config_home,
+            &data_home,
+            &trash_folders,
+            mounts_file,
+        ),
+        candidate_interests(
+            report,
+            &config_home,
+            &data_home,
+            &trash_folders,
+            mounts_file,
+        ),
     )
+}
+
+/// The paths whose changes can alter the projected Dock places.
+pub(crate) struct Interests {
+    /// Only the appearance, removal or replacement of these paths matters.
+    existence: Vec<PathBuf>,
+    /// Entries created or removed directly inside these paths matter too.
+    contents: Vec<PathBuf>,
+}
+
+impl Interests {
+    /// Events without paths (such as a queue overflow) are always relevant.
+    pub(crate) fn wants_any(&self, paths: &[PathBuf]) -> bool {
+        paths.is_empty() || paths.iter().any(|path| self.wants(path))
+    }
+
+    fn wants(&self, path: &Path) -> bool {
+        let names_or_encloses = |target: &PathBuf| target.starts_with(path);
+        self.existence.iter().any(names_or_encloses)
+            || self.contents.iter().any(names_or_encloses)
+            || self
+                .contents
+                .iter()
+                .any(|target| path.parent() == Some(target.as_path()))
+    }
+}
+
+pub(crate) fn candidate_interests(
+    report: &Report,
+    config_home: &Path,
+    data_home: &Path,
+    trash_folders: &[PathBuf],
+    mounts_file: Option<&Path>,
+) -> Interests {
+    let mut contents = vec![data_home.join("Trash/files"), data_home.join("Trash/info")];
+    for folder in trash_folders {
+        contents.push(folder.join("files"));
+        contents.push(folder.join("info"));
+    }
+    contents.extend(mounts_file.map(Path::to_path_buf));
+    Interests {
+        existence: vec![
+            config_home.join("user-dirs.dirs"),
+            report.snapshot.home.path.clone(),
+            report.snapshot.downloads.path.clone(),
+            data_home.join("Trash"),
+        ],
+        contents,
+    }
 }
 
 pub(crate) fn candidate_watch_targets(

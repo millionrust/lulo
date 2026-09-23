@@ -92,49 +92,40 @@ fn centered_window_bounds(width: f32, height: f32, cx: &App) -> WindowBounds {
     WindowBounds::centered(size(px(width), px(height)), cx)
 }
 
-/// On Wayland the display is only known once the surface has entered an
-/// output, after the window is mapped, so the opening size cannot be fitted
-/// up front. Check briefly until the display is known, then shrink the window
+/// GPUI cannot report the logical screen size on Wayland before or right
+/// after mapping (it names no display, lists outputs divided by wl_output's
+/// integer scale, and briefly reports that integer scale), so ask the
+/// compositor for the focused output's logical size and shrink the new window
 /// if it reaches under the Dock.
 fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
     window
         .spawn(cx, async move |cx| {
-            for _ in 0..20 {
-                cx.background_executor()
-                    .timer(std::time::Duration::from_millis(100))
-                    .await;
-                let fitted = cx.update(|window, cx| {
-                    // GPUI's Wayland backend never sets the window's display
-                    // or a primary display, but it does list the outputs --
-                    // divided by wl_output's integer scale (2 for a 1.25x
-                    // output), so convert back through the window's real
-                    // fractional scale to get logical points.
-                    let screen = if let Some(display) = window.display(cx) {
-                        display.bounds().size
-                    } else if let Some(display) = cx.displays().into_iter().next() {
-                        let scale = window.scale_factor();
-                        let correction = scale.ceil() / scale;
-                        let listed = display.bounds().size;
-                        size(listed.width * correction, listed.height * correction)
-                    } else {
-                        return false;
-                    };
-                    let current = window.bounds().size;
-                    let (width, height) = fit_to_screen(
-                        f32::from(current.width),
-                        f32::from(current.height),
-                        f32::from(screen.width),
-                        f32::from(screen.height),
-                    );
-                    if width < f32::from(current.width) || height < f32::from(current.height) {
-                        window.resize(size(px(width), px(height)));
-                    }
-                    true
-                });
-                if fitted.unwrap_or(true) {
-                    break;
+            let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+                return;
+            };
+            let screen = snapshot
+                .focus
+                .output
+                .as_ref()
+                .and_then(|id| snapshot.outputs.iter().find(|output| &output.id == id))
+                .or_else(|| snapshot.outputs.first())
+                .and_then(|output| output.logical.as_ref())
+                .map(|logical| (logical.size.width as f32, logical.size.height as f32));
+            let Some((screen_width, screen_height)) = screen else {
+                return;
+            };
+            let _ = cx.update(|window, _| {
+                let current = window.bounds().size;
+                let (width, height) = fit_to_screen(
+                    f32::from(current.width),
+                    f32::from(current.height),
+                    screen_width,
+                    screen_height,
+                );
+                if width < f32::from(current.width) || height < f32::from(current.height) {
+                    window.resize(size(px(width), px(height)));
                 }
-            }
+            });
         })
         .detach();
 }

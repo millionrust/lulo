@@ -4840,6 +4840,25 @@ name = "rmac-locale"
 version = "0.1.0"
 
 [[package]]
+name = "rmac-login-items"
+version = "0.1.0"
+
+[[package]]
+name = "rmac-login-items-linux"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "futures-util",
+ "libc",
+ "notify",
+ "rmac-login-items",
+ "rmac-storage",
+ "trash",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-network"
 version = "0.1.0"
 dependencies = [
@@ -5029,8 +5048,10 @@ dependencies = [
  "rmac-dock",
  "rmac-dock-runtime",
  "rmac-dock-system",
+ "rmac-login-items-linux",
  "rmac-osd",
  "rmac-places",
+ "rmac-places-system",
  "rmac-recent-documents",
  "rmac-search",
  "rmac-shell-layer",
@@ -5043,6 +5064,7 @@ dependencies = [
  "rmac-wallpaper-runtime",
  "trash",
  "uuid",
+ "zbus",
 ]
 
 [[package]]

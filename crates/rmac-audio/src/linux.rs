@@ -37,9 +37,15 @@ pub(super) async fn watch_once(
 
     use futures_lite::io::AsyncReadExt as _;
 
-    let mut command = async_process::Command::new("pw-mon");
+    // `pw-dump --monitor` is the machine-readable PipeWire graph monitor: it
+    // prints the full graph once, then a fresh JSON array of changed objects
+    // on every subsequent state change. This loop never parses those bytes —
+    // it only treats their arrival as a "something changed, re-read the
+    // authoritative state" trigger, so the JSON framing does not matter here.
+    let mut command = async_process::Command::new("pw-dump");
     command
-        .arg("--color=never")
+        .arg("--monitor")
+        .arg("--no-colors")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -101,7 +107,7 @@ pub(super) async fn monitor_status_error(mut child: async_process::Child) -> Res
         .map_err(|error| Error::new("wait for the PipeWire monitor", error.to_string()))?;
     Err(Error::new(
         "watch PipeWire changes",
-        format!("pw-mon exited with {status}"),
+        format!("pw-dump --monitor exited with {status}"),
     ))
 }
 
@@ -156,6 +162,7 @@ pub(super) struct GraphNode {
     pub(super) device_id: Option<String>,
     pub(super) route_device: Option<i32>,
     pub(super) balance: Option<Balance>,
+    pub(super) level: Option<Level>,
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
@@ -182,50 +189,38 @@ pub(super) struct GraphMetadata {
     pub(super) nodes: std::collections::HashMap<String, GraphNode>,
     pub(super) hardware: Vec<GraphHardwareDevice>,
     pub(super) capabilities_rejected: bool,
+    /// `node.name` of the node named by the `default` metadata object's
+    /// `default.audio.sink` key, if any and unambiguous.
+    pub(super) default_sink: Option<String>,
+    /// `node.name` of the node named by the `default` metadata object's
+    /// `default.audio.source` key, if any and unambiguous.
+    pub(super) default_source: Option<String>,
 }
 
 #[cfg(not(target_os = "macos"))]
 pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
-    let mut outputs = machine_devices(DeviceKind::Output)?;
-    let mut inputs = machine_devices(DeviceKind::Input)?;
-    let graph = command("pw-dump", &["--no-colors"], "read PipeWire capabilities")
-        .and_then(|dump| parse_pw_dump_metadata(&dump));
-    let (graph, mut configuration_error) = match graph {
-        Ok(graph) => (Some(graph), None),
-        Err(_) => (
-            None,
-            Some("Audio ports and device profiles could not be read from PipeWire.".into()),
-        ),
-    };
-    if graph
-        .as_ref()
-        .is_some_and(|graph| graph.capabilities_rejected)
-    {
-        configuration_error = Some(
-            "Some audio port or device profile data was rejected because PipeWire returned an ambiguous response."
-                .into(),
-        );
-    }
-    if let Some(graph) = &graph {
-        apply_graph_metadata(&mut outputs, graph, DeviceKind::Output);
-        apply_graph_metadata(&mut inputs, graph, DeviceKind::Input);
-    }
-    let output = read_default_level(&outputs, DeviceKind::Output)?;
-    let input = read_default_level(&inputs, DeviceKind::Input)?;
+    let graph = read_graph_metadata("read PipeWire state")?;
+    let mut outputs = graph_devices(&graph, DeviceKind::Output);
+    let mut inputs = graph_devices(&graph, DeviceKind::Input);
+    apply_graph_metadata(&mut outputs, &graph, DeviceKind::Output);
+    apply_graph_metadata(&mut inputs, &graph, DeviceKind::Input);
     sort_devices(&mut outputs);
     sort_devices(&mut inputs);
     let has_output = default_device_id(&outputs).is_some();
     let has_input = default_device_id(&inputs).is_some();
-    let configuration_available = graph.is_some();
+    let output = default_level(&graph, DeviceKind::Output, "read output volume")?;
+    let input = default_level(&graph, DeviceKind::Input, "read input volume")?;
+    let configuration_available = !graph.capabilities_rejected;
+    let configuration_error = graph.capabilities_rejected.then(|| {
+        "Some audio port, device profile, or default-device data was rejected because PipeWire \
+         returned an ambiguous response."
+            .to_string()
+    });
     let mut hardware_devices = graph
-        .map(|graph| {
-            graph
-                .hardware
-                .into_iter()
-                .map(|hardware| hardware.device)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+        .hardware
+        .into_iter()
+        .map(|hardware| hardware.device)
+        .collect::<Vec<_>>();
     hardware_devices.sort_by(|left, right| {
         left.name
             .to_lowercase()
@@ -254,80 +249,117 @@ pub(super) fn system_default_device(kind: DeviceKind) -> Result<DefaultDevice, E
         DeviceKind::Output => "read default output device",
         DeviceKind::Input => "read default input device",
     };
-    let target = wpctl_default_target(kind);
-    let default =
-        parse_wpctl_default_inspect(&command("wpctl", &["inspect", target], operation)?, kind)
-            .ok_or_else(|| Error::new(operation, "wpctl returned an invalid default device"))?;
-    let level = parse_wpctl_level(&command("wpctl", &["get-volume", target], operation)?)
-        .ok_or_else(|| Error::new(operation, "wpctl returned an invalid volume"))?;
+    let graph = read_graph_metadata(operation)?;
+    let node = default_node(&graph, kind)
+        .ok_or_else(|| Error::new(operation, "PipeWire has no default device configured"))?;
+    let level = node.level.ok_or_else(|| {
+        Error::new(
+            operation,
+            "PipeWire did not report a usable volume for the default device",
+        )
+    })?;
     Ok(DefaultDevice {
-        name: default.description,
+        name: node.description.clone(),
         level,
     })
 }
 
+/// The graph node currently named by the PipeWire `default` metadata object
+/// for `kind`, if the default is set and points at a node that is present.
 #[cfg(not(target_os = "macos"))]
-pub(super) fn read_default_level(devices: &[Device], kind: DeviceKind) -> Result<Level, Error> {
-    let Some(id) = default_device_id(devices) else {
-        return Ok(Level::default());
-    };
-    let operation = match kind {
-        DeviceKind::Output => "read output volume",
-        DeviceKind::Input => "read input volume",
-    };
-    parse_wpctl_level(&command("wpctl", &["get-volume", id], operation)?)
-        .ok_or_else(|| Error::new(operation, "unexpected wpctl response"))
+fn default_node(graph: &GraphMetadata, kind: DeviceKind) -> Option<&GraphNode> {
+    let default_name = match kind {
+        DeviceKind::Output => graph.default_sink.as_deref(),
+        DeviceKind::Input => graph.default_source.as_deref(),
+    }?;
+    graph
+        .nodes
+        .values()
+        .find(|node| node.kind == kind && node.authority_name == default_name)
+}
+
+/// The volume/mute level of the current default device for `kind`, read
+/// straight from its `pw-dump` node Props. No default device is not an
+/// error (`Level::default()`); a default device with unreadable Props is.
+#[cfg(not(target_os = "macos"))]
+fn default_level(
+    graph: &GraphMetadata,
+    kind: DeviceKind,
+    operation: &'static str,
+) -> Result<Level, Error> {
+    match default_node(graph, kind) {
+        None => Ok(Level::default()),
+        Some(node) => node.level.ok_or_else(|| {
+            Error::new(
+                operation,
+                "PipeWire did not report a usable volume for the default device",
+            )
+        }),
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
 pub(super) fn machine_devices(kind: DeviceKind) -> Result<Vec<Device>, Error> {
-    let (object_type, operation) = match kind {
-        DeviceKind::Output => ("sinks", "read PipeWire output devices"),
-        DeviceKind::Input => ("sources", "read PipeWire input devices"),
+    let operation = match kind {
+        DeviceKind::Output => "read PipeWire output devices",
+        DeviceKind::Input => "read PipeWire input devices",
     };
-    let listed = command("wpctl", &["list", "audio", object_type], operation)
-        .and_then(|output| parse_wpctl_list(&output, kind));
-    match listed {
-        Ok(devices) => Ok(devices),
-        Err(_) => machine_devices_from_graph(kind, operation),
-    }
+    let graph = read_graph_metadata(operation)?;
+    let mut devices = graph_devices(&graph, kind);
+    apply_graph_metadata(&mut devices, &graph, kind);
+    sort_devices(&mut devices);
+    Ok(devices)
+}
+
+/// The recovery hint appended to a failed mutation `Error`'s detail: mutations
+/// only check the mutating command's exit status (never its text), so this
+/// is the one place callers get an actionable next step when that exit
+/// status is non-zero.
+#[cfg(not(target_os = "macos"))]
+const PIPEWIRE_MUTATION_HINT: &str =
+    "check that PipeWire and WirePlumber are running for this session (`wpctl status`)";
+
+/// Runs a PipeWire/WirePlumber CLI mutation, checking only its exit status.
+/// On failure, the command's stderr detail is kept but annotated with
+/// [`PIPEWIRE_MUTATION_HINT`] so the caller has a next step, not just a raw
+/// tool error.
+#[cfg(not(target_os = "macos"))]
+fn pipewire_mutation(
+    program: &'static str,
+    arguments: &[&str],
+    operation: &'static str,
+) -> Result<(), Error> {
+    command(program, arguments, operation)
+        .map(|_| ())
+        .map_err(|error| {
+            Error::new(
+                operation,
+                format!("{}; {PIPEWIRE_MUTATION_HINT}", error.detail()),
+            )
+        })
 }
 
 #[cfg(not(target_os = "macos"))]
-fn machine_devices_from_graph(
-    kind: DeviceKind,
-    operation: &'static str,
-) -> Result<Vec<Device>, Error> {
-    let graph = read_graph_metadata(operation)?;
-    if !graph.nodes.values().any(|node| node.kind == kind) {
-        return Ok(Vec::new());
-    }
-    let target = wpctl_default_target(kind);
-    let default =
-        parse_wpctl_default_inspect(&command("wpctl", &["inspect", target], operation)?, kind)
-            .ok_or_else(|| Error::new(operation, "wpctl returned an invalid default device"))?;
-    graph_devices(&graph, kind, &default, operation)
+fn wpctl_mutation(arguments: &[&str], operation: &'static str) -> Result<(), Error> {
+    pipewire_mutation("wpctl", arguments, operation)
 }
 
 #[cfg(not(target_os = "macos"))]
 pub(super) fn system_set_volume(kind: DeviceKind, volume: u8) -> Result<(), Error> {
     let target = wpctl_default_target(kind);
     let value = format!("{:.2}", f32::from(volume) / 100.0);
-    command(
-        "wpctl",
+    wpctl_mutation(
         &["set-volume", target, &value],
         match kind {
             DeviceKind::Output => "change output volume",
             DeviceKind::Input => "change input volume",
         },
-    )?;
-    Ok(())
+    )
 }
 
 #[cfg(not(target_os = "macos"))]
 pub(super) fn system_set_muted(kind: DeviceKind, muted: bool) -> Result<(), Error> {
-    command(
-        "wpctl",
+    wpctl_mutation(
         &[
             "set-mute",
             wpctl_default_target(kind),
@@ -337,8 +369,7 @@ pub(super) fn system_set_muted(kind: DeviceKind, muted: bool) -> Result<(), Erro
             DeviceKind::Output => "change output mute",
             DeviceKind::Input => "change input mute",
         },
-    )?;
-    Ok(())
+    )
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -373,8 +404,7 @@ pub(super) fn system_set_default_device(
     if current.is_default {
         return system_snapshot();
     }
-    command(
-        "wpctl",
+    wpctl_mutation(
         &["set-default", &expected.id],
         "change default audio device",
     )?;
@@ -466,8 +496,7 @@ pub(super) fn system_set_profile(
         return system_snapshot();
     }
     let index = expected_profile.index.to_string();
-    command(
-        "wpctl",
+    wpctl_mutation(
         &["set-profile", &expected_device.id, &index],
         "change audio profile",
     )?;
@@ -556,8 +585,7 @@ pub(super) fn system_set_route(
         return system_snapshot();
     }
     let index = expected_route.index.to_string();
-    command(
-        "wpctl",
+    wpctl_mutation(
         &["set-route", &expected_device.id, &index],
         "change audio route",
     )?;
@@ -635,7 +663,7 @@ pub(super) fn system_set_balance(expected_device: &Device, value: i8) -> Result<
         spa_channel_volume(first),
         spa_channel_volume(second)
     );
-    command(
+    pipewire_mutation(
         "pw-cli",
         &["set-param", &expected_device.id, "Props", &parameter],
         "change output balance",
@@ -734,9 +762,10 @@ pub(super) fn exact_routed_device(
     expected: &Device,
     operation: &'static str,
 ) -> Result<Device, Error> {
-    let mut devices = machine_devices(kind)?;
-    let graph = read_graph_metadata(operation)?;
-    apply_graph_metadata(&mut devices, &graph, kind);
+    // `machine_devices` already reads the graph and every node from a single
+    // `pw-dump` call and applies that same graph's metadata, so there is no
+    // second, separately-timed read to reconcile here.
+    let devices = machine_devices(kind)?;
     let current = devices
         .into_iter()
         .find(|device| device.id == expected.id)
@@ -777,17 +806,6 @@ pub(super) fn wpctl_default_target(kind: DeviceKind) -> &'static str {
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
-pub(super) fn parse_wpctl_level(output: &str) -> Option<Level> {
-    let volume = output
-        .split_whitespace()
-        .find_map(|field| field.parse::<f32>().ok())?;
-    Some(Level {
-        volume: (volume * 100.0).round().clamp(0.0, 100.0) as u8,
-        muted: output.contains("[MUTED]"),
-    })
-}
-
-#[cfg(any(not(target_os = "macos"), test))]
 pub(super) const MAX_AUDIO_DEVICES: usize = 256;
 #[cfg(any(not(target_os = "macos"), test))]
 pub(super) const MAX_AUTHORITY_NAME_BYTES: usize = 512;
@@ -798,66 +816,18 @@ pub(super) const MAX_GRAPH_OBJECTS: usize = 4096;
 #[cfg(any(not(target_os = "macos"), test))]
 pub(super) const MAX_DEVICE_CAPABILITIES: usize = 128;
 
+/// Builds the machine-readable device list for `kind` straight from the
+/// `pw-dump` graph: one [`Device`] per matching node, marked `is_default`
+/// against the PipeWire `default` metadata object (see
+/// [`GraphMetadata::default_sink`] / [`GraphMetadata::default_source`]).
+/// Ports, routes and balance are filled in separately by
+/// [`apply_graph_metadata`].
 #[cfg(any(not(target_os = "macos"), test))]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct DefaultNode {
-    pub(super) id: String,
-    pub(super) authority_name: String,
-    pub(super) description: String,
-}
-
-#[cfg(any(not(target_os = "macos"), test))]
-pub(super) fn parse_wpctl_default_inspect(output: &str, kind: DeviceKind) -> Option<DefaultNode> {
-    let mut lines = output.lines();
-    let id = lines.next()?.trim().strip_prefix("id ")?.split_once(',')?.0;
-    id.parse::<u32>().ok().filter(|id| *id > 0)?;
-    let expected_class = match kind {
-        DeviceKind::Output => "Audio/Sink",
-        DeviceKind::Input => "Audio/Source",
+pub(super) fn graph_devices(graph: &GraphMetadata, kind: DeviceKind) -> Vec<Device> {
+    let default_name = match kind {
+        DeviceKind::Output => graph.default_sink.as_deref(),
+        DeviceKind::Input => graph.default_source.as_deref(),
     };
-    let mut authority_name = None;
-    let mut description = None;
-    let mut nickname = None;
-    let mut media_class = None;
-    for line in lines {
-        let property = line.trim().strip_prefix("* ").unwrap_or(line.trim());
-        let Some((key, raw_value)) = property.split_once(" = ") else {
-            continue;
-        };
-        let parsed = || serde_json::from_str::<String>(raw_value).ok();
-        match key {
-            "node.name" if authority_name.is_none() => authority_name = parsed(),
-            "node.name" => return None,
-            "node.description" if description.is_none() => description = parsed(),
-            "node.description" => return None,
-            "node.nick" if nickname.is_none() => nickname = parsed(),
-            "node.nick" => return None,
-            "media.class" if media_class.is_none() => media_class = parsed(),
-            "media.class" => return None,
-            _ => {}
-        }
-    }
-    let authority_name = bounded_authority_name(&authority_name?)?;
-    let description = description
-        .as_deref()
-        .or(nickname.as_deref())
-        .map(bounded_label)
-        .filter(|label| !label.is_empty())
-        .unwrap_or_else(|| bounded_label(&authority_name));
-    (media_class.as_deref() == Some(expected_class)).then(|| DefaultNode {
-        id: id.to_owned(),
-        authority_name,
-        description,
-    })
-}
-
-#[cfg(any(not(target_os = "macos"), test))]
-pub(super) fn graph_devices(
-    graph: &GraphMetadata,
-    kind: DeviceKind,
-    default: &DefaultNode,
-    operation: &'static str,
-) -> Result<Vec<Device>, Error> {
     let mut devices = graph
         .nodes
         .iter()
@@ -865,7 +835,7 @@ pub(super) fn graph_devices(
         .map(|(id, node)| Device {
             id: id.clone(),
             name: node.description.clone(),
-            is_default: id == &default.id && node.authority_name == default.authority_name,
+            is_default: default_name == Some(node.authority_name.as_str()),
             routes: Vec::new(),
             balance: None,
             authority_name: node.authority_name.clone(),
@@ -873,97 +843,8 @@ pub(super) fn graph_devices(
             authority_route_device: None,
         })
         .collect::<Vec<_>>();
-    if !devices.iter().any(|device| device.is_default) {
-        return Err(Error::new(
-            operation,
-            "the default PipeWire node changed while audio state was being read",
-        ));
-    }
     sort_devices(&mut devices);
-    Ok(devices)
-}
-
-#[cfg(any(not(target_os = "macos"), test))]
-pub(super) fn parse_wpctl_list(output: &str, kind: DeviceKind) -> Result<Vec<Device>, Error> {
-    use std::collections::HashSet;
-
-    let expected_class = match kind {
-        DeviceKind::Output => "audio/sink",
-        DeviceKind::Input => "audio/source",
-    };
-    let operation = match kind {
-        DeviceKind::Output => "read PipeWire output devices",
-        DeviceKind::Input => "read PipeWire input devices",
-    };
-    let mut seen = HashSet::new();
-    let mut devices = Vec::new();
-    let mut defaults = 0;
-    for raw in output.lines().filter(|line| !line.trim().is_empty()) {
-        if devices.len() == MAX_AUDIO_DEVICES {
-            return Err(Error::new(
-                operation,
-                "the device list exceeded 256 entries",
-            ));
-        }
-        let fields = raw.trim_end_matches('\r').split('\t').collect::<Vec<_>>();
-        if fields.len() != 4 {
-            return Err(Error::new(
-                operation,
-                "wpctl list returned a row without four tab-separated fields",
-            ));
-        }
-        let id = fields[0];
-        if id.parse::<u32>().ok().filter(|id| *id > 0).is_none() || !seen.insert(id) {
-            return Err(Error::new(
-                operation,
-                "wpctl list returned an invalid or duplicate object id",
-            ));
-        }
-        let authority_name = fields[1];
-        if authority_name.is_empty()
-            || authority_name.len() > MAX_AUTHORITY_NAME_BYTES
-            || authority_name.chars().any(char::is_control)
-        {
-            return Err(Error::new(
-                operation,
-                "wpctl list returned an invalid node name",
-            ));
-        }
-        if fields[2] != expected_class {
-            return Err(Error::new(
-                operation,
-                "wpctl list returned an unexpected media class",
-            ));
-        }
-        let is_default = match fields[3] {
-            "*" => true,
-            marker if marker.chars().all(char::is_whitespace) => false,
-            _ => {
-                return Err(Error::new(
-                    operation,
-                    "wpctl list returned an invalid default marker",
-                ));
-            }
-        };
-        defaults += usize::from(is_default);
-        if defaults > 1 {
-            return Err(Error::new(
-                operation,
-                "WirePlumber advertised more than one default node",
-            ));
-        }
-        devices.push(Device {
-            id: id.to_owned(),
-            name: bounded_label(authority_name),
-            is_default,
-            routes: Vec::new(),
-            balance: None,
-            authority_name: authority_name.to_owned(),
-            authority_device_id: None,
-            authority_route_device: None,
-        });
-    }
-    Ok(devices)
+    devices
 }
 
 #[cfg(any(not(target_os = "macos"), test))]
@@ -991,20 +872,31 @@ pub(super) fn parse_pw_dump_metadata(output: &str) -> Result<GraphMetadata, Erro
 
     let mut graph = GraphMetadata::default();
     let mut ambiguous_nodes = std::collections::HashSet::new();
+    let mut sink_count = 0_usize;
+    let mut source_count = 0_usize;
+    let mut default_objects = Vec::new();
     for object in &objects {
         let Some(id) = json_u32(object.get("id")) else {
             continue;
         };
-        let Some(props) = object.get("info").and_then(|info| info.get("props")) else {
-            continue;
-        };
         match object.get("type").and_then(Value::as_str) {
             Some("PipeWire:Interface:Node") => {
+                let Some(props) = object.get("info").and_then(|info| info.get("props")) else {
+                    continue;
+                };
                 let kind = match props.get("media.class").and_then(Value::as_str) {
                     Some("Audio/Sink") => DeviceKind::Output,
                     Some("Audio/Source") => DeviceKind::Input,
                     _ => continue,
                 };
+                match kind {
+                    DeviceKind::Output => sink_count += 1,
+                    DeviceKind::Input => source_count += 1,
+                }
+                if sink_count > MAX_AUDIO_DEVICES || source_count > MAX_AUDIO_DEVICES {
+                    graph.capabilities_rejected = true;
+                    continue;
+                }
                 let Some(authority_name) = props
                     .get("node.name")
                     .and_then(Value::as_str)
@@ -1025,15 +917,20 @@ pub(super) fn parse_pw_dump_metadata(output: &str) -> Result<GraphMetadata, Erro
                     device_id: json_u32(props.get("device.id")).map(|id| id.to_string()),
                     route_device: json_i32(props.get("card.profile.device")),
                     balance: parse_node_balance(object),
+                    level: parse_node_level(object),
                 };
                 let id = id.to_string();
                 if graph.nodes.insert(id.clone(), node).is_some() {
                     ambiguous_nodes.insert(id);
                 }
             }
-            Some("PipeWire:Interface:Device")
-                if props.get("media.class").and_then(Value::as_str) == Some("Audio/Device") =>
-            {
+            Some("PipeWire:Interface:Device") => {
+                let Some(props) = object.get("info").and_then(|info| info.get("props")) else {
+                    continue;
+                };
+                if props.get("media.class").and_then(Value::as_str) != Some("Audio/Device") {
+                    continue;
+                }
                 if graph.hardware.len() == MAX_AUDIO_DEVICES {
                     graph.capabilities_rejected = true;
                     continue;
@@ -1051,11 +948,32 @@ pub(super) fn parse_pw_dump_metadata(output: &str) -> Result<GraphMetadata, Erro
                     }
                 }
             }
+            Some("PipeWire:Interface:Metadata") => {
+                let Some(props) = object.get("props") else {
+                    continue;
+                };
+                if props.get("metadata.name").and_then(Value::as_str) != Some("default") {
+                    continue;
+                }
+                default_objects.push(object);
+            }
             _ => {}
         }
     }
     for id in ambiguous_nodes {
         graph.nodes.remove(&id);
+    }
+    match default_objects.as_slice() {
+        [] => {}
+        [only] => {
+            if let Some(entries) = only.get("metadata").and_then(Value::as_array) {
+                graph.default_sink = default_node_name(entries, "default.audio.sink");
+                graph.default_source = default_node_name(entries, "default.audio.source");
+            }
+        }
+        // PipeWire only ever publishes one "default" metadata object; more
+        // than one is an ambiguous response we cannot safely pick between.
+        _ => graph.capabilities_rejected = true,
     }
     let mut id_counts = std::collections::HashMap::new();
     let mut name_counts = std::collections::HashMap::new();
@@ -1302,6 +1220,79 @@ pub(super) fn parse_route_direction(value: Option<&serde_json::Value>) -> Option
     }
 }
 
+/// Finds the single Props entry in a node's `params.Props` array that
+/// carries `channelVolumes`. Real `pw-dump` output for an ALSA-backed node
+/// has *two* Props entries — the volume/mute one and a second, ALSA-route
+/// specific one (`device`, `deviceName`, …) with no `channelVolumes` field —
+/// so this cannot assume the array has exactly one entry; it must instead
+/// find the one entry that advertises `channelVolumes`, and reject the node
+/// as unreadable if that is not exactly one entry.
+#[cfg(any(not(target_os = "macos"), test))]
+fn volume_props(params: &serde_json::Value) -> Option<&serde_json::Value> {
+    let mut matches = params.get("Props")?.as_array()?.iter().filter(|entry| {
+        entry
+            .get("channelVolumes")
+            .and_then(serde_json::Value::as_array)
+            .is_some()
+    });
+    let found = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(found)
+}
+
+/// A node's live volume/mute, read from its Props `channelVolumes` (a
+/// linear scale) and `mute`. `channelVolumes` is averaged across channels
+/// and cube-rooted to match the perceptual/cubic scale WirePlumber tools
+/// such as `wpctl` display (e.g. a raw `channelVolumes` of `8e-6` is the
+/// `wpctl`-displayed `0.02`, since `0.02.powi(3) == 8e-6`).
+#[cfg(any(not(target_os = "macos"), test))]
+pub(super) fn parse_node_level(object: &serde_json::Value) -> Option<Level> {
+    let params = object.get("info")?.get("params")?;
+    let props = volume_props(params)?;
+    let channel_volumes = props.get("channelVolumes")?.as_array()?;
+    if channel_volumes.is_empty() || channel_volumes.len() > MAX_DEVICE_CAPABILITIES {
+        return None;
+    }
+    let mut sum = 0.0_f64;
+    for value in channel_volumes {
+        let value = value.as_f64()?;
+        if !value.is_finite() || !(0.0..=10.0).contains(&value) {
+            return None;
+        }
+        sum += value;
+    }
+    let average_linear = sum / channel_volumes.len() as f64;
+    let display = average_linear.max(0.0).cbrt();
+    let volume = (display * 100.0).round().clamp(0.0, 100.0) as u8;
+    let muted = props.get("mute")?.as_bool()?;
+    Some(Level { volume, muted })
+}
+
+/// Reads a `default.audio.sink`/`default.audio.source`-style entry from a
+/// PipeWire `default` metadata object's `metadata` array and returns the
+/// node name it points at, if any and well-formed. The value is normally
+/// already a decoded `{"name": "..."}` object, but metadata values are
+/// generically typed as JSON-encoded strings, so a raw string is also
+/// accepted and decoded the same way.
+#[cfg(any(not(target_os = "macos"), test))]
+fn default_node_name(entries: &[serde_json::Value], key: &str) -> Option<String> {
+    let entry = entries
+        .iter()
+        .find(|entry| entry.get("key").and_then(serde_json::Value::as_str) == Some(key))?;
+    let value = entry.get("value")?;
+    let name = value
+        .get("name")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| {
+            let decoded = serde_json::from_str::<serde_json::Value>(value.as_str()?).ok()?;
+            decoded.get("name")?.as_str().map(str::to_owned)
+        })?;
+    bounded_authority_name(&name)
+}
+
 #[cfg(any(not(target_os = "macos"), test))]
 pub(super) fn parse_node_balance(object: &serde_json::Value) -> Option<Balance> {
     let permissions = object.get("permissions")?.as_array()?;
@@ -1328,12 +1319,9 @@ pub(super) fn parse_node_balance(object: &serde_json::Value) -> Option<Balance> 
     if !channel_volumes_advertised {
         return None;
     }
-    let props = params.get("Props")?.as_array()?;
-    if props.len() != 1 {
-        return None;
-    }
-    let channel_map = props[0].get("channelMap")?.as_array()?;
-    let channel_volumes = props[0].get("channelVolumes")?.as_array()?;
+    let props = volume_props(params)?;
+    let channel_map = props.get("channelMap")?.as_array()?;
+    let channel_volumes = props.get("channelVolumes")?.as_array()?;
     if channel_map.len() != 2 || channel_volumes.len() != 2 {
         return None;
     }

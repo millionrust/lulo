@@ -56,95 +56,135 @@ fn encoded_notification_sound_boundary_checks_format_size_and_debug() {
 }
 
 #[test]
-fn wpctl_level_parses_volume_and_mute() {
+fn node_level_matches_wpctl_cubic_volume_scale() {
+    // Real `pw-dump` channelVolumes are linear; wpctl/pavucontrol display the
+    // cube root. 8e-6 is the exact real-hardware value the reference laptop
+    // reported as `wpctl`-displayed 0.02 (2%); 0.343 -> 0.7 (70%) verifies a
+    // non-boundary value on the same curve.
+    let quiet = serde_json::json!({
+        "info": {"params": {"Props": [
+            {"channelVolumes": [8e-6, 8e-6], "mute": false}
+        ]}}
+    });
     assert_eq!(
-        parse_wpctl_level("Volume: 0.72 [MUTED]"),
+        parse_node_level(&quiet),
         Some(Level {
-            volume: 72,
+            volume: 2,
+            muted: false
+        })
+    );
+
+    let full_muted = serde_json::json!({
+        "info": {"params": {"Props": [
+            {"channelVolumes": [1.0, 1.0], "mute": true}
+        ]}}
+    });
+    assert_eq!(
+        parse_node_level(&full_muted),
+        Some(Level {
+            volume: 100,
             muted: true
         })
     );
-    assert_eq!(parse_wpctl_level("Volume: 1.5").unwrap().volume, 100);
+
+    let mid = serde_json::json!({
+        "info": {"params": {"Props": [{"channelVolumes": [0.343], "mute": false}]}}
+    });
+    assert_eq!(parse_node_level(&mid).unwrap().volume, 70);
 }
 
 #[test]
-fn machine_readable_wpctl_lists_preserve_exact_identity_and_defaults() {
-    let mut outputs = parse_wpctl_list(
-        "61\talsa_output.hdmi\taudio/sink\t \n52\talsa_output.analog\taudio/sink\t*",
-        DeviceKind::Output,
-    )
-    .unwrap();
-    let mut inputs =
-        parse_wpctl_list("53\talsa_input.analog\taudio/source\t*", DeviceKind::Input).unwrap();
-    sort_devices(&mut outputs);
-    sort_devices(&mut inputs);
-    assert_eq!(outputs.len(), 2);
-    assert_eq!(outputs[0].id, "52");
-    assert!(outputs[0].is_default);
-    assert_eq!(outputs[0].authority_name, "alsa_output.analog");
-    assert_eq!(inputs[0].authority_name, "alsa_input.analog");
-    assert!(parse_wpctl_list("53\talsa_input.analog\taudio/sink\t*", DeviceKind::Input).is_err());
+fn node_level_finds_the_volume_props_entry_among_alsa_route_entries() {
+    // Real ALSA-backed sinks/sources have a *second* Props entry (`device`,
+    // `deviceName`, `cardName`, …) with no `channelVolumes` field at all;
+    // the parser must not assume the Props array has exactly one entry.
+    let realistic = serde_json::json!({
+        "info": {"params": {"Props": [
+            {"volume": 1.0, "mute": false, "channelVolumes": [1.0, 1.0], "channelMap": ["FL", "FR"]},
+            {"device": "front:1", "deviceName": "", "cardName": ""}
+        ]}}
+    });
+    assert_eq!(
+        parse_node_level(&realistic),
+        Some(Level {
+            volume: 100,
+            muted: false
+        })
+    );
+
+    let missing_mute =
+        serde_json::json!({"info": {"params": {"Props": [{"channelVolumes": [1.0]}]}}});
+    assert!(parse_node_level(&missing_mute).is_none());
+
+    let ambiguous = serde_json::json!({"info": {"params": {"Props": [
+        {"channelVolumes": [1.0], "mute": false},
+        {"channelVolumes": [0.5], "mute": false}
+    ]}}});
+    assert!(parse_node_level(&ambiguous).is_none());
 }
 
 #[test]
-fn machine_readable_wpctl_list_rejects_ambiguous_or_malformed_identity() {
-    for invalid in [
-        "52\talsa_output.analog\taudio/sink\t*\n52\talsa_output.hdmi\taudio/sink\t ",
-        "52\talsa_output.analog\taudio/sink\t*\n61\talsa_output.hdmi\taudio/sink\t*",
-        "52\talsa_output.analog\taudio/sink\t?",
-        "0\talsa_output.analog\taudio/sink\t*",
-        "52\talsa_output.analog\taudio/sink",
-    ] {
-        assert!(parse_wpctl_list(invalid, DeviceKind::Output).is_err());
-    }
-}
-
-#[test]
-fn wpctl_inspect_and_pipewire_graph_support_stable_wireplumber() {
-    let inspected = parse_wpctl_default_inspect(
-        concat!(
-            "id 58, type PipeWire:Interface:Node\n",
-            "  * media.class = \"Audio/Sink\"\n",
-            "  * node.description = \"Built-in Audio Analog Stereo\"\n",
-            "  * node.name = \"alsa_output.pci-0000_00_1b.0.analog-stereo\"\n",
-        ),
-        DeviceKind::Output,
-    )
-    .unwrap();
-    assert_eq!(inspected.id, "58");
-
+fn graph_devices_marks_the_node_named_by_default_metadata() {
     let graph = parse_pw_dump_metadata(
         r#"[
-            {"id":58,"type":"PipeWire:Interface:Node","info":{"props":{
-                "media.class":"Audio/Sink",
-                "node.name":"alsa_output.pci-0000_00_1b.0.analog-stereo",
+            {"id":41,"type":"PipeWire:Interface:Metadata","props":{"metadata.name":"default"},
+             "metadata":[
+                {"subject":0,"key":"default.audio.sink","value":{"name":"alsa_output.analog"}},
+                {"subject":0,"key":"default.audio.source","value":{"name":"alsa_input.analog"}}
+             ]},
+            {"id":52,"type":"PipeWire:Interface:Node","info":{"props":{
+                "media.class":"Audio/Sink","node.name":"alsa_output.analog",
                 "node.description":"Built-in Audio Analog Stereo"
             }}},
-            {"id":59,"type":"PipeWire:Interface:Node","info":{"props":{
-                "media.class":"Audio/Source",
-                "node.name":"alsa_input.pci-0000_00_1b.0.analog-stereo",
+            {"id":61,"type":"PipeWire:Interface:Node","info":{"props":{
+                "media.class":"Audio/Sink","node.name":"alsa_output.hdmi",
+                "node.description":"HDMI"
+            }}},
+            {"id":53,"type":"PipeWire:Interface:Node","info":{"props":{
+                "media.class":"Audio/Source","node.name":"alsa_input.analog",
                 "node.description":"Built-in Audio Analog Stereo"
             }}}
         ]"#,
     )
     .unwrap();
-    let devices = graph_devices(
-        &graph,
-        DeviceKind::Output,
-        &inspected,
-        "read PipeWire output devices",
+    assert_eq!(graph.default_sink.as_deref(), Some("alsa_output.analog"));
+    assert_eq!(graph.default_source.as_deref(), Some("alsa_input.analog"));
+
+    let outputs = graph_devices(&graph, DeviceKind::Output);
+    assert_eq!(outputs.len(), 2);
+    assert!(
+        outputs
+            .iter()
+            .find(|device| device.id == "52")
+            .unwrap()
+            .is_default
+    );
+    assert!(
+        !outputs
+            .iter()
+            .find(|device| device.id == "61")
+            .unwrap()
+            .is_default
+    );
+
+    let inputs = graph_devices(&graph, DeviceKind::Input);
+    assert_eq!(inputs.len(), 1);
+    assert!(inputs[0].is_default);
+}
+
+#[test]
+fn duplicate_default_metadata_objects_are_rejected_as_ambiguous() {
+    let graph = parse_pw_dump_metadata(
+        r#"[
+            {"id":41,"type":"PipeWire:Interface:Metadata","props":{"metadata.name":"default"},
+             "metadata":[{"subject":0,"key":"default.audio.sink","value":{"name":"a"}}]},
+            {"id":42,"type":"PipeWire:Interface:Metadata","props":{"metadata.name":"default"},
+             "metadata":[{"subject":0,"key":"default.audio.sink","value":{"name":"b"}}]}
+        ]"#,
     )
     .unwrap();
-    assert_eq!(devices.len(), 1);
-    assert_eq!(devices[0].id, "58");
-    assert_eq!(devices[0].name, "Built-in Audio Analog Stereo");
-    assert!(devices[0].is_default);
-
-    assert!(parse_wpctl_default_inspect(
-        "id 58, type PipeWire:Interface:Node\n  * node.name = \"sink\"\n",
-        DeviceKind::Output,
-    )
-    .is_none());
+    assert!(graph.default_sink.is_none());
+    assert!(graph.capabilities_rejected);
 }
 
 #[test]
@@ -201,8 +241,7 @@ fn pipewire_json_correlates_exact_profiles_routes_and_node_identity() {
     assert_eq!(graph.hardware[0].device.profiles.len(), 3);
     assert!(graph.hardware[0].device.profiles[0].is_active);
 
-    let mut outputs =
-        parse_wpctl_list("52\talsa_output.analog\taudio/sink\t*", DeviceKind::Output).unwrap();
+    let mut outputs = graph_devices(&graph, DeviceKind::Output);
     apply_graph_metadata(&mut outputs, &graph, DeviceKind::Output);
     assert_eq!(outputs[0].name, "Built-in Audio Analog Stereo");
     assert_eq!(outputs[0].routes.len(), 2);
@@ -274,14 +313,34 @@ fn balance_requires_writable_exact_front_stereo_channels() {
     read_only["permissions"] = serde_json::json!(["r"]);
     assert!(parse_node_balance(&read_only).is_none());
 
-    let mut surround = base;
+    let mut surround = base.clone();
     surround["info"]["params"]["Props"][0]["channelMap"] = serde_json::json!(["FL", "FR", "FC"]);
     surround["info"]["params"]["Props"][0]["channelVolumes"] = serde_json::json!([0.5, 0.5, 0.5]);
     assert!(parse_node_balance(&surround).is_none());
+
+    // Real ALSA-backed nodes carry a *second* Props entry alongside the
+    // volume/mute one (an ALSA-route entry with `device`/`deviceName`
+    // fields and no `channelVolumes`); balance parsing must find the right
+    // entry rather than assuming the array has exactly one member.
+    let mut alsa_shaped = base;
+    alsa_shaped["info"]["params"]["Props"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"device": "front:1", "deviceName": "", "cardName": ""}));
+    assert_eq!(
+        parse_node_balance(&alsa_shaped).map(|balance| balance.value),
+        Some(0)
+    );
 }
 
 #[test]
 fn graph_labels_require_the_exact_machine_list_node_name() {
+    // `graph_devices` and `apply_graph_metadata` always read the same
+    // `GraphMetadata` value now (one `pw-dump` call), so the ids and names
+    // they see can never disagree there; this test exercises
+    // `apply_graph_metadata`'s identity guard directly, against a `Device`
+    // built independently of the graph (as could happen if a caller ever
+    // passed a stale graph for a different read).
     let graph = parse_pw_dump_metadata(
         r#"[{
                 "id":52,"type":"PipeWire:Interface:Node","info":{"props":{
@@ -291,11 +350,16 @@ fn graph_labels_require_the_exact_machine_list_node_name() {
             }]"#,
     )
     .unwrap();
-    let mut outputs = parse_wpctl_list(
-        "52\tcurrent.private.node\taudio/sink\t*",
-        DeviceKind::Output,
-    )
-    .unwrap();
+    let mut outputs = vec![Device {
+        id: "52".into(),
+        name: "current.private.node".into(),
+        is_default: true,
+        routes: Vec::new(),
+        balance: None,
+        authority_name: "current.private.node".into(),
+        authority_device_id: None,
+        authority_route_device: None,
+    }];
     apply_graph_metadata(&mut outputs, &graph, DeviceKind::Output);
     assert_eq!(outputs[0].name, "current.private.node");
     assert!(outputs[0].routes.is_empty());
@@ -347,4 +411,74 @@ fn errors_keep_operation_context() {
         error.to_string(),
         "could not read audio devices: service unavailable"
     );
+}
+
+/// A real `pw-dump` capture from the reference laptop (Built-in Audio
+/// sink/source on an Intel HDA card), trimmed to the sink, source, hardware
+/// device and `default` metadata objects and with device names/serials
+/// sanitized. Captured read-only via
+/// `ssh jacob@<reference> 'XDG_RUNTIME_DIR=/run/user/1000 pw-dump'` — no
+/// volume/default/mute change was made to capture it.
+#[test]
+fn real_pw_dump_fixture_parses_into_the_expected_defaults_volumes_and_profile() {
+    let dump = include_str!("fixtures/pw-dump-laptop.json");
+    let graph = parse_pw_dump_metadata(dump).unwrap();
+    assert!(!graph.capabilities_rejected);
+
+    assert_eq!(
+        graph.default_sink.as_deref(),
+        Some("alsa_output.pci-0000_00_1b.0.analog-stereo")
+    );
+    assert_eq!(
+        graph.default_source.as_deref(),
+        Some("alsa_input.pci-0000_00_1b.0.analog-stereo")
+    );
+
+    let outputs = graph_devices(&graph, DeviceKind::Output);
+    assert_eq!(outputs.len(), 1);
+    assert!(outputs[0].is_default);
+    assert_eq!(outputs[0].name, "Built-in Audio Analog Stereo");
+    let output_id = outputs[0].id.clone();
+
+    let inputs = graph_devices(&graph, DeviceKind::Input);
+    assert_eq!(inputs.len(), 1);
+    assert!(inputs[0].is_default);
+    let input_id = inputs[0].id.clone();
+
+    // The reference laptop's real sink was at 2% (wpctl-displayed) and the
+    // source at 100%, both unmuted; channelVolumes are linear, so this
+    // exercises the cubic-scale conversion against real hardware values.
+    let output_node = graph
+        .nodes
+        .get(&output_id)
+        .and_then(|node| node.level)
+        .unwrap();
+    assert_eq!(output_node.volume, 2);
+    assert!(!output_node.muted);
+    let input_node = graph
+        .nodes
+        .get(&input_id)
+        .and_then(|node| node.level)
+        .unwrap();
+    assert_eq!(input_node.volume, 100);
+    assert!(!input_node.muted);
+
+    assert_eq!(graph.hardware.len(), 1);
+    let hardware = &graph.hardware[0];
+    assert_eq!(hardware.device.name, "Built-in Audio");
+    assert!(
+        hardware
+            .device
+            .profiles
+            .iter()
+            .find(|profile| profile.index == 1)
+            .unwrap()
+            .is_active
+    );
+
+    let mut outputs = outputs;
+    apply_graph_metadata(&mut outputs, &graph, DeviceKind::Output);
+    assert_eq!(outputs[0].routes.len(), 2);
+    assert!(outputs[0].routes[0].is_active);
+    assert_eq!(outputs[0].routes[0].name, "Speakers");
 }

@@ -1,0 +1,212 @@
+[
+  {
+    "id": 41,
+    "type": "PipeWire:Interface:Metadata",
+    "props": {
+      "metadata.name": "default"
+    },
+    "metadata": [
+      {
+        "subject": 0,
+        "key": "default.audio.sink",
+        "type": "Spa:String:JSON",
+        "value": {
+          "name": "alsa_output.pci-0000_00_1b.0.analog-stereo"
+        }
+      },
+      {
+        "subject": 0,
+        "key": "default.audio.source",
+        "type": "Spa:String:JSON",
+        "value": {
+          "name": "alsa_input.pci-0000_00_1b.0.analog-stereo"
+        }
+      }
+    ]
+  },
+  {
+    "id": 58,
+    "type": "PipeWire:Interface:Node",
+    "permissions": [
+      "r",
+      "w",
+      "x",
+      "m"
+    ],
+    "info": {
+      "props": {
+        "media.class": "Audio/Sink",
+        "node.name": "alsa_output.pci-0000_00_1b.0.analog-stereo",
+        "node.description": "Built-in Audio Analog Stereo",
+        "device.id": 51,
+        "card.profile.device": 3
+      },
+      "params": {
+        "PropInfo": [
+          {
+            "id": "channelVolumes",
+            "description": "Channel Volumes",
+            "container": "Array"
+          }
+        ],
+        "Props": [
+          {
+            "volume": 1.0,
+            "mute": false,
+            "channelVolumes": [
+              8e-06,
+              8e-06
+            ],
+            "channelMap": [
+              "FL",
+              "FR"
+            ]
+          },
+          {
+            "device": "front:1",
+            "deviceName": "",
+            "cardName": ""
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": 59,
+    "type": "PipeWire:Interface:Node",
+    "permissions": [
+      "r",
+      "w",
+      "x",
+      "m"
+    ],
+    "info": {
+      "props": {
+        "media.class": "Audio/Source",
+        "node.name": "alsa_input.pci-0000_00_1b.0.analog-stereo",
+        "node.description": "Built-in Audio Analog Stereo",
+        "device.id": 51,
+        "card.profile.device": 0
+      },
+      "params": {
+        "Props": [
+          {
+            "volume": 1.0,
+            "mute": false,
+            "channelVolumes": [
+              1.0,
+              1.0
+            ],
+            "channelMap": [
+              "FL",
+              "FR"
+            ]
+          },
+          {
+            "device": "front:1",
+            "deviceName": "",
+            "cardName": ""
+          }
+        ]
+      }
+    }
+  },
+  {
+    "id": 51,
+    "type": "PipeWire:Interface:Device",
+    "info": {
+      "props": {
+        "media.class": "Audio/Device",
+        "device.name": "alsa_card.pci-0000_00_1b.0",
+        "device.description": "Built-in Audio"
+      },
+      "params": {
+        "EnumProfile": [
+          {
+            "index": 0,
+            "name": "off",
+            "description": "Off",
+            "available": "yes"
+          },
+          {
+            "index": 1,
+            "name": "output:analog-stereo+input:analog-stereo",
+            "description": "Analog Stereo Duplex",
+            "available": "yes"
+          },
+          {
+            "index": 4,
+            "name": "pro-audio",
+            "description": "Pro Audio",
+            "available": "unknown"
+          }
+        ],
+        "Profile": [
+          {
+            "index": 1,
+            "name": "output:analog-stereo+input:analog-stereo",
+            "description": "Analog Stereo Duplex"
+          }
+        ],
+        "EnumRoute": [
+          {
+            "index": 0,
+            "direction": "Input",
+            "name": "analog-input-internal-mic",
+            "description": "Internal Microphone",
+            "available": "unknown",
+            "profiles": [
+              3,
+              1
+            ],
+            "devices": [
+              0
+            ]
+          },
+          {
+            "index": 2,
+            "direction": "Output",
+            "name": "analog-output-speaker",
+            "description": "Speakers",
+            "available": "unknown",
+            "profiles": [
+              2,
+              1
+            ],
+            "devices": [
+              3
+            ]
+          },
+          {
+            "index": 3,
+            "direction": "Output",
+            "name": "analog-output-headphones",
+            "description": "Headphones",
+            "available": "no",
+            "profiles": [
+              2,
+              1
+            ],
+            "devices": [
+              3
+            ]
+          }
+        ],
+        "Route": [
+          {
+            "index": 0,
+            "direction": "Input",
+            "device": 0,
+            "profile": 1
+          },
+          {
+            "index": 2,
+            "direction": "Output",
+            "device": 3,
+            "profile": 1
+          }
+        ]
+      }
+    }
+  }
+]

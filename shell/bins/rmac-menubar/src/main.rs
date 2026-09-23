@@ -424,12 +424,14 @@ mod linux_wayland {
                 offset: point(px(0.0), px(0.0)),
                 blur_radius: px(0.0),
                 spread_radius: px(0.5),
+                inset: false,
             },
             BoxShadow {
                 color: rgba(0x00000059).into(),
                 offset: point(px(0.0), px(10.0)),
                 blur_radius: px(32.0),
                 spread_radius: px(0.0),
+                inset: false,
             },
         ]
     }

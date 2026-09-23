@@ -121,9 +121,23 @@ fn restored_window_bounds(app_id: &str, width: f32, height: f32, cx: &App) -> Wi
     ) else {
         return fallback();
     };
+    // A size saved on a larger screen still has to fit between the menu bar
+    // and the Dock here; floating windows ignore the Dock's reserved zone.
+    let (width, height) = match (state.mode, cx.primary_display()) {
+        (WindowMode::Windowed, Some(display)) => {
+            let screen = display.bounds().size;
+            fit_to_screen(
+                state.width as f32,
+                state.height as f32,
+                f32::from(screen.width),
+                f32::from(screen.height),
+            )
+        }
+        _ => (state.width as f32, state.height as f32),
+    };
     let bounds = Bounds::new(
         point(px(state.x as f32), px(state.y as f32)),
-        size(px(state.width as f32), px(state.height as f32)),
+        size(px(width), px(height)),
     );
     match state.mode {
         WindowMode::Windowed => WindowBounds::Windowed(bounds),

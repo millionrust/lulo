@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>System Settings — macOS 26 panes, exact</title>
+<!--
+  System Settings (crates/system-settings) at 1:1 logical points, measured on
+  the owner's Mac (macOS 26.2 Tahoe, dark, 2026-09-23). Sources: AX frames of
+  every element in the Settings window (System Events, window at 700,33 ×
+  723 × 832) for General, Appearance, Desktop & Dock, Wallpaper, Displays,
+  Sound, Wi-Fi, Bluetooth, Battery and Menu Bar, plus Retina pixels ÷ 2.
+  Rust copies these into crates/system-settings/src/controller/settings_style.rs.
+  Glyphs are the SVGs the Rust loads (crates/system-settings/assets/icons and
+  gpui-component's icons), inlined below; they are Lucide, not SF Symbols.
+  All x/y are relative to the window's top-left corner.
+
+  Window        723 × 832 (not resizable narrower on the Mac), radius 27,
+                fill rgb(32,33,45); toolbar 52, transparent over the window
+  Traffic       centres (26,26) (49,26) (72,26) inside the sidebar panel
+  Sidebar panel floating, x 8, y 8, 215 × (h − 16), radius 19 (27 − 8),
+                fill rgb(29,29,40), edge rgba(255,255,255,.10); the split is at
+                x 223 (panel + 8)
+  Search        x 18, y 61, 195 × 28, capsule, fill rgb(46,47,58); glyph 15 at
+                x 26 rgb(161,162,166); placeholder 13 at x 46 rgb(150,151,156)
+  List          scrolls from y 98 under the search field
+  Account row   46 tall; avatar 38 circle at x 24; name 13 bold, "Apple
+                Account" 11 regular secondary, both at x 70
+  Rows          x 18, 195 × 32, radius 8; icon tile 20 at x 24 (row + 6),
+                label 13 regular rgb(244,244,244) at x 49 (row + 31)
+  Sections      13 pt gap between groups, no titles
+  Selection     rgb(36,88,202) accent while the sidebar has focus in the key
+                window (white text); rgb(70,70,70) otherwise
+  Back/Forward  one 73 × 36 capsule at x 231, y 8: two 36 segments with a 1 pt
+                divider; enabled chevron rgb(233,233,235), disabled
+                rgb(105,106,121); capsule fill rgb(39,40,56) edge rgb(56,58,84)
+  Title         x 316 (capsule + 12), 15 bold rgb(232,232,234), centred on y 26
+  Detail        x 223 → 723 (500), content inset 20 → 460 wide at x 243; it
+                starts at y 52 and scrolls under the toolbar
+  Group         radius 12, fill rgb(39,40,51), no border; 10 between groups
+  Form row      37 tall + a 1 pt separator (38 pitch), padding 10; label 13
+                regular rgb(222,222,224); subtitle 11 regular rgb(158,158,163)
+                2 below; separator rgb(49,50,61) inset 10 both sides
+  Section head  13 bold rgb(220,220,222) at x 253; 30 below the previous group
+                and 10 above its group; the first one sits 3 below y 52
+  Nav row       42 tall; icon 20 at x + 10, label at x + 40; value secondary;
+                chevron rgb(92,93,101) 14 from the right
+  Hero          (General, Accessibility) a group 164 tall: icon 52 centred 24
+                from the top, title 22 bold on a 26 line, description 13
+                secondary on 16 lines, ≤ 397 wide, 20 bottom padding
+  Header card   (Wi-Fi, Bluetooth) icon 26 at x + 10, title 13 and 11 pt
+                description at x + 48, 44 × 20 switch 10 from the right
+  Pop-up        value 13 then a 20 circle rgb(55,56,67) holding ⌃⌄, 24 tall,
+                10 from the row's right edge
+  Switch        36 × 16 (header cards 44 × 20); on #397CF7, off rgb(60,61,71),
+                capsule thumb rgb(226,226,228)
+  Slider        track 6, fill #397CF7, rest rgb(60,61,71); knob 20 × 16 capsule
+                rgb(223,223,225); tick dots 1 × 2; labels 11 below
+  Info (i)      17 circle outline, 12 from the row's right edge
+  Push button   24 tall, radius 6, fill rgb(55,56,67), label 13
+  Help (?)      24 circle rgb(55,56,67), right-aligned 10 below the last group
+  Segmented     24 tall, full row width, selected #397CF7, rest rgb(55,56,67)
+-->
+<!-- self-contained: lab.css class names (.search, .row, .tile) would collide -->
+<style>
+  :root{
+    --win:rgb(32,33,45); --panel:rgb(29,29,40); --panel-edge:rgba(255,255,255,.10);
+    --group:rgb(39,40,51); --sep:rgb(49,50,61); --label:rgb(222,222,224); --sec:rgb(158,158,163);
+    --head:rgb(220,220,222); --side:rgb(244,244,244); --title:rgb(232,232,234);
+    --search:rgb(46,47,58); --ph:rgb(150,151,156); --sel-grey:rgb(70,70,70); --sel-blue:rgb(36,88,202);
+    --accent:#397CF7; --off:rgb(60,61,71); --knob:rgb(226,226,228); --ctl:rgb(55,56,67);
+    --chev:rgb(92,93,101); --cap:rgb(39,40,56); --cap-edge:rgb(56,58,84);
+    --font:-apple-system,"SF Pro Text",Inter,system-ui,sans-serif;
+  }
+  body{margin:0;background:#111;font:13px var(--font);color:var(--label);-webkit-font-smoothing:antialiased}
+  .stage{padding:24px;display:flex;flex-wrap:wrap;gap:24px}
+  .win{position:relative;width:723px;height:832px;background:var(--win);border-radius:27px;overflow:hidden;flex:none;
+       box-shadow:0 0 0 .5px rgba(0,0,0,.9),inset 0 0 0 1px rgba(255,255,255,.14)}
+  .panel{position:absolute;left:8px;top:8px;width:215px;bottom:8px;border-radius:19px;background:var(--panel);
+       box-shadow:inset 0 0 0 1px var(--panel-edge);overflow:hidden}
+  .tl{position:absolute;top:19px;left:19px;display:flex;gap:9px;z-index:3}
+  .tl i{width:14px;height:14px;border-radius:50%;display:block}
+  .tl i:nth-child(1){background:#EC6765}.tl i:nth-child(2){background:#F2CA44}.tl i:nth-child(3){background:#65C466}
+  .search{position:absolute;left:10px;top:53px;width:195px;height:28px;border-radius:14px;background:var(--search);
+       display:flex;align-items:center;color:var(--ph)}
+  .search svg{position:absolute;left:8px;width:15px;height:15px;color:rgb(161,162,166)}
+  .search span{position:absolute;left:28px}
+  .list{position:absolute;left:10px;top:90px;width:195px;bottom:0;overflow:hidden}
+  .acct{height:46px;display:flex;align-items:center;position:relative}
+  .acct .av{position:absolute;left:6px;width:38px;height:38px;border-radius:50%;background:rgb(84,85,96);
+       display:flex;align-items:center;justify-content:center;color:rgb(190,190,196)}
+  .acct .av svg{width:22px;height:22px}
+  .acct b{position:absolute;left:52px;top:7px;font:700 13px/16px var(--font);color:var(--side)}
+  .acct small{position:absolute;left:52px;top:23px;font:400 11px/14px var(--font);color:var(--sec)}
+  .gap{height:13px}
+  .row{height:32px;border-radius:8px;position:relative;display:flex;align-items:center;color:var(--side)}
+  .row.sel{background:var(--sel-grey)} .row.sel.focus{background:var(--sel-blue);color:#fff}
+  .tile{width:20px;height:20px;border-radius:5.5px;display:flex;align-items:center;justify-content:center;flex:none;color:#fff}
+  .tile svg{width:12.5px;height:12.5px}
+  .row .tile{position:absolute;left:6px}
+  .row span{position:absolute;left:31px}
+  .cap{position:absolute;left:231px;top:8px;width:73px;height:36px;border-radius:18px;background:var(--cap);
+       box-shadow:inset 0 0 0 1px var(--cap-edge);display:flex;align-items:center}
+  .cap b{width:36px;height:36px;display:flex;align-items:center;justify-content:center;color:rgb(233,233,235)}
+  .cap b.off{color:rgb(105,106,121)} .cap b svg{width:17px;height:17px}
+  .cap hr{width:1px;height:20px;border:0;margin:0;background:rgba(255,255,255,.10)}
+  .title{position:absolute;left:316px;top:16px;font:700 15px/20px var(--font);color:var(--title)}
+  .detail{position:absolute;left:243px;top:52px;width:460px;bottom:0;overflow:hidden}
+  .h{font:700 13px/16px var(--font);color:var(--head);padding:0 10px;margin:20px 0 10px}
+  .detail > .h:first-child{margin-top:3px}
+  .g{background:var(--group);border-radius:12px;margin-bottom:10px;overflow:hidden}
+  .r{min-height:37px;padding:10px;display:flex;align-items:center;gap:8px;position:relative;box-sizing:border-box}
+  .r + .r{margin-top:1px}
+  .r + .r::before{content:"";position:absolute;left:10px;right:10px;top:-1px;height:1px;background:var(--sep)}
+  .r .t{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+  .r .t b{font:400 13px/16px var(--font);color:var(--label)}
+  .r .t small{font:400 11px/14px var(--font);color:var(--sec)}
+  .r.top{align-items:flex-start}
+  .r.nav{height:42px;padding:0 14px 0 10px}
+  .r.nav .tile{margin-right:10px}
+  .v{color:var(--label)} .v.sec{color:var(--sec)}
+  .pop{display:flex;align-items:center;gap:6px;height:24px;color:var(--label)}
+  .pop i{width:20px;height:20px;border-radius:50%;background:var(--ctl);display:flex;align-items:center;justify-content:center;margin-right:2px}
+  .pop i svg{width:12px;height:12px;color:var(--label)}
+  .sw{width:36px;height:16px;border-radius:8px;background:var(--off);position:relative;flex:none}
+  .sw::after{content:"";position:absolute;left:1.5px;top:1.5px;width:21px;height:13px;border-radius:7px;background:var(--knob)}
+  .sw.on{background:var(--accent)} .sw.on::after{left:13.5px;background:#E1EBFE}
+  .sw.big{width:44px;height:20px;border-radius:10px} .sw.big::after{width:26px;height:17px;top:1.5px;border-radius:9px}
+  .sw.big.on::after{left:16.5px}
+  .chev{width:14px;height:14px;color:var(--chev)}
+  .info{width:17px;height:17px;color:var(--label);margin-right:2px}
+  .btns{display:flex;justify-content:flex-end;gap:10px;margin-bottom:10px}
+  .pb{height:24px;padding:0 10px;border-radius:6px;background:var(--ctl);display:inline-flex;align-items:center;color:var(--label)}
+  .help{width:24px;height:24px;border-radius:50%;background:var(--ctl);display:inline-flex;align-items:center;justify-content:center;font-size:15px}
+  .slider{flex:1;display:flex;flex-direction:column;gap:5px}
+  .track{height:6px;border-radius:3px;background:var(--off);position:relative;margin:5px 0}
+  .track .fill{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--accent)}
+  .track .knob{position:absolute;top:-5px;width:20px;height:16px;border-radius:8px;background:rgb(223,223,225);margin-left:-10px}
+  .ticks{display:flex;justify-content:space-between;padding:0 9px;margin-top:-3px}
+  .ticks i{width:1px;height:2px;background:rgb(92,93,101)}
+  .ends{display:flex;justify-content:space-between;font-size:11px;line-height:14px;color:var(--label)}
+  .seg{display:flex;height:24px;border-radius:6px;background:var(--ctl);flex:1}
+  .seg b{flex:1;display:flex;align-items:center;justify-content:center;font-weight:400;border-radius:6px}
+  .seg b.on{background:var(--accent);color:#fff}
+  .hero{height:164px;display:flex;flex-direction:column;align-items:center;padding-top:24px;box-sizing:border-box}
+  .hero .tile{width:52px;height:52px;border-radius:12px} .hero .tile svg{width:32px;height:32px}
+  .hero b{margin-top:10px;font:700 22px/26px var(--font);color:var(--label)}
+  .hero p{margin:0;max-width:397px;text-align:center;font:400 13px/16px var(--font);color:var(--sec)}
+  .hc{display:flex;align-items:flex-start;padding:10px;gap:12px}
+  .hc .tile{width:26px;height:26px;border-radius:7px} .hc .tile svg{width:16px;height:16px}
+  .hc .t{flex:1;display:flex;flex-direction:column;gap:2px}
+  .hc .t b{font:400 13px/16px var(--font)} .hc .t small{font:400 11px/14px var(--font);color:var(--sec)}
+  .thumbs{display:flex;gap:10px;padding:0 10px}
+  .thumbs div{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px}
+  .thumbs i{width:146px;height:96px;border-radius:8px;display:block}
+  .cb{width:16px;height:16px;border-radius:4px;background:rgb(62,63,73);display:inline-block;vertical-align:middle;margin-right:6px}
+  .cb.on{background:var(--accent)}
+  .cap-label{position:absolute;left:0;top:-22px;color:#9a9aa2;font:12px var(--font)}
+  .frame{position:relative;margin-top:22px}
+</style>
+</head>
+<body>
+<div class="stage" id="stage"></div>
+<script>
+const ICONS=/*ICONS*/{"accessibility": "<svg class=\"lucide lucide-accessibility\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <circle cx=\"16\" cy=\"4\" r=\"1\" /> <path d=\"m18 19 1-7-6 1\" /> <path d=\"m5 8 3-3 5.5 3-2.36 3.5\" /> <path d=\"M4.24 14.5a5 5 0 0 0 6.88 6\" /> <path d=\"M13.76 17.5a5 5 0 0 0-6.88-6\" /> </svg>", "app-window": "<svg class=\"lucide lucide-app-window\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <rect x=\"2\" y=\"4\" width=\"20\" height=\"16\" rx=\"2\" /> <path d=\"M10 4v4\" /> <path d=\"M2 8h20\" /> <path d=\"M6 4v4\" /> </svg>", "battery-charging": "<svg class=\"lucide lucide-battery-charging\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"m11 7-3 5h4l-3 5\" /> <path d=\"M14.856 6H16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.935\" /> <path d=\"M22 14v-4\" /> <path d=\"M5.14 18H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2.936\" /> </svg>", "bell": "<svg class=\"lucide lucide-bell\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M10.268 21a2 2 0 0 0 3.464 0\" /> <path d=\"M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326\" /> </svg>", "bluetooth": "<svg class=\"lucide lucide-bluetooth\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"m7 7 10 10-5 5V2l5 5L7 17\" /> </svg>", "chevron-left": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-chevron-left\"> <path d=\"m15 18-6-6 6-6\"/> </svg>", "chevron-right": "<svg class=\"lucide lucide-chevron-right\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"m9 18 6-6-6-6\" /> </svg>", "chevrons-up-down": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-chevrons-up-down\"> <path d=\"m7 15 5 5 5-5\"/> <path d=\"m7 9 5-5 5 5\"/> </svg>", "clock": "<svg class=\"lucide lucide-clock\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"M12 6v6l4 2\" /> </svg>", "database": "<svg class=\"lucide lucide-database\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\" /> <path d=\"M3 5V19A9 3 0 0 0 21 19V5\" /> <path d=\"M3 12A9 3 0 0 0 21 12\" /> </svg>", "globe": "<svg class=\"lucide lucide-globe\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20\" /> <path d=\"M2 12h20\" /> </svg>", "image": "<svg class=\"lucide lucide-image\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\" /> <circle cx=\"9\" cy=\"9\" r=\"2\" /> <path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\" /> </svg>", "info": "<svg class=\"lucide lucide-info\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <circle cx=\"12\" cy=\"12\" r=\"10\" /> <path d=\"M12 16v-4\" /> <path d=\"M12 8h.01\" /> </svg>", "key": "<svg class=\"lucide lucide-key\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4\" /> <path d=\"m21 2-9.6 9.6\" /> <circle cx=\"7.5\" cy=\"15.5\" r=\"5.5\" /> </svg>", "keyboard": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 8h.01\"/><path d=\"M12 12h.01\"/><path d=\"M14 8h.01\"/><path d=\"M16 12h.01\"/><path d=\"M18 8h.01\"/><path d=\"M6 8h.01\"/><path d=\"M7 16h10\"/><path d=\"M8 12h.01\"/><rect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\"/></svg>", "languages": "<svg class=\"lucide lucide-languages\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"m5 8 6 6\" /> <path d=\"m4 14 6-6 2-3\" /> <path d=\"M2 5h12\" /> <path d=\"M7 2h1\" /> <path d=\"m22 22-5-10-5 10\" /> <path d=\"M14 18h6\" /> </svg>", "lock": "<svg class=\"lucide lucide-lock\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <rect width=\"18\" height=\"11\" x=\"3\" y=\"11\" rx=\"2\" ry=\"2\" /> <path d=\"M7 11V7a5 5 0 0 1 10 0v4\" /> </svg>", "monitor": "<svg class=\"lucide lucide-monitor\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <rect width=\"20\" height=\"14\" x=\"2\" y=\"3\" rx=\"2\" /> <line x1=\"8\" x2=\"16\" y1=\"21\" y2=\"21\" /> <line x1=\"12\" x2=\"12\" y1=\"17\" y2=\"21\" /> </svg>", "moon": "<svg class=\"lucide lucide-moon\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401\" /> </svg>", "mouse": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"5\" y=\"2\" width=\"14\" height=\"20\" rx=\"7\"/><path d=\"M12 6v4\"/></svg>", "palette": "<svg class=\"lucide lucide-palette\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z\" /> <circle cx=\"13.5\" cy=\"6.5\" r=\".5\" fill=\"currentColor\" /> <circle cx=\"17.5\" cy=\"10.5\" r=\".5\" fill=\"currentColor\" /> <circle cx=\"6.5\" cy=\"12.5\" r=\".5\" fill=\"currentColor\" /> <circle cx=\"8.5\" cy=\"7.5\" r=\".5\" fill=\"currentColor\" /> </svg>", "panel-top": "<svg class=\"lucide lucide-panel-top\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /> <path d=\"M3 9h18\" /> </svg>", "refresh-cw": "<svg class=\"lucide lucide-refresh-cw\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\" /> <path d=\"M21 3v5h-5\" /> <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\" /> <path d=\"M8 16H3v5\" /> </svg>", "search": "<svg class=\"lucide lucide-search\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"m21 21-4.34-4.34\" /> <circle cx=\"11\" cy=\"11\" r=\"8\" /> </svg>", "settings": "<svg class=\"lucide lucide-settings\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915\" /> <circle cx=\"12\" cy=\"12\" r=\"3\" /> </svg>", "shield": "<svg class=\"lucide lucide-shield\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z\" /> </svg>", "touchpad": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"20\" height=\"16\" x=\"2\" y=\"4\" rx=\"2\"/><path d=\"M2 14h20\"/><path d=\"M8 18h.01\"/><path d=\"M16 18h.01\"/></svg>", "user": "<svg class=\"lucide lucide-user\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2\" /> <circle cx=\"12\" cy=\"7\" r=\"4\" /> </svg>", "volume-2": "<svg class=\"lucide lucide-volume-2\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z\" /> <path d=\"M16 9a5 5 0 0 1 0 6\" /> <path d=\"M19.364 18.364a9 9 0 0 0 0-12.728\" /> </svg>", "wifi": "<svg class=\"lucide lucide-wifi\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" > <path d=\"M12 20h.01\" /> <path d=\"M2 8.82a15 15 0 0 1 20 0\" /> <path d=\"M5 12.859a10 10 0 0 1 14 0\" /> <path d=\"M8.5 16.429a5 5 0 0 1 7 0\" /> </svg>"}/*END*/;
+const I=(n)=>ICONS[n]||'';
+const C={blue:'#1372f9',gray:'#8e8e93',green:'#34c759',red:'#ff3b30',pink:'#ff2d55',indigo:'#5e5ce6',teal:'#30b0c7',black:'#1d1d1f',sky:'#0a84ff'};
+const SIDEBAR=[
+  [['Wi-Fi','wifi',C.blue],['Bluetooth','bluetooth',C.blue],['Network','globe',C.blue],['VPN','key',C.blue],['Battery','battery-charging',C.green]],
+  [['General','settings',C.gray],['Accessibility','accessibility',C.blue],['Appearance','palette',C.black],['Desktop & Dock','app-window',C.black],
+   ['Displays','monitor',C.blue],['Menu Bar','panel-top',C.gray],['Spotlight','search',C.blue],['Wallpaper','image',C.teal]],
+  [['Notifications','bell',C.red],['Sound','volume-2',C.pink],['Focus','moon',C.indigo]],
+  [['Lock Screen','lock',C.black],['Privacy & Security','shield',C.blue]],
+  [['Keyboard','keyboard',C.gray],['Mouse','mouse',C.gray],['Trackpad','touchpad',C.gray]],
+];
+const tile=(icon,color)=>`<div class="tile" style="background:${color}">${I(icon)}</div>`;
+function sidebar(sel,focus){
+  let h=`<div class="panel"><div class="search">${I('search')}<span>Search</span></div><div class="list">`;
+  h+=`<div class="acct"><div class="av">${I('user')}</div><b>User</b><small>Local Account</small></div>`;
+  for(const s of SIDEBAR){h+='<div class="gap"></div>';
+    for(const [n,ic,c] of s) h+=`<div class="row${n===sel?' sel'+(focus?' focus':''):''}">${tile(ic,c)}<span>${n}</span></div>`;}
+  return h+'</div></div>';
+}
+const g=(...rows)=>`<div class="g">${rows.join('')}</div>`;
+const h=(t)=>`<div class="h">${t}</div>`;
+const t=(l,s)=>`<div class="t"><b>${l}</b>${s?`<small>${s}</small>`:''}</div>`;
+const pop=(l,v,s)=>`<div class="r${s?' top':''}">${t(l,s)}<div class="pop">${v}<i>${I('chevrons-up-down')}</i></div></div>`;
+const sw=(l,on,s)=>`<div class="r${s?' top':''}">${t(l,s)}<div class="sw${on?' on':''}"></div></div>`;
+const val=(l,v,info)=>`<div class="r">${t(l)}<span class="v sec">${v}</span>${info?`<span class="info">${I('info')}</span>`:''}</div>`;
+const nav=(ic,c,l,v)=>`<div class="r nav">${tile(ic,c)}${t(l)}${v?`<span class="v sec">${v}</span>`:''}<span class="chev">${I('chevron-right')}</span></div>`;
+const slider=(l,f,ticks,a,b)=>`<div class="r top" style="flex-direction:column;align-items:stretch;gap:0">${l?`<b style="font-weight:400">${l}</b>`:''}<div class="slider"><div class="track"><div class="fill" style="width:${f*100}%"></div><div class="knob" style="left:${f*100}%"></div></div>${ticks?`<div class="ticks">${'<i></i>'.repeat(ticks)}</div>`:''}${a?`<div class="ends"><span>${a}</span><span>${b}</span></div>`:''}</div></div>`;
+const hslider=(l,f)=>`<div class="r">${t(l)}<div style="width:230px"><div class="track"><div class="fill" style="width:${f*100}%"></div><div class="knob" style="left:${f*100}%"></div></div></div></div>`;
+const btns=(...b)=>`<div class="btns">${b.map(x=>x==='?'?'<span class="help">?</span>':`<span class="pb">${x}</span>`).join('')}</div>`;
+const seg=(opts,on)=>`<div class="r"><div class="seg">${opts.map((o,i)=>`<b class="${i===on?'on':''}">${o}</b>`).join('')}</div></div>`;
+const hero=(ic,c,title,desc)=>`<div class="g hero">${tile(ic,c)}<b>${title}</b><p>${desc}</p></div>`;
+const hcard=(ic,c,title,desc,on,extra='')=>`<div class="g"><div class="hc">${tile(ic,c)}<div class="t"><b>${title}</b><small>${desc}</small></div><div class="sw big${on?' on':''}"></div></div>${extra}</div>`;
+
+const PANES={
+  // Rows are the controls rmac really has (each backed by a Linux service);
+  // their layout follows the Mac's form grammar measured above.
+  'General':[null, hero('settings',C.gray,'General','View system information, update status, storage, and the services and preferences grouped under General.'),
+    g(nav('info',C.gray,'About'),nav('refresh-cw',C.gray,'Software Update'),nav('database',C.gray,'Storage')),
+    g(nav('clock',C.blue,'Date & Time'),nav('languages',C.blue,'Language & Region'),nav('app-window',C.gray,'Login Items'),nav('globe',C.gray,'Sharing'))],
+  'Appearance':['Appearance',
+    g(`<div class="r top" style="min-height:84px">${t('Appearance')}<div style="display:flex;gap:8px">${['Automatic','Light','Dark'].map((n,i)=>`<div style="display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;color:${i==2?'var(--label)':'var(--sec)'};font-weight:${i==2?700:400}"><i style="width:74px;height:46px;border-radius:6px;display:block;background:${['linear-gradient(90deg,#e8e8ed 50%,#2c2c2e 50%)','#e8e8ed','#2c2c2e'][i]};box-shadow:${i==2?'0 0 0 3px var(--accent)':'inset 0 0 0 1px rgba(255,255,255,.1)'}"></i>${n}</div>`).join('')}</div></div>`),
+    h('Theme'),
+    g(`<div class="r top" style="min-height:62px">${t('Accent colour')}<div style="display:flex;gap:10px">${['conic-gradient(red,yellow,lime,cyan,blue,magenta,red)','#0a84ff','#bf5af2','#ff375f','#ff453a','#ff9f0a','#ffd60a','#32d74b','#98989d'].map((c,i)=>`<i style="width:18px;height:18px;border-radius:50%;background:${c};${i==0?'box-shadow:0 0 0 2px var(--group),0 0 0 4px var(--accent)':''}"></i>`).join('')}</div></div>`,
+      sw('Allow wallpaper tinting in windows',true,'Subtly mixes the desktop colour into opaque app surfaces.')),
+    g(pop('Contrast','Automatic'),pop('Motion','Automatic'))],
+  'Desktop & Dock':['Desktop & Dock', h('Dock'),
+    g(pop('Position on screen','Bottom'),sw('Automatically hide and show the Dock',false),sw('Reserve screen space',true,'Keep tiled windows outside the visible Dock area.')),
+    g(sw('Magnification',false),pop('Maximum size','1.5×')),
+    g(pop('Click a focused app again','Cycle Windows')),
+    h('Displays'), g(pop('Show the Dock on','All Displays')),
+    btns('Revert','?')],
+  'Wallpaper':['Wallpaper',
+    `<div style="display:flex;gap:14px;margin:9px 0 10px"><i style="width:109px;height:68px;border-radius:8px;background:linear-gradient(135deg,#2b3bd1,#6f8cff 55%,#1d2a8a);flex:none"></i><div style="flex:1">${g(pop('Tahoe','Fill'),pop('Apply to','All Displays'))}</div></div>`,
+    btns('Choose Image…'),
+    h('Wallpapers'),`<div class="thumbs" style="padding:0">${['#2b3bd1','#c24a8a','#6a7680'].map((c,i)=>`<div><i style="background:linear-gradient(135deg,${c},#111)"></i>${['Tahoe','Sequoia','Graphite'][i]}</div>`).join('')}</div>`],
+  'Displays':['Displays',
+    `<div style="margin:0 -20px 20px;height:160px;background:rgb(28,28,36);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px"><i style="width:120px;height:74px;border-radius:6px;background:linear-gradient(135deg,#3b5ea6,#1f6b74)"></i><b style="font:700 13px var(--font)">Built-in Display</b></div>`,
+    g(pop('Resolution','1920 × 1080'),pop('Scale','100%'),pop('Rotation','Standard')),
+    g(val('Type','Built-in'),val('Connector','eDP-1')),
+    btns('Revert','?')],
+  'Sound':['Sound', h('Sound Effects'),
+    g(pop('Alert sound','Alert'),pop('Play sound effects through','Selected Sound Output Device'),hslider('Alert volume',1),sw('Play user interface sound effects',true),sw('Play feedback when volume is changed',false)),
+    h('Output &amp; Input'), g(seg(['Output','Input'],0),`<div class="r" style="padding:0 10px;min-height:28px;color:var(--label);font-size:11px">Name</div>`,`<div class="r" style="min-height:24px;padding:4px 10px;background:rgba(255,255,255,.08)">Built-in Audio</div>`),
+    g(hslider('Output volume',.6),`<div class="r" style="justify-content:flex-end;padding-top:0"><span class="cb"></span>Mute</div>`), btns('?')],
+  'Wi-Fi':['Wi-Fi', hcard('wifi',C.blue,'Wi-Fi','Set up Wi-Fi to wirelessly connect your computer to the internet. Turn on Wi-Fi, then choose a network to join.',true,
+      `<div class="r" style="border-top:1px solid var(--sep);margin:0 10px;padding:10px 0">${t('Home Network','Connected')}<span class="pb">Details…</span></div>`),
+    h('Known Networks'), g(val('Home Network','',false),val('Office','',false)),
+    h('Other Networks'), g(val('Cafe','',false),val('Guest','',false)), btns('Other…','?')],
+  'Bluetooth':['Bluetooth', hcard('bluetooth',C.blue,'Bluetooth','Connect to accessories you can use for activities such as streaming music, typing and gaming.',true,
+      `<div class="r" style="border-top:1px solid var(--sep);margin:0 10px;padding:10px 0">${t('Discoverable','Allow nearby devices to find this computer.')}<div class="sw on"></div></div>`),
+    h('My Devices'), g(`<div class="r">${t('Headphones','Not Connected')}<span class="info">${I('info')}</span></div>`),
+    h('Nearby Devices'), g(`<div class="r" style="justify-content:center;color:var(--sec)">Searching…</div>`)],
+  'Battery':['Battery',
+    g(pop('Energy Mode','Balanced')), g(val('Battery Health','Normal',true)),
+    g(seg(['Last 24 Hours','Last 10 Days'],0),`<div class="r top">${t('Last charged to 100%','Today, 3:14 PM')}</div>`,`<div class="r" style="height:170px;align-items:flex-end;gap:3px">${Array.from({length:24},(_,i)=>`<i style="flex:1;height:${40+Math.round(50*Math.abs(Math.sin(i/4)))}%;background:#34c759;border-radius:1px"></i>`).join('')}</div>`),
+    btns('Options…','?')],
+  'Menu Bar':['Menu Bar',
+    g(sw('Show seconds in the clock',false)),
+    h('Menu Bar Controls'), g(...[['wifi',C.blue,'Wi-Fi',1],['key',C.blue,'VPN',1],['bluetooth',C.blue,'Bluetooth',0],['volume-2',C.pink,'Sound',1],['battery-charging',C.green,'Battery',1],['moon',C.indigo,'Focus',1],['bell',C.red,'Notifications',1]].map(([ic,c,n,on])=>`<div class="r nav" style="height:42px"><span class="cb${on?' on':''}"></span>${tile(ic,c)}${t(n)}</div>`)),
+    g(sw('Show battery percentage',false))],
+};
+const PANE_SEL={'Menu Bar':'Menu Bar'};
+let out='';
+const order=['General','Appearance','Wallpaper','Desktop & Dock','Menu Bar','Displays','Sound','Wi-Fi','Bluetooth','Battery'];
+for(const name of order){
+  const [title,...body]=PANES[name];
+  out+=`<div class="frame" id="${name.replace(/\W+/g,'-').toLowerCase()}"><div class="cap-label">${name}</div><div class="win">${sidebar(name,name==='General')}
+    <div class="tl"><i></i><i></i><i></i></div>
+    <div class="cap"><b>${I('chevron-left')}</b><hr><b class="off">${I('chevron-right')}</b></div>
+    ${title?`<div class="title">${title}</div>`:''}
+    <div class="detail">${body.join('')}</div></div></div>`;
+}
+document.getElementById('stage').innerHTML=out;
+</script>
+</body>
+</html>

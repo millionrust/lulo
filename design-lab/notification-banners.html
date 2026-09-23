@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Notification banners — exact</title>
+<!--
+  macOS 26.2 (dark) notification banners at 1:1 logical points, measured on
+  the owner's Mac on 2026-09-23 from `display notification` banners captured
+  with screencapture bursts, a 60 fps screen recording and the Accessibility
+  tree of the NotificationCenter process (Retina pixels ÷ 2; 1470 × 956
+  screen, 33 pt menu bar). Rust: crates/notification-center-app/src/daemon.
+
+  Placement
+    card               344 wide (rim x 1110 → 1453.5), 16 below the menu bar
+                       (top rim y 49), 16.5 from the screen edge
+    height             hugs the text: 12 top, 13 bottom padding, 16 pt lines;
+                       title + 1 body line ≈ 57, title + 3 lines 88.5
+    radius             20 (the corner arc spans 20 pt both ways)
+    material           dark glass ≈ rgb(35,34,45) over a dark window
+                       (≈ rgba(40,40,48,.8) + blur), 0.5 pt rim white ≈ .15,
+                       soft shadow below
+  Content
+    icon               32 × 32 real app icon, no plate, x 13 from the card's
+                       left, vertically centred
+    text column        starts 58 from the card's left (13 gap after the icon)
+    title              13 semibold, one line, truncated with "…" 15 pt earlier
+                       than the body (ends ≈ 1421 vs 1437)
+    body               13 regular, same white ≈ .87 (222) as the title, 16 pt
+                       lines, up to 4 lines then "…", wraps ≈ 16 from the right
+    app name / time    not shown on a banner
+  Hover (pointer moved onto the card with a CGEvent)
+    ×                  20 pt disc 6 left of and 4 above the card's top-left
+                       corner (x 1104 → 1123.5, y 45 → 64.5),
+                       fill ≈ rgb(53,53,59), 8 pt × white ≈ .65
+    action button      "Show", 64 × 22 pill at the card's bottom-right
+                       (10 from right and bottom), fill white ≈ .07 over the
+                       glass, 13 medium white; the body text fades out under
+                       it. Several actions: one "Options" pill that lists them
+    chevron            ">" at the top-right expands a stacked group (not
+                       ported: the host never groups banners)
+    timing             hovering pauses the timeout; leaving resumes the
+                       remaining time
+  Motion
+    enter              slides in from past the right edge (≈ 360 pt), fast
+                       then settling: 23.5 / 14.5 / 6 / 3.5 pt left to travel
+                       at 0.38 / 0.40 / 0.47 / 0.50 s after posting → an
+                       ease-out cubic of ≈ 600 ms
+    stay               starts sliding out ≈ 5.1 s after it was posted
+    exit               slides back out to the right, gone within ≈ 250 ms
+    same app           a newer banner from the same app replaces the one on
+                       screen (it slides out, the new one slides in)
+    different apps     not captured; stacked newest on top, 8 apart
+-->
+<style>
+  :root {
+    --bar-h: 33px;
+    --card-w: 344px;
+    --top: 16px;
+    --right: 16px;
+    --radius: 20px;
+    --fill: rgba(36,36,40,.94);
+    --rim: rgba(255,255,255,.15);
+    --text: rgba(255,255,255,.87);
+    --font: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  }
+  html, body { margin: 0; background: #111; }
+  body { display: flex; flex-wrap: wrap; font-family: var(--font); -webkit-font-smoothing: antialiased; }
+  .screen { position: relative; width: 490px; height: 160px; overflow: hidden;
+            background: #1e1e2a; }
+  .bar { position: absolute; left: 0; right: 0; top: 0; height: var(--bar-h); background: #10086a; }
+  .label { position: absolute; left: 10px; bottom: 6px; font: 500 11px var(--font); color: #ffcc00; }
+  .banner { position: absolute; right: var(--right); top: calc(var(--bar-h) + var(--top));
+            box-sizing: border-box; width: var(--card-w); border-radius: var(--radius);
+            background: var(--fill); box-shadow: inset 0 0 0 .5px var(--rim), 0 8px 24px rgba(0,0,0,.28);
+            padding: 12px 0 13px 13px; display: flex; align-items: center; }
+  .banner img { width: 32px; height: 32px; flex: none; }
+  .text { margin-left: 13px; padding-right: 16px; flex: 1; min-width: 0;
+          font: 400 13px/16px var(--font); color: var(--text); }
+  .title { font-weight: 600; margin-right: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .body { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .close { position: absolute; left: -6px; top: -4px; width: 20px; height: 20px; border-radius: 10px;
+           background: rgba(53,53,57,.95); box-shadow: inset 0 0 0 .5px rgba(255,255,255,.12);
+           display: grid; place-items: center; }
+  .close svg { width: 8px; height: 8px; }
+  .action { position: absolute; right: 10px; bottom: 10px; display: flex; }
+  .fade { width: 24px; height: 22px; background: linear-gradient(90deg, rgba(36,36,40,0), var(--fill)); }
+  .pill { height: 22px; min-width: 64px; box-sizing: border-box; padding: 0 16px; border-radius: 11px;
+          background: linear-gradient(rgba(255,255,255,.07), rgba(255,255,255,.07)), var(--fill);
+          font: 500 13px/22px var(--font); color: rgba(255,255,255,.96); text-align: center; }
+  .enter { transform: translateX(60px); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <symbol id="x" viewBox="0 0 8 8"><path d="M1 1l6 6M7 1L1 7" stroke="rgba(255,255,255,.66)" stroke-width="1.3" stroke-linecap="round"/></symbol>
+</defs></svg>
+
+<div class="screen"><div class="bar"></div>
+  <div class="banner"><img src="../assets/icons/terminal.svg">
+    <div class="text"><div class="title">Terminal</div><div class="body">Build finished</div></div>
+  </div><span class="label">Banner (measured f/in5)</span></div>
+
+<div class="screen"><div class="bar"></div>
+  <div class="banner"><img src="../assets/icons/files.svg">
+    <div class="text"><div class="title">Downloads</div><div class="body">Your download is complete and ready to open.</div></div>
+    <span class="close"><svg><use href="#x"/></svg></span>
+    <div class="action"><div class="fade"></div><div class="pill">Show</div></div>
+  </div><span class="label">Hover: × and action</span></div>
+
+<div class="screen"><div class="bar"></div>
+  <div class="banner"><img src="../assets/icons/terminal.svg">
+    <div class="text"><div class="title">A title that is also long enough to run past the right edge of the banner card</div>
+    <div class="body">An unusually long notification body is used here so that every line wraps at a slightly different word, which tells us exactly where the text column ends and how many lines a banner keeps before it truncates.</div></div>
+  </div><span class="label">Long text: 1 title line, 4 body lines</span></div>
+
+<div class="screen"><div class="bar"></div>
+  <div class="banner enter"><img src="../assets/icons/terminal.svg">
+    <div class="text"><div class="title">Terminal</div><div class="body">Build finished</div></div>
+  </div><span class="label">Sliding in (60 pt left to travel)</span></div>
+</body>
+</html>

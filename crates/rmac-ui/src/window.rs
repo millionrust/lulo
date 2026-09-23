@@ -77,7 +77,30 @@ fn minimum_window_size(width: f32, height: f32) -> Size<Pixels> {
 }
 
 fn centered_window_bounds(width: f32, height: f32, cx: &App) -> WindowBounds {
+    let (width, height) = cx
+        .primary_display()
+        .map(|display| {
+            let screen = display.bounds().size;
+            fit_to_screen(
+                width,
+                height,
+                f32::from(screen.width),
+                f32::from(screen.height),
+            )
+        })
+        .unwrap_or((width, height));
     WindowBounds::centered(size(px(width), px(height)), cx)
+}
+
+/// macOS never opens a new window taller or wider than the space between the
+/// menu bar and the Dock; on a small screen the default size shrinks to fit.
+fn fit_to_screen(width: f32, height: f32, screen_width: f32, screen_height: f32) -> (f32, f32) {
+    // Menu bar, Dock shelf with its margin, and a little air around both.
+    const RESERVED_HEIGHT: f32 = 29.0 + 89.0 + 16.0;
+    const SIDE_MARGIN: f32 = 40.0;
+    let max_width = (screen_width - SIDE_MARGIN).max(MIN_WINDOW_WIDTH);
+    let max_height = (screen_height - RESERVED_HEIGHT).max(MIN_WINDOW_HEIGHT);
+    (width.min(max_width), height.min(max_height))
 }
 
 fn restored_window_bounds(app_id: &str, width: f32, height: f32, cx: &App) -> WindowBounds {
@@ -469,4 +492,17 @@ pub fn boot_with_assets<A, V, F>(
 
             cx.activate(true);
         });
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::fit_to_screen;
+
+    #[test]
+    fn default_sizes_shrink_to_the_space_between_menu_bar_and_dock() {
+        // The reference laptop is 1536 × 864 logical.
+        assert_eq!(fit_to_screen(947.0, 833.0, 1536.0, 864.0), (947.0, 730.0));
+        assert_eq!(fit_to_screen(700.0, 500.0, 1536.0, 864.0), (700.0, 500.0));
+        assert_eq!(fit_to_screen(2000.0, 900.0, 1470.0, 956.0), (1430.0, 822.0));
+    }
 }

@@ -396,6 +396,13 @@ pub(super) fn minimized_items(
     minimized
 }
 
+/// Open/Save panels belong to the app that asked for them, as on macOS, so
+/// the separate panel process never appears as an application of its own.
+fn is_system_dialog(canonical_app_id: &str) -> bool {
+    canonical_app_id == "org.rmac.filechooser"
+        || canonical_app_id.starts_with("org.rmac.filechooser.")
+}
+
 pub(super) fn window_groups(
     compositor: &rmac_compositor::Snapshot,
 ) -> BTreeMap<String, Vec<GroupedWindow>> {
@@ -415,7 +422,7 @@ pub(super) fn window_groups(
             continue;
         };
         let canonical = canonical_app_id(app_id);
-        if canonical.is_empty() {
+        if canonical.is_empty() || is_system_dialog(&canonical) {
             continue;
         }
         groups.entry(canonical).or_default().push(GroupedWindow {

@@ -1,8 +1,8 @@
+#[cfg(any(target_os = "linux", test))]
+use rmac_sharing::Share;
 use rmac_sharing::{Error, ErrorKind, Snapshot};
 #[cfg(target_os = "linux")]
-use rmac_sharing::{FileSharing, RemoteLogin};
-#[cfg(any(target_os = "linux", test))]
-use rmac_sharing::{FirewallState, Share};
+use rmac_sharing::{FileSharing, FirewallState, RemoteLogin};
 
 use crate::service::ManagedService;
 
@@ -274,37 +274,38 @@ pub(crate) fn wait_for_state(_service: ManagedService, _enabled: bool) -> Result
     system_snapshot()
 }
 
+// Ubuntu 26.04 (the reference laptop) ships `ufw` 0.36.2 with no D-Bus
+// service (`busctl list` shows nothing under `org.fedoraproject.FirewallD1`
+// or any UFW-owned name) and `firewalld` is not installed. `ufw status`
+// itself refuses to run unprivileged ("ERROR: You need to be root to run
+// this script"), so the previous `Command::new("ufw").arg("status")` call
+// always failed on this machine and silently degraded to `Unavailable`.
+// UFW's own on/off switch is a stable `ENABLED=yes|no` key in
+// `/etc/ufw/ufw.conf`, which stays world-readable (0644) even though the
+// per-rule file `/etc/ufw/user.rules` is root-only (0640) — so this can
+// report Active/Inactive without root, but can no longer see individual
+// allow rules (that needs the same root ufw status always needed).
+#[cfg(target_os = "linux")]
+const UFW_CONF_PATH: &str = "/etc/ufw/ufw.conf";
+
 #[cfg(target_os = "linux")]
 fn firewall_state(service: FirewallService) -> (FirewallState, Option<String>) {
-    let output = std::process::Command::new("ufw").arg("status").output();
-    let Ok(output) = output else {
-        return (
-            FirewallState::Unavailable,
-            Some("UFW is not installed or could not be executed".into()),
-        );
-    };
-    if !output.status.success() {
-        return (
-            FirewallState::Unavailable,
-            Some("UFW status requires additional authorization".into()),
-        );
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let state = parse_ufw_status(&text, service);
-    if state == FirewallState::ActiveUnverified {
-        (
-            state,
-            Some(match service {
-                FirewallService::Ssh => {
-                    "No explicit OpenSSH or TCP port 22 allow rule was found".into()
-                }
-                FirewallService::Samba => {
-                    "No explicit UFW Samba profile allow rule was found".into()
-                }
-            }),
-        )
-    } else {
-        (state, None)
+    match read_bounded_config(UFW_CONF_PATH) {
+        Ok(text) => match parse_ufw_conf_enabled(&text) {
+            Some(true) => (
+                FirewallState::ActiveUnverified,
+                Some(match service {
+                    FirewallService::Ssh => "UFW is active; whether it explicitly allows OpenSSH or TCP port 22 cannot be read without root (per-rule config is not world-readable)".into(),
+                    FirewallService::Samba => "UFW is active; whether it explicitly allows Samba cannot be read without root (per-rule config is not world-readable)".into(),
+                }),
+            ),
+            Some(false) => (FirewallState::Inactive, None),
+            None => (
+                FirewallState::Unavailable,
+                Some(format!("{UFW_CONF_PATH} did not contain an ENABLED setting")),
+            ),
+        },
+        Err(detail) => (FirewallState::Unavailable, Some(detail)),
     }
 }
 
@@ -315,87 +316,143 @@ pub(crate) enum FirewallService {
     Samba,
 }
 
+/// Parse UFW's own `ENABLED=yes|no` setting out of `/etc/ufw/ufw.conf`
+/// (or the same key in a similarly-shaped file). This is stable key=value
+/// config UFW itself writes and reads — not command output — so comments
+/// (`#...`), blank lines, and optional quoting around the value are the
+/// only syntax handled.
 #[cfg(any(target_os = "linux", test))]
-pub(crate) fn parse_ufw_status(text: &str, service: FirewallService) -> FirewallState {
-    let lowercase = text.to_ascii_lowercase();
-    if lowercase
-        .lines()
-        .any(|line| line.trim() == "status: inactive")
-    {
-        FirewallState::Inactive
-    } else if lowercase.lines().any(|line| match service {
-        FirewallService::Ssh => {
-            (line.contains("openssh") || line.contains("22/tcp") || line.contains("ssh "))
-                && line.contains("allow")
+pub(crate) fn parse_ufw_conf_enabled(text: &str) -> Option<bool> {
+    text.lines().find_map(|line| {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            return None;
         }
-        FirewallService::Samba => line.contains("samba") && line.contains("allow"),
-    }) {
-        FirewallState::Allows
-    } else {
-        FirewallState::ActiveUnverified
-    }
+        let value = line.strip_prefix("ENABLED=")?;
+        let value = value.trim().trim_matches(['"', '\'']).trim();
+        match value.to_ascii_lowercase().as_str() {
+            "yes" => Some(true),
+            "no" => Some(false),
+            _ => None,
+        }
+    })
 }
+
+// Ubuntu's `samba` metapackage (not installed on the reference laptop,
+// which only carries `samba-libs`) puts the running server's configuration
+// at `/etc/samba/smb.conf`, a plain public config file `smbd` reads
+// directly, plus any shares a user created with `net usershare` as one
+// file per share under `/var/lib/samba/usershares` (root:sambashare,
+// group-readable by that group; the filename *is* the share name).
+// `testparm -s` merely resolves and prints that same config; reading the
+// files directly avoids spawning it and parsing prose output.
+#[cfg(target_os = "linux")]
+const SMB_CONF_PATH: &str = "/etc/samba/smb.conf";
+#[cfg(target_os = "linux")]
+const SAMBA_USERSHARE_DIR: &str = "/var/lib/samba/usershares";
 
 #[cfg(target_os = "linux")]
 fn samba_shares() -> (Vec<Share>, bool, Option<String>) {
-    const MAX_OUTPUT_BYTES: usize = 512 * 1024;
-    let output = std::process::Command::new("testparm").arg("-s").output();
-    let Ok(output) = output else {
-        return (
-            Vec::new(),
-            false,
-            Some("Samba's testparm validator is not installed or could not be executed".into()),
-        );
-    };
-    if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr);
-        let detail = detail.trim();
-        return (
-            Vec::new(),
-            false,
-            Some(if detail.is_empty() {
-                "Samba rejected the effective configuration".into()
+    let mut names = usershare_names();
+    let configuration_error = match read_bounded_config(SMB_CONF_PATH) {
+        Ok(text) => {
+            names.extend(parse_smb_conf_shares(&text));
+            None
+        }
+        Err(detail) => {
+            // A host can offer only `net usershare` shares with no
+            // system-wide smb.conf at all; only report an error if there is
+            // truly nothing to show.
+            if names.is_empty() {
+                Some(detail)
             } else {
-                format!("Samba rejected the effective configuration: {detail}")
-            }),
-        );
-    }
-    if output.stdout.len() > MAX_OUTPUT_BYTES {
-        return (
-            Vec::new(),
-            true,
-            Some("Samba's effective configuration exceeded the safe read limit".into()),
-        );
-    }
-    let Ok(text) = String::from_utf8(output.stdout) else {
-        return (
-            Vec::new(),
-            false,
-            Some("Samba returned a non-UTF-8 effective configuration".into()),
-        );
+                None
+            }
+        }
     };
-    let (shares, truncated) = parse_samba_shares(&text);
-    (shares, truncated, None)
+    let (shares, truncated) = bounded_shares(names);
+    (shares, truncated, configuration_error)
+}
+
+/// List share names from Samba's user-share directory, where the file name
+/// itself is the share name (see `net usershare(8)`). Directory entries are
+/// used only as names, never opened or followed.
+#[cfg(target_os = "linux")]
+fn usershare_names() -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(SAMBA_USERSHARE_DIR) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|entry| entry.ok())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| sanitize_share_name(name).is_some())
+        .collect()
+}
+
+/// Parse `[section]` share names out of a Samba `smb.conf`-shaped file,
+/// skipping the reserved `global`/`printers`/`print$` sections and any
+/// section explicitly marked `available = no`. This is a small INI reader,
+/// not a full Samba config evaluator: it does not follow `include =`
+/// directives or apply `[global]` defaults to per-share parameters, so a
+/// share whose availability is only set globally will not be filtered.
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn parse_smb_conf_shares(text: &str) -> Vec<String> {
+    let mut shares = Vec::new();
+    let mut current: Option<(String, bool)> = None;
+    let flush = |current: Option<(String, bool)>, shares: &mut Vec<String>| {
+        if let Some((name, available)) = current {
+            if available {
+                shares.push(name);
+            }
+        }
+    };
+    for raw_line in text.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+            continue;
+        }
+        if let Some(name) = line
+            .strip_prefix('[')
+            .and_then(|rest| rest.strip_suffix(']'))
+        {
+            flush(current.take(), &mut shares);
+            let name = name.trim();
+            current = sanitize_share_name(name).map(|name| (name, true));
+            continue;
+        }
+        let Some((_, available)) = current.as_mut() else {
+            continue;
+        };
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim().to_ascii_lowercase().replace([' ', '_'], "");
+        if key == "available" {
+            let value = value.trim().to_ascii_lowercase();
+            *available = !matches!(value.as_str(), "no" | "false" | "0");
+        }
+    }
+    flush(current, &mut shares);
+    shares
 }
 
 #[cfg(any(target_os = "linux", test))]
-pub(crate) fn parse_samba_shares(text: &str) -> (Vec<Share>, bool) {
+fn sanitize_share_name(name: &str) -> Option<String> {
+    let name = name.trim();
+    (!name.is_empty()
+        && name.len() <= 128
+        && !name.chars().any(char::is_control)
+        && !matches!(
+            name.to_ascii_lowercase().as_str(),
+            "global" | "printers" | "print$"
+        ))
+    .then(|| name.to_owned())
+}
+
+#[cfg(any(target_os = "linux", test))]
+pub(crate) fn bounded_shares(names: Vec<String>) -> (Vec<Share>, bool) {
     const MAX_SHARES: usize = 128;
-    let mut names = text
-        .lines()
-        .filter_map(|line| {
-            let line = line.trim_end();
-            let name = line.strip_prefix('[')?.strip_suffix(']')?.trim();
-            (!name.is_empty()
-                && name.len() <= 128
-                && !name.chars().any(char::is_control)
-                && !matches!(
-                    name.to_ascii_lowercase().as_str(),
-                    "global" | "printers" | "print$"
-                ))
-            .then(|| name.to_owned())
-        })
-        .collect::<Vec<_>>();
+    let mut names = names;
     names.sort_by_key(|name| name.to_ascii_lowercase());
     names.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
     let truncated = names.len() > MAX_SHARES;
@@ -404,6 +461,26 @@ pub(crate) fn parse_samba_shares(text: &str) -> (Vec<Share>, bool) {
         names.into_iter().map(|name| Share { name }).collect(),
         truncated,
     )
+}
+
+/// Read a small, bounded, UTF-8 configuration file. Used only for the
+/// stable key=value/INI config files UFW and Samba write and read
+/// themselves — never for command output.
+#[cfg(target_os = "linux")]
+fn read_bounded_config(path: &str) -> Result<String, String> {
+    const MAX_CONFIG_BYTES: u64 = 512 * 1024;
+    let metadata = std::fs::metadata(path)
+        .map_err(|_| format!("{path} is not installed or could not be read"))?;
+    if metadata.len() > MAX_CONFIG_BYTES {
+        return Err(format!("{path} exceeded the safe read limit"));
+    }
+    std::fs::read_to_string(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::InvalidData {
+            format!("{path} is not valid UTF-8")
+        } else {
+            format!("{path} could not be read: {error}")
+        }
+    })
 }
 
 #[cfg(target_os = "linux")]

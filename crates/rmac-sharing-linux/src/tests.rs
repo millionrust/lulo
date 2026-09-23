@@ -1,65 +1,41 @@
-use rmac_sharing::FirewallState;
-
 use crate::system::{
-    parse_samba_shares, parse_ufw_status, requested_state_reached, FirewallService,
+    bounded_shares, parse_smb_conf_shares, parse_ufw_conf_enabled, requested_state_reached,
 };
 use crate::watch::{firewall_path_relevant, owner_change_reappeared, samba_path_relevant};
 
 #[test]
-fn ufw_parser_requires_an_explicit_allow_rule() {
+fn ufw_conf_enabled_reads_ufws_own_key_value_setting() {
     assert_eq!(
-        parse_ufw_status("Status: inactive\n", FirewallService::Ssh),
-        FirewallState::Inactive
+        parse_ufw_conf_enabled("# comment\n\nENABLED=no\nLOGLEVEL=low\n"),
+        Some(false)
     );
+    assert_eq!(parse_ufw_conf_enabled("ENABLED=yes\n"), Some(true));
+    // Quoting and surrounding whitespace, as some `ufw.conf` variants use.
+    assert_eq!(parse_ufw_conf_enabled("ENABLED = \"yes\"\n"), Some(true));
     assert_eq!(
-        parse_ufw_status(
-            "Status: active\n22/tcp ALLOW Anywhere\n",
-            FirewallService::Ssh
-        ),
-        FirewallState::Allows
+        parse_ufw_conf_enabled("# ENABLED=yes\nLOGLEVEL=low\n"),
+        None
     );
-    assert_eq!(
-        parse_ufw_status(
-            "Status: active\n22/tcp DENY Anywhere\n",
-            FirewallService::Ssh
-        ),
-        FirewallState::ActiveUnverified
-    );
-    assert_eq!(
-        parse_ufw_status(
-            "Status: active\nSamba ALLOW Anywhere\n",
-            FirewallService::Samba
-        ),
-        FirewallState::Allows
-    );
-    assert_eq!(
-        parse_ufw_status(
-            "Status: active\n445/tcp ALLOW Anywhere\n",
-            FirewallService::Samba
-        ),
-        FirewallState::ActiveUnverified
-    );
+    assert_eq!(parse_ufw_conf_enabled("LOGLEVEL=low\n"), None);
+    assert_eq!(parse_ufw_conf_enabled("ENABLED=maybe\n"), None);
 }
 
 #[test]
-fn samba_parser_exposes_only_bounded_file_share_names() {
-    let (shares, truncated) = parse_samba_shares(
-        "[global]\n[homes]\n[printers]\n[print$]\n[Team Files]\n[team files]\n\t[option value]\n",
+fn samba_parser_exposes_only_available_share_sections() {
+    let names = parse_smb_conf_shares(
+        "[global]\n   workgroup = WORKGROUP\n\n[homes]\n   browseable = no\n\n[printers]\n\n[print$]\n\n[Team Files]\n   path = /srv/team\n   available = no\n\n[team files]\n   path = /srv/team2\n\n; a comment\n# another comment\n[Backups]\n   path = /srv/backups\n",
     );
+    let (shares, truncated) = bounded_shares(names);
     assert!(!truncated);
-    assert_eq!(
-        shares
-            .iter()
-            .map(|share| share.name.as_str())
-            .collect::<Vec<_>>(),
-        ["homes", "Team Files"]
-    );
+    let mut names: Vec<_> = shares.iter().map(|share| share.name.as_str()).collect();
+    names.sort();
+    assert_eq!(names, ["Backups", "homes", "team files"]);
+}
 
-    let input = (0..130)
-        .map(|index| format!("[share-{index}]"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let (shares, truncated) = parse_samba_shares(&input);
+#[test]
+fn samba_parser_share_names_are_bounded() {
+    let names: Vec<String> = (0..130).map(|index| format!("share-{index}")).collect();
+    let (shares, truncated) = bounded_shares(names);
     assert!(truncated);
     assert_eq!(shares.len(), 128);
 }

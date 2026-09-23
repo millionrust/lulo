@@ -41,6 +41,9 @@ pub(crate) struct CatalogEntry {
 pub(crate) struct ApplicationCatalog {
     by_id: BTreeMap<String, (String, ApplicationIdentity)>,
     by_executable: BTreeMap<PathBuf, (String, ApplicationIdentity)>,
+    /// Exact display names owned by exactly one application; the freedesktop
+    /// `app_name` of most senders (e.g. `notify-send -a Files`).
+    by_name: BTreeMap<String, (String, ApplicationIdentity)>,
 }
 
 /// Programs that start other programs; their executable says nothing about
@@ -85,11 +88,17 @@ impl ApplicationCatalog {
     pub(crate) fn new(entries: Vec<CatalogEntry>) -> Self {
         let mut by_id = BTreeMap::new();
         let mut executables = BTreeMap::<PathBuf, Vec<(String, ApplicationIdentity)>>::new();
+        let mut names = BTreeMap::<String, Vec<(String, ApplicationIdentity)>>::new();
         for entry in entries {
+            let name = entry.name.clone();
             let identity = ApplicationIdentity {
                 name: entry.name.into(),
                 icon: entry.icon,
             };
+            names
+                .entry(name)
+                .or_default()
+                .push((entry.id.clone(), identity.clone()));
             by_id.insert(entry.id.clone(), (entry.id.clone(), identity.clone()));
             if let Some(alias) = entry.id.strip_suffix(".desktop") {
                 by_id
@@ -107,9 +116,14 @@ impl ApplicationCatalog {
             .into_iter()
             .filter_map(|(path, mut owners)| (owners.len() == 1).then(|| (path, owners.remove(0))))
             .collect();
+        let by_name = names
+            .into_iter()
+            .filter_map(|(name, mut owners)| (owners.len() == 1).then(|| (name, owners.remove(0))))
+            .collect();
         Self {
             by_id,
             by_executable,
+            by_name,
         }
     }
 
@@ -130,7 +144,8 @@ impl ApplicationCatalog {
                     .executable
                     .as_deref()
                     .and_then(|path| self.by_executable.get(Path::new(path)))
-            });
+            })
+            .or_else(|| self.by_name.get(&record.app_id));
         if let Some((id, identity)) = known {
             return (id.clone(), identity.clone());
         }
@@ -415,6 +430,11 @@ mod tests {
 
         let (_, identity) = catalog.resolve(&record(3, "org.example.Chat", Origin::default()));
         assert_eq!(identity.name.as_ref(), "Chat");
+
+        // `notify-send -a Files` names the app rather than its desktop id.
+        let (key, identity) = catalog.resolve(&record(4, "Files", Origin::default()));
+        assert_eq!(key, "org.example.Files.desktop");
+        assert_eq!(identity.name.as_ref(), "Files");
     }
 
     #[test]

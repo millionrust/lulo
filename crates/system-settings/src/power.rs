@@ -81,6 +81,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn duration_formats_hours_minutes_and_bare_minutes() {
+        assert_eq!(format_duration(0), "0 min");
+        assert_eq!(format_duration(59), "0 min");
+        assert_eq!(format_duration(60), "1 min");
+        assert_eq!(format_duration(45 * 60), "45 min");
+        assert_eq!(format_duration(3600), "1 hr 0 min");
+        assert_eq!(format_duration(3600 * 2 + 60 * 17), "2 hr 17 min");
+    }
+
+    #[test]
     fn history_sampling_preserves_the_time_range() {
         let points = (0..100)
             .map(|timestamp| rmac_power::BatteryHistoryPoint {

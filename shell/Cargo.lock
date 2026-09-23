@@ -4720,6 +4720,21 @@ name = "rmac-desktop"
 version = "0.1.0"
 dependencies = [
  "notify",
+ "rmac-storage",
+ "rustix 1.1.4",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rmac-desktop-widgets"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "gpui",
+ "rmac-desktop",
+ "rmac-power",
+ "rmac-weather",
 ]
 
 [[package]]
@@ -5292,6 +5307,7 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-shell-status",
  "rmac-theme",
+ "unicode-segmentation",
 ]
 
 [[package]]
@@ -5312,11 +5328,13 @@ dependencies = [
  "rmac-compositor",
  "rmac-compositor-niri",
  "rmac-desktop",
+ "rmac-desktop-widgets",
  "rmac-dock",
  "rmac-dock-runtime",
  "rmac-dock-system",
  "rmac-osd",
  "rmac-places",
+ "rmac-power",
  "rmac-recent-documents",
  "rmac-search",
  "rmac-shell-layer",
@@ -5329,6 +5347,7 @@ dependencies = [
  "rmac-wallpaper",
  "rmac-wallpaper-image",
  "rmac-wallpaper-runtime",
+ "rmac-weather",
  "trash",
  "uuid",
 ]
@@ -5408,6 +5427,15 @@ dependencies = [
  "rmac-compositor",
  "rmac-shell-settings",
  "rmac-wallpaper",
+]
+
+[[package]]
+name = "rmac-weather"
+version = "0.1.0"
+dependencies = [
+ "rmac-storage",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

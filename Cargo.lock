@@ -5588,6 +5588,21 @@ name = "rmac-desktop"
 version = "0.1.0"
 dependencies = [
  "notify",
+ "rmac-storage",
+ "rustix 1.1.4",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "rmac-desktop-widgets"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "gpui",
+ "rmac-desktop",
+ "rmac-power",
+ "rmac-weather",
 ]
 
 [[package]]
@@ -6044,6 +6059,8 @@ dependencies = [
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",
+ "rmac-desktop",
+ "rmac-desktop-widgets",
  "rmac-notifications",
  "rmac-notifications-linux",
  "rmac-notifications-runtime",

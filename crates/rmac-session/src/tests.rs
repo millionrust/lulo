@@ -427,8 +427,10 @@ fn every_window_uses_the_measured_radius_and_active_inactive_shadows() {
     assert!(shell.contains(
         "match is-focused=true\n    shadow {\n        softness 42\n        offset x=0 y=16\n        color \"#000000bd\""
     ));
-    // Unified-toolbar apps take the 27 pt toolbar-window radius.
-    assert!(shell.contains("|TextEditor)$\"#\n    geometry-corner-radius 27"));
+    // Unified-toolbar apps take the 27 pt toolbar-window radius; Text Editor
+    // is a title-bar window like TextEdit and keeps the 16 pt default.
+    assert!(shell.contains("|SystemMonitor)$\"#\n    geometry-corner-radius 27"));
+    assert!(!shell.contains("TextEditor)$\"#\n    geometry-corner-radius 27"));
 }
 
 #[test]

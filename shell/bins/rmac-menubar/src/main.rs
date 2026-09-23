@@ -32,7 +32,13 @@ mod linux_wayland {
     // occupies rows 0–28 and is fully transparent.
     const BAR_HEIGHT: f32 = 29.0;
     const MENU_SURFACE_HEIGHT: f32 = 520.0;
-    const MENU_WIDTH: f32 = 248.0;
+    /// Width of the logout/restart confirmation shown in place of a menu.
+    const CONFIRMATION_MENU_WIDTH: f32 = 248.0;
+    /// Highlight inset from the panel edge and text inset within it.
+    const MENU_ROW_INSET: f32 = 5.0;
+    const MENU_ROW_PADDING: f32 = 9.0;
+    /// Space between an item's title and its keyboard shortcut.
+    const MENU_SHORTCUT_GAP: f32 = 24.0;
     const RECENT_MENU_WIDTH: f32 = 286.0;
     const MAX_RECENT_ITEMS: usize = 10;
     const FULLSCREEN_REVEAL_EDGE: f32 = 2.0;
@@ -587,9 +593,21 @@ mod linux_wayland {
                 self.selected_item = 0;
             }
             let visible = !self.fullscreen || self.revealed || self.open_menu.is_some();
+            // Menus are as wide as their widest item, as on macOS, and stay
+            // on screen near the right edge.
+            let menu_width = if self.pending_system_action.is_some() {
+                self.open_menu.map(|_| CONFIRMATION_MENU_WIDTH)
+            } else {
+                self.open_menu
+                    .and_then(|index| menus.get(index))
+                    .map(|menu| menu_panel_width(menu, window))
+            };
+            let screen_width = f32::from(window.bounds().size.width);
             let menu_left = self
                 .open_menu
-                .map(|index| menu_anchor_x(&active_app, &menus, index));
+                .map(|index| menu_anchor_x(&active_app, &menus, index))
+                .zip(menu_width)
+                .map(|(left, width)| left.min(screen_width - width - 4.0).max(4.0));
             let menu_height = if self.pending_system_action.is_some() {
                 Some(150.0)
             } else {
@@ -609,17 +627,17 @@ mod linux_wayland {
                     .unwrap_or(BAR_HEIGHT + 2.0)
             });
             let backdrop_panels = if visible {
-                match (menu_left, menu_height) {
-                    (Some(left), Some(height)) => {
+                match (menu_left, menu_width, menu_height) {
+                    (Some(left), Some(width), Some(height)) => {
                         let mut panels = vec![MenuBackdropPanel {
                             left,
                             top: BAR_HEIGHT + 2.0,
-                            width: MENU_WIDTH,
+                            width,
                             height,
                         }];
                         if let Some(top) = recent_submenu_top {
                             panels.push(MenuBackdropPanel {
-                                left: left + MENU_WIDTH - 4.0,
+                                left: left + width - 4.0,
                                 top,
                                 width: RECENT_MENU_WIDTH,
                                 height: recent_menu_height(
@@ -655,14 +673,16 @@ mod linux_wayland {
             };
             let mut input_regions = vec![bar_region];
             if visible {
-                if let (Some(left), Some(height)) = (menu_left, menu_height) {
+                if let (Some(left), Some(width), Some(height)) =
+                    (menu_left, menu_width, menu_height)
+                {
                     input_regions.push(Bounds {
                         origin: point(px(left), px(BAR_HEIGHT)),
-                        size: Size::new(px(MENU_WIDTH), px(height + 4.0)),
+                        size: Size::new(px(width), px(height + 4.0)),
                     });
                     if let Some(top) = recent_submenu_top {
                         input_regions.push(Bounds {
-                            origin: point(px(left + MENU_WIDTH - 4.0), px(top)),
+                            origin: point(px(left + width - 4.0), px(top)),
                             size: Size::new(
                                 px(RECENT_MENU_WIDTH),
                                 px(recent_menu_height(
@@ -721,6 +741,7 @@ mod linux_wayland {
                     self.open_app_id.clone()?
                 };
                 let left = menu_left?;
+                let width = menu_width?;
                 let selected = self.selected_item.min(menu.items.len().saturating_sub(1));
                 let mut panel = div()
                     .id(format!("app-menu-panel-{}-{menu_index}", self.display_id))
@@ -729,7 +750,7 @@ mod linux_wayland {
                     .absolute()
                     .top(px(BAR_HEIGHT + 2.0))
                     .left(px(left))
-                    .w(px(MENU_WIDTH))
+                    .w(px(width))
                     .py_1()
                     .rounded(px(tokens::menu_radius()))
                     .bg(rgba(tokens::transparent()))
@@ -827,8 +848,8 @@ mod linux_wayland {
                         .role(Role::MenuItem)
                         .aria_label(item.label.clone())
                         .h(px(tokens::menu_row_height()))
-                        .mx_1()
-                        .px_2()
+                        .mx(px(MENU_ROW_INSET))
+                        .px(px(MENU_ROW_PADDING))
                         .flex()
                         .items_center()
                         .justify_between()
@@ -894,7 +915,7 @@ mod linux_wayland {
                         .aria_label("Recent Items")
                         .absolute()
                         .top(px(submenu_top))
-                        .left(px(left + MENU_WIDTH - 4.0))
+                        .left(px(left + width - 4.0))
                         .w(px(RECENT_MENU_WIDTH))
                         .py_1()
                         .rounded(px(tokens::menu_radius()))
@@ -1212,6 +1233,50 @@ mod linux_wayland {
                 .child(bar)
                 .children(popup)
         }
+    }
+
+    /// The widest item's title and shortcut plus the row insets and border,
+    /// never narrower than the macOS minimum menu width.
+    fn menu_panel_width(menu: &rmac_app_menu::Menu, window: &Window) -> f32 {
+        let content = menu
+            .items
+            .iter()
+            .map(|item| {
+                let shortcut = text_width(window, &item.shortcut);
+                text_width(window, &item.label)
+                    + if shortcut > 0.0 {
+                        MENU_SHORTCUT_GAP + shortcut
+                    } else {
+                        0.0
+                    }
+            })
+            .fold(0.0, f32::max);
+        let chrome = 2.0 * (MENU_ROW_INSET + MENU_ROW_PADDING) + 2.0;
+        (content + chrome)
+            .ceil()
+            .max(tokens::current().metrics.menu_min_width)
+    }
+
+    fn text_width(window: &Window, text: &str) -> f32 {
+        if text.is_empty() {
+            return 0.0;
+        }
+        let style = window.text_style();
+        let run = gpui::TextRun {
+            len: text.len(),
+            font: style.font(),
+            color: style.color,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let line = window.text_system().shape_line(
+            SharedString::from(text.to_owned()),
+            px(tokens::body_text_size()),
+            &[run],
+            None,
+        );
+        f32::from(line.width())
     }
 
     fn menu_anchor_x(active_app: &str, menus: &[rmac_app_menu::Menu], index: usize) -> f32 {

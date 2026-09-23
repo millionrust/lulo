@@ -290,8 +290,10 @@ account metadata.
 
 Font discovery begins while the Wayland connection is prepared, before the
 session-lock request. The account raster is cached independently while prompt
-identity avoids reshaping on every password dot; one shared eight-entry cache
-keeps every layout raster at or below 2 MiB. The account sits between the avatar
+identity avoids reshaping on every password dot; one shared twelve-entry cache
+(six roles for each of two output layouts) keeps every layout raster at or
+below 2 MiB. The fixed "Enter Password" placeholder is a constant, not PAM
+text, and PAM's plain "Password:" request is not repeated under the field. The account sits between the avatar
 and input field while changing PAM guidance appears below the field. The glyph
 cache resets for every new prompt. Failure to rasterize either required label
 is a wire failure, not a silently unreadable authentication UI. The existing

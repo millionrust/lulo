@@ -41,6 +41,9 @@ use crate::text_renderer::{Error as TextRendererError, LockTextRenderer};
 use crate::xkb_keyboard::{Error as XkbError, KeyboardDecoder};
 use rmac_lock_provider::{OutputId, UnlockAuthorization};
 
+/// Longest event-loop wait while the wrong-password shake animates (~60 Hz).
+const SHAKE_FRAME_WAIT: Duration = Duration::from_millis(16);
+
 /// Capabilities observed in one initial registry snapshot.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Capabilities {
@@ -219,6 +222,7 @@ impl LockConnection {
         let now = Instant::now();
         self.inner.state.emit_due_repeats(now);
         let timeout = self.inner.state.repeat_wait(timeout, now);
+        let timeout = self.inner.state.animation_wait(timeout);
         let dispatched = self.dispatch_pending()?;
         if dispatched > 0 {
             return Ok(dispatched);
@@ -474,6 +478,9 @@ struct PreparedState {
     locking: Option<LockingState>,
     text_renderer: LockTextRenderer,
     caps_lock: CapsLockState,
+    /// Start of the running wrong-password shake. Presentation only: it
+    /// never delays PAM, input, or the compositor's lock decision.
+    shake_started: Option<Instant>,
 }
 
 impl Default for PreparedState {
@@ -490,6 +497,7 @@ impl Default for PreparedState {
             locking: None,
             text_renderer: LockTextRenderer::default(),
             caps_lock: CapsLockState::default(),
+            shake_started: None,
         }
     }
 }
@@ -952,6 +960,14 @@ impl PreparedState {
         let Some(locking) = &mut self.locking else {
             return;
         };
+        if visual.authentication_failed() && !locking.visual.authentication_failed() {
+            self.shake_started = Some(Instant::now());
+        }
+        let visual = visual.with_shake_offset(
+            self.shake_started
+                .and_then(|started| crate::paint::shake_offset(started.elapsed()))
+                .unwrap_or(0),
+        );
         if (locking.visual == visual && !text_changed) || !locking.phase.accepts_surfaces() {
             return;
         }
@@ -961,7 +977,40 @@ impl PreparedState {
             .extend(locking.lock_surfaces.keys().copied());
     }
 
+    /// Cap the event-loop wait while the shake runs so it gets frames.
+    fn animation_wait(&self, requested: Duration) -> Duration {
+        if self.shake_started.is_some() {
+            requested.min(SHAKE_FRAME_WAIT)
+        } else {
+            requested
+        }
+    }
+
+    /// Advance the wrong-password shake and queue a repaint of every output
+    /// when the pill moved.
+    fn advance_shake(&mut self) {
+        let Some(started) = self.shake_started else {
+            return;
+        };
+        let offset = crate::paint::shake_offset(started.elapsed());
+        if offset.is_none() {
+            self.shake_started = None;
+        }
+        let Some(locking) = &mut self.locking else {
+            self.shake_started = None;
+            return;
+        };
+        let visual = locking.visual.with_shake_offset(offset.unwrap_or(0));
+        if visual != locking.visual && locking.phase.accepts_surfaces() {
+            locking.visual = visual;
+            locking
+                .pending_renders
+                .extend(locking.lock_surfaces.keys().copied());
+        }
+    }
+
     fn render_pending(&mut self, queue_handle: &QueueHandle<Self>) -> Result<(), WireError> {
+        self.advance_shake();
         if self.text_renderer.refresh_clock() {
             if let Some(locking) = &mut self.locking {
                 if locking.phase.accepts_surfaces() {
@@ -1036,16 +1085,7 @@ impl PreparedState {
                 return Err(WireError::Text(error));
             }
         };
-        let frame = match ShmFrame::paint(
-            &plan,
-            LockPalette::MIDNIGHT,
-            visual,
-            text.clock(),
-            text.date(),
-            text.avatar(),
-            text.account(),
-            text.prompt(),
-        ) {
+        let frame = match ShmFrame::paint(&plan, LockPalette::MIDNIGHT, visual, text.texts()) {
             Ok(frame) => frame,
             Err(error) => {
                 self.surfaces

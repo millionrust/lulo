@@ -996,9 +996,9 @@ circular glyph badge. Rebuild the ASCII sketch above to match `settings-appearan
 
 - [ ] **6.1 Lock screen visual.** Rendered by `rmac-lock-provider-linux` (ext-session-lock). Layout at any resolution:
   - Background: the current wallpaper of that output, Gaussian-blurred (radius 30 logical) and darkened `00000033`, computed once per lock (not per frame). If wallpaper unavailable: `1C1C1E`.
-  - Top center at 12% height: date `lock.date` (e.g. "Wednesday 17 September"), below it time `lock.time` 96 Semibold, white `FFFFFFE6`.
-  - Bottom center at 80% height: user avatar 64 circle (AccountsService icon or initials on `system.gray`), full name `headline` white, password field 200×30 radius 15 `FFFFFF33` fill, placeholder "Enter Password", caret white, dots `•` for characters, trailing `→` circle button appears when non-empty.
-  - Wrong password: field shakes horizontally 3× 8 px over 400 ms (Reduce Motion: none), text clears, below it "Incorrect password" `callout` white 80%.
+  - Geometry and colours live in `design-lab/lock.html` and `paint.rs` `layout` (all `S` until the lock screen is photographed). Top: date "Wednesday 17 September" 22 Semibold centred 70 pt from the top edge, time 112 Semibold glass fill centred 146 pt from the top.
+  - Bottom (measured from the bottom edge): avatar 56 circle at 196 (initials on a grey gradient; no AccountsService picture decoding in the lock process), the exact login name 15 Semibold at 148 (the secure-lock design discloses no full name), password field 180×28 radius 14 `FFFFFF33` fill at 110, placeholder "Enter Password", dots `•` from the left, trailing `→` circle button only when non-empty.
+  - Wrong password: field shakes horizontally 3× 8 px over 400 ms (Reduce Motion: none — not yet wired, the lock process reads no appearance settings), text clears, below it "Incorrect password" 12 pt white 80%.
   - Caps Lock on: ⇪ glyph inside field (existing `caps_lock.rs`).
   - Bottom-right: keyboard layout short name (if > 1 layout), accessibility glyph (opens on-screen keyboard if available), battery glyph on laptops.
   - Lock message (Settings ▸ Lock Screen ▸ "Show message when locked") at bottom above avatar.

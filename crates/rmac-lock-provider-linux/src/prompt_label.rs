@@ -109,6 +109,7 @@ pub(crate) struct PromptLabel {
     #[cfg(any(target_os = "linux", test))]
     key: PromptKey,
     value: String,
+    generic_password: bool,
 }
 
 impl PromptLabel {
@@ -120,18 +121,30 @@ impl PromptLabel {
             .map(|value| normalize(value, MAX_PROMPT_LABEL_BYTES))
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| fallback.to_owned());
+        let generic_password =
+            prompt.kind == RequestKind::EchoOff && is_generic_password_prompt(&value);
         Self {
             #[cfg(any(target_os = "linux", test))]
             key: PromptKey::Pam(prompt.id),
             value,
+            generic_password,
         }
+    }
+
+    /// PAM's plain "Password:" request, which the lock screen already
+    /// expresses with the pill's "Enter Password" placeholder.
+    #[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
+    pub(crate) fn is_generic_password(&self) -> bool {
+        self.generic_password
     }
 
     #[cfg(any(target_os = "linux", test))]
     pub(crate) fn authentication_failure() -> Self {
         Self {
             key: PromptKey::AuthenticationFailure,
-            value: "Authentication failed. Try again.".to_owned(),
+            // COMPLETION_SPEC §6.1; macOS itself only shakes the field.
+            value: "Incorrect password".to_owned(),
+            generic_password: false,
         }
     }
 
@@ -140,6 +153,7 @@ impl PromptLabel {
         Self {
             key: PromptKey::Authenticating,
             value: "Authenticating…".to_owned(),
+            generic_password: false,
         }
     }
 
@@ -195,6 +209,12 @@ fn normalize(value: &str, maximum_bytes: usize) -> String {
         normalized.push('…');
     }
     normalized
+}
+
+fn is_generic_password_prompt(value: &str) -> bool {
+    value
+        .trim_end_matches(|character: char| matches!(character, ':' | '：' | ' '))
+        .eq_ignore_ascii_case("password")
 }
 
 fn is_bidi_control(character: char) -> bool {
@@ -275,11 +295,33 @@ mod tests {
 
         let failure = PromptLabel::authentication_failure();
         assert_eq!(failure.key(), PromptKey::AuthenticationFailure);
-        failure.expose(|value| assert!(value.starts_with("Authentication failed")));
+        failure.expose(|value| assert_eq!(value, "Incorrect password"));
+        assert!(!failure.is_generic_password());
 
         let authenticating = PromptLabel::authenticating();
         assert_eq!(authenticating.key(), PromptKey::Authenticating);
         authenticating.expose(|value| assert_eq!(value, "Authenticating…"));
+    }
+
+    #[test]
+    fn only_the_plain_pam_password_request_defers_to_the_placeholder() {
+        for (request, generic) in [
+            (Request::EchoOff(c"Password: "), true),
+            (Request::EchoOff(c"password"), true),
+            (Request::EchoOff(c"Verification code:"), false),
+            (Request::EchoOn(c"Password:"), false),
+        ] {
+            let pending = pending_prompt(request);
+            let prompt_value = pending.prompt();
+            prompt_value.text(|text| {
+                let label = PromptLabel::from_prompt(PromptText::new(
+                    prompt_value.id(),
+                    prompt_value.kind(),
+                    text,
+                ));
+                assert_eq!(label.is_generic_password(), generic);
+            });
+        }
     }
 
     #[test]

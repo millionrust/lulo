@@ -10,11 +10,15 @@ use cosmic_text::{
 };
 use zeroize::Zeroizing;
 
-use crate::paint::{TextRaster, TextRasterError};
+use crate::paint::{layout as lock_layout, LockTexts, TextRaster, TextRasterError};
 use crate::prompt_label::{AccountLabel, PromptKey, PromptLabel, PromptText};
 use crate::surface::BufferLayout;
 
-const MAX_CACHED_RASTERS: usize = 8;
+// Six roles per output layout; twelve entries keep two differently sized
+// outputs from evicting each other on every repaint.
+const MAX_CACHED_RASTERS: usize = 12;
+/// The empty password pill's placeholder on a Mac without Touch ID.
+const PLACEHOLDER: &str = "Enter Password";
 
 pub(crate) struct LockTextRenderer {
     font_system: FontSystem,
@@ -91,6 +95,7 @@ impl LockTextRenderer {
             date: self.label_raster(layout, TextRole::Date)?,
             avatar: self.avatar_raster(layout)?,
             account: self.account_raster(layout)?,
+            placeholder: self.label_raster(layout, TextRole::Placeholder)?,
             prompt: self.prompt_raster(layout)?,
         })
     }
@@ -144,6 +149,7 @@ impl LockTextRenderer {
         let text = match role {
             TextRole::Clock => self.clock.time.as_str(),
             TextRole::Date => self.clock.date.as_str(),
+            TextRole::Placeholder => PLACEHOLDER,
             _ => return Err(Error::InvalidRaster),
         };
         let key = RasterKey::new(layout);
@@ -199,6 +205,12 @@ impl LockTextRenderer {
         let Some(label) = self.prompt.as_ref() else {
             return Ok(None);
         };
+        // The pill's "Enter Password" placeholder already asks for the
+        // password; repeating PAM's generic "Password:" under it would not
+        // happen on a Mac.
+        if label.is_generic_password() {
+            return Ok(None);
+        }
         let key = RasterKey::new(layout);
         if let Some((_, _, raster)) = self
             .rasters
@@ -235,28 +247,50 @@ pub(crate) struct LockTextRasters {
     date: Option<TextRaster>,
     avatar: Option<TextRaster>,
     account: Option<TextRaster>,
+    placeholder: Option<TextRaster>,
     prompt: Option<TextRaster>,
 }
 
 impl LockTextRasters {
+    pub(crate) fn texts(&self) -> LockTexts<'_> {
+        LockTexts {
+            clock: self.clock.as_ref(),
+            date: self.date.as_ref(),
+            avatar: self.avatar.as_ref(),
+            account: self.account.as_ref(),
+            placeholder: self.placeholder.as_ref(),
+            prompt: self.prompt.as_ref(),
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn clock(&self) -> Option<&TextRaster> {
         self.clock.as_ref()
     }
 
+    #[cfg(test)]
     pub(crate) fn date(&self) -> Option<&TextRaster> {
         self.date.as_ref()
     }
 
+    #[cfg(test)]
     pub(crate) fn avatar(&self) -> Option<&TextRaster> {
         self.avatar.as_ref()
     }
 
+    #[cfg(test)]
     pub(crate) fn account(&self) -> Option<&TextRaster> {
         self.account.as_ref()
     }
 
+    #[cfg(test)]
     pub(crate) fn prompt(&self) -> Option<&TextRaster> {
         self.prompt.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn placeholder(&self) -> Option<&TextRaster> {
+        self.placeholder.as_ref()
     }
 }
 
@@ -285,6 +319,7 @@ enum TextRole {
     Date,
     Avatar,
     Account,
+    Placeholder,
     Prompt,
 }
 
@@ -308,7 +343,8 @@ fn rasterize(
     let scale = layout.scale();
     let maximum_width = match role {
         TextRole::Clock => 720,
-        TextRole::Avatar => 160,
+        TextRole::Avatar => lock_layout::AVATAR_DIAMETER,
+        TextRole::Placeholder => lock_layout::FIELD_WIDTH,
         TextRole::Date | TextRole::Account | TextRole::Prompt => 560,
     };
     let width = layout
@@ -316,12 +352,21 @@ fn rasterize(
         .saturating_sub(48_u32.saturating_mul(scale))
         .max(1)
         .min(maximum_width * scale);
-    let logical_height = match role {
-        TextRole::Clock => 124,
-        TextRole::Date => 42,
-        TextRole::Avatar => 80,
-        TextRole::Account => 40,
-        TextRole::Prompt => 56,
+    // design-lab/lock.html, all S. Single-line rasters are exactly one line
+    // box tall so centring the box centres the text.
+    let (font_size, line_height, weight) = match role {
+        TextRole::Clock => (112.0, 134, Weight::SEMIBOLD),
+        TextRole::Date => (22.0, 28, Weight::SEMIBOLD),
+        TextRole::Avatar => (24.0, 30, Weight::MEDIUM),
+        TextRole::Account => (15.0, 20, Weight::SEMIBOLD),
+        TextRole::Placeholder => (13.0, 18, Weight::NORMAL),
+        TextRole::Prompt => (12.0, 16, Weight::NORMAL),
+    };
+    // PAM guidance may wrap to two lines under the pill.
+    let logical_height = if role == TextRole::Prompt {
+        2 * line_height
+    } else {
+        line_height
     };
     let height = layout.height().max(1).min(logical_height * scale);
     let length = usize::try_from(width)
@@ -335,24 +380,13 @@ fn rasterize(
     let mut alpha = vec![0_u8; length];
 
     let scale = scale as f32;
-    let (font_size, line_height) = match role {
-        TextRole::Clock => (96.0, 112.0),
-        TextRole::Date => (24.0, 34.0),
-        TextRole::Avatar => (52.0, 64.0),
-        TextRole::Account => (21.0, 29.0),
-        TextRole::Prompt => (16.0, 24.0),
-    };
-    let metrics = Metrics::new(font_size * scale, line_height * scale);
+    let metrics = Metrics::new(font_size * scale, line_height as f32 * scale);
     let mut buffer = Buffer::new(font_system, metrics);
     buffer.set_size(font_system, Some(width as f32), Some(height as f32));
     buffer.set_wrap(font_system, Wrap::WordOrGlyph);
     let attrs = Attrs::new()
         .family(Family::Name(rmac_design::UI_FONT))
-        .weight(if role == TextRole::Clock {
-            Weight::LIGHT
-        } else {
-            Weight::NORMAL
-        });
+        .weight(weight);
     buffer.set_rich_text(
         font_system,
         [(text, attrs.clone())],
@@ -401,28 +435,38 @@ fn rasterize(
     }
 
     let origin_x = i64::from(layout.width().saturating_sub(width) / 2);
-    let origin_y = match role {
-        TextRole::Clock => {
-            let center = u64::from(layout.height()) * 18 / 100;
-            center.saturating_sub(u64::from(height) / 2) as i64
-        }
-        TextRole::Date => {
-            let center = u64::from(layout.height()) * 10 / 100;
-            center.saturating_sub(u64::from(height) / 2) as i64
-        }
-        TextRole::Avatar => {
-            let center = u64::from(layout.height()) * 66 / 100;
-            center.saturating_sub(u64::from(height) / 2) as i64
-        }
-        TextRole::Account => {
-            let center = u64::from(layout.height()) * 76 / 100;
-            center.saturating_sub(u64::from(height) / 2) as i64
-        }
-        TextRole::Prompt => {
-            let panel_center = u64::from(layout.height()) * 84 / 100;
-            panel_center.saturating_add(u64::from(26 * layout.scale())) as i64
-        }
+    let output_height = layout.height();
+    let output_scale = layout.scale();
+    let center_y = match role {
+        TextRole::Date => lock_layout::from_top(output_scale, lock_layout::DATE_CENTER_FROM_TOP),
+        TextRole::Clock => lock_layout::from_top(output_scale, lock_layout::CLOCK_CENTER_FROM_TOP),
+        TextRole::Avatar => lock_layout::from_bottom(
+            output_height,
+            output_scale,
+            lock_layout::AVATAR_CENTER_FROM_BOTTOM,
+        ),
+        TextRole::Account => lock_layout::from_bottom(
+            output_height,
+            output_scale,
+            lock_layout::ACCOUNT_CENTER_FROM_BOTTOM,
+        ),
+        TextRole::Placeholder | TextRole::Prompt => lock_layout::from_bottom(
+            output_height,
+            output_scale,
+            lock_layout::FIELD_CENTER_FROM_BOTTOM,
+        ),
     };
+    let origin_y = if role == TextRole::Prompt {
+        // Guidance hangs a fixed gap below the pill.
+        center_y
+            + i64::from(
+                (lock_layout::FIELD_HEIGHT / 2 + lock_layout::GUIDANCE_GAP)
+                    .saturating_mul(output_scale.max(1)),
+            )
+    } else {
+        center_y - i64::from(height / 2)
+    }
+    .max(0);
     TextRaster::new(origin_x, origin_y, width, height, alpha).map_err(Error::Raster)
 }
 
@@ -441,7 +485,8 @@ impl ClockLabels {
         Self {
             minute: now.timestamp().div_euclid(60),
             time: now.format("%-I:%M").to_string(),
-            date: now.format("%A, %-d %B").to_string(),
+            // "Tuesday 23 September", the owner's en-AU order.
+            date: now.format("%A %-d %B").to_string(),
         }
     }
 }
@@ -499,24 +544,30 @@ mod tests {
             assert_eq!(first.account(), second.account());
             assert_eq!(first.prompt(), second.prompt());
             assert_ne!(first.account(), first.prompt());
-            let panel_center = i64::from(layout().height()) * 84 / 100;
+            let panel_center = crate::paint::PromptGeometry::new(
+                layout().width(),
+                layout().height(),
+                layout().scale(),
+            )
+            .center_y;
             assert!(first.clock().is_some());
+            assert!(first.placeholder().is_some());
             assert!(first.date().is_some());
             assert!(first.avatar().is_some());
             assert!(first.account().unwrap().origin_y() > 0);
             assert!(first.account().unwrap().bottom() < panel_center);
             assert!(first.prompt().unwrap().origin_y() > panel_center);
-            assert_eq!(renderer.rasters.len(), 5);
+            assert_eq!(renderer.rasters.len(), 6);
             assert!(renderer.update(None, true, false));
             let failure = renderer.rasters(layout()).unwrap();
             assert_eq!(first.account(), failure.account());
             assert_ne!(first.prompt(), failure.prompt());
-            assert_eq!(renderer.rasters.len(), 5);
+            assert_eq!(renderer.rasters.len(), 6);
             assert!(renderer.update(None, false, true));
             let authenticating = renderer.rasters(layout()).unwrap();
             assert_eq!(first.account(), authenticating.account());
             assert_ne!(failure.prompt(), authenticating.prompt());
-            assert_eq!(renderer.rasters.len(), 5);
+            assert_eq!(renderer.rasters.len(), 6);
             assert_eq!(format!("{renderer:?}"), "LockTextRenderer(<redacted>)");
             assert_eq!(format!("{first:?}"), "LockTextRasters(<redacted>)");
             assert_eq!(

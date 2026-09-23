@@ -7,7 +7,7 @@ use std::os::fd::{AsFd, BorrowedFd};
 
 use rustix::fs::{fcntl_add_seals, ftruncate, memfd_create, MemfdFlags, SealFlags};
 
-use crate::paint::{paint_lock_frame_with_text, LockPalette, LockVisualState, TextRaster};
+use crate::paint::{paint_lock_frame_with_text, LockPalette, LockTexts, LockVisualState};
 use crate::surface::{BufferId, BufferLayout, RenderPlan};
 
 pub struct ShmFrame {
@@ -17,16 +17,11 @@ pub struct ShmFrame {
 }
 
 impl ShmFrame {
-    #[allow(clippy::too_many_arguments)]
     pub fn paint(
         plan: &RenderPlan,
         palette: LockPalette,
         visual: LockVisualState,
-        clock_text: Option<&TextRaster>,
-        date_text: Option<&TextRaster>,
-        avatar_text: Option<&TextRaster>,
-        account_text: Option<&TextRaster>,
-        prompt_text: Option<&TextRaster>,
+        texts: LockTexts<'_>,
     ) -> Result<Self, Error> {
         let layout = plan.layout();
         let fd = memfd_create(
@@ -38,18 +33,8 @@ impl ShmFrame {
         let file = File::from(fd);
         {
             let mut writer = BufWriter::with_capacity(64 * 1024, &file);
-            paint_lock_frame_with_text(
-                &mut writer,
-                layout,
-                palette,
-                visual,
-                clock_text,
-                date_text,
-                avatar_text,
-                account_text,
-                prompt_text,
-            )
-            .map_err(Error::Paint)?;
+            paint_lock_frame_with_text(&mut writer, layout, palette, visual, texts)
+                .map_err(Error::Paint)?;
             writer.flush().map_err(Error::Paint)?;
         }
         fcntl_add_seals(

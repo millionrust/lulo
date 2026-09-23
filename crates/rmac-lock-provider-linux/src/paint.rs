@@ -6,11 +6,73 @@
 use std::fmt;
 use std::io::{self, Write};
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::surface::BufferLayout;
 
 const CHUNK_PIXELS: usize = 4096;
 const MAX_TEXT_RASTER_BYTES: usize = 2 * 1024 * 1024;
+const WHITE: Rgb = Rgb::new(255, 255, 255);
+const BLACK: Rgb = Rgb::new(0, 0, 0);
+
+/// The macOS 26 lock screen in logical points (`design-lab/lock.html`).
+/// Clock rows hang from the top edge and the identity block from the bottom
+/// edge, like the Mac, instead of scaling with the output. Nothing here could
+/// be measured (the owner's Mac cannot be locked for a capture), so every
+/// value is `S` until a photo replaces it.
+pub(crate) mod layout {
+    // The text rows are only rasterized by the Linux renderer.
+    #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
+
+    /// Date line centre, from the top edge. S
+    pub(crate) const DATE_CENTER_FROM_TOP: u32 = 70;
+    /// Clock line centre, from the top edge. S
+    pub(crate) const CLOCK_CENTER_FROM_TOP: u32 = 146;
+    /// Monogram avatar diameter. S
+    pub(crate) const AVATAR_DIAMETER: u32 = 56;
+    /// Avatar centre, from the bottom edge. S
+    pub(crate) const AVATAR_CENTER_FROM_BOTTOM: u32 = 196;
+    /// Account name centre, from the bottom edge. S
+    pub(crate) const ACCOUNT_CENTER_FROM_BOTTOM: u32 = 148;
+    /// Password pill. S
+    pub(crate) const FIELD_WIDTH: u32 = 180;
+    pub(crate) const FIELD_HEIGHT: u32 = 28;
+    pub(crate) const FIELD_CENTER_FROM_BOTTOM: u32 = 110;
+    /// Gap between the pill and the guidance text under it. S
+    pub(crate) const GUIDANCE_GAP: u32 = 8;
+    /// Submit circle: diameter 20, centre 14 in from the pill's right end. S
+    pub(crate) const SUBMIT_RADIUS: u32 = 10;
+    pub(crate) const SUBMIT_INSET: u32 = 14;
+    /// Password bullets: 6 pt dots on a 10 pt pitch, first centre 14 in. S
+    pub(crate) const DOT_RADIUS: u32 = 3;
+    pub(crate) const DOT_PITCH: u32 = 10;
+    pub(crate) const DOT_INSET: u32 = 14;
+    /// Wrong-password shake: ±8 pt, three cycles in 400 ms. S
+    pub(crate) const SHAKE_AMPLITUDE: f64 = 8.0;
+    pub(crate) const SHAKE_CYCLES: f64 = 3.0;
+    pub(crate) const SHAKE_MILLIS: u64 = 400;
+
+    pub(crate) fn from_bottom(height: u32, scale: u32, points: u32) -> i64 {
+        i64::from(height) - i64::from(points.saturating_mul(scale.max(1)))
+    }
+
+    pub(crate) fn from_top(scale: u32, points: u32) -> i64 {
+        i64::from(points.saturating_mul(scale.max(1)))
+    }
+}
+
+/// Horizontal field offset in logical points for a shake that started
+/// `elapsed` ago, or `None` once the shake has finished.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn shake_offset(elapsed: Duration) -> Option<i8> {
+    let total = Duration::from_millis(layout::SHAKE_MILLIS);
+    if elapsed >= total {
+        return None;
+    }
+    let progress = elapsed.as_secs_f64() / total.as_secs_f64();
+    let phase = progress * layout::SHAKE_CYCLES * std::f64::consts::TAU;
+    Some((layout::SHAKE_AMPLITUDE * phase.sin()).round() as i8)
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Rgb {
@@ -51,6 +113,7 @@ pub struct LockVisualState {
     authentication_failed: bool,
     caps_lock_active: bool,
     keyboard_focused: bool,
+    shake_offset: i8,
 }
 
 impl Default for LockVisualState {
@@ -60,6 +123,7 @@ impl Default for LockVisualState {
             authentication_failed: false,
             caps_lock_active: false,
             keyboard_focused: false,
+            shake_offset: 0,
         }
     }
 }
@@ -71,7 +135,19 @@ impl LockVisualState {
             authentication_failed,
             caps_lock_active: false,
             keyboard_focused: false,
+            shake_offset: 0,
         }
+    }
+
+    /// Displace the password pill horizontally by `points` for one frame of
+    /// the wrong-password shake.
+    pub const fn with_shake_offset(mut self, points: i8) -> Self {
+        self.shake_offset = points;
+        self
+    }
+
+    pub const fn shake_offset(self) -> i8 {
+        self.shake_offset
     }
 
     pub const fn with_caps_lock(mut self, active: bool) -> Self {
@@ -202,6 +278,13 @@ impl TextRaster {
         self.alpha.get(index).copied()
     }
 
+    /// Position of row `y` inside the raster box, 0 at the top and 255 at the
+    /// bottom, for vertical gradients clipped to the glyphs.
+    fn vertical_fraction(&self, y: i64) -> u32 {
+        let local = (y - self.origin_y).clamp(0, i64::from(self.height));
+        (local * 255 / i64::from(self.height.max(1))) as u32
+    }
+
     #[cfg(all(test, target_os = "linux"))]
     pub(crate) fn origin_y(&self) -> i64 {
         self.origin_y
@@ -283,26 +366,40 @@ pub fn paint_lock_frame(
         layout,
         palette,
         visual,
-        None,
-        None,
-        None,
-        account_text,
-        prompt_text,
+        LockTexts {
+            account: account_text,
+            prompt: prompt_text,
+            ..LockTexts::default()
+        },
     )
 }
 
+/// Every text raster one lock frame can carry. Each is optional so a frame
+/// still paints while fonts are unavailable.
+#[derive(Clone, Copy, Default)]
+pub struct LockTexts<'a> {
+    pub clock: Option<&'a TextRaster>,
+    pub date: Option<&'a TextRaster>,
+    pub avatar: Option<&'a TextRaster>,
+    pub account: Option<&'a TextRaster>,
+    /// "Enter Password", drawn inside the empty pill and moved by the shake.
+    pub placeholder: Option<&'a TextRaster>,
+    pub prompt: Option<&'a TextRaster>,
+}
+
+impl fmt::Debug for LockTexts<'_> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("LockTexts(<redacted>)")
+    }
+}
+
 /// Paint one lock frame with the complete modern lock-screen text hierarchy.
-#[allow(clippy::too_many_arguments)]
 pub fn paint_lock_frame_with_text(
     writer: &mut impl Write,
     layout: BufferLayout,
     palette: LockPalette,
     visual: LockVisualState,
-    clock_text: Option<&TextRaster>,
-    date_text: Option<&TextRaster>,
-    avatar_text: Option<&TextRaster>,
-    account_text: Option<&TextRaster>,
-    prompt_text: Option<&TextRaster>,
+    texts: LockTexts<'_>,
 ) -> io::Result<()> {
     let width = layout.width();
     let height = layout.height();
@@ -321,11 +418,7 @@ pub fn paint_lock_frame_with_text(
                     layout.scale(),
                     palette,
                     visual,
-                    clock_text,
-                    date_text,
-                    avatar_text,
-                    account_text,
-                    prompt_text,
+                    texts,
                 );
                 let offset = index * 4;
                 chunk[offset..offset + 4].copy_from_slice(&pixel.argb8888());
@@ -346,11 +439,7 @@ fn paint_pixel(
     scale: u32,
     palette: LockPalette,
     visual: LockVisualState,
-    clock_text: Option<&TextRaster>,
-    date_text: Option<&TextRaster>,
-    avatar_text: Option<&TextRaster>,
-    account_text: Option<&TextRaster>,
-    prompt_text: Option<&TextRaster>,
+    texts: LockTexts<'_>,
 ) -> Rgb {
     let denominator = height.saturating_sub(1).max(1);
     let mut color = palette
@@ -383,106 +472,86 @@ fn paint_pixel(
         color = color.blend(palette.secondary_glow, strength);
     }
 
-    // A restrained dark veil keeps white identity text readable like a
-    // wallpaper-backed macOS lock screen without flattening the Aurora color.
-    color = color.blend(Rgb::new(4, 7, 18), 54);
+    // The Aurora artwork is already made of soft gradients, so it reads as the
+    // Mac's blurred wallpaper; the Mac then lays a black 20 % veil over it (S).
+    color = color.blend(BLACK, 51);
 
-    let dx = i64::from(x) - center_x;
+    let px = i64::from(x);
+    let py = i64::from(y);
+    let unit = i64::from(scale.max(1));
+    let shake = i64::from(visual.shake_offset) * unit;
 
-    let avatar_y = percent(height, 66);
-    let avatar_radius = u64::from((width.min(height) / 16).clamp(28 * scale, 64 * scale));
-    let avatar_dy = i64::from(y) - avatar_y;
-    let avatar_distance = (dx * dx + avatar_dy * avatar_dy) as u64;
-    let avatar_ring_radius = avatar_radius.saturating_add(u64::from(2 * scale));
-    if avatar_distance <= avatar_ring_radius * avatar_ring_radius {
-        color = color.blend(palette.panel, 92);
+    // Monogram avatar: a grey vertical gradient disc, like a Contacts
+    // monogram without a picture (S).
+    let avatar_center_y = layout::from_bottom(height, scale, layout::AVATAR_CENTER_FROM_BOTTOM);
+    let avatar_radius = i64::from(layout::AVATAR_DIAMETER / 2) * unit;
+    if inside_circle(px, py, center_x, avatar_center_y, avatar_radius) {
+        let top = avatar_center_y - avatar_radius;
+        let span = (2 * avatar_radius).max(1);
+        let position = ((py - top).clamp(0, span) * 255 / span) as u32;
+        color = Rgb::new(165, 171, 184).interpolate(Rgb::new(132, 137, 147), position, 255);
     }
-    if avatar_distance <= avatar_radius * avatar_radius {
-        color = color.blend(palette.avatar, 224);
-    }
 
-    let prompt_geometry = PromptGeometry::new(width, height, scale);
-    let panel_half_width = prompt_geometry.half_width;
-    let panel_half_height = prompt_geometry.half_height;
-    let panel_center_y = prompt_geometry.center_y;
+    // The glass password pill, displaced by the wrong-password shake.
+    let geometry = PromptGeometry::new(width, height, scale);
+    let field_x = center_x + shake;
+    let field_y = geometry.center_y;
+    let half_width = geometry.half_width;
+    let half_height = geometry.half_height;
     if inside_rounded_rect(
-        i64::from(x),
-        i64::from(y),
-        center_x,
-        panel_center_y,
-        panel_half_width,
-        panel_half_height,
-        panel_half_height,
+        px,
+        py,
+        field_x,
+        field_y,
+        half_width,
+        half_height,
+        half_height,
     ) {
-        let panel = if visual.authentication_failed {
-            palette.error
-        } else {
-            palette.panel
-        };
-        color = color.blend(panel, if visual.authentication_failed { 76 } else { 58 });
-    }
-
-    let interactive_prompt = matches!(
-        visual.prompt,
-        PromptVisual::Secret { .. }
-            | PromptVisual::Text { .. }
-            | PromptVisual::Notice
-            | PromptVisual::Radio { .. }
-    );
-    if visual.keyboard_focused && interactive_prompt {
-        let scale = i64::from(scale);
-        let outer = inside_rounded_rect(
-            i64::from(x),
-            i64::from(y),
-            center_x,
-            panel_center_y,
-            panel_half_width + 2 * scale,
-            panel_half_height + 2 * scale,
-            panel_half_height + 2 * scale,
-        );
+        color = color.blend(WHITE, 51);
         let inner = inside_rounded_rect(
-            i64::from(x),
-            i64::from(y),
-            center_x,
-            panel_center_y,
-            panel_half_width,
-            panel_half_height,
-            panel_half_height,
+            px,
+            py,
+            field_x,
+            field_y,
+            half_width - unit,
+            half_height - unit,
+            half_height - unit,
         );
-        if outer && !inner {
-            color = color.blend(
-                if visual.authentication_failed {
-                    palette.error
-                } else {
-                    palette.accent
-                },
-                236,
+        if !inner {
+            let interactive = matches!(
+                visual.prompt,
+                PromptVisual::Secret { .. }
+                    | PromptVisual::Text { .. }
+                    | PromptVisual::Notice
+                    | PromptVisual::Radio { .. }
             );
+            // A brighter rim is the only focus cue; the Mac draws no accent
+            // ring on the lock screen (S).
+            let rim = if visual.keyboard_focused && interactive {
+                110
+            } else {
+                41
+            };
+            color = color.blend(WHITE, rim);
         }
     }
 
-    let accent_x = prompt_geometry.submit_x;
-    let accent_radius = prompt_geometry.submit_radius;
-    let accent_dx = i64::from(x) - accent_x;
-    let accent_dy = i64::from(y) - panel_center_y;
-    let can_submit = prompt_can_submit(visual.prompt);
-    if can_submit && accent_dx * accent_dx + accent_dy * accent_dy <= accent_radius * accent_radius
-    {
-        color = color.blend(
-            if visual.authentication_failed {
-                palette.error
-            } else {
-                palette.accent
-            },
-            238,
-        );
-        let shaft = (-6 * i64::from(scale)..=3 * i64::from(scale)).contains(&accent_dx)
-            && accent_dy.abs() <= i64::from(scale);
-        let head_x = accent_dx - i64::from(scale);
-        let head = (0..=5 * i64::from(scale)).contains(&head_x)
-            && (accent_dy.abs() - (5 * i64::from(scale) - head_x)).abs() <= i64::from(scale);
-        if shaft || head {
-            color = color.blend(Rgb::new(18, 25, 42), 232);
+    let submit_visible = prompt_can_submit(visual.prompt);
+    if submit_visible {
+        let submit_x = geometry.submit_x + shake;
+        if inside_circle(px, py, submit_x, field_y, geometry.submit_radius) {
+            color = color.blend(WHITE, 64);
+            let arrow_dx = px - submit_x;
+            let arrow_dy = py - field_y;
+            // A 1.5 pt stroke: 1 px at 1x, 3 px at 2x.
+            let on_stroke = |distance: i64| distance.abs() * 4 <= 3 * unit;
+            let shaft = (-4 * unit..=3 * unit).contains(&arrow_dx) && on_stroke(arrow_dy);
+            let head_x = arrow_dx + unit;
+            let head =
+                (0..=4 * unit).contains(&head_x) && on_stroke(arrow_dy.abs() - (4 * unit - head_x));
+            if shaft || head {
+                color = color.blend(WHITE, 240);
+            }
         }
     }
 
@@ -492,56 +561,79 @@ fn paint_pixel(
             PromptVisual::Secret { .. } | PromptVisual::Text { .. }
         )
     {
-        let scale = i64::from(scale);
-        let indicator_x = center_x - panel_half_width + 18 * scale;
-        let indicator_y = panel_center_y;
-        let local_x = (i64::from(x) - indicator_x).abs();
-        let local_y = i64::from(y) - (indicator_y - 7 * scale);
-        let arrow_head = (0..=6 * scale).contains(&local_y) && local_x <= local_y;
-        let arrow_stem = local_x <= scale
-            && (indicator_y - scale..=indicator_y + 6 * scale).contains(&i64::from(y));
-        if arrow_head || arrow_stem {
-            color = color.blend(palette.error, 232);
+        // ⇪ at the pill's right end, left of the submit arrow when it shows.
+        let indicator_x = field_x + half_width
+            - i64::from(layout::SUBMIT_INSET) * unit
+            - if submit_visible { 24 * unit } else { 0 };
+        let local_x = (px - indicator_x).abs();
+        let local_y = py - (field_y - 6 * unit);
+        let arrow_head = (0..=5 * unit).contains(&local_y) && local_x <= local_y;
+        let arrow_stem = local_x <= unit && (field_y - unit..=field_y + 3 * unit).contains(&py);
+        let base = local_x <= 3 * unit && (field_y + 5 * unit..=field_y + 6 * unit).contains(&py);
+        if arrow_head || arrow_stem || base {
+            color = color.blend(WHITE, 178);
         }
     }
 
     color = paint_prompt(
         color,
-        i64::from(x),
-        i64::from(y),
-        center_x,
-        panel_center_y,
+        px,
+        py,
+        field_x,
+        field_y,
+        half_width,
         scale,
         palette,
         visual.prompt,
     );
 
-    for text in [
-        clock_text,
-        date_text,
-        avatar_text,
-        account_text,
-        prompt_text,
-    ]
-    .into_iter()
-    .flatten()
-    {
-        if let Some(alpha) = text.alpha_at(i64::from(x), i64::from(y)) {
-            color = color.blend(palette.panel, alpha);
+    // Clock: a glass fill (white 92 % → 62 % down the line box) over a 1 pt
+    // black 18 % shadow (S).
+    if let Some(clock) = texts.clock {
+        if let Some(alpha) = clock.alpha_at(px, py - unit) {
+            color = color.blend(BLACK, scale_alpha(alpha, 46));
+        }
+        if let Some(alpha) = clock.alpha_at(px, py) {
+            let fraction = clock.vertical_fraction(py);
+            let strength = 235 - (235 - 158) * fraction / 255;
+            color = color.blend(WHITE, scale_alpha(alpha, strength));
+        }
+    }
+    let placeholder_visible = matches!(
+        visual.prompt,
+        PromptVisual::Hidden | PromptVisual::Secret { dots: 0 }
+    );
+    let placeholder = texts.placeholder.filter(|_| placeholder_visible);
+    for (text, strength, sample_x) in [
+        (texts.date, 230, px),
+        (texts.avatar, 255, px),
+        (texts.account, 255, px),
+        (placeholder, 153, px - shake),
+        (texts.prompt, 204, px),
+    ] {
+        let Some(text) = text else {
+            continue;
+        };
+        if let Some(alpha) = text.alpha_at(sample_x, py) {
+            color = color.blend(WHITE, scale_alpha(alpha, strength));
         }
     }
 
     color
 }
 
+fn scale_alpha(alpha: u8, strength: u32) -> u8 {
+    (u32::from(alpha) * strength.min(255) / 255) as u8
+}
+
+/// Whether the submit arrow is shown and clickable. Like the Mac, an empty
+/// password or text field has no arrow; Return still submits it.
 pub(crate) fn prompt_can_submit(prompt: PromptVisual) -> bool {
-    matches!(
-        prompt,
-        PromptVisual::Secret { .. }
-            | PromptVisual::Text { .. }
-            | PromptVisual::Notice
-            | PromptVisual::Radio { .. }
-    )
+    match prompt {
+        PromptVisual::Secret { dots } | PromptVisual::Text { dots } => dots > 0,
+        PromptVisual::Notice | PromptVisual::Radio { .. } => true,
+        PromptVisual::Hidden | PromptVisual::Authenticating | PromptVisual::Binary => false,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -556,13 +648,14 @@ pub(crate) struct PromptGeometry {
 impl PromptGeometry {
     pub(crate) fn new(width: u32, height: u32, scale: u32) -> Self {
         let scale = scale.max(1);
-        let half_width = percent(width, 28).min(i64::from(180 * scale));
+        let unit = i64::from(scale);
+        let half_width = percent(width, 45).min(i64::from(layout::FIELD_WIDTH / 2) * unit);
         Self {
-            center_y: percent(height, 84),
+            center_y: layout::from_bottom(height, scale, layout::FIELD_CENTER_FROM_BOTTOM),
             half_width,
-            half_height: i64::from(19 * scale),
-            submit_x: i64::from(width / 2) + half_width - i64::from(18 * scale),
-            submit_radius: i64::from(13 * scale),
+            half_height: i64::from(layout::FIELD_HEIGHT / 2) * unit,
+            submit_x: i64::from(width / 2) + half_width - i64::from(layout::SUBMIT_INSET) * unit,
+            submit_radius: i64::from(layout::SUBMIT_RADIUS) * unit,
         }
     }
 }
@@ -574,43 +667,45 @@ fn paint_prompt(
     y: i64,
     center_x: i64,
     center_y: i64,
+    half_width: i64,
     scale: u32,
     palette: LockPalette,
     prompt: PromptVisual,
 ) -> Rgb {
-    let scale = i64::from(scale);
+    let scale = i64::from(scale.max(1));
     match prompt {
         PromptVisual::Authenticating => {
             for offset in [-10_i64, 0, 10] {
                 if inside_circle(x, y, center_x + offset * scale, center_y, 2 * scale) {
-                    color = color.blend(palette.panel, 176);
+                    color = color.blend(WHITE, 176);
                 }
             }
         }
         PromptVisual::Secret { dots } | PromptVisual::Text { dots } => {
-            let count = i64::from(dots);
-            let spacing = 12 * scale;
-            let first = center_x - (count.saturating_sub(1) * spacing / 2);
-            for index in 0..count {
-                if inside_circle(x, y, first + index * spacing, center_y, 3 * scale) {
-                    color = color.blend(palette.panel, 224);
+            // Bullets start at the left like a macOS secure text field (S).
+            let first = center_x - half_width + i64::from(layout::DOT_INSET) * scale;
+            let pitch = i64::from(layout::DOT_PITCH) * scale;
+            let radius = i64::from(layout::DOT_RADIUS) * scale;
+            for index in 0..i64::from(dots) {
+                if inside_circle(x, y, first + index * pitch, center_y, radius) {
+                    color = color.blend(WHITE, 224);
                     break;
                 }
             }
         }
         PromptVisual::Notice => {
-            for (offset, half_width) in [(-7, 34), (0, 42), (7, 28)] {
+            for (offset, line_half_width) in [(-7, 34), (0, 42), (7, 28)] {
                 if (y - (center_y + i64::from(offset) * scale)).abs() <= scale
-                    && (x - center_x).abs() <= i64::from(half_width) * scale
+                    && (x - center_x).abs() <= i64::from(line_half_width) * scale
                 {
-                    color = color.blend(palette.panel, 188);
+                    color = color.blend(WHITE, 188);
                 }
             }
         }
         PromptVisual::Radio { selected } => {
             let selection_x = center_x + if selected { 9 * scale } else { -9 * scale };
             if inside_rounded_rect(x, y, center_x, center_y, 19 * scale, 10 * scale, 10 * scale) {
-                color = color.blend(palette.panel, 92);
+                color = color.blend(WHITE, 92);
             }
             if inside_circle(x, y, selection_x, center_y, 7 * scale) {
                 color = color.blend(palette.accent, 230);
@@ -621,7 +716,7 @@ fn paint_prompt(
                 if (x - (center_x + offset * scale)).abs() <= 2 * scale
                     && (y - center_y).abs() <= 7 * scale
                 {
-                    color = color.blend(palette.panel, 196);
+                    color = color.blend(WHITE, 196);
                 }
             }
         }
@@ -867,6 +962,50 @@ mod tests {
             TextRaster::new(0, 0, 2, 2, vec![0; 3]),
             Err(TextRasterError::InvalidDimensions)
         );
+    }
+
+    #[test]
+    fn wrong_password_shake_moves_the_field_and_settles() {
+        assert_eq!(shake_offset(Duration::ZERO), Some(0));
+        let peak = (0..400)
+            .filter_map(|millis| shake_offset(Duration::from_millis(millis)))
+            .map(i8::unsigned_abs)
+            .max();
+        assert_eq!(peak, Some(8));
+        assert_eq!(shake_offset(Duration::from_millis(400)), None);
+
+        let layout = layout(320, 200, 1);
+        let mut still = Vec::new();
+        let mut shaken = Vec::new();
+        let visual = LockVisualState::new(PromptVisual::Hidden, true);
+        paint_lock_frame(
+            &mut still,
+            layout,
+            LockPalette::MIDNIGHT,
+            visual,
+            None,
+            None,
+        )
+        .unwrap();
+        paint_lock_frame(
+            &mut shaken,
+            layout,
+            LockPalette::MIDNIGHT,
+            visual.with_shake_offset(8),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_ne!(still, shaken);
+    }
+
+    #[test]
+    fn submit_arrow_needs_input_like_the_mac() {
+        assert!(!prompt_can_submit(PromptVisual::secret(0)));
+        assert!(prompt_can_submit(PromptVisual::secret(1)));
+        assert!(!prompt_can_submit(PromptVisual::text(0)));
+        assert!(prompt_can_submit(PromptVisual::Notice));
+        assert!(!prompt_can_submit(PromptVisual::Binary));
     }
 
     struct FailingWriter {

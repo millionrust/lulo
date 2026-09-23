@@ -105,15 +105,20 @@ mod tests {
 
     #[test]
     fn submit_target_matches_the_visible_accent_and_rejects_binary_prompts() {
-        // 800x600: center=(400,504), panel half-width=180, accent=(562,504).
+        // 800x600: pill centre=(400,490), half-width=90, submit arrow=(476,490).
+        // An empty field has no arrow, as on the Mac.
         assert_eq!(
-            hit_test(800, 600, PromptVisual::secret(4), 562.0, 504.0),
+            hit_test(800, 600, PromptVisual::secret(0), 476.0, 490.0),
+            None
+        );
+        assert_eq!(
+            hit_test(800, 600, PromptVisual::secret(4), 476.0, 490.0),
             Some(PointerTarget::Submit)
         );
-        assert_eq!(hit_test(800, 600, PromptVisual::Binary, 562.0, 504.0), None);
-        assert_eq!(hit_test(800, 600, PromptVisual::Hidden, 562.0, 504.0), None);
+        assert_eq!(hit_test(800, 600, PromptVisual::Binary, 476.0, 490.0), None);
+        assert_eq!(hit_test(800, 600, PromptVisual::Hidden, 476.0, 490.0), None);
         assert_eq!(
-            hit_test(800, 600, PromptVisual::Authenticating, 562.0, 504.0),
+            hit_test(800, 600, PromptVisual::Authenticating, 476.0, 490.0),
             None
         );
         assert!(matches!(
@@ -126,11 +131,11 @@ mod tests {
     fn radio_halves_select_and_release_outside_cannot_activate() {
         let radio = PromptVisual::Radio { selected: false };
         assert_eq!(
-            hit_test(800, 600, radio, 390.0, 504.0),
+            hit_test(800, 600, radio, 390.0, 490.0),
             Some(PointerTarget::SelectPrevious)
         );
         assert_eq!(
-            hit_test(800, 600, radio, 410.0, 504.0),
+            hit_test(800, 600, radio, 410.0, 490.0),
             Some(PointerTarget::SelectNext)
         );
         for (x, y) in [(-1.0, 0.0), (f64::NAN, 2.0), (800.0, 10.0)] {

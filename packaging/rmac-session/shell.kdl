@@ -3,6 +3,10 @@
 input {
     touchpad {
         tap
+        // Two-finger click is a secondary click, as on a Mac trackpad, and
+        // resting palms are ignored while typing.
+        click-method "clickfinger"
+        dwt
         // The owner's Mac has natural scrolling off (FEEL_SPEC.md §C), so the
         // touchpad must not reverse the scroll direction.
         // macOS-like tracking speed and adaptive acceleration (FEEL_SPEC.md §D.4).
@@ -35,6 +39,21 @@ layout {
 cursor {
     xcursor-theme "rmac"
     xcursor-size 24
+    // macOS hides the pointer while typing until the mouse moves again.
+    hide-when-typing
+}
+
+// macOS has no middle-click selection paste; only the clipboard pastes.
+clipboard {
+    disable-primary
+}
+
+// The rmac menu sits in the top-left corner, so niri's overview hot corner
+// must never fire there. Mission Control is opened from the keyboard and Dock.
+gestures {
+    hot-corners {
+        off
+    }
 }
 
 // Motion continuity (FEEL_SPEC.md §D.3), matching the §4.9 motion tokens.

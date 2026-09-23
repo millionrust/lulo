@@ -1,6 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-width="1.8">
-    <circle cx="12" cy="12" r="4.2" fill="#fff" stroke="none"/>
-    <path d="M12 1.8v2.5M12 19.7v2.5M1.8 12h2.5M19.7 12h2.5M4.8 4.8l1.8 1.8M17.4 17.4l1.8 1.8M19.2 4.8l-1.8 1.8M6.6 17.4l-1.8 1.8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 33 33" width="33" height="33">
+  <!-- sun.max.fill, measured 16.5 × 16.5 pt in the macOS 26 Display module -->
+  <circle cx="16.5" cy="16.5" r="7.5" fill="#fff"/>
+  <g stroke="#fff" stroke-width="2.4" stroke-linecap="round">
+    <path d="M16.5 1.2v4.8M16.5 27v4.8M1.2 16.5H6M27 16.5h4.8"/>
+    <path d="M5.68 5.68l3.39 3.39M23.93 23.93l3.39 3.39M27.32 5.68l-3.39 3.39M9.07 23.93l-3.39 3.39"/>
   </g>
 </svg>

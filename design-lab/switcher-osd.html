@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>App switcher and OSD — exact</title>
+<!--
+  The ⌘Tab app switcher and the volume/brightness OSD at 1:1 logical points,
+  measured from the owner's Mac (macOS 26.2 Tahoe, dark mode, 2026-09-23,
+  Retina recording ÷ 2, 1470 × 956 pt screen). Rust copies these numbers:
+  shell/bins/rmac-app-switcher and shell/bins/rmac-osd.
+
+  ⌘Tab switcher (frames f054 / f055):
+    panel             one row, height 176, radius 56, centred on the screen
+                      (panel centre = screen centre on both axes)
+    padding           24 on every side
+    icon frame        128 × 128; the app artwork's squircle is 104 (Apple grid)
+    icon gap          6 (pitch 134) → width = 48 + 128·n + 6·(n − 1)
+                      5 apps = 712 wide
+    selection plate   120 × 120, inset 4 inside the selected 128 frame,
+                      radius 32 (concentric with the panel: 56 − 24),
+                      white ≈ 29 % at the top rising to ≈ 32 % at the bottom
+    app name          only under the selected icon, 13 pt semibold white,
+                      centred on the icon, baseline 164 from the panel top
+                      (12 above the bottom edge, inside the padding)
+    material          dark glass: over #0E1015 the panel reads #1A1C21, i.e.
+                      rgba(34,36,41,.60) over a strong blur; 1 pt light rim,
+                      brightest on the top edge (≈ 36 % white)
+    order             current app first, selection starts on the second item
+
+  OSD (no volume/brightness frame exists in the recording; Tahoe draws the
+  OSD as the Control Center Sound/Display module, measured in f028):
+    module            292 × 64, radius 22, top-right: right edge 14 from the
+                      screen edge, top 6 below the menu bar (39 on the Mac's
+                      33 pt bar, 35 on rmac's 29 pt bar)
+    material          over #090A0D the module reads #2E3034 → rgba(52,54,58,.85);
+                      0.5 pt light rim (≈ 55 % white top, 40 % sides)
+    title             13 pt bold white, x 16.5, cap top 14, baseline 23
+                      "Sound" / "Display"
+    slider            4 thick, centre line y 41.75, fill #FAFAFA, track black 40 %,
+                      fully rounded ends, no knob
+    sound glyphs      speaker.fill 9.25 × 13.25 at x 16.5; track from x 34;
+                      speaker.wave.3.fill 20.5 × 14.75, 7 after the track
+    display glyphs    sun.min.fill 15 × 15 at x 15.5; track from x 36.5;
+                      sun.max.fill 16.5 × 16.5, 6 after the track
+    right side        the Control Center module ends in a 36 pt AirPlay/display
+                      button; the OSD has no button, so the row mirrors the left
+                      16 pt inset and the track takes the freed width
+    timing            hold 1.6 s after the last change, then hide
+-->
+<style>
+  :root {
+    --font: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+    --bar-h: 33px;
+  }
+  html, body { margin: 0; background: #0e1015; }
+  body { width: 1470px; font-family: var(--font); -webkit-font-smoothing: antialiased; }
+  .screen { position: relative; width: 1470px; height: 956px; overflow: hidden;
+            background: #0e1015; }
+  .menubar { height: var(--bar-h); background: linear-gradient(#0d077b, #0b066d); }
+  /* stand-in window content, so the glass has something to blur */
+  .content { position: absolute; left: 180px; top: 60px; right: 60px;
+             font: 400 15px/28px "SF Mono", Menlo, monospace; color: #d7d8db; white-space: pre; }
+
+  /* ---------------- ⌘Tab switcher ---------------- */
+  .switcher {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    height: 176px; box-sizing: border-box; padding: 24px;
+    display: flex; gap: 6px; border-radius: 56px;
+    background: rgba(34, 36, 41, .60);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    backdrop-filter: blur(24px) saturate(1.4);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .16),
+                inset 0 1px 0 rgba(255, 255, 255, .22),
+                0 12px 40px rgba(0, 0, 0, .35);
+  }
+  .app { position: relative; width: 128px; height: 128px; flex: none; }
+  .app img { position: relative; width: 128px; height: 128px; display: block; }
+  .app.sel::before {
+    content: ""; position: absolute; inset: 4px; border-radius: 32px;
+    background: linear-gradient(rgba(255, 255, 255, .29), rgba(255, 255, 255, .32));
+  }
+  .app .name {
+    position: absolute; left: -40px; right: -40px; top: 128px; height: 16px;
+    text-align: center; font: 600 13px/16px var(--font); color: #fff; white-space: nowrap;
+  }
+
+  /* ---------------- OSD ---------------- */
+  .osd {
+    position: absolute; right: 14px; top: calc(var(--bar-h) + 6px);
+    width: 292px; height: 64px; box-sizing: border-box; border-radius: 22px;
+    background: rgba(52, 54, 58, .85);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
+    backdrop-filter: blur(24px) saturate(1.4);
+    box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .40),
+                inset 0 .5px 0 rgba(255, 255, 255, .30),
+                0 8px 24px rgba(0, 0, 0, .30);
+    color: #fff;
+  }
+  .osd .title { position: absolute; left: 16.5px; top: 10.5px; height: 16px;
+                font: 700 13px/16px var(--font); }
+  .osd .row { position: absolute; left: 0; right: 16px; top: 41.75px; height: 0;
+              display: flex; align-items: center; }
+  .osd .lo, .osd .hi { flex: none; display: block; }
+  .osd .track { position: relative; flex: 1; height: 4px; border-radius: 2px;
+                background: rgba(0, 0, 0, .40); overflow: hidden; }
+  .osd .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px;
+               background: #fafafa; }
+  /* sound: speaker at 16.5, track from 34, wave glyph 7 after the track */
+  .osd.sound .lo { margin-left: 16.5px; width: 9.25px; height: 13.5px; margin-right: 8.25px; }
+  .osd.sound .lo.muted { width: 11px; margin-right: 6.5px; }
+  .osd.sound .hi { width: 20.5px; height: 14.75px; margin-left: 7px; }
+  /* display: small sun box at 15.5, track from 36.5, large sun 6 after */
+  .osd.display .lo { margin-left: 15.5px; width: 15px; height: 15px; margin-right: 6px; }
+  .osd.display .hi { width: 16.5px; height: 16.5px; margin-left: 6px; }
+
+  .strip { display: flex; gap: 24px; padding: 24px; background: #0e1015; }
+  .strip .osd { position: relative; right: auto; top: auto; }
+</style>
+</head>
+<body>
+
+<!-- Screen 1: ⌘Tab held, Finder selected (one Tab from the current app) -->
+<section class="screen">
+  <div class="menubar"></div>
+  <div class="content">2. Battery icon: click it. Then Option-click it.
+3. Control Center icon: click it, then click into a module (e.g. Display or Sound) so it expands.
+4. Clock: click it to open Notification Center.
+5. Spotlight icon: click it, then type a letter.
+6. Apple menu, then Finder's File, Edit, View, Go and Window menus.
+7. Dock: right-click an app icon (e.g. Finder), and hover over its name label.
+8. ⌘Tab: hold it with 3–4 apps open.
+9. Volume and brightness keys: press them once each.
+
+If you're faster, stop and tell me and I'll start analysing right away.</div>
+  <div class="switcher">
+    <div class="app"><img src="../assets/icons/text-editor.svg" alt=""></div>
+    <div class="app sel"><img src="../assets/icons/files.svg" alt=""><div class="name">Finder</div></div>
+    <div class="app"><img src="../assets/icons/notes.svg" alt=""></div>
+    <div class="app"><img src="../assets/icons/system-settings.svg" alt=""></div>
+    <div class="app"><img src="../assets/icons/terminal.svg" alt=""></div>
+  </div>
+</section>
+
+<!-- Screen 2: volume key pressed (Sound OSD) -->
+<section class="screen">
+  <div class="menubar"></div>
+  <div class="content">2. Battery icon: click it. Then Option-click it.
+3. Control Center icon: click it, then click into a module (e.g. Display or Sound) so it expands.
+4. Clock: click it to open Notification Center.</div>
+  <div class="osd sound">
+    <div class="title">Sound</div>
+    <div class="row">
+      <img class="lo" src="../shell/assets/osd/speaker-low.svg" alt="">
+      <div class="track"><div class="fill" style="width:64%"></div></div>
+      <img class="hi" src="../shell/assets/osd/speaker-high.svg" alt="">
+    </div>
+  </div>
+</section>
+
+<!-- The other states side by side -->
+<div class="strip">
+  <div class="osd display">
+    <div class="title">Display</div>
+    <div class="row">
+      <img class="lo" src="../shell/assets/osd/brightness-low.svg" alt="">
+      <div class="track"><div class="fill" style="width:61%"></div></div>
+      <img class="hi" src="../shell/assets/osd/brightness-high.svg" alt="">
+    </div>
+  </div>
+  <div class="osd sound">
+    <div class="title">Sound</div>
+    <div class="row">
+      <img class="lo muted" src="../shell/assets/osd/muted.svg" alt="">
+      <div class="track"><div class="fill" style="width:0"></div></div>
+      <img class="hi" src="../shell/assets/osd/speaker-high.svg" alt="">
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

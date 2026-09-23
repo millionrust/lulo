@@ -1,4 +1,7 @@
 #[cfg(all(target_os = "linux", feature = "wayland"))]
+mod ipc;
+
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 mod linux_wayland {
     use std::env;
     use std::fs::{self, OpenOptions};
@@ -11,9 +14,10 @@ mod linux_wayland {
     use futures_util::FutureExt as _;
     use gpui::{
         canvas, div, img, layer_shell::*, point, prelude::*, px, rgba, AccessibleAction,
-        AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, ExternalPaths, FontWeight,
-        MouseButton, PathBuilder, PlatformDisplay, QuitMode, Role, Size, Window,
-        WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
+        AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, ExternalPaths, FocusHandle,
+        FontWeight, KeyDownEvent, MouseButton, PathBuilder, PlatformDisplay, QuitMode, Role,
+        SharedString, Size, WeakEntity, Window, WindowBackgroundAppearance, WindowBounds,
+        WindowHandle, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use rmac_shell_ui::tokens;
@@ -225,6 +229,246 @@ mod linux_wayland {
         enabled: bool,
     }
 
+    /// ⌃F3 keyboard mode on one Dock (design-lab/dock.html, scene 3).
+    ///
+    /// The Dock's own layer surface is created with no keyboard
+    /// interactivity, and GPUI's `PlatformWindow` has no call to change a
+    /// layer surface's interactivity after it is mapped. Re-creating the
+    /// Dock with an exclusive keyboard would drop and re-reserve its work
+    /// area (every window would reflow twice) and lose hover, bounce and
+    /// menu state. So, like the ⌘Tab switcher, the keyboard is held by a
+    /// separate, invisible 1 × 1 overlay surface with exclusive
+    /// interactivity that exists only while the Dock is focused; it forwards
+    /// keys here and carries the accessible focus Orca announces.
+    struct KeyboardMode {
+        navigator: rmac_dock::keyboard::Navigator,
+        surface: WindowHandle<DockKeyboard>,
+        /// The window that had the keyboard before ⌃F3; Esc refocuses it.
+        previous_window: Option<rmac_compositor::WindowId>,
+    }
+
+    /// One tile the keyboard can reach, in shelf order.
+    #[derive(Clone)]
+    struct KeyTarget {
+        id: rmac_dock::presentation::EntryId,
+        /// Shown in the name bubble.
+        name: String,
+        accessible: String,
+        /// Resting centre along the Dock axis, relative to the shelf start.
+        center: f32,
+    }
+
+    /// What the focus surface exposes as the focused accessible node.
+    #[derive(Clone, PartialEq)]
+    struct Announcement {
+        role: Role,
+        label: SharedString,
+        /// Changes with the focused tile or row, so each move is a new
+        /// focus event rather than a rename of the same node.
+        key: usize,
+    }
+
+    const MENU_ANNOUNCEMENT_KEY: usize = 1 << 20;
+
+    fn dock_edge(placement: rmac_shell_settings::DockPlacement) -> rmac_dock::keyboard::Edge {
+        match placement {
+            rmac_shell_settings::DockPlacement::Bottom => rmac_dock::keyboard::Edge::Bottom,
+            rmac_shell_settings::DockPlacement::Left => rmac_dock::keyboard::Edge::Left,
+            rmac_shell_settings::DockPlacement::Right => rmac_dock::keyboard::Edge::Right,
+        }
+    }
+
+    fn trash_accessible_label(model: &rmac_dock::Model) -> String {
+        let trash = model
+            .special_items
+            .iter()
+            .find(|item| item.kind == rmac_dock::SpecialItemKind::Trash);
+        match trash.and_then(|trash| trash.item_count) {
+            Some(0) => "Trash, empty".into(),
+            Some(1) => "Trash, 1 item".into(),
+            Some(count) => format!("Trash, {count} items"),
+            None => "Trash unavailable".into(),
+        }
+    }
+
+    /// Applications, minimized windows and Trash in shelf order, with the
+    /// same resting centres the renderer lays out.
+    fn keyboard_targets(snapshot: &rmac_dock_runtime::Snapshot) -> Vec<KeyTarget> {
+        let entries = &snapshot.content.applications;
+        let pinned = snapshot
+            .model
+            .items
+            .iter()
+            .take_while(|item| item.pinned)
+            .count();
+        let separates_running = pinned > 0 && pinned < entries.len();
+        let mut targets: Vec<KeyTarget> = entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| KeyTarget {
+                id: entry.id.clone(),
+                name: entry.label.clone(),
+                accessible: entry.accessible_label.clone(),
+                center: SHELF_PADDING
+                    + ICON_SIZE / 2.0
+                    + index as f32 * (ICON_SIZE + ICON_GAP)
+                    + if separates_running && index >= pinned {
+                        SEPARATOR_SLOT + ICON_GAP
+                    } else {
+                        0.0
+                    },
+            })
+            .collect();
+        let trash_center = dock_shelf_extent(snapshot) - SHELF_PADDING - ICON_SIZE / 2.0;
+        let minimized: Vec<_> = snapshot
+            .content
+            .places
+            .iter()
+            .filter(|entry| matches!(entry.id, rmac_dock::presentation::EntryId::Minimized(_)))
+            .collect();
+        let count = minimized.len();
+        targets.extend(
+            minimized
+                .into_iter()
+                .enumerate()
+                .map(|(index, entry)| KeyTarget {
+                    id: entry.id.clone(),
+                    name: entry.label.clone(),
+                    accessible: entry.accessible_label.clone(),
+                    center: trash_center - (count - index) as f32 * (ICON_SIZE + ICON_GAP),
+                }),
+        );
+        targets.push(KeyTarget {
+            id: rmac_dock::presentation::EntryId::Special(rmac_dock::SpecialItemKind::Trash),
+            name: "Trash".into(),
+            accessible: trash_accessible_label(&snapshot.model),
+            center: trash_center,
+        });
+        targets
+    }
+
+    /// Never keep an invisible exclusive surface that never got the keyboard.
+    const KEYBOARD_ACTIVATION_TIMEOUT: Duration = Duration::from_millis(1_000);
+
+    /// The invisible surface that holds the keyboard while the Dock is
+    /// focused. It draws nothing and takes no pointer input.
+    struct DockKeyboard {
+        dock: WeakEntity<Dock>,
+        focus: FocusHandle,
+        announcement: Announcement,
+        was_active: bool,
+        closing: bool,
+        input_region_set: bool,
+    }
+
+    impl DockKeyboard {
+        fn new(
+            dock: WeakEntity<Dock>,
+            announcement: Announcement,
+            window: &mut Window,
+            cx: &mut Context<Self>,
+        ) -> Self {
+            let focus = cx.focus_handle();
+            focus.focus(window, cx);
+            cx.observe_window_activation(window, |this, window, cx| {
+                if window.is_window_active() {
+                    this.was_active = true;
+                } else if this.was_active {
+                    // Another surface took the keyboard (⌘Tab, a menu bar
+                    // click, the lock screen): leave without refocusing.
+                    this.close(false, window, cx);
+                }
+            })
+            .detach();
+            cx.spawn_in(window, async move |this, cx| {
+                cx.background_executor()
+                    .timer(KEYBOARD_ACTIVATION_TIMEOUT)
+                    .await;
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if !this.was_active {
+                        this.close(false, window, cx);
+                    }
+                });
+            })
+            .detach();
+            Self {
+                dock,
+                focus,
+                announcement,
+                was_active: false,
+                closing: false,
+                input_region_set: false,
+            }
+        }
+
+        fn close(&mut self, restore: bool, window: &mut Window, cx: &mut Context<Self>) {
+            if self.closing {
+                return;
+            }
+            self.closing = true;
+            let _ = self
+                .dock
+                .update(cx, |dock, cx| dock.leave_keyboard(restore, cx));
+            window.remove_window();
+        }
+
+        fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+            cx.stop_propagation();
+            if self.closing {
+                return;
+            }
+            let key = event.keystroke.key.clone();
+            let modifiers = event.keystroke.modifiers;
+            let next = self
+                .dock
+                .update(cx, |dock, cx| {
+                    dock.keyboard_key(&key, modifiers.shift, modifiers.alt, cx)
+                })
+                .ok()
+                .flatten();
+            match next {
+                Some(announcement) => {
+                    if announcement != self.announcement {
+                        self.announcement = announcement;
+                        cx.notify();
+                    }
+                }
+                None => {
+                    // The Dock already left keyboard mode (or is gone).
+                    self.closing = true;
+                    window.remove_window();
+                }
+            }
+        }
+    }
+
+    impl Render for DockKeyboard {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            if !self.input_region_set {
+                self.input_region_set = true;
+                window.set_input_region(Some(&[]));
+            }
+            // The container holds real focus; the child stands for the
+            // focused tile (or menu row) through aria-activedescendant, so
+            // Orca reads "Safari, button" on every move.
+            div()
+                .id("dock-keyboard")
+                .track_focus(&self.focus)
+                .role(Role::Toolbar)
+                .aria_label("Dock")
+                .size_full()
+                .on_key_down(cx.listener(Self::key_down))
+                .child(
+                    div()
+                        .id(("dock-keyboard-focus", self.announcement.key))
+                        .role(self.announcement.role)
+                        .aria_label(self.announcement.label.clone())
+                        .aria_active_descendant()
+                        .size_full(),
+                )
+        }
+    }
+
     struct Dock {
         display_id: u64,
         output: Option<rmac_compositor::OutputId>,
@@ -259,11 +503,13 @@ mod linux_wayland {
         bounces: rmac_dock::bounce::BounceTracker,
         /// The tile under a held primary button: macOS darkens it.
         pressed: Option<String>,
-        /// Option held (read from pointer events; the Dock never takes the
+        /// Option held (read from pointer events; the Dock surface never takes the
         /// keyboard): Dock menus show Force Quit instead of Quit.
         option_held: bool,
         /// Reviewed Trash contents waiting for the Empty Trash alert.
         trash_review: Option<rmac_dock_system::dispatch::ReviewedTrash>,
+        /// ⌃F3: the tile with keyboard focus and the surface holding it.
+        keyboard: Option<KeyboardMode>,
     }
 
     impl Dock {
@@ -309,6 +555,7 @@ mod linux_wayland {
                 pressed: None,
                 option_held: false,
                 trash_review: None,
+                keyboard: None,
             }
         }
 
@@ -718,7 +965,10 @@ mod linux_wayland {
                     .timer(Duration::from_millis(rmac_dock::motion::HIDE_DELAY_MS))
                     .await;
                 let _ = this.update(cx, |this, cx| {
-                    if this.hide_generation == generation && !this.pointer_inside {
+                    if this.hide_generation == generation
+                        && !this.pointer_inside
+                        && this.keyboard.is_none()
+                    {
                         this.hovered_item = None;
                         this.set_hidden(true, cx);
                     }
@@ -906,6 +1156,306 @@ mod linux_wayland {
             .detach();
         }
 
+        /// ⌃F3: focus the first tile and take the keyboard through the
+        /// invisible focus surface (see `KeyboardMode`).
+        fn begin_keyboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            if self.keyboard.is_some() || self.trash_review.is_some() {
+                return;
+            }
+            let (targets, previous_window) = {
+                let status = self.status.read(cx);
+                let Some(snapshot) = status.snapshot() else {
+                    return;
+                };
+                (keyboard_targets(snapshot), snapshot.compositor.focus.window)
+            };
+            let Some(navigator) = rmac_dock::keyboard::Navigator::new(targets.len()) else {
+                return;
+            };
+            self.context_menu = None;
+            self.tile_drag = None;
+            self.pressed = None;
+            let announcement = Announcement {
+                role: Role::Button,
+                label: targets[0].accessible.clone().into(),
+                key: 0,
+            };
+            let dock = cx.entity().downgrade();
+            let options = WindowOptions {
+                titlebar: None,
+                focus: true,
+                show: true,
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: Size::new(px(1.0), px(1.0)),
+                })),
+                display_id: window.display(cx).map(|display| display.id()),
+                app_id: Some("dev.rmac.DockKeyboard".to_owned()),
+                window_background: WindowBackgroundAppearance::Transparent,
+                kind: WindowKind::LayerShell(LayerShellOptions {
+                    namespace: "rmac-dock-keyboard".to_owned(),
+                    layer: Layer::Overlay,
+                    keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                    ..Default::default()
+                }),
+                is_movable: false,
+                is_resizable: false,
+                is_minimizable: false,
+                ..Default::default()
+            };
+            let surface = match cx.open_window(options, move |window, cx| {
+                cx.new(|cx| DockKeyboard::new(dock, announcement, window, cx))
+            }) {
+                Ok(surface) => surface,
+                Err(error) => {
+                    eprintln!("could not move keyboard focus to the Dock: {error}");
+                    return;
+                }
+            };
+            self.keyboard = Some(KeyboardMode {
+                navigator,
+                surface,
+                previous_window,
+            });
+            // A hidden Dock slides in while it has the keyboard.
+            self.hide_generation = self.hide_generation.saturating_add(1);
+            self.set_hidden(false, cx);
+            self.input_region = None;
+            cx.notify();
+        }
+
+        /// Leave keyboard mode. `restore` (Esc) hands the keyboard back to
+        /// the window that had it before ⌃F3; activating a tile does not,
+        /// because the activation focuses its own window.
+        fn leave_keyboard(&mut self, restore: bool, cx: &mut Context<Self>) {
+            let Some(mode) = self.keyboard.take() else {
+                return;
+            };
+            // Fails harmlessly when the focus surface is the caller; it then
+            // removes itself.
+            let _ = mode.surface.update(cx, |surface, window, _| {
+                surface.closing = true;
+                window.remove_window();
+            });
+            if let (true, Some(window)) = (restore, mode.previous_window) {
+                cx.spawn(async move |_, _| {
+                    let action = rmac_compositor::Action::FocusWindow { window };
+                    if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                        eprintln!("could not return focus from the Dock: {error:?}");
+                    }
+                })
+                .detach();
+            }
+            self.input_region = None;
+            let autohide = self
+                .status
+                .read(cx)
+                .snapshot()
+                .is_some_and(|snapshot| snapshot.settings.autohide)
+                || self.fullscreen;
+            if autohide && !self.pointer_inside && !self.overview_visible {
+                self.schedule_hide(cx);
+            }
+            cx.notify();
+        }
+
+        /// One key from the focus surface. Returns what the surface should
+        /// expose next, or `None` once keyboard mode has ended.
+        fn keyboard_key(
+            &mut self,
+            key: &str,
+            shift: bool,
+            alt: bool,
+            cx: &mut Context<Self>,
+        ) -> Option<Announcement> {
+            let targets = {
+                let status = self.status.read(cx);
+                status.snapshot().map(keyboard_targets).unwrap_or_default()
+            };
+            let mode = self.keyboard.as_mut()?;
+            if !mode.navigator.set_len(targets.len()) {
+                self.leave_keyboard(true, cx);
+                return None;
+            }
+            if self.context_menu.is_some() {
+                return self.keyboard_menu_key(key, alt, &targets, cx);
+            }
+            let index = mode.navigator.index();
+            let edge = dock_edge(self.placement);
+            let outcome = mode
+                .navigator
+                .handle(rmac_dock::keyboard::Key::from_name(key, shift, edge));
+            match outcome {
+                rmac_dock::keyboard::Outcome::Moved => cx.notify(),
+                rmac_dock::keyboard::Outcome::Unchanged => {}
+                rmac_dock::keyboard::Outcome::Activate => {
+                    let target = targets[index].clone();
+                    self.leave_keyboard(false, cx);
+                    self.activate_target(&target, cx);
+                    return None;
+                }
+                rmac_dock::keyboard::Outcome::OpenMenu => {
+                    self.open_target_menu(&targets[index], cx);
+                }
+                rmac_dock::keyboard::Outcome::Dismiss => {
+                    self.leave_keyboard(true, cx);
+                    return None;
+                }
+            }
+            self.keyboard_announcement(&targets)
+        }
+
+        /// ↑ ↓ Return Esc inside a Dock menu opened from the keyboard.
+        fn keyboard_menu_key(
+            &mut self,
+            key: &str,
+            alt: bool,
+            targets: &[KeyTarget],
+            cx: &mut Context<Self>,
+        ) -> Option<Announcement> {
+            use rmac_dock::menu::{Effect, KeyCommand};
+            let command = match key {
+                "up" => Some(KeyCommand::ArrowUp),
+                "down" => Some(KeyCommand::ArrowDown),
+                "home" => Some(KeyCommand::Home),
+                "end" => Some(KeyCommand::End),
+                "enter" | "space" if alt => Some(KeyCommand::AlternateReturn),
+                "enter" | "space" => Some(KeyCommand::Return),
+                "escape" => Some(KeyCommand::Escape),
+                _ => None,
+            };
+            if let Some(command) = command {
+                let menu = self.context_menu.as_mut()?;
+                match menu.session.handle_key(command) {
+                    Effect::None => {}
+                    Effect::SelectionChanged => {
+                        // Options ▸ rows live in the submenu: show it while
+                        // one of them is selected.
+                        let rows = menu.session.rows();
+                        menu.submenu_open = menu
+                            .session
+                            .selected()
+                            .and_then(|id| rows.iter().find(|row| &row.id == id))
+                            .is_some_and(|row| row.submenu.is_some());
+                        cx.notify();
+                    }
+                    Effect::Activate { action, .. } => {
+                        self.context_menu = None;
+                        self.input_region = None;
+                        self.leave_keyboard(false, cx);
+                        self.run_menu_action(action, cx);
+                        return None;
+                    }
+                    Effect::Dismissed { .. } => {
+                        // Back to the tile, still in keyboard mode.
+                        self.context_menu = None;
+                        self.input_region = None;
+                        cx.notify();
+                    }
+                }
+            }
+            self.keyboard_announcement(targets)
+        }
+
+        fn keyboard_announcement(&self, targets: &[KeyTarget]) -> Option<Announcement> {
+            let mode = self.keyboard.as_ref()?;
+            if let Some(menu) = &self.context_menu {
+                let rows = menu.session.rows();
+                let selected = menu
+                    .session
+                    .selected()
+                    .and_then(|id| rows.iter().position(|row| &row.id == id));
+                return Some(match selected {
+                    Some(index) => Announcement {
+                        role: Role::MenuItem,
+                        label: rows[index].accessible_label.clone().into(),
+                        key: MENU_ANNOUNCEMENT_KEY + 1 + index,
+                    },
+                    None => Announcement {
+                        role: Role::Menu,
+                        label: menu.session.accessible_title().to_owned().into(),
+                        key: MENU_ANNOUNCEMENT_KEY,
+                    },
+                });
+            }
+            let index = mode.navigator.index();
+            targets.get(index).map(|target| Announcement {
+                role: Role::Button,
+                label: target.accessible.clone().into(),
+                key: index,
+            })
+        }
+
+        /// Return / Space on a focused tile: the same paths a click runs.
+        fn activate_target(&mut self, target: &KeyTarget, cx: &mut Context<Self>) {
+            match &target.id {
+                rmac_dock::presentation::EntryId::Application(app_id) => {
+                    let app_id = app_id.clone();
+                    self.activate_entry(&app_id, false, cx);
+                }
+                id => self.dispatch_action(rmac_dock::menu::Action::ActivateEntry(id.clone()), cx),
+            }
+        }
+
+        /// ↑ on a focused tile: its Dock menu, as a right-click opens it.
+        fn open_target_menu(&mut self, target: &KeyTarget, cx: &mut Context<Self>) {
+            let session = {
+                let status = self.status.read(cx);
+                status.model().and_then(|model| match &target.id {
+                    rmac_dock::presentation::EntryId::Application(app_id) => model
+                        .context_menu(app_id)
+                        .and_then(|menu| rmac_dock::menu::Session::context(&menu).ok()),
+                    rmac_dock::presentation::EntryId::Special(kind) => model
+                        .special_context_menu(*kind)
+                        .and_then(|menu| rmac_dock::menu::Session::special(&menu).ok()),
+                    _ => None,
+                })
+            };
+            let Some(session) = session else {
+                return;
+            };
+            self.context_menu = Some(DockMenu {
+                anchor: target.center,
+                session,
+                submenu_open: false,
+                login: None,
+            });
+            self.input_region = None;
+            if let rmac_dock::presentation::EntryId::Application(app_id) = &target.id {
+                self.load_login_state(app_id, cx);
+            }
+            cx.notify();
+        }
+
+        /// Run a chosen Dock menu command, re-checking that it still
+        /// matches the model.
+        fn run_menu_action(&mut self, action: rmac_dock::menu::Action, cx: &mut Context<Self>) {
+            let authorized = match &action {
+                rmac_dock::menu::Action::Context(action) => self
+                    .status
+                    .read(cx)
+                    .model()
+                    .is_some_and(|model| model.authorizes_context_action(action)),
+                rmac_dock::menu::Action::ActivateEntry(_)
+                | rmac_dock::menu::Action::SpecialContext(_) => true,
+            };
+            if let rmac_dock::menu::Action::Context(rmac_dock::ContextAction::LaunchNew {
+                app_id,
+                ..
+            }) = &action
+            {
+                if authorized {
+                    self.note_launch(app_id);
+                }
+            }
+            if authorized {
+                self.dispatch_action(action, cx);
+            } else {
+                eprintln!("the selected Dock command is no longer current");
+            }
+            cx.notify();
+        }
+
         fn dispatch_action(&mut self, action: rmac_dock::menu::Action, cx: &mut Context<Self>) {
             if matches!(action, rmac_dock::menu::Action::SpecialContext(_)) {
                 self.review_trash(action, cx);
@@ -981,18 +1531,27 @@ mod linux_wayland {
             // lets them reach the same activation path a mouse click uses.
             let a11y_entity = cx.entity();
             let launcher = self.status.read(cx).launcher.clone();
-            let (dock_settings, model, mut entries, content) = {
+            let (dock_settings, model, mut entries, content, keyboard_focus) = {
                 let status = self.status.read(cx);
                 let snapshot = status
                     .snapshot()
                     .expect("a Dock surface is opened only after runtime readiness");
+                // ⌃F3: the focused tile darkens like a menu-open tile and
+                // shows its name bubble (design-lab/dock.html, scene 3).
+                let keyboard_focus = self.keyboard.as_ref().and_then(|mode| {
+                    keyboard_targets(snapshot)
+                        .into_iter()
+                        .nth(mode.navigator.index())
+                });
                 (
                     snapshot.settings.clone(),
                     snapshot.model.clone(),
                     snapshot.content.applications.clone(),
                     snapshot.content.clone(),
+                    keyboard_focus,
                 )
             };
+            let keyboard_focus_id = keyboard_focus.as_ref().map(|target| target.id.clone());
             self.content = content;
             // Launch and attention bounces follow the authoritative model:
             // a window appearing ends a launch, urgency asks for attention.
@@ -1043,12 +1602,7 @@ mod linux_wayland {
             let trash_full = trash
                 .and_then(|trash| trash.item_count)
                 .is_some_and(|count| count > 0);
-            let trash_label = match trash.and_then(|trash| trash.item_count) {
-                Some(0) => "Trash, empty".into(),
-                Some(1) => "Trash, 1 item".into(),
-                Some(count) => format!("Trash, {count} items"),
-                None => "Trash unavailable".into(),
-            };
+            let trash_label = trash_accessible_label(&model);
             let trash_available = model.activate_special(rmac_dock::SpecialItemKind::Trash)
                 == rmac_dock::SpecialActivation::OpenTrash;
             let pinned_count = model.items.iter().take_while(|item| item.pinned).count();
@@ -1149,7 +1703,13 @@ mod linux_wayland {
                 .tile_drag
                 .as_ref()
                 .is_some_and(|ui| ui.drag.is_active());
-            let modal = menu_geometry.is_some() || self.trash_review.is_some() || dragging;
+            // Keyboard mode also captures the next click anywhere, which
+            // ends it, so the invisible focus surface can never keep the
+            // keyboard after the user has moved on.
+            let modal = menu_geometry.is_some()
+                || self.trash_review.is_some()
+                || dragging
+                || self.keyboard.is_some();
             let input_region = (shelf_start, shelf_extent, self.hidden, modal);
             if self.input_region != Some(input_region) {
                 let shelf_bounds = match (self.placement, self.hidden) {
@@ -1196,8 +1756,12 @@ mod linux_wayland {
                 window.set_input_region(Some(&regions));
                 self.input_region = Some(input_region);
             }
+            let tooltip_item = keyboard_focus
+                .as_ref()
+                .map(|target| (target.center, target.name.clone()))
+                .or_else(|| self.hovered_item.clone());
             let tooltip = (!self.hidden && self.context_menu.is_none() && !dragging)
-                .then_some(self.hovered_item.as_ref())
+                .then_some(tooltip_item.as_ref())
                 .flatten()
                 .map(|(relative_center, label)| {
                     let icon_center = shelf_start + *relative_center;
@@ -1251,6 +1815,14 @@ mod linux_wayland {
                 .relative()
                 .flex()
                 .font_features(rmac_shell_ui::tabular_font_features())
+                // Any click leaves keyboard mode first; a click on a tile
+                // then does what it always does. niri gives the keyboard
+                // back to its focused window when the focus surface goes.
+                .capture_any_mouse_down(cx.listener(|this, _, _, cx| {
+                    if this.keyboard.is_some() {
+                        this.leave_keyboard(false, cx);
+                    }
+                }))
                 .on_click(cx.listener(|this, _, _, cx| {
                     if this.context_menu.take().is_some() {
                         this.input_region = None;
@@ -1362,6 +1934,7 @@ mod linux_wayland {
                     // application icon rather than a bare letter.
                     let main_icon = thumbnail.clone().or_else(|| badge.clone());
                     let badge_overlay = thumbnail.is_some().then(|| badge.clone()).flatten();
+                    let keyboard_focused = keyboard_focus_id.as_ref() == Some(&entry.id);
                     let label = entry.label.clone();
                     let tooltip_label = entry.label.clone();
                     let mut tile = div()
@@ -1449,6 +2022,19 @@ mod linux_wayland {
                         ),
                         None => visual.child(item_mark(&label)),
                     };
+                    if keyboard_focused {
+                        // rmac value: the Mac's focused minimized tile was
+                        // not captured; it darkens like an app tile.
+                        visual = visual.child(
+                            div()
+                                .absolute()
+                                .left_0()
+                                .top_0()
+                                .size_full()
+                                .rounded(px(tokens::dock_tile_radius(visual_size)))
+                                .bg(rgba(MENU_OPEN_DIM)),
+                        );
+                    }
                     tile = tile.child(visual);
                     if let Some(path) = badge_overlay {
                         tile = tile.child(
@@ -1486,6 +2072,7 @@ mod linux_wayland {
                         let actionable =
                             !matches!(activation, rmac_dock::Activation::Unavailable { .. });
                         let menu_open = menu_anchor == Some(relative_center);
+                        let keyboard_focused = keyboard_focus_id.as_ref() == Some(&entry.id);
                         let running =
                             entry.activity != rmac_dock::presentation::ActivityIndicator::None;
                         let icon_path = item_icon_path(&entry.icon, &app_id);
@@ -1656,7 +2243,10 @@ mod linux_wayland {
                                     .child(item_mark(&entry.label)),
                             );
                         }
-                        if menu_open || self.pressed.as_deref() == Some(app_id.as_str()) {
+                        if menu_open
+                            || keyboard_focused
+                            || self.pressed.as_deref() == Some(app_id.as_str())
+                        {
                             let inset = (visual_size - squircle) / 2.0;
                             visual = visual.child(
                                 div()
@@ -1896,13 +2486,14 @@ mod linux_wayland {
                             let art = visual_size * ICON_ART_SCALE;
                             let inset = (visual_size - art) / 2.0;
                             // Darkened while its menu is open, like a tile.
-                            let image = img(path)
-                                .absolute()
-                                .w(px(art))
-                                .h(px(art))
-                                .when(menu_anchor == Some(trash_center), |image| {
-                                    image.opacity(0.47)
-                                });
+                            let image = img(path).absolute().w(px(art)).h(px(art)).when(
+                                menu_anchor == Some(trash_center)
+                                    || keyboard_focus_id.as_ref()
+                                        == Some(&rmac_dock::presentation::EntryId::Special(
+                                            rmac_dock::SpecialItemKind::Trash,
+                                        )),
+                                |image| image.opacity(0.47),
+                            );
                             let image = match self.placement {
                                 rmac_shell_settings::DockPlacement::Bottom => {
                                     image.left(px(visual_offset + inset)).bottom(px(inset))
@@ -2214,32 +2805,9 @@ mod linux_wayland {
                     } else {
                         primary.clone()
                     };
-                    let authorized = match &action {
-                        rmac_dock::menu::Action::Context(action) => this
-                            .status
-                            .read(cx)
-                            .model()
-                            .is_some_and(|model| model.authorizes_context_action(action)),
-                        rmac_dock::menu::Action::ActivateEntry(_)
-                        | rmac_dock::menu::Action::SpecialContext(_) => true,
-                    };
                     this.context_menu = None;
                     this.input_region = None;
-                    if let rmac_dock::menu::Action::Context(rmac_dock::ContextAction::LaunchNew {
-                        app_id,
-                        ..
-                    }) = &action
-                    {
-                        if authorized {
-                            this.note_launch(app_id);
-                        }
-                    }
-                    if authorized {
-                        this.dispatch_action(action, cx);
-                    } else {
-                        eprintln!("the selected Dock command is no longer current");
-                    }
-                    cx.notify();
+                    this.run_menu_action(action, cx);
                 }));
         }
         element.into_any_element()
@@ -3125,7 +3693,87 @@ mod linux_wayland {
         }
     }
 
+    /// ⌃F3 from niri: give the keyboard to the Dock on the focused output
+    /// (or the first Dock when niri reports no focused output).
+    fn focus_dock(windows: &DockWindows, status: &Entity<DockStatus>, cx: &mut App) {
+        let focused_output = status.read(cx).snapshot().and_then(|snapshot| {
+            snapshot
+                .compositor
+                .focus
+                .output
+                .as_ref()
+                .map(rmac_shell_layer::stable_output_uuid)
+        });
+        let handle = focused_output
+            .and_then(|uuid| windows.windows.get(&uuid))
+            .or_else(|| windows.windows.values().next())
+            .map(|(_, foreground, _)| *foreground);
+        let Some(dock) = handle.and_then(|handle| handle.downcast::<Dock>()) else {
+            return;
+        };
+        let _ = dock.update(cx, |dock, window, cx| dock.begin_keyboard(window, cx));
+    }
+
+    /// Receive `rmac-dock focus` datagrams on a thread; the Dock keeps
+    /// running without ⌃F3 if the socket cannot be bound.
+    fn listen_for_commands() -> Option<async_channel::Receiver<crate::ipc::Command>> {
+        let listener = match crate::ipc::Listener::bind() {
+            Ok(listener) => listener,
+            Err(error) => {
+                eprintln!("Dock keyboard access (⌃F3) is unavailable: {error}");
+                return None;
+            }
+        };
+        let (command_tx, command_rx) = async_channel::bounded(8);
+        let spawned = std::thread::Builder::new()
+            .name("rmac-dock-ipc".into())
+            .spawn(move || loop {
+                match listener.receive() {
+                    Ok(command) => {
+                        if command_tx.send_blocking(command).is_err() {
+                            return;
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("Dock command endpoint stopped: {error}");
+                        return;
+                    }
+                }
+            });
+        if let Err(error) = spawned {
+            eprintln!("could not start the Dock command endpoint: {error}");
+            return None;
+        }
+        Some(command_rx)
+    }
+
+    /// `rmac-dock` runs the Dock; `rmac-dock focus` (niri's ⌃F3 bind) asks
+    /// the running Dock to take keyboard focus and exits.
     pub fn run() {
+        let arguments = env::args().skip(1).collect::<Vec<_>>();
+        match arguments.as_slice() {
+            [] => run_service(),
+            [command] => match crate::ipc::Command::parse(command) {
+                Some(command) => {
+                    if let Err(error) = crate::ipc::send(command) {
+                        eprintln!("the Dock is not running: {error}");
+                        std::process::exit(1);
+                    }
+                }
+                None => {
+                    eprintln!("usage: dock [focus]");
+                    std::process::exit(2);
+                }
+            },
+            _ => {
+                eprintln!("usage: dock [focus]");
+                std::process::exit(2);
+            }
+        }
+    }
+
+    fn run_service() {
+        let commands = listen_for_commands();
         let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
             rmac_shell_ui::tokens::install_appearance_watch(cx);
@@ -3155,8 +3803,22 @@ mod linux_wayland {
             })
             .detach();
             let _ = reconcile_tx.try_send(());
+            let windows = Rc::new(std::cell::RefCell::new(DockWindows::default()));
+            if let Some(commands) = commands {
+                let windows = windows.clone();
+                let status = status.clone();
+                cx.spawn(async move |cx| {
+                    while let Ok(command) = commands.recv().await {
+                        cx.update(|cx| match command {
+                            crate::ipc::Command::Focus => {
+                                focus_dock(&windows.borrow(), &status, cx);
+                            }
+                        });
+                    }
+                })
+                .detach();
+            }
             cx.spawn(async move |cx| {
-                let mut windows = DockWindows::default();
                 while reconcile_rx.recv().await.is_ok() {
                     loop {
                         let complete = cx.update(|cx| {
@@ -3165,6 +3827,7 @@ mod linux_wayland {
                                 return false;
                             };
                             let expected = surfaces.len();
+                            let mut windows = windows.borrow_mut();
                             windows.reconcile(Some(&surfaces), &status, cx);
                             windows.len() == expected
                         });

@@ -247,6 +247,9 @@ mod linux_wayland {
         backdrop_panels: Option<Vec<MenuBackdropPanel>>,
         backdrop_tx: async_channel::Sender<MenuBackdropUpdate>,
         focus: FocusHandle,
+        /// Evidence capture: `RMAC_CAPTURE_MENU=<index>` opens that menu on
+        /// the first frame so screenshots can compare it with macOS.
+        capture_menu: Option<usize>,
         _blur: Subscription,
     }
 
@@ -289,6 +292,9 @@ mod linux_wayland {
                 parking: rmac_compositor::ParkingStore::load_default(),
                 backdrop_panels: None,
                 backdrop_tx,
+                capture_menu: std::env::var("RMAC_CAPTURE_MENU")
+                    .ok()
+                    .and_then(|value| value.parse().ok()),
                 focus,
                 _blur: blur,
             }
@@ -548,6 +554,14 @@ mod linux_wayland {
     impl Render for TopBar {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             self.render_count = self.render_count.saturating_add(1);
+            if let Some(index) = self.capture_menu.take() {
+                let app_id = if index == 0 {
+                    SYSTEM_MENU_ID.to_owned()
+                } else {
+                    self.status.read(cx).menu_app_id.clone().unwrap_or_default()
+                };
+                self.open_menu(index, app_id, window, cx);
+            }
             record_render_count(window, self.display_id, self.render_count);
             let now = Local::now();
             let status = self.status.read(cx);
@@ -1040,6 +1054,7 @@ mod linux_wayland {
                 .items_center()
                 .pl(px(BAR_LEAD))
                 .pr(px(BAR_TRAIL))
+                .font_family("Inter")
                 .text_color(rgba(tokens::menubar_text()))
                 .text_size(px(tokens::body_text_size()))
                 .child(

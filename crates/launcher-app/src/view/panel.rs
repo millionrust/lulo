@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use gpui::{Context, SharedString, Window};
+use gpui::{AppContext as _, Context, SharedString, Window};
 
 use super::actions::{self, ActionItem};
 use super::LauncherView;

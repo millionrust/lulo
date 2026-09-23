@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Calculator
+Name[hi]=कैलकुलेटर
+GenericName=Calculator
+GenericName[hi]=कैलकुलेटर
+Comment=Perform basic arithmetic calculations
+Comment[hi]=बुनियादी अंकगणितीय गणनाएँ करें
+Keywords=calculator;math;arithmetic;numbers;
+Keywords[hi]=कैलकुलेटर;गणित;अंकगणित;संख्याएँ;
+TryExec=/usr/bin/rmac-calculator
+Exec=/usr/bin/rmac-calculator
+Icon=org.rmac.Calculator
+Terminal=false
+Categories=Utility;Calculator;
+StartupWMClass=org.rmac.Calculator

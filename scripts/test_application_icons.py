@@ -18,6 +18,7 @@ IDENTITIES = (
     "org.rmac.SystemMonitor",
     "org.rmac.AppDrawer",
     "org.rmac.SystemSettings",
+    "org.rmac.Calculator",
 )
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 ALLOWED_ELEMENTS = {"svg", "g", "rect", "path", "circle"}

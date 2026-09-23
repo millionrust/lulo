@@ -19,6 +19,7 @@ PACKAGE_FORMAT = 1
 MAX_SOURCE_BYTES = 1024 * 1024
 APPLICATION_IDS = (
     "org.rmac.AppDrawer",
+    "org.rmac.Calculator",
     "org.rmac.Files",
     "org.rmac.Notes",
     "org.rmac.SystemMonitor",

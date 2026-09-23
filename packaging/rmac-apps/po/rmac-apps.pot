@@ -97,3 +97,12 @@ msgstr ""
 
 msgid "settings;preferences;configuration;devices;"
 msgstr ""
+
+msgid "Calculator"
+msgstr ""
+
+msgid "Perform basic arithmetic calculations"
+msgstr ""
+
+msgid "calculator;math;arithmetic;numbers;"
+msgstr ""

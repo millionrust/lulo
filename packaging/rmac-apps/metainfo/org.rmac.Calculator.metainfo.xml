@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<component type="desktop-application">
+  <id>org.rmac.Calculator</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Calculator</name>
+  <name xml:lang="hi">कैलकुलेटर</name>
+  <summary>Perform basic arithmetic calculations</summary>
+  <summary xml:lang="hi">बुनियादी अंकगणितीय गणनाएँ करें</summary>
+  <description>
+    <p>Calculator adds, subtracts, multiplies, and divides with a familiar keypad, percentages, and sign changes.</p>
+    <p>It works from the keyboard, and copies or pastes the displayed value.</p>
+  </description>
+  <launchable type="desktop-id">org.rmac.Calculator.desktop</launchable>
+  <icon type="stock">org.rmac.Calculator</icon>
+  <provides><binary>rmac-calculator</binary></provides>
+  <url type="homepage">https://github.com/snehacodex/rmac</url>
+  <developer id="org.rmac"><name>rmac contributors</name></developer>
+  <releases><release version="0.1.0" date="2026-07-25"/></releases>
+  <content_rating type="oars-1.1"/>
+</component>

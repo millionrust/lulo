@@ -123,6 +123,27 @@ GLYPHS: dict[str, tuple[str, str, str, str]] = {
           <rect x="582" y="628" width="52" height="70" rx="14"/>
         </g>
     """),
+    "calculator": ("#5A5C63", "#26272B", "#FF9500", """
+        <rect x="302" y="232" width="420" height="560" rx="72" fill="#141417"/>
+        <rect x="346" y="276" width="332" height="104" rx="30" fill="#2C2D32"/>
+        <rect x="552" y="318" width="92" height="22" rx="11" fill="#F2F2F4"/>
+        <g fill="#A5A7AD">
+          <circle cx="386" cy="450" r="34"/><circle cx="470" cy="450" r="34"/>
+          <circle cx="554" cy="450" r="34"/>
+        </g>
+        <g fill="#4A4C53">
+          <circle cx="386" cy="534" r="34"/><circle cx="470" cy="534" r="34"/>
+          <circle cx="554" cy="534" r="34"/>
+          <circle cx="386" cy="618" r="34"/><circle cx="470" cy="618" r="34"/>
+          <circle cx="554" cy="618" r="34"/>
+          <circle cx="386" cy="702" r="34"/><circle cx="470" cy="702" r="34"/>
+          <circle cx="554" cy="702" r="34"/>
+        </g>
+        <g fill="#FF9500">
+          <circle cx="638" cy="450" r="34"/><circle cx="638" cy="534" r="34"/>
+          <circle cx="638" cy="618" r="34"/><circle cx="638" cy="702" r="34"/>
+        </g>
+    """),
     "trash": ("#D8D8DE", "#A5A5AC", "#FFFFFF", """
         <path d="M368 372h288l-28 348c-2 26-24 46-50 46H446c-26 0-48-20-50-46z"
               fill="#FFFFFF" opacity=".92"/>

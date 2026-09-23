@@ -96,3 +96,12 @@ msgstr "डेस्कटॉप, उपकरण और सिस्टम क�
 
 msgid "settings;preferences;configuration;devices;"
 msgstr "सेटिंग्स;प्राथमिकताएँ;कॉन्फ़िगरेशन;उपकरण;"
+
+msgid "Calculator"
+msgstr "कैलकुलेटर"
+
+msgid "Perform basic arithmetic calculations"
+msgstr "बुनियादी अंकगणितीय गणनाएँ करें"
+
+msgid "calculator;math;arithmetic;numbers;"
+msgstr "कैलकुलेटर;गणित;अंकगणित;संख्याएँ;"

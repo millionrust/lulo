@@ -37,6 +37,15 @@ APPLICATIONS = {
         "categories": "System;",
         "hidden": False,
     },
+    "org.rmac.Calculator": {
+        "name": "Calculator",
+        "generic": "Calculator",
+        "summary": "Perform basic arithmetic calculations",
+        "keywords": "calculator;math;arithmetic;numbers;",
+        "binary": "rmac-calculator",
+        "categories": "Utility;Calculator;",
+        "hidden": False,
+    },
     "org.rmac.Files": {
         "name": "Files",
         "generic": "File Manager",
@@ -121,6 +130,9 @@ HINDI = {
     "Create and edit plain text documents": "सादा पाठ दस्तावेज़ बनाएँ और संपादित करें",
     "text;editor;document;markdown;": "पाठ;संपादक;दस्तावेज़;मार्कडाउन;",
     "New Document": "नया दस्तावेज़",
+    "Calculator": "कैलकुलेटर",
+    "Perform basic arithmetic calculations": "बुनियादी अंकगणितीय गणनाएँ करें",
+    "calculator;math;arithmetic;numbers;": "कैलकुलेटर;गणित;अंकगणित;संख्याएँ;",
 }
 LOCALIZATION_FILES = {
     "LINGUAS",

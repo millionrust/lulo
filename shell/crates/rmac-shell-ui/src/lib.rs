@@ -18,6 +18,32 @@ pub fn tabular_font_features() -> FontFeatures {
     ]))
 }
 
+/// Laid-out width of one line of body text in the window's font, for sizing
+/// menus to their content the way AppKit does.
+pub fn text_width(window: &gpui::Window, text: &str, weight: gpui::FontWeight) -> f32 {
+    if text.is_empty() {
+        return 0.0;
+    }
+    let style = window.text_style();
+    let mut font = style.font();
+    font.weight = weight;
+    let run = gpui::TextRun {
+        len: text.len(),
+        font,
+        color: style.color,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
+    };
+    let line = window.text_system().shape_line(
+        gpui::SharedString::from(text.to_owned()),
+        gpui::px(tokens::body_text_size()),
+        &[run],
+        None,
+    );
+    f32::from(line.width())
+}
+
 /// Delay to the next wall-clock minute without a periodic redraw loop.
 pub fn delay_until_next_minute(epoch_millis: u128) -> Duration {
     const MINUTE_MILLIS: u128 = 60_000;

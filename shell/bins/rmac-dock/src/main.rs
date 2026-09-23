@@ -27,7 +27,6 @@ mod linux_wayland {
     const SEPARATOR_WIDTH: f32 = 1.0;
     const TOOLTIP_WIDTH: f32 = 240.0;
     const TOOLTIP_BOTTOM: f32 = EXCLUSIVE_ZONE + 6.0;
-    const MENU_WIDTH: f32 = 248.0;
     const READY_FILE_ENV: &str = "RMAC_DOCK_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_DOCK_RENDER_COUNT_DIR";
     static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(0);
@@ -412,9 +411,10 @@ mod linux_wayland {
                     .filter(|rows| rows[0].section != rows[1].section)
                     .count() as f32;
                 let height = 38.0 + row_count * tokens::menu_row_height() + section_breaks * 9.0;
-                let start = (shelf_start + menu.anchor - MENU_WIDTH / 2.0)
-                    .clamp(8.0, (axis - MENU_WIDTH - 8.0).max(8.0));
-                (start, height)
+                let width = dock_menu_width(menu, window);
+                let start = (shelf_start + menu.anchor - width / 2.0)
+                    .clamp(8.0, (axis - width - 8.0).max(8.0));
+                (start, height, width)
             });
             let input_region = (
                 shelf_start,
@@ -1132,15 +1132,39 @@ mod linux_wayland {
         }
     }
 
+    /// The Dock menu is as wide as its bold title or widest row (with the
+    /// check mark), as on macOS, never narrower than the minimum menu width.
+    fn dock_menu_width(menu: &DockMenu, window: &Window) -> f32 {
+        const CHECK_GAP: f32 = 24.0;
+        let title = rmac_shell_ui::text_width(window, &menu.session.title(), FontWeight::SEMIBOLD);
+        let rows = menu
+            .session
+            .rows()
+            .iter()
+            .map(|row| {
+                rmac_shell_ui::text_width(window, &row.label, FontWeight::NORMAL)
+                    + if row.checked {
+                        CHECK_GAP + rmac_shell_ui::text_width(window, "✓", FontWeight::NORMAL)
+                    } else {
+                        0.0
+                    }
+            })
+            .fold(title, f32::max);
+        // Panel padding (4 per side), row padding (8 per side) and border.
+        (rows + 2.0 * (4.0 + 8.0) + 2.0)
+            .ceil()
+            .max(tokens::current().metrics.menu_min_width)
+    }
+
     fn render_context_menu(
         menu: Option<&DockMenu>,
         placement: rmac_shell_settings::DockPlacement,
-        geometry: Option<(f32, f32)>,
+        geometry: Option<(f32, f32, f32)>,
         display_id: u64,
         cx: &Context<Dock>,
     ) -> Option<gpui::AnyElement> {
         let menu = menu?;
-        let (start, _) = geometry?;
+        let (start, _, width) = geometry?;
         let selected = menu.session.selected().cloned();
         let rows = menu.session.rows().to_vec();
         let mut panel = div()
@@ -1148,7 +1172,7 @@ mod linux_wayland {
             .role(Role::Menu)
             .aria_label(menu.session.accessible_title().to_owned())
             .absolute()
-            .w(px(MENU_WIDTH))
+            .w(px(width))
             .p_1()
             .rounded(px(tokens::menu_radius()))
             .bg(rgba(tokens::regular_dark_tint()))

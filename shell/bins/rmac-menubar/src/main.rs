@@ -1242,8 +1242,9 @@ mod linux_wayland {
             .items
             .iter()
             .map(|item| {
-                let shortcut = text_width(window, &item.shortcut);
-                text_width(window, &item.label)
+                let shortcut =
+                    rmac_shell_ui::text_width(window, &item.shortcut, FontWeight::NORMAL);
+                rmac_shell_ui::text_width(window, &item.label, FontWeight::NORMAL)
                     + if shortcut > 0.0 {
                         MENU_SHORTCUT_GAP + shortcut
                     } else {
@@ -1255,28 +1256,6 @@ mod linux_wayland {
         (content + chrome)
             .ceil()
             .max(tokens::current().metrics.menu_min_width)
-    }
-
-    fn text_width(window: &Window, text: &str) -> f32 {
-        if text.is_empty() {
-            return 0.0;
-        }
-        let style = window.text_style();
-        let run = gpui::TextRun {
-            len: text.len(),
-            font: style.font(),
-            color: style.color,
-            background_color: None,
-            underline: None,
-            strikethrough: None,
-        };
-        let line = window.text_system().shape_line(
-            SharedString::from(text.to_owned()),
-            px(tokens::body_text_size()),
-            &[run],
-            None,
-        );
-        f32::from(line.width())
     }
 
     fn menu_anchor_x(active_app: &str, menus: &[rmac_app_menu::Menu], index: usize) -> f32 {

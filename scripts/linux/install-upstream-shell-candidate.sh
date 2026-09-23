@@ -17,7 +17,7 @@ manifest_path="$manifest_dir/upstream-shell-candidate.txt"
 minimum_kib=$((15 * 1024 * 1024))
 build_minimum_kib=$((25 * 1024 * 1024))
 expected_upstream_revision=76c93968da5b8b8809bdd72e4ad9e7d0e946bad0
-components=(wallpaper top-bar dock osd app-switcher)
+components=(wallpaper top-bar dock osd app-switcher screenshot)
 app_packages=(rmac-finder rmac-terminal rmac-text-editor rmac-activity-monitor rmac-system-settings)
 app_binaries=(rmac-files rmac-terminal rmac-text-editor rmac-system-monitor rmac-system-settings)
 app_ids=(org.rmac.Files org.rmac.Terminal org.rmac.TextEditor org.rmac.SystemMonitor org.rmac.SystemSettings)
@@ -113,7 +113,7 @@ repo_revision="$(git -C "$repo_root" rev-parse HEAD)"
 echo "Upstream shell candidate plan"
 echo "  rmac revision: ${repo_revision:0:12}"
 echo "  GPUI revision: ${pinned_revisions[0]:0:12}"
-echo "  components: wallpaper, menu bar, Dock, system OSD, app switcher, and five first-party apps"
+echo "  components: wallpaper, menu bar, Dock, system OSD, app switcher, screenshots, and five first-party apps"
 echo "  destination: $libexec_dir"
 echo "  build: $build"
 echo "  shell profile: $shell_profile"
@@ -135,7 +135,8 @@ if [[ "$build" == true ]]; then
       shell_build+=(--release)
     fi
     CARGO_TARGET_DIR="$target_dir" cargo "${shell_build[@]}" \
-      --features wayland --bin wallpaper --bin top-bar --bin dock --bin osd --bin app-switcher
+      --features wayland --bin wallpaper --bin top-bar --bin dock --bin osd --bin app-switcher \
+      --bin screenshot
   )
   build_args=(build --locked --jobs "${CARGO_BUILD_JOBS:-2}")
   for package in "${app_packages[@]}"; do
@@ -159,7 +160,7 @@ for binary in "${app_binaries[@]}"; do
     || fail "$source_path is not a built executable; rerun without --no-build"
 done
 
-if pgrep -f "^${target_dir}/${shell_profile}/(wallpaper|top-bar|dock|osd|app-switcher)( --service)?$" >/dev/null 2>&1; then
+if pgrep -f "^${target_dir}/${shell_profile}/(wallpaper|top-bar|dock|osd|app-switcher|screenshot)( --service)?$" >/dev/null 2>&1; then
   fail "the manual shell preview is still running; stop it before installing supervised copies"
 fi
 
@@ -230,7 +231,7 @@ staged+=("$manifest_temporary")
   fi
   echo "shell_cargo_profile=$shell_profile"
   echo "app_cargo_profile=debug"
-  echo "components=rmac-wallpaper,rmac-top-bar,rmac-dock,rmac-osd,rmac-app-switcher,rmac-files,rmac-terminal,rmac-text-editor,rmac-system-monitor,rmac-system-settings"
+  echo "components=rmac-wallpaper,rmac-top-bar,rmac-dock,rmac-osd,rmac-app-switcher,rmac-screenshot,rmac-files,rmac-terminal,rmac-text-editor,rmac-system-monitor,rmac-system-settings"
 } >"$manifest_temporary"
 chmod 0644 "$manifest_temporary"
 mv -f -- "$manifest_temporary" "$manifest_path"
@@ -248,13 +249,13 @@ fi
 systemctl --user daemon-reload
 systemctl --user reset-failed \
   rmac-wallpaper.service rmac-top-bar.service rmac-dock.service rmac-osd.service \
-    rmac-app-switcher.service >/dev/null 2>&1 || true
+    rmac-app-switcher.service rmac-screenshot.service >/dev/null 2>&1 || true
 
 if systemctl --user is-active --quiet rmac-session.target; then
   systemctl --user restart \
     rmac-wallpaper.service rmac-top-bar.service rmac-dock.service rmac-osd.service \
-    rmac-app-switcher.service
-  echo "Restarted the five shell surfaces in the active rmac session."
+    rmac-app-switcher.service rmac-screenshot.service
+  echo "Restarted the six shell surfaces in the active rmac session."
 else
   state_home="${XDG_STATE_HOME:-${HOME}/.local/state}"
   if [[ -f "$state_home/rmac/session/safe-mode.json" ]]; then
@@ -266,5 +267,5 @@ else
   fi
 fi
 
-echo "Installed the pinned upstream shell, system OSD, app switcher, and five first-party app candidates."
+echo "Installed the pinned upstream shell, system OSD, app switcher, screenshots, and five first-party app candidates."
 echo "This handoff does not promote GPUI or make these binaries public release artifacts."

@@ -53,6 +53,7 @@ class NativePackageContractTests(unittest.TestCase):
                 "rmac-dock",
                 "rmac-osd",
                 "rmac-app-switcher",
+                "rmac-screenshot",
             },
         )
         self.assertTrue(
@@ -67,8 +68,8 @@ class NativePackageContractTests(unittest.TestCase):
 
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
         self.assertEqual(len(contract.APPLICATION_BINARIES), 9)
-        self.assertEqual(len(contract.SESSION_BINARIES), 21)
-        self.assertEqual(len(contract.ALL_BINARIES), 28)
+        self.assertEqual(len(contract.SESSION_BINARIES), 22)
+        self.assertEqual(len(contract.ALL_BINARIES), 29)
         self.assertEqual(
             set(contract.ALL_BINARIES),
             set(contract.APPLICATION_BINARIES) | set(contract.SESSION_BINARIES),
@@ -93,6 +94,9 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("rmac-dock", session.binaries)
         self.assertIn("rmac-osd", session.binaries)
         self.assertIn("rmac-app-switcher", session.binaries)
+        self.assertIn("rmac-screenshot", session.binaries)
+        self.assertIn("grim", session.static_dependencies)
+        self.assertIn("wl-clipboard", session.static_dependencies)
         self.assertIn("rmac-lock-provider", session.binaries)
         self.assertIn("rmac-sound", session.binaries)
 

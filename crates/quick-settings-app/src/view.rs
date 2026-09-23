@@ -332,16 +332,16 @@ impl QuickSettingsView {
         .detach();
     }
 
-    /// Screenshot: close Control Center first so it is not in the capture,
-    /// then take the same full-screen capture as ⇧⌘3.
+    /// Screenshot: close Control Center first, then open the ⇧⌘5 screenshot
+    /// toolbar, as the Mac's Screenshot control does.
     pub(crate) fn screenshot(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         cx.background_executor()
             .spawn(async {
                 blocking::unblock(|| {
                     std::thread::sleep(Duration::from_millis(250));
-                    let executable = std::env::current_exe()?.with_file_name("rmac-sound");
+                    let executable = std::env::current_exe()?.with_file_name("rmac-screenshot");
                     ProcessCommand::new(executable)
-                        .arg("screenshot-screen")
+                        .arg("toolbar")
                         .spawn()
                         .map(drop)
                 })

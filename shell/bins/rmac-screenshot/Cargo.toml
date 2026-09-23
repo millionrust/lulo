@@ -1,0 +1,27 @@
+[package]
+name = "rmac-shell-screenshot"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "screenshot"
+path = "src/main.rs"
+
+[features]
+default = []
+wayland = ["gpui_platform/wayland", "rmac-shell-layer/wayland"]
+x11 = ["gpui_platform/x11"]
+
+[dependencies]
+async-channel.workspace = true
+chrono.workspace = true
+gpui.workspace = true
+gpui_platform.workspace = true
+rmac-compositor.workspace = true
+rmac-compositor-niri.workspace = true
+rmac-shell-layer.workspace = true
+rmac-shell-ui.workspace = true
+rmac-sound.workspace = true
+uuid.workspace = true

@@ -152,6 +152,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
         include_str!("../units/rmac-wallpaper.service"),
         include_str!("../units/rmac-osd.service"),
         include_str!("../units/rmac-app-switcher.service"),
+        include_str!("../units/rmac-screenshot.service"),
         include_str!("../units/rmac-shortcut-broker.service"),
     ];
     for unit in resident_units {
@@ -258,6 +259,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     assert!(normal_target.contains("rmac-app-drawer.service"));
     assert!(normal_target.contains("rmac-osd.service"));
     assert!(normal_target.contains("rmac-app-switcher.service"));
+    assert!(normal_target.contains("rmac-screenshot.service"));
     assert!(safe_target
         .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
 
@@ -359,6 +361,20 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     ));
     assert!(shell.contains("{ spawn \"/usr/libexec/rmac/rmac-app-switcher\" \"previous\"; }"));
     assert!(shell.contains("Mod+grave { next-window filter=\"app-id\"; }"));
+    // ⇧⌘3/4/5 go to the resident screenshot service, not niri's own UI.
+    for (keys, word) in [
+        ("Mod+Shift+3", "screen"),
+        ("Mod+Shift+4", "selection"),
+        ("Mod+Shift+5", "toolbar"),
+    ] {
+        assert!(shell.lines().any(|line| {
+            line.trim_start().starts_with(keys)
+                && line.contains(&format!(
+                    "{{ spawn \"/usr/libexec/rmac/rmac-screenshot\" \"{word}\"; }}"
+                ))
+        }));
+    }
+    assert!(!shell.contains("\"screenshot-screen\""));
     assert!(fallback.contains("Mod+Space repeat=false"));
     assert!(fallback.contains("Mod+Ctrl+Q repeat=false allow-when-locked=true"));
     assert_eq!(fallback.matches("{ spawn ").count(), 2);

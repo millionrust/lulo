@@ -203,8 +203,15 @@ binds {
     Ctrl+Right repeat=false hotkey-overlay-title="Next Space" { focus-workspace-down; }
     Ctrl+Up repeat=false hotkey-overlay-title="Mission Control" { toggle-overview; }
     Mod+Ctrl+F repeat=false hotkey-overlay-title="Full Screen" { fullscreen-window; }
-    Mod+Shift+3 repeat=false hotkey-overlay-title="Capture Screen" { spawn "/usr/libexec/rmac/rmac-sound" "screenshot-screen"; }
-    Print repeat=false hotkey-overlay-title="Capture Screen" { spawn "/usr/libexec/rmac/rmac-sound" "screenshot-screen"; }
+    // Screenshots are the resident rmac-screenshot service
+    // (docs/decisions/0010): ⇧⌘3 screen, ⇧⌘4 selection (Space: window),
+    // ⇧⌘5 toolbar; adding ⌃ copies to the clipboard instead of saving.
+    Mod+Shift+3 repeat=false hotkey-overlay-title="Capture Screen" { spawn "/usr/libexec/rmac/rmac-screenshot" "screen"; }
+    Mod+Ctrl+Shift+3 repeat=false hotkey-overlay-title="Copy Screen to Clipboard" { spawn "/usr/libexec/rmac/rmac-screenshot" "screen-to-clipboard"; }
+    Mod+Shift+4 repeat=false hotkey-overlay-title="Capture Selection" { spawn "/usr/libexec/rmac/rmac-screenshot" "selection"; }
+    Mod+Ctrl+Shift+4 repeat=false hotkey-overlay-title="Copy Selection to Clipboard" { spawn "/usr/libexec/rmac/rmac-screenshot" "selection-to-clipboard"; }
+    Mod+Shift+5 repeat=false hotkey-overlay-title="Screenshot and Recording Options" { spawn "/usr/libexec/rmac/rmac-screenshot" "toolbar"; }
+    Print repeat=false hotkey-overlay-title="Capture Screen" { spawn "/usr/libexec/rmac/rmac-screenshot" "screen"; }
     XF86AudioRaiseVolume allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "volume-up"; }
     XF86AudioLowerVolume allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "volume-down"; }
     XF86AudioMute allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "toggle-output-mute"; }

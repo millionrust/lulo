@@ -67,6 +67,7 @@ SESSION_BINARIES = (
     "rmac-dock",
     "rmac-osd",
     "rmac-app-switcher",
+    "rmac-screenshot",
     "rmac-launcher",
     "rmac-app-drawer",
     "rmac-quick-settings",
@@ -82,7 +83,7 @@ SESSION_BINARIES = (
     "rmac-idle-locker",
 )
 
-# The five shell surfaces are built from the separately locked Linux GPUI
+# The six shell surfaces are built from the separately locked Linux GPUI
 # graph. Each host must consume the maintained runtime/model crate listed here;
 # packaging and contract tests treat this mapping as part of the release ABI.
 SHIPPING_SHELL_SOURCES = {
@@ -91,6 +92,7 @@ SHIPPING_SHELL_SOURCES = {
     "rmac-dock": ("dock", ("rmac-dock-runtime", "rmac-dock-system")),
     "rmac-osd": ("osd", ("rmac-osd",)),
     "rmac-app-switcher": ("app-switcher", ("rmac-compositor", "rmac-apps")),
+    "rmac-screenshot": ("screenshot", ("rmac-compositor", "rmac-sound")),
 }
 
 PACKAGE_SPECS = (
@@ -134,12 +136,14 @@ PACKAGE_SPECS = (
             "fonts-inter",
             "fonts-jetbrains-mono",
             "gawk | mawk",
+            "grim",
             "niri",
             "pipewire-bin",
             "rmac-apps (= {version})",
             "swayidle",
             "swaylock",
             "systemd",
+            "wl-clipboard",
             "xdg-desktop-portal",
             "xdg-desktop-portal-gnome",
             "xdg-desktop-portal-gtk",

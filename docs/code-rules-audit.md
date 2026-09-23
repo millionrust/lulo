@@ -186,9 +186,10 @@ exercised code).
 
 ## Summary
 
-- 4 commits on this worktree branch (`worktree-agent-af82b464370e50e16`):
+- 3 commits on this worktree branch (`worktree-agent-af82b464370e50e16`):
   - `15fa68dc` — log instead of drop for window/Finder/media-player state saves (Rule 1, 3 files)
   - `cd6ee465` — refuse instead of dropping clipboard payload deletes and unconfirmed permanent delete (Rule 1 / Rule 6, 2 files)
+  - `3de97aa0` — this audit document
 - Rules audited: 6/6. Violations found and fixed: 5 (see tables above).
   Violations found and left as documented follow-up: 5, all in Rule 2
   (settings/cache writes that duplicate `rmac-storage`'s pattern by hand

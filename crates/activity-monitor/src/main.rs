@@ -2,6 +2,7 @@
 
 mod columns;
 mod cpu_ticks;
+mod host_stats;
 mod metrics;
 mod process_action;
 mod process_signal;
@@ -27,8 +28,9 @@ fn main() {
     rmac_ui::boot_app(
         rmac_ui::app_id::SYSTEM_MONITOR,
         "System Monitor",
-        1040.0,
-        680.0,
+        // Activity Monitor's window on macOS 26.2 (measured).
+        960.0,
+        640.0,
         |window, cx| {
             let view = MonitorView::new(window, cx);
             cx.bind_keys([

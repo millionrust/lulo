@@ -3,10 +3,35 @@
 use super::*;
 
 impl MonitorView {
-    pub(super) fn render_confirm(&self, cx: &Context<Self>) -> Option<impl IntoElement> {
+    pub(super) fn render_confirm(&self, cx: &Context<Self>) -> Option<gpui::AnyElement> {
         use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
 
         let request = self.pending_kill.clone()?;
+        if request.kind == process_action::ActionKind::Quit {
+            // Activity Monitor's ⊗ asks once and offers both signals:
+            // Force Quit · Cancel · Quit.
+            return Some(
+                rmac_ui::alert(
+                    "Are you sure you want to quit this process?",
+                    format!(
+                        "Do you really want to quit \u{201c}{}\u{201d} (PID {})?",
+                        request.process.name, request.process.pid
+                    ),
+                    vec![
+                        rmac_ui::dialog_button("kill-force", "Force Quit", Destructive)
+                            .on_click(cx.listener(|this, _, _, cx| this.confirm_force_quit(cx)))
+                            .into_any_element(),
+                        rmac_ui::dialog_button("kill-cancel", "Cancel", Normal)
+                            .on_click(cx.listener(|this, _, _, cx| this.cancel_kill(cx)))
+                            .into_any_element(),
+                        rmac_ui::dialog_button("kill-confirm", "Quit", Primary)
+                            .on_click(cx.listener(|this, _, _, cx| this.confirm_kill(cx)))
+                            .into_any_element(),
+                    ],
+                )
+                .into_any_element(),
+            );
+        }
         let verb = request.kind.label();
         let body = format!(
             "Do you want to {} the process \u{201c}{}\u{201d} (PID {})?",
@@ -14,23 +39,21 @@ impl MonitorView {
             request.process.name,
             request.process.pid
         );
-        let confirm_kind = if request.kind == process_action::ActionKind::ForceQuit {
-            Destructive
-        } else {
-            Primary
-        };
-        Some(rmac_ui::alert(
-            format!("{verb} Process"),
-            body,
-            vec![
-                rmac_ui::dialog_button("kill-cancel", "Cancel", Normal)
-                    .on_click(cx.listener(|this, _, _, cx| this.cancel_kill(cx)))
-                    .into_any_element(),
-                rmac_ui::dialog_button("kill-confirm", verb, confirm_kind)
-                    .on_click(cx.listener(|this, _, _, cx| this.confirm_kill(cx)))
-                    .into_any_element(),
-            ],
-        ))
+        Some(
+            rmac_ui::alert(
+                format!("{verb} Process"),
+                body,
+                vec![
+                    rmac_ui::dialog_button("kill-cancel", "Cancel", Normal)
+                        .on_click(cx.listener(|this, _, _, cx| this.cancel_kill(cx)))
+                        .into_any_element(),
+                    rmac_ui::dialog_button("kill-confirm", verb, Destructive)
+                        .on_click(cx.listener(|this, _, _, cx| this.confirm_kill(cx)))
+                        .into_any_element(),
+                ],
+            )
+            .into_any_element(),
+        )
     }
 
     pub(super) fn render_inspector(&self, cx: &Context<Self>) -> Option<impl IntoElement> {

@@ -1552,6 +1552,13 @@ impl<D: TableDelegate> Table<D> {
         self.size = Some(Size::Small);
         self
     }
+
+    /// Rows (and the header row) exactly `height` points tall, such as
+    /// Activity Monitor's measured 24 pt table rows.
+    pub fn row_height(mut self, height: f32) -> Self {
+        self.size = Some(Size::Size(px(height)));
+        self
+    }
 }
 
 impl<D: TableDelegate> RenderOnce for Table<D> {

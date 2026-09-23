@@ -94,7 +94,6 @@ pub(crate) struct ProcessTableDelegate {
     /// uid → username resolution table. Accounts are stable over a monitor
     /// session, so this is loaded once rather than refreshed every two seconds.
     users: Users,
-    pub(crate) cpu_count: usize,
     filter: String,
     /// The column the rows are sorted by — identity-based so it survives the
     /// visible set changing under it.
@@ -114,7 +113,6 @@ impl ProcessTableDelegate {
             columns: visible.iter().map(|key| key.to_column()).collect(),
             visible,
             users: Users::new_with_refreshed_list(),
-            cpu_count: 1,
             filter: String::new(),
             // Default: busiest CPU first.
             sort_key: ColKey::Cpu,
@@ -180,7 +178,6 @@ impl ProcessTableDelegate {
                 .with_cmd(UpdateKind::OnlyIfNotSet)
                 .with_user(UpdateKind::OnlyIfNotSet),
         );
-        self.cpu_count = self.system.cpus().len().max(1);
 
         let users = &self.users;
         self.all_rows = self

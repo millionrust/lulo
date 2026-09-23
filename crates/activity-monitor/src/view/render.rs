@@ -2,8 +2,8 @@ use gpui::{
     div, prelude::FluentBuilder as _, px, Context, InteractiveElement as _, IntoElement,
     ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
-use gpui_component::StyledExt as _;
-use rmac_ui::{mac, Button, SearchField, Table, Tabs};
+use gpui_component::{Icon, IconName, StyledExt as _};
+use rmac_ui::{mac, Button, SearchField, Table};
 use sysinfo::Pid;
 
 use crate::columns::ColKey;
@@ -11,6 +11,9 @@ use crate::metrics::{format_bytes, format_duration, format_mem, format_rate, Tab
 use crate::{process_action, CancelKill, ConfirmKill, FocusSearch, ForceQuitProcess, QuitProcess};
 
 use super::MonitorView;
+
+/// Measured Activity Monitor table row (and header row) height.
+const TABLE_ROW_HEIGHT: f32 = 24.0;
 
 mod chrome;
 mod metrics_panes;
@@ -48,7 +51,6 @@ impl Render for MonitorView {
             .font_features(mac::tabular_font_features())
             .bg(mac::window())
             .text_color(mac::text())
-            .child(rmac_ui::title_bar("System Monitor"))
             .child(self.render_toolbar(layout, cx))
             .when_some(persistence_error, |monitor, message| {
                 monitor.child(
@@ -115,19 +117,26 @@ impl Render for MonitorView {
                         ),
                 )
             })
-            .child(self.render_summary(cx))
             .when(self.tab.has_process_table(), |monitor| {
+                // Activity Monitor's table: full-width 24 pt rows with every
+                // other row striped, a 5 pt gap under the header.
                 monitor.child(
                     div()
                         .flex_1()
-                        .px_4()
-                        .pb_4()
-                        .child(Table::new(&self.table).stripe(true).bordered(true)),
+                        .min_h(px(0.0))
+                        .text_size(rmac_ui::text_px(13.0))
+                        .child(
+                            Table::new(&self.table)
+                                .stripe(true)
+                                .bordered(false)
+                                .row_height(TABLE_ROW_HEIGHT),
+                        ),
                 )
             })
             .when(!self.tab.has_process_table(), |monitor| {
                 monitor.child(self.render_network_pane())
             })
+            .child(self.render_bottom_panel(cx))
             .when(
                 self.cols_menu_open && self.tab.has_process_table(),
                 |monitor| monitor.child(self.render_columns_menu(layout, cx)),

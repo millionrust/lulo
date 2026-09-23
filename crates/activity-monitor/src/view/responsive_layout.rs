@@ -1,8 +1,10 @@
 //! Width-driven System Monitor toolbar geometry.
 
 const COMPACT_TOOLBAR_MAX_WIDTH: f32 = 900.0;
-const REGULAR_COLUMNS_MENU_TOP: f32 = 96.0;
-const COMPACT_COLUMNS_MENU_TOP: f32 = 140.0;
+/// The column chooser drops from the ⋯ capsule, whose bottom edge is at
+/// 43.5 in the 52 pt toolbar, at every width.
+const REGULAR_COLUMNS_MENU_TOP: f32 = 48.0;
+const COMPACT_COLUMNS_MENU_TOP: f32 = 48.0;
 const REGULAR_SEARCH_WIDTH: f32 = 220.0;
 const COMPACT_SEARCH_WIDTH: f32 = 180.0;
 

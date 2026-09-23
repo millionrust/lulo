@@ -41,6 +41,8 @@ pub(crate) struct MonitorView {
     persistence_error: Option<SharedString>,
     /// PID whose detail inspector is open (double-click a row).
     inspect_pid: Option<u32>,
+    /// Whether the toolbar's search circle has expanded into a field.
+    search_open: bool,
 }
 
 impl MonitorView {
@@ -95,6 +97,7 @@ impl MonitorView {
             cols_menu_open: false,
             persistence_error,
             inspect_pid: None,
+            search_open: false,
         };
         view.refresh(cx);
 
@@ -253,17 +256,42 @@ impl MonitorView {
     }
 
     fn cancel_kill(&mut self, cx: &mut Context<Self>) {
-        // Escape also dismisses the inspector and the column chooser.
+        // Escape also dismisses the inspector, the column chooser and an
+        // empty search field (collapsing it back to the toolbar circle).
+        let empty_search = self.search_open && self.search.read(cx).value().is_empty();
         if self.pending_kill.take().is_some()
             || self.inspect_pid.take().is_some()
             || std::mem::take(&mut self.cols_menu_open)
         {
             cx.notify();
+        } else if empty_search {
+            self.search_open = false;
+            cx.notify();
+        }
+    }
+
+    /// Force-quit the process a pending Quit confirmation names, from the
+    /// alert's Force Quit button.
+    fn confirm_force_quit(&mut self, cx: &mut Context<Self>) {
+        if let Some(request) = self.pending_kill.as_mut() {
+            request.kind = process_action::ActionKind::ForceQuit;
+        }
+        self.confirm_kill(cx);
+    }
+
+    /// Open the inspector for the highlighted process (toolbar ⓘ).
+    fn inspect_selected(&mut self, cx: &mut Context<Self>) {
+        if let Some(process) = self.selected_proc(cx) {
+            self.inspect_pid = Some(process.pid);
+            self.cols_menu_open = false;
+            cx.notify();
         }
     }
 
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_open = true;
         self.search.update(cx, |s, cx| s.focus(window, cx));
+        cx.notify();
     }
 
     /// Toggle a column's visibility from the chooser, rebuilding the table layout.

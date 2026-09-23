@@ -5,6 +5,7 @@ use rmac_ui::TableState;
 use sysinfo::Networks;
 
 use crate::cpu_ticks;
+use crate::host_stats;
 use crate::metrics::{Aggregates, History, NetIface, REFRESH_SECS};
 use crate::process_table::{resync_selection, ProcessTableDelegate};
 use crate::view::MonitorView;
@@ -73,22 +74,10 @@ impl Sampler {
         table.update(cx, |state, cx| {
             let delegate = state.delegate_mut();
             delegate.refresh();
-            let cpu_count = delegate.cpu_count as f32;
-
-            aggregates.per_core = delegate
-                .system
-                .cpus()
-                .iter()
-                .map(|cpu| cpu.cpu_usage())
-                .collect();
-            aggregates.cpu_total =
-                (delegate.all_rows.iter().map(|row| row.cpu).sum::<f32>() / cpu_count).min(100.0);
             aggregates.energy_total = delegate.all_rows.iter().map(|row| row.energy).sum();
             aggregates.mem_used = delegate.system.used_memory();
             aggregates.mem_total = delegate.system.total_memory();
-            aggregates.mem_available = delegate.system.available_memory();
             aggregates.swap_used = delegate.system.used_swap();
-            aggregates.swap_total = delegate.system.total_swap();
 
             let (read, write) = delegate.system.processes().values().fold(
                 (0u64, 0u64),
@@ -106,8 +95,34 @@ impl Sampler {
 
         aggregates.net_recv_rate = network_received as f64 / REFRESH_SECS;
         aggregates.net_sent_rate = network_sent as f64 / REFRESH_SECS;
+        (aggregates.net_total_recv, aggregates.net_total_sent) =
+            self.interfaces
+                .iter()
+                .fold((0u64, 0u64), |(received, sent), interface| {
+                    (
+                        received.saturating_add(interface.total_recv),
+                        sent.saturating_add(interface.total_sent),
+                    )
+                });
+        aggregates.threads = host_stats::thread_count();
+        aggregates.mem_cached = host_stats::cached_bytes();
 
-        History::push(&mut self.history.cpu, aggregates.cpu_total);
+        let (user, system) = self
+            .cpu_split
+            .map_or((0.0, 0.0), |(user, system, _)| (user, system));
+        History::push(&mut self.history.cpu_user, user);
+        History::push(&mut self.history.cpu_system, system);
+        History::push(
+            &mut self.history.disk_read,
+            aggregates.disk_read_rate as f32,
+        );
+        History::push(
+            &mut self.history.disk_write,
+            aggregates.disk_write_rate as f32,
+        );
+        History::push(&mut self.history.net_recv, aggregates.net_recv_rate as f32);
+        History::push(&mut self.history.net_sent, aggregates.net_sent_rate as f32);
+
         let memory_percent = if aggregates.mem_total > 0 {
             (aggregates.mem_used as f32 / aggregates.mem_total as f32) * 100.0
         } else {
@@ -115,14 +130,6 @@ impl Sampler {
         };
         History::push(&mut self.history.mem, memory_percent);
         History::push(&mut self.history.energy, aggregates.energy_total.min(100.0));
-        History::push(
-            &mut self.history.disk,
-            ((aggregates.disk_read_rate + aggregates.disk_write_rate) / 1_048_576.0) as f32,
-        );
-        History::push(
-            &mut self.history.net,
-            ((aggregates.net_recv_rate + aggregates.net_sent_rate) / 1_048_576.0) as f32,
-        );
 
         self.aggregates = aggregates;
     }

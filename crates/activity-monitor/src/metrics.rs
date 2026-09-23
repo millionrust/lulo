@@ -1,7 +1,7 @@
 use crate::columns::ColKey;
 
 /// Which top-level pane is active. Each tab re-focuses the table on a different
-/// metric and surfaces its corresponding aggregate summary and sparkline.
+/// metric and surfaces its corresponding bottom summary panel.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Tab {
     Cpu,
@@ -51,28 +51,38 @@ impl Tab {
 /// Aggregate readings recomputed every tick for summaries and graphs.
 #[derive(Default)]
 pub(crate) struct Aggregates {
-    pub(crate) cpu_total: f32,
-    pub(crate) per_core: Vec<f32>,
     pub(crate) mem_used: u64,
     pub(crate) mem_total: u64,
-    pub(crate) mem_available: u64,
     pub(crate) swap_used: u64,
-    pub(crate) swap_total: u64,
     pub(crate) energy_total: f32,
     pub(crate) disk_read_rate: f64,
     pub(crate) disk_write_rate: f64,
     pub(crate) net_recv_rate: f64,
     pub(crate) net_sent_rate: f64,
+    /// Bytes received / sent by every interface since boot.
+    pub(crate) net_total_recv: u64,
+    pub(crate) net_total_sent: u64,
+    /// Host thread count, when the platform exposes it.
+    pub(crate) threads: Option<u64>,
+    /// File-backed page cache ("Cached Files"), when the platform exposes it.
+    pub(crate) mem_cached: Option<u64>,
 }
 
 /// A bounded ring of recent samples for each metric.
 #[derive(Default)]
 pub(crate) struct History {
-    pub(crate) cpu: Vec<f32>,
+    /// User and System CPU percentages, drawn as the CPU LOAD graph's blue
+    /// and red series.
+    pub(crate) cpu_user: Vec<f32>,
+    pub(crate) cpu_system: Vec<f32>,
     pub(crate) mem: Vec<f32>,
     pub(crate) energy: Vec<f32>,
-    pub(crate) disk: Vec<f32>,
-    pub(crate) net: Vec<f32>,
+    /// Bytes per second read / written, the Disk graph's two series.
+    pub(crate) disk_read: Vec<f32>,
+    pub(crate) disk_write: Vec<f32>,
+    /// Bytes per second received / sent, the Network graph's two series.
+    pub(crate) net_recv: Vec<f32>,
+    pub(crate) net_sent: Vec<f32>,
 }
 
 impl History {

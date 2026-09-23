@@ -45,12 +45,72 @@
                       32 tall (12 inset top and bottom), radius 6, flush with
                       the typed text on the left, 8 of padding on the right
     top-hit icon      26 × 26 app icon, 23 from the pill's right edge
-  Results list (no Tahoe capture yet — estimated, marked S in Rust): a
-  separate glass card 8 below the bar, 640 wide, radius 24, 8 padding;
-  11 pt semibold section headers in label tertiary, 32 pt rows with 22 pt
-  icons, 13 pt titles and a tertiary " — kind" suffix, selected row filled
-  with the accent and white text, radius 10. The card is at most
-  576 − 56 − 8 = 512 tall.
+  Results (Retina captures 2026-09-23 21:08–21:21 of "12*7", "5 km in
+  miles", "10 usd in eur", "time in tokyo", "100 f in c", "sqrt(2)", "1/3",
+  "1000*1000", "2^10", "5 kg in lb", "1 gb in mb", "60 mph in km/h",
+  "3 hours in minutes", "1 acre in m2", "define serendipity", a file name,
+  a nonsense word, ↓, ⌘↓ and ⌘Y; AX window frame 415,190 640 × 467):
+    panel             ONE glass shape: the bar grows downwards into it.
+                      x 415–1055 (640), top 190, radius 28 at all four
+                      corners, same rim and hairline as the pill. Height
+                      follows the content up to 467 (4 rows: 301).
+    fill              list area (28,28,29); the 56 pt bar zone a little
+                      lighter (35,35,36)
+    answer card       directly under the bar (top 247 = bar + 1), inset 18
+                      (x 433–1037), radius 16, 1 pt rim (95,95,97).
+                      Calculation/conversion: 62 tall, fill (64,64,65);
+                      label "12*7 =" 13 pt (188,189,189) at x +18.5, cap
+                      top +15.5; result 17 pt semibold white, cap top +33.5;
+                      copy button ⌀ 26, fill (97,98,99), glyph 11.5 × 14
+                      (239,239,239), 16 from the card's right edge.
+                      Currency: 84 tall, the rate source's mark bottom right
+                      (20 in, 15 up, (141,142,143)); the Mac shows
+                      yahoo!finance, rmac names the European Central Bank.
+                      Time zone: 60 tall, rim only (no fill); 36 pt icon box
+                      at +18; "Tokyo, Japan" 18 pt white at +71.5, cap top
+                      +13; "GMT+9 · Tomorrow, +3:30 HRS" 16 pt (93,93,95);
+                      "12:46 AM" 17 pt white, 21 from the right.
+                      Definition: 60 tall, fill (58,59,63), title
+                      "serendipity — Oxford Dictionary of English" 18 pt, the
+                      definition 16 pt (130,131,134) on one truncated line.
+    separator         1 pt (64,64,65), x 435–1035; directly under the bar
+                      (y 246) or 8 under the card
+    app chips         (apps with more matches: "Calculator", "Photos"…) 24
+                      tall, 11 under the separator — omitted in rmac, which
+                      has no per-app content search to scope to
+    rows              56 tall, no section headers, plate inset 10 (x
+                      425–1045) radius 17; icon box 36 at x +18 (panel),
+                      centred; title white at x +71.5; subtitle
+                      (128,130,130); file rows 17 pt title, 15 pt subtitle; one-line rows 18 pt; e.g. "Markdown text file · 926 bytes ·
+                      17/09/26, 3:33 PM · 📁 rmac". Rows start 10 under the
+                      separator; the top hit is its own section, 2 above
+                      the next row.
+    top hit           plate (64,65,65) until the arrow keys move; then the
+                      keyboard selection is (47,98,179) with subtitle
+                      (112,163,245)
+    completion plate  4 after the typed text, 30 tall (y 202–232), radius
+                      6, fill (57,58,58) = white 10 %; 15 pt (120,120,122):
+                      "=  84" for a calculation, "—  Tokyo, Japan" for other
+                      answers, "—  PLAN_NEW.md" for the keyboard selection;
+                      10.5 in, glyph, 11 gap, text, 10 out. A prefix of the
+                      top hit still completes flush ("term" + "inal — Open").
+    top-hit icon      26 × 26 at 20 from the panel's right edge, centred on
+                      the bar (y 205.5–231.5)
+    footer rows       "Search iCloud Drive", "Search in Finder", "Search the
+                      Web", "Ask Siri": one-line 18 pt titles, always last;
+                      with no results they are the whole list. rmac shows
+                      "Search in Files" only (no iCloud, web or Siri).
+    number format     locale grouping: 10,00,000 (en_IN), 1,024; results
+                      to 10 decimals, trailing zeros dropped (1.4142135624,
+                      0.3333333333); conversions to 2 decimals (3.11 miles,
+                      37.78 °C, 96.56 km/h, 4,046.86 m²) except pounds to 3
+                      (11.023 lb); 1,000 MB; 180 minutes; 8.77 EUR.
+    ⌘↓                jumps to the next section's first row
+    ⌘Y                Quick Look on the selected file; Spotlight hides and
+                      comes back with the row still selected. rmac closes
+                      Spotlight instead (a layer surface cannot hide).
+    No preview pane: Tahoe dropped the right-hand preview of earlier
+    macOS; previews are Quick Look (⌘Y).
   The Actions and Clipboard circles open the panels mocked in
   design-lab/spotlight-actions.html. The circles only show while the
   pointer is over the bar; otherwise the idle capsule is 640 wide.
@@ -99,13 +159,50 @@
   .circle { width: var(--circle); height: var(--circle); border-radius: 50%; margin-top: 1px;
             display: flex; align-items: center; justify-content: center; color: var(--glyph); }
   .circle svg { width: 28px; height: 28px; }
-  .results { border-radius: 24px; padding: 8px; }
-  .section { font-size: 11px; font-weight: 600; color: var(--tertiary); height: 24px; line-height: 28px; padding: 0 10px; }
-  .row { height: 32px; border-radius: 10px; display: flex; align-items: center; gap: 10px; padding: 0 10px; font-size: 13px; }
-  .row .icon { width: 22px; height: 22px; border-radius: 5px; flex: none; }
-  .row .kind { color: var(--tertiary); }
-  .row.selected { background: var(--accent); }
-  .row.selected .kind { color: rgba(255,255,255,.75); }
+  /* Results: one panel that the bar grows into. */
+  .panel { position: absolute; left: 40px; top: 20px; width: 640px; border-radius: 28px; overflow: hidden;
+           background: linear-gradient(rgb(35,35,36), rgb(28,28,29) 110px); border: 1px solid rgba(255,255,255,.30);
+           box-shadow: 0 0 0 0.5px var(--hairline), var(--shadow); box-sizing: border-box; }
+  .panel .barzone { position: relative; height: 55px; }
+  .panel .barzone .search { position: absolute; left: 19.5px; top: 15.5px; width: 22.5px; height: 22.5px; color: var(--glyph); }
+  .panel .barzone .field { position: absolute; left: 59px; top: 0; height: 55px; right: 60px; display: flex; align-items: center;
+                           font-size: 26px; white-space: pre; padding-bottom: 2px; box-sizing: border-box; }
+  .panel .barzone .appicon { position: absolute; right: 19px; top: 14.5px; width: 26px; height: 26px; }
+  .answerplate { margin-left: 4px; height: 30px; border-radius: 6px; background: rgba(255,255,255,.10); color: #78787A;
+                 font-size: 15px; display: flex; align-items: center; padding: 0 10px 0 10.5px; white-space: pre; }
+  .answerplate .mark { margin-right: 11px; }
+  .card { margin: 1px 17px 0; border-radius: 16px; border: 1px solid rgba(255,255,255,.30); position: relative; box-sizing: border-box;
+          background-clip: padding-box; }
+  .card.filled { background-color: rgba(255,255,255,.16); }
+  .card.definition { background-color: rgba(255,255,255,.135); }
+  .card .label { position: absolute; left: 17.5px; top: 11px; font-size: 13px; color: #BCBDBD; }
+  .card .value { position: absolute; left: 17.5px; top: 28px; font-size: 17px; font-weight: 600; color: #fff; }
+  .card .copy { position: absolute; right: 15px; top: 17px; width: 26px; height: 26px; border-radius: 50%; background: rgba(255,255,255,.18);
+                display: flex; align-items: center; justify-content: center; }
+  .card .copy svg { width: 12px; height: 14px; color: #EFEFEF; }
+  .card .source { position: absolute; right: 19.5px; bottom: 13px; font-size: 11px; font-weight: 600; color: #8D8E8F; }
+  .card .icon36 { position: absolute; left: 17px; top: 11px; width: 36px; height: 36px; }
+  .card .title { position: absolute; left: 70.5px; top: 8px; font-size: 18px; color: #fff; white-space: nowrap; }
+  .card .sub { position: absolute; left: 70.5px; top: 31px; right: 20px; font-size: 16px; color: #5D5D5F; white-space: nowrap;
+               overflow: hidden; text-overflow: ellipsis; }
+  .card.definition .sub { color: #828386; }
+  .card .time { position: absolute; right: 20px; top: 18px; font-size: 17px; font-weight: 500; color: #fff; }
+  .sep { height: 1px; margin: 0 19px; background: rgba(255,255,255,.155); }
+  .sep.after-card { margin-top: 8px; }
+  .list { padding: 10px 9px 10px; }
+  .row { position: relative; height: 56px; border-radius: 17px; display: flex; align-items: center; }
+  .row.hit-gap { margin-bottom: 2px; }
+  .row .icon36 { position: absolute; left: 8px; top: 10px; width: 36px; height: 36px; }
+  .row .doc { position: absolute; left: 12px; top: 10px; width: 28px; height: 36px; border-radius: 3px; background: #f2f2f2;
+              box-shadow: inset 0 0 0 .5px rgba(0,0,0,.3); }
+  .row .text { position: absolute; left: 61.5px; right: 16px; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center; }
+  .row .title { font-size: 17px; line-height: 21px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .sub { font-size: 15px; line-height: 19px; color: #808282; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .sub svg { width: 13px; height: 10px; vertical-align: -0.5px; margin-right: 3px; }
+  .row.top { background: rgba(255,255,255,.16); }
+  .row.keyboard { background: #2F62B3; }
+  .row.keyboard .sub { color: #70A3F5; }
+  .row.single .title { font-size: 18px; }
 </style>
 </head>
 <body>
@@ -135,52 +232,45 @@
   </div>
 </div>
 
-<!-- 2. Typing "term": inline completion of the top hit, results card below. -->
-<div class="state" id="typing" style="height:372px">
-  <div class="group">
-    <div class="bar">
-      <div class="pill wide glass">
-        <svg class="search"><use href="#search"/></svg>
-        <div class="field"><span>term</span><span class="completion">inal — Open</span></div>
-        <div class="tophit">&gt;_</div>
-      </div>
-    </div>
-    <div class="results glass">
-      <div class="section">Top Hit</div>
-      <div class="row selected"><div class="icon" style="background:#1b1b1d"></div><span>Terminal</span></div>
-      <div class="section">Applications</div>
-      <div class="row"><div class="icon" style="background:#3a7bd5"></div><span>Text Editor</span><span class="kind">— Application</span></div>
-      <div class="section">Settings</div>
-      <div class="row"><div class="icon" style="background:#8e8e93"></div><span>Desktop &amp; Dock</span><span class="kind">— Terminal behaviour</span></div>
-      <div class="section">Files</div>
-      <div class="row"><div class="icon" style="background:#5aa0e6"></div><span>terminal-notes.txt</span><span class="kind">— Documents</span></div>
-      <div class="row"><div class="icon" style="background:#5aa0e6"></div><span>Terminal Themes</span><span class="kind">— Downloads</span></div>
-    </div>
-  </div>
+<!-- 2. "12*7": answer card, then the list. Compare q1 crop x 790–2150 (÷2), y 340–1340. -->
+<div class="state" id="calculation" style="height:507px">
+  <div class="panel"><div class="barzone"><svg class="search"><use href="#search"/></svg><div class="field"><span>12*7</span><span class="answerplate"><span class="mark">=</span>84</span></div><img class="appicon" src="../packaging/rmac-apps/icons/org.rmac.Calculator.svg"></div><div class="card filled" style="height:62px"><div class="label">12*7 =</div><div class="value">84</div><div class="copy"><svg viewBox="0 0 12 14"><g fill="currentColor"><path d="M4 0h4.6L12 3.4V10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V1a1 1 0 0 1 1-1Z" opacity=".95"/><path d="M1 3h1v8.5A1.5 1.5 0 0 0 3.5 13H9v1H2.5A1.5 1.5 0 0 1 1 12.5Z"/></g></svg></div></div><div class="sep after-card"></div><div class="list"><div class="row "><div class="doc"></div><div class="text"><div class="title">design-notes.md</div><div class="sub">2 KB · Today, 8:52 PM · <svg viewBox="0 0 14 11"><path fill="none" stroke="currentColor" stroke-width="1.1" d="M1 2.2a1 1 0 0 1 1-1h3.2l1.3 1.2H12a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1Z"/></svg>rmac</div></div></div><div class="row "><div class="doc"></div><div class="text"><div class="title">budget-2026.ods</div><div class="sub">48 KB · 17/09/26, 3:33 PM · <svg viewBox="0 0 14 11"><path fill="none" stroke="currentColor" stroke-width="1.1" d="M1 2.2a1 1 0 0 1 1-1h3.2l1.3 1.2H12a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1Z"/></svg>Documents</div></div></div><div class="row single "><img class="icon36" src="../packaging/rmac-apps/icons/org.rmac.Files.svg"><div class="text"><div class="title">Search in Files</div></div></div></div></div>
 </div>
 
-<!-- 3. Selected result: Down arrow moves the accent plate; the completion stays with the top hit. -->
-<div class="state" id="selected" style="height:372px">
-  <div class="group">
-    <div class="bar">
-      <div class="pill wide glass">
-        <svg class="search"><use href="#search"/></svg>
-        <div class="field"><span>term</span><span class="completion">inal — Open</span></div>
-        <div class="tophit">&gt;_</div>
-      </div>
-    </div>
-    <div class="results glass">
-      <div class="section">Top Hit</div>
-      <div class="row"><div class="icon" style="background:#1b1b1d"></div><span>Terminal</span></div>
-      <div class="section">Applications</div>
-      <div class="row selected"><div class="icon" style="background:#3a7bd5"></div><span>Text Editor</span><span class="kind">— Application</span></div>
-      <div class="section">Settings</div>
-      <div class="row"><div class="icon" style="background:#8e8e93"></div><span>Desktop &amp; Dock</span><span class="kind">— Terminal behaviour</span></div>
-      <div class="section">Files</div>
-      <div class="row"><div class="icon" style="background:#5aa0e6"></div><span>terminal-notes.txt</span><span class="kind">— Documents</span></div>
-      <div class="row"><div class="icon" style="background:#5aa0e6"></div><span>Terminal Themes</span><span class="kind">— Downloads</span></div>
-    </div>
-  </div>
+<!-- 3. "5 km in miles" = 3.11 miles (2 decimals). -->
+<div class="state" id="conversion" style="height:300px">
+  <div class="panel"><div class="barzone"><svg class="search"><use href="#search"/></svg><div class="field"><span>5 km in miles</span><span class="answerplate"><span class="mark">=</span>3.11 miles</span></div><img class="appicon" src="../packaging/rmac-apps/icons/org.rmac.Calculator.svg"></div><div class="card filled" style="height:62px"><div class="label">5 km in miles =</div><div class="value">3.11 miles</div><div class="copy"><svg viewBox="0 0 12 14"><g fill="currentColor"><path d="M4 0h4.6L12 3.4V10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V1a1 1 0 0 1 1-1Z" opacity=".95"/><path d="M1 3h1v8.5A1.5 1.5 0 0 0 3.5 13H9v1H2.5A1.5 1.5 0 0 1 1 12.5Z"/></g></svg></div></div><div class="sep after-card"></div><div class="list"><div class="row single "><img class="icon36" src="../packaging/rmac-apps/icons/org.rmac.Files.svg"><div class="text"><div class="title">Search in Files</div></div></div></div></div>
 </div>
+
+<!-- 4. "10 usd in eur": 84 tall card with the rate source bottom right. -->
+<div class="state" id="currency" style="height:322px">
+  <div class="panel"><div class="barzone"><svg class="search"><use href="#search"/></svg><div class="field"><span>10 usd in eur</span><span class="answerplate"><span class="mark">=</span>8.77 EUR</span></div><img class="appicon" src="../packaging/rmac-apps/icons/org.rmac.Calculator.svg"></div><div class="card filled" style="height:84px"><div class="label">10 usd in eur =</div><div class="value">8.77 EUR</div><div class="copy"><svg viewBox="0 0 12 14"><g fill="currentColor"><path d="M4 0h4.6L12 3.4V10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V1a1 1 0 0 1 1-1Z" opacity=".95"/><path d="M1 3h1v8.5A1.5 1.5 0 0 0 3.5 13H9v1H2.5A1.5 1.5 0 0 1 1 12.5Z"/></g></svg></div><div class="source">European Central Bank · 23 Sep</div></div><div class="sep after-card"></div><div class="list"><div class="row single "><img class="icon36" src="../packaging/rmac-apps/icons/org.rmac.Files.svg"><div class="text"><div class="title">Search in Files</div></div></div></div></div>
+</div>
+
+<!-- 5. "time in tokyo": outlined card, no fill. -->
+<div class="state" id="time" style="height:298px">
+  <div class="panel"><div class="barzone"><svg class="search"><use href="#search"/></svg><div class="field"><span>time in tokyo</span><span class="answerplate"><span class="mark">—</span>Tokyo, Japan</span></div><img class="appicon" src="../packaging/rmac-apps/icons/org.rmac.Clock.svg"></div><div class="card" style="height:60px"><img class="icon36" src="../packaging/rmac-apps/icons/org.rmac.Clock.svg"><div class="title">Tokyo, Japan</div><div class="sub" style="right:120px">GMT+9 · Tomorrow, +3:30 HRS</div><div class="time">12:46 AM</div></div><div class="sep after-card"></div><div class="list"><div class="row single "><img class="icon36" src="../packaging/rmac-apps/icons/org.rmac.Files.svg"><div class="text"><div class="title">Search in Files</div></div></div></div></div>
+</div>
+
+<!-- 6. "define serendipity" (only with a local dictd dictionary installed). -->
+<div class="state" id="definition" style="height:298px">
+  <div class="panel"><div class="barzone"><svg class="search"><use href="#search"/></svg><div class="field"><span>define serendipity</span><span class="answerplate"><span class="mark">—</span>serendipity</span></div></div><div class="card definition" style="height:60px"><div class="icon36" style="border-radius:8px;background:linear-gradient(#e0474c,#b3262c);color:#fff;font:600 16px/36px -apple-system;text-align:center">Aa</div><div class="title"><b style="font-weight:600">serendipity</b> — WordNet</div><div class="sub">the occurrence and development of events by chance in a happy or beneficial way</div></div><div class="sep after-card"></div><div class="list"><div class="row single "><img class="icon36" src="../packaging/rmac-apps/icons/org.rmac.Files.svg"><div class="text"><div class="title">Search in Files</div></div></div></div></div>
+</div>
+
+<!-- 7. A file name: the top hit on the grey plate, completion "— Open". Compare q6. -->
+<div class="state" id="files" style="height:507px">
+  <div class="panel"><div class="barzone"><svg class="search"><use href="#search"/></svg><div class="field"><span>AGENTS.md</span><span class="answerplate"><span class="mark">—</span>Open</span></div></div><div class="sep"></div><div class="list"><div class="row top hit-gap"><div class="doc"></div><div class="text"><div class="title">AGENTS.md</div><div class="sub">926 bytes · 17/09/26, 3:33 PM · <svg viewBox="0 0 14 11"><path fill="none" stroke="currentColor" stroke-width="1.1" d="M1 2.2a1 1 0 0 1 1-1h3.2l1.3 1.2H12a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1Z"/></svg>rmac</div></div></div><div class="row "><div class="doc"></div><div class="text"><div class="title">PLAN_NEW.md</div><div class="sub">24 KB · Today, 9:08 PM · <svg viewBox="0 0 14 11"><path fill="none" stroke="currentColor" stroke-width="1.1" d="M1 2.2a1 1 0 0 1 1-1h3.2l1.3 1.2H12a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1Z"/></svg>rmac</div></div></div><div class="row "><div class="doc"></div><div class="text"><div class="title">COMPLETION_SPEC.md</div><div class="sub">202 KB · Today, 8:20 PM · <svg viewBox="0 0 14 11"><path fill="none" stroke="currentColor" stroke-width="1.1" d="M1 2.2a1 1 0 0 1 1-1h3.2l1.3 1.2H12a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1Z"/></svg>rmac</div></div></div><div class="row "><div class="doc"></div><div class="text"><div class="title">SUB_AGENTS.md</div><div class="sub">4 KB · 24/05/26, 9:12 AM · <svg viewBox="0 0 14 11"><path fill="none" stroke="currentColor" stroke-width="1.1" d="M1 2.2a1 1 0 0 1 1-1h3.2l1.3 1.2H12a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1Z"/></svg>docs</div></div></div><div class="row "><div class="doc"></div><div class="text"><div class="title">README.md</div><div class="sub">8 KB · 24/05/26, 9:12 AM · <svg viewBox="0 0 14 11"><path fill="none" stroke="currentColor" stroke-width="1.1" d="M1 2.2a1 1 0 0 1 1-1h3.2l1.3 1.2H12a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1Z"/></svg>notes</div></div></div></div></div>
+</div>
+
+<!-- 8. ↓: the keyboard selection takes the blue plate and the completion names it. Compare nav-down1. -->
+<div class="state" id="keyboard" style="height:507px">
+  <div class="panel"><div class="barzone"><svg class="search"><use href="#search"/></svg><div class="field"><span>AGENTS.md</span><span class="answerplate"><span class="mark">—</span>PLAN_NEW.md</span></div></div><div class="sep"></div><div class="list"><div class="row hit-gap"><div class="doc"></div><div class="text"><div class="title">AGENTS.md</div><div class="sub">926 bytes · 17/09/26, 3:33 PM · <svg viewBox="0 0 14 11"><path fill="none" stroke="currentColor" stroke-width="1.1" d="M1 2.2a1 1 0 0 1 1-1h3.2l1.3 1.2H12a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1Z"/></svg>rmac</div></div></div><div class="row keyboard"><div class="doc"></div><div class="text"><div class="title">PLAN_NEW.md</div><div class="sub">24 KB · Today, 9:08 PM · <svg viewBox="0 0 14 11"><path fill="none" stroke="currentColor" stroke-width="1.1" d="M1 2.2a1 1 0 0 1 1-1h3.2l1.3 1.2H12a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1Z"/></svg>rmac</div></div></div><div class="row "><div class="doc"></div><div class="text"><div class="title">COMPLETION_SPEC.md</div><div class="sub">202 KB · Today, 8:20 PM · <svg viewBox="0 0 14 11"><path fill="none" stroke="currentColor" stroke-width="1.1" d="M1 2.2a1 1 0 0 1 1-1h3.2l1.3 1.2H12a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1Z"/></svg>rmac</div></div></div><div class="row "><div class="doc"></div><div class="text"><div class="title">SUB_AGENTS.md</div><div class="sub">4 KB · 24/05/26, 9:12 AM · <svg viewBox="0 0 14 11"><path fill="none" stroke="currentColor" stroke-width="1.1" d="M1 2.2a1 1 0 0 1 1-1h3.2l1.3 1.2H12a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1Z"/></svg>docs</div></div></div><div class="row "><div class="doc"></div><div class="text"><div class="title">README.md</div><div class="sub">8 KB · 24/05/26, 9:12 AM · <svg viewBox="0 0 14 11"><path fill="none" stroke="currentColor" stroke-width="1.1" d="M1 2.2a1 1 0 0 1 1-1h3.2l1.3 1.2H12a1 1 0 0 1 1 1v5.9a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1Z"/></svg>notes</div></div></div></div></div>
+</div>
+
+<!-- 9. No matches: only the footer row, as the top hit. -->
+<div class="state" id="nothing" style="height:173px">
+  <div class="panel"><div class="barzone"><svg class="search"><use href="#search"/></svg><div class="field"><span>zzqqxxjjvv</span><span class="answerplate"><span class="mark">—</span>Search in Files</span></div></div><div class="sep"></div><div class="list"><div class="row single top"><img class="icon36" src="../packaging/rmac-apps/icons/org.rmac.Files.svg"><div class="text"><div class="title">Search in Files</div></div></div></div></div>
+</div>
+
 </body>
 </html>

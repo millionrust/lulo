@@ -62,6 +62,57 @@
                 pane's own buttons (Refresh, Revert, Choose Image…) take that
                 right-aligned footer row instead.
   Segmented     24 tall, full row width, selected #397CF7, rest rgb(55,56,67)
+
+  Second wave (same window, AX frames + Retina pixels, 2026-09-23): Network,
+  a network service, Notifications and an app's page, Focus and a mode,
+  Lock Screen, Privacy & Security and Camera, Keyboard and its Keyboard
+  Shortcuts sheet, Trackpad (all three tabs), Date & Time, Language &
+  Region, Login Items & Extensions, Sharing (and its File Sharing sheet),
+  Accessibility and Display, Spotlight, About, Software Update, Storage.
+  The owner's Mac has no mouse and no VPN, so Settings shows neither pane:
+  Mouse copies Trackpad's grammar and VPN the Wi-Fi known-network rows.
+
+  Icon row      52 tall (53 pitch): icon 26 at x + 11, vertically centred;
+                title 13/16 and subtitle 11/14 at x + 48, 10 padding, 2 gap
+                (Network services, Notifications apps, Focus modes, Login
+                background items; Sharing's are 50 tall)
+  Status line   8 pt dot then 4 gap then 11 pt secondary: connected
+                rgb(104,206,103), not connected rgb(235,83,78), inactive
+                rgb(92,93,101)
+  Header card   65 tall: icon 26 at (11, 12), title 13 at x + 48, 1 gap,
+                description 11 secondary (Notifications, Privacy,
+                Accessibility, Spotlight — Accessibility has no hero)
+  Section note  11 pt rgb(154,155,160) 2 under a section head, 10 above the
+                group (Notification Centre, Login Items, Focus sections)
+  Nav row 42    unchanged; counts as values (Privacy "4", Storage sizes)
+  Slider row    label left, 242 wide slider from x + 208, 6 pt track, tick
+                dots under it, 11 pt end labels; row 51 tall (Trackpad)
+  Twin sliders  Keyboard's first group is 75 tall with two 210 wide sliders
+                at x + 10 and x + 240, label above, ends below
+  Tabs          Trackpad: 460 × 24, radius 6, selected #397CF7, rest
+                rgb(48,49,60); the group starts 18 under it
+  Radio         16 circles; a row's options right-aligned, 14 apart
+  List well     a group holding a table: 28 header, 24 rows, then a 24 pt
+                +/− bar under a 1 pt rule (Language, Login Items)
+  Storage bar   group 87: name + "x of y used" at y + 12; bar 21 tall at
+                x + 10, 440 wide, radius 3, 1 pt gaps rgb(49,50,60), free
+                rgb(68,69,78) with its size centred; legend 8 pt dots 11 pt.
+                Category colours in order: rgb(235,83,78), rgb(240,151,72),
+                rgb(248,216,73), rgb(104,206,103), rgb(99,215,195),
+                rgb(95,207,221); System Data rgb(128,128,128)
+  Sheet         Keyboard Shortcuts: 670 × 468 centred (27, 182), radius 26,
+                fill rgb(31,33,44); sidebar panel 200 wide inset 8, fill
+                rgb(27,28,35), 32 pt rows; content group 430 wide at x 228,
+                y 20; footer rule at y 403, buttons 24 tall 12 from the
+                bottom-right (Done #3478F6)
+  Omitted here and in rmac because rmac has no backend for them: every
+  Mac-only row (Firewall, Notification Centre previews, Alert Style, Focus
+  sharing and status, display sleep and login-window options, Dictation,
+  keyboard brightness, Force Click, More Gestures, 24-hour time, time zone
+  by location, calendar/temperature/measurement pickers, Live Text, Media/
+  Screen/Bluetooth/Printer/Internet sharing, Zoom, Hearing, Speech, Related
+  Content, Siri, device art and serial number, iCloud recommendations) and
+  every Help (?) button.
 -->
 <!-- self-contained: lab.css class names (.search, .row, .tile) would collide -->
 <style>
@@ -156,7 +207,52 @@
   .thumbs div{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:11px}
   .thumbs i{width:146px;height:96px;border-radius:8px;display:block}
   .cb{width:16px;height:16px;border-radius:4px;background:rgb(62,63,73);display:inline-block;vertical-align:middle;margin-right:6px}
-  .cb.on{background:var(--accent)}
+  .cb.on{background:var(--accent);position:relative}
+  .cb.on::after{content:'✓';position:absolute;inset:0;color:#fff;font:700 11px/16px var(--font);text-align:center}
+  /* second wave (Network … Storage) */
+  .r.big{min-height:52px;padding:10px 10px 10px 11px;gap:11px}
+  .r.big .ic{width:26px;height:26px;flex:none;border-radius:7px;display:flex;align-items:center;justify-content:center;color:#fff}
+  .r.big .ic svg{width:16px;height:16px}
+  .r.big .t small{display:flex;align-items:center;gap:4px}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+  .hdr{display:flex;align-items:flex-start;padding:10px 10px 10px 11px;gap:11px;min-height:65px;box-sizing:border-box}
+  .hdr .ic{width:26px;height:26px;border-radius:7px;flex:none;margin-top:2px;display:flex;align-items:center;justify-content:center;color:#fff}
+  .hdr .ic svg{width:16px;height:16px}
+  .hdr .t{flex:1;display:flex;flex-direction:column;gap:1px}
+  .hdr .t b{font:400 13px/16px var(--font)} .hdr .t small{font:400 11px/14px var(--font);color:var(--sec)}
+  .h.withnote{margin-bottom:2px}
+  .note{font:400 11px/14px var(--font);color:rgb(154,155,160);padding:0 10px;margin-bottom:10px}
+  .rad{display:flex;gap:14px;align-items:center}
+  .rad span{display:flex;align-items:center;gap:6px}
+  .rad i{width:16px;height:16px;border-radius:50%;background:var(--off);display:flex;align-items:center;justify-content:center}
+  .rad i.on{background:var(--accent)} .rad i.on::after{content:"";width:6px;height:6px;border-radius:50%;background:#fff}
+  .tabs{display:flex;height:24px;border-radius:6px;background:rgb(48,49,60);margin:0 0 18px}
+  .tabs b{flex:1;display:flex;align-items:center;justify-content:center;font-weight:400;border-radius:6px}
+  .tabs b.on{background:var(--accent);color:#fff}
+  .ss{display:flex;flex-direction:column;gap:3px}
+  .ss .track{margin:5px 0 0}
+  .ss .ticks{padding:0 9px;margin-top:2px}
+  .ss .ends{font-size:11px;line-height:14px}
+  .well{background:var(--group);border-radius:12px;margin-bottom:10px;overflow:hidden}
+  .well .hd{display:flex;height:28px;align-items:center;padding:0 10px;font:400 11px var(--font);color:var(--sec);border-bottom:1px solid var(--sep)}
+  .well .li{display:flex;height:24px;align-items:center;padding:0 10px;gap:8px}
+  .well .li:nth-child(even){background:rgba(255,255,255,.03)}
+  .well .pm{display:flex;height:24px;align-items:center;gap:0;border-top:1px solid var(--sep);padding-left:4px;color:var(--label)}
+  .well .pm b{width:20px;text-align:center;font-weight:400} .well .pm hr{width:1px;height:12px;border:0;margin:0 2px;background:var(--sep)}
+  .sbar{display:flex;height:21px;gap:1px;background:rgb(49,50,60);border-radius:3px;overflow:hidden;margin:0 10px}
+  .sbar i{display:block;height:100%}
+  .sbar .free{background:rgb(68,69,78);color:rgb(212,212,214);font:400 11px/21px var(--font);text-align:center;flex:1}
+  .legend{display:flex;gap:12px;padding:6px 10px 10px;font:400 11px/14px var(--font);color:var(--sec)}
+  .legend span{display:flex;align-items:center;gap:4px}
+  .info17{width:17px;height:17px;flex:none;color:var(--label);display:flex}
+  .sheet{position:absolute;left:27px;top:182px;width:670px;height:468px;border-radius:26px;background:rgb(29,30,41);
+       box-shadow:0 0 0 1px rgba(255,255,255,.12),0 20px 60px rgba(0,0,0,.6);overflow:hidden;z-index:5}
+  .sheet .sb{position:absolute;left:8px;top:8px;width:200px;bottom:8px;border-radius:18px;background:rgb(24,25,34);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+  .sheet .sb .row{margin:0 10px}
+  .sheet .body{position:absolute;left:228px;top:20px;width:430px}
+  .sheet .foot{position:absolute;left:208px;right:0;bottom:0;height:65px;border-top:1px solid rgba(255,255,255,.06);display:flex;align-items:center;justify-content:flex-end;padding:0 12px 0 20px}
+  .done{height:24px;padding:0 16px;border-radius:12px;background:var(--accent);color:#fff;display:inline-flex;align-items:center}
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.35);z-index:4}
   .cap-label{position:absolute;left:0;top:-22px;color:#9a9aa2;font:12px var(--font)}
   .frame{position:relative;margin-top:22px}
 </style>
@@ -245,16 +341,159 @@ const PANES={
     h('Menu Bar Controls'), g(...[['wifi',C.blue,'Wi-Fi',1],['key',C.blue,'VPN',1],['bluetooth',C.blue,'Bluetooth',0],['volume-2',C.pink,'Sound',1],['battery-charging',C.green,'Battery',1],['moon',C.indigo,'Focus',1],['bell',C.red,'Notifications',1]].map(([ic,c,n,on])=>`<div class="r nav" style="height:42px"><span class="cb${on?' on':''}"></span>${tile(ic,c)}${t(n)}</div>`)),
     g(sw('Show battery percentage',false))],
 };
-const PANE_SEL={'Menu Bar':'Menu Bar'};
+// ---- second wave: Network … Storage (measured 2026-09-23, see header) ----
+const GREEN='rgb(104,206,103)', RED='rgb(235,83,78)', GREY='rgb(92,93,101)';
+const T26=(ic,c)=>`<div class="ic" style="background:${c}">${I(ic)}</div>`;
+const chev=`<span class="chev">${I('chevron-right')}</span>`;
+const st=(color,text)=>`<span class="dot" style="background:${color}"></span>${text}`;
+const big=(ic,c,title,sub,trail='')=>`<div class="r big">${T26(ic,c)}${t(title,sub)}${trail}</div>`;
+const hdr=(ic,c,title,desc,trail='')=>`<div class="g"><div class="hdr">${T26(ic,c)}<div class="t"><b>${title}</b><small>${desc}</small></div>${trail}</div></div>`;
+const hn=(title,note)=>`<div class="h withnote">${title}</div><div class="note">${note}</div>`;
+const pb=(l)=>`<span class="pb">${l}</span>`;
+const valbtn=(l,v,b,s)=>`<div class="r${s?' top':''}">${t(l,s)}${v?`<span class="v sec">${v}</span>`:''}${b?pb(b):''}</div>`;
+const btnrow=(...b)=>`<div class="r" style="justify-content:flex-end">${b.map(pb).join('')}</div>`;
+const radio=(l,opts,on)=>`<div class="r">${t(l)}<div class="rad">${opts.map((o,i)=>`<span><i class="${i===on?'on':''}"></i>${o}</span>`).join('')}</div></div>`;
+const tabs=(opts,on)=>`<div class="tabs">${opts.map((o,i)=>`<b class="${i===on?'on':''}">${o}</b>`).join('')}</div>`;
+const steps=(n,sel,a,b)=>`<div class="ss"><div class="track"><div class="fill" style="width:${sel/(n-1)*100}%"></div><div class="knob" style="left:${sel/(n-1)*100}%"></div></div><div class="ticks">${'<i></i>'.repeat(n)}</div><div class="ends"><span>${a}</span><span>${b}</span></div></div>`;
+const srow=(l,n,sel,a,b)=>`<div class="r top">${t(l)}<div style="width:242px">${steps(n,sel,a,b)}</div></div>`;
+const info=`<span class="info17">${I('info')}</span>`;
+const nav42=(ic,c,l,v)=>nav(ic,c,l,v);
+const sw42=(ic,c,l,on)=>`<div class="r nav">${tile(ic,c)}${t(l)}<div class="sw${on?' on':''}"></div></div>`;
+const ghead=(l,s)=>`<div class="r top" style="padding-bottom:8px">${t(`<span style="font-weight:700">${l}</span>`,s)}</div>`;
+const well=(head,rows)=>`<div class="well">${head?`<div class="hd">${head}</div>`:''}${rows.join('')}<div class="li"></div><div class="pm"><b>+</b><hr><b>−</b></div></div>`;
+const bar=(segs,free)=>`<div class="sbar">${segs.map(([c,w])=>`<i style="background:${c};width:${w}px"></i>`).join('')}<div class="free">${free}</div></div>`;
+const legend=(items)=>`<div class="legend">${items.map(([c,n])=>`<span><span class="dot" style="background:${c}"></span>${n}</span>`).join('')}</div>`;
+const thumb=(label,on,kind)=>`<div style="display:flex;flex-direction:column;align-items:center;gap:0;width:${kind?107:88}px;white-space:nowrap"><i style="display:block;width:88px;height:58px;border-radius:4px;background:linear-gradient(#8fa4c9,#9b82b8);position:relative">${kind?'<i style="position:absolute;right:4px;top:5px;width:22px;height:30px;background:repeating-linear-gradient(#fff 0 5px,transparent 5px 7px);border-radius:1px;opacity:.9"></i>':'<i style="position:absolute;right:4px;top:5px;width:22px;height:6px;background:#fff;border-radius:2px;opacity:.9"></i>'}</i><span style="margin-top:10px;line-height:16px">${label}</span><span class="cb${on?' on':''}" style="margin:7px 0 0"></span></div>`;
+const S={blue:'#1372f9',cyan:'#30b0c7',orange:'#ff9500',purple:'#af52de',gray:C.gray,indigo:C.indigo,red:C.red};
+Object.assign(PANES,{
+  'Network':['Network',
+    g(big('wifi',S.blue,'Wi-Fi',st(GREEN,'Connected'),chev)),
+    h('Other Services'),
+    g(big('globe',S.gray,'Ethernet',st(RED,'Disconnected'),chev),big('globe',S.gray,'Ethernet 2',st(RED,'Unavailable'),chev)),
+    btns('Refresh')],
+  'Network › Wi-Fi':['Wi-Fi',
+    g(`<div class="r big">${T26('wifi',S.blue)}${t('Wi-Fi',st(GREEN,'Connected'))}${pb('Details…')}</div>`),
+    g(val('IP Address','192.0.2.24'),val('Router','192.0.2.1'),val('DNS Servers','192.0.2.1'),val('Hardware Address','02:00:5e:10:00:01'))],
+  'VPN':['VPN',
+    g(`<div class="r">${t('Office','WireGuard · Connected')}${info}<div class="sw on"></div></div>`,`<div class="r">${t('Travel','OpenVPN · Not Connected')}${info}<div class="sw"></div></div>`),
+    btns('Add VPN Configuration…','Refresh')],
+  'Notifications':['Notifications',
+    hdr('bell',S.red,'Notifications','Customise how notifications appear, whether they play a sound and which applications can send them.'),
+    h('Application Notifications'),
+    g(big('app-window',S.blue,'Files','Badges, Sounds, and Desktop',chev),big('app-window',S.gray,'Terminal','Off',chev),big('app-window',S.orange,'Notes','Sounds, Time Sensitive',chev),big('app-window',S.purple,'Calendar','Badges, Sounds, Desktop, and Time Sensitive',chev)),
+    btns('Refresh')],
+  'Notifications › Files':['Files',
+    `<div class="g"><div class="hdr" style="min-height:52px">${T26('app-window',S.blue)}<div class="t"><b>Allow notifications</b><small>Files</small></div><div class="sw big on"></div></div></div>`,
+    `<div class="g" style="padding:20px 0 16px;display:flex;justify-content:space-evenly">${thumb('Desktop',1,0)}${thumb('Notification Centre',1,1)}</div>`,
+    g(sw('Time Sensitive Notifications',true),sw('Badge application icon',true),sw('Play sound for notification',false))],
+  'Focus':['Focus',
+    g(big('moon',S.indigo,'Do Not Disturb','',`<span class="v sec">On</span>${chev}`),big('moon',S.purple,'Sleep','',chev)),
+    btns('Refresh')],
+  'Focus › Do Not Disturb':['Do Not Disturb',
+    g(`<div class="r">${tile('moon',S.indigo)}${t('Do Not Disturb')}<div class="sw on"></div></div>`,valbtn('Turn on for 1 hour','', 'Turn On')),
+    hn('Allow Notifications','Notifications from the applications below will be allowed; all others will be silenced.'),
+    g(sw42('app-window',S.blue,'Files',true),sw42('app-window',S.gray,'Terminal',false),sw('Time Sensitive Notifications',true)),
+    hn('Set a Schedule','Have this Focus turn on automatically at a set time.'),
+    g(`<div class="r">${tile('clock',S.indigo)}${t('Do Not Disturb','22:00 – 07:00 · Every day')}${pb('Edit…')}<div class="sw on"></div></div>`,btnrow('Add Schedule…'))],
+  'Lock Screen':['Lock Screen',
+    g(pop('Lock screen when inactive','After 5 minutes'),pop('Put the computer to sleep when inactive','Never','⚠ Automatic sleep needs administrator authorisation on this computer.')),
+    btns('Lock Now','Refresh')],
+  'Privacy & Security':['Privacy & Security',
+    hdr('shield',S.blue,'Privacy','Control which applications can use your camera and microphone.'),
+    g(nav42('user',S.gray,'Camera','2'),nav42('volume-2',S.gray,'Microphone','1')),
+    h('Security'),
+    g(nav42('refresh-cw',S.gray,'Security Updates','None available'),val('Automatic security updates','On'),val('Ubuntu Pro','Not attached')),
+    btns('Refresh')],
+  'Privacy & Security › Camera':['Camera',
+    `<div class="g"><div class="r" style="color:var(--sec)">Allow the applications below to access your camera.</div><div class="r nav" style="border-top:1px solid var(--sep);margin:0 10px;padding:0">${tile('app-window',S.blue)}${t('Video Calls')}${pb('Reset…')}</div></div>`],
+  'Keyboard':['Keyboard',
+    g(`<div class="r" style="gap:30px;align-items:flex-start;min-height:75px"><div style="flex:1"><b style="font-weight:400">Key repeat rate</b>${steps(5,3,'Slow','Fast')}</div><div style="flex:1"><b style="font-weight:400">Delay until repeat</b>${steps(5,3,'Long','Short')}</div></div>`),
+    g(sw('Use Num Lock on startup',false),btnrow('Keyboard Shortcuts…')),
+    h('Text Input'),
+    g(valbtn('Input Sources','us · intl','Edit…')),
+    btns('Refresh')],
+  'Mouse':['Mouse',
+    g(srow('Tracking speed',5,2,'Slow','Fast'),sw('Natural scrolling',false,'Content tracks finger movement'),pop('Secondary click','Click Right Side'),sw('Pointer acceleration',true),sw('Middle-click emulation',false,'Click the left and right buttons together')),
+    btns('Refresh')],
+  'Trackpad':['Trackpad',
+    tabs(['Point & Click','Scroll & Zoom'],0),
+    g(srow('Tracking speed',5,3,'Slow','Fast'),sw('Pointer acceleration',true),sw('Tap to click',true,'Tap with one finger'),sw('Ignore trackpad while typing',true),sw('Drag lock',false,'Keep dragging briefly after lifting your finger'),sw('Primary click on right',false),sw('Middle-click emulation',false,'Click the left and right sides together')),
+    btns('Refresh')],
+  'Trackpad › Scroll & Zoom':['Trackpad',
+    tabs(['Point & Click','Scroll & Zoom'],1),
+    g(sw('Natural scrolling',false,'Content tracks finger movement')),
+    btns('Refresh')],
+  'Date & Time':['Date & Time',
+    g(sw('Set time and date automatically',true)),
+    g(valbtn('Date and time','23 Sep 2026 at 17:04:21')),
+    g(valbtn('Time zone','Asia/Kolkata','Set…')),
+    btns('Refresh')],
+  'Language & Region':['Language & Region',
+    `<div class="g">${ghead('Preferred Languages')}<div class="li" style="display:flex;height:24px;align-items:center;padding:0 10px;background:rgba(255,255,255,.03)"><span style="flex:1">en_IN.UTF-8</span><span class="v sec">Primary</span></div><div class="r" style="justify-content:flex-end">${pb('Edit…')}</div></div>`,
+    `<div class="g"><div style="text-align:center;padding:9px 0 12px;font:400 11px/16px var(--font);color:var(--sec)">Wednesday, 23 September 2026 at 5:04:23 PM<br>23/09/26 &nbsp; ₹12,345.67 &nbsp; 4,567.89</div><div class="r" style="border-top:1px solid var(--sep);margin:0 10px;padding:10px 0">${t('Region')}<span class="v sec">en_IN.UTF-8</span>${pb('Edit…')}</div></div>`,
+    btns('Refresh')],
+  'Login Items':['Login Items & Extensions',
+    hn('Open at Login','These items will open automatically when you log in.'),
+    well('<span style="flex:1">Item</span><span style="width:222px">Kind</span>',[['Syncthing','Application'],['Nextcloud','Application']].map(([n,k])=>`<div class="li"><span class="cb on" style="width:14px;height:14px"></span><span style="flex:1">${n}</span><span style="width:222px">${k}</span></div>`)),
+    hn('App Background Activity','These services start with your session and keep running in the background.'),
+    g(`<div class="r big">${T26('settings',S.gray)}${t('pipewire','Audio service · Active')}<span class="info17">${I('search')}</span><div class="sw on"></div></div>`,`<div class="r big">${T26('settings',S.gray)}${t('syncthing','File synchronisation · Inactive')}<span class="info17">${I('search')}</span><div class="sw"></div></div>`),
+    btns('Refresh')],
+  'Sharing':['Sharing',
+    `<div class="h" style="margin-top:4px">Content &amp; Media</div>`,
+    g(`<div class="r big" style="min-height:50px">${T26('globe',S.cyan)}${t('File Sharing')}<div class="sw"></div>${info}</div>`),
+    h('Advanced'),
+    g(`<div class="r big" style="min-height:50px">${T26('key',S.gray)}${t('Remote Login')}<div class="sw on"></div>${info}</div>`),
+    g(valbtn('Local hostname','rmac-laptop'),valbtn('','', 'Edit…','Computers on your local network can reach this computer by this name.'))],
+  'Accessibility':['Accessibility',
+    hdr('accessibility',S.blue,'Accessibility','Personalise rmac in ways that work best for you with accessibility features for vision and motor.'),
+    h('Vision'),g(nav42('volume-2',S.gray,'Screen Reader'),nav42('monitor',S.blue,'Display'),nav42('refresh-cw',S.gray,'Motion')),
+    h('Motor'),g(nav42('keyboard',S.gray,'Keyboard'),nav42('mouse',S.gray,'Pointer Control'))],
+  'Accessibility › Display':['Display',
+    g(pop('Contrast','Automatic')),
+    h('Text'),g(pop('Text size','Standard'),pop('GTK application text','Standard'))],
+  'Spotlight':['Spotlight',
+    hdr('search',S.blue,'Spotlight','Spotlight helps you quickly find applications, settings, files and calculations on your computer.'),
+    g(valbtn('Recent Documents','','Clear Recent Documents…','Documents that Files and Spotlight list as recent. Clearing never deletes a document.')),
+    g(ghead('Results from System','Allows items and their content to appear in Spotlight.'),sw42('app-window',S.blue,'Apps',true),sw42('settings',S.gray,'System Settings',true),sw42('globe',S.cyan,'Files',true),sw42('database',S.gray,'Calculator',true)),
+    g(sw('Allow private file results',true,'Show local file names and recent documents in results.'),sw('Include removable volumes',false,'Search disks and volumes beyond the home folder.')),
+    hn('Search Privacy','Prevent Spotlight from searching these locations.'),
+    well('',[`<div class="li">${I('')}<span style="flex:1">~/Private</span></div>`]),
+    btns('Keyboard Shortcuts…','Refresh')],
+  'About':['About',
+    `<div style="display:flex;flex-direction:column;align-items:center;margin:10px 0 20px"><span style="width:128px;height:128px;color:var(--label);display:flex">${I('monitor')}</span><b style="font:700 26px/31px var(--font)">ThinkPad X1 Carbon</b><small style="font:400 11px/14px var(--font);color:var(--sec)">LENOVO</small></div>`,
+    g(valbtn('Name','rmac-laptop','Edit…'),val('Chip','Intel Core Ultra 7'),val('Memory','32 GB')),
+    h('Operating System'),g(`<div class="r big">${T26('settings',S.gray)}${t('Ubuntu 26.04 LTS')}<span class="v sec">Linux 7.0</span></div>`),
+    h('Storage'),g(`<div class="r big">${T26('database',S.gray)}${t('Home')}<span class="v sec">62.6 GB available of 245.1 GB</span></div>`,btnrow('Storage Settings…')),
+    `<div style="display:flex;justify-content:center;margin:10px 0">${pb('Copy System Report')}</div>`],
+  'Software Update':['Software Update',
+    `<div class="g"><div class="r" style="min-height:52px;gap:6px">${T26('refresh-cw',S.gray)}${t('3 updates available','1 security update')}${pb('Install All…')}</div><div class="r" style="border-top:1px solid var(--sep);margin:0 10px;padding:10px 0">${t('firefox','Security · Mozilla Firefox web browser')}<span class="v sec">142.0</span></div><div class="r" style="border-top:1px solid var(--sep);margin:0 10px;padding:10px 0">${t('libc6','Bug fix · GNU C Library')}<span class="v sec">2.42-0ubuntu3</span></div></div>`,
+    g(val('Installed','Ubuntu 26.04 LTS')),
+    btns('Check Again')],
+  'Storage':['Storage',
+    `<div class="g" style="padding-top:12px"><div style="display:flex;justify-content:space-between;padding:0 10px 12px"><span>Home</span><span class="v sec">182.5 GB of 245.1 GB used</span></div>${bar([[RED,54],['rgb(240,151,72)',54],['rgb(248,216,73)',3],['rgb(104,206,103)',3],['rgb(128,128,128)',133]],'62.6 GB')}${legend([[RED,'Applications'],['rgb(240,151,72)','Documents'],['rgb(248,216,73)','Music'],['rgb(104,206,103)','Photos'],['rgb(128,128,128)','System Data']])}</div>`,
+    g(...[['app-window',S.red,'Applications','41.3 GB'],['globe',S.orange,'Documents','30.8 GB'],['volume-2',S.red,'Music','8.4 MB'],['image',S.cyan,'Photos','2.1 GB'],['database',S.gray,'Bin','1.2 GB']].map(([ic,c,n,v])=>`<div class="r nav">${tile(ic,c)}${t(n)}<span class="v sec">${v}</span>${info}</div>`),`<div class="r nav">${tile('settings',S.gray)}${t('System Data')}<span class="v sec">74.1 GB</span></div>`),
+    btns('Refresh')],
+});
+const PANE_SEL={'Menu Bar':'Menu Bar','Date & Time':'General','Language & Region':'General','Login Items':'General','Sharing':'General','About':'General','Software Update':'General','Storage':'General'};
+const selOf=(name)=>PANE_SEL[name]||name.split(' › ')[0];
 let out='';
-const order=['General','Appearance','Wallpaper','Desktop & Dock','Menu Bar','Displays','Sound','Wi-Fi','Bluetooth','Battery'];
+const order=['General','Appearance','Wallpaper','Desktop & Dock','Menu Bar','Displays','Sound','Wi-Fi','Bluetooth','Battery',
+  'Network','Network › Wi-Fi','VPN','Notifications','Notifications › Files','Focus','Focus › Do Not Disturb','Lock Screen',
+  'Privacy & Security','Privacy & Security › Camera','Keyboard','Keyboard Shortcuts','Mouse','Trackpad','Trackpad › Scroll & Zoom',
+  'Date & Time','Language & Region','Login Items','Sharing','Accessibility','Accessibility › Display','Spotlight','About',
+  'Software Update','Storage'];
+const SHEET=`<div class="dim"></div><div class="sheet"><div class="sb"><div style="height:10px"></div>${[['search',S.blue,'Spotlight'],['lock',C.black,'Lock Screen']].map(([ic,c,n],i)=>`<div class="row${i==0?' sel':''}">${tile(ic,c)}<span>${n}</span></div>`).join('')}</div>
+  <div class="body"><div class="g"><div class="r" style="color:var(--label)">To change a shortcut, double-click the key combination.</div><div class="li" style="display:flex;height:24px;align-items:center;padding:0 10px 0 20px;border-top:1px solid var(--sep);margin:0 0 8px"><span style="flex:1">Show Spotlight search</span><span>⌘Space</span></div></div></div>
+  <div class="foot"><span class="done">Done</span></div></div>`;
 for(const name of order){
-  const [title,...body]=PANES[name];
-  out+=`<div class="frame" id="${name.replace(/\W+/g,'-').toLowerCase()}"><div class="cap-label">${name}</div><div class="win">${sidebar(name,name==='General')}
+  const sheet=name==='Keyboard Shortcuts';
+  const [title,...body]=PANES[sheet?'Keyboard':name];
+  const sel=sheet?'Keyboard':selOf(name);
+  out+=`<div class="frame" id="${name.replace(/\W+/g,'-').toLowerCase()}"><div class="cap-label">${name}</div><div class="win">${sidebar(sel,name==='General')}
     <div class="tl"><i></i><i></i><i></i></div>
     <div class="cap"><b>${I('chevron-left')}</b><hr><b class="off">${I('chevron-right')}</b></div>
     ${title?`<div class="title">${title}</div>`:''}
-    <div class="detail">${body.join('')}</div></div></div>`;
+    <div class="detail">${body.join('')}</div>${sheet?SHEET:''}</div></div>`;
 }
 document.getElementById('stage').innerHTML=out;
 </script>

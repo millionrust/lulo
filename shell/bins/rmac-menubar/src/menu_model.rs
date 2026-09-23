@@ -244,11 +244,16 @@ pub enum StatusAction {
     ToggleOtherNetworks,
     OpenSettings(&'static str),
     ToggleLowPower,
+    /// Dismiss a failed Wi-Fi mutation's banner without changing anything.
+    DismissWifiError,
+    /// Dismiss a failed energy-mode mutation's banner without changing
+    /// anything.
+    DismissBatteryError,
 }
 
 impl StatusAction {
-    /// Whether choosing it dismisses the menu (switches and the disclosure
-    /// act in place, as on macOS).
+    /// Whether choosing it dismisses the menu (switches, the disclosure and
+    /// error dismissals act in place, as on macOS).
     pub fn closes_menu(&self) -> bool {
         matches!(self, Self::Join(_) | Self::OpenSettings(_))
     }
@@ -416,6 +421,10 @@ pub struct WifiMenuInput<'a> {
     pub device: Option<&'a NetworkDevice>,
     pub option: bool,
     pub others_expanded: bool,
+    /// The network a join is currently in flight for, if any.
+    pub joining: Option<&'a WifiNetworkId>,
+    /// The last join or radio-toggle failure, shown until dismissed.
+    pub error: Option<&'a str>,
 }
 
 /// One entry per network name: the connected access point, else the
@@ -442,10 +451,11 @@ fn unique_networks<'a>(networks: impl Iterator<Item = &'a WifiNetwork>) -> Vec<&
     unique
 }
 
-fn network_row(network: &WifiNetwork) -> StatusRow {
+fn network_row(network: &WifiNetwork, joining: bool) -> StatusRow {
     // Saved and open networks join directly; a new protected network needs
-    // credentials, which Wi-Fi Settings asks for.
-    let action = if network.connected {
+    // credentials, which Wi-Fi Settings asks for. A join already in flight
+    // is not reactivatable until it resolves.
+    let action = if joining || network.connected {
         None
     } else if network.known
         || matches!(
@@ -494,17 +504,22 @@ pub fn wifi_menu_rows(input: WifiMenuInput<'_>) -> Vec<StatusRow> {
         warning: false,
         action: StatusAction::OpenSettings("wifi"),
     };
+    let error_row = input.error.map(|error| StatusRow::Item {
+        label: error.to_string(),
+        warning: true,
+        action: StatusAction::DismissWifiError,
+    });
     let Some(wifi) = input.wifi else {
-        return vec![
-            StatusRow::Title {
-                label: "Wi-Fi".into(),
-                value: None,
-                switch: None,
-                action: None,
-            },
-            StatusRow::Separator,
-            settings,
-        ];
+        let mut rows = vec![StatusRow::Title {
+            label: "Wi-Fi".into(),
+            value: None,
+            switch: None,
+            action: None,
+        }];
+        rows.extend(error_row);
+        rows.push(StatusRow::Separator);
+        rows.push(settings);
+        return rows;
     };
     let mut rows = vec![StatusRow::Title {
         label: "Wi-Fi".into(),
@@ -512,6 +527,7 @@ pub fn wifi_menu_rows(input: WifiMenuInput<'_>) -> Vec<StatusRow> {
         switch: wifi.available.then_some(wifi.enabled),
         action: wifi.available.then_some(StatusAction::ToggleWifi),
     }];
+    rows.extend(error_row);
     if !wifi.available {
         rows.push(StatusRow::Info("Wi-Fi Unavailable".into()));
     }
@@ -542,8 +558,11 @@ pub fn wifi_menu_rows(input: WifiMenuInput<'_>) -> Vec<StatusRow> {
             rows.push(StatusRow::Separator);
             rows.push(StatusRow::Header("Known Networks".into()));
             for network in known.iter().copied() {
-                rows.push(network_row(network));
-                if input.option && network.connected {
+                let joining = input.joining == Some(&network.id);
+                rows.push(network_row(network, joining));
+                if joining {
+                    rows.push(StatusRow::Detail("Connecting…".into()));
+                } else if input.option && network.connected {
                     rows.extend(connected_details(network, input.device));
                 }
             }
@@ -568,8 +587,11 @@ pub fn wifi_menu_rows(input: WifiMenuInput<'_>) -> Vec<StatusRow> {
                 rows.push(StatusRow::Info("No Other Networks".into()));
             } else {
                 for network in others {
-                    rows.push(network_row(network));
-                    if input.option && network.connected {
+                    let joining = input.joining == Some(&network.id);
+                    rows.push(network_row(network, joining));
+                    if joining {
+                        rows.push(StatusRow::Detail("Connecting…".into()));
+                    } else if input.option && network.connected {
                         rows.extend(connected_details(network, input.device));
                     }
                 }
@@ -582,7 +604,10 @@ pub fn wifi_menu_rows(input: WifiMenuInput<'_>) -> Vec<StatusRow> {
     rows
 }
 
-pub fn battery_menu_rows(snapshot: Option<&rmac_power::Snapshot>) -> Vec<StatusRow> {
+pub fn battery_menu_rows(
+    snapshot: Option<&rmac_power::Snapshot>,
+    error: Option<&str>,
+) -> Vec<StatusRow> {
     let battery = snapshot.and_then(|snapshot| snapshot.battery.as_ref());
     let mut rows = vec![StatusRow::Title {
         label: "Battery".into(),
@@ -590,6 +615,13 @@ pub fn battery_menu_rows(snapshot: Option<&rmac_power::Snapshot>) -> Vec<StatusR
         switch: None,
         action: None,
     }];
+    if let Some(error) = error {
+        rows.push(StatusRow::Item {
+            label: error.to_string(),
+            warning: true,
+            action: StatusAction::DismissBatteryError,
+        });
+    }
     if let Some(battery) = battery {
         rows.push(StatusRow::Info(
             if battery.on_battery {
@@ -599,6 +631,15 @@ pub fn battery_menu_rows(snapshot: Option<&rmac_power::Snapshot>) -> Vec<StatusR
             }
             .into(),
         ));
+        // `battery.seconds_remaining` (UPower TimeToEmpty/TimeToFull) is read
+        // by the backend and already shown in System Settings' Battery pane
+        // (`system-settings/src/power.rs::format_duration`). It is
+        // deliberately not repeated here: the reference capture of the real
+        // Tahoe menu-bar Battery dropdown at 38%/discharging
+        // (target/evidence/mac-2026-09-23/ax/status-Battery.png) shows only
+        // the percentage and power source, no time estimate — inventing a
+        // row macOS doesn't draw here would violate "measure, never invent
+        // numbers." Re-check a charging capture before adding one.
     }
     if let Some(profiles) = snapshot
         .map(|snapshot| &snapshot.profiles)
@@ -799,6 +840,8 @@ mod tests {
             device: None,
             option: false,
             others_expanded: false,
+            joining: None,
+            error: None,
         });
         assert_eq!(
             labels(&rows),
@@ -846,6 +889,8 @@ mod tests {
             device: None,
             option: false,
             others_expanded: true,
+            joining: None,
+            error: None,
         });
         assert_eq!(
             labels(&rows)[1..6],
@@ -896,6 +941,8 @@ mod tests {
             device: Some(&device),
             option: true,
             others_expanded: false,
+            joining: None,
+            error: None,
         });
         assert_eq!(
             labels(&rows)[..9],
@@ -921,6 +968,8 @@ mod tests {
             device: None,
             option: false,
             others_expanded: false,
+            joining: None,
+            error: None,
         });
         assert_eq!(labels(&rows)[1], "item:Weak Security…");
 
@@ -931,6 +980,8 @@ mod tests {
             device: None,
             option: false,
             others_expanded: false,
+            joining: None,
+            error: None,
         });
         assert_eq!(
             labels(&rows),
@@ -941,6 +992,128 @@ mod tests {
             StatusRow::Title {
                 switch: Some(false),
                 action: Some(StatusAction::ToggleWifi),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn a_network_being_joined_shows_connecting_and_cannot_be_reactivated() {
+        let wifi = snapshot(vec![
+            network("Home Wi-Fi", 90, true, true, psk()),
+            network("cafe", 40, true, false, psk()),
+        ]);
+        let joining = wifi.networks[1].id.clone();
+        let rows = wifi_menu_rows(WifiMenuInput {
+            wifi: Some(&wifi),
+            device: None,
+            option: false,
+            others_expanded: false,
+            joining: Some(&joining),
+            error: None,
+        });
+        assert_eq!(
+            labels(&rows),
+            [
+                "title:Wi-Fi",
+                "---",
+                "head:Known Networks",
+                "badge:cafe",
+                "detail:Connecting…",
+                "badge:Home Wi-Fi",
+                "end",
+                "---",
+                "more:Other Networks",
+                "---",
+                "item:Wi-Fi Settings…",
+            ]
+        );
+        // The row being joined cannot be clicked again until it resolves.
+        assert!(matches!(rows[3], StatusRow::Badge { action: None, .. }));
+    }
+
+    #[test]
+    fn a_join_or_radio_failure_shows_a_dismissible_banner() {
+        let wifi = snapshot(vec![network("cafe", 40, true, false, psk())]);
+        let rows = wifi_menu_rows(WifiMenuInput {
+            wifi: Some(&wifi),
+            device: None,
+            option: false,
+            others_expanded: false,
+            joining: None,
+            error: Some("Couldn't join \u{201c}cafe\u{201d}: wrong password"),
+        });
+        assert_eq!(
+            labels(&rows)[..2],
+            [
+                "title:Wi-Fi",
+                "item:Couldn't join \u{201c}cafe\u{201d}: wrong password"
+            ]
+        );
+        assert!(matches!(
+            rows[1],
+            StatusRow::Item {
+                warning: true,
+                action: StatusAction::DismissWifiError,
+                ..
+            }
+        ));
+
+        // Wi-Fi unavailable still shows the banner ahead of the title-only
+        // fallback.
+        let rows = wifi_menu_rows(WifiMenuInput {
+            wifi: None,
+            device: None,
+            option: false,
+            others_expanded: false,
+            joining: None,
+            error: Some("Couldn't reach the Wi-Fi service"),
+        });
+        assert_eq!(
+            labels(&rows),
+            [
+                "title:Wi-Fi",
+                "item:Couldn't reach the Wi-Fi service",
+                "---",
+                "item:Wi-Fi Settings…",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_battery_mutation_failure_shows_a_dismissible_banner() {
+        let battery = rmac_power::Battery {
+            percentage: 61,
+            state: rmac_power::BatteryState::Discharging,
+            on_battery: true,
+            seconds_remaining: None,
+            capacity: None,
+            charge_cycles: None,
+            energy_rate_watts: None,
+            model: None,
+            charge_threshold: Default::default(),
+            history: Default::default(),
+        };
+        let snapshot = rmac_power::Snapshot {
+            battery: Some(battery),
+            profiles: rmac_power::Profiles::default(),
+        };
+        let rows = battery_menu_rows(
+            Some(&snapshot),
+            Some("Couldn't change the energy mode: not authorized"),
+        );
+        assert_eq!(
+            labels(&rows)[..2],
+            [
+                "title:Battery",
+                "item:Couldn't change the energy mode: not authorized",
+            ]
+        );
+        assert!(matches!(
+            rows[1],
+            StatusRow::Item {
+                warning: true,
+                action: StatusAction::DismissBatteryError,
                 ..
             }
         ));
@@ -1032,6 +1205,8 @@ mod tests {
             device: None,
             option: false,
             others_expanded: false,
+            joining: None,
+            error: None,
         });
         // A is connected (no action): first stop is B, then the disclosure,
         // then Wi-Fi Settings, then back to B.
@@ -1068,7 +1243,7 @@ mod tests {
             profiles: rmac_power::Profiles::default(),
         };
         assert_eq!(
-            labels(&battery_menu_rows(Some(&snapshot))),
+            labels(&battery_menu_rows(Some(&snapshot), None)),
             [
                 "title:Battery",
                 "info:Power Source: Battery",
@@ -1085,7 +1260,7 @@ mod tests {
             ],
             performance_degraded: None,
         };
-        let rows = battery_menu_rows(Some(&snapshot));
+        let rows = battery_menu_rows(Some(&snapshot), None);
         assert_eq!(
             labels(&rows),
             [

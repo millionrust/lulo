@@ -461,7 +461,14 @@ mod linux_wayland {
         status_generation: u64,
         wifi_menu: Option<WifiMenuData>,
         wifi_others_expanded: bool,
+        /// The network a `Join` is waiting on a D-Bus reply for.
+        wifi_joining: Option<rmac_network::WifiNetworkId>,
+        /// The last Wi-Fi mutation failure, visible until dismissed or a
+        /// fresh mutation starts.
+        wifi_error: Option<String>,
         battery_menu: Option<rmac_power::Snapshot>,
+        /// The last energy-mode mutation failure, visible until dismissed.
+        battery_error: Option<String>,
         /// Each status item's highlight edges (left, right), recorded while
         /// painting, so its menu opens exactly under it.
         status_slots: Rc<RefCell<BTreeMap<StatusMenuKind, (f32, f32)>>>,
@@ -520,7 +527,10 @@ mod linux_wayland {
                 status_generation: 0,
                 wifi_menu: None,
                 wifi_others_expanded: false,
+                wifi_joining: None,
+                wifi_error: None,
                 battery_menu: None,
+                battery_error: None,
                 status_slots: Rc::new(RefCell::new(BTreeMap::new())),
                 fullscreen,
                 revealed: !fullscreen,
@@ -724,8 +734,12 @@ mod linux_wayland {
                         .and_then(|data| data.device.as_ref()),
                     option: self.status_option,
                     others_expanded: self.wifi_others_expanded,
+                    joining: self.wifi_joining.as_ref(),
+                    error: self.wifi_error.as_deref(),
                 }),
-                StatusMenuKind::Battery => battery_menu_rows(self.battery_menu.as_ref()),
+                StatusMenuKind::Battery => {
+                    battery_menu_rows(self.battery_menu.as_ref(), self.battery_error.as_deref())
+                }
             }
         }
 
@@ -746,6 +760,7 @@ mod linux_wayland {
                     let enabled = !data.wifi.enabled;
                     // Flip the switch now; the reload confirms or reverts it.
                     data.wifi.enabled = enabled;
+                    self.wifi_error = None;
                     cx.notify();
                     cx.spawn(async move |this, cx| {
                         let result = cx
@@ -754,30 +769,63 @@ mod linux_wayland {
                                 blocking::unblock(move || rmac_network::set_enabled(enabled)).await
                             })
                             .await;
-                        if let Err(error) = result {
-                            eprintln!(
-                                "could not turn Wi-Fi {}: {error}",
-                                if enabled { "on" } else { "off" }
-                            );
-                        }
                         let _ = this.update(cx, |this, cx| {
+                            if let Err(error) = result {
+                                eprintln!(
+                                    "could not turn Wi-Fi {}: {error}",
+                                    if enabled { "on" } else { "off" }
+                                );
+                                this.wifi_error = Some(format!(
+                                    "Couldn't turn Wi-Fi {}: {error}",
+                                    if enabled { "on" } else { "off" }
+                                ));
+                            }
                             if this.status_menu == Some(StatusMenuKind::Wifi) {
                                 this.load_status_menu(StatusMenuKind::Wifi, enabled, cx);
+                            } else {
+                                cx.notify();
                             }
                         });
                     })
                     .detach();
                 }
                 StatusAction::Join(network) => {
-                    cx.background_executor()
-                        .spawn(async move {
-                            let result =
-                                blocking::unblock(move || rmac_network::connect(&network)).await;
+                    // The row's action is already gone once `wifi_joining` is
+                    // set (see `network_row`), so this cannot double-fire.
+                    let ssid = self.wifi_menu.as_ref().and_then(|data| {
+                        data.wifi
+                            .networks
+                            .iter()
+                            .find(|candidate| candidate.id == network)
+                            .map(|candidate| candidate.ssid.clone())
+                    });
+                    self.wifi_joining = Some(network.clone());
+                    self.wifi_error = None;
+                    cx.notify();
+                    cx.spawn(async move |this, cx| {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async move {
+                                blocking::unblock(move || rmac_network::connect(&network)).await
+                            })
+                            .await;
+                        let _ = this.update(cx, |this, cx| {
+                            this.wifi_joining = None;
                             if let Err(error) = result {
                                 eprintln!("could not join the Wi-Fi network: {error}");
+                                this.wifi_error = Some(match &ssid {
+                                    Some(ssid) => format!("Couldn't join “{ssid}”: {error}"),
+                                    None => format!("Couldn't join the network: {error}"),
+                                });
                             }
-                        })
-                        .detach();
+                            if this.status_menu == Some(StatusMenuKind::Wifi) {
+                                this.load_status_menu(StatusMenuKind::Wifi, false, cx);
+                            } else {
+                                cx.notify();
+                            }
+                        });
+                    })
+                    .detach();
                 }
                 StatusAction::ToggleOtherNetworks => {
                     self.wifi_others_expanded = !self.wifi_others_expanded;
@@ -798,6 +846,7 @@ mod linux_wayland {
                         rmac_power::PowerProfile::PowerSaver
                     };
                     profiles.active = Some(target);
+                    self.battery_error = None;
                     cx.notify();
                     cx.spawn(async move |this, cx| {
                         let result = cx
@@ -806,16 +855,28 @@ mod linux_wayland {
                                 blocking::unblock(move || rmac_power::set_profile(target)).await
                             })
                             .await;
-                        if let Err(error) = result {
-                            eprintln!("could not change the energy mode: {error}");
-                        }
                         let _ = this.update(cx, |this, cx| {
+                            if let Err(error) = result {
+                                eprintln!("could not change the energy mode: {error}");
+                                this.battery_error =
+                                    Some(format!("Couldn't change the energy mode: {error}"));
+                            }
                             if this.status_menu == Some(StatusMenuKind::Battery) {
                                 this.load_status_menu(StatusMenuKind::Battery, false, cx);
+                            } else {
+                                cx.notify();
                             }
                         });
                     })
                     .detach();
+                }
+                StatusAction::DismissWifiError => {
+                    self.wifi_error = None;
+                    cx.notify();
+                }
+                StatusAction::DismissBatteryError => {
+                    self.battery_error = None;
+                    cx.notify();
                 }
             }
         }

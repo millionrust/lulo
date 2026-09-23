@@ -17,6 +17,26 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   chaos/soak runs, and the security review still need native candidate evidence.
 - No hardware station is yet certified for Alpha, Beta, or 1.0.
 
+## Accessibility limits
+
+- The Dock's layer-shell surface runs with `keyboard_interactive: false` (no
+  compositor surface ever receives keyboard focus there), so there is no
+  keyboard-only path into it yet -- macOS reaches the Dock with Control-F3,
+  then arrow keys and Return. Making the Dock keyboard-reachable needs a
+  layer-shell keyboard-interactivity mode switch, a new global shortcut, an
+  arrow-key selection state machine, a visible focus ring, and an Escape
+  route back to the previous focus: a cross-crate feature, not a small
+  follow-up to the AT-SPI Click-action fix in the Dock and Spotlight
+  (todo.md "Accessibility gates").
+- AT-SPI's `EditableText` interface (needed to type into Spotlight's search
+  field without a keyboard injector) is not implemented by the pinned
+  `accesskit_unix`/`accesskit_atspi_common` versions at all -- confirmed
+  against the vendored dependency source, independent of which rmac binary
+  is deployed. The field reports a real `TextInput` role with its value
+  (readable over AT-SPI's `Text` interface) and already handles AccessKit's
+  `SetValue`/`ReplaceSelectedText` actions, ready for when a dependency
+  upgrade adds the AT-SPI bridge for them.
+
 ## Feature limits
 
 - rmac does not clone Apple services, proprietary assets, iCloud, AirDrop,

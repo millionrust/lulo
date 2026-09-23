@@ -1,10 +1,11 @@
 # Lulo OS
 
-Lulo OS is an open-source desktop for Linux that feels like a Mac. It gives
-you a menu bar, a Dock, Spotlight, Mission Control, Control Center and
-notifications, along with a set of apps built to match macOS 26. Everything is
-written in Rust and drawn with [GPUI](https://github.com/zed-industries/zed),
-the GPU UI framework behind the Zed editor.
+Lulo OS is an open-source desktop for Linux that feels like a Mac, with Windows
+support planned. It gives you a menu bar, a Dock, Spotlight, Mission Control,
+Control Center and notifications, along with a set of apps built to match
+macOS 26. Everything is written in Rust and drawn with
+[GPUI](https://github.com/zed-industries/zed), the GPU UI framework behind the
+Zed editor.
 
 It runs on Ubuntu 26.04 as its own login session on top of the
 [niri](https://github.com/niri-wm/niri) Wayland compositor. Your normal Ubuntu

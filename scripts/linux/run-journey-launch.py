@@ -25,19 +25,33 @@ against a disposable account; this script complements it rather than
 duplicating it.
 
 Launching "from the Dock or Spotlight" is attempted through real AT-SPI
-actions first. As of this writing neither surface is actually drivable that
-way (see the "dock_launch" and "spotlight_launch" steps in the JSON report):
-Dock icons expose only the Accessible/Component AT-SPI interfaces (no
-"click" action), and the Spotlight search field exposes neither Text nor
-EditableText, so a query cannot be typed without a keyboard injector, and
-there is no D-Bus query/activate entry point to fall back to either. Both
-are real product accessibility gaps (see todo.md's "no pointer-only
-controls" accessibility gate) and are reported as failed steps rather than
-silently skipped. To still produce real timing/focus/close evidence for the
-rest of the journey, the script then launches the target application the
-same way the Dock/Spotlight would ultimately do it (its installed
-`Exec=`), clearly labeled in the report as a fallback that did not go
-through the accessible UI.
+actions first (see the "dock_launch" and "spotlight_launch" steps in the
+JSON report). Both were pointer-only gaps against todo.md's "no
+pointer-only controls" accessibility gate:
+
+  * Dock icons exposed only the Accessible/Component AT-SPI interfaces (no
+    "click" action) -- fixed: each launchable tile now wires AccessKit's
+    Click action to the same launch/activate path a mouse click uses, so
+    `dock_launch` clicks it for real once the fixed binary is deployed.
+  * Spotlight's search field exposed neither Text nor EditableText, so a
+    query could not be typed -- partly fixed: the field now reports a real
+    Entry role with its value over AT-SPI's Text interface, and each result
+    row is a real Button. But the pinned accesskit_unix/
+    accesskit_atspi_common AT-SPI bridge does not implement
+    org.a11y.atspi.EditableText at all (confirmed against the vendored
+    dependency source), so there is still no AT-SPI action that can *set*
+    the field's text without a keyboard injector; `spotlight_launch` still
+    reports this as a failed step, now with an accurate reason.
+
+The reference laptop runs whatever binaries were last deployed there, so
+this script always drives the surfaces through live AT-SPI introspection
+(never a hardcoded "new binary" assumption) and reports exactly what it
+finds. Until the fixed binaries are deployed, both steps still fail as
+before. To still produce real timing/focus/close evidence for the rest of
+the journey, the script then launches the target application the same way
+the Dock/Spotlight would ultimately do it (its installed `Exec=`), clearly
+labeled in the report as a fallback that did not go through the accessible
+UI.
 
 The report is privacy-safe: no screenshots, no home-directory paths, no
 window titles, no user names. Every wait in this script is bounded; it never
@@ -316,11 +330,24 @@ def find_node(
     node_name: str,
     role: Optional[str] = None,
     timeout: float = ATSPI_FIND_TIMEOUT_S,
+    name_prefix: bool = False,
 ):
+    """Find an AT-SPI node by its accessible name and (optionally) role.
+
+    With ``name_prefix=True``, ``node_name`` matches the start of the
+    node's name rather than the whole of it: result rows carry state after
+    the title (", running", " — Application", ...), so a caller that only
+    knows the title searches with a prefix instead of guessing the suffix.
+    """
+
     def search():
         for node in _atspi_snapshot(app_name):
             try:
-                if node.name != node_name:
+                name = node.name
+                matches = (
+                    name.startswith(node_name) if name_prefix else name == node_name
+                )
+                if not matches:
                     continue
                 if role is not None and node.getRoleName() != role:
                     continue
@@ -492,6 +519,11 @@ def attempt_dock_launch(app: dict[str, str]) -> dict[str, Any]:
     return make_step("dock_launch", True, "clicked the Dock icon via its AT-SPI click action")
 
 
+# The query field's accessible name (crates/rmac-launcher-runtime's
+# QUERY_NAME); kept as a literal because this script has no Rust bridge.
+LAUNCHER_QUERY_NAME = "Spotlight Search"
+
+
 def attempt_spotlight_launch(app: dict[str, str]) -> dict[str, Any]:
     button = find_node("rmac-top-bar", "Spotlight", role="button")
     if button is None or "click" not in action_names(button):
@@ -501,7 +533,7 @@ def attempt_spotlight_launch(app: dict[str, str]) -> dict[str, Any]:
             "the top bar's Spotlight button was not found or has no AT-SPI click action",
         )
     click(button)
-    entry = find_node("rmac-launcher", "", role="entry", timeout=2.0)
+    entry = find_node("rmac-launcher", LAUNCHER_QUERY_NAME, role="entry", timeout=2.0)
     try:
         if entry is None:
             return make_step(
@@ -510,18 +542,33 @@ def attempt_spotlight_launch(app: dict[str, str]) -> dict[str, Any]:
                 "Spotlight opened but its search field was not found over AT-SPI",
             )
         interfaces = set(entry.get_interfaces())
-        if "EditableText" not in interfaces and "Text" not in interfaces:
+        if "EditableText" not in interfaces:
+            # The field now reports a real Entry role with its value (over
+            # AT-SPI's Text interface) -- it can be *read*. But the pinned
+            # accesskit_unix/accesskit_atspi_common AT-SPI bridge does not
+            # implement org.a11y.atspi.EditableText at all (verified against
+            # the vendored dependency source, independent of which rmac
+            # binary is running), so there is still no AT-SPI action that
+            # can *set* its text without a keyboard injector (none is
+            # installed here). This is an upstream dependency gap, not an
+            # rmac one; typing still cannot be exercised by this script.
             return make_step(
                 "spotlight_launch",
                 False,
-                "Spotlight's search field exposes only "
-                f"{sorted(interfaces)} over AT-SPI, with no Text or "
-                "EditableText interface, so a query cannot be typed "
-                "without a keyboard injector (none is installed)",
+                "Spotlight's search field exposes "
+                f"{sorted(interfaces)} over AT-SPI (readable via Text) but "
+                "not EditableText, so a query cannot be typed without a "
+                "keyboard injector -- accesskit_unix does not implement "
+                "org.a11y.atspi.EditableText",
             )
-        if "EditableText" in interfaces:
-            entry.queryEditableText().setTextContents(app["display_name"])
-        result_row = find_node("rmac-launcher", app["display_name"], role="button", timeout=2.0)
+        entry.queryEditableText().setTextContents(app["display_name"])
+        result_row = find_node(
+            "rmac-launcher",
+            app["display_name"],
+            role="button",
+            timeout=2.0,
+            name_prefix=True,
+        )
         if result_row is None or "click" not in action_names(result_row):
             return make_step(
                 "spotlight_launch",
@@ -665,18 +712,20 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
             gaps.append(
                 {
                     "surface": "dock",
-                    "issue": "Dock icons expose only Accessible/Component over "
-                    "AT-SPI (no 'click' action); they cannot be activated by "
-                    "assistive technology or by this test today",
+                    "issue": "the Dock icon has no AT-SPI 'click' action on this "
+                    "build; it cannot be activated by assistive technology or "
+                    "by this test (fixed upstream -- redeploy rmac-dock)",
                 }
             )
             gaps.append(
                 {
                     "surface": "spotlight",
-                    "issue": "the Spotlight search field exposes neither Text nor "
-                    "EditableText over AT-SPI, so a query cannot be typed "
-                    "without a keyboard injector, and there is no D-Bus "
-                    "query/activate entry point to fall back to",
+                    "issue": "the Spotlight search field cannot be typed into over "
+                    "AT-SPI without a keyboard injector: either this build "
+                    "predates the field reporting a real Entry role with its "
+                    "value (redeploy rmac-launcher), or accesskit_unix's "
+                    "AT-SPI bridge still does not implement "
+                    "org.a11y.atspi.EditableText (an upstream dependency gap)",
                 }
             )
 

@@ -66,16 +66,26 @@ full logout/login, so the shared reference session is never disturbed; the
 destructive full GDM login/logout journey is
 [`docs/session-journey-evidence.md`](session-journey-evidence.md).
 
-As of this writing, neither the Dock nor Spotlight can actually be activated
-this way: Dock icons expose only the AT-SPI Accessible/Component interfaces
-(no `click` action), and Spotlight's search field exposes neither `Text` nor
-`EditableText` (so a query cannot be typed) with no D-Bus query/activate
-entry point to fall back to. Both are real accessibility gaps against
-todo.md's "no pointer-only controls" gate, reported as failed steps rather
-than hidden. To still measure the rest of the journey, the script then
+Both surfaces had real accessibility gaps against todo.md's "no pointer-only
+controls" gate, tracked as the `dock_launch` and `spotlight_launch` steps:
+
+* Dock icons exposed only the AT-SPI Accessible/Component interfaces (no
+  `click` action) -- fixed: each launchable tile now wires AccessKit's Click
+  action to the same activation path a mouse click uses.
+* Spotlight's search field exposed neither `Text` nor `EditableText` -- partly
+  fixed: it now reports a real Entry role with its value over `Text`, and
+  each result row is a real Button, but the pinned `accesskit_unix` AT-SPI
+  bridge does not implement `org.a11y.atspi.EditableText` at all, so a query
+  still cannot be typed without a keyboard injector (an upstream dependency
+  gap, not an rmac one).
+
+The script always drives both surfaces through live AT-SPI introspection, so
+it reports exactly what the deployed binary exposes rather than assuming a
+fix is live; until the fixed binaries are deployed to the reference laptop,
+both steps still fail there. Whenever either step fails, the script then
 launches the target application directly (the same installed command a Dock
 or Spotlight activation would run), clearly labeled `fallback_spawn` in the
-report.
+report, so the rest of the journey is still measured.
 
 `scripts/test_journey_launch.py` unit-tests the script's pure JSON-parsing,
 environment-discovery, and report-building logic and runs anywhere with

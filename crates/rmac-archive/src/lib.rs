@@ -68,7 +68,7 @@ impl std::error::Error for Error {}
 
 impl From<io::Error> for Error {
     fn from(error: io::Error) -> Self {
-        if error.kind() == io::ErrorKind::Interrupted && error.to_string() == CANCELLED {
+        if error.kind() == io::ErrorKind::Other && error.to_string() == CANCELLED {
             Self::Cancelled
         } else {
             Self::Io(error)
@@ -78,8 +78,10 @@ impl From<io::Error> for Error {
 
 const CANCELLED: &str = "rmac-archive: cancelled";
 
+/// Not `Interrupted`: std's read loops (`read_exact`, `read_to_end`, copy)
+/// silently retry that kind, so a cancelled read would spin forever.
 pub(crate) fn cancelled_io() -> io::Error {
-    io::Error::new(io::ErrorKind::Interrupted, CANCELLED)
+    io::Error::other(CANCELLED)
 }
 
 /// The Archive Utility alert text for a failed expansion, or `None` when the

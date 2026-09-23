@@ -1,9 +1,10 @@
 //! Bounded, framework-neutral Desktop directory projection, plus the pure
 //! parts of the macOS 26 desktop: the icon grid (`grid`), Stacks
-//! (`stacks`), widgets (`widgets`) and the saved desktop state
-//! (`settings`).
+//! (`stacks`), widgets (`widgets`), renaming (`rename`) and the saved
+//! desktop state (`settings`).
 
 pub mod grid;
+pub mod rename;
 pub mod settings;
 pub mod stacks;
 pub mod widgets;
@@ -309,6 +310,83 @@ pub fn duplicate_file(path: &Path) -> Result<PathBuf, Error> {
     Ok(target)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RenameError {
+    /// Another item already has the name.
+    Taken,
+    /// The name cannot be used (see [`rename::check_name`]).
+    Invalid,
+    Io(io::ErrorKind),
+}
+
+/// Renames a Desktop item in place and returns its new path. An existing
+/// item is never replaced: the name is checked first, and the kernel
+/// refuses the rename (RENAME_NOREPLACE) if one appears in between.
+pub fn rename_item(path: &Path, new_name: &str) -> Result<PathBuf, RenameError> {
+    let old_name = path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .ok_or(RenameError::Invalid)?;
+    match rename::check_name(old_name, new_name) {
+        rename::NameCheck::Unchanged => return Ok(path.to_path_buf()),
+        rename::NameCheck::Empty | rename::NameCheck::Invalid => return Err(RenameError::Invalid),
+        rename::NameCheck::Hidden | rename::NameCheck::Valid => {}
+    }
+    let parent = path.parent().ok_or(RenameError::Invalid)?;
+    let target = parent.join(new_name);
+    let source = fs::symlink_metadata(path).map_err(|error| RenameError::Io(error.kind()))?;
+    match fs::symlink_metadata(&target) {
+        // Only a change of case on a case-insensitive file system finds
+        // the item itself under its new name.
+        Ok(existing)
+            if same_file(&source, &existing)
+                && old_name.to_lowercase() == new_name.to_lowercase() =>
+        {
+            return fs::rename(path, &target)
+                .map(|()| target)
+                .map_err(|error| RenameError::Io(error.kind()));
+        }
+        Ok(_) => return Err(RenameError::Taken),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(RenameError::Io(error.kind())),
+    }
+    match rename_noreplace(path, &target) {
+        Ok(()) => Ok(target),
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Err(RenameError::Taken),
+        Err(error) => Err(RenameError::Io(error.kind())),
+    }
+}
+
+#[cfg(unix)]
+fn same_file(left: &fs::Metadata, right: &fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt as _;
+    left.dev() == right.dev() && left.ino() == right.ino()
+}
+
+#[cfg(not(unix))]
+fn same_file(_: &fs::Metadata, _: &fs::Metadata) -> bool {
+    false
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn rename_noreplace(source: &Path, destination: &Path) -> io::Result<()> {
+    rustix::fs::renameat_with(
+        rustix::fs::CWD,
+        source,
+        rustix::fs::CWD,
+        destination,
+        rustix::fs::RenameFlags::NOREPLACE,
+    )
+    .map_err(io::Error::from)
+}
+
+/// Without an atomic no-replace rename, refuse rather than risk replacing
+/// an item that appeared after the check.
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn rename_noreplace(_: &Path, _: &Path) -> io::Result<()> {
+    Err(io::Error::from(io::ErrorKind::Unsupported))
+}
+
 /// Orders items as Sort By and Clean Up By do.
 pub fn sort_items(items: &mut [Item], sort: SortOrder) {
     items.sort_by(|left, right| {
@@ -430,6 +508,40 @@ mod tests {
         assert_eq!(
             duplicate_path(&root.join("notes")).unwrap(),
             root.join("notes copy")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rename_never_replaces_an_existing_item() {
+        let root = temporary("rename");
+        fs::write(root.join("notes.txt"), b"mine").unwrap();
+        fs::write(root.join("other.txt"), b"theirs").unwrap();
+        assert_eq!(
+            rename_item(&root.join("notes.txt"), "other.txt"),
+            Err(RenameError::Taken)
+        );
+        assert_eq!(fs::read(root.join("other.txt")).unwrap(), b"theirs");
+        assert_eq!(
+            rename_item(&root.join("notes.txt"), "a/b"),
+            Err(RenameError::Invalid)
+        );
+        assert_eq!(
+            rename_item(&root.join("notes.txt"), "plans.txt").unwrap(),
+            root.join("plans.txt")
+        );
+        assert_eq!(fs::read(root.join("plans.txt")).unwrap(), b"mine");
+        assert!(fs::symlink_metadata(root.join("notes.txt")).is_err());
+        assert_eq!(
+            rename_item(&root.join("missing"), "found"),
+            Err(RenameError::Io(io::ErrorKind::NotFound))
+        );
+        // The kernel refuses too, when a name appears after the check.
+        assert_eq!(
+            rename_noreplace(&root.join("plans.txt"), &root.join("other.txt"))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::AlreadyExists
         );
         fs::remove_dir_all(root).unwrap();
     }

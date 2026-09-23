@@ -199,6 +199,9 @@ mod linux_wayland {
         content: rmac_dock::presentation::ShelfContent,
         drag: Option<rmac_dock::drag::DragSession>,
         drag_order: Option<Vec<String>>,
+        /// Clock for tile animations (bounce, slide, fade).
+        epoch: std::time::Instant,
+        bounces: rmac_dock::bounce::BounceTracker,
     }
 
     impl Dock {
@@ -228,7 +231,19 @@ mod linux_wayland {
                 content: rmac_dock::presentation::ShelfContent::default(),
                 drag: None,
                 drag_order: None,
+                epoch: std::time::Instant::now(),
+                bounces: rmac_dock::bounce::BounceTracker::default(),
             }
+        }
+
+        fn now_ms(&self) -> u64 {
+            u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
+        }
+
+        /// A launch the Dock starts bounces its tile until a window appears.
+        fn note_launch(&mut self, app_id: &str) {
+            let now = self.now_ms();
+            self.bounces.launch(app_id, now);
         }
 
         fn schedule_hide(&mut self, cx: &mut Context<Self>) {
@@ -277,6 +292,12 @@ mod linux_wayland {
                     self.dispatch_action(rmac_dock::menu::Action::Context(action), cx);
                 }
             } else {
+                let launches = self.status.read(cx).model().is_some_and(|model| {
+                    matches!(model.activate(app_id), rmac_dock::Activation::Launch { .. })
+                });
+                if launches {
+                    self.note_launch(app_id);
+                }
                 self.dispatch_action(
                     rmac_dock::menu::Action::ActivateEntry(
                         rmac_dock::presentation::EntryId::Application(app_id.to_owned()),
@@ -371,6 +392,25 @@ mod linux_wayland {
                 )
             };
             self.content = content;
+            // Launch and attention bounces follow the authoritative model:
+            // a window appearing ends a launch, urgency asks for attention.
+            let now = self.now_ms();
+            let running_apps: std::collections::BTreeSet<String> = model
+                .items
+                .iter()
+                .filter(|item| item.running)
+                .map(|item| item.id.clone())
+                .collect();
+            let attention_apps: std::collections::BTreeSet<String> = model
+                .items
+                .iter()
+                .filter(|item| item.urgent && !item.active)
+                .map(|item| item.id.clone())
+                .collect();
+            self.bounces.reconcile(&running_apps, &attention_apps, now);
+            if self.bounces.is_animating(now) {
+                window.request_animation_frame();
+            }
             self.surface_description = description;
             let effective_autohide = dock_settings.autohide || self.fullscreen;
             let visibility_policy = (effective_autohide, self.overview_visible);
@@ -800,6 +840,7 @@ mod linux_wayland {
                             &dock_settings,
                         );
                         let visual_offset = (ICON_SIZE - visual_size) / 2.0;
+                        let lift = self.bounces.lift(&app_id, now, ICON_SIZE);
                         let activate_app_id = app_id.clone();
                         let mut item = div()
                             .id(format!("dock-item-{}-{index}", self.display_id))
@@ -950,13 +991,13 @@ mod linux_wayland {
                             });
                         visual = match self.placement {
                             rmac_shell_settings::DockPlacement::Bottom => {
-                                visual.left(px(visual_offset)).bottom_0()
+                                visual.left(px(visual_offset)).bottom(px(lift))
                             }
                             rmac_shell_settings::DockPlacement::Left => {
-                                visual.left_0().top(px(visual_offset))
+                                visual.left(px(lift)).top(px(visual_offset))
                             }
                             rmac_shell_settings::DockPlacement::Right => {
-                                visual.right_0().top(px(visual_offset))
+                                visual.right(px(lift)).top(px(visual_offset))
                             }
                         };
                         let squircle = visual_size * ICON_SQUIRCLE;
@@ -1057,18 +1098,8 @@ mod linux_wayland {
                             };
                             item = item.child(indicator);
                         }
-                        if entry.urgent {
-                            item = item.child(
-                                div()
-                                    .absolute()
-                                    .top(px(-3.0))
-                                    .right(px(-3.0))
-                                    .w(px(10.0))
-                                    .h(px(10.0))
-                                    .rounded_full()
-                                    .bg(rgba(tokens::system_red())),
-                            );
-                        }
+                        // Attention is a bounce on macOS (see the bounce
+                        // tracker), never a dot or badge.
                         let mut children: Vec<gpui::AnyElement> = Vec::with_capacity(2);
                         if separates_running && index == pinned_count {
                             children.push(dock_separator(self.placement));
@@ -1382,6 +1413,14 @@ mod linux_wayland {
                         };
                         this.context_menu = None;
                         this.input_region = None;
+                        if let rmac_dock::menu::Action::Context(
+                            rmac_dock::ContextAction::LaunchNew { app_id, .. },
+                        ) = &action
+                        {
+                            if authorized {
+                                this.note_launch(app_id);
+                            }
+                        }
                         if authorized {
                             this.dispatch_action(action, cx);
                         } else {

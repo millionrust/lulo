@@ -210,6 +210,32 @@ recent-windows {
 
 // macOS 26-style system feedback lives beneath the menu bar on the display
 // receiving keyboard focus. Niri owns the backdrop sampling and rounded blur.
+// Single-card shell panels fill their surface, so the compositor blur and
+// shadow take the card's own corner radius (popover 20, large surface 24).
+layer-rule {
+    match namespace=r#"^rmac-quick-settings$"#
+    geometry-corner-radius 20
+    shadow {
+        on
+        softness 30
+        spread 2
+        offset x=0 y=10
+        color "#00000055"
+    }
+}
+
+layer-rule {
+    match namespace=r#"^rmac-app-drawer$"#
+    geometry-corner-radius 24
+    shadow {
+        on
+        softness 30
+        spread 2
+        offset x=0 y=10
+        color "#00000055"
+    }
+}
+
 layer-rule {
     match namespace=r#"^rmac-osd-"#
     geometry-corner-radius 28

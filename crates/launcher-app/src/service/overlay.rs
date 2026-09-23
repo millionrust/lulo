@@ -40,7 +40,9 @@ fn overlay_options(bounds: WindowBounds) -> WindowOptions {
         is_minimizable: false,
         // The compact surface matches the visible Spotlight bounds, so its
         // client-requested blur cannot spill over the desktop.
-        window_background: WindowBackgroundAppearance::Blurred,
+        // Several separate glass shapes share this surface, and compositor
+        // blur covers the whole surface as one square rectangle.
+        window_background: WindowBackgroundAppearance::Transparent,
         app_id: Some("org.rmac.Launcher".into()),
         ..Default::default()
     }

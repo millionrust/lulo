@@ -64,7 +64,9 @@ fn panel_options(bounds: Bounds<Pixels>) -> WindowOptions {
         is_movable: false,
         is_resizable: false,
         is_minimizable: false,
-        window_background: WindowBackgroundAppearance::Blurred,
+        // Several separate glass shapes share this surface, and compositor
+        // blur covers the whole surface as one square rectangle.
+        window_background: WindowBackgroundAppearance::Transparent,
         app_id: Some("org.rmac.NotificationCenter".into()),
         ..Default::default()
     }

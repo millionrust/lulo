@@ -29,6 +29,7 @@ impl Render for QuickSettingsView {
                     this.dismiss(window, cx);
                 }
             }))
+            .size_full()
             .v_flex()
             .overflow_hidden()
             .rounded(px(mac::radius_popover()))

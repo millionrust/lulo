@@ -192,7 +192,7 @@ mod linux_wayland {
     }
 
     /// Run compositor actions in order, one socket each.
-    fn run(actions: Vec<Action>, cx: &mut App) {
+    fn run_actions(actions: Vec<Action>, cx: &mut App) {
         if actions.is_empty() {
             return;
         }
@@ -464,7 +464,7 @@ mod linux_wayland {
                 Exit::Focus(window) => Some(Action::FocusWindow { window }),
                 Exit::Space(workspace) => Some(Action::FocusWorkspace { workspace }),
             };
-            run(action.into_iter().collect(), cx);
+            run_actions(action.into_iter().collect(), cx);
         }
 
         fn commit(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -509,13 +509,13 @@ mod linux_wayland {
                 return;
             };
             match model::add_space(&snapshot, &self.scene.output) {
-                Some(model::Added::New(action)) => run(vec![action], cx),
+                Some(model::Added::New(action)) => run_actions(vec![action], cx),
                 Some(model::Added::PinnedCurrent(action)) => {
                     let output = self.scene.output.clone();
                     let _ = self
                         .service
                         .update(cx, |service, _| service.pending_add = Some(output));
-                    run(vec![action], cx);
+                    run_actions(vec![action], cx);
                 }
                 None => {}
             }
@@ -526,7 +526,7 @@ mod linux_wayland {
                 return;
             };
             let actions = model::remove_space(&snapshot, &self.scene.output, workspace);
-            run(actions, cx);
+            run_actions(actions, cx);
         }
 
         fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -1208,7 +1208,7 @@ mod linux_wayland {
                 if let Some(workspace) =
                     model::neighbour_space(&snapshot, command == Command::NextSpace)
                 {
-                    run(vec![Action::FocusWorkspace { workspace }], cx);
+                    run_actions(vec![Action::FocusWorkspace { workspace }], cx);
                 }
             }
             Command::Cancel => {
@@ -1358,7 +1358,7 @@ mod linux_wayland {
         if let Some(shown) = shown {
             service.update(cx, |service, _| service.shown_desktop = None);
             if let Some(action) = model::restore_desktop(&snapshot, &shown) {
-                run(vec![action], cx);
+                run_actions(vec![action], cx);
                 return;
             }
         }
@@ -1369,7 +1369,7 @@ mod linux_wayland {
             workspace: shown.empty,
         };
         service.update(cx, |service, _| service.shown_desktop = Some(shown));
-        run(vec![action], cx);
+        run_actions(vec![action], cx);
     }
 
     fn run_service() -> Result<(), String> {
@@ -1413,7 +1413,7 @@ mod linux_wayland {
                         let (topology, action) =
                             watched.update(cx, |service, _| service.apply(event));
                         if let Some(action) = action {
-                            run(vec![action], cx);
+                            run_actions(vec![action], cx);
                         }
                         if topology {
                             reconcile_corners(&watched, cx);

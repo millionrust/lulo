@@ -5731,6 +5731,7 @@ dependencies = [
  "rmac-shell-settings",
  "rmac-shortcuts",
  "rmac-ui",
+ "rust-embed",
 ]
 
 [[package]]

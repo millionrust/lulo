@@ -265,6 +265,13 @@ pub(crate) struct WaylandClientState {
     vertical_modifier: f32,
     horizontal_modifier: f32,
     scroll_event_received: bool,
+    /// rmac: touchpad momentum. Finger scroll velocity in logical px/ms, the
+    /// time of the last finger scroll, a pending axis stop, and a generation
+    /// that cancels a running glide.
+    scroll_velocity: Point<f32>,
+    last_finger_scroll: Option<Instant>,
+    axis_stop_pending: bool,
+    momentum_generation: u64,
     enter_token: Option<()>,
     button_pressed: Option<MouseButton>,
     mouse_focused_window: Option<WaylandWindowStatePtr>,
@@ -752,6 +759,10 @@ impl WaylandClient {
             },
             capslock: Capslock { on: false },
             scroll_event_received: false,
+            scroll_velocity: point(0.0, 0.0),
+            last_finger_scroll: None,
+            axis_stop_pending: false,
+            momentum_generation: 0,
             axis_source: AxisSource::Wheel,
             mouse_location: None,
             continuous_scroll_delta: None,
@@ -1922,6 +1933,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                 }
             }
             wl_pointer::Event::Leave { .. } => {
+                state.momentum_generation = state.momentum_generation.wrapping_add(1);
                 if let Some(focused_window) = state.mouse_focused_window.clone() {
                     let input = PlatformInput::MouseExited(MouseExitEvent {
                         position: state.mouse_location.unwrap(),
@@ -1999,6 +2011,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                 // Record presses only. Requests referencing this serial (popup grabs,
                 // interactive moves) are declined when given a release serial.
                 if button_state == wl_pointer::ButtonState::Pressed {
+                    state.momentum_generation = state.momentum_generation.wrapping_add(1);
                     state.serial_tracker.update(SerialKind::MousePress, serial);
                 }
                 let button = linux_button_to_gpui(button);
@@ -2083,6 +2096,14 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                 axis_source: WEnum::Value(axis_source),
             } => {
                 state.axis_source = axis_source;
+            }
+            wl_pointer::Event::AxisStop { .. } => {
+                // The fingers left the touchpad; the frame decides whether the
+                // scroll glides on (rmac, docs/decisions/0013).
+                if state.axis_source == AxisSource::Finger {
+                    state.axis_stop_pending = true;
+                    state.scroll_event_received = true;
+                }
             }
             wl_pointer::Event::Axis {
                 axis: WEnum::Value(axis),
@@ -2177,6 +2198,19 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                     state.scroll_event_received = false;
                     let continuous = state.continuous_scroll_delta.take();
                     let discrete = state.discrete_scroll_delta.take();
+                    let stopped = std::mem::take(&mut state.axis_stop_pending);
+                    if continuous.is_some() || discrete.is_some() {
+                        // New scrolling cancels a glide in progress.
+                        state.momentum_generation = state.momentum_generation.wrapping_add(1);
+                    }
+                    if let Some(continuous) = continuous
+                        && state.axis_source == AxisSource::Finger
+                    {
+                        track_finger_velocity(&mut state, continuous);
+                    }
+                    if stopped {
+                        start_momentum(&mut state);
+                    }
                     if let Some(continuous) = continuous {
                         if let Some(window) = state.mouse_focused_window.clone() {
                             let input = PlatformInput::ScrollWheel(ScrollWheelEvent {
@@ -2663,4 +2697,87 @@ impl Dispatch<XdgDialogV1, ()> for WaylandClientStatePtr {
         _qhandle: &QueueHandle<Self>,
     ) {
     }
+}
+
+/// rmac: macOS-like momentum after a touchpad scroll, using the same decay as
+/// `rmac_ui::scroll` (FEEL_SPEC §D.4).
+const MOMENTUM_DECAY_MS: f32 = 325.0;
+const MOMENTUM_TICK: Duration = Duration::from_millis(8);
+/// Below this lift-off speed (px/ms) the scroll simply stops, like a slow
+/// deliberate drag on a Mac trackpad.
+const MOMENTUM_MIN_VELOCITY: f32 = 0.08;
+/// The glide ends once it moves less than this per tick.
+const MOMENTUM_STOP_PX: f32 = 0.25;
+
+fn track_finger_velocity(state: &mut WaylandClientState, delta: Point<Pixels>) {
+    let now = Instant::now();
+    let delta = point(f32::from(delta.x), f32::from(delta.y));
+    let elapsed = state
+        .last_finger_scroll
+        .map(|last| now.duration_since(last).as_secs_f32() * 1000.0);
+    let instant_velocity = |dt: f32| point(delta.x / dt, delta.y / dt);
+    state.scroll_velocity = match elapsed {
+        // Blend with recent motion so one uneven frame doesn't decide the fling.
+        Some(dt) if dt <= 100.0 => {
+            let current = instant_velocity(dt.max(4.0));
+            point(
+                0.6 * current.x + 0.4 * state.scroll_velocity.x,
+                0.6 * current.y + 0.4 * state.scroll_velocity.y,
+            )
+        }
+        _ => instant_velocity(16.0),
+    };
+    state.last_finger_scroll = Some(now);
+}
+
+fn start_momentum(state: &mut WaylandClientState) {
+    let lifted_while_moving = state
+        .last_finger_scroll
+        .is_some_and(|last| last.elapsed() <= Duration::from_millis(60));
+    let velocity = state.scroll_velocity;
+    state.last_finger_scroll = None;
+    state.scroll_velocity = point(0.0, 0.0);
+    if !lifted_while_moving
+        || velocity.x.hypot(velocity.y) < MOMENTUM_MIN_VELOCITY
+        || state.mouse_focused_window.is_none()
+    {
+        return;
+    }
+    state.momentum_generation = state.momentum_generation.wrapping_add(1);
+    let generation = state.momentum_generation;
+    let mut velocity = velocity;
+    let mut last_tick = Instant::now();
+    let _ = state.loop_handle.insert_source(
+        Timer::from_duration(MOMENTUM_TICK),
+        move |_, _, this: &mut WaylandClientStatePtr| {
+            let client = this.get_client();
+            let mut state = client.borrow_mut();
+            if state.momentum_generation != generation {
+                return TimeoutAction::Drop;
+            }
+            let now = Instant::now();
+            let dt = now.duration_since(last_tick).as_secs_f32() * 1000.0;
+            last_tick = now;
+            let decay = (-dt / MOMENTUM_DECAY_MS).exp();
+            velocity = point(velocity.x * decay, velocity.y * decay);
+            let step = point(velocity.x * dt, velocity.y * dt);
+            if step.x.hypot(step.y) < MOMENTUM_STOP_PX {
+                return TimeoutAction::Drop;
+            }
+            let (Some(window), Some(position)) =
+                (state.mouse_focused_window.clone(), state.mouse_location)
+            else {
+                return TimeoutAction::Drop;
+            };
+            let modifiers = state.modifiers;
+            drop(state);
+            window.handle_input(PlatformInput::ScrollWheel(ScrollWheelEvent {
+                position,
+                delta: ScrollDelta::Pixels(point(px(step.x), px(step.y))),
+                modifiers,
+                touch_phase: TouchPhase::Moved,
+            }));
+            TimeoutAction::ToDuration(MOMENTUM_TICK)
+        },
+    );
 }

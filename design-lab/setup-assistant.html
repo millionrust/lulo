@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Setup Assistant</title>
+<!--
+  rmac Setup Assistant: the first-login flow (crates/setup-assistant).
+  Every page is one 800 × 600 window at 1:1 logical points, dark appearance.
+  The Rust port (crates/setup-assistant/src/view.rs, `metrics`) copies these
+  numbers.
+
+  NOTHING HERE IS MEASURED. A Mac only shows Setup Assistant on a new or erased
+  machine, and the owner's Mac is neither, so every size, colour and duration
+  is S (from knowledge of macOS 14–26 Setup Assistant) until a capture exists.
+  The layout grammar is macOS's. The greeting is rmac's own design: typeset
+  words in several scripts crossfading on a slow accent gradient. It is not
+  Apple's handwritten "hello" artwork.
+
+  Window        800 × 600, radius 16 (the default niri rule), fill #222025      S
+                no traffic lights: Setup Assistant has none; the page's own
+                buttons move on, and closing the window counts as Set Up Later
+  Hero icon     64 circle, centre x, top 48; glyph 30, white on the step colour S
+                (the characters here stand in for the lucide icons the Rust
+                port draws: globe, keyboard, wifi, user, palette, search,
+                shield, check; the account pictures stand in for the
+                system's /usr/share/pixmaps/faces images)
+  Title         26/32 semibold, centre, 16 under the icon                       S
+  Subtitle      13/18 regular, label-2, centre, max 520 wide, 8 under the title S
+  Content       520 wide, centred, 24 under the subtitle                        S
+  Bottom bar    buttons 28 tall, radius 7, 13 pt; 24 from the bottom and sides;
+                Back (secondary) left, Continue (accent) right, Set Up Later a
+                plain text button 16 left of Continue                           S
+  List well     radius 10, fill #29272D, rows 32 tall, 1 px #3A3840 separators,
+                selected row accent fill, white text                            S
+  Greeting      64 pt semibold, tracking -1; fill a linear gradient
+                #6FB6FF → #B38CFF → #FF8FB1 at 110°; each word 2.8 s:
+                0.7 s fade + 12 pt rise in, 1.4 s hold, 0.7 s fade out          S
+                words: hello · bonjour · hola · hallo · ciao · olá · नमस्ते ·
+                こんにちは · 你好 · 안녕하세요 · привет · merhaba · hej · γεια σου
+  Get Started   44 circle accent with a 20 → glyph, centre x, 120 above the
+                bottom; "Get Started" 13 pt label 10 under it                  S
+  Skip Setup    text button, 13 pt label-2, bottom-left 24/24                  S
+
+  Backends (only real ones; anything else is omitted):
+    Language & Region  systemd-localed SetLocale (polkit asks for the admin
+                       password); lists are the installed locales
+    Keyboard           rmac-keyboard: the PC Keyboard switches from System
+                       Settings (docs/decisions/0017-mac-keyboard.md)
+    Wi-Fi              rmac-network (NetworkManager); the page is skipped when
+                       the computer has no Wi-Fi or is already connected
+    Your Account       AccountsService SetRealName / SetIconFile, which a user
+                       may call for their own account without root. Pictures
+                       are the system's /usr/share/pixmaps/faces set; without
+                       it only the monogram shows. The login name and the
+                       password need root (usermod / passwd), so they are
+                       shown, not edited
+    Appearance         rmac-theme's colour-scheme preference (Light/Dark/Auto)
+    Tips, Privacy      static text about what rmac itself does
+  Marker        $XDG_CONFIG_HOME/rmac/setup-assistant-complete, written on
+                Done, Skip Setup or closing the window
+-->
+<link rel="stylesheet" href="lab.css">
+<style>
+  body{padding:24px}
+  .cap-label{color:#8b8b93;font-size:12px;margin:18px 0 6px}
+  .win{position:relative;width:800px;height:600px;border-radius:16px;overflow:hidden;background:#222025;
+       color:var(--label);font-family:var(--font);box-shadow:0 16px 42px rgba(0,0,0,.74)}
+  .hero{position:absolute;left:368px;top:48px;width:64px;height:64px;border-radius:32px;display:flex;
+        align-items:center;justify-content:center;font-size:30px;color:#fff}
+  .title{position:absolute;left:0;right:0;top:128px;text-align:center;font-size:26px;line-height:32px;font-weight:600}
+  .sub{position:absolute;left:140px;width:520px;top:168px;text-align:center;font-size:13px;line-height:18px;color:var(--label-2)}
+  .content{position:absolute;left:140px;width:520px;top:210px}
+  .bar{position:absolute;left:24px;right:24px;bottom:24px;height:28px;display:flex;align-items:center;gap:16px}
+  .btn{height:28px;padding:0 16px;border-radius:7px;background:#363237;display:flex;align-items:center;font-size:13px}
+  .btn.primary{background:var(--accent);color:#fff}
+  .link{font-size:13px;color:var(--label-2)}
+  .grow{flex:1}
+  .well{background:#29272D;border-radius:10px;overflow:hidden}
+  .well .r{height:32px;display:flex;align-items:center;padding:0 12px;font-size:13px;border-top:1px solid #3A3840}
+  .well .r:first-child{border-top:0}
+  .well .r.sel{background:var(--accent);color:#fff;border-top-color:transparent}
+  .well .r .v{margin-left:auto;color:var(--label-2)}
+  .well .r.sel .v{color:rgba(255,255,255,.8)}
+  .two{display:flex;gap:16px}.two>div{flex:1}
+  .h{font-size:13px;font-weight:600;margin:0 0 6px 4px;color:var(--label-2)}
+  .sw{width:38px;height:22px;border-radius:11px;background:#48464D;position:relative;flex:none}
+  .sw::after{content:"";position:absolute;left:2px;top:2px;width:18px;height:18px;border-radius:9px;background:#E8E8EA}
+  .sw.on{background:var(--accent)}.sw.on::after{left:18px}
+  .row2{display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid #3A3840;font-size:13px}
+  .row2:first-child{border-top:0}.row2 .t{flex:1}.row2 small{display:block;color:var(--label-2);font-size:11px;line-height:14px}
+  .keys{display:flex;gap:6px;justify-content:center;margin:0 0 18px}
+  .key{height:44px;border-radius:7px;background:#3A3840;display:flex;flex-direction:column;justify-content:flex-end;
+       padding:5px 7px;font-size:11px;color:var(--label-2);min-width:52px}
+  .key b{font-size:15px;font-weight:500;color:var(--label)}
+  .key.space{width:190px}
+  .key.cmd{outline:2px solid var(--accent)}
+  .field{height:28px;border-radius:7px;background:#181818;border:1px solid #3A3840;display:flex;align-items:center;padding:0 9px;font-size:13px}
+  .faces{display:flex;gap:12px;justify-content:center;margin-top:16px}
+  .face{width:56px;height:56px;border-radius:28px;background:linear-gradient(#A5ABB8,#848993);display:flex;align-items:center;
+        justify-content:center;font-size:22px;font-weight:500;color:#fff}
+  .face.sel{outline:3px solid var(--accent);outline-offset:2px}
+  .looks{display:flex;gap:28px;justify-content:center}
+  .look{display:flex;flex-direction:column;align-items:center;gap:8px;font-size:13px}
+  .look i{width:136px;height:88px;border-radius:9px;display:block;border:1px solid #3A3840}
+  .look.sel i{outline:3px solid var(--accent);outline-offset:2px}
+  .tip{display:flex;gap:14px;align-items:flex-start;margin-bottom:18px}
+  .tip .g{width:40px;height:40px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff}
+  .tip b{display:block;font-size:13px;font-weight:600}.tip span{font-size:12px;line-height:16px;color:var(--label-2)}
+  /* Welcome */
+  .glow{position:absolute;inset:0;background:radial-gradient(60% 50% at 50% 42%,rgba(19,114,249,.22),transparent 70%)}
+  .hello{position:absolute;left:0;right:0;top:200px;height:90px;text-align:center}
+  .hello span{position:absolute;left:0;right:0;font-size:64px;line-height:90px;font-weight:600;letter-spacing:-1px;opacity:0;
+      background:linear-gradient(110deg,#6FB6FF,#B38CFF,#FF8FB1);-webkit-background-clip:text;background-clip:text;color:transparent;
+      animation:word 39.2s infinite}
+  @keyframes word{0%{opacity:0;transform:translateY(12px)}1.786%{opacity:1;transform:none}5.357%{opacity:1}7.143%{opacity:0}100%{opacity:0}}
+  .go{position:absolute;left:378px;bottom:120px;width:44px;height:44px;border-radius:22px;background:var(--accent);color:#fff;
+      display:flex;align-items:center;justify-content:center;font-size:20px}
+  .golabel{position:absolute;left:0;right:0;bottom:92px;text-align:center;font-size:13px;color:var(--label-2)}
+</style>
+</head>
+<body>
+<header class="lab"><h1>Setup Assistant</h1><span class="note">800 × 600, dark · all values S</span></header>
+
+<div class="cap-label">1 · Welcome</div>
+<div class="win"><div class="glow"></div>
+  <div class="hello" id="hello"></div>
+  <div class="go">→</div><div class="golabel">Get Started</div>
+  <div class="bar"><span class="link">Skip Setup</span></div>
+</div>
+
+<div class="cap-label">2 · Language &amp; Region</div>
+<div class="win">
+  <div class="hero" style="background:#1372F9">🌐</div>
+  <div class="title">Language &amp; Region</div>
+  <div class="sub">Choose the language rmac uses and the region for dates, times and numbers.</div>
+  <div class="content two">
+    <div><div class="h">Language</div><div class="well">
+      <div class="r">Deutsch</div><div class="r sel">English (UK)</div><div class="r">English (US)</div><div class="r">Español</div><div class="r">Français</div><div class="r">हिन्दी</div><div class="r">日本語</div>
+    </div></div>
+    <div><div class="h">Region</div><div class="well">
+      <div class="r">Australia</div><div class="r">Deutschland</div><div class="r sel">India</div><div class="r">United Kingdom</div><div class="r">United States</div><div class="r">日本</div><div class="r">France</div>
+    </div></div>
+  </div>
+  <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="link">Set Up Later</span><span class="btn primary">Continue</span></div>
+</div>
+
+<div class="cap-label">3 · Keyboard</div>
+<div class="win">
+  <div class="hero" style="background:#8E8E93">⌨</div>
+  <div class="title">Keyboard</div>
+  <div class="sub">rmac works like a Mac. On a PC keyboard it can put ⌘ Command next to the space bar and make ⌘C and ⌘V work in every app.</div>
+  <div class="content">
+    <div class="keys"><div class="key"><b>⌃</b>control</div><div class="key"><b>⌥</b>option</div><div class="key cmd"><b>⌘</b>command</div><div class="key space"></div><div class="key cmd"><b>⌘</b>command</div></div>
+    <div class="well">
+      <div class="r">Input source<span class="v">English (UK)</span></div>
+      <div class="row2"><div class="t">⌘ Command next to the space bar<small>Alt works as ⌘ Command and the Windows key as ⌥ Option</small></div><div class="sw on"></div></div>
+      <div class="row2"><div class="t">Use Mac shortcuts in all apps<small>⌘C, ⌘V and the other ⌘ shortcuts work in apps made for PC keyboards</small></div><div class="sw"></div></div>
+    </div>
+  </div>
+  <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="link">Set Up Later</span><span class="btn primary">Continue</span></div>
+</div>
+
+<div class="cap-label">4 · Wi-Fi</div>
+<div class="win">
+  <div class="hero" style="background:#1372F9">📶</div>
+  <div class="title">Choose a Wi-Fi Network</div>
+  <div class="sub">Connect to the internet for updates, the time and the weather.</div>
+  <div class="content">
+    <div class="well">
+      <div class="r sel">Home Network<span class="v">🔒 ▂▄▆</span></div><div class="r">Office<span class="v">🔒 ▂▄</span></div><div class="r">Café Guest<span class="v">▂</span></div>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center"><span style="font-size:13px;width:120px;text-align:right">Password</span><div class="field" style="flex:1">••••••••</div></div>
+  </div>
+  <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="link">Set Up Later</span><span class="btn primary">Continue</span></div>
+</div>
+
+<div class="cap-label">5 · Your Account</div>
+<div class="win">
+  <div class="hero" style="background:#8E8E93">👤</div>
+  <div class="title">Your Account</div>
+  <div class="sub">Choose how your name and picture appear on the lock screen and in Settings.</div>
+  <div class="content">
+    <div style="display:flex;gap:10px;align-items:center"><span style="font-size:13px;width:120px;text-align:right">Full name</span><div class="field" style="flex:1">Alex Example</div></div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:10px"><span style="font-size:13px;width:120px;text-align:right">Account name</span><span style="font-size:13px;color:var(--label-2)">alex · set when this computer was installed</span></div>
+    <div class="faces"><div class="face sel">AE</div><div class="face" style="background:#C57A3E">🐱</div><div class="face" style="background:#3E8FC5">🌻</div><div class="face" style="background:#4DA36B">⚽</div><div class="face" style="background:#8A5CC5">🎸</div></div>
+  </div>
+  <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="link">Set Up Later</span><span class="btn primary">Continue</span></div>
+</div>
+
+<div class="cap-label">6 · Appearance</div>
+<div class="win">
+  <div class="hero" style="background:#1C1C1E;border:1px solid #3A3840">◐</div>
+  <div class="title">Choose Your Look</div>
+  <div class="sub">You can change this at any time in System Settings › Appearance.</div>
+  <div class="content" style="top:236px">
+    <div class="looks">
+      <div class="look"><i style="background:linear-gradient(#F2F2F7 30%,#DADAE0)"></i>Light</div>
+      <div class="look sel"><i style="background:linear-gradient(#2C2A31 30%,#17161A)"></i>Dark</div>
+      <div class="look"><i style="background:linear-gradient(90deg,#F2F2F7 50%,#2C2A31 50%)"></i>Auto</div>
+    </div>
+  </div>
+  <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="link">Set Up Later</span><span class="btn primary">Continue</span></div>
+</div>
+
+<div class="cap-label">7 · The Dock and the Menu Bar</div>
+<div class="win">
+  <div class="hero" style="background:#FF9F0A">✦</div>
+  <div class="title">Find Your Way Around</div>
+  <div class="sub">A few things that work just like on a Mac.</div>
+  <div class="content">
+    <div class="tip"><div class="g" style="background:#1372F9">▭</div><div><b>The Dock</b><span>Your apps sit at the bottom of the screen. Click one to open it; a dot shows that it is running.</span></div></div>
+    <div class="tip"><div class="g" style="background:#8E8E93">☰</div><div><b>The menu bar</b><span>The app you are using shows its menus at the top left. Wi-Fi, sound, Control Centre and the clock are at the top right.</span></div></div>
+    <div class="tip"><div class="g" style="background:#5E5CE6">⌕</div><div><b>Spotlight</b><span>Press ⌘ Space to find apps, files and settings, or to do a quick calculation.</span></div></div>
+  </div>
+  <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="btn primary">Continue</span></div>
+</div>
+
+<div class="cap-label">8 · Privacy</div>
+<div class="win">
+  <div class="hero" style="background:#1372F9">✋</div>
+  <div class="title">Your Privacy</div>
+  <div class="sub">rmac is designed to keep your information on this computer.</div>
+  <div class="content">
+    <div class="tip"><div class="g" style="background:#30D158">⌂</div><div><b>Stays on your computer</b><span>rmac collects no usage data. Notes, clipboard history and notifications are stored only in your home folder.</span></div></div>
+    <div class="tip"><div class="g" style="background:#FF9F0A">◉</div><div><b>Apps ask first</b><span>Apps ask before they use the camera, microphone, screen or location.</span></div></div>
+    <div class="tip"><div class="g" style="background:#8E8E93">⚙</div><div><b>You stay in control</b><span>Review and change what apps can use in System Settings › Privacy &amp; Security.</span></div></div>
+  </div>
+  <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="btn primary">Continue</span></div>
+</div>
+
+<div class="cap-label">9 · Done</div>
+<div class="win"><div class="glow"></div>
+  <div class="hero" style="background:#30D158;top:150px">✓</div>
+  <div class="title" style="top:230px">You’re All Set</div>
+  <div class="sub" style="top:270px">You can run Setup Assistant again from System Settings › General.</div>
+  <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="btn primary">Get Started</span></div>
+</div>
+
+<script>
+const words=['hello','bonjour','hola','hallo','ciao','olá','नमस्ते','こんにちは','你好','안녕하세요','привет','merhaba','hej','γεια σου'];
+const host=document.getElementById('hello');
+// 14 words × 2.8 s = 39.2 s loop; each starts 2.8 s after the previous.
+// A static capture (?still) shows the first word fully in.
+const still=location.search.includes('still');
+words.forEach((w,i)=>{const s=document.createElement('span');s.textContent=w;
+  if(still){s.style.animation='none';s.style.opacity=i===0?1:0}else{s.style.animationDelay=(i*2.8)+'s'}
+  host.appendChild(s)});
+</script>
+</body>
+</html>

@@ -181,8 +181,14 @@ pub fn magnified_layout_with_gaps(
     Ok(MagnifiedLayout { items, start, end })
 }
 
-pub const HIDE_DELAY_MS: u64 = 500;
-pub const REVEAL_PRESSURE_MS: u64 = 150;
+// Auto-hide, measured on macOS 26.2 with ⌥⌘D from 60 fps recordings
+// (docs/dock-behaviour-2026-09-23.md): the Dock starts sliding away as soon
+// as the pointer leaves it (the first moving frame was 33 ms later, one
+// frame), slides for about 190 ms, and comes back 200 ms after the pointer
+// reaches the screen edge, sliding in for about 180 ms.
+pub const HIDE_DELAY_MS: u64 = 0;
+pub const REVEAL_PRESSURE_MS: u64 = 200;
+pub const AUTOHIDE_SLIDE_MS: u64 = 190;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum Visibility {
@@ -425,25 +431,37 @@ mod tests {
             reduced_motion: false,
         });
         let leaving = machine.apply(VisibilityEvent::PointerLeft { now_ms: 100 });
-        assert_eq!(leaving.schedule_deadline_ms, Some(600));
+        let deadline = 100 + HIDE_DELAY_MS;
+        assert_eq!(leaving.schedule_deadline_ms, Some(deadline));
         assert!(!leaving.visual_changed);
         assert!(!leaving.animate);
         assert_eq!(
             machine.visibility(),
-            Visibility::WaitingToHide { deadline_ms: 600 }
+            Visibility::WaitingToHide {
+                deadline_ms: deadline
+            }
         );
-        machine.apply(VisibilityEvent::Deadline { now_ms: 599 });
-        assert_ne!(machine.visibility(), Visibility::Hidden);
-        let hidden = machine.apply(VisibilityEvent::Deadline { now_ms: 600 });
+        let hidden = machine.apply(VisibilityEvent::Deadline { now_ms: deadline });
         assert_eq!(machine.visibility(), Visibility::Hidden);
         assert!(hidden.visual_changed);
         assert!(hidden.animate);
 
         machine.apply(VisibilityEvent::RevealPressure { now_ms: 1_000 });
-        machine.apply(VisibilityEvent::RevealPressure { now_ms: 1_149 });
+        machine.apply(VisibilityEvent::RevealPressure {
+            now_ms: 1_000 + REVEAL_PRESSURE_MS - 1,
+        });
         assert_eq!(machine.visibility(), Visibility::Hidden);
-        machine.apply(VisibilityEvent::RevealPressure { now_ms: 1_150 });
+        machine.apply(VisibilityEvent::RevealPressure {
+            now_ms: 1_000 + REVEAL_PRESSURE_MS,
+        });
         assert_eq!(machine.visibility(), Visibility::Visible);
+    }
+
+    #[test]
+    fn autohide_timings_are_the_measured_mac_values() {
+        assert_eq!(HIDE_DELAY_MS, 0);
+        assert_eq!(REVEAL_PRESSURE_MS, 200);
+        assert_eq!(AUTOHIDE_SLIDE_MS, 190);
     }
 
     #[test]

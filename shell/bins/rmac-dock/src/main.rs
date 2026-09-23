@@ -75,6 +75,8 @@ mod linux_wayland {
         outputs: std::collections::BTreeSet<uuid::Uuid>,
         removed_outputs: std::collections::BTreeSet<uuid::Uuid>,
         actions: rmac_dock_system::interaction::State,
+        /// Displays whose Dock is auto-hidden; their shelf material hides too.
+        hidden_displays: std::collections::BTreeSet<u64>,
     }
 
     impl DockStatus {
@@ -124,6 +126,7 @@ mod linux_wayland {
                 outputs: std::collections::BTreeSet::new(),
                 removed_outputs: std::collections::BTreeSet::new(),
                 actions: rmac_dock_system::interaction::State::default(),
+                hidden_displays: std::collections::BTreeSet::new(),
             }
         }
 
@@ -215,6 +218,8 @@ mod linux_wayland {
         input_region: Option<(f32, f32, bool, bool)>,
         pointer_inside: bool,
         hidden: bool,
+        /// Auto-hide slide in progress: (start ms, sliding out).
+        hide_slide: Option<(u64, bool)>,
         fullscreen: bool,
         overview_visible: bool,
         visibility_policy: Option<(bool, bool)>,
@@ -251,6 +256,13 @@ mod linux_wayland {
             cx: &mut Context<Self>,
         ) -> Self {
             cx.observe(&status, |_, _, cx| cx.notify()).detach();
+            let hidden = surface.fullscreen && !surface.overview_visible;
+            if hidden {
+                let id = u64::from(display_id);
+                status.update(cx, |status, _| {
+                    status.hidden_displays.insert(id);
+                });
+            }
             Self {
                 display_id: u64::from(display_id),
                 output: surface.output.clone(),
@@ -261,7 +273,8 @@ mod linux_wayland {
                 context_menu: None,
                 input_region: None,
                 pointer_inside: false,
-                hidden: surface.fullscreen && !surface.overview_visible,
+                hidden,
+                hide_slide: None,
                 fullscreen: surface.fullscreen,
                 overview_visible: surface.overview_visible,
                 visibility_policy: None,
@@ -600,14 +613,71 @@ mod linux_wayland {
                     .await;
                 let _ = this.update(cx, |this, cx| {
                     if this.hide_generation == generation && !this.pointer_inside {
-                        this.hidden = true;
                         this.hovered_item = None;
-                        this.input_region = None;
-                        cx.notify();
+                        this.set_hidden(true, cx);
                     }
                 });
             })
             .detach();
+        }
+
+        /// The pointer reached the edge of a hidden Dock: it slides back in
+        /// once the pointer has stayed there for the measured 200 ms.
+        fn schedule_reveal(&mut self, cx: &mut Context<Self>) {
+            self.hide_generation = self.hide_generation.saturating_add(1);
+            let generation = self.hide_generation;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(rmac_dock::motion::REVEAL_PRESSURE_MS))
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    if this.hide_generation == generation && this.pointer_inside {
+                        this.set_hidden(false, cx);
+                    }
+                });
+            })
+            .detach();
+        }
+
+        /// Start the auto-hide slide and hide or show the shelf material.
+        fn set_hidden(&mut self, hidden: bool, cx: &mut Context<Self>) {
+            if self.hidden == hidden {
+                return;
+            }
+            self.hidden = hidden;
+            self.hide_slide = Some((self.now_ms(), hidden));
+            self.input_region = None;
+            let display_id = self.display_id;
+            self.status.update(cx, |status, cx| {
+                let changed = if hidden {
+                    status.hidden_displays.insert(display_id)
+                } else {
+                    status.hidden_displays.remove(&display_id)
+                };
+                if changed {
+                    cx.notify();
+                }
+            });
+            cx.notify();
+        }
+
+        /// 0 when the shelf rests in place, 1 when it is fully out of view.
+        fn hide_progress(&mut self, now: u64) -> f32 {
+            let resting = if self.hidden { 1.0 } else { 0.0 };
+            let Some((started, hiding)) = self.hide_slide else {
+                return resting;
+            };
+            let elapsed = now.saturating_sub(started);
+            if elapsed >= rmac_dock::motion::AUTOHIDE_SLIDE_MS {
+                self.hide_slide = None;
+                return resting;
+            }
+            let t = rmac_dock::reorder::ease_out(elapsed, rmac_dock::motion::AUTOHIDE_SLIDE_MS);
+            if hiding {
+                t
+            } else {
+                1.0 - t
+            }
         }
 
         fn model_snapshot(&self, cx: &Context<Self>) -> Option<rmac_dock::Model> {
@@ -837,7 +907,7 @@ mod linux_wayland {
                 self.visibility_policy = Some(visibility_policy);
                 if self.overview_visible || !effective_autohide {
                     self.hide_generation = self.hide_generation.saturating_add(1);
-                    self.hidden = false;
+                    self.set_hidden(false, cx);
                 } else if !self.hidden {
                     self.schedule_hide(cx);
                 }
@@ -1052,6 +1122,10 @@ mod linux_wayland {
                     }
                 });
             let autohide = effective_autohide;
+            let hide_progress = self.hide_progress(now);
+            if self.hide_slide.is_some() {
+                window.request_animation_frame();
+            }
             let root = div()
                 .id(format!("dock-{}", self.display_id))
                 .role(Role::Toolbar)
@@ -1102,9 +1176,7 @@ mod linux_wayland {
                     this.hide_generation = this.hide_generation.saturating_add(1);
                     if *hovered {
                         if this.hidden {
-                            this.hidden = false;
-                            this.input_region = None;
-                            cx.notify();
+                            this.schedule_reveal(cx);
                         }
                     } else if autohide {
                         this.schedule_hide(cx);
@@ -1131,7 +1203,15 @@ mod linux_wayland {
                 .p(px(SHELF_PADDING))
                 .rounded(px(tokens::dock_shelf_radius(ICON_SIZE)))
                 .bg(rgba(tokens::transparent()))
-                .opacity(if self.hidden { 0.0 } else { 1.0 });
+                .relative()
+                .opacity(if hide_progress >= 1.0 { 0.0 } else { 1.0 });
+            // Auto-hide slides the shelf off its screen edge.
+            let slide = hide_progress * EXCLUSIVE_ZONE;
+            let shelf = match self.placement {
+                rmac_shell_settings::DockPlacement::Bottom => shelf.top(px(slide)),
+                rmac_shell_settings::DockPlacement::Left => shelf.left(px(-slide)),
+                rmac_shell_settings::DockPlacement::Right => shelf.left(px(slide)),
+            };
             let mut shelf = if horizontal {
                 shelf.items_end()
             } else {
@@ -2546,7 +2626,7 @@ mod linux_wayland {
                 {
                     continue;
                 }
-                let backdrop = open_dock_backdrop(display.clone(), &surface, cx);
+                let backdrop = open_dock_backdrop(display.clone(), &surface, status.clone(), cx);
                 let foreground = open_dock(display, surface.clone(), status.clone(), cx);
                 if let Some((_, previous_foreground, previous_backdrop)) =
                     self.windows.insert(uuid, (surface, foreground, backdrop))
@@ -2558,10 +2638,31 @@ mod linux_wayland {
         }
     }
 
-    struct DockBackdrop;
+    struct DockBackdrop {
+        display_id: u64,
+        status: Entity<DockStatus>,
+        blurred: bool,
+    }
 
     impl Render for DockBackdrop {
-        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            // An auto-hidden Dock takes its material with it.
+            let hidden = self
+                .status
+                .read(cx)
+                .hidden_displays
+                .contains(&self.display_id);
+            if self.blurred == hidden {
+                self.blurred = !hidden;
+                window.set_background_appearance(if hidden {
+                    WindowBackgroundAppearance::Transparent
+                } else {
+                    WindowBackgroundAppearance::Blurred
+                });
+            }
+            if hidden {
+                return div().size_full();
+            }
             // The measured shelf: a faint tint over the compositor blur and
             // a 1 pt rim. macOS draws no shadow under the Dock.
             div()
@@ -2576,6 +2677,7 @@ mod linux_wayland {
     fn open_dock_backdrop(
         display: Rc<dyn PlatformDisplay>,
         surface: &DockSurface,
+        status: Entity<DockStatus>,
         cx: &mut App,
     ) -> AnyWindowHandle {
         let display_id = display.id();
@@ -2620,7 +2722,16 @@ mod linux_wayland {
                 }),
                 ..Default::default()
             },
-            |_, cx| cx.new(|_| DockBackdrop),
+            move |_, cx| {
+                cx.new(|cx| {
+                    cx.observe(&status, |_, _, cx| cx.notify()).detach();
+                    DockBackdrop {
+                        display_id: u64::from(display_id),
+                        status,
+                        blurred: true,
+                    }
+                })
+            },
         )
         .expect("open Dock material layer surface")
         .into()

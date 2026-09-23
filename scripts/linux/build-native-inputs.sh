@@ -67,7 +67,11 @@ from native_package_contract import ALL_BINARIES
 print("\n".join(ALL_BINARIES))
 ' "$repo_root/scripts/linux")" || fail "native package inventory could not be loaded"
 mapfile -t binary_names <<<"$inventory"
-[[ ${#binary_names[@]} -eq 36 ]] || fail "native package inventory is not exact"
+# The contract's tests pin the exact list; here it only has to be non-empty
+# and free of duplicates, so adding a program never needs a count edit.
+[[ ${#binary_names[@]} -gt 0 ]] || fail "native package inventory is empty"
+[[ "$(printf '%s\n' "${binary_names[@]}" | sort -u | wc -l)" -eq ${#binary_names[@]} ]] \
+  || fail "native package inventory has duplicates"
 
 # Reuse the repository's one normal target graph even if the caller exports a
 # different Cargo target directory.
@@ -105,6 +109,7 @@ export CARGO_TARGET_DIR="$target_dir"
     -p rmac-lock-provider-linux --features provider \
       --bin rmac-lock-provider \
     -p rmac-sound --bin rmac-sound \
+    -p rmac-media --bin rmac-media \
     -p rmac-keyboard --bin rmac-mac-keyboard \
     -p rmac-setup-assistant --bin rmac-setup-assistant
 )

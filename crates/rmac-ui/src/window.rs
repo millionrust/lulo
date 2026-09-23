@@ -104,7 +104,13 @@ fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
                     .timer(std::time::Duration::from_millis(100))
                     .await;
                 let fitted = cx.update(|window, cx| {
-                    let Some(display) = window.display(cx) else {
+                    // GPUI's Wayland backend never sets the window's display
+                    // or a primary display, but it does list the outputs.
+                    let Some(display) = window
+                        .display(cx)
+                        .or_else(|| cx.primary_display())
+                        .or_else(|| cx.displays().into_iter().next())
+                    else {
                         return false;
                     };
                     let screen = display.bounds().size;

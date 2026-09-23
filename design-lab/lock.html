@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lock screen and login window</title>
+<!--
+  The macOS 26 lock screen and login window at 1:1 logical points on the
+  owner's 1470 × 956 pt screen. The Rust lock provider
+  (crates/rmac-lock-provider-linux/src/paint.rs `layout`, text_renderer.rs)
+  copies these numbers; the backdrop is the same Aurora artwork the provider
+  paints procedurally (packaging/rmac-session/greeter/rmac-aurora.svg).
+
+  NOTHING HERE IS MEASURED. The Mac cannot be locked for a capture (the owner
+  is using it) and docs/reference-captures-2026-09-18.md lists the lock screen
+  as "photograph it with a phone". Every size, position, colour and duration
+  below is S (from knowledge of macOS 26 / Sonoma-era lock screens) until a
+  photo replaces it. Structure is certain.
+
+  Lock screen (in-session, ⌃⌘Q):
+    backdrop          the output's wallpaper, Gaussian blur 30, black 20 % veil   S
+    date              22 pt semibold, white 90 %, centred, centre y 70 from top    S
+                      format "Tuesday 23 September" (owner's en-AU order)
+    time              112 pt semibold, tabular, tracking −2, centre y 146          S
+                      "glass" fill: vertical white 92 % → 62 % gradient clipped to
+                      the glyphs, 1 pt black 18 % drop shadow                      S
+                      12-hour, no AM/PM (Mac lock clock)
+    avatar            56 pt circle, centre y H − 196; no picture → monogram on a
+                      grey gradient #A5ABB8 → #848993, initials 24 pt medium white  S
+    name              15 pt semibold white, centre y H − 148                       S
+                      (rmac shows the login name, not the full name: the secure
+                      lock design discloses only the exact PAM account)
+    field             180 × 28 pill (radius 14), centre y H − 110                  S
+                      fill white 20 %, 1 pt rim white 16 % (keyboard focus 43 %)    S
+    placeholder       "Enter Password", 13 pt regular, white 60 %, centred         S
+                      (Macs without Touch ID never say "Touch ID or …")
+    dots              6 pt bullets, 10 pt pitch, left-aligned like a secure text
+                      field (first centre 14 in), white 88 %                       S
+    submit            appears only once the field is non-empty: 20 pt circle
+                      (centre 14 from the field's right end), white 25 %, white
+                      arrow                                                         S
+    Caps Lock         ⇪ glyph inside the field at the right end (left of the
+                      arrow when it shows), white 70 %                             S
+    wrong password    field shakes ±8 pt horizontally, 3 cycles in 400 ms, then
+                      clears back to the placeholder; no red tint             S
+                      "Incorrect password" 12 pt white 80 % under the field is
+                      rmac's (COMPLETION_SPEC §6.1) — macOS only shakes
+    guidance          other PAM text (e.g. "Verification code") 12 pt white 80 %,
+                      top 8 below the field                                        S
+    password hint "?" after 3 failures: no hint store in rmac → omitted
+    top-right extras  battery / Wi-Fi / input source: no backend in the lock
+                      process → omitted
+    unlock            the lock UI fades out (~0.3 s) and the Tahoe wallpaper
+                      animates as the desktop returns                               S
+                      rmac: ext-session-lock surfaces are removed by niri at once,
+                      so no client-side transition is possible → omitted
+    sounds            macOS plays no sound on lock or unlock; rmac's own Lock /
+                      Unlock cues (rmac-sound, user-toggleable) are kept
+
+  Login window (after boot; GDM on rmac):
+    same backdrop, clock, avatar, name and field as the lock screen          S
+    several users     avatars in one row, 56 pt, pitch 112, names under       S
+    power row         Sleep / Restart / Shut Down: 32 pt glass circles, glyph
+                      white, 11 pt labels white 85 % under them, pitch 88,
+                      centre y H − 42 — only on the login window, never on
+                      the lock screen                                               S
+-->
+<link rel="stylesheet" href="lab.css">
+<style>
+  .stage{position:relative;width:1470px;height:956px;overflow:hidden;background:#10162f;
+         font-family:-apple-system,"SF Pro Text","Inter",system-ui,sans-serif;color:#fff}
+  .stage .wall{position:absolute;inset:-60px;background:url(../packaging/rmac-session/greeter/rmac-aurora.svg) center/cover;
+         filter:blur(30px)}
+  .stage .veil{position:absolute;inset:0;background:rgba(0,0,0,.20)}
+  .date{position:absolute;left:0;right:0;top:70px;transform:translateY(-50%);text-align:center;
+        font-size:22px;font-weight:600;color:rgba(255,255,255,.90);line-height:28px}
+  .time{position:absolute;left:0;right:0;top:146px;transform:translateY(-50%);text-align:center;
+        font-size:112px;line-height:134px;font-weight:600;letter-spacing:-2px;font-variant-numeric:tabular-nums}
+  .time span{background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(255,255,255,.62));
+        -webkit-background-clip:text;background-clip:text;color:transparent;
+        filter:drop-shadow(0 1px 0 rgba(0,0,0,.18))}
+  .avatar{position:absolute;left:50%;top:calc(956px - 196px);width:56px;height:56px;margin:-28px 0 0 -28px;border-radius:50%;
+        background:linear-gradient(180deg,#A5ABB8,#848993);display:flex;align-items:center;justify-content:center;
+        font-size:24px;font-weight:500}
+  .name{position:absolute;left:0;right:0;top:calc(956px - 148px);transform:translateY(-50%);text-align:center;
+        font-size:15px;font-weight:600;line-height:20px}
+  .field{position:absolute;left:50%;top:calc(956px - 110px);width:180px;height:28px;margin:-14px 0 0 -90px;
+        border-radius:14px;background:rgba(255,255,255,.20);box-shadow:inset 0 0 0 1px rgba(255,255,255,.16);
+        display:flex;align-items:center;justify-content:center;font-size:13px;color:rgba(255,255,255,.60)}
+  .field.focus{box-shadow:inset 0 0 0 1px rgba(255,255,255,.43)}
+  .dots{position:absolute;left:11px;top:11px;display:flex;gap:4px}
+  .dots i{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.88)}
+  .submit{position:absolute;right:4px;top:4px;width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,.25);
+        display:flex;align-items:center;justify-content:center}
+  .caps{position:absolute;top:0;height:28px;display:flex;align-items:center;font-size:13px;color:rgba(255,255,255,.70)}
+  .hint{position:absolute;left:0;right:0;top:calc(956px - 110px + 14px + 8px);text-align:center;font-size:12px;
+        line-height:16px;color:rgba(255,255,255,.80)}
+  .power{position:absolute;left:50%;top:calc(956px - 42px);transform:translate(-50%,-50%);display:flex;gap:24px}
+  .power div{width:64px;white-space:nowrap;display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;color:rgba(255,255,255,.85)}
+  .power b{width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,.20);
+        box-shadow:inset 0 0 0 1px rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center}
+  @keyframes shake{0%,100%{transform:translateX(0)}
+    8.33%{transform:translateX(8px)}25%{transform:translateX(-8px)}41.67%{transform:translateX(8px)}
+    58.33%{transform:translateX(-8px)}75%{transform:translateX(8px)}91.67%{transform:translateX(-8px)}}
+  .shake{animation:shake .4s linear}
+  body.shot header.lab, body.shot section.surface > h2, body.shot section.surface > p.note{display:none}
+  body.shot section.surface{padding:0;border:0}
+  body.shot section.surface:not(.only){display:none}
+</style>
+</head>
+<body>
+<header class="lab"><h1>Lock screen and login window</h1>
+  <nav><a href="index.html">Overview</a><a href="shell.html">Shell</a></nav>
+  <span class="spacer"></span><button class="t" onclick="replay()">Replay wrong-password shake</button></header>
+
+<template id="clock">
+  <div class="wall"></div><div class="veil"></div>
+  <div class="date">Tuesday 23 September</div>
+  <div class="time"><span>1:36</span></div>
+  <div class="avatar">J</div>
+  <div class="name">jake</div>
+</template>
+
+<section class="surface" id="lock-idle">
+  <h2>1 · Lock screen, idle</h2>
+  <p class="note">Every value <b>S</b> — see the header comment. Placeholder only, no submit arrow while empty.</p>
+  <div class="stage" data-clock><div class="field focus">Enter Password</div></div>
+</section>
+
+<section class="surface" id="lock-typing">
+  <h2>2 · Typing with Caps Lock on</h2>
+  <p class="note">Dots from the left, ⇪ left of the submit arrow at the field's right end.</p>
+  <div class="stage" data-clock><div class="field focus">
+    <div class="dots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="caps" style="right:30px">⇪</div>
+    <div class="submit"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 5h7M5 1.8 8.2 5 5 8.2" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  </div></div>
+</section>
+
+<section class="surface" id="lock-wrong">
+  <h2>3 · Wrong password</h2>
+  <p class="note">The field shakes ±8 pt three times in 400 ms and clears. "Incorrect password" is rmac's addition (§6.1); macOS only shakes.</p>
+  <div class="stage" data-clock><div class="field focus" id="shaker">Enter Password</div>
+    <div class="hint">Incorrect password</div></div>
+</section>
+
+<section class="surface" id="login">
+  <h2>4 · Login window (GDM on rmac — see the report for what GDM cannot draw)</h2>
+  <p class="note">Same composition plus the Sleep / Restart / Shut Down row, which the lock screen never shows.</p>
+  <div class="stage" data-clock><div class="field">Enter Password</div>
+    <div class="power">
+      <div><b><svg width="14" height="14" viewBox="0 0 14 14"><path d="M9.5 2.2A5.2 5.2 0 1 0 11.8 9 4.4 4.4 0 0 1 9.5 2.2z" fill="#fff"/></svg></b>Sleep</div>
+      <div><b><svg width="14" height="14" viewBox="0 0 14 14"><path d="M11.5 7A4.5 4.5 0 1 1 9.8 3.5M10 1v3h-3" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></b>Restart</div>
+      <div><b><svg width="14" height="14" viewBox="0 0 14 14"><path d="M7 1.5v5M4 3.4a4.6 4.6 0 1 0 6 0" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg></b>Shut Down</div>
+    </div></div>
+</section>
+
+<script>
+  const tpl = document.getElementById('clock').innerHTML;
+  document.querySelectorAll('[data-clock]').forEach(s => s.insertAdjacentHTML('afterbegin', tpl));
+  function replay(){ const f=document.getElementById('shaker'); f.classList.remove('shake'); void f.offsetWidth; f.classList.add('shake'); }
+  const shot = new URLSearchParams(location.search).get('shot');
+  if (shot) { document.body.classList.add('shot'); document.getElementById(shot).classList.add('only'); }
+</script>
+</body>
+</html>

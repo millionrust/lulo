@@ -141,7 +141,12 @@ impl WallpaperColorStore {
         let mut watcher =
             notify::recommended_watcher(move |result: Result<notify::Event, notify::Error>| {
                 match result {
-                    Ok(event) if event.paths.iter().any(|path| path == &callback_target) => {
+                    // Reads of the snapshot, including this process's own reload,
+                    // raise access events; only writes should trigger a reload.
+                    Ok(event)
+                        if !event.kind.is_access()
+                            && event.paths.iter().any(|path| path == &callback_target) =>
+                    {
                         let _ = callback_sender.try_send(());
                     }
                     Ok(_) => {}

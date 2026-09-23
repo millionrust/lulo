@@ -62,7 +62,10 @@ impl ShellSettingsStore<FileSystem> {
         let mut watcher =
             notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
                 let event = match result {
-                    Ok(event) if event_targets_path(&event.paths, &callback_path) => {
+                    Ok(event)
+                        if !event.kind.is_access()
+                            && event_targets_path(&event.paths, &callback_path) =>
+                    {
                         Some(StoreEvent::Changed)
                     }
                     Ok(_) => None,

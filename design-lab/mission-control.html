@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mission Control — exact</title>
+<!--
+  Mission Control, App Exposé, the Spaces bar and hot corners at 1:1 logical
+  points, measured on the owner's Mac (macOS 26.2 Tahoe, dark mode,
+  2026-09-23, 1470 × 956 pt screen). Frames come from the Dock process's
+  accessibility tree while each mode was open; colours and strokes from the
+  Retina captures ÷ 2. Rust copies these numbers:
+  shell/bins/rmac-mission-control/src/model.rs.
+
+  Pick a state with ?state=mc | mc-hover | mc-expanded | mc-two | expose |
+  expose-hover | layout.
+
+  Mission Control (⌃↑)
+    backdrop          the wallpaper, neither dimmed nor blurred (pixels outside
+                      the bar match the desktop exactly); the menu bar is gone;
+                      the Dock stays up
+    Spaces bar        collapsed 0…72, expanded 0…164 (AX group 1470 × 72 / × 164)
+                      fill: white ≈ 5 % over the wallpaper (+13 on R and G)
+                      top hairline white ≈ 19 %, bottom hairline white ≈ 11 %
+                      it expands while the pointer is over it
+    Desktop pill      collapsed only: 24 tall, top 40 (centre y 52), fully
+                      rounded, white ≈ 15 %; label 13 pt white, ≈ 10 pt side
+                      padding ("Desktop" = 72.5 wide). One Space reads
+                      "Desktop"; several read "Desktop 1", "Desktop 2" …
+                      Pill centres sit on the expanded thumbnails' centres.
+    thumbnails        expanded only: 138 × 90 (the screen's aspect), top 46,
+                      pitch 170 (gap 32), the row centred; label 11 pt white
+                      centred under it, text top ≈ 145
+                      current Space: 3 pt #5697F5 ring, 1 pt outside the
+                      thumbnail, radius ≈ 6
+                      hovering a thumbnail when there are several shows a
+                      22 pt white ⊗ (grey #878787 × of ≈ 8 pt) centred on the
+                      thumbnail's top-left corner — removes the Space
+    add Space (+)     32 circle, centre (W − 34, 44) collapsed, (W − 34, 90)
+                      expanded; white ≈ 10 %; plus 19 × 19, 2 pt white strokes
+    window area       x 20 … W − 20; y bar + 40 … H − 104
+                      (collapsed 112…852, expanded 204…852)
+    windows           one uniform scale, never enlarged; the focused window
+                      keeps no special size; no labels until hovered
+    hover             5 pt ring #5595F1 → #4A7ECD (top → bottom), 1 pt outside
+                      the window; a light capsule with the window title in the
+                      window's centre: 22.5 tall, #B6B7BE, text 18 pt #1B1B1C,
+                      ≈ 14.5 pt side padding
+    choreography      the bar slides down from above while the windows fly to
+                      their slots (120 ms in: pill already at y 24)
+
+  App Exposé (⌃↓)
+    window area       x 20 … W − 20, y 52 … H − 100 (AX group 1430 × 804)
+    layout            equal cells: each row splits the width evenly, rows split
+                      the height evenly; one uniform scale fills the tightest
+                      cell; each window centred in its cell with its title
+                      below. Three terminals: 557 × 370 at (99,52) (814,52)
+                      (456,454)
+    titles            13 pt white, text top ≈ 9 below the window (line 16);
+                      the label band is 32 tall
+    hover             the same 5 pt ring, measured #4070B5 here
+    backdrop          wallpaper, no Spaces bar, no menu bar
+
+  Show Desktop (F11): windows leave the screen and the desktop shows; F11
+  again brings them back. rmac cannot move windows off-screen as a group on
+  niri, so it shows the output's empty Space instead (ADR 0014).
+
+  Hot corners: the owner's Mac has bottom-right → Quick Note
+  (com.apple.dock wvous-br-corner = 14). A corner fires when the pointer
+  reaches the corner pixel. No dwell could be measured without launching
+  Notes on the owner's Mac; rmac uses none (value S).
+-->
+<style>
+  :root { --font: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif; }
+  html, body { margin: 0; background: #000; }
+  body { width: 1470px; font-family: var(--font); -webkit-font-smoothing: antialiased; }
+  .screen { position: relative; width: 1470px; height: 956px; overflow: hidden;
+    /* stand-in for the Tahoe blue wallpaper, sampled from the captures */
+    background:
+      radial-gradient(900px 420px at 18% 108%, rgba(170,180,225,.85), rgba(170,180,225,0) 70%),
+      radial-gradient(700px 360px at 92% 78%, rgba(150,160,215,.8), rgba(150,160,215,0) 70%),
+      radial-gradient(1200px 520px at 45% 70%, #1c3fb8, rgba(28,63,184,0) 72%),
+      linear-gradient(170deg, #0e0889 0%, #2215aa 28%, #3a2ad0 40%, #1b2aa8 62%, #041480 100%);
+  }
+
+  /* ---------------- Spaces bar ---------------- */
+  .bar { position: absolute; left: 0; right: 0; top: 0; height: 72px;
+         background: rgba(255,255,255,.05);
+         box-shadow: inset 0 .5px 0 rgba(255,255,255,.19), inset 0 -.5px 0 rgba(255,255,255,.11); }
+  .bar.expanded { height: 164px; }
+  .pill { position: absolute; top: 40px; height: 24px; padding: 0 10px; border-radius: 12px;
+          transform: translateX(-50%); background: rgba(255,255,255,.15);
+          font: 400 13px/24px var(--font); color: #fff; white-space: nowrap; }
+  .thumb { position: absolute; top: 46px; width: 138px; height: 90px; border-radius: 2px;
+           background: #1f1f24; overflow: visible; }
+  .thumb .shot { position: absolute; inset: 0; border-radius: 2px; overflow: hidden;
+                 background: inherit; }
+  .thumb.current::before { content: ""; position: absolute; inset: -4px; border-radius: 6px;
+                           border: 3px solid #5697f5; }
+  .thumb .label { position: absolute; left: -40px; right: -40px; top: 96px; text-align: center;
+                  font: 400 11px/13px var(--font); color: #fff; }
+  .thumb .remove { position: absolute; left: -11px; top: -11px; width: 22px; height: 22px;
+                   border-radius: 11px; background: #fff; }
+  .thumb .remove::before, .thumb .remove::after { content: ""; position: absolute; left: 5.5px;
+                   top: 10px; width: 11px; height: 2px; background: #878787; border-radius: 1px; }
+  .thumb .remove::before { transform: rotate(45deg); }
+  .thumb .remove::after { transform: rotate(-45deg); }
+  .add { position: absolute; right: 18px; top: 28px; width: 32px; height: 32px; border-radius: 16px;
+         background: rgba(255,255,255,.10); }
+  .bar.expanded .add { top: 74px; }
+  .add::before, .add::after { content: ""; position: absolute; background: #fff; border-radius: 1px; }
+  .add::before { left: 6.5px; top: 15px; width: 19px; height: 2px; }
+  .add::after { left: 15px; top: 6.5px; width: 2px; height: 19px; }
+
+  /* ---------------- windows ---------------- */
+  .win { position: absolute; border-radius: 8px; background: #1e1e1e;
+         box-shadow: 0 0 0 .5px rgba(255,255,255,.12), 0 8px 26px rgba(0,0,0,.45); }
+  .win .tl { position: absolute; left: 8px; top: 8px; display: flex; gap: 4px; }
+  .win .tl i { width: 7px; height: 7px; border-radius: 50%; background: #5a5a5f; display: block; }
+  .win.hover::after { content: ""; position: absolute; inset: -6px; border-radius: 13px;
+         border: 5px solid transparent;
+         background: linear-gradient(#5595f1, #4a7ecd) border-box;
+         -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+         -webkit-mask-composite: xor; mask-composite: exclude; }
+  .expose .win.hover::after { background: #4070b5 border-box; }
+  .title-pill { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+         height: 22.5px; padding: 0 14.5px; border-radius: 11.25px; background: #b6b7be;
+         font: 500 18px/22.5px var(--font); color: #1b1b1c; white-space: nowrap; }
+  .caption { position: absolute; text-align: center; font: 400 13px/16px var(--font); color: #fff;
+             white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+  .dock { position: absolute; left: 152px; top: 862px; width: 1166px; height: 84px; border-radius: 28px;
+          background: rgba(255,255,255,.12); box-shadow: inset 0 .5px 0 rgba(255,255,255,.3); }
+</style>
+</head>
+<body>
+<section class="screen" id="screen"></section>
+<script>
+// Mac frames from the accessibility tree (collapsed Mission Control, first capture).
+const MAC_MC = [
+  [789,225,255,169,"Terminal"], [506,219,255,169,"Terminal"], [1134,110,318,366,"Screen & System Audio Recording"],
+  [678,488,646,366,"rmac"], [40,122,405,204,"mac-survey"], [831,116,203,80,"Accessibility Access"],
+  [19,405,646,366,"claude code update - Google Search"],
+];
+const MAC_EXPANDED = [
+  [759,209,224,148], [503,231,224,148], [1173,202,279,322], [598,532,567,322],
+  [31,216,356,179], [907,381,178,70], [18,411,567,322],
+];
+const MAC_EXPOSE = [[99,52,557,370,"jake — ax-670918578.command — -zsh — 80×24"],
+                    [814,52,557,370,"jake — ax-2395332397.command — 80×24"],
+                    [456,454,557,370,"jake — ax-12556750.command — osascript — 80×24"]];
+
+// The same layout rmac runs (model::layout): rows in on-screen order, one
+// uniform scale (never above 1), and the spare space shared out evenly around
+// every window and every row — which gives App Exposé's measured positions.
+function layout(wins, area, gapX, gapY, band) {
+  const n = wins.length; if (!n) return [];
+  const order = wins.map((w, i) => i).sort((a, b) =>
+    (wins[a][1] + wins[a][3] / 2) - (wins[b][1] + wins[b][3] / 2) || wins[a][0] - wins[b][0]);
+  let best = null;
+  for (let rows = 1; rows <= n; rows++) {
+    const per = Math.ceil(n / rows); const groups = [];
+    for (let i = 0; i < n; i += per) groups.push(order.slice(i, i + per).sort((a, b) => wins[a][0] - wins[b][0]));
+    let scale = 1, tallest = 0;
+    for (const g of groups) {
+      const width = g.reduce((t, i) => t + wins[i][2], 0);
+      scale = Math.min(scale, (area.w - gapX * g.length) / width);
+      tallest += Math.max(...g.map(i => wins[i][3]));
+    }
+    scale = Math.min(scale, (area.h - groups.length * (gapY + band)) / tallest);
+    if (!best || scale > best.scale + 1e-6) best = { scale, groups };
+  }
+  const s = best.scale, out = [];
+  const heights = best.groups.map(g => Math.max(...g.map(i => wins[i][3])) * s + band);
+  const spareY = (area.h - heights.reduce((t, h) => t + h, 0)) / best.groups.length;
+  let y = area.y + spareY / 2;
+  best.groups.forEach((g, r) => {
+    const spareX = (area.w - g.reduce((t, i) => t + wins[i][2] * s, 0)) / g.length;
+    let x = area.x + spareX / 2;
+    g.forEach(i => { const w = wins[i][2] * s, h = wins[i][3] * s;
+      out[i] = [x, y + (heights[r] - band - h) / 2, w, h, wins[i][4]]; x += w + spareX; });
+    y += heights[r] + spareY;
+  });
+  return out;
+}
+
+const state = new URLSearchParams(location.search).get("state") || "mc";
+const s = document.getElementById("screen");
+const el = (cls, css, html) => { const d = document.createElement("div"); d.className = cls;
+  Object.assign(d.style, css); if (html) d.innerHTML = html; s.appendChild(d); return d; };
+const px = v => v + "px";
+function win(r, hover, title) {
+  const d = el("win" + (hover ? " hover" : ""), { left: px(r[0]), top: px(r[1]), width: px(r[2]), height: px(r[3]) },
+    '<div class="tl"><i></i><i></i><i></i></div>');
+  if (hover && title) { const t = document.createElement("div"); t.className = "title-pill"; t.textContent = title; d.appendChild(t); }
+}
+function bar(expanded, spaces) {
+  const b = el("bar" + (expanded ? " expanded" : ""), {});
+  const pitch = 170, left = 735 - (spaces - 1) * pitch / 2;
+  for (let i = 0; i < spaces; i++) {
+    const name = spaces === 1 ? "Desktop" : "Desktop " + (i + 1), cx = left + i * pitch;
+    if (expanded) {
+      const t = document.createElement("div"); t.className = "thumb" + (i === 0 ? " current" : "");
+      t.style.left = px(cx - 69);
+      t.innerHTML = '<div class="shot"></div><div class="label">' + name + "</div>" +
+        (spaces > 1 && i === spaces - 1 ? '<div class="remove"></div>' : "");
+      b.appendChild(t);
+    } else {
+      const p = document.createElement("div"); p.className = "pill"; p.style.left = px(cx); p.textContent = name; b.appendChild(p);
+    }
+  }
+  const a = document.createElement("div"); a.className = "add"; b.appendChild(a);
+}
+
+if (state === "mc" || state === "mc-hover") {
+  MAC_MC.forEach((r, i) => win(r, state === "mc-hover" && i === 3, "rmac"));
+  bar(false, 1); el("dock", {});
+} else if (state === "mc-expanded" || state === "mc-two") {
+  MAC_EXPANDED.forEach(r => win(r));
+  bar(true, state === "mc-two" ? 2 : 1); el("dock", {});
+} else if (state === "expose" || state === "expose-hover") {
+  s.classList.add("expose");
+  MAC_EXPOSE.forEach((r, i) => { win(r, state === "expose-hover" && i === 2);
+    el("caption", { left: px(r[0] - 100), width: px(r[2] + 200), top: px(r[1] + r[3] + 9) }).textContent = r[4]; });
+  el("dock", {});
+} else if (state === "layout") {
+  // rmac's own layout of seven desktop-sized windows, for comparison with "mc".
+  const desk = [[120,80,900,560],[300,200,700,460],[900,120,520,700],[60,420,760,420],[640,300,800,540],[500,60,420,260],[1000,520,420,300]];
+  layout(desk, { x: 20, y: 112, w: 1430, h: 740 }, 40, 24, 0).forEach(r => win(r));
+  bar(false, 1); el("dock", {});
+}
+</script>
+</body>
+</html>

@@ -43,6 +43,8 @@ impl LauncherView {
         let id = row.id.clone();
         div()
             .id(SharedString::from(format!("launcher-grid-{index}")))
+            .role(Role::Button)
+            .aria_label(row.title.clone())
             .w(px(104.0))
             .h(px(112.0))
             .v_flex()
@@ -91,6 +93,11 @@ impl LauncherView {
         };
         div()
             .id(SharedString::from(format!("launcher-row-{index}")))
+            .role(Role::Button)
+            .aria_label(match &row.subtitle {
+                Some(subtitle) => format!("{}, {subtitle}", row.title),
+                None => row.title.clone(),
+            })
             .h(px(metrics::ROW_HEIGHT))
             .w_full()
             .flex_none()
@@ -139,6 +146,8 @@ impl LauncherView {
                     item.child(
                         div()
                             .id(SharedString::from(format!("launcher-alternate-{index}")))
+                            .role(Role::Button)
+                            .aria_label(row.alternate_label.unwrap_or("Show in Folder"))
                             .size(px(22.0))
                             .flex_none()
                             .flex()

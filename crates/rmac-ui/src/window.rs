@@ -114,18 +114,32 @@ fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
             let Some((screen_width, screen_height)) = screen else {
                 return;
             };
-            let _ = cx.update(|window, _| {
-                let current = window.bounds().size;
-                let (width, height) = fit_to_screen(
-                    f32::from(current.width),
-                    f32::from(current.height),
-                    screen_width,
-                    screen_height,
-                );
-                if width < f32::from(current.width) || height < f32::from(current.height) {
-                    window.resize(size(px(width), px(height)));
+            // niri configures a new floating window after it maps and would
+            // replace a size set before that, so keep fitting briefly until
+            // the window stays inside the space above the Dock.
+            for _ in 0..10 {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(100))
+                    .await;
+                let fits = cx.update(|window, _| {
+                    let current = window.bounds().size;
+                    let (width, height) = fit_to_screen(
+                        f32::from(current.width),
+                        f32::from(current.height),
+                        screen_width,
+                        screen_height,
+                    );
+                    let oversized =
+                        width < f32::from(current.width) || height < f32::from(current.height);
+                    if oversized {
+                        window.resize(size(px(width), px(height)));
+                    }
+                    !oversized
+                });
+                if fits.unwrap_or(true) {
+                    break;
                 }
-            });
+            }
         })
         .detach();
 }

@@ -16,8 +16,8 @@ impl TerminalView {
         Some(
             div()
                 .absolute()
-                .left(px(BODY_PAD + column as f32 * self.cell_w))
-                .top(px(BODY_PAD + row as f32 * self.line_h))
+                .left(px(PAD_X + column as f32 * self.cell_w))
+                .top(px(PAD_TOP + row as f32 * self.line_h))
                 .w(px(remaining_columns as f32 * self.cell_w))
                 .max_h(px(self.rows.saturating_sub(row).max(1) as f32 * self.line_h))
                 .overflow_hidden()

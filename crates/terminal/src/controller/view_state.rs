@@ -130,8 +130,8 @@ impl TerminalView {
     pub(super) fn resize_to(&mut self, window: &Window) {
         self.cell_w = measure_cell_w(window, self.font_size);
         let viewport = window.viewport_size();
-        let width = f32::from(viewport.width);
-        let height = f32::from(viewport.height);
+        let width = f32::from(viewport.width) - 2.0 * PAD_X;
+        let height = f32::from(viewport.height) - self.terminal_content_top() - PAD_BOTTOM;
         let size = grid_dimensions(width, height, self.cell_w, self.line_h);
         let _ = self.tabs[self.active].resize(size);
         self.cols = self.tabs[self.active].accepted_size.cols;

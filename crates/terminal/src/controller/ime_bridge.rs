@@ -3,7 +3,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use super::{ImeComposition, TerminalView, BODY_PAD, LEFT_PAD, MAX_IME_TEXT_BYTES};
+use super::{ImeComposition, TerminalView, MAX_IME_TEXT_BYTES, PAD_TOP, PAD_X};
 use crate::ime::{
     byte_range_for_utf16, replace_buffer as replace_ime_buffer, utf16_len, ImeEditError,
 };
@@ -288,8 +288,8 @@ impl EntityInputHandler for TerminalView {
         let available_columns = self.cols.saturating_sub(candidate_column).max(1);
         Some(Bounds::new(
             gpui::point(
-                element_bounds.left() + px(BODY_PAD + candidate_column as f32 * self.cell_w),
-                element_bounds.top() + px(BODY_PAD + candidate_row as f32 * self.line_h),
+                element_bounds.left() + px(PAD_X + candidate_column as f32 * self.cell_w),
+                element_bounds.top() + px(PAD_TOP + candidate_row as f32 * self.line_h),
             ),
             gpui::size(
                 px(range_cells.min(available_columns) as f32 * self.cell_w),
@@ -312,7 +312,7 @@ impl EntityInputHandler for TerminalView {
         let row = (((f32::from(point.y) - self.terminal_content_top()) / self.line_h).floor()
             as i32)
             .clamp(0, self.rows.saturating_sub(1) as i32) as usize;
-        let column = (((f32::from(point.x) - LEFT_PAD) / self.cell_w).floor() as i32)
+        let column = (((f32::from(point.x) - PAD_X) / self.cell_w).floor() as i32)
             .clamp(0, self.cols.saturating_sub(1) as i32) as usize;
         let cursor_linear = cursor_row
             .saturating_mul(self.cols)

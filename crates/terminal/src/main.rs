@@ -21,8 +21,9 @@ fn main() {
     rmac_ui::boot_app(
         rmac_ui::app_id::TERMINAL,
         "Terminal",
-        820.0,
-        560.0,
+        // 80 × 24 cells of 7 × 14 plus the measured insets and title bar.
+        580.0,
+        385.0,
         controller::TerminalView::new,
     );
 }

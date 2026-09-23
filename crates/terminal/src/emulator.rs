@@ -162,6 +162,8 @@ pub(super) fn advance_filtered_output<T: EventListener>(
     }
 }
 
+/// Cells that fit the grid's content box (the window minus title bar, tab
+/// bar and insets). A hair of slack keeps an exact 80 × 7 pt fit at 80.
 pub(super) fn grid_dimensions(
     width: f32,
     height: f32,
@@ -172,11 +174,11 @@ pub(super) fn grid_dimensions(
         if !available.is_finite() || !cell.is_finite() || cell <= 0.0 {
             return minimum;
         }
-        (available.max(0.0) / cell).floor() as usize
+        ((available.max(0.0) + 0.01) / cell).floor() as usize
     };
     TermSize {
-        cols: bounded(width - 16.0, cell_width, MIN_COLS).clamp(MIN_COLS, MAX_COLS),
-        lines: bounded(height - 50.0, line_height, MIN_ROWS).clamp(MIN_ROWS, MAX_ROWS),
+        cols: bounded(width, cell_width, MIN_COLS).clamp(MIN_COLS, MAX_COLS),
+        lines: bounded(height, line_height, MIN_ROWS).clamp(MIN_ROWS, MAX_ROWS),
     }
 }
 

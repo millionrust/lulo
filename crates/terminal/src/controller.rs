@@ -61,11 +61,14 @@ use rmac_ui::{Button, InputState, SearchField};
 use vte::ansi::Processor;
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor};
 
-const COLS: usize = 100;
-const ROWS: usize = 28;
+/// A new Terminal window on macOS 26.2 is 80 × 24 (measured).
+const COLS: usize = 80;
+const ROWS: usize = 24;
 pub(super) const MAX_TABS: usize = 16;
-const FONT_SIZE: f32 = 13.0;
-const LINE_H: f32 = 17.0;
+/// The Basic profile's cells measure 7.0 × 14.0 pt on the Mac. JetBrains Mono
+/// advances 0.6 em, so 7.0 / 0.6 gives the same 7 pt column.
+const FONT_SIZE: f32 = 7.0 / 0.6;
+const LINE_H: f32 = 14.0;
 /// Pre-measurement fallback for the monospace cell advance. The real advance
 /// is measured from `rmac_ui::MONO_FONT` through the window text system; this
 /// ratio is used only before a window exists or if the glyph cannot resolve.
@@ -80,11 +83,16 @@ pub(super) fn measure_cell_w(window: &Window, font_size: f32) -> f32 {
         .map(|size| f32::from(size.width))
         .unwrap_or(font_size * CELL_RATIO_FALLBACK)
 }
-const TITLE_BAR_HEIGHT: f32 = 34.0;
-const TAB_BAR_HEIGHT: f32 = 32.0;
-const BODY_PAD: f32 = 8.0;
-/// Pixels from the window left to the first column: 8pt content padding.
-const LEFT_PAD: f32 = BODY_PAD;
+/// The shared 32 pt title bar (1 pt base line included).
+const TITLE_BAR_HEIGHT: f32 = 32.0;
+/// With two or more tabs the Mac adds 36 pt: a 28 pt tab track, a 7 pt gap
+/// and a 1 pt base line.
+const TAB_BAR_HEIGHT: f32 = 36.0;
+/// Grid insets measured on an 80 × 24 window: 80 × 7 + 2 × 10 = 580 wide,
+/// 24 × 14 + 7 + 10 = 353 tall below the title bar.
+const PAD_X: f32 = 10.0;
+const PAD_TOP: f32 = 7.0;
+const PAD_BOTTOM: f32 = 10.0;
 const FOCUS_IN_REPORT: &[u8] = b"\x1b[I";
 const FOCUS_OUT_REPORT: &[u8] = b"\x1b[O";
 
@@ -115,7 +123,7 @@ gpui::actions!(
 const FIND_HL: u32 = 0xffd60a;
 
 fn terminal_content_top(tab_count: usize) -> f32 {
-    TITLE_BAR_HEIGHT + if tab_count > 1 { TAB_BAR_HEIGHT } else { 0.0 } + BODY_PAD
+    TITLE_BAR_HEIGHT + if tab_count > 1 { TAB_BAR_HEIGHT } else { 0.0 } + PAD_TOP
 }
 
 fn focus_report(mode: TermMode, focused: bool) -> Option<&'static [u8]> {

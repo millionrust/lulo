@@ -64,30 +64,7 @@ impl Render for TerminalView {
             .v_flex()
             .bg(hsla(active().bg))
             .child(rmac_ui::title_bar_content(
-                // Three flex sections: a left spacer balances the right chip so
-                // "Terminal" stays centered. No absolute positioning — that broke
-                // click hit-testing for the chip inside the TitleBar.
-                div()
-                    .size_full()
-                    .flex()
-                    .items_center()
-                    .text_size(rmac_ui::text_px(13.0))
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .max_w(px(layout.title_max_width))
-                            .truncate()
-                            .child(active_title),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .flex()
-                            .items_center()
-                            .justify_end()
-                            .pr_2()
-                            .child(self.profile_chip(cx)),
-                    ),
+                self.render_title(active_title, layout.title_max_width),
             ))
             .when(multi, |terminal: Div| {
                 terminal.child(self.render_tabs(layout.tab_title_max_width, cx))

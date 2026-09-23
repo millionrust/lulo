@@ -100,8 +100,24 @@ pub(crate) static PROFILES: &[Profile] = &[
     },
 ];
 
+/// Index of "Basic", Terminal's default profile.
+pub(crate) const DEFAULT_PROFILE: usize = 1;
+
+/// Basic follows the system appearance on macOS. In dark mode it measures
+/// #1E1E1E behind white text with a #9C9D9D block cursor (macOS 26.2); the
+/// selection colour is not measured (S) and uses the system's dark
+/// unemphasised selection grey.
+static BASIC_DARK: Profile = Profile {
+    name: "Basic",
+    bg: 0x1e1e1e,
+    fg: 0xffffff,
+    cursor: 0x9c9d9d,
+    selection: 0x464646,
+    ansi: MAC_ANSI,
+};
+
 thread_local! {
-    static ACTIVE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static ACTIVE: std::cell::Cell<usize> = const { std::cell::Cell::new(DEFAULT_PROFILE) };
 }
 
 pub(crate) fn set_active(index: usize) {
@@ -110,7 +126,19 @@ pub(crate) fn set_active(index: usize) {
 
 pub(crate) fn active() -> &'static Profile {
     let index = ACTIVE.with(|active| active.get());
-    PROFILES.get(index).unwrap_or(&PROFILES[0])
+    resolved(index)
+}
+
+/// The profile at `index` as drawn in the current appearance: Basic swaps to
+/// its dark colours while rmac is dark, like Terminal's appearance-aware
+/// Basic profile.
+pub(crate) fn resolved(index: usize) -> &'static Profile {
+    let profile = PROFILES.get(index).unwrap_or(&PROFILES[DEFAULT_PROFILE]);
+    if index == DEFAULT_PROFILE && rmac_ui::mac::window().l < 0.5 {
+        &BASIC_DARK
+    } else {
+        profile
+    }
 }
 
 fn config_path() -> Result<PathBuf, storage::Failure> {
@@ -153,7 +181,7 @@ pub(crate) fn load() -> Result<(usize, bool), storage::Failure> {
         Some(content) => parse(&content).map_err(|detail| {
             storage::Failure::message(storage::Operation::LoadProfile, &path, detail)
         }),
-        None => Ok((0, false)),
+        None => Ok((DEFAULT_PROFILE, false)),
     }
 }
 

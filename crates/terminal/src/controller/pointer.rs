@@ -39,7 +39,7 @@ impl TerminalView {
         let x = f32::from(position.x);
         let y = f32::from(position.y);
         let column =
-            (((x - LEFT_PAD) / self.cell_w).floor() as i32).clamp(0, self.cols as i32 - 1) as usize;
+            (((x - PAD_X) / self.cell_w).floor() as i32).clamp(0, self.cols as i32 - 1) as usize;
         let row = (((y - self.terminal_content_top()) / self.line_h).floor() as i32)
             .clamp(0, self.rows as i32 - 1) as usize;
         (row, column)

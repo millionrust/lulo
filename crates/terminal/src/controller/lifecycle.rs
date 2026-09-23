@@ -104,7 +104,10 @@ impl TerminalView {
                     .map(|failure| SharedString::from(failure.to_string()));
                 (profile, migration_error)
             }
-            Err(failure) => (0, Some(SharedString::from(failure.to_string()))),
+            Err(failure) => (
+                profiles::DEFAULT_PROFILE,
+                Some(SharedString::from(failure.to_string())),
+            ),
         };
 
         // PTY/model events wake this task. The bounded channel coalesces output

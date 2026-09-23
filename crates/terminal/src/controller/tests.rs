@@ -7,8 +7,8 @@ fn terminal_resources_have_explicit_bounds() {
     assert_eq!(FOCUS_IN_REPORT.len(), 3);
     assert_eq!(FOCUS_OUT_REPORT.len(), 3);
     assert_eq!(MAX_TABS, 16);
-    assert_eq!(terminal_content_top(1), 42.0);
-    assert_eq!(terminal_content_top(2), 74.0);
+    assert_eq!(terminal_content_top(1), 39.0);
+    assert_eq!(terminal_content_top(2), 75.0);
 }
 
 #[test]

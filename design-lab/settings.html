@@ -57,7 +57,10 @@
                 rgb(223,223,225); tick dots 1 × 2; labels 11 below
   Info (i)      17 circle outline, 12 from the row's right edge
   Push button   24 tall, radius 6, fill rgb(55,56,67), label 13
-  Help (?)      24 circle rgb(55,56,67), right-aligned 10 below the last group
+  Help (?)      24 circle rgb(55,56,67), right-aligned 10 below the last group;
+                not drawn in rmac, which has no help book for it to open. The
+                pane's own buttons (Refresh, Revert, Choose Image…) take that
+                right-aligned footer row instead.
   Segmented     24 tall, full row width, selected #397CF7, rest rgb(55,56,67)
 -->
 <!-- self-contained: lab.css class names (.search, .row, .tile) would collide -->
@@ -104,7 +107,7 @@
   .cap b.off{color:rgb(105,106,121)} .cap b svg{width:17px;height:17px}
   .cap hr{width:1px;height:20px;border:0;margin:0;background:rgba(255,255,255,.10)}
   .title{position:absolute;left:316px;top:16px;font:700 15px/20px var(--font);color:var(--title)}
-  .detail{position:absolute;left:243px;top:52px;width:460px;bottom:0;overflow:hidden}
+  .detail{position:absolute;left:223px;top:52px;width:500px;padding:0 20px;box-sizing:border-box;bottom:0;overflow:hidden}
   .h{font:700 13px/16px var(--font);color:var(--head);padding:0 10px;margin:20px 0 10px}
   .detail > .h:first-child{margin-top:3px}
   .g{background:var(--group);border-radius:12px;margin-bottom:10px;overflow:hidden}
@@ -211,32 +214,32 @@ const PANES={
     g(sw('Magnification',false),pop('Maximum size','1.5×')),
     g(pop('Click a focused app again','Cycle Windows')),
     h('Displays'), g(pop('Show the Dock on','All Displays')),
-    btns('Revert','?')],
+    btns('Revert','Refresh')],
   'Wallpaper':['Wallpaper',
-    `<div style="display:flex;gap:14px;margin:9px 0 10px"><i style="width:109px;height:68px;border-radius:8px;background:linear-gradient(135deg,#2b3bd1,#6f8cff 55%,#1d2a8a);flex:none"></i><div style="flex:1">${g(pop('Tahoe','Fill'),pop('Apply to','All Displays'))}</div></div>`,
-    btns('Choose Image…'),
-    h('Wallpapers'),`<div class="thumbs" style="padding:0">${['#2b3bd1','#c24a8a','#6a7680'].map((c,i)=>`<div><i style="background:linear-gradient(135deg,${c},#111)"></i>${['Tahoe','Sequoia','Graphite'][i]}</div>`).join('')}</div>`],
+    `<div style="display:flex;gap:10px;margin:16px 0 10px"><i style="width:160px;height:100px;border-radius:8px;background:linear-gradient(135deg,#10162f,#3949ab,#22a6a1,#d96c9d);flex:none"></i><div style="flex:1;min-width:0">${g(pop('Aurora','Fill'),pop('Show on','All Displays','Default for every display'))}</div></div>`,
+    btns('Choose Image…','Revert','Refresh'),
+    h('Wallpapers'),`<div class="thumbs" style="padding:0;flex-wrap:wrap;gap:9px">${[['#10162f','#d96c9d','Aurora'],['#06283d','#e8f9fa','Tide'],['#1b1b1f','#c98a4b','Basalt'],['#0b1c1e','#b8c4b0','Monsoon'],['#f5efe6','#8a7a5c','Paper']].map(([a,b,n],i)=>`<div><i style="width:108px;height:68px;background:linear-gradient(135deg,${a},${b});${i==0?'box-shadow:0 0 0 2px var(--accent)':''}"></i>${n}</div>`).join('')}</div>`],
   'Displays':['Displays',
     `<div style="margin:0 -20px 20px;height:160px;background:rgb(28,28,36);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px"><i style="width:120px;height:74px;border-radius:6px;background:linear-gradient(135deg,#3b5ea6,#1f6b74)"></i><b style="font:700 13px var(--font)">Built-in Display</b></div>`,
     g(pop('Resolution','1920 × 1080'),pop('Scale','100%'),pop('Rotation','Standard')),
-    g(val('Type','Built-in'),val('Connector','eDP-1')),
-    btns('Revert','?')],
+    g(val('Type','Built-in'),val('Connector','eDP-1'),val('Logical Size','1920 × 1080')),
+    btns('Refresh')],
   'Sound':['Sound', h('Sound Effects'),
     g(pop('Alert sound','Alert'),pop('Play sound effects through','Selected Sound Output Device'),hslider('Alert volume',1),sw('Play user interface sound effects',true),sw('Play feedback when volume is changed',false)),
     h('Output &amp; Input'), g(seg(['Output','Input'],0),`<div class="r" style="padding:0 10px;min-height:28px;color:var(--label);font-size:11px">Name</div>`,`<div class="r" style="min-height:24px;padding:4px 10px;background:rgba(255,255,255,.08)">Built-in Audio</div>`),
-    g(hslider('Output volume',.6),`<div class="r" style="justify-content:flex-end;padding-top:0"><span class="cb"></span>Mute</div>`), btns('?')],
+    g(hslider('Output volume',.6),sw('Mute output',false)), btns('Refresh')],
   'Wi-Fi':['Wi-Fi', hcard('wifi',C.blue,'Wi-Fi','Set up Wi-Fi to wirelessly connect your computer to the internet. Turn on Wi-Fi, then choose a network to join.',true,
-      `<div class="r" style="border-top:1px solid var(--sep);margin:0 10px;padding:10px 0">${t('Home Network','Connected')}<span class="pb">Details…</span></div>`),
-    h('Known Networks'), g(val('Home Network','',false),val('Office','',false)),
-    h('Other Networks'), g(val('Cafe','',false),val('Guest','',false)), btns('Other…','?')],
+      `<div class="r" style="border-top:1px solid var(--sep);margin:0 10px;padding:10px 0">${t('Home Network','Connected')}<span style="display:flex;gap:10px;align-items:center"><span style="width:12px;height:12px;display:flex">${I('lock')}</span><span style="width:15px;height:15px;display:flex">${I('wifi')}</span></span></div>`),
+    h('Known Networks'), g(`<div class="r" style="min-height:44px"><span style="width:20px">✓</span>${t('Home Network')}<span class="pb">Forget…</span></div>`,`<div class="r" style="min-height:44px"><span style="width:20px"></span>${t('Office')}<span class="pb">Forget…</span></div>`),
+    h('Other Networks'), g(`<div class="r" style="min-height:44px"><span style="width:20px"></span>${t('Cafe')}</div>`,`<div class="r" style="min-height:44px"><span style="width:20px"></span>${t('Guest','Known Network')}</div>`), btns('Refresh')],
   'Bluetooth':['Bluetooth', hcard('bluetooth',C.blue,'Bluetooth','Connect to accessories you can use for activities such as streaming music, typing and gaming.',true,
       `<div class="r" style="border-top:1px solid var(--sep);margin:0 10px;padding:10px 0">${t('Discoverable','Allow nearby devices to find this computer.')}<div class="sw on"></div></div>`),
     h('My Devices'), g(`<div class="r">${t('Headphones','Not Connected')}<span class="info">${I('info')}</span></div>`),
     h('Nearby Devices'), g(`<div class="r" style="justify-content:center;color:var(--sec)">Searching…</div>`)],
   'Battery':['Battery',
-    g(pop('Energy Mode','Balanced')), g(val('Battery Health','Normal',true)),
+    g(pop('Energy Mode','Balanced')), g(val('Battery Health','Normal'),val('Maximum Capacity','92%'),val('Cycle Count','311')),
     g(seg(['Last 24 Hours','Last 10 Days'],0),`<div class="r top">${t('Last charged to 100%','Today, 3:14 PM')}</div>`,`<div class="r" style="height:170px;align-items:flex-end;gap:3px">${Array.from({length:24},(_,i)=>`<i style="flex:1;height:${40+Math.round(50*Math.abs(Math.sin(i/4)))}%;background:#34c759;border-radius:1px"></i>`).join('')}</div>`),
-    btns('Options…','?')],
+    btns('Refresh')],
   'Menu Bar':['Menu Bar',
     g(sw('Show seconds in the clock',false)),
     h('Menu Bar Controls'), g(...[['wifi',C.blue,'Wi-Fi',1],['key',C.blue,'VPN',1],['bluetooth',C.blue,'Bluetooth',0],['volume-2',C.pink,'Sound',1],['battery-charging',C.green,'Battery',1],['moon',C.indigo,'Focus',1],['bell',C.red,'Notifications',1]].map(([ic,c,n,on])=>`<div class="r nav" style="height:42px"><span class="cb${on?' on':''}"></span>${tile(ic,c)}${t(n)}</div>`)),

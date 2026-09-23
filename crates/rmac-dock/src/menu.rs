@@ -30,7 +30,24 @@ pub enum Section {
     Commands,
     Windows,
     Organization,
+    /// Open or Quit, always last in a macOS Dock menu.
+    Lifecycle,
     Destructive,
+}
+
+/// A submenu that groups rows under one parent row, as macOS does with
+/// Options ▸ (Keep in Dock, Open at Login, Show in Finder).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Submenu {
+    Options,
+}
+
+impl Submenu {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Options => "Options",
+        }
+    }
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -66,6 +83,12 @@ pub struct Row {
     /// A separately exposed accessibility action/trailing control. Keyboard
     /// renderers route alternate activation here without changing selection.
     pub secondary: Option<Action>,
+    /// Label shown instead of `label` while Option is held; only rows whose
+    /// secondary action is the Option alternative (Quit → Force Quit) have it.
+    pub alternate_label: Option<String>,
+    /// Pointer renderers draw rows with a submenu inside that submenu's
+    /// panel. Keyboard order and accessibility keep one flat list.
+    pub submenu: Option<Submenu>,
 }
 
 impl fmt::Debug for Row {
@@ -82,6 +105,7 @@ impl fmt::Debug for Row {
             .field("destructive", &self.destructive)
             .field("has_primary", &self.primary.is_some())
             .field("has_secondary", &self.secondary.is_some())
+            .field("submenu", &self.submenu)
             .finish()
     }
 }
@@ -192,6 +216,8 @@ impl Session {
                         .enabled
                         .then(|| Action::ActivateEntry(entry.id.clone())),
                     secondary: None,
+                    alternate_label: None,
+                    submenu: None,
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -203,6 +229,12 @@ impl Session {
         )
     }
 
+    /// The macOS 26 Dock menu, top to bottom: the app's windows (the
+    /// focused one ticked), the app's own commands, Options ▸ with Keep in
+    /// Dock and Show in Files, then Open for a closed app or Quit for a
+    /// running one (Option turns Quit into Force Quit). Show All Windows,
+    /// Hide and Hide Others are omitted: niri has no application hiding or
+    /// per-application Exposé.
     pub fn context(menu: &ContextMenu) -> Result<Self, MenuError> {
         let row_count = usize::from(menu.open.is_some())
             + menu.application_commands.len()
@@ -213,37 +245,8 @@ impl Session {
         if row_count > MAX_MENU_ROWS {
             return Err(MenuError::TooManyRows { count: row_count });
         }
+        let running = !menu.windows.is_empty() || menu.quit.is_some();
         let mut rows = Vec::new();
-        if let Some(action) = &menu.open {
-            rows.push(Row {
-                id: RowId::Open,
-                section: Section::Commands,
-                label: "Open".into(),
-                accessible_label: bounded(&format!("Open {}", bounded(&menu.application_name),)),
-                enabled: true,
-                checked: false,
-                urgent: false,
-                destructive: false,
-                primary: Some(Action::Context(action.clone())),
-                secondary: None,
-            });
-        }
-        rows.extend(menu.application_commands.iter().map(|command| Row {
-            id: RowId::ApplicationCommand(command.id.clone()),
-            section: Section::Commands,
-            label: bounded(&command.name),
-            accessible_label: bounded(&format!(
-                "{}, {}",
-                bounded(&command.name),
-                bounded(&menu.application_name)
-            )),
-            enabled: true,
-            checked: false,
-            urgent: false,
-            destructive: false,
-            primary: Some(Action::Context(command.action.clone())),
-            secondary: None,
-        }));
         rows.extend(menu.windows.iter().map(|window| {
             let title = bounded(&window.title);
             let mut accessible = vec![title.clone()];
@@ -265,26 +268,58 @@ impl Session {
                 destructive: false,
                 primary: Some(Action::Context(window.focus.clone())),
                 secondary: Some(Action::Context(window.close.clone())),
+                alternate_label: None,
+                submenu: None,
             }
         }));
-        let pin_label = match &menu.pin {
-            PinCommand::Pin { .. } => "Keep in Dock",
-            PinCommand::Unpin { .. } => "Remove from Dock",
+        rows.extend(menu.application_commands.iter().map(|command| Row {
+            id: RowId::ApplicationCommand(command.id.clone()),
+            section: Section::Commands,
+            label: bounded(&command.name),
+            accessible_label: bounded(&format!(
+                "{}, {}",
+                bounded(&command.name),
+                bounded(&menu.application_name)
+            )),
+            enabled: true,
+            checked: false,
+            urgent: false,
+            destructive: false,
+            primary: Some(Action::Context(command.action.clone())),
+            secondary: None,
+            alternate_label: None,
+            submenu: None,
+        }));
+        // A kept app that is running shows a ticked "Keep in Dock" whose
+        // choice removes it; a closed kept app offers "Remove from Dock".
+        let (pin_label, pin_checked) = match &menu.pin {
+            PinCommand::Pin { .. } => ("Keep in Dock", false),
+            PinCommand::Unpin { .. } if running => ("Keep in Dock", true),
+            PinCommand::Unpin { .. } => ("Remove from Dock", false),
             PinCommand::Move { .. } | PinCommand::MoveTo { .. } => {
                 return Err(MenuError::InvalidPinAction);
             }
+        };
+        let pin_accessible = match &menu.pin {
+            PinCommand::Unpin { .. } => "Remove from Dock",
+            _ => "Keep in Dock",
         };
         rows.push(Row {
             id: RowId::Pin,
             section: Section::Organization,
             label: pin_label.into(),
-            accessible_label: bounded(&format!("{pin_label}, {}", bounded(&menu.application_name))),
+            accessible_label: bounded(&format!(
+                "{pin_accessible}, {}",
+                bounded(&menu.application_name)
+            )),
             enabled: true,
-            checked: false,
+            checked: pin_checked,
             urgent: false,
             destructive: false,
             primary: Some(Action::Context(ContextAction::UpdatePins(menu.pin.clone()))),
             secondary: None,
+            alternate_label: None,
+            submenu: Some(Submenu::Options),
         });
         if let Some(action) = &menu.show_in_finder {
             rows.push(Row {
@@ -301,12 +336,31 @@ impl Session {
                 destructive: false,
                 primary: Some(Action::Context(action.clone())),
                 secondary: None,
+                alternate_label: None,
+                submenu: Some(Submenu::Options),
+            });
+        }
+        if let Some(action) = &menu.open {
+            rows.push(Row {
+                id: RowId::Open,
+                section: Section::Lifecycle,
+                label: "Open".into(),
+                accessible_label: bounded(&format!("Open {}", bounded(&menu.application_name))),
+                enabled: true,
+                checked: false,
+                urgent: false,
+                destructive: false,
+                primary: Some(Action::Context(action.clone())),
+                secondary: None,
+                alternate_label: None,
+                submenu: None,
             });
         }
         if let Some(action) = &menu.quit {
+            let force_quit = menu.force_quit.clone().map(Action::Context);
             rows.push(Row {
                 id: RowId::Quit,
-                section: Section::Commands,
+                section: Section::Lifecycle,
                 label: "Quit".into(),
                 accessible_label: bounded(&format!(
                     "Quit {}, hold Option to Force Quit",
@@ -317,7 +371,9 @@ impl Session {
                 urgent: false,
                 destructive: false,
                 primary: Some(Action::Context(action.clone())),
-                secondary: menu.force_quit.clone().map(Action::Context),
+                alternate_label: force_quit.as_ref().map(|_| "Force Quit".to_owned()),
+                secondary: force_quit,
+                submenu: None,
             });
         }
         Self::new(
@@ -328,13 +384,15 @@ impl Session {
         )
     }
 
+    /// The macOS Trash menu: Open, a separator, then Empty Trash, which stays
+    /// visible but disabled while the Trash is empty.
     pub fn special(menu: &SpecialContextMenu) -> Result<Self, MenuError> {
         let available = validate_special_menu(menu)?;
         let name = special_name(menu.kind);
         let mut rows = vec![Row {
             id: RowId::OpenSpecial(menu.kind),
             section: Section::Commands,
-            label: format!("Open {name}"),
+            label: "Open".into(),
             accessible_label: format!("Open {name}"),
             enabled: available,
             checked: false,
@@ -342,30 +400,51 @@ impl Session {
             destructive: false,
             primary: available.then_some(Action::ActivateEntry(EntryId::Special(menu.kind))),
             secondary: None,
+            alternate_label: None,
+            submenu: None,
         }];
-        if let Some(action) = &menu.empty_trash {
-            let SpecialContextAction::EmptyTrash {
-                expected_item_count,
-            } = action;
-            let item_label = if *expected_item_count == 1 {
-                "item"
-            } else {
-                "items"
-            };
-            rows.push(Row {
+        match &menu.empty_trash {
+            Some(action) => {
+                let SpecialContextAction::EmptyTrash {
+                    expected_item_count,
+                } = action;
+                let item_label = if *expected_item_count == 1 {
+                    "item"
+                } else {
+                    "items"
+                };
+                rows.push(Row {
+                    id: RowId::EmptyTrash,
+                    section: Section::Destructive,
+                    label: "Empty Trash".into(),
+                    accessible_label: bounded(&format!(
+                        "Empty Trash permanently, {expected_item_count} {item_label}, requires confirmation"
+                    )),
+                    enabled: true,
+                    checked: false,
+                    urgent: false,
+                    destructive: true,
+                    primary: Some(Action::SpecialContext(action.clone())),
+                    secondary: None,
+                    alternate_label: None,
+                    submenu: None,
+                });
+            }
+            None if menu.kind == SpecialItemKind::Trash && available => rows.push(Row {
                 id: RowId::EmptyTrash,
                 section: Section::Destructive,
-                label: "Empty Trash…".into(),
-                accessible_label: bounded(&format!(
-                    "Empty Trash permanently, {expected_item_count} {item_label}, requires confirmation"
-                )),
-                enabled: true,
+                label: "Empty Trash".into(),
+                accessible_label: "Empty Trash, the Trash is empty".into(),
+                enabled: false,
                 checked: false,
                 urgent: false,
-                destructive: true,
-                primary: Some(Action::SpecialContext(action.clone())),
+                destructive: false,
+                primary: None,
                 secondary: None,
-            });
+                alternate_label: None,
+                submenu: None,
+            }),
+            None => {}
         }
         Self::new(
             EntryId::Special(menu.kind),
@@ -758,8 +837,10 @@ mod tests {
             force_quit: None,
         };
         let closed = Session::context(&menu).unwrap();
-        assert_eq!(closed.rows()[0].id, RowId::Open);
-        assert_eq!(closed.rows()[0].label, "Open");
+        let last = closed.rows().last().unwrap();
+        assert_eq!(last.id, RowId::Open);
+        assert_eq!(last.label, "Open");
+        assert_eq!(last.section, Section::Lifecycle);
 
         menu.open = None;
         menu.application_commands = vec![crate::ApplicationCommand {
@@ -784,6 +865,154 @@ mod tests {
                 )),
                 restore_focus: EntryId::Application("music.desktop".into()),
             }
+        );
+    }
+
+    fn mac_menu(pin: PinCommand, windows: Vec<WindowMenu>, quit: bool) -> ContextMenu {
+        ContextMenu {
+            app_id: "terminal.desktop".into(),
+            application_name: "Terminal".into(),
+            open: (windows.is_empty() && !quit).then(|| ContextAction::LaunchNew {
+                app_id: "terminal.desktop".into(),
+                spec: rmac_apps::LaunchSpec::Command {
+                    program: "terminal".into(),
+                    args: Vec::new(),
+                    working_dir: None,
+                    terminal: false,
+                },
+            }),
+            application_commands: vec![crate::ApplicationCommand {
+                id: "new-window".into(),
+                name: "New Window".into(),
+                action: ContextAction::LaunchNew {
+                    app_id: "terminal.desktop".into(),
+                    spec: rmac_apps::LaunchSpec::Command {
+                        program: "terminal".into(),
+                        args: vec!["--new-window".into()],
+                        working_dir: None,
+                        terminal: false,
+                    },
+                },
+            }],
+            windows,
+            show_in_finder: Some(ContextAction::RevealApplication {
+                app_id: "terminal.desktop".into(),
+                source: "/apps/terminal.desktop".into(),
+            }),
+            pin,
+            quit: quit.then(|| terminate("terminal.desktop", crate::TerminationKind::Quit)),
+            force_quit: quit
+                .then(|| terminate("terminal.desktop", crate::TerminationKind::ForceQuit)),
+        }
+    }
+
+    fn window_menu(id: u64, focused: bool) -> WindowMenu {
+        WindowMenu {
+            id: rmac_compositor::WindowId(id),
+            title: format!("Window {id}"),
+            focused,
+            urgent: false,
+            focus: focus("terminal.desktop", id),
+            close: close("terminal.desktop", id),
+        }
+    }
+
+    #[test]
+    fn running_kept_app_menu_follows_the_macos_order() {
+        let menu = mac_menu(
+            PinCommand::Unpin {
+                app_id: "terminal.desktop".into(),
+            },
+            vec![window_menu(2, true), window_menu(1, false)],
+            true,
+        );
+        let session = Session::context(&menu).unwrap();
+        let rows = session.rows();
+        assert_eq!(
+            rows.iter().map(|row| row.id.clone()).collect::<Vec<_>>(),
+            [
+                RowId::Window(rmac_compositor::WindowId(2)),
+                RowId::Window(rmac_compositor::WindowId(1)),
+                RowId::ApplicationCommand("new-window".into()),
+                RowId::Pin,
+                RowId::ShowInFinder,
+                RowId::Quit,
+            ]
+        );
+        // The current window is ticked; Options holds a ticked Keep in Dock.
+        assert!(rows[0].checked && !rows[1].checked);
+        assert_eq!(rows[3].label, "Keep in Dock");
+        assert!(rows[3].checked);
+        assert_eq!(rows[3].submenu, Some(Submenu::Options));
+        assert_eq!(rows[4].submenu, Some(Submenu::Options));
+        assert_eq!(Submenu::Options.label(), "Options");
+        // Holding Option turns Quit into Force Quit.
+        assert_eq!(rows[5].label, "Quit");
+        assert_eq!(rows[5].alternate_label.as_deref(), Some("Force Quit"));
+        assert_eq!(
+            rows[5].secondary,
+            Some(Action::Context(terminate(
+                "terminal.desktop",
+                crate::TerminationKind::ForceQuit
+            )))
+        );
+        assert_eq!(rows[5].section, Section::Lifecycle);
+    }
+
+    #[test]
+    fn closed_kept_app_offers_remove_from_dock_and_open_last() {
+        let menu = mac_menu(
+            PinCommand::Unpin {
+                app_id: "terminal.desktop".into(),
+            },
+            Vec::new(),
+            false,
+        );
+        let session = Session::context(&menu).unwrap();
+        let rows = session.rows();
+        let pin = rows.iter().find(|row| row.id == RowId::Pin).unwrap();
+        assert_eq!(pin.label, "Remove from Dock");
+        assert!(!pin.checked);
+        assert_eq!(rows.last().unwrap().id, RowId::Open);
+        assert!(rows.iter().all(|row| row.id != RowId::Quit));
+    }
+
+    #[test]
+    fn running_app_not_in_the_dock_offers_an_unticked_keep_in_dock() {
+        let menu = mac_menu(
+            PinCommand::Pin {
+                app_id: "terminal.desktop".into(),
+            },
+            vec![window_menu(1, false)],
+            true,
+        );
+        let session = Session::context(&menu).unwrap();
+        let pin = session
+            .rows()
+            .iter()
+            .find(|row| row.id == RowId::Pin)
+            .unwrap();
+        assert_eq!(pin.label, "Keep in Dock");
+        assert!(!pin.checked);
+    }
+
+    #[test]
+    fn empty_trash_menu_keeps_a_disabled_empty_trash_row() {
+        let menu = SpecialContextMenu {
+            kind: SpecialItemKind::Trash,
+            open: SpecialActivation::OpenTrash,
+            empty_trash: None,
+        };
+        let session = Session::special(&menu).unwrap();
+        let rows = session.rows();
+        assert_eq!(rows[0].label, "Open");
+        assert_eq!(rows[1].id, RowId::EmptyTrash);
+        assert_eq!(rows[1].label, "Empty Trash");
+        assert!(!rows[1].enabled);
+        assert!(rows[1].primary.is_none());
+        assert_eq!(
+            session.selected(),
+            Some(&RowId::OpenSpecial(SpecialItemKind::Trash))
         );
     }
 

@@ -60,6 +60,10 @@ mod linux_wayland {
     const MENU_SHELF_GAP: f32 = 25.5;
     const MENU_POINTER_WIDTH: f32 = 20.0;
     const MENU_POINTER_HEIGHT: f32 = 10.0;
+    // Options ▸: room for the chevron, and how far a submenu tucks under
+    // its parent panel (rmac values; the submenu was not measured).
+    const MENU_CHEVRON_COLUMN: f32 = 20.0;
+    const MENU_SUBMENU_OVERLAP: f32 = 3.0;
     const TOOLTIP_WIDTH: f32 = 240.0;
     const TOOLTIP_BOTTOM: f32 = EXCLUSIVE_ZONE + 6.0;
     const READY_FILE_ENV: &str = "RMAC_DOCK_READY_FILE";
@@ -178,6 +182,8 @@ mod linux_wayland {
     struct DockMenu {
         anchor: f32,
         session: rmac_dock::menu::Session,
+        /// Options ▸ is open (the pointer rested on its parent row).
+        submenu_open: bool,
     }
 
     struct Dock {
@@ -204,6 +210,11 @@ mod linux_wayland {
         bounces: rmac_dock::bounce::BounceTracker,
         /// The tile under a held primary button: macOS darkens it.
         pressed: Option<String>,
+        /// Option held (read from pointer events; the Dock never takes the
+        /// keyboard): Dock menus show Force Quit instead of Quit.
+        option_held: bool,
+        /// Reviewed Trash contents waiting for the Empty Trash alert.
+        trash_review: Option<rmac_dock_system::dispatch::ReviewedTrash>,
     }
 
     impl Dock {
@@ -236,6 +247,8 @@ mod linux_wayland {
                 epoch: std::time::Instant::now(),
                 bounces: rmac_dock::bounce::BounceTracker::default(),
                 pressed: None,
+                option_held: false,
+                trash_review: None,
             }
         }
 
@@ -310,7 +323,89 @@ mod linux_wayland {
             }
         }
 
+        /// Empty Trash from the Dock menu: bind the exact Trash contents on a
+        /// worker, then ask for confirmation before anything is deleted.
+        fn review_trash(&mut self, action: rmac_dock::menu::Action, cx: &mut Context<Self>) {
+            let pending = self.status.update(cx, |status, _| {
+                let model = status.model()?;
+                match rmac_dock_system::dispatch::prepare(model, action).ok()? {
+                    rmac_dock_system::dispatch::Preparation::TrashReview(review) => {
+                        review.begin(&mut status.actions).ok()
+                    }
+                    _ => None,
+                }
+            });
+            let Some(pending) = pending else {
+                eprintln!("the Trash changed before it could be emptied");
+                return;
+            };
+            let work = cx
+                .background_executor()
+                .spawn(async move { pending.run_blocking(&rmac_places_system::SystemBackend) });
+            cx.spawn(async move |this, cx| {
+                let completion = work.await;
+                let _ = this.update(cx, |this, cx| {
+                    let (result, _) = this
+                        .status
+                        .update(cx, |status, _| completion.apply(&mut status.actions));
+                    match result {
+                        Ok(reviewed) if reviewed.item_count() > 0 => {
+                            this.trash_review = Some(reviewed);
+                            this.input_region = None;
+                        }
+                        Ok(_) => {}
+                        Err(error) => eprintln!("{error}"),
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+
+        /// The confirmation alert's answer. Only an affirmative answer creates
+        /// the capability that deletes the reviewed items.
+        fn finish_trash_review(&mut self, confirmed: bool, cx: &mut Context<Self>) {
+            let Some(reviewed) = self.trash_review.take() else {
+                return;
+            };
+            self.input_region = None;
+            cx.notify();
+            let Some(confirmed) = reviewed.confirm(confirmed) else {
+                return;
+            };
+            let pending = match self
+                .status
+                .update(cx, |status, _| confirmed.begin(&mut status.actions))
+            {
+                Ok(pending) => pending,
+                Err(error) => {
+                    eprintln!("could not empty the Trash: {error}");
+                    return;
+                }
+            };
+            let work = cx
+                .background_executor()
+                .spawn(async move { pending.run_blocking(&rmac_places_system::SystemBackend) });
+            cx.spawn(async move |this, cx| {
+                let completion = work.await;
+                let _ = this.update(cx, |this, cx| {
+                    let (result, _) = this
+                        .status
+                        .update(cx, |status, _| completion.apply(&mut status.actions));
+                    if let Err(error) = result {
+                        eprintln!("{error}");
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+
         fn dispatch_action(&mut self, action: rmac_dock::menu::Action, cx: &mut Context<Self>) {
+            if matches!(action, rmac_dock::menu::Action::SpecialContext(_)) {
+                self.review_trash(action, cx);
+                return;
+            }
             let pending = match self.status.update(cx, |status, _| {
                 let model = status
                     .model()
@@ -491,12 +586,8 @@ mod linux_wayland {
                 let start = (tip - MENU_ANCHOR_INSET).clamp(8.0, (axis - width - 8.0).max(8.0));
                 (start, tip - start, width)
             });
-            let input_region = (
-                shelf_start,
-                shelf_extent,
-                self.hidden,
-                menu_geometry.is_some(),
-            );
+            let modal = menu_geometry.is_some() || self.trash_review.is_some();
+            let input_region = (shelf_start, shelf_extent, self.hidden, modal);
             if self.input_region != Some(input_region) {
                 let shelf_bounds = match (self.placement, self.hidden) {
                     (rmac_shell_settings::DockPlacement::Bottom, true) => Bounds {
@@ -531,7 +622,7 @@ mod linux_wayland {
                 // dismissed. Capture one click across the output while the
                 // Dock menu is open; otherwise only the visible shelf is
                 // interactive and this transparent layer is inert.
-                let regions = if menu_geometry.is_some() {
+                let regions = if modal {
                     vec![Bounds {
                         origin: point(px(0.0), px(0.0)),
                         size: Size::new(window_size.width, window_size.height),
@@ -606,6 +697,14 @@ mod linux_wayland {
                         }
                     }),
                 )
+                .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
+                    if this.option_held != event.modifiers.alt {
+                        this.option_held = event.modifiers.alt;
+                        if this.context_menu.is_some() {
+                            cx.notify();
+                        }
+                    }
+                }))
                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                     this.pointer_inside = *hovered;
                     this.hide_generation = this.hide_generation.saturating_add(1);
@@ -1065,6 +1164,7 @@ mod linux_wayland {
                                 this.context_menu = session.map(|session| DockMenu {
                                     anchor: relative_center,
                                     session,
+                                    submenu_open: false,
                                 });
                                 this.input_region = None;
                                 cx.notify();
@@ -1183,17 +1283,16 @@ mod linux_wayland {
                                                 rmac_dock::SpecialItemKind::Trash,
                                             )
                                         })
-                                        .and_then(|mut menu| {
-                                            // Permanent deletion remains behind a dedicated
-                                            // confirmation sheet. The first Dock-menu slice
-                                            // exposes the safe Open Trash command only.
-                                            menu.empty_trash = None;
+                                        .and_then(|menu| {
+                                            // Empty Trash goes through the review and
+                                            // confirmation alert below.
                                             rmac_dock::menu::Session::special(&menu).ok()
                                         })
                                 };
                                 this.context_menu = session.map(|session| DockMenu {
                                     anchor: trash_center,
                                     session,
+                                    submenu_open: false,
                                 });
                                 this.input_region = None;
                                 cx.notify();
@@ -1226,37 +1325,422 @@ mod linux_wayland {
                         trash
                     }),
             )
+            .children(self.trash_review.as_ref().map(|review| {
+                render_empty_trash_alert(
+                    review.item_count(),
+                    surface_width,
+                    surface_height,
+                    self.display_id,
+                    cx,
+                )
+            }))
             .children(render_context_menu(
                 self.context_menu.as_ref(),
                 self.placement,
                 menu_geometry,
+                axis,
                 self.display_id,
+                self.option_held,
+                window,
                 cx,
             ))
         }
     }
 
-    /// Whether any row carries a check mark; macOS then gives every row a
-    /// leading check column.
-    fn dock_menu_has_checks(menu: &DockMenu) -> bool {
-        menu.session.rows().iter().any(|row| row.checked)
+    /// One entry of the main Dock menu panel: a row, or the parent row that
+    /// stands for a submenu (Options ▸).
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum MenuEntry {
+        Row(usize),
+        Submenu(rmac_dock::menu::Submenu),
     }
 
-    /// The Dock menu is exactly as wide as its widest row plus padding; unlike
-    /// menu bar menus it has no minimum (the Trash menu is 92 wide on macOS).
-    fn dock_menu_width(menu: &DockMenu, window: &Window) -> f32 {
-        let text = menu
-            .session
-            .rows()
-            .iter()
-            .map(|row| rmac_shell_ui::text_width(window, &row.label, FontWeight::NORMAL))
-            .fold(0.0, f32::max);
-        let leading = if dock_menu_has_checks(menu) {
+    fn menu_entries(rows: &[rmac_dock::menu::Row]) -> Vec<MenuEntry> {
+        let mut entries = Vec::new();
+        for (index, row) in rows.iter().enumerate() {
+            match row.submenu {
+                None => entries.push(MenuEntry::Row(index)),
+                Some(submenu) if !entries.contains(&MenuEntry::Submenu(submenu)) => {
+                    entries.push(MenuEntry::Submenu(submenu));
+                }
+                Some(_) => {}
+            }
+        }
+        entries
+    }
+
+    fn entry_section(rows: &[rmac_dock::menu::Row], entry: MenuEntry) -> rmac_dock::menu::Section {
+        match entry {
+            MenuEntry::Row(index) => rows[index].section,
+            MenuEntry::Submenu(_) => rmac_dock::menu::Section::Organization,
+        }
+    }
+
+    fn submenu_rows(
+        rows: &[rmac_dock::menu::Row],
+        submenu: rmac_dock::menu::Submenu,
+    ) -> Vec<usize> {
+        rows.iter()
+            .enumerate()
+            .filter_map(|(index, row)| (row.submenu == Some(submenu)).then_some(index))
+            .collect()
+    }
+
+    /// A row is as wide as its longer label, so holding Option (Quit →
+    /// Force Quit) never resizes the menu.
+    fn menu_row_text_width(window: &Window, row: &rmac_dock::menu::Row) -> f32 {
+        let label = rmac_shell_ui::text_width(window, &row.label, FontWeight::NORMAL);
+        row.alternate_label
+            .as_deref()
+            .map(|alternate| rmac_shell_ui::text_width(window, alternate, FontWeight::NORMAL))
+            .map_or(label, |alternate| label.max(alternate))
+    }
+
+    fn menu_panel_width(text: f32, checks: bool) -> f32 {
+        let leading = if checks {
             MENU_CHECK_INSET + MENU_CHECK_COLUMN
         } else {
             MENU_ROW_INSET
         };
         (text + leading + MENU_ROW_INSET + 2.0 * (MENU_PADDING + MENU_BORDER)).ceil()
+    }
+
+    /// Whether any main-panel row carries a check mark; macOS then gives
+    /// every row of that panel a leading check column.
+    fn dock_menu_has_checks(menu: &DockMenu) -> bool {
+        let rows = menu.session.rows();
+        menu_entries(rows)
+            .into_iter()
+            .any(|entry| matches!(entry, MenuEntry::Row(index) if rows[index].checked))
+    }
+
+    /// The Dock menu is exactly as wide as its widest row plus padding; unlike
+    /// menu bar menus it has no minimum (the Trash menu is 92 wide on macOS).
+    fn dock_menu_width(menu: &DockMenu, window: &Window) -> f32 {
+        let rows = menu.session.rows();
+        let text = menu_entries(rows)
+            .into_iter()
+            .map(|entry| match entry {
+                MenuEntry::Row(index) => menu_row_text_width(window, &rows[index]),
+                MenuEntry::Submenu(submenu) => {
+                    rmac_shell_ui::text_width(window, submenu.label(), FontWeight::NORMAL)
+                        + MENU_CHEVRON_COLUMN
+                }
+            })
+            .fold(0.0, f32::max);
+        menu_panel_width(text, dock_menu_has_checks(menu))
+    }
+
+    fn submenu_width(rows: &[rmac_dock::menu::Row], indices: &[usize], window: &Window) -> f32 {
+        let text = indices
+            .iter()
+            .map(|index| menu_row_text_width(window, &rows[*index]))
+            .fold(0.0, f32::max);
+        menu_panel_width(text, indices.iter().any(|index| rows[*index].checked))
+    }
+
+    /// Height of the rows and separators of one panel, without its padding.
+    fn menu_rows_height(sections: &[rmac_dock::menu::Section]) -> f32 {
+        let separators = sections
+            .windows(2)
+            .filter(|pair| pair[0] != pair[1])
+            .count();
+        sections.len() as f32 * tokens::menu_row_height() + separators as f32 * MENU_SEPARATOR
+    }
+
+    fn menu_panel(id: String, label: String, width: f32) -> gpui::Stateful<gpui::Div> {
+        div()
+            .id(id)
+            .role(Role::Menu)
+            .aria_label(label)
+            .absolute()
+            .w(px(width))
+            .p(px(MENU_PADDING))
+            .rounded(px(tokens::menu_radius()))
+            .bg(rgba(tokens::regular_dark_tint()))
+            .border_1()
+            .border_color(rgba(tokens::light_border()))
+            .shadow_lg()
+            .text_size(px(13.0))
+            .text_color(rgba(tokens::primary_text()))
+            .occlude()
+    }
+
+    fn menu_separator() -> gpui::AnyElement {
+        // An 11-tall separator whose line is inset 16 from the edge.
+        div()
+            .h(px(MENU_BORDER))
+            .mx(px(MENU_ROW_INSET))
+            .my(px((MENU_SEPARATOR - MENU_BORDER) / 2.0))
+            .bg(rgba(tokens::separator()))
+            .into_any_element()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn menu_row_element(
+        row: &rmac_dock::menu::Row,
+        index: usize,
+        display_id: u64,
+        has_checks: bool,
+        selected: bool,
+        option_held: bool,
+        in_submenu: bool,
+        cx: &Context<Dock>,
+    ) -> gpui::AnyElement {
+        let row_id = row.id.clone();
+        let primary = row.primary.clone();
+        let secondary = row.secondary.clone();
+        let has_alternate = row.alternate_label.is_some();
+        let enabled = row.enabled && primary.is_some();
+        let label = match (&row.alternate_label, option_held) {
+            (Some(alternate), true) => alternate.clone(),
+            _ => row.label.clone(),
+        };
+        let mut element = div()
+            .id(format!("dock-menu-{display_id}-{index}"))
+            .role(Role::MenuItem)
+            .aria_label(row.accessible_label.clone())
+            .h(px(tokens::menu_row_height()))
+            .pl(px(if has_checks {
+                MENU_CHECK_INSET
+            } else {
+                MENU_ROW_INSET
+            }))
+            .pr(px(MENU_ROW_INSET))
+            .flex()
+            .items_center()
+            .rounded(px(tokens::menu_item_radius()))
+            .when(selected, |style| style.bg(rgba(tokens::accent())))
+            .when(!enabled, |style| {
+                style.text_color(rgba(tokens::disabled_text()))
+            });
+        // macOS puts the check mark in a leading column.
+        if has_checks {
+            element = element.child(
+                div()
+                    .w(px(MENU_CHECK_COLUMN))
+                    .flex_none()
+                    .child(if row.checked { "✓" } else { "" }),
+            );
+        }
+        element = element.child(label);
+        if enabled {
+            let primary = primary.expect("enabled Dock menu row has an action");
+            element = element
+                .cursor_pointer()
+                .hover(|style| style.bg(rgba(tokens::accent())))
+                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                    if !*hovered {
+                        return;
+                    }
+                    let Some(menu) = this.context_menu.as_mut() else {
+                        return;
+                    };
+                    // Moving onto a main-panel row closes the submenu.
+                    let closed_submenu = !in_submenu && std::mem::take(&mut menu.submenu_open);
+                    if menu.session.select(&row_id) || closed_submenu {
+                        cx.notify();
+                    }
+                }))
+                .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
+                    cx.stop_propagation();
+                    // Option turns Quit into Force Quit.
+                    let action = if has_alternate && event.modifiers().alt {
+                        secondary.clone().unwrap_or_else(|| primary.clone())
+                    } else {
+                        primary.clone()
+                    };
+                    let authorized = match &action {
+                        rmac_dock::menu::Action::Context(action) => this
+                            .status
+                            .read(cx)
+                            .model()
+                            .is_some_and(|model| model.authorizes_context_action(action)),
+                        rmac_dock::menu::Action::ActivateEntry(_)
+                        | rmac_dock::menu::Action::SpecialContext(_) => true,
+                    };
+                    this.context_menu = None;
+                    this.input_region = None;
+                    if let rmac_dock::menu::Action::Context(rmac_dock::ContextAction::LaunchNew {
+                        app_id,
+                        ..
+                    }) = &action
+                    {
+                        if authorized {
+                            this.note_launch(app_id);
+                        }
+                    }
+                    if authorized {
+                        this.dispatch_action(action, cx);
+                    } else {
+                        eprintln!("the selected Dock command is no longer current");
+                    }
+                    cx.notify();
+                }));
+        }
+        element.into_any_element()
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_context_menu(
+        menu: Option<&DockMenu>,
+        placement: rmac_shell_settings::DockPlacement,
+        geometry: Option<(f32, f32, f32)>,
+        axis_length: f32,
+        display_id: u64,
+        option_held: bool,
+        window: &Window,
+        cx: &Context<Dock>,
+    ) -> Vec<gpui::AnyElement> {
+        let (Some(menu), Some((start, tip, width))) = (menu, geometry) else {
+            return Vec::new();
+        };
+        let selected = menu.session.selected().cloned();
+        let rows = menu.session.rows().to_vec();
+        let entries = menu_entries(&rows);
+        let has_checks = dock_menu_has_checks(menu);
+        // macOS Dock menus have no title row; the app name stays the
+        // accessible title.
+        let mut panel = menu_panel(
+            format!("dock-menu-{display_id}"),
+            menu.session.accessible_title().to_owned(),
+            width,
+        );
+        let offset = EXCLUSIVE_ZONE + MENU_SHELF_GAP;
+        panel = match placement {
+            rmac_shell_settings::DockPlacement::Bottom => {
+                panel.left(px(start)).bottom(px(offset)).child(
+                    canvas(
+                        |_, _, _| (),
+                        |bounds, _, window, _| paint_menu_pointer(bounds, window),
+                    )
+                    .absolute()
+                    // Start at the panel's inner edge so the pointer covers
+                    // the rim across its base.
+                    .left(px(tip - MENU_BORDER - MENU_POINTER_WIDTH / 2.0))
+                    .bottom(px(-(MENU_POINTER_HEIGHT + MENU_BORDER)))
+                    .w(px(MENU_POINTER_WIDTH))
+                    .h(px(MENU_POINTER_HEIGHT + MENU_BORDER)),
+                )
+            }
+            rmac_shell_settings::DockPlacement::Left => panel.left(px(offset)).top(px(start)),
+            rmac_shell_settings::DockPlacement::Right => panel.right(px(offset)).top(px(start)),
+        };
+        let sections: Vec<_> = entries
+            .iter()
+            .map(|entry| entry_section(&rows, *entry))
+            .collect();
+        let panel_height = menu_rows_height(&sections) + 2.0 * (MENU_PADDING + MENU_BORDER);
+        let mut submenu_panel = None;
+        for (position, entry) in entries.iter().enumerate() {
+            if position > 0 && sections[position - 1] != sections[position] {
+                panel = panel.child(menu_separator());
+            }
+            match *entry {
+                MenuEntry::Row(index) => {
+                    panel = panel.child(menu_row_element(
+                        &rows[index],
+                        index,
+                        display_id,
+                        has_checks,
+                        selected.as_ref() == Some(&rows[index].id),
+                        option_held,
+                        false,
+                        cx,
+                    ));
+                }
+                MenuEntry::Submenu(submenu) => {
+                    let open = menu.submenu_open;
+                    let parent = div()
+                        .id(format!("dock-menu-{display_id}-submenu"))
+                        .role(Role::MenuItem)
+                        .aria_label(submenu.label())
+                        .h(px(tokens::menu_row_height()))
+                        .pl(px(if has_checks {
+                            MENU_CHECK_INSET + MENU_CHECK_COLUMN
+                        } else {
+                            MENU_ROW_INSET
+                        }))
+                        .pr(px(MENU_ROW_INSET))
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .rounded(px(tokens::menu_item_radius()))
+                        .when(open, |style| style.bg(rgba(tokens::accent())))
+                        .child(submenu.label())
+                        .child("›")
+                        .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                            if *hovered {
+                                if let Some(menu) = this.context_menu.as_mut() {
+                                    if !menu.submenu_open {
+                                        menu.submenu_open = true;
+                                        cx.notify();
+                                    }
+                                }
+                            }
+                        }));
+                    panel = panel.child(parent);
+                    if open {
+                        // Top of the parent row, measured from the panel top.
+                        let above = menu_rows_height(&sections[..position])
+                            + if position > 0 && sections[position - 1] != sections[position] {
+                                MENU_SEPARATOR
+                            } else {
+                                0.0
+                            };
+                        let parent_top = MENU_BORDER + MENU_PADDING + above;
+                        let indices = submenu_rows(&rows, submenu);
+                        let sub_width = submenu_width(&rows, &indices, window);
+                        let sub_height = indices.len() as f32 * tokens::menu_row_height()
+                            + 2.0 * (MENU_PADDING + MENU_BORDER);
+                        let sub_checks = indices.iter().any(|index| rows[*index].checked);
+                        let mut sub = menu_panel(
+                            format!("dock-submenu-{display_id}"),
+                            submenu.label().to_owned(),
+                            sub_width,
+                        );
+                        // The submenu's first row lines up with its parent
+                        // and it opens to the right unless the output ends.
+                        sub = match placement {
+                            rmac_shell_settings::DockPlacement::Bottom => {
+                                let right_start = start + width - MENU_SUBMENU_OVERLAP;
+                                let left = if right_start + sub_width > axis_length - 8.0 {
+                                    start - sub_width + MENU_SUBMENU_OVERLAP
+                                } else {
+                                    right_start
+                                };
+                                let parent_top_from_bottom = offset + panel_height - parent_top;
+                                sub.left(px(left))
+                                    .bottom(px(parent_top_from_bottom + MENU_BORDER + MENU_PADDING
+                                        - sub_height))
+                            }
+                            rmac_shell_settings::DockPlacement::Left => sub
+                                .left(px(offset + width - MENU_SUBMENU_OVERLAP))
+                                .top(px(start + parent_top - MENU_BORDER - MENU_PADDING)),
+                            rmac_shell_settings::DockPlacement::Right => sub
+                                .right(px(offset + width - MENU_SUBMENU_OVERLAP))
+                                .top(px(start + parent_top - MENU_BORDER - MENU_PADDING)),
+                        };
+                        for index in indices {
+                            sub = sub.child(menu_row_element(
+                                &rows[index],
+                                index,
+                                display_id,
+                                sub_checks,
+                                selected.as_ref() == Some(&rows[index].id),
+                                option_held,
+                                true,
+                                cx,
+                            ));
+                        }
+                        submenu_panel = Some(sub.into_any_element());
+                    }
+                }
+            }
+        }
+        let mut panels = vec![panel.into_any_element()];
+        panels.extend(submenu_panel);
+        panels
     }
 
     /// The 20 × 10 pointer under a bottom Dock's menu, tip on the tile
@@ -1293,155 +1777,92 @@ mod linux_wayland {
         }
     }
 
-    fn render_context_menu(
-        menu: Option<&DockMenu>,
-        placement: rmac_shell_settings::DockPlacement,
-        geometry: Option<(f32, f32, f32)>,
+    /// The alert Files shows before the Trash is emptied from the Dock.
+    /// Text follows macOS; the geometry is rmac's standard alert (the Mac
+    /// alert was not measured in this pass).
+    fn render_empty_trash_alert(
+        item_count: usize,
+        surface_width: f32,
+        surface_height: f32,
         display_id: u64,
         cx: &Context<Dock>,
-    ) -> Option<gpui::AnyElement> {
-        let menu = menu?;
-        let (start, tip, width) = geometry?;
-        let selected = menu.session.selected().cloned();
-        let rows = menu.session.rows().to_vec();
-        let has_checks = dock_menu_has_checks(menu);
-        // macOS Dock menus have no title row; the app name stays the
-        // accessible title.
-        let mut panel = div()
-            .id(format!("dock-menu-{display_id}"))
-            .role(Role::Menu)
-            .aria_label(menu.session.accessible_title().to_owned())
+    ) -> gpui::AnyElement {
+        const WIDTH: f32 = 260.0;
+        // The count stays in the accessible name; the text is the Mac's.
+        let accessible = format!("Empty Trash, {item_count} items");
+        let button = |id: &'static str, label: &'static str, default: bool| {
+            div()
+                .id(format!("dock-trash-alert-{display_id}-{id}"))
+                .role(Role::Button)
+                .aria_label(label)
+                .flex_1()
+                .h(px(28.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .rounded_full()
+                .cursor_pointer()
+                .bg(rgba(if default {
+                    tokens::accent()
+                } else {
+                    tokens::light_border()
+                }))
+                .child(label)
+        };
+        div()
+            .id(format!("dock-trash-alert-{display_id}"))
+            .role(Role::Dialog)
+            .aria_label(accessible)
             .absolute()
-            .w(px(width))
-            .p(px(MENU_PADDING))
-            .rounded(px(tokens::menu_radius()))
+            .left(px(((surface_width - WIDTH) / 2.0).max(0.0)))
+            .top(px(surface_height * 0.28))
+            .w(px(WIDTH))
+            .p(px(16.0))
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(px(10.0))
+            .rounded(px(tokens::menu_radius() * 2.0))
             .bg(rgba(tokens::regular_dark_tint()))
             .border_1()
             .border_color(rgba(tokens::light_border()))
             .shadow_lg()
-            .text_size(px(13.0))
             .text_color(rgba(tokens::primary_text()))
-            .occlude();
-        let offset = EXCLUSIVE_ZONE + MENU_SHELF_GAP;
-        panel = match placement {
-            rmac_shell_settings::DockPlacement::Bottom => {
-                panel.left(px(start)).bottom(px(offset)).child(
-                    canvas(
-                        |_, _, _| (),
-                        |bounds, _, window, _| paint_menu_pointer(bounds, window),
-                    )
-                    .absolute()
-                    // Start at the panel's inner edge so the pointer covers
-                    // the rim across its base.
-                    .left(px(tip - MENU_BORDER - MENU_POINTER_WIDTH / 2.0))
-                    .bottom(px(-(MENU_POINTER_HEIGHT + MENU_BORDER)))
-                    .w(px(MENU_POINTER_WIDTH))
-                    .h(px(MENU_POINTER_HEIGHT + MENU_BORDER)),
-                )
-            }
-            rmac_shell_settings::DockPlacement::Left => panel.left(px(offset)).top(px(start)),
-            rmac_shell_settings::DockPlacement::Right => panel.right(px(offset)).top(px(start)),
-        };
-        for (index, row) in rows.iter().enumerate() {
-            if index > 0 && rows[index - 1].section != row.section {
-                // An 11-tall separator whose line is inset 16 from the edge.
-                panel = panel.child(
-                    div()
-                        .h(px(MENU_BORDER))
-                        .mx(px(MENU_ROW_INSET))
-                        .my(px((MENU_SEPARATOR - MENU_BORDER) / 2.0))
-                        .bg(rgba(tokens::separator())),
-                );
-            }
-            let row_id = row.id.clone();
-            let primary = row.primary.clone();
-            let secondary = row.secondary.clone();
-            let enabled = row.enabled && primary.is_some();
-            let mut element = div()
-                .id(format!("dock-menu-{display_id}-{index}"))
-                .role(Role::MenuItem)
-                .aria_label(row.accessible_label.clone())
-                .h(px(tokens::menu_row_height()))
-                .pl(px(if has_checks {
-                    MENU_CHECK_INSET
-                } else {
-                    MENU_ROW_INSET
-                }))
-                .pr(px(MENU_ROW_INSET))
-                .flex()
-                .items_center()
-                .rounded(px(tokens::menu_item_radius()))
-                .when(selected.as_ref() == Some(&row.id), |style| {
-                    style.bg(rgba(tokens::accent()))
-                })
-                .when(!enabled, |style| {
-                    style.text_color(rgba(tokens::disabled_text()))
-                });
-            // macOS puts the check mark in a leading column.
-            if has_checks {
-                element = element.child(
-                    div()
-                        .w(px(MENU_CHECK_COLUMN))
-                        .flex_none()
-                        .child(if row.checked { "✓" } else { "" }),
-                );
-            }
-            element = element.child(row.label.clone());
-            if enabled {
-                let primary = primary.expect("enabled Dock menu row has an action");
-                let click_row_id = row.id.clone();
-                element = element
-                    .cursor_pointer()
-                    .hover(|style| style.bg(rgba(tokens::accent())))
-                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                        if *hovered
-                            && this
-                                .context_menu
-                                .as_mut()
-                                .is_some_and(|menu| menu.session.select(&row_id))
-                        {
-                            cx.notify();
-                        }
-                    }))
-                    .on_click(cx.listener(move |this, event: &gpui::ClickEvent, _, cx| {
-                        cx.stop_propagation();
-                        let action = if matches!(click_row_id, rmac_dock::menu::RowId::Quit)
-                            && event.modifiers().alt
-                        {
-                            secondary.clone().unwrap_or_else(|| primary.clone())
-                        } else {
-                            primary.clone()
-                        };
-                        let authorized = match &action {
-                            rmac_dock::menu::Action::Context(action) => this
-                                .status
-                                .read(cx)
-                                .model()
-                                .is_some_and(|model| model.authorizes_context_action(action)),
-                            rmac_dock::menu::Action::ActivateEntry(_)
-                            | rmac_dock::menu::Action::SpecialContext(_) => true,
-                        };
-                        this.context_menu = None;
-                        this.input_region = None;
-                        if let rmac_dock::menu::Action::Context(
-                            rmac_dock::ContextAction::LaunchNew { app_id, .. },
-                        ) = &action
-                        {
-                            if authorized {
-                                this.note_launch(app_id);
-                            }
-                        }
-                        if authorized {
-                            this.dispatch_action(action, cx);
-                        } else {
-                            eprintln!("the selected Dock command is no longer current");
-                        }
-                        cx.notify();
-                    }));
-            }
-            panel = panel.child(element);
-        }
-        Some(panel.into_any_element())
+            .occlude()
+            .children(trash_icon_path(true).map(|path| img(path).w(px(64.0)).h(px(64.0))))
+            .child(
+                div()
+                    .text_size(px(13.0))
+                    .font_weight(FontWeight::BOLD)
+                    .text_center()
+                    .child("Are you sure you want to permanently erase the items in the Trash?"),
+            )
+            .child(
+                div()
+                    .text_size(px(11.0))
+                    .text_center()
+                    .child("You can’t undo this action."),
+            )
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .gap(px(8.0))
+                    .text_size(px(13.0))
+                    .child(button("cancel", "Cancel", false).on_click(cx.listener(
+                        |this, _: &gpui::ClickEvent, _, cx| {
+                            cx.stop_propagation();
+                            this.finish_trash_review(false, cx);
+                        },
+                    )))
+                    .child(button("empty", "Empty Trash", true).on_click(cx.listener(
+                        |this, _: &gpui::ClickEvent, _, cx| {
+                            cx.stop_propagation();
+                            this.finish_trash_review(true, cx);
+                        },
+                    ))),
+            )
+            .into_any_element()
     }
 
     fn dock_separator(placement: rmac_shell_settings::DockPlacement) -> gpui::AnyElement {

@@ -34,6 +34,7 @@ rmac-dock-runtime.workspace = true
 rmac-dock-system.workspace = true
 rmac-osd.workspace = true
 rmac-places.workspace = true
+rmac-places-system.workspace = true
 rmac-recent-documents.workspace = true
 rmac-search.workspace = true
 rmac-shell-layer.workspace = true

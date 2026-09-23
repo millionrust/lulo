@@ -2,6 +2,7 @@
 //! selects when editing starts, which new names are allowed, and the words
 //! of Finder's rename alerts.
 
+use std::io;
 use std::ops::Range;
 
 /// Longest file name, in bytes, Linux file systems accept.
@@ -77,6 +78,20 @@ pub fn invalid_message(name: &str) -> (String, &'static str) {
     )
 }
 
+/// The alert when the file system refuses the rename: title and body.
+pub fn failed_message(name: &str, error: io::ErrorKind) -> (String, &'static str) {
+    let body = match error {
+        io::ErrorKind::PermissionDenied => "You don’t have permission to rename it.",
+        io::ErrorKind::NotFound => "It may have been moved or deleted.",
+        io::ErrorKind::ReadOnlyFilesystem => "The disk it’s on is read-only.",
+        io::ErrorKind::Unsupported | io::ErrorKind::InvalidInput => {
+            "Its file system can’t rename it without risking another item."
+        }
+        _ => "An unexpected error occurred.",
+    };
+    (format!("The item “{name}” couldn’t be renamed."), body)
+}
+
 /// The warning before a name that begins with a dot: title and body. The
 /// buttons are Cancel and Use “.”.
 pub const HIDDEN_TITLE: &str = "Are you sure you want to use a name that begins with a dot “.”?";
@@ -124,5 +139,12 @@ mod tests {
             "The name “notes.txt” is already taken. Please choose a different name."
         );
         assert_eq!(invalid_message("a/b").0, "The name “a/b” can’t be used.");
+        assert_eq!(
+            failed_message("a", io::ErrorKind::PermissionDenied),
+            (
+                "The item “a” couldn’t be renamed.".to_owned(),
+                "You don’t have permission to rename it."
+            )
+        );
     }
 }

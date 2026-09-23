@@ -35,22 +35,13 @@ impl FinderView {
                 PlaceKind::Item,
             ));
         }
-        locations.extend([
-            p(
-                &host,
-                home.clone(),
-                "icons/house.svg",
-                drive_gray(),
-                PlaceKind::Item,
-            ),
-            p(
-                root_volume_name(),
-                "/".into(),
-                "icons/hard-drive.svg",
-                drive_gray(),
-                PlaceKind::Item,
-            ),
-        ]);
+        locations.extend([p(
+            &host,
+            home.clone(),
+            "icons/house.svg",
+            drive_gray(),
+            PlaceKind::Item,
+        )]);
         let (mounts, mount_error) = match rmac_mounts::discover() {
             Ok(mounts) => (mounts, None),
             Err(error) => (
@@ -86,7 +77,7 @@ impl FinderView {
             prominent.push(p(
                 "Shared",
                 shared,
-                "icons/users.svg",
+                "icons/shared-folder.svg",
                 accent(),
                 PlaceKind::Item,
             ));
@@ -99,32 +90,28 @@ impl FinderView {
             accent(),
             PlaceKind::Applications,
         )];
+        // The owner's Finder order; the Mac hides Macintosh HD and Movies
+        // from the sidebar by default, so Files does too (⇧⌘C and the path
+        // bar still reach the root).
         favorites.extend([
             p(
-                "Documents",
-                home.join("Documents"),
-                "icons/folder-fill.svg",
+                "Downloads",
+                home.join("Downloads"),
+                "icons/circle-arrow-down.svg",
                 accent(),
                 PlaceKind::Item,
             ),
             p(
-                "Downloads",
-                home.join("Downloads"),
-                "icons/download.svg",
+                "Documents",
+                home.join("Documents"),
+                "icons/file.svg",
                 accent(),
                 PlaceKind::Item,
             ),
             p(
                 "Desktop",
                 home.join("Desktop"),
-                "icons/folder-fill.svg",
-                accent(),
-                PlaceKind::Item,
-            ),
-            p(
-                "Movies",
-                home.join("Videos"),
-                "icons/folder-fill.svg",
+                "icons/desktop.svg",
                 accent(),
                 PlaceKind::Item,
             ),
@@ -134,7 +121,7 @@ impl FinderView {
             favorites.push(p(
                 "Projects",
                 projects,
-                "icons/folder-fill.svg",
+                "icons/folder.svg",
                 accent(),
                 PlaceKind::Item,
             ));
@@ -330,6 +317,12 @@ impl FinderView {
             watched_parent: None,
             search_generation: 0,
             search_cancel: None,
+            search_open: false,
+            show_path_bar: false,
+            icon_scroll: gpui::ScrollHandle::new(),
+            marquee: None,
+            type_select: TypeSelect::default(),
+            spring: SpringLoading::default(),
         };
         view.persist_finder_state();
         view.reload(cx);

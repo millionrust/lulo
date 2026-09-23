@@ -46,7 +46,11 @@ impl FinderView {
         cx.notify();
     }
 
-    pub(super) fn render_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_list(
+        &self,
+        window_active: bool,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         // Recursive content matches may not contain the query in their names.
         // Local filtering remains active until Return starts a ranked search.
         let q = if self.search_summary.is_some() {
@@ -55,67 +59,152 @@ impl FinderView {
             self.query.read(cx).value().to_lowercase()
         };
 
-        let head = |w: Option<f32>, text: &'static str, key: SortKey, pl: bool| {
+        // design-lab/finder.html: a 28 pt header, 11 pt labels, the sorted
+        // column in semibold with its chevron, 1 × 16 column dividers and a
+        // 0.5 pt hairline underneath.
+        let head = |id: &'static str,
+                    text: &'static str,
+                    key: SortKey,
+                    width: Option<f32>,
+                    divider: bool,
+                    text_x: f32| {
             let active = !self.search_relevance_order && self.sort_key == key;
-            let title: SharedString = if active {
-                format!("{text} {}", if self.sort_asc { "↑" } else { "↓" }).into()
-            } else {
-                text.into()
-            };
-            Button::new(text, title)
-                .ghost()
-                .xsmall()
-                .selected(active)
-                .when(pl, |button| button.pl_4())
-                .when_some(w, |el, w| el.w(px(w)))
-                .when(w.is_none(), |el| el.flex_1())
+            div()
+                .id(id)
+                .h_full()
+                .flex()
+                .items_center()
+                .when_some(width, |cell, width| cell.w(px(width)).flex_none())
+                .when(width.is_none(), |cell| cell.flex_1().min_w(px(0.0)))
+                .when(divider, |cell| {
+                    cell.child(
+                        div()
+                            .w(px(1.0))
+                            .h(px(LIST_HEADER_DIVIDER_HEIGHT))
+                            .flex_none()
+                            .bg(header_divider()),
+                    )
+                })
+                .child(
+                    div()
+                        .pl(px(if divider { text_x - 1.0 } else { text_x }))
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .truncate()
+                        .text_size(rmac_ui::text_px(LIST_HEADER_TEXT))
+                        .font_weight(if active {
+                            rmac_ui::mac::SEMIBOLD
+                        } else {
+                            rmac_ui::mac::REGULAR
+                        })
+                        .text_color(if active {
+                            sorted_header_text()
+                        } else {
+                            chrome_text()
+                        })
+                        .child(text),
+                )
+                .when(active, |cell| {
+                    cell.child(div().mr(px(8.0)).flex_none().child(icon(
+                        if self.sort_asc {
+                            "icons/chevron-up.svg"
+                        } else {
+                            "icons/chevron-down.svg"
+                        },
+                        11.0,
+                        chrome_text(),
+                    )))
+                })
+                .cursor_pointer()
                 .on_click(cx.listener(move |this, _, _, cx| this.set_sort(key, cx)))
         };
 
         let header = div()
-            .flex()
-            .items_center()
-            .h(px(rmac_ui::mac::list_row_height()))
-            .px_2()
-            .border_b_1()
-            .border_color(sep())
-            .text_size(rmac_ui::text_px(12.0))
-            .text_color(secondary())
-            .child(head(None, "Name", SortKey::Name, true))
-            .child(head(Some(DATE_W), "Date Modified", SortKey::Date, false))
-            .child(head(Some(SIZE_W), "Size", SortKey::Size, false))
-            .child(head(Some(KIND_W), "Kind", SortKey::Kind, true));
+            .h(px(LIST_HEADER_HEIGHT))
+            .flex_none()
+            .v_flex()
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .mx(px(LIST_ROW_INSET))
+                    .child(head(
+                        "head-name",
+                        "Name",
+                        SortKey::Name,
+                        None,
+                        false,
+                        LIST_DISCLOSURE_X + LIST_DISCLOSURE_WIDTH + LIST_ICON + LIST_ICON_TO_NAME,
+                    ))
+                    .child(head(
+                        "head-date",
+                        "Date Modified",
+                        SortKey::Date,
+                        Some(DATE_W),
+                        true,
+                        LIST_CELL_TEXT_X,
+                    ))
+                    .child(head(
+                        "head-size",
+                        "Size",
+                        SortKey::Size,
+                        Some(SIZE_W),
+                        true,
+                        LIST_CELL_TEXT_X,
+                    ))
+                    .child(head(
+                        "head-kind",
+                        "Kind",
+                        SortKey::Kind,
+                        Some(KIND_W),
+                        true,
+                        LIST_CELL_TEXT_X,
+                    )),
+            )
+            .child(div().h(px(0.5)).flex_none().bg(hairline()));
 
         let mut rows: Vec<gpui::AnyElement> = Vec::new();
+        let mut stripe_index = 0usize;
         for (ix, e) in self.entries.iter().enumerate() {
             if !q.is_empty() && !e.name.to_lowercase().contains(&q) {
                 continue;
             }
+            let striped = stripe_index % 2 == 1;
+            stripe_index += 1;
             let selected = self.selected.contains(&ix);
-            let primary = if selected { white() } else { label() };
-            let sub = if selected { white() } else { secondary() };
+            let primary = if selected {
+                selected_text(window_active)
+            } else {
+                primary_text()
+            };
+            let sub = if selected {
+                selected_text(window_active)
+            } else {
+                secondary_text()
+            };
             let glyph = if e.is_dir {
                 "icons/folder-artwork.svg"
             } else {
                 "icons/file-fill.svg"
             };
-            let icon_color = if selected {
-                white()
-            } else if e.is_dir {
+            let icon_color = if e.is_dir {
                 folder_blue()
+            } else if selected {
+                selected_text(window_active)
             } else {
-                secondary()
+                secondary_text()
             };
             let row_icon: gpui::AnyElement = e
                 .application
                 .as_ref()
                 .and_then(|application| application.icon.clone())
                 .map_or_else(
-                    || icon(glyph, 16.0, icon_color).into_any_element(),
+                    || icon(glyph, LIST_ICON, icon_color).into_any_element(),
                     |path| {
                         img(path)
-                            .w(px(17.0))
-                            .h(px(17.0))
+                            .w(px(LIST_ICON))
+                            .h(px(LIST_ICON))
                             .rounded(px(rmac_ui::mac::radius_menu_item()))
                             .into_any_element()
                     },
@@ -128,19 +217,20 @@ impl FinderView {
             };
             let drag_count = drag_paths.len();
             let drop_dir = e.path.clone();
+            let spring_dir = e.path.clone();
             let row_is_dir = e.is_dir;
             let search_detail = e.search_detail.clone();
             let has_search_detail = search_detail.is_some();
 
             let name_cell: gpui::AnyElement = match &self.renaming {
                 Some((rename_path, input)) if rename_path == &e.path => div()
-                    .pl(px(6.0))
+                    .pl(px(LIST_ICON_TO_NAME))
                     .flex_1()
                     .child(TextField::new(input).appearance(true))
                     .into_any_element(),
                 _ => div()
                     .id(("list-name", ix))
-                    .pl(px(6.0))
+                    .pl(px(LIST_ICON_TO_NAME))
                     .flex_1()
                     .min_w(px(0.0))
                     .v_flex()
@@ -180,59 +270,73 @@ impl FinderView {
             rows.push(
                 div()
                     .id(("row", ix))
+                    .flex_none()
                     .flex()
                     .items_center()
                     .h(px(if has_search_detail {
                         38.0
                     } else {
-                        rmac_ui::mac::list_row_height()
+                        LIST_ROW_HEIGHT
                     }))
-                    .px_2()
+                    .mx(px(LIST_ROW_INSET))
+                    .rounded(px(ROW_RADIUS))
                     .text_size(rmac_ui::text_px(13.0))
-                    .when(selected, |el: Stateful<Div>| el.bg(sel()))
-                    .when(!selected && ix % 2 == 1, |el: Stateful<Div>| {
-                        el.bg(alt_row())
+                    .when(selected, |el: Stateful<Div>| {
+                        el.bg(selection(window_active))
                     })
-                    .when(!selected, |el: Stateful<Div>| {
-                        el.hover(|h| h.bg(rmac_ui::mac::hover()))
-                    })
+                    .when(!selected && striped, |el: Stateful<Div>| el.bg(stripe()))
                     .child(
                         div()
                             .flex_1()
                             .flex()
                             .items_center()
                             .min_w(px(0.0))
-                            .child(div().w(px(16.0)).flex().justify_center().when(
-                                e.is_dir,
-                                |el: Div| {
-                                    el.child(icon(
-                                        "icons/chevron-right.svg",
-                                        11.0,
-                                        if selected { white() } else { tertiary() },
-                                    ))
-                                },
-                            ))
+                            .child(
+                                div()
+                                    .w(px(LIST_DISCLOSURE_X + LIST_DISCLOSURE_WIDTH))
+                                    .flex_none()
+                                    .flex()
+                                    .justify_center()
+                                    .pl(px(LIST_DISCLOSURE_X))
+                                    .when(e.is_dir, |el: Div| {
+                                        el.child(icon(
+                                            "icons/chevron-right.svg",
+                                            12.0,
+                                            if selected {
+                                                selected_text(window_active)
+                                            } else {
+                                                chrome_text()
+                                            },
+                                        ))
+                                    }),
+                            )
                             .child(row_icon)
                             .child(name_cell),
                     )
                     .child(
                         div()
                             .w(px(DATE_W))
+                            .flex_none()
+                            .pl(px(LIST_CELL_TEXT_X))
+                            .truncate()
                             .text_color(sub)
                             .child(e.modified.clone()),
                     )
                     .child(
                         div()
                             .w(px(SIZE_W))
+                            .flex_none()
                             .flex()
                             .justify_end()
+                            .pr(px(LIST_SIZE_TRAILING))
                             .text_color(sub)
                             .child(e.size.clone()),
                     )
                     .child(
                         div()
                             .w(px(KIND_W))
-                            .pl_3()
+                            .flex_none()
+                            .pl(px(LIST_CELL_TEXT_X))
                             .text_color(sub)
                             .truncate()
                             .child(e.kind.clone()),
@@ -278,6 +382,12 @@ impl FinderView {
                             el.drag_over::<DraggedPaths>(|s, _, _, _| {
                                 s.bg(rmac_ui::mac::accent_subtle())
                             })
+                            .on_drag_move(cx.listener(
+                                move |this, event: &gpui::DragMoveEvent<DraggedPaths>, _, cx| {
+                                    let inside = event.bounds.contains(&event.event.position);
+                                    this.spring_hover(spring_dir.clone(), inside, cx);
+                                },
+                            ))
                             .on_drop(cx.listener(
                                 move |this, p: &DraggedPaths, _, cx| {
                                     this.drop_into(dd.clone(), &p.0, cx)
@@ -288,6 +398,21 @@ impl FinderView {
                     .into_any_element(),
             );
         }
+        // Finder keeps striping the empty area below the last row.
+        let filler_start = stripe_index;
+        let filler = div()
+            .flex_1()
+            .min_h(px(0.0))
+            .overflow_hidden()
+            .v_flex()
+            .children((filler_start..filler_start + FILLER_STRIPES).map(|index| {
+                div()
+                    .h(px(LIST_ROW_HEIGHT))
+                    .flex_none()
+                    .mx(px(LIST_ROW_INSET))
+                    .rounded(px(ROW_RADIUS))
+                    .when(index % 2 == 1, |row| row.bg(stripe()))
+            }));
 
         let show_list = self.view == ViewMode::List;
         let show_icons = self.view == ViewMode::Icon;
@@ -301,13 +426,14 @@ impl FinderView {
             .collect::<Vec<_>>();
         let navigation_indices = visible_indices.clone();
         let horizontal_navigation = matches!(self.view, ViewMode::Icon | ViewMode::Gallery);
+        let icon_columns = if show_icons { self.icon_columns() } else { 1 };
 
         // Icon-grid tiles. Gallery owns a distinct preview + filmstrip tree.
         let mut tiles: Vec<gpui::AnyElement> = Vec::new();
         if show_icons {
             let icon_size = self.icon_size;
-            let tile_width = icon_size + 52.0;
-            let label_width = icon_size + 32.0;
+            let (tile_width, tile_height) = self.icon_cell();
+            let label_width = ICON_LABEL_MAX_WIDTH.min(tile_width - 16.0);
             for (ix, e) in self.entries.iter().enumerate() {
                 if !q.is_empty() && !e.name.to_lowercase().contains(&q) {
                     continue;
@@ -318,7 +444,11 @@ impl FinderView {
                 } else {
                     "icons/file-fill.svg"
                 };
-                let icon_color = if e.is_dir { folder_blue() } else { secondary() };
+                let icon_color = if e.is_dir {
+                    folder_blue()
+                } else {
+                    secondary_text()
+                };
                 let visual: gpui::AnyElement = if let Some(path) = e
                     .application
                     .as_ref()
@@ -346,23 +476,33 @@ impl FinderView {
                 };
                 let drag_count = drag_paths.len();
                 let drop_directory = e.path.clone();
+                let spring_dir = e.path.clone();
                 let is_directory = e.is_dir;
                 let tile_label: gpui::AnyElement = match &self.renaming {
                     Some((rename_path, input)) if rename_path == &e.path => div()
+                        .mt(px(ICON_LABEL_GAP - ICON_PLATE_GROW))
                         .w(px(label_width))
                         .child(TextField::new(input).appearance(true))
                         .into_any_element(),
                     _ => div()
                         .id(("tile-name", ix))
+                        .mt(px(ICON_LABEL_GAP - ICON_PLATE_GROW))
                         .max_w(px(label_width))
-                        .px_1p5()
-                        .py_0p5()
-                        .rounded(px(rmac_ui::mac::radius_menu_item()))
-                        .when(selected, |el: Stateful<Div>| el.bg(sel()))
-                        .text_size(rmac_ui::text_px(13.0))
+                        .px(px(5.0))
+                        .py(px(1.0))
+                        .rounded(px(ICON_LABEL_RADIUS))
+                        .when(selected, |el: Stateful<Div>| {
+                            el.bg(selection(window_active))
+                        })
+                        .text_size(rmac_ui::text_px(ICON_LABEL_SIZE))
+                        .line_height(px(15.0))
                         .text_center()
-                        .truncate()
-                        .text_color(if selected { white() } else { label() })
+                        .line_clamp(2)
+                        .text_color(if selected {
+                            selected_text(window_active)
+                        } else {
+                            primary_text()
+                        })
                         .child(e.name.clone())
                         .on_mouse_down(
                             MouseButton::Left,
@@ -389,22 +529,24 @@ impl FinderView {
                     div()
                         .id(("tile", ix))
                         .w(px(tile_width))
-                        .h(px(icon_size + 48.0))
+                        .h(px(tile_height))
                         .flex_none()
-                        .flex()
-                        .flex_col()
+                        .v_flex()
                         .items_center()
-                        .gap_1()
-                        .px_1()
-                        .py_2()
                         .child(
+                            // The selected plate grows 4 pt around the icon;
+                            // the negative margin keeps the icon itself on
+                            // the measured grid.
                             div()
-                                .w(px(icon_size))
-                                .h(px(icon_size))
+                                .mt(px(-ICON_PLATE_GROW))
+                                .w(px(icon_size + 2.0 * ICON_PLATE_GROW))
+                                .h(px(icon_size + 2.0 * ICON_PLATE_GROW))
                                 .flex_none()
                                 .flex()
                                 .items_center()
                                 .justify_center()
+                                .rounded(px(ICON_PLATE_RADIUS))
+                                .when(selected, |plate| plate.bg(icon_plate()))
                                 .child(visual),
                         )
                         .child(tile_label)
@@ -446,6 +588,16 @@ impl FinderView {
                                     .drag_over::<DraggedPaths>(|style, _, _, _| {
                                         style.bg(rmac_ui::mac::accent_subtle())
                                     })
+                                    .on_drag_move(cx.listener(
+                                        move |this,
+                                              event: &gpui::DragMoveEvent<DraggedPaths>,
+                                              _,
+                                              cx| {
+                                            let inside =
+                                                event.bounds.contains(&event.event.position);
+                                            this.spring_hover(spring_dir.clone(), inside, cx);
+                                        },
+                                    ))
                                     .on_drop(cx.listener(
                                         move |this, paths: &DraggedPaths, _, cx| {
                                             this.drop_into(drop_directory.clone(), &paths.0, cx)
@@ -460,10 +612,8 @@ impl FinderView {
 
         let content = if self.trash_view && self.entries.is_empty() {
             let empty_title = format!("{} is Empty", self.file_words.bin());
-            let empty_message = format!(
-                "Items moved to {} will appear here.",
-                self.file_words.bin()
-            );
+            let empty_message =
+                format!("Items moved to {} will appear here.", self.file_words.bin());
             div()
                 .id("trash-empty")
                 .flex_1()
@@ -471,9 +621,7 @@ impl FinderView {
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(
-                    rmac_ui::EmptyState::new(empty_title).message(empty_message),
-                )
+                .child(rmac_ui::EmptyState::new(empty_title).message(empty_message))
                 .into_any_element()
         } else {
             match self.view {
@@ -482,40 +630,13 @@ impl FinderView {
                     .flex_1()
                     .min_h(px(0.0))
                     .overflow_y_scroll()
-                    .child(div().v_flex().children(rows))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|this, _, window, cx| {
-                            this.selected.clear();
-                            this.anchor = None;
-                            window.focus(&this.focus, cx);
-                            cx.notify();
-                        }),
-                    )
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(|this, ev: &MouseDownEvent, window, cx| {
-                            cx.stop_propagation();
-                            this.open_context_menu(None, ev.position, window, cx);
-                        }),
-                    )
-                    .into_any_element(),
-                ViewMode::Column => self.render_columns(cx).into_any_element(),
-                ViewMode::Gallery => self.render_gallery(&visible_indices, cx).into_any_element(),
-                ViewMode::Icon => div()
-                    .id("icon-grid")
-                    .flex_1()
-                    .min_h(px(0.0))
-                    .overflow_y_scroll()
-                    .p_3()
                     .child(
                         div()
-                            .w_full()
-                            .flex()
-                            .flex_wrap()
-                            .content_start()
-                            .gap_2()
-                            .children(tiles),
+                            .min_h(gpui::relative(1.0))
+                            .v_flex()
+                            .pt(px(LIST_ROWS_TOP))
+                            .children(rows)
+                            .child(filler),
                     )
                     .on_mouse_down(
                         MouseButton::Left,
@@ -534,6 +655,74 @@ impl FinderView {
                         }),
                     )
                     .into_any_element(),
+                ViewMode::Column => self.render_columns(window_active, cx).into_any_element(),
+                ViewMode::Gallery => self.render_gallery(&visible_indices, cx).into_any_element(),
+                ViewMode::Icon => {
+                    let marquee = self.marquee_rect();
+                    div()
+                        .id("icon-grid")
+                        .flex_1()
+                        .min_h(px(0.0))
+                        .overflow_y_scroll()
+                        .track_scroll(&self.icon_scroll)
+                        .child(
+                            div()
+                                .relative()
+                                .min_h(gpui::relative(1.0))
+                                .w_full()
+                                .pl(px(ICON_GRID_LEFT))
+                                .pt(px(ICON_GRID_TOP))
+                                .flex()
+                                .flex_wrap()
+                                .content_start()
+                                .children(tiles)
+                                .when_some(marquee, |grid, bounds| {
+                                    grid.child(
+                                        div()
+                                            .absolute()
+                                            .left(bounds.origin.x)
+                                            .top(bounds.origin.y)
+                                            .w(bounds.size.width)
+                                            .h(bounds.size.height)
+                                            .bg(marquee_fill())
+                                            .border_1()
+                                            .border_color(marquee_edge()),
+                                    )
+                                }),
+                        )
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, ev: &MouseDownEvent, window, cx| {
+                                this.begin_marquee(
+                                    ev.position,
+                                    ev.modifiers.platform || ev.modifiers.shift,
+                                );
+                                window.focus(&this.focus, cx);
+                                cx.notify();
+                            }),
+                        )
+                        .on_mouse_move(cx.listener(|this, ev: &MouseMoveEvent, _, cx| {
+                            if ev.pressed_button == Some(MouseButton::Left) {
+                                this.update_marquee(ev.position, cx);
+                            }
+                        }))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(|this, _, _, cx| this.end_marquee(cx)),
+                        )
+                        .on_mouse_up_out(
+                            MouseButton::Left,
+                            cx.listener(|this, _, _, cx| this.end_marquee(cx)),
+                        )
+                        .on_mouse_down(
+                            MouseButton::Right,
+                            cx.listener(|this, ev: &MouseDownEvent, window, cx| {
+                                cx.stop_propagation();
+                                this.open_context_menu(None, ev.position, window, cx);
+                            }),
+                        )
+                        .into_any_element()
+                }
             }
         };
 
@@ -560,9 +749,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
             .on_action(cx.listener(|this, _: &GoUp, _, cx| this.go_up(cx)))
             .on_action(cx.listener(|this, _: &GoHome, _, cx| this.go_home(cx)))
-            .on_action(cx.listener(|this, _: &GoApplications, _, cx| {
-                this.applications_click(cx)
-            }))
+            .on_action(cx.listener(|this, _: &GoApplications, _, cx| this.applications_click(cx)))
             .on_action(cx.listener(|this, _: &GoDownloads, _, cx| this.go_downloads(cx)))
             .on_action(cx.listener(|this, _: &GoTrash, _, cx| this.trash_click(cx)))
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
@@ -595,36 +782,43 @@ impl FinderView {
                 let a = this.active;
                 this.close_tab(a, cx);
             }))
-            .on_action(cx.listener(|this, _: &PreviousTab, _, cx| {
-                this.select_adjacent_tab(-1, cx)
+            .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.select_adjacent_tab(-1, cx)))
+            .on_action(cx.listener(|this, _: &NextTab, _, cx| this.select_adjacent_tab(1, cx)))
+            .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
+            .on_action(cx.listener(|this, _: &TogglePathBar, _, cx| {
+                this.show_path_bar = !this.show_path_bar;
+                cx.notify();
             }))
-            .on_action(cx.listener(|this, _: &NextTab, _, cx| {
-                this.select_adjacent_tab(1, cx)
-            }))
+            .on_action(
+                cx.listener(|this, _: &GoComputer, _, cx| this.navigate(PathBuf::from("/"), cx)),
+            )
             .on_action(cx.listener(|this, _: &ShowHelp, _, cx| {
                 this.help_open = true;
                 cx.notify();
             }))
             .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _, cx| {
+                if this.renaming.is_some() {
+                    return;
+                }
                 let current = this.anchor.and_then(|anchor| {
                     navigation_indices.iter().position(|index| *index == anchor)
                 });
+                let last = navigation_indices.len().saturating_sub(1);
+                // Icon view moves by whole rows vertically, as in Finder.
+                let vertical_step = icon_columns.max(1);
                 let select_position = match ev.keystroke.key.as_str() {
                     "down" => Some(
                         current
-                            .map(|position| position + 1)
+                            .map(|position| position + vertical_step)
                             .unwrap_or(0)
-                            .min(navigation_indices.len().saturating_sub(1)),
+                            .min(last),
                     ),
-                    "right" if horizontal_navigation => Some(
-                        current
-                            .map(|position| position + 1)
-                            .unwrap_or(0)
-                            .min(navigation_indices.len().saturating_sub(1)),
-                    ),
+                    "right" if horizontal_navigation => {
+                        Some(current.map(|position| position + 1).unwrap_or(0).min(last))
+                    }
                     "up" => Some(
                         current
-                            .map(|position| position.saturating_sub(1))
+                            .map(|position| position.saturating_sub(vertical_step))
                             .unwrap_or(0),
                     ),
                     "left" if horizontal_navigation => Some(
@@ -633,7 +827,7 @@ impl FinderView {
                             .unwrap_or(0),
                     ),
                     "home" => Some(0),
-                    "end" => Some(navigation_indices.len().saturating_sub(1)),
+                    "end" => Some(last),
                     _ => None,
                 };
                 match ev.keystroke.key.as_str() {
@@ -648,6 +842,8 @@ impl FinderView {
                                 this.select_single(navigation_indices[position]);
                                 cx.notify();
                             }
+                        } else if let Some(text) = type_select_text(ev) {
+                            this.type_select(&text, &navigation_indices, cx);
                         }
                     }
                 }
@@ -665,6 +861,9 @@ impl FinderView {
             .bg(list_bg())
             .when(show_list, |el: Div| el.child(header))
             .child(content)
+            .when(self.show_path_bar, |el: Div| {
+                el.child(self.render_path_bar(cx))
+            })
             .child(self.render_status_bar())
     }
 }

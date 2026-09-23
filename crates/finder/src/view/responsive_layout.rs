@@ -11,6 +11,7 @@ const WIDE_SEARCH_WIDTH: f32 = 180.0;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct ResponsiveLayout {
     pub(super) sidebar_visible: bool,
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(super) sidebar_available: bool,
     pub(super) title_visible: bool,
     pub(super) view_control_visible: bool,

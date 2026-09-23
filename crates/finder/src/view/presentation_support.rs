@@ -70,21 +70,6 @@ pub(super) fn hsl(h: u32) -> Hsla {
 pub(super) fn list_bg() -> Hsla {
     rmac_ui::mac::list()
 }
-pub(super) fn toolbar_bg() -> Hsla {
-    rmac_ui::mac::chrome()
-}
-pub(super) fn statusbar_bg() -> Hsla {
-    rmac_ui::mac::statusbar()
-}
-pub(super) fn sidebar_bg() -> Hsla {
-    rmac_ui::mac::material_sidebar()
-}
-pub(super) fn alt_row() -> Hsla {
-    rmac_ui::mac::row_alternate()
-}
-pub(super) fn sel() -> Hsla {
-    rmac_ui::mac::accent()
-}
 pub(super) fn accent() -> Hsla {
     rmac_ui::mac::accent()
 }
@@ -108,9 +93,6 @@ pub(super) fn tertiary() -> Hsla {
 pub(super) fn drive_gray() -> Hsla {
     rmac_ui::mac::text_secondary()
 }
-pub(super) fn white() -> Hsla {
-    rmac_ui::mac::on_accent()
-}
 
 pub(super) fn icon(path: &'static str, size: f32, color: Hsla) -> Svg {
     svg()
@@ -121,9 +103,10 @@ pub(super) fn icon(path: &'static str, size: f32, color: Hsla) -> Svg {
         .flex_none()
 }
 
-pub(super) const DATE_W: f32 = 184.0;
-pub(super) const SIZE_W: f32 = 80.0;
-pub(super) const KIND_W: f32 = 150.0;
+// design-lab/finder.html: Date Modified 181, Size 97, Kind 115.
+pub(super) const DATE_W: f32 = 181.0;
+pub(super) const SIZE_W: f32 = 97.0;
+pub(super) const KIND_W: f32 = 115.0;
 
 pub(super) fn root_volume_name() -> &'static str {
     if cfg!(target_os = "macos") {

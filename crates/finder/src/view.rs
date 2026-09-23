@@ -11,6 +11,8 @@ mod conflict_controller;
 mod content_presentation;
 mod dialog_presentation;
 mod filesystem_helpers;
+mod finder_behaviour;
+mod finder_style;
 mod gallery_presentation;
 mod item_operations;
 mod lifecycle_controller;
@@ -57,7 +59,7 @@ use gpui::{
     MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render, Result, SharedString,
     Stateful, StatefulInteractiveElement as _, Styled, Svg, Window,
 };
-use gpui_component::{Icon, IconName, Size, StyledExt as _};
+use gpui_component::{Icon, IconName, StyledExt as _};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use rmac_ui::{
     Button, InputEvent, InputState, SearchField, Slider, SliderEvent, SliderState, TextField,
@@ -85,6 +87,8 @@ use crate::watchers::{
 use crate::watchers::{next_mount_watch_retry, MountWatchHealth, MountWatchNotice};
 use crate::{directory_state, file_ops, operation_journal, pasteboard, quick_look, undo_journal};
 use filesystem_helpers::*;
+use finder_behaviour::*;
+use finder_style::*;
 use presentation_persistence::{FinderPersistence, MAX_RESTORED_TABS};
 use presentation_support::*;
 use search_helpers::*;
@@ -132,6 +136,9 @@ actions!(
         PreviousTab,
         NextTab,
         ShowHelp,
+        ToggleSidebar,
+        TogglePathBar,
+        GoComputer,
     ]
 );
 
@@ -321,14 +328,22 @@ struct FinderView {
     watched_parent: Option<PathBuf>,
     search_generation: u64,
     search_cancel: Option<Arc<AtomicBool>>,
+    /// The toolbar search circle has been opened into a field.
+    search_open: bool,
+    /// View ▸ Show Path Bar (⌥⌘P); off by default, as on the Mac.
+    show_path_bar: bool,
+    icon_scroll: gpui::ScrollHandle,
+    marquee: Option<Marquee>,
+    type_select: TypeSelect,
+    spring: SpringLoading,
 }
 
 pub(crate) fn run(destination: crate::StartupDestination) {
     rmac_ui::boot_unified_app_with_assets(
         rmac_ui::app_id::FILES,
         CombinedAssets,
-        1100.0,
-        720.0,
+        finder_style::WINDOW_WIDTH,
+        finder_style::WINDOW_HEIGHT,
         move |window, cx| {
             let mut finder = FinderView::new(window, cx);
             match destination {

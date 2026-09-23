@@ -143,22 +143,13 @@ impl FinderView {
                 kind: PlaceKind::Item,
             });
         }
-        places.extend([
-            Place {
-                name: host.into(),
-                path: self.home.clone(),
-                icon: "icons/house.svg",
-                tint: drive_gray(),
-                kind: PlaceKind::Item,
-            },
-            Place {
-                name: root_volume_name().into(),
-                path: PathBuf::from("/"),
-                icon: "icons/hard-drive.svg",
-                tint: drive_gray(),
-                kind: PlaceKind::Item,
-            },
-        ]);
+        places.extend([Place {
+            name: host.into(),
+            path: self.home.clone(),
+            icon: "icons/house.svg",
+            tint: drive_gray(),
+            kind: PlaceKind::Item,
+        }]);
         places.extend(self.mounts.iter().map(|mount| Place {
             name: mount.name.clone().into(),
             path: mount.path.clone(),

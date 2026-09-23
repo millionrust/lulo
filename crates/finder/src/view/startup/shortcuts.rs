@@ -87,5 +87,9 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         ),
         KeyBinding::new("ctrl-shift-tab", PreviousTab, Some("Finder")),
         KeyBinding::new("ctrl-tab", NextTab, Some("Finder")),
+        // View ▸ Hide Sidebar, View ▸ Show Path Bar and Go ▸ Computer.
+        KeyBinding::new("ctrl-cmd-s", ToggleSidebar, Some("Finder")),
+        KeyBinding::new("alt-cmd-p", TogglePathBar, Some("Finder")),
+        KeyBinding::new("cmd-shift-c", GoComputer, Some("Finder")),
     ]);
 }

@@ -44,30 +44,25 @@ impl FinderView {
                     .v_flex()
                     .gap_4()
                     .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_3()
-                            .child(artwork)
-                            .child(
-                                div()
-                                    .min_w(px(0.0))
-                                    .v_flex()
-                                    .child(
-                                        div()
-                                            .truncate()
-                                            .text_size(rmac_ui::text_px(13.0))
-                                            .font_weight(rmac_ui::mac::SEMIBOLD)
-                                            .text_color(label())
-                                            .child(entry.name.clone()),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_size(rmac_ui::text_px(11.0))
-                                            .text_color(secondary())
-                                            .child(entry.kind.clone()),
-                                    ),
-                            ),
+                        div().flex().items_center().gap_3().child(artwork).child(
+                            div()
+                                .min_w(px(0.0))
+                                .v_flex()
+                                .child(
+                                    div()
+                                        .truncate()
+                                        .text_size(rmac_ui::text_px(13.0))
+                                        .font_weight(rmac_ui::mac::SEMIBOLD)
+                                        .text_color(label())
+                                        .child(entry.name.clone()),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(rmac_ui::text_px(11.0))
+                                        .text_color(secondary())
+                                        .child(entry.kind.clone()),
+                                ),
+                        ),
                     )
                     .child(
                         div()
@@ -119,13 +114,12 @@ impl FinderView {
 
         div()
             .id("gallery-inspector")
-            .w(px(250.0))
+            .w(px(GALLERY_INSPECTOR_WIDTH))
             .h_full()
             .flex_none()
             .p_3()
             .border_l_1()
-            .border_color(sep())
-            .bg(sidebar_bg())
+            .border_color(dark_rule())
             .child(contents)
     }
 
@@ -137,8 +131,8 @@ impl FinderView {
         visible_indices: &[usize],
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let search_active = self.search_summary.is_some()
-            || !self.query.read(cx).value().trim().is_empty();
+        let search_active =
+            self.search_summary.is_some() || !self.query.read(cx).value().trim().is_empty();
         let active_index = self
             .anchor
             .filter(|index| self.selected.contains(index) && visible_indices.contains(index))
@@ -165,20 +159,24 @@ impl FinderView {
                         .items_center()
                         .justify_center()
                         .child(
-                            rmac_ui::EmptyState::new(if visible_indices.is_empty() && search_active {
-                                "No Matching Items"
-                            } else if visible_indices.is_empty() {
-                                "This Folder Is Empty"
-                            } else {
-                                "Select an Item"
-                            })
-                            .message(if visible_indices.is_empty() && search_active {
-                                "Try a different search."
-                            } else if visible_indices.is_empty() {
-                                "Items added to this folder will appear here."
-                            } else {
-                                "Choose an item in the filmstrip to preview it."
-                            }),
+                            rmac_ui::EmptyState::new(
+                                if visible_indices.is_empty() && search_active {
+                                    "No Matching Items"
+                                } else if visible_indices.is_empty() {
+                                    "This Folder Is Empty"
+                                } else {
+                                    "Select an Item"
+                                },
+                            )
+                            .message(
+                                if visible_indices.is_empty() && search_active {
+                                    "Try a different search."
+                                } else if visible_indices.is_empty() {
+                                    "Items added to this folder will appear here."
+                                } else {
+                                    "Choose an item in the filmstrip to preview it."
+                                },
+                            ),
                         )
                         .into_any_element()
                 },
@@ -301,7 +299,7 @@ impl FinderView {
                         || {
                             icon(
                                 glyph,
-                                42.0,
+                                GALLERY_THUMB,
                                 if entry.is_dir {
                                     folder_blue()
                                 } else {
@@ -331,24 +329,18 @@ impl FinderView {
             Some(
                 div()
                     .id(("gallery-item", index))
-                    .w(px(64.0))
-                    .h(px(64.0))
+                    .w(px(GALLERY_THUMB + 6.0))
+                    .h(px(GALLERY_THUMB + 6.0))
                     .flex_none()
-                    .v_flex()
+                    .flex()
                     .items_center()
                     .justify_center()
-                    .gap_1()
-                    .px_1()
-                    .rounded(px(rmac_ui::mac::radius_control()))
-                    .border_2()
-                    .border_color(if selected { accent() } else { list_bg() })
-                    .when(!selected, |element: Stateful<Div>| {
-                        element.hover(|hover| hover.bg(rmac_ui::mac::hover()))
-                    })
+                    .rounded(px(ICON_PLATE_RADIUS))
+                    .when(selected, |element: Stateful<Div>| element.bg(icon_plate()))
                     .child(
                         div()
-                            .h(px(50.0))
-                            .w_full()
+                            .h(px(GALLERY_THUMB))
+                            .w(px(GALLERY_THUMB))
                             .flex()
                             .items_center()
                             .justify_center()
@@ -414,16 +406,13 @@ impl FinderView {
             .child(
                 div()
                     .id("gallery-filmstrip")
-                    .h(px(70.0))
+                    .h(px(GALLERY_THUMB + 16.0))
                     .flex_none()
                     .flex()
                     .items_center()
-                    .gap_2()
-                    .px_3()
+                    .gap(px(GALLERY_THUMB_PITCH - GALLERY_THUMB - 6.0))
+                    .px(px(5.0))
                     .overflow_x_scroll()
-                    .border_t_1()
-                    .border_color(sep())
-                    .bg(toolbar_bg())
                     .children(filmstrip),
             );
 

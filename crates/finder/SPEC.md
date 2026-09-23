@@ -406,11 +406,16 @@ Authoritative values (points). Sources: AppKit/NSColor, HIG, measured on light m
 | drive icon tint | `#808080` (gray) |
 
 ## Sidebar
-- Sections: **Favorites**, **iCloud**, **Locations** (+ Tags). 11 pt semibold gray headers.
-- Row ~28 pt, icon 18 px, text 13 pt. Selected = gray `#d8d8dc` rounded (unfocused) / accent (focused).
-- Icon tint rule: folders/locations = **blue**; physical drives/hardware = **gray**.
-- SF Symbol → bundled SVG: folder→folder-fill, Applications→layout-grid, Downloads→download,
-  Recents→clock, Macintosh HD→hard-drive(gray), iCloud→cloud, home→house, drive→hard-drive(gray).
+- macOS 26 floating panel: 8 pt in from the window's left, top and bottom
+  (8.5 at the bottom), 148 pt wide, radius 19; the traffic lights sit inside it.
+  Measured numbers live in `design-lab/finder.html` and `view/finder_style.rs`.
+- Rows 32 pt; selection is a neutral grey rounded fill (radius 8, inset 10), never
+  the accent. Glyphs and labels share one colour; label 13 pt at 35 pt.
+- Sections: unnamed (Recents, Shared), **Favourites** (Applications, Downloads,
+  Documents, Desktop, Projects when present), **Locations** (iCloud Drive when
+  present, Home, mounted volumes, Bin), **Tags** only where a tag backend exists
+  (macOS). Headers 11 pt semibold after a 13 pt gap. Macintosh HD / Computer is
+  hidden as on the Mac; ⇧⌘C and the path bar still reach it.
 
 ## Kind column
 - Real Finder uses `UTType.localizedDescription`. Approximate by extension:
@@ -422,17 +427,31 @@ Authoritative values (points). Sources: AppKit/NSColor, HIG, measured on light m
   "18 Apr 2026 at 2:42 PM" (day-first, abbreviated month).
 
 ## Toolbar controls
-- Left: back/forward chevrons. Title (left, 13 pt semibold) after nav.
-- Right: view segmented control (grid/list[active]/columns/gallery), More, and
-  Search. Share and Tag are intentionally absent until a real Linux authority,
+- Tahoe capsules, 36 pt tall, 8 pt from the top: back/forward (73 pt), title
+  15 pt bold 12 pt after it, then on the right the view control (148 pt, the
+  current mode on a 34 × 28 pill), the Sort pop-up (Finder's Group button,
+  47.5 pt), the Action (…) capsule and a 36 pt Search circle that opens into a
+  field. Share and Tag are intentionally absent until a real Linux authority,
   capability state, failure path, and keyboard action are implemented; Files
   never renders them as inert reference-only glyphs.
-- Back/forward, view selection, and More use shared semantic buttons with
-  visible selected/disabled state and keyboard focus. Tabs and their close/new
-  actions, sidebar destinations and volume eject, sortable column headers,
-  path components, and Get Info close use the same shared button boundary.
-  Icon-only actions expose explicit tooltips; unavailable history navigation
-  is disabled rather than retaining an inert click target.
+- Capsule buttons carry tooltips; unavailable history navigation is dimmed.
+  Every toolbar action also has its menu/keyboard equivalent (⌘[ ⌘] ⌘1–⌘4,
+  ⌃⌘S sidebar, ⌥⌘P path bar), matching the Mac, where toolbar buttons are not
+  in the key loop unless Full Keyboard Access is on.
+
+## Views and behaviour
+- List: 28 pt header, 20 pt rows 5 pt below it, stripes and selection inset
+  10 pt with radius 6; stripes continue below the last row. Selection is the
+  accent-derived blue while the window is key and #464646 otherwise.
+- Icon: 128 × 116 cells for 64 pt icons, 12 pt labels (two lines), a grey
+  plate behind the selected icon and a blue label pill; marquee selection on
+  empty space (⌘/⇧ extend it).
+- Column: 245 pt columns with a black divider, 22 pt rows; folders leading to
+  the selection keep a grey selection.
+- Type-to-select (1 s prefix window), ⌘↑/⌘↓, Space for Quick Look, and
+  spring-loaded folders (0.7 s hover while dragging) behave as in Finder.
+- Path bar (⌥⌘P, off by default) shows the selected item's path; status bar
+  28 pt.
 
 ## Accessibility text size
 - Finder-owned labels and chrome follow rmac's bounded 100%, 115%, and 130% text preference.

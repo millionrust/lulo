@@ -11,16 +11,29 @@ impl FinderView {
         };
         let key = format!("{}-{}", p.name, p.path.display());
 
+        // design-lab/finder.html: glyph box centred 19 in, label at 35; a tag
+        // dot is centred on the same axis.
         let leading: gpui::AnyElement = if is_tag {
             div()
-                .w(px(12.0))
-                .h(px(12.0))
+                .ml(px(SIDEBAR_GLYPH_CENTRE - SIDEBAR_TAG_DOT / 2.0))
+                .mr(px(SIDEBAR_TEXT_X
+                    - SIDEBAR_GLYPH_CENTRE
+                    - SIDEBAR_TAG_DOT / 2.0))
+                .w(px(SIDEBAR_TAG_DOT))
+                .h(px(SIDEBAR_TAG_DOT))
                 .flex_none()
                 .rounded_full()
                 .bg(p.tint)
                 .into_any_element()
         } else {
-            icon(p.icon, 17.0, if selected { accent() } else { label() }).into_any_element()
+            div()
+                .ml(px(SIDEBAR_GLYPH_CENTRE - SIDEBAR_GLYPH / 2.0))
+                .mr(px(SIDEBAR_TEXT_X
+                    - SIDEBAR_GLYPH_CENTRE
+                    - SIDEBAR_GLYPH / 2.0))
+                .flex_none()
+                .child(icon(p.icon, SIDEBAR_GLYPH, sidebar_text()))
+                .into_any_element()
         };
 
         let np = p.path.clone();
@@ -29,9 +42,9 @@ impl FinderView {
         let main = div()
             .id(SharedString::from(format!("placemain-{key}")))
             .flex_1()
+            .h_full()
             .flex()
             .items_center()
-            .gap_2()
             .min_w(px(0.0))
             .cursor_pointer()
             .child(leading)
@@ -42,7 +55,7 @@ impl FinderView {
                     .truncate()
                     .text_size(rmac_ui::text_px(13.0))
                     .font_weight(rmac_ui::mac::REGULAR)
-                    .text_color(label())
+                    .text_color(sidebar_text())
                     .child(p.name.clone()),
             )
             .on_click(cx.listener(move |this, _, _, cx| match kind {
@@ -55,28 +68,39 @@ impl FinderView {
 
         let mut row = div()
             .id(SharedString::from(format!("place-{key}")))
+            .flex_none()
             .flex()
             .items_center()
-            .gap_2()
-            .h(px(rmac_ui::mac::sidebar_row_height()))
-            .px_2()
-            .rounded(px(rmac_ui::mac::radius_menu_item()))
-            .when(selected, |el: Stateful<Div>| {
-                el.bg(rmac_ui::mac::sidebar_selection())
-            })
-            .when(!selected && !is_tag, |el: Stateful<Div>| {
-                el.hover(|h| h.bg(rmac_ui::mac::hover()))
-            })
+            .h(px(SIDEBAR_ROW_HEIGHT))
+            .pr_1()
+            .rounded(px(SIDEBAR_ROW_RADIUS))
+            // Tahoe: a neutral grey fill, never the accent, and no hover wash.
+            .when(selected, |el: Stateful<Div>| el.bg(sidebar_selection()))
             .child(main);
+
+        // Dropping onto a folder place moves the items there, as in Finder.
+        if matches!(p.kind, PlaceKind::Item | PlaceKind::Volume) {
+            let destination = p.path.clone();
+            row = row
+                .drag_over::<DraggedPaths>(|style, _, _, _| style.bg(sidebar_selection()))
+                .on_drop(cx.listener(move |this, paths: &DraggedPaths, _, cx| {
+                    this.drop_into(destination.clone(), &paths.0, cx)
+                }));
+        }
 
         if p.kind == PlaceKind::Volume {
             let ep = p.path.clone();
-            let tooltip = format!("Eject {}", p.name);
             row = row.child(
-                Button::new(SharedString::from(format!("eject-{key}")), "Eject")
-                    .ghost()
-                    .xsmall()
-                    .tooltip(tooltip)
+                div()
+                    .id(SharedString::from(format!("eject-{key}")))
+                    .flex_none()
+                    .w(px(20.0))
+                    .h(px(20.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .child(icon("icons/eject.svg", 14.0, sidebar_section_text()))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         cx.stop_propagation();
                         this.eject_volume(ep.clone(), cx);
@@ -151,17 +175,28 @@ impl FinderView {
     }
 
     pub(in crate::view) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let mut contents = div().h_full().v_flex().pt_2().px_2().gap_0p5();
-        for (si, section) in self.sections.iter().enumerate() {
+        let mut contents = div()
+            .h_full()
+            .v_flex()
+            .px(px(SIDEBAR_ROW_INSET))
+            .pb(px(SIDEBAR_ROW_INSET));
+        for section in &self.sections {
+            if section.places.is_empty() {
+                continue;
+            }
             if !section.title.is_empty() {
                 contents = contents.child(
                     div()
-                        .px_2()
-                        .pt(px(if si == 0 { 2.0 } else { 12.0 }))
-                        .pb_1()
+                        .flex_none()
+                        .mt(px(SIDEBAR_SECTION_GAP))
+                        .h(px(SIDEBAR_SECTION_HEIGHT))
+                        .pl(px(SIDEBAR_SECTION_TEXT_X))
+                        .pt(px(2.0))
+                        .flex()
+                        .items_center()
                         .text_size(rmac_ui::text_px(11.0))
                         .font_weight(rmac_ui::mac::SEMIBOLD)
-                        .text_color(secondary())
+                        .text_color(sidebar_section_text())
                         .child(section.title.clone()),
                 );
             }
@@ -169,15 +204,69 @@ impl FinderView {
                 contents = contents.child(self.render_place(p, cx));
             }
         }
+
+        // Traffic lights live inside the floating panel (window-relative
+        // centres 26 / 49 / 72, y 26), so place the cluster by its centre.
+        let traffic_left = TRAFFIC_LIGHT_FIRST_CENTRE
+            - rmac_ui::mac::traffic_light_hit_width() / 2.0
+            - SIDEBAR_INSET;
+        let traffic_top = TRAFFIC_LIGHT_FIRST_CENTRE
+            - rmac_ui::mac::traffic_light_hit_height() / 2.0
+            - SIDEBAR_INSET;
+        let titlebar = div()
+            .id("sidebar-titlebar")
+            .h(px(TOOLBAR_HEIGHT - SIDEBAR_INSET))
+            .flex_none()
+            .relative()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, _| this.dragging = true),
+            )
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, _, _| this.dragging = false),
+            )
+            .on_mouse_move(cx.listener(|this, _, window, _| {
+                if this.dragging {
+                    this.dragging = false;
+                    window.start_window_move();
+                }
+            }))
+            .child(
+                div()
+                    .absolute()
+                    .left(px(traffic_left))
+                    .top(px(traffic_top))
+                    .child(rmac_ui::traffic_lights()),
+            );
+
         div()
             .w(px(self.sidebar_width))
             .h_full()
             .flex_shrink_0()
             .relative()
-            .bg(sidebar_bg())
-            .border_r_1()
-            .border_color(sep())
-            .child(contents.overflow_y_scrollbar())
+            .child(
+                div()
+                    .id("sidebar-panel")
+                    .absolute()
+                    .left(px(SIDEBAR_INSET))
+                    .top(px(SIDEBAR_INSET))
+                    .bottom(px(SIDEBAR_BOTTOM_INSET))
+                    .right_0()
+                    .v_flex()
+                    .rounded(px(SIDEBAR_RADIUS))
+                    .bg(sidebar_panel())
+                    .border_1()
+                    .border_color(sidebar_panel_edge())
+                    .overflow_hidden()
+                    .child(titlebar)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h(px(0.0))
+                            .child(contents.overflow_y_scrollbar()),
+                    ),
+            )
             .child(
                 div()
                     .id("sidebar-resizer")
@@ -186,7 +275,6 @@ impl FinderView {
                     .top_0()
                     .bottom_0()
                     .w(px(5.0))
-                    .hover(|handle| handle.bg(rmac_ui::mac::accent_subtle()))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, _| this.begin_sidebar_resize()),

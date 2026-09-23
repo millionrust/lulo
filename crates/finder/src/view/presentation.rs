@@ -12,6 +12,7 @@ impl Render for FinderView {
             self.sidebar_visible,
             self.sidebar_width,
         );
+        let window_active = window.is_window_active();
         let info = self.info.clone();
         let multi = self.tabs.len() > 1;
         let menu_at = self.menu_at.clone();
@@ -88,7 +89,7 @@ impl Render for FinderView {
             .id("files-root")
             .size_full()
             .relative()
-            .v_flex()
+            .flex()
             .bg(list_bg())
             .rounded(px(rmac_ui::mac::radius_large_surface()))
             .overflow_hidden()
@@ -175,206 +176,215 @@ impl Render for FinderView {
             .on_action(
                 cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
             )
-            .child(self.render_toolbar(layout, cx))
-            .when_some(operation_notice, |el, message| {
-                el.child(
-                    div()
-                        .id("operation-notice")
-                        .h(px(34.0))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .bg(rmac_ui::mac::accent_subtle())
-                        .border_b_1()
-                        .border_color(rmac_ui::mac::accent_border())
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(label())
-                        .child(
-                            div()
-                                .w(px(16.0))
-                                .h(px(16.0))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded_full()
-                                .bg(rmac_ui::mac::accent())
-                                .text_color(rmac_ui::mac::on_accent())
-                                .child("✓"),
-                        )
-                        .child(div().min_w_0().flex_1().truncate().child(message))
-                        .child(
-                            Button::new("dismiss-operation-notice", "Dismiss")
-                                .ghost()
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.operation_notice = None;
-                                    cx.notify();
-                                })),
-                        ),
-                )
+            .when(layout.sidebar_visible, |root| {
+                root.child(self.render_sidebar(cx))
             })
-            .when_some(operation_error, |el, message| {
-                el.child(
-                    div()
-                        .id("operation-error")
-                        .relative()
-                        .h(px(34.0))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .bg(rmac_ui::mac::error_background())
-                        .border_b_1()
-                        .border_color(rmac_ui::mac::error_border())
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(rmac_ui::mac::danger())
-                        .child(
-                            div()
-                                .w(px(16.0))
-                                .h(px(16.0))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .rounded_full()
-                                .bg(rmac_ui::mac::danger())
-                                .text_color(rmac_ui::mac::on_danger())
-                                .child("!"),
-                        )
-                        .child(div().min_w_0().flex_1().pr_20().truncate().child(message))
-                        .child(
-                            div()
-                                .id("resolve-operation-error")
-                                .absolute()
-                                .right_2()
-                                .top(px(5.0))
-                                .h(px(24.0))
-                                .px_2()
-                                .flex()
-                                .items_center()
-                                .rounded(px(rmac_ui::mac::radius_control()))
-                                .font_weight(rmac_ui::mac::SEMIBOLD)
-                                .cursor_pointer()
-                                .hover(|button| button.bg(rmac_ui::mac::control_fill_hover()))
-                                .child(if any_recovery_pending {
-                                    "Review"
-                                } else {
-                                    "Dismiss"
-                                })
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    if recovery_pending {
-                                        this.recovery_open = true;
-                                    } else {
-                                        #[cfg(any(target_os = "linux", test))]
-                                        if trash_recovery_pending {
-                                            this.trash_recovery_open = true;
-                                            cx.notify();
-                                            return;
-                                        }
-                                        this.operation_error = None;
-                                    }
-                                    cx.notify();
-                                })),
-                        ),
-                )
-            })
-            .when_some(
-                trash_progress,
-                |el, (operation, processed, total, cancelling)| {
-                    el.child(
-                        div()
-                            .h(px(34.0))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .px_3()
-                            .bg(rmac_ui::mac::accent_subtle())
-                            .border_b_1()
-                            .border_color(rmac_ui::mac::accent_border())
-                            .text_size(rmac_ui::text_px(12.0))
-                            .text_color(label())
-                            .child(div().flex_1().child(accessibility::trash_progress_text(
-                                operation.as_ref(),
-                                processed,
-                                total,
-                            )))
-                            .child(
-                                Button::new(
-                                    "cancel-trash",
-                                    accessibility::cancel_progress_label(cancelling),
-                                )
-                                .xsmall()
-                                .disabled(cancelling)
-                                .on_click(cx.listener(|this, _, _, cx| this.cancel_trash(cx))),
-                            ),
-                    )
-                },
-            )
-            .when_some(undo_progress, |el, undo| {
-                let status = accessibility::undo_progress_text(&undo);
-                el.child(
-                    div()
-                        .id("undo-progress")
-                        .h(px(34.0))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .bg(rmac_ui::mac::accent_subtle())
-                        .border_b_1()
-                        .border_color(rmac_ui::mac::accent_border())
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(label())
-                        .child(div().flex_1().child(status))
-                        .child(
-                            Button::new(
-                                "cancel-undo",
-                                accessibility::cancel_progress_label(undo.cancelling),
-                            )
-                            .xsmall()
-                            .disabled(undo.cancelling)
-                            .on_click(cx.listener(|this, _, _, cx| this.cancel_undo(cx))),
-                        ),
-                )
-            })
-            .when_some(transfer, |el, transfer| {
-                let action = accessibility::cancel_progress_label(transfer.cancelling);
-                let status = accessibility::transfer_progress_text(&transfer);
-                el.child(
-                    div()
-                        .h(px(34.0))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .bg(rmac_ui::mac::accent_subtle())
-                        .border_b_1()
-                        .border_color(rmac_ui::mac::accent_border())
-                        .text_size(rmac_ui::text_px(12.0))
-                        .text_color(label())
-                        .child(div().flex_1().child(status))
-                        .child(
-                            Button::new("cancel-transfer", action)
-                                .xsmall()
-                                .disabled(transfer.cancelling)
-                                .on_click(cx.listener(|this, _, _, cx| this.cancel_transfer(cx))),
-                        ),
-                )
-            })
-            .when(multi, |el| el.child(self.render_tabs(cx)))
             .child(
                 div()
                     .flex_1()
-                    .min_h(px(0.0))
-                    .flex()
-                    .when(layout.sidebar_visible, |content| {
-                        content.child(self.render_sidebar(cx))
+                    .min_w(px(0.0))
+                    .h_full()
+                    .v_flex()
+                    .child(self.render_toolbar(layout, cx))
+                    .when_some(operation_notice, |el, message| {
+                        el.child(
+                            div()
+                                .id("operation-notice")
+                                .h(px(34.0))
+                                .flex_none()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .px_3()
+                                .bg(rmac_ui::mac::accent_subtle())
+                                .border_b_1()
+                                .border_color(rmac_ui::mac::accent_border())
+                                .text_size(rmac_ui::text_px(12.0))
+                                .text_color(label())
+                                .child(
+                                    div()
+                                        .w(px(16.0))
+                                        .h(px(16.0))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .rounded_full()
+                                        .bg(rmac_ui::mac::accent())
+                                        .text_color(rmac_ui::mac::on_accent())
+                                        .child("✓"),
+                                )
+                                .child(div().min_w_0().flex_1().truncate().child(message))
+                                .child(
+                                    Button::new("dismiss-operation-notice", "Dismiss")
+                                        .ghost()
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.operation_notice = None;
+                                            cx.notify();
+                                        })),
+                                ),
+                        )
                     })
-                    .child(self.render_list(cx)),
+                    .when_some(operation_error, |el, message| {
+                        el.child(
+                            div()
+                                .id("operation-error")
+                                .relative()
+                                .h(px(34.0))
+                                .flex_none()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .px_3()
+                                .bg(rmac_ui::mac::error_background())
+                                .border_b_1()
+                                .border_color(rmac_ui::mac::error_border())
+                                .text_size(rmac_ui::text_px(12.0))
+                                .text_color(rmac_ui::mac::danger())
+                                .child(
+                                    div()
+                                        .w(px(16.0))
+                                        .h(px(16.0))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .rounded_full()
+                                        .bg(rmac_ui::mac::danger())
+                                        .text_color(rmac_ui::mac::on_danger())
+                                        .child("!"),
+                                )
+                                .child(div().min_w_0().flex_1().pr_20().truncate().child(message))
+                                .child(
+                                    div()
+                                        .id("resolve-operation-error")
+                                        .absolute()
+                                        .right_2()
+                                        .top(px(5.0))
+                                        .h(px(24.0))
+                                        .px_2()
+                                        .flex()
+                                        .items_center()
+                                        .rounded(px(rmac_ui::mac::radius_control()))
+                                        .font_weight(rmac_ui::mac::SEMIBOLD)
+                                        .cursor_pointer()
+                                        .hover(|button| {
+                                            button.bg(rmac_ui::mac::control_fill_hover())
+                                        })
+                                        .child(if any_recovery_pending {
+                                            "Review"
+                                        } else {
+                                            "Dismiss"
+                                        })
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            if recovery_pending {
+                                                this.recovery_open = true;
+                                            } else {
+                                                #[cfg(any(target_os = "linux", test))]
+                                                if trash_recovery_pending {
+                                                    this.trash_recovery_open = true;
+                                                    cx.notify();
+                                                    return;
+                                                }
+                                                this.operation_error = None;
+                                            }
+                                            cx.notify();
+                                        })),
+                                ),
+                        )
+                    })
+                    .when_some(
+                        trash_progress,
+                        |el, (operation, processed, total, cancelling)| {
+                            el.child(
+                                div()
+                                    .h(px(34.0))
+                                    .flex_none()
+                                    .flex()
+                                    .items_center()
+                                    .gap_2()
+                                    .px_3()
+                                    .bg(rmac_ui::mac::accent_subtle())
+                                    .border_b_1()
+                                    .border_color(rmac_ui::mac::accent_border())
+                                    .text_size(rmac_ui::text_px(12.0))
+                                    .text_color(label())
+                                    .child(div().flex_1().child(
+                                        accessibility::trash_progress_text(
+                                            operation.as_ref(),
+                                            processed,
+                                            total,
+                                        ),
+                                    ))
+                                    .child(
+                                        Button::new(
+                                            "cancel-trash",
+                                            accessibility::cancel_progress_label(cancelling),
+                                        )
+                                        .xsmall()
+                                        .disabled(cancelling)
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| this.cancel_trash(cx)),
+                                        ),
+                                    ),
+                            )
+                        },
+                    )
+                    .when_some(undo_progress, |el, undo| {
+                        let status = accessibility::undo_progress_text(&undo);
+                        el.child(
+                            div()
+                                .id("undo-progress")
+                                .h(px(34.0))
+                                .flex_none()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .px_3()
+                                .bg(rmac_ui::mac::accent_subtle())
+                                .border_b_1()
+                                .border_color(rmac_ui::mac::accent_border())
+                                .text_size(rmac_ui::text_px(12.0))
+                                .text_color(label())
+                                .child(div().flex_1().child(status))
+                                .child(
+                                    Button::new(
+                                        "cancel-undo",
+                                        accessibility::cancel_progress_label(undo.cancelling),
+                                    )
+                                    .xsmall()
+                                    .disabled(undo.cancelling)
+                                    .on_click(cx.listener(|this, _, _, cx| this.cancel_undo(cx))),
+                                ),
+                        )
+                    })
+                    .when_some(transfer, |el, transfer| {
+                        let action = accessibility::cancel_progress_label(transfer.cancelling);
+                        let status = accessibility::transfer_progress_text(&transfer);
+                        el.child(
+                            div()
+                                .h(px(34.0))
+                                .flex_none()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .px_3()
+                                .bg(rmac_ui::mac::accent_subtle())
+                                .border_b_1()
+                                .border_color(rmac_ui::mac::accent_border())
+                                .text_size(rmac_ui::text_px(12.0))
+                                .text_color(label())
+                                .child(div().flex_1().child(status))
+                                .child(
+                                    Button::new("cancel-transfer", action)
+                                        .xsmall()
+                                        .disabled(transfer.cancelling)
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| this.cancel_transfer(cx)),
+                                        ),
+                                ),
+                        )
+                    })
+                    .when(multi, |el| el.child(self.render_tabs(cx)))
+                    .child(self.render_list(window_active, cx)),
             )
             .when_some(info, |el, entry| el.child(self.render_info(&entry, cx)))
             .when_some(menu_at, |el, state| {

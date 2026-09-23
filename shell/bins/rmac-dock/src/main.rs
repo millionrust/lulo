@@ -28,7 +28,6 @@ mod linux_wayland {
     const TOOLTIP_WIDTH: f32 = 240.0;
     const TOOLTIP_BOTTOM: f32 = EXCLUSIVE_ZONE + 6.0;
     const MENU_WIDTH: f32 = 248.0;
-    const MENU_ROW_HEIGHT: f32 = 28.0;
     const READY_FILE_ENV: &str = "RMAC_DOCK_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_DOCK_RENDER_COUNT_DIR";
     static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(0);
@@ -412,7 +411,7 @@ mod linux_wayland {
                     .windows(2)
                     .filter(|rows| rows[0].section != rows[1].section)
                     .count() as f32;
-                let height = 38.0 + row_count * MENU_ROW_HEIGHT + section_breaks * 9.0;
+                let height = 38.0 + row_count * tokens::menu_row_height() + section_breaks * 9.0;
                 let start = (shelf_start + menu.anchor - MENU_WIDTH / 2.0)
                     .clamp(8.0, (axis - MENU_WIDTH - 8.0).max(8.0));
                 (start, height)
@@ -1191,7 +1190,7 @@ mod linux_wayland {
                 .id(format!("dock-menu-{display_id}-{index}"))
                 .role(Role::MenuItem)
                 .aria_label(row.accessible_label.clone())
-                .h(px(MENU_ROW_HEIGHT))
+                .h(px(tokens::menu_row_height()))
                 .px_2()
                 .flex()
                 .items_center()

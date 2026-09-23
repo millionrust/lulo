@@ -34,7 +34,6 @@ mod linux_wayland {
     const MENU_SURFACE_HEIGHT: f32 = 520.0;
     const MENU_WIDTH: f32 = 248.0;
     const RECENT_MENU_WIDTH: f32 = 286.0;
-    const MENU_ROW_HEIGHT: f32 = 28.0;
     const MAX_RECENT_ITEMS: usize = 10;
     const FULLSCREEN_REVEAL_EDGE: f32 = 2.0;
     const FULLSCREEN_HIDE_DELAY: Duration = Duration::from_millis(500);
@@ -827,7 +826,7 @@ mod linux_wayland {
                         ))
                         .role(Role::MenuItem)
                         .aria_label(item.label.clone())
-                        .h(px(MENU_ROW_HEIGHT))
+                        .h(px(tokens::menu_row_height()))
                         .mx_1()
                         .px_2()
                         .flex()
@@ -931,7 +930,7 @@ mod linux_wayland {
                                     .id(format!("recent-item-{}-{index}", self.display_id))
                                     .role(Role::MenuItem)
                                     .aria_label(format!("Open {label}"))
-                                    .h(px(MENU_ROW_HEIGHT))
+                                    .h(px(tokens::menu_row_height()))
                                     .mx_1()
                                     .px_2()
                                     .flex()
@@ -964,7 +963,7 @@ mod linux_wayland {
                                     .id(format!("recent-items-clear-{}", self.display_id))
                                     .role(Role::MenuItem)
                                     .aria_label("Clear Recent Items")
-                                    .h(px(MENU_ROW_HEIGHT))
+                                    .h(px(tokens::menu_row_height()))
                                     .mx_1()
                                     .px_2()
                                     .flex()
@@ -1405,7 +1404,7 @@ mod linux_wayland {
             .iter()
             .filter(|item| item.separator_before)
             .count() as f32;
-        8.0 + MENU_ROW_HEIGHT * menu.items.len() as f32 + separators * 9.0
+        8.0 + tokens::menu_row_height() * menu.items.len() as f32 + separators * 9.0
     }
 
     fn menu_item_top(menu: &rmac_app_menu::Menu, index: usize) -> f32 {
@@ -1415,7 +1414,7 @@ mod linux_wayland {
             .take(index + 1)
             .filter(|item| item.separator_before)
             .count() as f32;
-        BAR_HEIGHT + 6.0 + MENU_ROW_HEIGHT * index as f32 + separators * 9.0
+        BAR_HEIGHT + 6.0 + tokens::menu_row_height() * index as f32 + separators * 9.0
     }
 
     fn recent_action_count(items: &[PathBuf], loading: bool, unavailable: bool) -> usize {
@@ -1432,7 +1431,7 @@ mod linux_wayland {
         } else {
             items + 1
         };
-        30.0 + rows as f32 * MENU_ROW_HEIGHT
+        30.0 + rows as f32 * tokens::menu_row_height()
             + if items > 0 && !loading && !unavailable {
                 9.0
             } else {
@@ -1445,7 +1444,7 @@ mod linux_wayland {
             .id(format!("recent-items-status-{label}"))
             .role(Role::MenuItem)
             .aria_label(label)
-            .h(px(MENU_ROW_HEIGHT))
+            .h(px(tokens::menu_row_height()))
             .mx_1()
             .px_2()
             .flex()

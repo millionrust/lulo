@@ -232,6 +232,12 @@ pub fn menubar_height() -> f32 {
     current().metrics.menubar_height
 }
 
+/// The measured menu row pitch (24 px on the macOS reference); shared by
+/// menu bar menus and the Dock menu.
+pub fn menu_row_height() -> f32 {
+    current().metrics.menu_row_height
+}
+
 /// The measured rendered Dock tile size (64 px on the reference Mac).
 pub fn dock_tile() -> f32 {
     current().metrics.dock_tile

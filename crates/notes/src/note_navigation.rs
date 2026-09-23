@@ -35,9 +35,9 @@ impl NotesView {
                     .child(
                         div()
                             .text_size(rmac_ui::text_px(11.0))
-                            .font_weight(mac::SEMIBOLD)
-                            .text_color(mac::text_tertiary())
-                            .child("ON THIS COMPUTER"),
+                            .font_weight(mac::BOLD)
+                            .text_color(mac::text_secondary())
+                            .child("On My Computer"),
                     )
                     .child(
                         div()
@@ -138,8 +138,43 @@ impl NotesView {
                     .collect()
             };
         let note_count = notes.len();
+        // Notes groups a date-sorted list under Pinned / Today / Yesterday /
+        // Previous 7 Days / … headers (S: sizes from platform knowledge).
+        let sectioned = !search_active
+            && self
+                .session
+                .snapshot()
+                .is_some_and(|snapshot| snapshot.sort_order != SortOrder::Title);
+        let sort_by_created = self
+            .session
+            .snapshot()
+            .is_some_and(|snapshot| snapshot.sort_order == SortOrder::Created);
+        let mut current_section: Option<SharedString> = None;
         let mut items = Vec::<AnyElement>::new();
         for (note, search_hit) in notes {
+            if sectioned {
+                let section: SharedString = if note.pinned {
+                    "Pinned".into()
+                } else if sort_by_created {
+                    date_section(note.created_unix_ms)
+                } else {
+                    date_section(note.modified_unix_ms)
+                };
+                if current_section.as_ref() != Some(&section) {
+                    items.push(
+                        div()
+                            .px(px(20.0))
+                            .pt_3()
+                            .pb_1()
+                            .text_size(rmac_ui::text_px(13.0))
+                            .font_weight(mac::BOLD)
+                            .text_color(mac::text())
+                            .child(section.clone())
+                            .into_any_element(),
+                    );
+                    current_section = Some(section);
+                }
+            }
             let note_id = note.id;
             let is_selected = selected == Some(note.id);
             let title_source = if note.title.trim().is_empty() {
@@ -236,15 +271,20 @@ impl NotesView {
             items.push(
                 div()
                     .id(("note", note.id.get()))
-                    .mx_1()
-                    .px_3()
-                    .py_2()
-                    .rounded(px(rmac_ui::mac::radius_menu_item()))
+                    .mx(px(10.0))
+                    .px(px(10.0))
+                    .py(px(8.0))
+                    .rounded(px(rmac_ui::mac::radius_control()))
+                    // Notes selects in its dimmed yellow (S) and separates
+                    // the other rows with inset hairlines.
                     .when(is_selected, |element: Stateful<Div>| {
-                        element.bg(mac::accent())
+                        element.bg(mac::notes_accent().opacity(0.62))
                     })
                     .when(!is_selected, |element: Stateful<Div>| {
-                        element.hover(|hover| hover.bg(mac::hover()))
+                        element
+                            .border_b_1()
+                            .border_color(mac::separator())
+                            .hover(|hover| hover.bg(mac::hover()))
                     })
                     .child(
                         div()
@@ -269,8 +309,8 @@ impl NotesView {
                                     .child(
                                         div()
                                             .flex_1()
-                                            .text_size(rmac_ui::text_px(14.0))
-                                            .font_weight(mac::SEMIBOLD)
+                                            .text_size(rmac_ui::text_px(13.0))
+                                            .font_weight(mac::BOLD)
                                             .text_color(if is_selected {
                                                 mac::on_accent()
                                             } else {

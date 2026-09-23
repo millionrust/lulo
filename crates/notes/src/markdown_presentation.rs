@@ -120,21 +120,43 @@ fn render_markdown_block(block: &MarkdownPreviewBlock) -> AnyElement {
             ordered_index,
             checked,
         } => {
-            let marker = checked.map_or_else(
-                || ordered_index.map_or_else(|| "•".to_string(), |index| format!("{index}.")),
-                |checked| if checked { "☑".into() } else { "☐".into() },
-            );
+            let marker = match checked {
+                // Notes draws checklist items as 18 pt circles, filled in
+                // the Notes yellow with a check when done (S).
+                Some(done) => div()
+                    .mt(px(3.0))
+                    .size(px(18.0))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .when(done, |circle| {
+                        circle
+                            .bg(mac::notes_accent())
+                            .text_size(rmac_ui::text_px(12.0))
+                            .font_weight(mac::BOLD)
+                            .text_color(mac::black())
+                            .child("✓")
+                    })
+                    .when(!done, |circle| {
+                        circle.border_2().border_color(mac::text_tertiary())
+                    })
+                    .into_any_element(),
+                None => div()
+                    .w(px(24.0))
+                    .text_color(mac::text_secondary())
+                    .child(
+                        ordered_index.map_or_else(|| "•".to_string(), |index| format!("{index}.")),
+                    )
+                    .into_any_element(),
+            };
             div()
                 .pl(px(f32::from(depth) * 18.0))
                 .flex()
                 .items_start()
                 .gap_2()
-                .child(
-                    div()
-                        .w(px(24.0))
-                        .text_color(mac::text_secondary())
-                        .child(marker),
-                )
+                .child(marker)
                 .child(div().flex_1().child(content))
                 .into_any_element()
         }

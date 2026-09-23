@@ -81,6 +81,9 @@ impl NotesView {
                 cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)),
             )
             .on_action(cx.listener(|this, _: &ExportNotes, _, cx| this.begin_export(cx)))
+            .on_action(cx.listener(|this, _: &InsertChecklist, window, cx| {
+                this.insert_checklist(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &RenameSelectedFolder, window, cx| {
                 this.begin_folder_rename(window, cx)
             }))

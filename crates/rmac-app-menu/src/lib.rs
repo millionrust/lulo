@@ -144,6 +144,10 @@ const NOTES_MENUS: &[MenuSpec] = &[
         items: &[item!("Find…", "notes::FocusSearch", "⌘F")],
     },
     MenuSpec {
+        label: "Format",
+        items: &[item!("Checklist", "notes::InsertChecklist", "⇧⌘L")],
+    },
+    MenuSpec {
         label: "View",
         items: &[
             item!("Sort by Date Edited", "notes::SortByEdited", ""),

@@ -151,8 +151,8 @@ impl NotesView {
                 .px(px(44.0))
                 .pt_2()
                 .pb_4()
-                .text_size(px(16.0))
-                .line_height(px(24.0))
+                .text_size(px(14.0))
+                .line_height(px(20.0))
                 .text_color(mac::text())
                 .child(
                     TextField::new(&self.body)
@@ -172,14 +172,21 @@ impl NotesView {
                     .pb_1()
                     .flex()
                     .items_center()
-                    .justify_between()
                     .px(px(44.0))
-                    .text_size(rmac_ui::text_px(11.0))
+                    .text_size(rmac_ui::text_px(12.0))
                     .text_color(mac::text_secondary())
-                    .child(date_label(note.modified_unix_ms))
+                    // Notes centres the note's full edit date above the text.
+                    .child(div().flex_1())
                     .child(
                         div()
+                            .flex_none()
+                            .child(full_date_label(note.modified_unix_ms)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
                             .flex()
+                            .justify_end()
                             .items_center()
                             .gap_1()
                             .child(
@@ -217,8 +224,8 @@ impl NotesView {
                 div()
                     .px(px(44.0))
                     .pt_1()
-                    .text_size(px(28.0))
-                    .line_height(px(34.0))
+                    .text_size(px(24.0))
+                    .line_height(px(30.0))
                     .font_weight(mac::BOLD)
                     .text_color(mac::text())
                     .child(

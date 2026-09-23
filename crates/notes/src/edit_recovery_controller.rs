@@ -19,6 +19,34 @@ impl NotesView {
         self.sync_markdown_preview(cx);
     }
 
+    /// Format ▸ Checklist (⇧⌘L): start a Markdown checklist item on its own
+    /// line at the caret. The preview draws it as Notes' round checkbox.
+    pub(super) fn insert_checklist(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let editable = self.is_interactive_ready()
+            && !self.markdown_preview_visible
+            && self
+                .session
+                .selected_note()
+                .is_some_and(|note| !note.deleted);
+        if !editable {
+            return;
+        }
+        self.body.update(cx, |state, cx| {
+            let cursor = state.cursor();
+            let value = state.value();
+            let at_line_start = cursor == 0
+                || value
+                    .get(..cursor)
+                    .is_some_and(|before| before.ends_with('\n'));
+            let item = if at_line_start { "- [ ] " } else { "\n- [ ] " };
+            state.insert(item, window, cx);
+            state.focus(window, cx);
+        });
+        // `insert` is silent, so record the edit explicitly.
+        self.schedule_current_edit(cx);
+        cx.notify();
+    }
+
     pub(super) fn schedule_current_edit(&mut self, cx: &mut Context<Self>) {
         if self.applying_snapshot || !self.is_interactive_ready() {
             return;

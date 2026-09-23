@@ -65,8 +65,8 @@ use input_support::{
 };
 use markdown_presentation::render_markdown_document;
 use presentation::{
-    attachment_match_row, centered_state, date_label, folder_row, format_storage_bytes,
-    styled_search_fragment, tag_pill,
+    attachment_match_row, centered_state, date_label, date_section, folder_row,
+    format_storage_bytes, full_date_label, styled_search_fragment, tag_pill,
 };
 use search_highlight::{
     matched_search_fragment, plain_search_fragment, MAX_SEARCH_DETAIL_FRAGMENT_CHARS,
@@ -91,7 +91,8 @@ actions!(
         FocusSearch,
         ExportNotes,
         RenameSelectedFolder,
-        DeleteSelectedFolder
+        DeleteSelectedFolder,
+        InsertChecklist
     ]
 );
 

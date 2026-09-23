@@ -159,6 +159,43 @@ pub(super) fn date_label(unix_ms: u64) -> SharedString {
     }
 }
 
+fn local_date(unix_ms: u64) -> DateTime<Local> {
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_millis(unix_ms))
+        .unwrap_or(SystemTime::UNIX_EPOCH)
+        .into()
+}
+
+/// The note list's date section, as Notes groups a list sorted by date:
+/// Today, Yesterday, Previous 7 Days, Previous 30 Days, then the month for
+/// this year and the year before that.
+pub(super) fn date_section(unix_ms: u64) -> SharedString {
+    section_for(local_date(unix_ms), Local::now())
+}
+
+fn section_for(date: DateTime<Local>, now: DateTime<Local>) -> SharedString {
+    let days = now
+        .date_naive()
+        .signed_duration_since(date.date_naive())
+        .num_days();
+    match days {
+        i64::MIN..=0 => "Today".into(),
+        1 => "Yesterday".into(),
+        2..=7 => "Previous 7 Days".into(),
+        8..=30 => "Previous 30 Days".into(),
+        _ if date.year() == now.year() => date.format("%B").to_string().into(),
+        _ => date.year().to_string().into(),
+    }
+}
+
+/// The editor's centred timestamp: "23 September 2026 at 5:14 PM".
+pub(super) fn full_date_label(unix_ms: u64) -> SharedString {
+    local_date(unix_ms)
+        .format("%-d %B %Y at %-I:%M %p")
+        .to_string()
+        .into()
+}
+
 pub(super) fn styled_search_fragment(
     fragment: SearchTextFragment,
     secondary: bool,
@@ -199,4 +236,23 @@ pub(super) fn styled_search_fragment(
         push_run(text_len, false);
     }
     StyledText::new(fragment.text().to_string()).with_runs(runs)
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{Local, TimeZone as _};
+
+    use super::section_for;
+
+    #[test]
+    fn note_list_sections_follow_notes_date_groups() {
+        let now = Local.with_ymd_and_hms(2026, 9, 23, 17, 0, 0).unwrap();
+        let at = |y, m, d| Local.with_ymd_and_hms(y, m, d, 9, 0, 0).unwrap();
+        assert_eq!(section_for(at(2026, 9, 23), now), "Today");
+        assert_eq!(section_for(at(2026, 9, 22), now), "Yesterday");
+        assert_eq!(section_for(at(2026, 9, 17), now), "Previous 7 Days");
+        assert_eq!(section_for(at(2026, 9, 1), now), "Previous 30 Days");
+        assert_eq!(section_for(at(2026, 3, 4), now), "March");
+        assert_eq!(section_for(at(2024, 3, 4), now), "2024");
+    }
 }

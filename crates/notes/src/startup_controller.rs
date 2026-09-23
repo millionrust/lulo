@@ -17,6 +17,7 @@ impl NotesView {
             KeyBinding::new("cmd-backspace", TrashOrRestore, Some("Notes")),
             KeyBinding::new("cmd-f", FocusSearch, Some("Notes")),
             KeyBinding::new("cmd-shift-e", ExportNotes, Some("Notes")),
+            KeyBinding::new("cmd-shift-l", InsertChecklist, Some("Notes")),
         ]);
 
         let search_query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));

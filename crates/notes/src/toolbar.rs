@@ -152,6 +152,24 @@ impl NotesView {
                             .on_click(cx.listener(|this, _, _, cx| this.begin_export(cx))),
                     )
                     .child(
+                        Button::new("checklist", "")
+                            .icon(IconName::CircleCheck)
+                            .ghost()
+                            .with_size(Size::Medium)
+                            .disabled(
+                                !ready
+                                    || deleted
+                                    || selected.is_none()
+                                    || self.markdown_preview_visible,
+                            )
+                            .tooltip("Checklist")
+                            .on_click(
+                                cx.listener(|this, _, window, cx| {
+                                    this.insert_checklist(window, cx)
+                                }),
+                            ),
+                    )
+                    .child(
                         Button::new("add-image", "")
                             .icon(IconName::GalleryVerticalEnd)
                             .ghost()

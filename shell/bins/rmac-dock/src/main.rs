@@ -31,9 +31,9 @@ mod linux_wayland {
     const SHELF_BOTTOM_MARGIN: f32 = ICON_SIZE * 0.078125;
     const EXCLUSIVE_ZONE: f32 = SHELF_THICKNESS + SHELF_BOTTOM_MARGIN;
     // The macOS icon grid shows a 52-of-64 squircle; rmac art draws its
-    // squircle at 112/128 of the image, so the image is scaled to match.
+    // squircle at 824/1024 of the image, so the image is scaled to match.
     const ICON_SQUIRCLE: f32 = 0.8125;
-    const ICON_ART_SCALE: f32 = ICON_SQUIRCLE * 128.0 / 112.0;
+    const ICON_ART_SCALE: f32 = ICON_SQUIRCLE * 1024.0 / 824.0;
     // Separator: a 1 × 62 line centred in the shelf with 13 either side
     // (plus the tile gap), so the pitch across it is 99.
     const SEPARATOR_WIDTH: f32 = 1.0;
@@ -969,8 +969,9 @@ mod linux_wayland {
                                     .rounded(px(tokens::dock_tile_radius(visual_size))),
                             );
                         } else {
-                            // Without artwork, a lettered squircle the size
-                            // of a real icon's visible shape.
+                            // Only if even the generic application artwork
+                            // is missing: a lettered squircle the size of a
+                            // real icon's visible shape.
                             visual = visual.child(
                                 div()
                                     .w(px(squircle))
@@ -1454,7 +1455,9 @@ mod linux_wayland {
         match icon {
             rmac_dock::presentation::Icon::File(path) if path.is_file() => Some(path.clone()),
             rmac_dock::presentation::Icon::File(_) | rmac_dock::presentation::Icon::Builtin(_) => {
-                first_party_icon_path(app_id)
+                // An application with no artwork of its own gets the generic
+                // application icon, as on the Mac.
+                first_party_icon_path(app_id).or_else(|| dock_asset_path("application.svg"))
             }
         }
     }
@@ -1489,19 +1492,34 @@ mod linux_wayland {
             rmac_apps::identity::PREVIEW => "org.rmac.Preview.svg",
             _ => return None,
         };
-        Some(
-            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../../packaging/rmac-apps/icons")
-                .join(file),
-        )
+        // The installed theme copy first (user, then system), then the
+        // source tree three levels above this crate (shell/bins/rmac-dock).
+        let data_home = std::env::var_os("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .or_else(|| {
+                std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/share"))
+            });
+        data_home
+            .into_iter()
+            .chain([PathBuf::from("/usr/share")])
+            .map(|data| data.join("icons/hicolor/scalable/apps").join(file))
+            .chain([PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../../packaging/rmac-apps/icons")
+                .join(file)])
+            .find(|path| path.is_file())
     }
 
     fn trash_icon_path(full: bool) -> Option<PathBuf> {
-        let file = if full {
+        dock_asset_path(if full {
             "trash-full.svg"
         } else {
             "trash-empty.svg"
-        };
+        })
+    }
+
+    /// The Dock's own artwork: installed copy first, then the source tree.
+    fn dock_asset_path(file: &str) -> Option<PathBuf> {
         [
             PathBuf::from("/usr/share/rmac/dock/icons").join(file),
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))

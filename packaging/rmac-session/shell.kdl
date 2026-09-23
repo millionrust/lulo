@@ -236,6 +236,14 @@ layer-rule {
     }
 }
 
+// The Dock material surface is exactly the shelf, so the compositor blur takes
+// the shelf's measured radius (28.5 at tile 64, design-lab/dock.html; niri
+// gets the nearest whole point). macOS draws no shadow under the Dock.
+layer-rule {
+    match namespace=r#"^rmac-dock-material-"#
+    geometry-corner-radius 28
+}
+
 layer-rule {
     match namespace=r#"^rmac-osd-"#
     geometry-corner-radius 28

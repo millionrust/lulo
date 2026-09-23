@@ -10,21 +10,56 @@ mod linux_wayland {
 
     use futures_util::FutureExt as _;
     use gpui::{
-        div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App, Bounds,
-        Context, DisplayId, Entity, FontWeight, MouseButton, PlatformDisplay, QuitMode, Role, Size,
-        Window, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
+        canvas, div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App,
+        Bounds, Context, DisplayId, Entity, FontWeight, MouseButton, PathBuilder, PlatformDisplay,
+        QuitMode, Role, Size, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
+        WindowOptions,
     };
     use gpui_platform::application;
     use rmac_shell_ui::tokens;
 
-    // Measured from the reference Mac 2026-09-18 (FEEL_SPEC.md §C.2): rendered
-    // tile 64, pitch 76 (gap 12), shelf 72 tall (padding 4), 18 above the edge.
+    // Measured from the owner's Mac 2026-09-23 and drawn in
+    // design-lab/dock.html. ICON_SIZE is the Dock tile (the icon canvas, the
+    // macOS "Size" preference); everything else is a measured ratio of it.
     const ICON_SIZE: f32 = 64.0;
-    const ICON_GAP: f32 = 12.0;
-    const SHELF_PADDING: f32 = 4.0;
-    const SHELF_BOTTOM_MARGIN: f32 = 18.0;
-    const EXCLUSIVE_ZONE: f32 = ICON_SIZE + 2.0 * SHELF_PADDING + SHELF_BOTTOM_MARGIN;
+    // Pitch 68: tiles sit 4 apart (their visible squircles 16 apart).
+    const ICON_GAP: f32 = ICON_SIZE * 0.0625;
+    // Tile → shelf rim on every side (16 from the visible squircle).
+    const SHELF_PADDING: f32 = ICON_SIZE * 0.15625;
+    const SHELF_THICKNESS: f32 = ICON_SIZE + 2.0 * SHELF_PADDING;
+    // Shelf rim → screen edge.
+    const SHELF_BOTTOM_MARGIN: f32 = ICON_SIZE * 0.078125;
+    const EXCLUSIVE_ZONE: f32 = SHELF_THICKNESS + SHELF_BOTTOM_MARGIN;
+    // The macOS icon grid shows a 52-of-64 squircle; rmac art draws its
+    // squircle at 112/128 of the image, so the image is scaled to match.
+    const ICON_SQUIRCLE: f32 = 0.8125;
+    const ICON_ART_SCALE: f32 = ICON_SQUIRCLE * 128.0 / 112.0;
+    // Separator: a 1 × 62 line centred in the shelf with 13 either side
+    // (plus the tile gap), so the pitch across it is 99.
     const SEPARATOR_WIDTH: f32 = 1.0;
+    const SEPARATOR_LENGTH: f32 = ICON_SIZE * 0.96875;
+    const SEPARATOR_MARGIN: f32 = ICON_SIZE * 0.203125;
+    const SEPARATOR_SLOT: f32 = SEPARATOR_WIDTH + 2.0 * SEPARATOR_MARGIN;
+    // Running dot: 4 across, its centre 4 below the tile.
+    const INDICATOR_SIZE: f32 = ICON_SIZE * 0.0625;
+    const INDICATOR_OFFSET: f32 = ICON_SIZE * 0.03125;
+    // The tile whose Dock menu is open is darkened (black ≈ 53 %).
+    const MENU_OPEN_DIM: u32 = 0x00000087;
+    // Dock menu (captures f046–f052): no title, 5 inside the edge (4 padding
+    // + 1 rim), 11-tall separators whose line is inset 16, text 16 from the
+    // edge or 24.5 with a check column. The pointer is 20 × 10, its tip on
+    // the tile centre 26.5 from the menu's left edge; the body ends 25.5
+    // above the shelf.
+    const MENU_PADDING: f32 = 4.0;
+    const MENU_BORDER: f32 = 1.0;
+    const MENU_SEPARATOR: f32 = 11.0;
+    const MENU_ROW_INSET: f32 = 11.0;
+    const MENU_CHECK_INSET: f32 = 4.0;
+    const MENU_CHECK_COLUMN: f32 = 15.5;
+    const MENU_ANCHOR_INSET: f32 = 26.5;
+    const MENU_SHELF_GAP: f32 = 25.5;
+    const MENU_POINTER_WIDTH: f32 = 20.0;
+    const MENU_POINTER_HEIGHT: f32 = 10.0;
     const TOOLTIP_WIDTH: f32 = 240.0;
     const TOOLTIP_BOTTOM: f32 = EXCLUSIVE_ZONE + 6.0;
     const READY_FILE_ENV: &str = "RMAC_DOCK_READY_FILE";
@@ -135,7 +170,7 @@ mod linux_wayland {
         let items = entries + minimized + 1;
         let children = items + separators;
         ICON_SIZE * items as f32
-            + SEPARATOR_WIDTH * separators as f32
+            + SEPARATOR_SLOT * separators as f32
             + ICON_GAP * children.saturating_sub(1) as f32
             + 2.0 * SHELF_PADDING
     }
@@ -397,24 +432,21 @@ mod linux_wayland {
                 surface_height
             };
             let shelf_extent = ICON_SIZE * item_count as f32
-                + SEPARATOR_WIDTH * separator_count as f32
+                + SEPARATOR_SLOT * separator_count as f32
                 + ICON_GAP * child_count.saturating_sub(1) as f32
                 + 2.0 * SHELF_PADDING;
             let shelf_start = (axis - shelf_extent) / 2.0;
             let trash_center = shelf_extent - SHELF_PADDING - ICON_SIZE / 2.0;
+            let menu_anchor = self.context_menu.as_ref().map(|menu| menu.anchor);
+            // (menu start along the Dock axis, pointer tip from that start,
+            // menu width)
             let menu_geometry = self.context_menu.as_ref().map(|menu| {
-                let row_count = menu.session.rows().len() as f32;
-                let section_breaks = menu
-                    .session
-                    .rows()
-                    .windows(2)
-                    .filter(|rows| rows[0].section != rows[1].section)
-                    .count() as f32;
-                let height = 38.0 + row_count * tokens::menu_row_height() + section_breaks * 9.0;
                 let width = dock_menu_width(menu, window);
-                let start = (shelf_start + menu.anchor - width / 2.0)
-                    .clamp(8.0, (axis - width - 8.0).max(8.0));
-                (start, height, width)
+                // macOS hangs the menu to the right of the tile: the pointer
+                // sits 26.5 from its left edge unless the output edge clamps it.
+                let tip = shelf_start + menu.anchor;
+                let start = (tip - MENU_ANCHOR_INSET).clamp(8.0, (axis - width - 8.0).max(8.0));
+                (start, tip - start, width)
             });
             let input_region = (
                 shelf_start,
@@ -556,7 +588,7 @@ mod linux_wayland {
                 .flex()
                 .gap(px(ICON_GAP))
                 .p(px(SHELF_PADDING))
-                .rounded(px(tokens::dock_tile_radius(ICON_SIZE)))
+                .rounded(px(tokens::dock_shelf_radius(ICON_SIZE)))
                 .bg(rgba(tokens::transparent()))
                 .opacity(if self.hidden { 0.0 } else { 1.0 });
             let mut shelf = if horizontal {
@@ -715,8 +747,8 @@ mod linux_wayland {
                     visual = match main_icon {
                         Some(path) => visual.child(
                             img(path)
-                                .w(px(visual_size - 2.0))
-                                .h(px(visual_size - 2.0))
+                                .w(px(visual_size * ICON_ART_SCALE))
+                                .h(px(visual_size * ICON_ART_SCALE))
                                 .rounded(px(tokens::dock_tile_radius(visual_size))),
                         ),
                         None => visual.child(item_mark(&label)),
@@ -743,7 +775,7 @@ mod linux_wayland {
                             + ICON_SIZE / 2.0
                             + index as f32 * (ICON_SIZE + ICON_GAP)
                             + if separates_running && index >= pinned_count {
-                                SEPARATOR_WIDTH + ICON_GAP
+                                SEPARATOR_SLOT + ICON_GAP
                             } else {
                                 0.0
                             };
@@ -758,8 +790,7 @@ mod linux_wayland {
                             rmac_dock::Activation::Launch { .. }
                                 | rmac_dock::Activation::FocusWindow(_)
                         );
-                        let active =
-                            entry.activity == rmac_dock::presentation::ActivityIndicator::Active;
+                        let menu_open = menu_anchor == Some(relative_center);
                         let running =
                             entry.activity != rmac_dock::presentation::ActivityIndicator::None;
                         let icon_path = item_icon_path(&entry.icon, &app_id);
@@ -794,11 +825,6 @@ mod linux_wayland {
                             .items_center()
                             .justify_center()
                             .rounded(px(tokens::dock_tile_radius(visual_size)))
-                            .bg(rgba(if icon_path.is_some() {
-                                0x00000000
-                            } else {
-                                item_color(&app_id, available)
-                            }))
                             .when(actionable, |visual| {
                                 let drag_entry =
                                     rmac_dock::presentation::EntryId::Application(app_id.clone());
@@ -934,15 +960,41 @@ mod linux_wayland {
                                 visual.right_0().top(px(visual_offset))
                             }
                         };
+                        let squircle = visual_size * ICON_SQUIRCLE;
                         if let Some(path) = icon_path {
                             visual = visual.child(
                                 img(path)
-                                    .w(px(visual_size - 2.0))
-                                    .h(px(visual_size - 2.0))
+                                    .w(px(visual_size * ICON_ART_SCALE))
+                                    .h(px(visual_size * ICON_ART_SCALE))
                                     .rounded(px(tokens::dock_tile_radius(visual_size))),
                             );
                         } else {
-                            visual = visual.child(item_mark(&entry.label));
+                            // Without artwork, a lettered squircle the size
+                            // of a real icon's visible shape.
+                            visual = visual.child(
+                                div()
+                                    .w(px(squircle))
+                                    .h(px(squircle))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .rounded(px(tokens::dock_tile_radius(visual_size)))
+                                    .bg(rgba(item_color(&app_id, available)))
+                                    .child(item_mark(&entry.label)),
+                            );
+                        }
+                        if menu_open {
+                            let inset = (visual_size - squircle) / 2.0;
+                            visual = visual.child(
+                                div()
+                                    .absolute()
+                                    .left(px(inset))
+                                    .top(px(inset))
+                                    .w(px(squircle))
+                                    .h(px(squircle))
+                                    .rounded(px(tokens::dock_tile_radius(visual_size)))
+                                    .bg(rgba(MENU_OPEN_DIM)),
+                            );
                         }
                         item = item.child(visual);
                         let context_app_id = app_id.clone();
@@ -980,21 +1032,27 @@ mod linux_wayland {
                             }
                         }));
                         if running {
+                            // macOS draws one dot for every running app;
+                            // the frontmost app gets no special mark.
                             let indicator = div()
                                 .absolute()
-                                .w(px(if active { 7.0 } else { 5.0 }))
-                                .h(px(if active { 7.0 } else { 5.0 }))
+                                .w(px(INDICATOR_SIZE))
+                                .h(px(INDICATOR_SIZE))
                                 .rounded_full()
-                                .bg(rgba(if active { 0x2563ebff } else { 0x60656dff }));
+                                .bg(rgba(tokens::dock_indicator()));
+                            let outside = -(INDICATOR_OFFSET + INDICATOR_SIZE);
+                            let along = (ICON_SIZE - INDICATOR_SIZE) / 2.0;
                             let indicator = match self.placement {
                                 rmac_shell_settings::DockPlacement::Bottom => {
-                                    indicator.bottom(px(-7.0))
+                                    indicator.bottom(px(outside)).left(px(along))
                                 }
+                                // The dot sits between the tile and the
+                                // screen edge, as it does below a bottom Dock.
                                 rmac_shell_settings::DockPlacement::Left => {
-                                    indicator.right(px(-7.0))
+                                    indicator.left(px(outside)).top(px(along))
                                 }
                                 rmac_shell_settings::DockPlacement::Right => {
-                                    indicator.left(px(-7.0))
+                                    indicator.right(px(outside)).top(px(along))
                                 }
                             };
                             item = item.child(indicator);
@@ -1101,20 +1159,25 @@ mod linux_wayland {
                             }),
                         );
                         if let Some(path) = trash_icon_path(trash_full) {
+                            let art = visual_size * ICON_ART_SCALE;
+                            let inset = (visual_size - art) / 2.0;
+                            // Darkened while its menu is open, like a tile.
                             let image = img(path)
                                 .absolute()
-                                .w(px(visual_size - 2.0))
-                                .h(px(visual_size - 2.0))
-                                .rounded(px(tokens::dock_tile_radius(visual_size)));
+                                .w(px(art))
+                                .h(px(art))
+                                .when(menu_anchor == Some(trash_center), |image| {
+                                    image.opacity(0.47)
+                                });
                             let image = match self.placement {
                                 rmac_shell_settings::DockPlacement::Bottom => {
-                                    image.left(px(visual_offset)).bottom_0()
+                                    image.left(px(visual_offset + inset)).bottom(px(inset))
                                 }
                                 rmac_shell_settings::DockPlacement::Left => {
-                                    image.left_0().top(px(visual_offset))
+                                    image.left(px(inset)).top(px(visual_offset + inset))
                                 }
                                 rmac_shell_settings::DockPlacement::Right => {
-                                    image.right_0().top(px(visual_offset))
+                                    image.right(px(inset)).top(px(visual_offset + inset))
                                 }
                             };
                             trash = trash.child(image);
@@ -1132,28 +1195,61 @@ mod linux_wayland {
         }
     }
 
-    /// The Dock menu is as wide as its bold title or widest row (with the
-    /// check mark), as on macOS, never narrower than the minimum menu width.
+    /// Whether any row carries a check mark; macOS then gives every row a
+    /// leading check column.
+    fn dock_menu_has_checks(menu: &DockMenu) -> bool {
+        menu.session.rows().iter().any(|row| row.checked)
+    }
+
+    /// The Dock menu is exactly as wide as its widest row plus padding; unlike
+    /// menu bar menus it has no minimum (the Trash menu is 92 wide on macOS).
     fn dock_menu_width(menu: &DockMenu, window: &Window) -> f32 {
-        const CHECK_GAP: f32 = 24.0;
-        let title = rmac_shell_ui::text_width(window, &menu.session.title(), FontWeight::SEMIBOLD);
-        let rows = menu
+        let text = menu
             .session
             .rows()
             .iter()
-            .map(|row| {
-                rmac_shell_ui::text_width(window, &row.label, FontWeight::NORMAL)
-                    + if row.checked {
-                        CHECK_GAP + rmac_shell_ui::text_width(window, "✓", FontWeight::NORMAL)
-                    } else {
-                        0.0
-                    }
-            })
-            .fold(title, f32::max);
-        // Panel padding (4 per side), row padding (8 per side) and border.
-        (rows + 2.0 * (4.0 + 8.0) + 2.0)
-            .ceil()
-            .max(tokens::current().metrics.menu_min_width)
+            .map(|row| rmac_shell_ui::text_width(window, &row.label, FontWeight::NORMAL))
+            .fold(0.0, f32::max);
+        let leading = if dock_menu_has_checks(menu) {
+            MENU_CHECK_INSET + MENU_CHECK_COLUMN
+        } else {
+            MENU_ROW_INSET
+        };
+        (text + leading + MENU_ROW_INSET + 2.0 * (MENU_PADDING + MENU_BORDER)).ceil()
+    }
+
+    /// The 20 × 10 pointer under a bottom Dock's menu, tip on the tile
+    /// centre, drawn in the panel's fill with its rim on the two slanted
+    /// sides. `bounds` spans the pointer's full width and height.
+    fn paint_menu_pointer(bounds: Bounds<gpui::Pixels>, window: &mut Window) {
+        let left = f32::from(bounds.origin.x);
+        let top = f32::from(bounds.origin.y);
+        let width = f32::from(bounds.size.width);
+        let height = f32::from(bounds.size.height);
+        let tip_x = left + width / 2.0;
+        let tip_y = top + height;
+        // A small round on the tip, as macOS draws it.
+        let round = 1.4;
+        let outline = |builder: &mut PathBuilder| {
+            builder.move_to(point(px(left), px(top)));
+            builder.line_to(point(px(tip_x - round), px(tip_y - round)));
+            builder.curve_to(
+                point(px(tip_x + round), px(tip_y - round)),
+                point(px(tip_x), px(tip_y)),
+            );
+            builder.line_to(point(px(left + width), px(top)));
+        };
+        let mut fill = PathBuilder::fill();
+        outline(&mut fill);
+        fill.close();
+        if let Ok(path) = fill.build() {
+            window.paint_path(path, rgba(tokens::regular_dark_tint()));
+        }
+        let mut rim = PathBuilder::stroke(px(MENU_BORDER));
+        outline(&mut rim);
+        if let Ok(path) = rim.build() {
+            window.paint_path(path, rgba(tokens::light_border()));
+        }
     }
 
     fn render_context_menu(
@@ -1164,16 +1260,19 @@ mod linux_wayland {
         cx: &Context<Dock>,
     ) -> Option<gpui::AnyElement> {
         let menu = menu?;
-        let (start, _, width) = geometry?;
+        let (start, tip, width) = geometry?;
         let selected = menu.session.selected().cloned();
         let rows = menu.session.rows().to_vec();
+        let has_checks = dock_menu_has_checks(menu);
+        // macOS Dock menus have no title row; the app name stays the
+        // accessible title.
         let mut panel = div()
             .id(format!("dock-menu-{display_id}"))
             .role(Role::Menu)
             .aria_label(menu.session.accessible_title().to_owned())
             .absolute()
             .w(px(width))
-            .p_1()
+            .p(px(MENU_PADDING))
             .rounded(px(tokens::menu_radius()))
             .bg(rgba(tokens::regular_dark_tint()))
             .border_1()
@@ -1181,30 +1280,37 @@ mod linux_wayland {
             .shadow_lg()
             .text_size(px(13.0))
             .text_color(rgba(tokens::primary_text()))
-            .occlude()
-            .child(
-                div()
-                    .h(px(30.0))
-                    .px_2()
-                    .flex()
-                    .items_center()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child(menu.session.title().to_owned()),
-            );
+            .occlude();
+        let offset = EXCLUSIVE_ZONE + MENU_SHELF_GAP;
         panel = match placement {
             rmac_shell_settings::DockPlacement::Bottom => {
-                panel.left(px(start)).bottom(px(EXCLUSIVE_ZONE + 8.0))
+                panel.left(px(start)).bottom(px(offset)).child(
+                    canvas(
+                        |_, _, _| (),
+                        |bounds, _, window, _| paint_menu_pointer(bounds, window),
+                    )
+                    .absolute()
+                    // Start at the panel's inner edge so the pointer covers
+                    // the rim across its base.
+                    .left(px(tip - MENU_BORDER - MENU_POINTER_WIDTH / 2.0))
+                    .bottom(px(-(MENU_POINTER_HEIGHT + MENU_BORDER)))
+                    .w(px(MENU_POINTER_WIDTH))
+                    .h(px(MENU_POINTER_HEIGHT + MENU_BORDER)),
+                )
             }
-            rmac_shell_settings::DockPlacement::Left => {
-                panel.left(px(EXCLUSIVE_ZONE + 8.0)).top(px(start))
-            }
-            rmac_shell_settings::DockPlacement::Right => {
-                panel.right(px(EXCLUSIVE_ZONE + 8.0)).top(px(start))
-            }
+            rmac_shell_settings::DockPlacement::Left => panel.left(px(offset)).top(px(start)),
+            rmac_shell_settings::DockPlacement::Right => panel.right(px(offset)).top(px(start)),
         };
         for (index, row) in rows.iter().enumerate() {
             if index > 0 && rows[index - 1].section != row.section {
-                panel = panel.child(div().h(px(1.0)).mx_2().my_1().bg(rgba(tokens::separator())));
+                // An 11-tall separator whose line is inset 16 from the edge.
+                panel = panel.child(
+                    div()
+                        .h(px(MENU_BORDER))
+                        .mx(px(MENU_ROW_INSET))
+                        .my(px((MENU_SEPARATOR - MENU_BORDER) / 2.0))
+                        .bg(rgba(tokens::separator())),
+                );
             }
             let row_id = row.id.clone();
             let primary = row.primary.clone();
@@ -1215,21 +1321,31 @@ mod linux_wayland {
                 .role(Role::MenuItem)
                 .aria_label(row.accessible_label.clone())
                 .h(px(tokens::menu_row_height()))
-                .px_2()
+                .pl(px(if has_checks {
+                    MENU_CHECK_INSET
+                } else {
+                    MENU_ROW_INSET
+                }))
+                .pr(px(MENU_ROW_INSET))
                 .flex()
                 .items_center()
-                .justify_between()
                 .rounded(px(tokens::menu_item_radius()))
                 .when(selected.as_ref() == Some(&row.id), |style| {
                     style.bg(rgba(tokens::accent()))
                 })
                 .when(!enabled, |style| {
                     style.text_color(rgba(tokens::disabled_text()))
-                })
-                .child(row.label.clone());
-            if row.checked {
-                element = element.child("✓");
+                });
+            // macOS puts the check mark in a leading column.
+            if has_checks {
+                element = element.child(
+                    div()
+                        .w(px(MENU_CHECK_COLUMN))
+                        .flex_none()
+                        .child(if row.checked { "✓" } else { "" }),
+                );
             }
+            element = element.child(row.label.clone());
             if enabled {
                 let primary = primary.expect("enabled Dock menu row has an action");
                 let click_row_id = row.id.clone();
@@ -1280,18 +1396,22 @@ mod linux_wayland {
     }
 
     fn dock_separator(placement: rmac_shell_settings::DockPlacement) -> gpui::AnyElement {
-        let separator = div().bg(rgba(tokens::separator()));
+        // Centred on the tile row (1 inside it at each end), 13 clear of the
+        // tile gaps on either side.
+        let separator = div().bg(rgba(tokens::dock_separator()));
+        let inset = (ICON_SIZE - SEPARATOR_LENGTH) / 2.0;
         match placement {
             rmac_shell_settings::DockPlacement::Bottom => separator
                 .w(px(SEPARATOR_WIDTH))
-                .h(px(48.0))
-                .mb_1()
+                .h(px(SEPARATOR_LENGTH))
+                .mx(px(SEPARATOR_MARGIN))
+                .mb(px(inset))
                 .into_any_element(),
             rmac_shell_settings::DockPlacement::Left
             | rmac_shell_settings::DockPlacement::Right => separator
-                .w(px(48.0))
+                .w(px(SEPARATOR_LENGTH))
                 .h(px(SEPARATOR_WIDTH))
-                .mx_1()
+                .my(px(SEPARATOR_MARGIN))
                 .into_any_element(),
         }
     }
@@ -1467,7 +1587,7 @@ mod linux_wayland {
                 reserve_space: true,
                 fullscreen: false,
                 overview_visible: false,
-                shelf_extent: ICON_SIZE + 2.0 * SHELF_PADDING,
+                shelf_extent: SHELF_THICKNESS,
                 description: None,
             }
         }
@@ -1574,13 +1694,14 @@ mod linux_wayland {
 
     impl Render for DockBackdrop {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+            // The measured shelf: a faint tint over the compositor blur and
+            // a 1 pt rim. macOS draws no shadow under the Dock.
             div()
                 .size_full()
-                .rounded(px(tokens::dock_tile_radius(ICON_SIZE)))
+                .rounded(px(tokens::dock_shelf_radius(ICON_SIZE)))
                 .bg(rgba(tokens::dock_tint()))
                 .border_1()
                 .border_color(rgba(tokens::dock_border()))
-                .shadow_lg()
         }
     }
 
@@ -1593,26 +1714,17 @@ mod linux_wayland {
         let (anchor, size, margin) = match surface.placement {
             rmac_shell_settings::DockPlacement::Bottom => (
                 Anchor::BOTTOM,
-                Size::new(
-                    px(surface.shelf_extent),
-                    px(ICON_SIZE + 2.0 * SHELF_PADDING),
-                ),
+                Size::new(px(surface.shelf_extent), px(SHELF_THICKNESS)),
                 (px(0.0), px(0.0), px(SHELF_BOTTOM_MARGIN), px(0.0)),
             ),
             rmac_shell_settings::DockPlacement::Left => (
                 Anchor::LEFT,
-                Size::new(
-                    px(ICON_SIZE + 2.0 * SHELF_PADDING),
-                    px(surface.shelf_extent),
-                ),
+                Size::new(px(SHELF_THICKNESS), px(surface.shelf_extent)),
                 (px(0.0), px(0.0), px(0.0), px(SHELF_BOTTOM_MARGIN)),
             ),
             rmac_shell_settings::DockPlacement::Right => (
                 Anchor::RIGHT,
-                Size::new(
-                    px(ICON_SIZE + 2.0 * SHELF_PADDING),
-                    px(surface.shelf_extent),
-                ),
+                Size::new(px(SHELF_THICKNESS), px(surface.shelf_extent)),
                 (px(0.0), px(SHELF_BOTTOM_MARGIN), px(0.0), px(0.0)),
             ),
         };

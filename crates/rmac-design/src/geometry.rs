@@ -59,7 +59,8 @@ impl Default for Radii {
             // unified toolbar, 12 otherwise" split is gone.
             window: 16.0,
             window_toolbar: 16.0,
-            dock: 26.0,
+            // Measured 2026-09-23: 28.5 at tile 64 (design-lab/dock.html).
+            dock: 28.5,
             hud: 28.0,
             tooltip: 8.0,
             cc_module: 18.0,
@@ -69,9 +70,10 @@ impl Default for Radii {
 }
 
 impl Radii {
-    /// The Dock shelf radius scales with the configured tile size.
+    /// The Dock shelf radius scales with the configured tile size: 28.5 at
+    /// tile 64 on the owner's Mac (design-lab/dock.html).
     pub fn dock_for_tile(tile: f32) -> f32 {
-        tile * 0.46
+        tile * 0.445
     }
 }
 
@@ -223,16 +225,17 @@ impl Default for Metrics {
             traffic_leading_inset_toolbar: 20.0,
             traffic_leading_inset_titlebar: 8.0,
 
-            // Measured 2026-09-18: rendered tile 64, pitch 76 (gap 12), shelf
-            // 72 tall (padding 4), 18 above the edge, running dot below it.
+            // Measured 2026-09-23 (design-lab/dock.html): tile 64 with a 52
+            // visible squircle, pitch 68 (gap 4), shelf 84 tall (padding 10),
+            // 5 above the screen edge, a 4 pt dot 2 below the tile.
             dock_tile: 64.0,
             dock_tile_min: 32.0,
             dock_tile_max: 128.0,
-            dock_gap: 12.0,
-            dock_padding: 4.0,
-            dock_bottom_margin: 18.0,
+            dock_gap: 4.0,
+            dock_padding: 10.0,
+            dock_bottom_margin: 5.0,
             dock_indicator: 4.0,
-            dock_indicator_offset: 6.0,
+            dock_indicator_offset: 2.0,
 
             tooltip_padding_x: 8.0,
             tooltip_padding_y: 4.0,

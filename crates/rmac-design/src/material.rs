@@ -59,10 +59,12 @@ impl Materials {
                     tint: Rgba::from_rgba(0xffffffcc),
                     ..menu
                 };
+                // Measured over the light wallpaper 2026-09-23: the shelf
+                // lifts the blurred backdrop by white ≈ 16 %, rim ≈ 28 %.
                 let dock = Material {
-                    tint: Rgba::from_rgba(0xffffff66),
+                    tint: Rgba::from_rgba(0xffffff29),
                     blur: true,
-                    border: Rgba::from_rgba(0xffffff59),
+                    border: Rgba::from_rgba(0xffffff47),
                     highlight: Rgba::from_rgba(0x00000014),
                     fallback: Rgba::from_rgba(0xf0f0f0f2),
                 };
@@ -113,10 +115,13 @@ impl Materials {
                     tint: Rgba::from_rgba(0x1c1c20b8),
                     ..menu
                 };
+                // Measured over the dark wallpaper 2026-09-23: the shelf
+                // barely darkens and desaturates the blurred backdrop (grey
+                // 40 at ≈ 7 %); its 1 pt rim is white ≈ 16 %. No shadow.
                 let dock = Material {
-                    tint: Rgba::from_rgba(0xffffff24),
+                    tint: Rgba::from_rgba(0x28282812),
                     blur: true,
-                    border: Rgba::from_rgba(0xffffff59),
+                    border: Rgba::from_rgba(0xffffff29),
                     highlight: Rgba::from_rgba(0x00000014),
                     fallback: Rgba::from_rgba(0x2a2a2df2),
                 };

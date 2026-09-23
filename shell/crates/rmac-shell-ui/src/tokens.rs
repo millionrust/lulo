@@ -225,8 +225,6 @@ pub fn pill_radius() -> f32 {
     current().radii.pill
 }
 
-/// Dock app-tile corner radius: the tile radius scales with the icon size
-/// rather than the shelf radius token.
 /// The measured menu bar height (29 px on the 2026-09-18 macOS 27 reference).
 pub fn menubar_height() -> f32 {
     current().metrics.menubar_height
@@ -243,8 +241,40 @@ pub fn dock_tile() -> f32 {
     current().metrics.dock_tile
 }
 
+/// Corner radius of the visible icon squircle for a Dock tile of `tile`
+/// points: 13 at tile 64 (the squircle is 52 of the 64; design-lab/dock.html).
 pub fn dock_tile_radius(tile: f32) -> f32 {
-    tile * 0.232
+    tile * 0.203125
+}
+
+/// Dock shelf corner radius for a tile size (28.5 at tile 64).
+pub fn dock_shelf_radius(tile: f32) -> f32 {
+    rmac_design::Radii::dock_for_tile(tile)
+}
+
+fn dark_scheme() -> bool {
+    current().color_scheme == rmac_appearance::ResolvedColorScheme::Dark
+}
+
+/// The Dock's group separator. macOS adds +65 per channel over the dark
+/// shelf and takes −57 off the light one (plus-lighter / plus-darker);
+/// GPUI has no such blend, so these alphas give the same result over the
+/// measured wallpaper.
+pub fn dock_separator() -> u32 {
+    if dark_scheme() {
+        0xffffff54
+    } else {
+        0x00000059
+    }
+}
+
+/// The Dock running-app dot: +125 per channel in dark, −39 in light.
+pub fn dock_indicator() -> u32 {
+    if dark_scheme() {
+        0xffffff9e
+    } else {
+        0x00000078
+    }
 }
 
 pub fn transparent() -> u32 {

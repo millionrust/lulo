@@ -49,8 +49,8 @@
   --mat-menu-blur:     50px;
   --mat-popover:       rgba(40,42,48,.78);
   --mat-hud:           rgba(28,28,32,.72);
-  --mat-dock:          rgba(255,255,255,.14);
-  --mat-dock-border:   rgba(255,255,255,.35);
+  --mat-dock:          rgba(40,40,40,.07);     /* M 2026-09-23, design-lab/dock.html */
+  --mat-dock-border:   rgba(255,255,255,.16);
   --mat-spot:          rgba(120,132,150,.42);   /* M composite #3E4958 */
   --mat-cc-module:     rgba(84,96,116,.40);     /* M composite #36414E */
   --blur:              40px;
@@ -74,12 +74,12 @@
   --menu-item-radius:  6px;
   --menu-font:         13px;
 
-  /* ---------- dock (M: tile 64, pitch 76 → gap 12) -------------------- */
+  /* ---------- dock (M 2026-09-23: tile 64, pitch 68 → gap 4; dock.html) - */
   --dock-tile:         64px;
-  --dock-gap:          12px;
-  --dock-pad:          5px;
-  --dock-radius:       29px;
-  --dock-bottom:       18px;
+  --dock-gap:          4px;
+  --dock-pad:          10px;
+  --dock-radius:       28.5px;
+  --dock-bottom:       5px;
   --dock-dot:          4px;
   --icon-radius:       22.5%;   /* squircle approximation in CSS */
 
@@ -169,7 +169,7 @@
   --mat-menu:          rgba(246,246,248,.86);
   --mat-popover:       rgba(244,244,246,.84);
   --mat-hud:           rgba(255,255,255,.80);
-  --mat-dock:          rgba(255,255,255,.40);
+  --mat-dock:          rgba(255,255,255,.16);
   --mat-spot:          rgba(252,252,252,.92);   /* M: #FCFCFC ≈ opaque */
   --mat-cc-module:     rgba(255,255,255,.55);
   --win-shadow:        0 12px 32px rgba(0,0,0,.18), 0 0 0 .5px rgba(0,0,0,.06);

@@ -111,9 +111,9 @@ use crate::shell_settings::composite_wallpaper_pixel;
 use crate::shell_settings::{
     persist_shell_settings_mutation, render_wallpaper_preview, spotlight_provider_policy,
     validate_search_exclusion, validate_wallpaper_choice, wallpaper_selection,
-    wallpaper_source_name, watch_shell_settings, DockChange, MenuBarChange, ShellSettingsMutation,
-    ShellSettingsStreamUpdate, SpotlightAuthority, SpotlightChange, WallpaperChange,
-    WallpaperTarget,
+    wallpaper_source_name, watch_shell_settings, DockChange, HotCorner, HotCornerChange,
+    MenuBarChange, ShellSettingsMutation, ShellSettingsStreamUpdate, SpotlightAuthority,
+    SpotlightChange, WallpaperChange, WallpaperTarget,
 };
 use crate::sound::{
     choice_is_actionable as audio_choice_is_actionable, SoundChange as AudioChange,

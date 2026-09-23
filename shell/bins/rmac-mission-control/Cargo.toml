@@ -1,0 +1,28 @@
+[package]
+name = "rmac-shell-mission-control"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "mission-control"
+path = "src/main.rs"
+
+[features]
+default = []
+wayland = ["gpui_platform/wayland", "rmac-shell-layer/wayland"]
+x11 = ["gpui_platform/x11"]
+
+[dependencies]
+async-channel.workspace = true
+gpui.workspace = true
+gpui_platform.workspace = true
+image.workspace = true
+rmac-apps.workspace = true
+rmac-compositor.workspace = true
+rmac-compositor-niri.workspace = true
+rmac-shell-layer.workspace = true
+rmac-shell-settings.workspace = true
+rmac-shell-ui.workspace = true
+uuid.workspace = true

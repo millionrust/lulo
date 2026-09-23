@@ -48,8 +48,9 @@ clipboard {
     disable-primary
 }
 
-// The rmac menu sits in the top-left corner, so niri's overview hot corner
-// must never fire there. Mission Control is opened from the keyboard and Dock.
+// niri's own hot corner opens niri's overview. rmac's hot corners are the
+// Mission Control service's corner surfaces, configured in Desktop & Dock
+// (docs/decisions/0014-mission-control.md).
 gestures {
     hot-corners {
         off
@@ -218,10 +219,15 @@ layer-rule {
 
 binds {
     // Preserve Super/Command letter keys for the focused application. macOS
-    // uses Control+Arrow for Spaces and Control+Up for Mission Control.
-    Ctrl+Left repeat=false hotkey-overlay-title="Previous Space" { focus-workspace-up; }
-    Ctrl+Right repeat=false hotkey-overlay-title="Next Space" { focus-workspace-down; }
-    Ctrl+Up repeat=false hotkey-overlay-title="Mission Control" { toggle-overview; }
+    // uses Control+Arrow for Spaces, Control+Up for Mission Control,
+    // Control+Down for App Exposé and F11 for Show Desktop. All five go to
+    // rmac's resident Mission Control service (docs/decisions/0014), which
+    // skips the parking workspace and niri's spare one when changing Spaces.
+    Ctrl+Left repeat=false hotkey-overlay-title="Previous Space" { spawn "/usr/libexec/rmac/rmac-mission-control" "previous-space"; }
+    Ctrl+Right repeat=false hotkey-overlay-title="Next Space" { spawn "/usr/libexec/rmac/rmac-mission-control" "next-space"; }
+    Ctrl+Up repeat=false hotkey-overlay-title="Mission Control" { spawn "/usr/libexec/rmac/rmac-mission-control" "mission-control"; }
+    Ctrl+Down repeat=false hotkey-overlay-title="Application Windows" { spawn "/usr/libexec/rmac/rmac-mission-control" "app-windows"; }
+    F11 repeat=false hotkey-overlay-title="Show Desktop" { spawn "/usr/libexec/rmac/rmac-mission-control" "show-desktop"; }
     Mod+Ctrl+F repeat=false hotkey-overlay-title="Full Screen" { fullscreen-window; }
     // Screenshots are the resident rmac-screenshot service
     // (docs/decisions/0010): ⇧⌘3 screen, ⇧⌘4 selection (Space: window),
@@ -277,6 +283,17 @@ layer-rule {
         blur true
         noise 0.02
         saturation 1.4
+    }
+}
+
+// Mission Control covers the output; niri shows the bare wallpaper behind it
+// (xray without blur), which hides the real windows while their pictures
+// fly into the measured layout. macOS neither blurs nor dims it.
+layer-rule {
+    match namespace=r#"^rmac-mission-control$"#
+    background-effect {
+        xray true
+        blur false
     }
 }
 

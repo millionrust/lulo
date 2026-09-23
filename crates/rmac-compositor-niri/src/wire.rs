@@ -54,6 +54,13 @@ pub enum Action {
         x: PositionChange,
         y: PositionChange,
     },
+    SetWorkspaceName {
+        name: String,
+        workspace: Option<WorkspaceReference>,
+    },
+    UnsetWorkspaceName {
+        reference: Option<WorkspaceReference>,
+    },
 }
 
 /// niri-ipc `SizeChange`; proportions are percentages of the working area

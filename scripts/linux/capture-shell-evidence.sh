@@ -71,8 +71,15 @@ done
 echo "8. Overlays: OSD, Mission Control, Dock context menu"
 /usr/libexec/rmac/rmac-osd volume-up 2>/dev/null || dispatch osd 2>/dev/null
 SETTLE=0.4 shot osd
-niri msg action toggle-overview >/dev/null 2>&1; shot mission-control
-niri msg action toggle-overview >/dev/null 2>&1
+mission_control() {
+  /usr/libexec/rmac/rmac-mission-control "$1" 2>/dev/null ||
+    "$HOME/.local/libexec/rmac/rmac-mission-control" "$1" 2>/dev/null
+}
+mission_control mission-control; SETTLE=0.6 shot mission-control
+mission_control mission-control
+sleep 0.5
+mission_control app-windows; SETTLE=0.6 shot app-windows
+mission_control app-windows
 echo "   right-click a Dock tile, then press Enter"; read -r _
 shot dock-menu
 

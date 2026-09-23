@@ -206,6 +206,40 @@ impl Settings {
         .detach();
     }
 
+    /// Save a Hot Corners choice through the shell-settings store that
+    /// `rmac-mission-control` watches. The Dock's revert point is left alone.
+    pub(super) fn apply_hot_corner_change(
+        &mut self,
+        change: HotCornerChange,
+        cx: &mut Context<Self>,
+    ) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            return;
+        };
+        if change.corner.get(&snapshot.settings.hot_corners) == change.action {
+            return;
+        }
+
+        self.shell_settings_busy = true;
+        self.shell_settings_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                persist_shell_settings_mutation(ShellSettingsMutation::HotCorner(change))
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                let dock_revert = this.shell_settings_revert.clone();
+                this.finish_shell_settings_mutation(result, dock_revert);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(super) fn revert_dock_change(&mut self, cx: &mut Context<Self>) {
         if self.shell_settings_loading || self.shell_settings_busy {
             return;

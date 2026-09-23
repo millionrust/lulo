@@ -158,6 +158,27 @@ fn minimize_and_restore_use_the_named_parking_workspace() {
 }
 
 #[test]
+fn spaces_are_added_and_removed_by_naming_workspaces_by_id() {
+    let named = convert_action_sequence(&domain::Action::NameWorkspace {
+        workspace: domain::WorkspaceId(9),
+        name: "rmac-space-9".into(),
+    })
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(&named[0]).unwrap(),
+        r#"{"SetWorkspaceName":{"name":"rmac-space-9","workspace":{"Id":9}}}"#
+    );
+    let unnamed = convert_action_sequence(&domain::Action::UnnameWorkspace {
+        workspace: domain::WorkspaceId(9),
+    })
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(&unnamed[0]).unwrap(),
+        r#"{"UnsetWorkspaceName":{"reference":{"Id":9}}}"#
+    );
+}
+
+#[test]
 fn fill_and_tiling_set_the_whole_floating_frame_by_id() {
     let json = |action: domain::Action| {
         convert_action_sequence(&action)

@@ -5,7 +5,7 @@ BindsTo=graphical-session.target
 After=graphical-session-pre.target
 Conflicts=rmac-safe-mode.target
 Requires=rmac-session-supervisor.service rmac-lock-coordinator.service
-Wants=rmac-top-bar.service rmac-dock.service rmac-launcher.service rmac-app-drawer.service rmac-quick-settings.service rmac-notification-center.service rmac-notification-center-panel.service rmac-focus.service rmac-wallpaper.service rmac-osd.service rmac-app-switcher.service rmac-screenshot.service rmac-clipboard.service rmac-shortcut-broker.service rmac-idle-lock.service
+Wants=rmac-top-bar.service rmac-dock.service rmac-launcher.service rmac-app-drawer.service rmac-quick-settings.service rmac-notification-center.service rmac-notification-center-panel.service rmac-focus.service rmac-wallpaper.service rmac-osd.service rmac-app-switcher.service rmac-screenshot.service rmac-mission-control.service rmac-clipboard.service rmac-shortcut-broker.service rmac-idle-lock.service
 
 [Install]
 WantedBy=graphical-session.target

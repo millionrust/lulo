@@ -4,7 +4,7 @@ use rmac_shell_settings::RecoveryState;
 use rmac_storage::Failure;
 use serde::{Deserialize, Serialize};
 
-pub const COMPONENT_UNITS: [&str; 13] = [
+pub const COMPONENT_UNITS: [&str; 14] = [
     "rmac-top-bar.service",
     "rmac-dock.service",
     "rmac-launcher.service",
@@ -16,6 +16,7 @@ pub const COMPONENT_UNITS: [&str; 13] = [
     "rmac-osd.service",
     "rmac-app-switcher.service",
     "rmac-screenshot.service",
+    "rmac-mission-control.service",
     "rmac-clipboard.service",
     "rmac-shortcut-broker.service",
 ];

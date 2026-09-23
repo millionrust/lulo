@@ -66,6 +66,8 @@ pub fn action_capabilities() -> domain::ActionCapabilities {
             domain::ActionKind::TileWindow,
             domain::ActionKind::MinimizeWindow,
             domain::ActionKind::RestoreWindow,
+            domain::ActionKind::NameWorkspace,
+            domain::ActionKind::UnnameWorkspace,
         ],
     }
 }
@@ -165,6 +167,13 @@ pub(super) fn convert_action(action: &domain::Action) -> wire::Action {
                 focus: true,
             }
         }
+        domain::Action::NameWorkspace { workspace, name } => wire::Action::SetWorkspaceName {
+            name: name.clone(),
+            workspace: Some(wire::WorkspaceReference::Id(workspace.0)),
+        },
+        domain::Action::UnnameWorkspace { workspace } => wire::Action::UnsetWorkspaceName {
+            reference: Some(wire::WorkspaceReference::Id(workspace.0)),
+        },
     }
 }
 

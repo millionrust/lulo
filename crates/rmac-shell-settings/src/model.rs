@@ -195,6 +195,59 @@ pub struct SpotlightSettings {
     pub include_removable_mounts: bool,
 }
 
+/// What a screen corner does when the pointer reaches it (Desktop & Dock ›
+/// Hot Corners). Only actions rmac can perform are offered; macOS's Quick
+/// Note, screen saver and display sleep have no rmac backend yet.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HotCornerAction {
+    #[default]
+    None,
+    MissionControl,
+    ApplicationWindows,
+    Desktop,
+    NotificationCenter,
+    Apps,
+    LockScreen,
+}
+
+impl HotCornerAction {
+    /// Every choice in the order macOS 26 lists them, "-" (none) last.
+    pub const ALL: [Self; 7] = [
+        Self::MissionControl,
+        Self::ApplicationWindows,
+        Self::Desktop,
+        Self::NotificationCenter,
+        Self::Apps,
+        Self::LockScreen,
+        Self::None,
+    ];
+
+    /// The pop-up title System Settings shows for this action.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::None => "-",
+            Self::MissionControl => "Mission Control",
+            Self::ApplicationWindows => "Application Windows",
+            Self::Desktop => "Desktop",
+            Self::NotificationCenter => "Notification Centre",
+            Self::Apps => "Apps",
+            Self::LockScreen => "Lock Screen",
+        }
+    }
+}
+
+/// The four hot corners. All are off by default: the Mac's default Quick
+/// Note corner has no rmac backend.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct HotCornerSettings {
+    pub top_left: HotCornerAction,
+    pub top_right: HotCornerAction,
+    pub bottom_left: HotCornerAction,
+    pub bottom_right: HotCornerAction,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct ShellSettings {
@@ -206,6 +259,7 @@ pub struct ShellSettings {
     pub focus: FocusSettings,
     pub providers: BTreeMap<ProviderId, ProviderPolicy>,
     pub spotlight: SpotlightSettings,
+    pub hot_corners: HotCornerSettings,
 }
 
 impl Default for ShellSettings {
@@ -232,6 +286,7 @@ impl Default for ShellSettings {
             focus: FocusSettings::default(),
             providers: BTreeMap::new(),
             spotlight: SpotlightSettings::default(),
+            hot_corners: HotCornerSettings::default(),
         }
     }
 }

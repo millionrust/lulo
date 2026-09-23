@@ -21,6 +21,8 @@ pub enum ActionKind {
     TileWindow,
     MinimizeWindow,
     RestoreWindow,
+    NameWorkspace,
+    UnnameWorkspace,
 }
 
 /// Target region for [`Action::TileWindow`]: the halves offered by the green
@@ -217,6 +219,17 @@ pub enum Action {
         window: WindowId,
         workspace: WorkspaceId,
     },
+    /// Give `workspace` a name. niri keeps a named workspace even when it is
+    /// empty, which is how Mission Control's + adds a Space.
+    NameWorkspace {
+        workspace: WorkspaceId,
+        name: String,
+    },
+    /// Drop `workspace`'s name. niri then removes it once it is empty and
+    /// inactive, which is how Mission Control removes a Space.
+    UnnameWorkspace {
+        workspace: WorkspaceId,
+    },
 }
 
 impl Action {
@@ -236,6 +249,8 @@ impl Action {
             Self::TileWindow { .. } => ActionKind::TileWindow,
             Self::MinimizeWindow { .. } => ActionKind::MinimizeWindow,
             Self::RestoreWindow { .. } => ActionKind::RestoreWindow,
+            Self::NameWorkspace { .. } => ActionKind::NameWorkspace,
+            Self::UnnameWorkspace { .. } => ActionKind::UnnameWorkspace,
         }
     }
 }

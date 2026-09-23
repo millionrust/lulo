@@ -28,6 +28,81 @@ impl DockChange {
     }
 }
 
+/// One of the four hot corners in Desktop & Dock.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum HotCorner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+impl HotCorner {
+    pub(super) const ALL: [Self; 4] = [
+        Self::TopLeft,
+        Self::TopRight,
+        Self::BottomLeft,
+        Self::BottomRight,
+    ];
+
+    pub(super) fn title(self) -> &'static str {
+        match self {
+            Self::TopLeft => "Top Left",
+            Self::TopRight => "Top Right",
+            Self::BottomLeft => "Bottom Left",
+            Self::BottomRight => "Bottom Right",
+        }
+    }
+
+    pub(super) fn id(self) -> &'static str {
+        match self {
+            Self::TopLeft => "hot-corner-top-left",
+            Self::TopRight => "hot-corner-top-right",
+            Self::BottomLeft => "hot-corner-bottom-left",
+            Self::BottomRight => "hot-corner-bottom-right",
+        }
+    }
+
+    pub(super) fn get(
+        self,
+        corners: &rmac_shell_settings::HotCornerSettings,
+    ) -> rmac_shell_settings::HotCornerAction {
+        match self {
+            Self::TopLeft => corners.top_left,
+            Self::TopRight => corners.top_right,
+            Self::BottomLeft => corners.bottom_left,
+            Self::BottomRight => corners.bottom_right,
+        }
+    }
+
+    fn set(
+        self,
+        corners: &mut rmac_shell_settings::HotCornerSettings,
+        action: rmac_shell_settings::HotCornerAction,
+    ) {
+        match self {
+            Self::TopLeft => corners.top_left = action,
+            Self::TopRight => corners.top_right = action,
+            Self::BottomLeft => corners.bottom_left = action,
+            Self::BottomRight => corners.bottom_right = action,
+        }
+    }
+}
+
+/// A Hot Corners change: what one corner does. `rmac-mission-control`
+/// watches this field and maps a corner surface for every corner in use.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct HotCornerChange {
+    pub(super) corner: HotCorner,
+    pub(super) action: rmac_shell_settings::HotCornerAction,
+}
+
+impl HotCornerChange {
+    pub(super) fn apply(self, settings: &mut rmac_shell_settings::ShellSettings) {
+        self.corner.set(&mut settings.hot_corners, self.action);
+    }
+}
+
 /// A Menu Bar pane change: which status items the rmac menu bar shows, and
 /// the clock's seconds. `rmac-shell-status` reads exactly these fields.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -192,6 +267,7 @@ pub(super) enum ShellSettingsMutation {
     Spotlight(SpotlightChange),
     RestoreSpotlight(SpotlightAuthority),
     MenuBar(MenuBarChange),
+    HotCorner(HotCornerChange),
 }
 
 impl ShellSettingsMutation {
@@ -206,6 +282,7 @@ impl ShellSettingsMutation {
             Self::Spotlight(change) => change.apply(settings),
             Self::RestoreSpotlight(spotlight) => spotlight.apply_to(settings),
             Self::MenuBar(change) => change.apply(settings),
+            Self::HotCorner(change) => change.apply(settings),
         }
     }
 }

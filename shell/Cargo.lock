@@ -5126,6 +5126,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-shell-mission-control"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "gpui",
+ "gpui_platform",
+ "image",
+ "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-shell-layer",
+ "rmac-shell-settings",
+ "rmac-shell-ui",
+ "uuid",
+]
+
+[[package]]
 name = "rmac-shell-osd"
 version = "0.1.0"
 dependencies = [

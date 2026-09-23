@@ -81,6 +81,11 @@ fn settings() -> ShellSettings {
             excluded_paths: vec!["/home/test/Private".into()],
             include_removable_mounts: true,
         },
+        hot_corners: HotCornerSettings {
+            top_left: HotCornerAction::MissionControl,
+            bottom_right: HotCornerAction::Desktop,
+            ..HotCornerSettings::default()
+        },
         ..ShellSettings::default()
     }
 }
@@ -372,4 +377,23 @@ fn failed_primary_write_restores_the_previous_last_good_copy() {
     assert_eq!(stored.settings, original);
     assert_eq!(store.load().unwrap().settings, original);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn hot_corners_default_off_and_read_from_older_files() {
+    assert_eq!(
+        ShellSettings::default().hot_corners,
+        HotCornerSettings::default()
+    );
+    assert_eq!(HotCornerSettings::default().top_left, HotCornerAction::None);
+    assert!(serde_json::from_str::<HotCornerSettings>(r#"{"top_left":"quick-note"}"#).is_err());
+    let parsed: HotCornerSettings =
+        serde_json::from_str(r#"{"top_left":"application-windows"}"#).unwrap();
+    assert_eq!(parsed.top_left, HotCornerAction::ApplicationWindows);
+    assert_eq!(parsed.bottom_right, HotCornerAction::None);
+    assert_eq!(HotCornerAction::ALL.len(), 7);
+    assert_eq!(
+        HotCornerAction::NotificationCenter.title(),
+        "Notification Centre"
+    );
 }

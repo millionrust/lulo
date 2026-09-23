@@ -153,6 +153,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
         include_str!("../units/rmac-osd.service"),
         include_str!("../units/rmac-app-switcher.service"),
         include_str!("../units/rmac-screenshot.service"),
+        include_str!("../units/rmac-mission-control.service"),
         include_str!("../units/rmac-clipboard.service"),
         include_str!("../units/rmac-shortcut-broker.service"),
     ];
@@ -264,6 +265,7 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     assert!(normal_target.contains("rmac-osd.service"));
     assert!(normal_target.contains("rmac-app-switcher.service"));
     assert!(normal_target.contains("rmac-screenshot.service"));
+    assert!(normal_target.contains("rmac-mission-control.service"));
     assert!(normal_target.contains("rmac-clipboard.service"));
     assert!(safe_target
         .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
@@ -380,6 +382,23 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
         }));
     }
     assert!(!shell.contains("\"screenshot-screen\""));
+    // ⌃↑ / ⌃↓ / F11 / ⌃← / ⌃→ go to rmac's Mission Control service
+    // (docs/decisions/0014), not niri's overview or raw workspace moves.
+    for (keys, word) in [
+        ("Ctrl+Up", "mission-control"),
+        ("Ctrl+Down", "app-windows"),
+        ("F11", "show-desktop"),
+        ("Ctrl+Left", "previous-space"),
+        ("Ctrl+Right", "next-space"),
+    ] {
+        assert!(shell.lines().any(|line| {
+            line.trim_start().starts_with(keys)
+                && line.contains(&format!(
+                    "{{ spawn \"/usr/libexec/rmac/rmac-mission-control\" \"{word}\"; }}"
+                ))
+        }));
+    }
+    assert!(!shell.contains("toggle-overview"));
     assert!(fallback.contains("Mod+Space repeat=false"));
     assert!(fallback.contains("Mod+Ctrl+Q repeat=false allow-when-locked=true"));
     assert_eq!(fallback.matches("{ spawn ").count(), 2);

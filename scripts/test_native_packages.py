@@ -54,6 +54,7 @@ class NativePackageContractTests(unittest.TestCase):
                 "rmac-osd",
                 "rmac-app-switcher",
                 "rmac-screenshot",
+                "rmac-mission-control",
             },
         )
         self.assertTrue(
@@ -68,8 +69,8 @@ class NativePackageContractTests(unittest.TestCase):
 
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
         self.assertEqual(len(contract.APPLICATION_BINARIES), 10)
-        self.assertEqual(len(contract.SESSION_BINARIES), 24)
-        self.assertEqual(len(contract.ALL_BINARIES), 32)
+        self.assertEqual(len(contract.SESSION_BINARIES), 25)
+        self.assertEqual(len(contract.ALL_BINARIES), 33)
         self.assertEqual(
             set(contract.ALL_BINARIES),
             set(contract.APPLICATION_BINARIES) | set(contract.SESSION_BINARIES),
@@ -96,6 +97,7 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("rmac-osd", session.binaries)
         self.assertIn("rmac-app-switcher", session.binaries)
         self.assertIn("rmac-screenshot", session.binaries)
+        self.assertIn("rmac-mission-control", session.binaries)
         self.assertIn("grim", session.static_dependencies)
         self.assertIn("wl-clipboard", session.static_dependencies)
         self.assertIn("rmac-clipboard-service", session.binaries)

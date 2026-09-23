@@ -216,6 +216,37 @@ impl Settings {
             _ => {}
         }
 
+        // macOS keeps these behind a "Hot Corners…" sheet; rmac lists the
+        // four pop-ups in the pane. Only actions rmac can perform are
+        // offered (rmac_shell_settings::HotCornerAction).
+        cards.push(section_header("Hot Corners"));
+        let corners = snapshot.settings.hot_corners;
+        let mut corner_rows = Vec::new();
+        for corner in HotCorner::ALL {
+            let current = corner.get(&corners);
+            let choices = rmac_shell_settings::HotCornerAction::ALL
+                .into_iter()
+                .map(|action| {
+                    let corner_view = view.clone();
+                    choice(action.title(), action == current, move |_, cx| {
+                        corner_view.update(cx, |settings, cx| {
+                            settings.apply_hot_corner_change(HotCornerChange { corner, action }, cx)
+                        });
+                    })
+                })
+                .collect::<Vec<_>>();
+            let value = popup_value(&choices, current.title());
+            corner_rows.push(popup_row(
+                corner.id(),
+                corner.title(),
+                None,
+                value,
+                choices,
+                enabled,
+            ));
+        }
+        cards.push(card(corner_rows));
+
         if snapshot.recovered_from_last_good || snapshot.migrated_from.is_some() {
             cards.push(note_card(snapshot.detail.clone().unwrap_or_else(|| {
                 snapshot.migrated_from.map_or_else(

@@ -271,6 +271,12 @@ impl HistoryAuthority {
         self.origins.wire(&self.ids())
     }
 
+    /// Display-only sending application of one notification, which the
+    /// banner host uses to show the same name and icon as the Center.
+    pub fn origin(&self, id: NotificationId) -> Option<crate::origin::Origin> {
+        self.origins.get(id)
+    }
+
     /// Labels a legacy notification with the process that sent it.
     fn annotate_sender(
         &self,
@@ -1229,9 +1235,20 @@ impl ServiceHandle {
     }
 }
 
+/// How long a banner stays once it has slid in. macOS 26 shows every banner,
+/// whatever its priority, for about 5.1 s from the start of its 600 ms
+/// slide-in, then slides out (design-lab/notification-banners.html); urgent
+/// notifications and Alert
+/// style (no timeout) stay until the person acts on them.
+pub const BANNER_TIMEOUT: TimeoutPolicy = TimeoutPolicy {
+    low_ms: 4_500,
+    normal_ms: 4_500,
+    high_ms: 4_500,
+};
+
 pub async fn serve() -> Result<(ServiceHandle, Receiver<RuntimeEvent>), ServiceError> {
     let history = HistoryAuthority::load().await?;
-    let core = SharedCore::new(500, TimeoutPolicy::default());
+    let core = SharedCore::new(500, BANNER_TIMEOUT);
     core.reserve_ids(history.ids());
     let (events, receiver) = async_channel::bounded(EVENT_CAPACITY);
     let legacy = LegacyInterface {

@@ -105,6 +105,11 @@ impl Origins {
         });
     }
 
+    /// The origin recorded for one notification, if any.
+    pub fn get(&self, id: NotificationId) -> Option<Origin> {
+        self.lock().get(&id).cloned()
+    }
+
     pub fn wire(&self, live: &[NotificationId]) -> Vec<WireOrigin> {
         let origins = self.lock();
         live.iter()

@@ -10,6 +10,13 @@ publish = false
 name = "rmac-notification-center-panel"
 path = "src/main.rs"
 
+# The notification authority. It serves both notification D-Bus protocols and
+# the Center history, and draws the macOS 26 banners in the same process
+# because the banner session must own the service's event stream.
+[[bin]]
+name = "rmac-notification-center"
+path = "src/daemon/main.rs"
+
 [dependencies]
 async-channel.workspace = true
 blocking.workspace = true
@@ -19,10 +26,17 @@ futures-util.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
+rmac-app-launch.workspace = true
+rmac-appearance.workspace = true
+rmac-appearance-portal.workspace = true
 rmac-apps.workspace = true
+rmac-compositor.workspace = true
+rmac-compositor-niri.workspace = true
 rmac-notifications.workspace = true
 rmac-notifications-linux.workspace = true
+rmac-notifications-runtime.workspace = true
 rmac-notifications-store.workspace = true
 rmac-shell-activation-runtime.workspace = true
 rmac-shortcuts.workspace = true
 rmac-ui.workspace = true
+uuid = { workspace = true, features = ["v5"] }

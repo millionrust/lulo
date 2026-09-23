@@ -87,7 +87,7 @@ export CARGO_TARGET_DIR="$target_dir"
     -p rmac-launcher-app --bin rmac-launcher \
     -p rmac-quick-settings-app --bin rmac-quick-settings \
     -p rmac-notification-center-app --bin rmac-notification-center-panel \
-    -p rmac-notifications-linux --bin rmac-notification-center \
+    -p rmac-notification-center-app --bin rmac-notification-center \
     -p rmac-focus-linux --bin rmac-focus-service \
     -p rmac-shortcuts \
       --bin rmac-shortcut-broker \

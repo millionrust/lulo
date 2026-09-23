@@ -586,6 +586,13 @@ impl BannerSession {
         self.apply_presentation_effect(effect, now)
     }
 
+    /// Slides out a banner that a newer one from the same application
+    /// replaces. The notification then expires as if its time were up.
+    pub fn replace(&mut self, id: NotificationId, now: Time) -> Result<Update, Error> {
+        let runtime = self.coordinator.replace(id, now).map_err(Error::Runtime)?;
+        self.finish(runtime, &[], Vec::new(), now)
+    }
+
     pub fn activate_control(&mut self, control: ControlId, now: Time) -> Result<Update, Error> {
         let effect = self.presenter.activate_control(control);
         self.apply_presentation_effect(effect, now)

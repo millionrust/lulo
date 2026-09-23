@@ -5,7 +5,9 @@
 Notification Center is the on-demand history surface for the rmac session. It
 should feel like the compact trailing macOS panel while remaining a truthful
 client of the rmac notification authority. It is not a second notification
-store, daemon, banner stack, or lock-screen renderer.
+store, daemon, banner stack, or lock-screen renderer. (The same crate also
+builds `rmac-notification-center`, the notification service, which draws the
+banners in its own process; see `src/daemon/`.)
 
 ## Primary journeys
 

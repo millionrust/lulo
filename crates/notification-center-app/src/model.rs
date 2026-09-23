@@ -5,6 +5,7 @@ use chrono::{DateTime, Duration, NaiveDateTime};
 use gpui::SharedString;
 use rmac_notifications::NotificationId;
 use rmac_notifications_linux::center::{ActionSelection, HistoryRecord};
+use rmac_notifications_linux::origin::Origin;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ApplicationIdentity {
@@ -133,19 +134,28 @@ impl ApplicationCatalog {
 
     /// The group key and visible identity of a record's sending application.
     pub(crate) fn resolve(&self, record: &HistoryRecord) -> (String, ApplicationIdentity) {
-        let origin = &record.origin;
+        self.resolve_origin(&record.app_id, &record.origin)
+    }
+
+    /// The group key and visible identity of the application that sent a
+    /// notification with this service application ID and display origin.
+    pub(crate) fn resolve_origin(
+        &self,
+        app_id: &str,
+        origin: &Origin,
+    ) -> (String, ApplicationIdentity) {
         let known = origin
             .desktop_id
             .as_deref()
             .and_then(|id| self.by_id(id))
-            .or_else(|| self.by_id(&record.app_id))
+            .or_else(|| self.by_id(app_id))
             .or_else(|| {
                 origin
                     .executable
                     .as_deref()
                     .and_then(|path| self.by_executable.get(Path::new(path)))
             })
-            .or_else(|| self.by_name.get(&record.app_id));
+            .or_else(|| self.by_name.get(app_id));
         if let Some((id, identity)) = known {
             return (id.clone(), identity.clone());
         }
@@ -173,9 +183,9 @@ impl ApplicationCatalog {
             );
         }
         (
-            format!("app:{}", record.app_id),
+            format!("app:{app_id}"),
             ApplicationIdentity {
-                name: fallback_app_name(&record.app_id).into(),
+                name: fallback_app_name(app_id).into(),
                 icon: None,
             },
         )

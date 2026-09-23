@@ -5916,13 +5916,20 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "rmac-app-launch",
+ "rmac-appearance",
+ "rmac-appearance-portal",
  "rmac-apps",
+ "rmac-compositor",
+ "rmac-compositor-niri",
  "rmac-notifications",
  "rmac-notifications-linux",
+ "rmac-notifications-runtime",
  "rmac-notifications-store",
  "rmac-shell-activation-runtime",
  "rmac-shortcuts",
  "rmac-ui",
+ "uuid",
 ]
 
 [[package]]

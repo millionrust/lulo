@@ -125,7 +125,7 @@ A compiler error, failing test, flaky runtime, or missing API is **not** a reaso
 | Spotlight | `crates/launcher-app` | **xdg window** positioned by niri `window-rule` | as a normal window it can show up in niri window lists and switchers, can't reliably open on the focused output or above full-screen windows, and its UI is an app browser with category pills rather than Tahoe Spotlight |
 | Control Center | `crates/quick-settings-app` | **xdg window** | generic cards + mute *Toggle* switch; not Tahoe modules; no customization |
 | Notification Center | `crates/notification-center-app` | **xdg window** | not layer-shell; no widgets area design |
-| Notification banners | `crates/rmac-notifications-linux/src/banner.rs` | **planning/model only; no host renders it** (`surfaces.rs`: "The eventual Linux host translates…", namespace `rmac-notification-banners`, card radius 14) | banners never appear on screen |
+| Notification banners | `crates/notification-center-app/src/daemon/` hosting `rmac-notifications-linux/src/banner.rs` | **[~] rendered** by the `rmac-notification-center` service itself (one overlay layer surface per output, namespace `rmac-notification-banners`, measured in `design-lab/notification-banners.html`); needs on-device verification | not yet seen on the reference PC |
 | Apps (Launchpad) | `crates/app-drawer` | xdg window | product name "App Drawer" contradicts Tahoe "Apps" |
 | Lock screen | `crates/rmac-lock-provider-linux` | custom Wayland renderer (`paint.rs`, `text_renderer.rs`, family `"Inter"`) | visual design not specified against Tahoe |
 | Windows | niri `window-rule` in `packaging/rmac-session/shell.kdl` | floating, radius 12 | traffic lights drawn per app by `rmac_ui::traffic_lights()` |

@@ -118,6 +118,17 @@ impl Coordinator {
         Ok(self.update(effects, now))
     }
 
+    /// Ends a banner's time on screen early, as macOS does when a newer
+    /// banner from the same application takes its place. Its exit expires the
+    /// notification exactly like a timeout, so Center history keeps it.
+    pub fn replace(&mut self, id: NotificationId, now: Time) -> Result<Update, Error> {
+        let effects = self
+            .stack
+            .close(id, CloseCause::Expired, now)
+            .map_err(|_| Error::UnknownBanner)?;
+        Ok(self.update(effects, now))
+    }
+
     /// Reconciles a close already committed by the notification service. A
     /// history-only, flood-retired, or duplicate close is intentionally inert.
     pub fn apply_closed(&mut self, id: NotificationId, now: Time) -> Update {

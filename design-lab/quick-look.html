@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Quick Look — exact</title>
+<!--
+  Quick Look (Space in Files) at 1:1 logical points, measured on the owner's
+  Mac (macOS 26.2 Tahoe, dark, 2026-09-23): Finder list view, Space on a
+  800×600 PNG, a 600×800 PNG, a text file, a Letter PDF, a folder and a zip,
+  one three-item selection (→ twice) and the index sheet of four items.
+  Accessibility frames of the "Quick Look" window + Retina pixels ÷ 2.
+  The Rust port (crates/rmac-quick-look/src/metrics.rs) copies these numbers;
+  the glyphs are crates/rmac-quick-look/assets/icons/quick-look (original).
+  M = measured, S = could not be measured (stated beside it).
+
+  WINDOW (M)
+    A floating panel owned by Finder (not a normal document window).
+    Title bar 38 tall. Content inset 5 left/right/bottom (image 800×600 →
+    window 810 × 643; content frame x 5 y 38). Window radius ≈ 20 (circle fit
+    of the corner), content radius ≈ 15. 1 pt rim rgb(108,108,125) →
+    rgb(93,93,105); body under the content edge rgb(31,31,39).
+    Title-bar fill rgb(29..32,29..32,46) — translucent glass over the desktop
+    (S: rmac draws it opaque; no compositor blur).
+  SIZE (M)
+    Image shown 1:1 when it fits. Larger content is scaled to fit a box whose
+    longest side is 721 on the 1470 × 956 screen (600×800 PNG → 541 × 721;
+    Letter PDF → 557 × 721), i.e. 721 = visible height 923 − 202 (S: the Mac's
+    exact rule is private; rmac uses 0.78 × the visible height).
+    While stepping through a selection the panel keeps that box: 800×600
+    after 600×800 shows at 721 × 541 (window 731 × 584), and text keeps the
+    previous window size.
+  TITLE BAR (M)
+    close        14 × 14 at x 11, y 12 (xmark.circle.fill, rgb(153,152,170))
+    full screen  14 × 14 at x 31, y 12 (same colour)
+    nav capsule  multi-selection only: x 51, y 6, 61 × 26, fill rgb(55,55,72),
+                 1 pt divider rgb(90,90,106) at x 81.5, chevrons rgb(235,235,237)
+    title        13 bold rgb(232,232,234), x 51 (single) / 118 (with capsule),
+                 AX frame y 9 h 18
+    buttons      33 × 19 at y 9, pitch 39, glyph rgb(153,153,161).
+                 Mac order: Index Sheet (multi) · Markup · Rotate · Share ·
+                 Open. rmac omits Markup, Rotate and Share (no backend) and
+                 keeps Index Sheet + Open.
+    Open         "Open with <default app>" capsule 19 tall, text 13 regular
+                 rgb(224,223,226), fill rgb(45,45,60), right edge 7 from the
+                 window edge, width = text + 24 (139 for "Open with Preview")
+  TEXT (M)        fill rgb(30,30,30) edge to edge in the content frame;
+                 monospaced 11 (S: size from the 13 pt line pitch), line 13,
+                 text x +8, first line top +3; colour white.
+  NO PREVIEW — folders, archives, other files (M, zip and folder captures)
+    window 592 × 328. Icon 256 × 256 at x 20 y 48. Text column x 298 w 274:
+      name 20 bold white (centre y 141), line 2 13 rgb(154,155,165) (centre
+      y 171): "364 bytes" / folder "2 bytes, 2 items", line 3 same style
+      (centre y 193): "Last modified on 23 Sep 2026 at 3:38:45 PM".
+    Title bar: no title. Zip: "Uncompress" button 103 × 26 at x 482 y 6
+      (fill rgb(52,53,60)). Folder: no Open button.
+  INDEX SHEET (M)  the index-sheet button swaps the preview for a grid; the
+    title bar keeps only close + the current name (x 31). Two columns of
+    215-wide thumbnails, 37 side margins and gutter; first row 46 below the
+    content top; rows 60 apart, each row as tall as its tallest item, items
+    centred in the row. Current item: 4 pt inner border rgb(36,88,202).
+  KEYS (M)  Space / Esc close · ← → previous/next (wraps) · ⌥Space full screen
+  ANIMATION (S)  the Mac zooms from the file's icon; rmac cannot place a
+    window at a screen point under niri, so it fades/scales in place.
+-->
+<style>
+  body { margin: 0; background: #151518; font-family: -apple-system, "SF Pro Text", Inter, sans-serif;
+         color: rgb(232,232,234); }
+  .stage { padding: 24px; display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; }
+  .ql { position: relative; border-radius: 20px; overflow: hidden; background: rgb(31,31,39);
+        box-shadow: 0 0 0 1px rgb(100,100,115), 0 18px 50px rgba(0,0,0,.55); flex: none; }
+  .bar { position: absolute; left: 0; top: 0; right: 0; height: 38px; background: rgb(30,30,45); }
+  .abs { position: absolute; }
+  .g14 { position: absolute; top: 12px; width: 14px; height: 14px; }
+  .g14 img { width: 14px; height: 14px; display: block; filter: invert(61%); }
+  .title { position: absolute; top: 9px; height: 18px; line-height: 18px; font-size: 13px; font-weight: 700;
+           white-space: nowrap; }
+  .nav { position: absolute; left: 51px; top: 6px; width: 61px; height: 26px; border-radius: 13px;
+         background: rgb(55,55,72); }
+  .nav .div { position: absolute; left: 30px; top: 6px; width: 1px; height: 14px; background: rgb(90,90,106); }
+  .nav img { position: absolute; top: 5px; width: 16px; height: 16px; filter: invert(92%); }
+  .btn { position: absolute; top: 9px; width: 33px; height: 19px; }
+  .btn img { position: absolute; left: 8.5px; top: 1.5px; width: 16px; height: 16px; filter: invert(60%); }
+  .open { position: absolute; top: 9px; height: 19px; border-radius: 9.5px; background: rgb(45,45,60);
+          color: rgb(224,223,226); font-size: 13px; line-height: 19px; padding: 0 12px; white-space: nowrap; }
+  .content { position: absolute; left: 5px; top: 38px; border-radius: 15px; overflow: hidden; }
+  .text { background: rgb(30,30,30); font: 11px/13px Menlo, "JetBrains Mono", monospace; color: #fff;
+          padding: 3px 8px; box-sizing: border-box; white-space: pre; }
+  .cap { font-size: 11px; color: #888; margin: 0 0 6px; }
+  .meta { position: absolute; left: 298px; width: 274px; }
+  .meta .name { font-size: 20px; font-weight: 700; color: #fff; position: absolute; top: 128px; line-height: 26px; }
+  .meta .l2, .meta .l3 { font-size: 13px; color: rgb(154,155,165); position: absolute; line-height: 16px; white-space: nowrap; }
+  .grid { background: rgb(31,31,40); }
+  .cell { position: absolute; width: 215px; }
+  .sel { box-shadow: inset 0 0 0 4px rgb(36,88,202); }
+  .page { background: #fff; color: #000; font: 4px/5px Menlo, monospace; padding: 8px; box-sizing: border-box; white-space: pre; }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <!-- A · single 800×600 PNG: window 810 × 643 -->
+  <div>
+    <p class="cap">A · Sample.png (800×600) — 810 × 643</p>
+    <div class="ql" style="width:810px;height:643px">
+      <div class="bar"></div>
+      <div class="g14" style="left:11px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/close.svg"></div>
+      <div class="g14" style="left:31px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/full-screen.svg"></div>
+      <div class="title" style="left:51px">Sample.png</div>
+      <div class="open" style="right:7px">Open with Preview</div>
+      <div class="content" style="width:800px;height:600px;background:rgb(64,118,194)"></div>
+    </div>
+  </div>
+
+  <!-- B · three selected, first is 600×800: window 551 × 764 -->
+  <div>
+    <p class="cap">B · 1 of 3, Tall.png (600×800) — 551 × 764</p>
+    <div class="ql" style="width:551px;height:764px">
+      <div class="bar"></div>
+      <div class="g14" style="left:11px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/close.svg"></div>
+      <div class="g14" style="left:31px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/full-screen.svg"></div>
+      <div class="nav">
+        <img style="left:8px" src="../crates/rmac-quick-look/assets/icons/quick-look/chevron-left.svg">
+        <div class="div"></div>
+        <img style="left:37px" src="../crates/rmac-quick-look/assets/icons/quick-look/chevron-right.svg">
+      </div>
+      <div class="title" style="left:118px">Tall.png</div>
+      <div class="btn" style="right:152px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/index-sheet.svg"></div>
+      <div class="open" style="right:7px">Open with Preview</div>
+      <div class="content" style="width:541px;height:721px;background:rgb(188,98,56)"></div>
+    </div>
+  </div>
+
+  <!-- C · text, keeps the previous window (731 × 584) -->
+  <div>
+    <p class="cap">C · 3 of 3, notes.txt — 731 × 584</p>
+    <div class="ql" style="width:731px;height:584px">
+      <div class="bar"></div>
+      <div class="g14" style="left:11px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/close.svg"></div>
+      <div class="g14" style="left:31px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/full-screen.svg"></div>
+      <div class="nav">
+        <img style="left:8px" src="../crates/rmac-quick-look/assets/icons/quick-look/chevron-left.svg">
+        <div class="div"></div>
+        <img style="left:37px" src="../crates/rmac-quick-look/assets/icons/quick-look/chevron-right.svg">
+      </div>
+      <div class="title" style="left:118px">notes.txt</div>
+      <div class="btn" style="right:153px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/index-sheet.svg"></div>
+      <div class="open" style="right:7px">Open with TextEdit</div>
+      <div class="content text" style="width:721px;height:541px;border-radius:0 0 15px 15px">Line one
+Line two</div>
+    </div>
+  </div>
+
+  <!-- D · no preview (zip): 592 × 328 -->
+  <div>
+    <p class="cap">D · Bundle.zip — 592 × 328</p>
+    <div class="ql" style="width:592px;height:328px;background:rgb(30,31,40)">
+      <div class="bar" style="background:rgb(28,29,36)"></div>
+      <div class="g14" style="left:11px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/close.svg"></div>
+      <div class="g14" style="left:31px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/full-screen.svg"></div>
+      <div class="open" style="right:7px;top:6px;height:26px;line-height:26px;border-radius:13px;width:79px;text-align:center;background:rgb(52,53,60)">Uncompress</div>
+      <img class="abs" style="left:20px;top:48px;width:256px;height:256px;filter:invert(90%)" src="../crates/rmac-quick-look/assets/icons/quick-look/document.svg">
+      <div class="meta">
+        <div class="name">Bundle.zip</div>
+        <div class="l2" style="top:163px">364 bytes</div>
+        <div class="l3" style="top:185px">Last modified on 23 Sep 2026 at 3:38:45 PM</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- E · index sheet of four -->
+  <div>
+    <p class="cap">E · index sheet (4 items) — 551 × 764</p>
+    <div class="ql" style="width:551px;height:764px">
+      <div class="bar"></div>
+      <div class="g14" style="left:11px"><img src="../crates/rmac-quick-look/assets/icons/quick-look/close.svg"></div>
+      <div class="title" style="left:31px">Sample.png</div>
+      <div class="content grid" style="width:541px;height:721px">
+        <div class="cell" style="left:37px;top:46px;height:287px;background:rgb(188,98,56)"></div>
+        <div class="cell sel" style="left:289px;top:109px;height:161px;background:rgb(64,118,194)"></div>
+        <div class="cell page" style="left:37px;top:424px;height:215px">Line one
+Line two</div>
+        <div class="cell page" style="left:289px;top:393px;height:278px">Line one
+Line two</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

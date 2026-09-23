@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Archive Utility — exact</title>
+<!--
+  Archive Utility and Files' Compress at 1:1 logical points, measured on the
+  owner's Mac (macOS 26.2 Tahoe, dark, 2026-09-23): Accessibility frames +
+  Retina pixels ÷ 2, and the names the Mac produced in a scratch folder.
+  The Rust port is crates/rmac-archive (naming, expand, compress) and
+  crates/archive-utility (the alert); Files draws the progress sheet.
+  M = measured, S = not measurable here (stated beside it).
+
+  BEHAVIOUR (M)
+    Double-click archive  expands next to the archive with no window unless
+                          it is slow. Several top-level items → folder named
+                          after the archive ("Bundle"), then "Bundle 2".
+                          One top-level item → that item, "notes 2.txt" when
+                          "notes.txt" exists.
+    Compress one item     File ▸ Compress “notes.txt” → "notes.txt.zip"
+                          (folders: "Folder A.zip"), then "notes.txt 2.zip" (S:
+                          clash name follows the Mac's "Archive 2.zip" rule).
+    Compress N items      File ▸ Compress 2 Items → "Archive.zip", then
+                          "Archive 2.zip".
+    Not an archive        alert "Unable to expand “Broken.zip”. It is in an
+                          unsupported format."
+    Other failures (S)    "Unable to expand “X” into “Folder”. (Error N -
+                          <reason>.)" — the Mac's wording for I/O errors, with
+                          the Linux errno text.
+
+  ALERT WINDOW "Archive Utility" 378 × 138 (M)
+    fill rgb(35,36,47); 1 pt rim rgb(79,80,89); title bar 32, no hairline
+    traffic lights centres (16,16) (39,16) (62,16) — close inactive grey
+    rgb(70,71,82) (the only action is OK), yellow rgb(242,202,68), green
+    rgb(101,196,102); title "Archive Utility" 13 bold rgb(159,160,171) at x 82
+    caution glyph 39 × 39 at (19, 47)
+    message 13 regular rgb(221,222,223) at (63, 49), width 294, wraps
+    OK 76 × 22 at (281, 99), fill rgb(52,120,246), text white, radius 11 (S)
+
+  PROGRESS (Mac: Finder's "Copy" window 404 × 88, M; rmac: a sheet in Files)
+    fill rgb(36,33,47); title bar 32 (no title)
+    archive glyph 34 × 34 at (17, 39)
+    line 1 13 rgb(222,221,223) at (61, 33) w 311: Compressing “Big.bin” to
+      “Big.bin.zip” · Expanding “Big.zip”
+    bar at (62, 46) w 309 (AX height 20; visible track 7, S), track
+      rgb(54,51,64), fill accent rgb(52,120,246)
+    stop button 15 × 10 frame at (378, 51): xmark.circle.fill rgb(157,155,162)
+    line 2 13 rgb(156,155,161) at (61, 64): "120.0 MB of 1.2 GB – Less than a
+      minute" / "– About 10 seconds"
+    Shown only after the job has run for 1 s (S: the Mac showed nothing for a
+    fast 1.2 GB stored zip and the window for a 20 s compress).
+-->
+<style>
+  body { margin: 0; background: #151518; font-family: -apple-system, "SF Pro Text", Inter, sans-serif; }
+  .stage { padding: 24px; display: flex; gap: 32px; align-items: flex-start; flex-wrap: wrap; }
+  .cap { font-size: 11px; color: #888; margin: 0 0 6px; }
+  .win { position: relative; border-radius: 16px; box-shadow: 0 0 0 1px rgb(79,80,89), 0 12px 40px rgba(0,0,0,.5); flex: none; }
+  .abs { position: absolute; }
+  .light { position: absolute; top: 9px; width: 14px; height: 14px; border-radius: 50%; }
+  .msg { font-size: 13px; line-height: 16px; color: rgb(221,222,223); }
+  .ok { position: absolute; left: 281px; top: 99px; width: 76px; height: 22px; border-radius: 11px;
+        background: rgb(52,120,246); color: #fff; font-size: 13px; line-height: 22px; text-align: center; }
+  .track { position: absolute; left: 62px; top: 52.5px; width: 309px; height: 7px; border-radius: 3.5px; background: rgb(54,51,64); overflow: hidden; }
+  .fill { height: 7px; background: rgb(52,120,246); border-radius: 3.5px; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div>
+    <p class="cap">Alert — 378 × 138</p>
+    <div class="win" style="width:378px;height:138px;background:rgb(35,36,47)">
+      <div class="light" style="left:9px;background:rgb(70,71,82)"></div>
+      <div class="light" style="left:32px;background:rgb(242,202,68)"></div>
+      <div class="light" style="left:55px;background:rgb(101,196,102)"></div>
+      <div class="abs" style="left:82px;top:8px;font-size:13px;font-weight:700;line-height:16px;color:rgb(159,160,171)">Archive Utility</div>
+      <svg class="abs" style="left:19px;top:47px" width="39" height="39" viewBox="0 0 39 39">
+        <path d="M17.1 4.4a2.8 2.8 0 0 1 4.8 0l15.5 27.8a2.8 2.8 0 0 1-2.4 4.1H4a2.8 2.8 0 0 1-2.4-4.1z" fill="rgb(241,196,59)"/>
+        <rect x="17.6" y="12" width="3.8" height="13.5" rx="1.9" fill="#fff"/><circle cx="19.5" cy="30" r="2.2" fill="#fff"/>
+      </svg>
+      <div class="abs msg" style="left:63px;top:49px;width:294px">Unable to expand “Broken.zip”. It is in an unsupported format.</div>
+      <div class="ok">OK</div>
+    </div>
+  </div>
+  <div>
+    <p class="cap">Progress — 404 × 88</p>
+    <div class="win" style="width:404px;height:88px;background:rgb(36,33,47)">
+      <img class="abs" style="left:17px;top:39px;width:34px;height:34px;filter:invert(90%)" src="../crates/rmac-quick-look/assets/icons/quick-look/document.svg">
+      <div class="abs msg" style="left:61px;top:33px;width:311px;color:rgb(222,221,223)">Compressing “Big.bin” to “Big.bin.zip”</div>
+      <div class="track"><div class="fill" style="width:10%"></div></div>
+      <img class="abs" style="left:378px;top:48.5px;width:15px;height:15px;filter:invert(62%)" src="../crates/rmac-quick-look/assets/icons/quick-look/close.svg">
+      <div class="abs msg" style="left:61px;top:64px;color:rgb(156,155,161)">120.0 MB of 1.2 GB – Less than a minute</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

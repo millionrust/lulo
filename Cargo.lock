@@ -5819,6 +5819,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-media"
+version = "0.1.0"
+dependencies = [
+ "zbus",
+]
+
+[[package]]
 name = "rmac-mounts"
 version = "0.1.0"
 dependencies = [

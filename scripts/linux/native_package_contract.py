@@ -59,6 +59,7 @@ APPLICATION_BINARIES = (
 SESSION_BINARIES = (
     "rmac-session-supervisor",
     "rmac-sound",
+    "rmac-media",
     "rmac-wallpaper",
     "rmac-top-bar",
     "rmac-dock",

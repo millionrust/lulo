@@ -189,6 +189,12 @@ binds {
     XF86AudioLowerVolume allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "volume-down"; }
     XF86AudioMute allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "toggle-output-mute"; }
     XF86AudioMicMute allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "toggle-input-mute"; }
+    // Media keys (F7–F9 on a Mac keyboard) control the Now Playing player.
+    XF86AudioPlay allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-media" "play-pause"; }
+    XF86AudioPause allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-media" "pause"; }
+    XF86AudioNext allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-media" "next"; }
+    XF86AudioPrev allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-media" "previous"; }
+    XF86AudioStop allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-media" "stop"; }
     XF86MonBrightnessUp allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-up"; }
     XF86MonBrightnessDown allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-down"; }
 }

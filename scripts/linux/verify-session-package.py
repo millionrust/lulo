@@ -39,6 +39,7 @@ _SOUND_FILES = (
 REQUIRED_RMAC_EXECUTABLES = (
     "rmac-session-supervisor",
     "rmac-sound",
+    "rmac-media",
     "rmac-osd",
     "rmac-launcher",
     "rmac-app-drawer",

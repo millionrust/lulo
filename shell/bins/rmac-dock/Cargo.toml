@@ -33,6 +33,7 @@ rmac-dock.workspace = true
 rmac-dock-runtime.workspace = true
 rmac-dock-system.workspace = true
 rmac-osd.workspace = true
+rmac-login-items-linux.workspace = true
 rmac-places.workspace = true
 rmac-places-system.workspace = true
 rmac-recent-documents.workspace = true

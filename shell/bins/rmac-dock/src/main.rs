@@ -205,6 +205,17 @@ mod linux_wayland {
         session: rmac_dock::menu::Session,
         /// Options ▸ is open (the pointer rested on its parent row).
         submenu_open: bool,
+        /// Options ▸ Open at Login, once the XDG autostart state is read.
+        login: Option<LoginOption>,
+    }
+
+    /// The app's XDG autostart state behind Options ▸ Open at Login.
+    #[derive(Clone)]
+    struct LoginOption {
+        desktop_entry: PathBuf,
+        /// Autostart entry ID: the desktop file name.
+        id: String,
+        enabled: bool,
     }
 
     struct Dock {
@@ -593,6 +604,94 @@ mod linux_wayland {
                                 error.detail
                             );
                         }
+                    }
+                })
+                .detach();
+        }
+
+        /// Read whether `app_id` opens at login (XDG autostart) off the UI
+        /// thread; the Options row appears only once that is known.
+        fn load_login_state(&mut self, app_id: &str, cx: &mut Context<Self>) {
+            let source = self
+                .status
+                .read(cx)
+                .model()
+                .and_then(|model| model.context_menu(app_id))
+                .and_then(|menu| match menu.show_in_finder {
+                    Some(rmac_dock::ContextAction::RevealApplication { source, .. }) => {
+                        Some(source)
+                    }
+                    _ => None,
+                });
+            let Some(desktop_entry) = source else {
+                return;
+            };
+            let Some(id) = desktop_entry
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_owned)
+            else {
+                return;
+            };
+            let invoker = rmac_dock::presentation::EntryId::Application(app_id.to_owned());
+            let lookup = id.clone();
+            let task = cx.background_executor().spawn(async move {
+                rmac_login_items_linux::snapshot().ok().map(|snapshot| {
+                    snapshot
+                        .items
+                        .iter()
+                        .any(|item| item.id == lookup && item.enabled)
+                })
+            });
+            cx.spawn(async move |this, cx| {
+                let Some(enabled) = task.await else {
+                    return;
+                };
+                let _ = this.update(cx, |this, cx| {
+                    if let Some(menu) = this.context_menu.as_mut() {
+                        if menu.session.invoker() == &invoker {
+                            menu.login = Some(LoginOption {
+                                desktop_entry,
+                                id,
+                                enabled,
+                            });
+                            cx.notify();
+                        }
+                    }
+                });
+            })
+            .detach();
+        }
+
+        /// Options ▸ Open at Login: add or enable the app's XDG autostart
+        /// entry, or disable it.
+        fn toggle_open_at_login(&mut self, login: LoginOption, cx: &mut Context<Self>) {
+            self.context_menu = None;
+            self.input_region = None;
+            cx.notify();
+            cx.background_executor()
+                .spawn(async move {
+                    let result = if login.enabled {
+                        rmac_login_items_linux::set_enabled(&login.id, false).map(|_| ())
+                    } else {
+                        match rmac_login_items_linux::snapshot() {
+                            Ok(snapshot)
+                                if snapshot.items.iter().any(|item| item.id == login.id) =>
+                            {
+                                rmac_login_items_linux::set_enabled(&login.id, true).map(|_| ())
+                            }
+                            Ok(_) => {
+                                rmac_login_items_linux::prepare_add_source(&login.desktop_entry)
+                                    .and_then(|preview| {
+                                        rmac_login_items_linux::add_source(&preview)
+                                    })
+                                    .map(|_| ())
+                            }
+                            Err(error) => Err(error),
+                        }
+                    };
+                    if result.is_err() {
+                        eprintln!("could not change Open at Login");
                     }
                 })
                 .detach();
@@ -1541,8 +1640,10 @@ mod linux_wayland {
                                     anchor: relative_center,
                                     session,
                                     submenu_open: false,
+                                    login: None,
                                 });
                                 this.input_region = None;
+                                this.load_login_state(&context_app_id, cx);
                                 cx.notify();
                             }),
                         );
@@ -1674,6 +1775,7 @@ mod linux_wayland {
                                     anchor: trash_center,
                                     session,
                                     submenu_open: false,
+                                    login: None,
                                 });
                                 this.input_region = None;
                                 cx.notify();
@@ -2141,10 +2243,25 @@ mod linux_wayland {
                             };
                         let parent_top = MENU_BORDER + MENU_PADDING + above;
                         let indices = submenu_rows(&rows, submenu);
-                        let sub_width = submenu_width(&rows, &indices, window);
-                        let sub_height = indices.len() as f32 * tokens::menu_row_height()
+                        let login = menu.login.clone();
+                        let login_label = "Open at Login";
+                        let sub_width = submenu_width(&rows, &indices, window).max(
+                            login.as_ref().map_or(0.0, |_| {
+                                menu_panel_width(
+                                    rmac_shell_ui::text_width(
+                                        window,
+                                        login_label,
+                                        FontWeight::NORMAL,
+                                    ),
+                                    true,
+                                )
+                            }),
+                        );
+                        let sub_rows = indices.len() + usize::from(login.is_some());
+                        let sub_height = sub_rows as f32 * tokens::menu_row_height()
                             + 2.0 * (MENU_PADDING + MENU_BORDER);
-                        let sub_checks = indices.iter().any(|index| rows[*index].checked);
+                        let sub_checks = indices.iter().any(|index| rows[*index].checked)
+                            || login.as_ref().is_some_and(|login| login.enabled);
                         let mut sub = menu_panel(
                             format!("dock-submenu-{display_id}"),
                             submenu.label().to_owned(),
@@ -2183,6 +2300,40 @@ mod linux_wayland {
                                 true,
                                 cx,
                             ));
+                            // macOS order: Keep in Dock, Open at Login,
+                            // Show in Finder.
+                            if rows[index].id == rmac_dock::menu::RowId::Pin {
+                                if let Some(login) = login.clone() {
+                                    let checked = login.enabled;
+                                    sub = sub.child(
+                                        div()
+                                            .id(format!("dock-menu-{display_id}-login"))
+                                            .role(Role::MenuItem)
+                                            .aria_label(login_label)
+                                            .h(px(tokens::menu_row_height()))
+                                            .pl(px(MENU_CHECK_INSET))
+                                            .pr(px(MENU_ROW_INSET))
+                                            .flex()
+                                            .items_center()
+                                            .rounded(px(tokens::menu_item_radius()))
+                                            .cursor_pointer()
+                                            .hover(|style| style.bg(rgba(tokens::accent())))
+                                            .child(
+                                                div()
+                                                    .w(px(MENU_CHECK_COLUMN))
+                                                    .flex_none()
+                                                    .child(if checked { "✓" } else { "" }),
+                                            )
+                                            .child(login_label)
+                                            .on_click(cx.listener(
+                                                move |this, _: &gpui::ClickEvent, _, cx| {
+                                                    cx.stop_propagation();
+                                                    this.toggle_open_at_login(login.clone(), cx);
+                                                },
+                                            )),
+                                    );
+                                }
+                            }
                         }
                         submenu_panel = Some(sub.into_any_element());
                     }

@@ -130,3 +130,12 @@ msgstr ""
 
 msgid "archive;zip;tar;expand;uncompress;"
 msgstr ""
+
+msgid "Clock"
+msgstr ""
+
+msgid "World clock, alarms, stopwatch and timers"
+msgstr ""
+
+msgid "clock;alarm;timer;stopwatch;time;world;"
+msgstr ""

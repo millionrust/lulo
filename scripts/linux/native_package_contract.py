@@ -50,6 +50,7 @@ APPLICATION_BINARIES = (
     "rmac-app-drawer",
     "rmac-archive-utility",
     "rmac-calculator",
+    "rmac-clock",
     "rmac-files",
     "rmac-notes",
     "rmac-preview",
@@ -126,7 +127,7 @@ PACKAGE_SPECS = (
         summary="macOS-inspired applications for the rmac Linux desktop",
         description=(
             "Provides Files, Terminal, Notes, Text Editor, System Monitor, "
-            "Calculator, Preview, Archive Utility, Apps, and Settings with their original rmac desktop "
+            "Calculator, Preview, Archive Utility, Clock, Apps, and Settings with their original rmac desktop "
             "metadata and assets."
         ),
     ),

@@ -45,8 +45,8 @@ pub use window::*;
 /// Stable Linux desktop identities matching desktop files and Wayland app IDs.
 pub mod app_id {
     pub use rmac_apps::identity::{
-        APP_DRAWER, CALCULATOR, FILES, NOTES, PREVIEW, SYSTEM_MONITOR, SYSTEM_SETTINGS, TERMINAL,
-        TEXT_EDITOR,
+        APP_DRAWER, CALCULATOR, CLOCK, FILES, NOTES, PREVIEW, SYSTEM_MONITOR, SYSTEM_SETTINGS,
+        TERMINAL, TEXT_EDITOR,
     };
 }
 

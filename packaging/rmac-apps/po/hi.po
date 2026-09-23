@@ -129,3 +129,12 @@ msgstr "zip और tar आर्काइव खोलें"
 
 msgid "archive;zip;tar;expand;uncompress;"
 msgstr "आर्काइव;ज़िप;टार;विस्तार;अनकंप्रेस;"
+
+msgid "Clock"
+msgstr "घड़ी"
+
+msgid "World clock, alarms, stopwatch and timers"
+msgstr "विश्व घड़ी, अलार्म, स्टॉपवॉच और टाइमर"
+
+msgid "clock;alarm;timer;stopwatch;time;world;"
+msgstr "घड़ी;अलार्म;टाइमर;स्टॉपवॉच;समय;विश्व;"

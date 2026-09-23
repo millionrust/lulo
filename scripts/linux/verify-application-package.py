@@ -81,6 +81,15 @@ APPLICATIONS = {
         "categories": "Utility;Calculator;",
         "hidden": False,
     },
+    "org.rmac.Clock": {
+        "name": "Clock",
+        "generic": "Clock",
+        "summary": "World clock, alarms, stopwatch and timers",
+        "keywords": "clock;alarm;timer;stopwatch;time;world;",
+        "binary": "rmac-clock",
+        "categories": "Utility;Clock;",
+        "hidden": False,
+    },
     "org.rmac.Files": {
         "name": "Files",
         "generic": "File Manager",
@@ -185,6 +194,9 @@ HINDI = {
     "Archive Manager": "आर्काइव प्रबंधक",
     "Expand zip and tar archives": "zip और tar आर्काइव खोलें",
     "archive;zip;tar;expand;uncompress;": "आर्काइव;ज़िप;टार;विस्तार;अनकंप्रेस;",
+    "Clock": "घड़ी",
+    "World clock, alarms, stopwatch and timers": "विश्व घड़ी, अलार्म, स्टॉपवॉच और टाइमर",
+    "clock;alarm;timer;stopwatch;time;world;": "घड़ी;अलार्म;टाइमर;स्टॉपवॉच;समय;विश्व;",
 }
 LOCALIZATION_FILES = {
     "LINGUAS",

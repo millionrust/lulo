@@ -15,6 +15,7 @@ ROOT = Path(__file__).parents[1]
 ICON_DIR = ROOT / "packaging/rmac-apps/icons"
 DOCK_DIR = ROOT / "crates/rmac-dock/assets/icons"
 IDENTITIES = (
+    "org.rmac.Clock",
     "org.rmac.Files",
     "org.rmac.Terminal",
     "org.rmac.Notes",

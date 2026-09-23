@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<component type="desktop-application">
+  <id>org.rmac.Clock</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Clock</name>
+  <name xml:lang="hi">घड़ी</name>
+  <summary>World clock, alarms, stopwatch and timers</summary>
+  <summary xml:lang="hi">विश्व घड़ी, अलार्म, स्टॉपवॉच और टाइमर</summary>
+  <description>
+    <p>Clock shows the time around the world on a day and night map, with an analogue face, sunrise and sunset for each city.</p>
+    <p>Alarms and timers ring with a notification and sound even when Clock is closed, and the stopwatch keeps laps.</p>
+  </description>
+  <launchable type="desktop-id">org.rmac.Clock.desktop</launchable>
+  <icon type="stock">org.rmac.Clock</icon>
+  <provides><binary>rmac-clock</binary></provides>
+  <url type="homepage">https://github.com/snehacodex/rmac</url>
+  <developer id="org.rmac"><name>rmac contributors</name></developer>
+  <releases><release version="0.1.0" date="2026-07-25"/></releases>
+  <content_rating type="oars-1.1"/>
+</component>

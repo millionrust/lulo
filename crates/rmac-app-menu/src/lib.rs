@@ -310,6 +310,27 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
     },
 ];
 
+const CLOCK_MENUS: &[MenuSpec] = &[
+    MenuSpec {
+        label: "File",
+        items: &[
+            item!("New", "clock::NewItem", "⌘N"),
+            item!("Close Window", "clock::CloseWindow", "⌘W", separator),
+        ],
+    },
+    MenuSpec {
+        label: "View",
+        items: &[
+            item!("World Clock", "clock::ShowWorldClock", "⌘1"),
+            item!("Alarms", "clock::ShowAlarms", "⌘2"),
+            item!("Stopwatch", "clock::ShowStopwatch", "⌘3"),
+            item!("Timers", "clock::ShowTimers", "⌘4"),
+            item!("Start or Stop", "clock::StartStop", "", separator),
+            item!("Lap or Reset", "clock::LapReset", ""),
+        ],
+    },
+];
+
 fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
     match app_id {
         rmac_apps::identity::FILES => Some(FILES_MENUS),
@@ -320,6 +341,7 @@ fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
         rmac_apps::identity::SYSTEM_SETTINGS => Some(SETTINGS_MENUS),
         rmac_apps::identity::CALCULATOR => Some(CALCULATOR_MENUS),
         rmac_apps::identity::PREVIEW => Some(PREVIEW_MENUS),
+        rmac_apps::identity::CLOCK => Some(CLOCK_MENUS),
         _ => None,
     }
 }
@@ -334,6 +356,7 @@ pub fn bus_name(app_id: &str) -> Option<&'static str> {
         rmac_apps::identity::SYSTEM_SETTINGS => Some("org.rmac.SystemSettings.Menu"),
         rmac_apps::identity::CALCULATOR => Some("org.rmac.Calculator.Menu"),
         rmac_apps::identity::PREVIEW => Some("org.rmac.Preview.Menu"),
+        rmac_apps::identity::CLOCK => Some("org.rmac.Clock.Menu"),
         _ => None,
     }
 }
@@ -731,6 +754,29 @@ mod tests {
         assert_eq!(shortcut("Actual Size").as_deref(), Some("⌘0"));
         assert_eq!(shortcut("Rotate Right").as_deref(), Some("⌘R"));
         assert_eq!(shortcut("Next Item").as_deref(), Some("⌥↓"));
+        assert!(validate_menus(&menus).is_ok());
+    }
+
+    #[test]
+    fn clock_exports_file_and_view_menus() {
+        assert_eq!(
+            bus_name(rmac_apps::identity::CLOCK),
+            Some("org.rmac.Clock.Menu")
+        );
+        let actions = CLOCK_MENUS
+            .iter()
+            .flat_map(|menu| menu.items.iter().map(|item| item.action))
+            .collect::<Vec<_>>();
+        let menus = definition(rmac_apps::identity::CLOCK, &actions).unwrap();
+        assert_eq!(
+            menus
+                .iter()
+                .map(|menu| menu.label.as_str())
+                .collect::<Vec<_>>(),
+            ["File", "View"]
+        );
+        assert_eq!(menus[1].items[2].label, "Stopwatch");
+        assert_eq!(menus[1].items[2].shortcut, "⌘3");
         assert!(validate_menus(&menus).is_ok());
     }
 

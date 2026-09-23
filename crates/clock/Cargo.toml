@@ -1,0 +1,28 @@
+[package]
+name = "rmac-clock"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rmac-clock"
+path = "src/main.rs"
+
+[dependencies]
+gpui.workspace = true
+gpui-component.workspace = true
+gpui-component-assets.workspace = true
+image.workspace = true
+rmac-sound.workspace = true
+rmac-storage.workspace = true
+rmac-ui.workspace = true
+rust-embed.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus.workspace = true

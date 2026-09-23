@@ -16,6 +16,7 @@ AppStream component ID, and every GPUI Wayland toplevel `app_id`.
 | Calculator | `org.rmac.Calculator` | `rmac-calculator` |
 | Preview | `org.rmac.Preview` | `rmac-preview` |
 | Archive Utility (hidden) | `org.rmac.ArchiveUtility` | `rmac-archive-utility` |
+| Clock | `org.rmac.Clock` | `rmac-clock` |
 
 Each identity now has original MIT-licensed scalable artwork under
 `packaging/rmac-apps/icons`. The ten icons share a 128-unit canvas, 28-unit

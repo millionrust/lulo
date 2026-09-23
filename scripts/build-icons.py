@@ -249,6 +249,19 @@ ICONS: dict[str, tuple[tuple[str, str] | None, str, str]] = {
     <path d="M712 700l70 70" stroke="#16284A" stroke-width="50" stroke-linecap="round"/>
   </g>"""),
 
+    "clock": (("#4A4B51", "#18191C"), grad("face", "#FFFFFF", "#E6E7EA"), """
+  <circle cx="512" cy="512" r="276" fill="url(#face)" stroke="url(#edge)" stroke-width="6"
+          filter="url(#lift)"/>
+  <g stroke="#1C1C1E" stroke-linecap="round">
+    <path d="M512 262v34M762 512h-34M512 762v-34M262 512h34" stroke-width="16"/>
+    <path d="M637 295l-9 16M729 387l-16 9M729 637l-16-9M637 729l-9-16M387 729l9-16M295 637l16-9
+             M295 387l16 9M387 295l9 16" stroke-width="10"/>
+    <path d="M512 512L512 348" stroke-width="26"/>
+    <path d="M512 512L626 590" stroke-width="20"/>
+  </g>
+  <path d="M512 560L512 300" stroke="#F09748" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="512" cy="512" r="18" fill="#F09748"/>"""),
+
     "application": (("#A3ACBB", "#5A6679"), grad("pane", "#5A96F7", "#2C60D2"), """
   <rect x="252" y="292" width="520" height="440" rx="60" fill="url(#frost)"
         stroke="url(#edge)" stroke-width="5" filter="url(#lift)"/>
@@ -297,6 +310,7 @@ PACKAGED = {
     "org.rmac.SystemMonitor": "system-monitor",
     "org.rmac.Calculator": "calculator",
     "org.rmac.Preview": "preview",
+    "org.rmac.Clock": "clock",
 }
 
 # The Dock's embedded artwork -> icon name (Application is the fallback for

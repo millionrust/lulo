@@ -53,6 +53,7 @@ fn identified_window_options_publish_stable_native_titles() {
         (app_id::SYSTEM_SETTINGS, "Settings"),
         (app_id::CALCULATOR, "Calculator"),
         (app_id::PREVIEW, "Preview"),
+        (app_id::CLOCK, "Clock"),
     ];
 
     for (app_id, expected) in cases {

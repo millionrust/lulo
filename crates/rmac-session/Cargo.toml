@@ -7,6 +7,7 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+rmac-gtk-settings.workspace = true
 rmac-shell-settings.workspace = true
 rmac-storage.workspace = true
 serde.workspace = true

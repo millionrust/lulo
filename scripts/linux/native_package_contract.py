@@ -158,7 +158,7 @@ PACKAGE_SPECS = (
             "xdg-desktop-portal-gnome",
             "xdg-desktop-portal-gtk",
         ),
-        recommends=("gdm3",),
+        recommends=("gdm3", "qt6-gtk-platformtheme"),
         summary="niri-based rmac Wayland desktop session",
         description=(
             "Provides the supervised rmac shell services, GDM session entry, "

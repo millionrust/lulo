@@ -73,6 +73,28 @@ def _dbus_service(path: Path, token: str, executable: str) -> bytes:
     return value.encode()
 
 
+def theme_sources(theme: Path) -> list[Path]:
+    """Every file of the rmac GTK theme, refusing links and stray types."""
+    if theme.is_symlink() or not theme.is_dir():
+        raise PackageError("the rmac GTK theme is missing")
+    sources = []
+    for current, directories, filenames in os.walk(theme, followlinks=False):
+        directories.sort()
+        for directory in directories:
+            if (Path(current) / directory).is_symlink():
+                raise PackageError("GTK theme source inventory is not regular")
+        for filename in sorted(filenames):
+            source = Path(current) / filename
+            if source.is_symlink() or not source.is_file():
+                raise PackageError("GTK theme source inventory is not regular")
+            if source.suffix not in {".css", ".theme"}:
+                raise PackageError(f"unexpected GTK theme source: {filename}")
+            sources.append(source)
+    if not sources:
+        raise PackageError("the rmac GTK theme is empty")
+    return sorted(sources)
+
+
 def package_files() -> dict[str, tuple[bytes, int]]:
     """Return the complete immutable package payload except its manifest."""
     package = REPO_ROOT / "packaging" / "rmac-session"
@@ -126,6 +148,10 @@ def package_files() -> dict[str, tuple[bytes, int]]:
         ),
         "usr/share/glib-2.0/schemas/90_rmac-greeter.gschema.override": (
             _read_regular(package / "greeter" / "90_rmac-greeter.gschema.override"),
+            0o644,
+        ),
+        "usr/share/glib-2.0/schemas/91_rmac-desktop.gschema.override": (
+            _read_regular(package / "gsettings" / "91_rmac-desktop.gschema.override"),
             0o644,
         ),
         "etc/fonts/conf.d/99-rmac.conf": (
@@ -200,6 +226,14 @@ def package_files() -> dict[str, tuple[bytes, int]]:
         destination = f"usr/share/icons/rmac/{source.name}"
         if destination in files:
             raise PackageError(f"duplicate package destination: {source.name}")
+        files[destination] = (_read_regular(source), 0o644)
+    # Original rmac GTK 3 / GTK 4 / libadwaita theme (FEEL_SPEC.md §D.7).
+    theme = package / "themes" / "rmac"
+    for source in theme_sources(theme):
+        relative = source.relative_to(theme).as_posix()
+        destination = f"usr/share/themes/rmac/{relative}"
+        if destination in files:
+            raise PackageError(f"duplicate package destination: {relative}")
         files[destination] = (_read_regular(source), 0o644)
     # Reproducible original interface sounds (FEEL_SPEC.md §D.1).
     sounds = REPO_ROOT / "assets" / "sounds"

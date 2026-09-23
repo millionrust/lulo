@@ -1,0 +1,99 @@
+/* rmac for libadwaita apps. Original rmac work, MIT licensed.
+ *
+ * libadwaita ignores gtk-theme-name and always loads its own stylesheet. The
+ * one supported way in is the user stylesheet ~/.config/gtk-4.0/gtk.css,
+ * which GTK loads for every GTK 4 app above theme priority. rmac writes a
+ * small managed stub there that imports this file and sets the accent.
+ *
+ * What this reaches (libadwaita 1.6 or later): its colour variables, window
+ * controls, header-bar height, and the standard GTK widgets restyled by
+ * gtk-4.0/rmac.css. What it cannot reach: libadwaita's layout (AdwHeaderBar
+ * centres its title, AdwToolbarView spacing, AdwDialog sheets and adaptive
+ * breakpoints), its animations, and widget geometry the app sets in code. */
+
+@media (prefers-color-scheme: dark) {
+  @import url("palette-dark.css");
+
+  :root {
+    --window-bg-color: #1E1E20;
+    --window-fg-color: #F5F5F7;
+    --view-bg-color: #1E1E20;
+    --view-fg-color: #F5F5F7;
+    --headerbar-bg-color: #29292C;
+    --headerbar-fg-color: #F5F5F7;
+    --headerbar-backdrop-color: #29292C;
+    --headerbar-border-color: rgba(255, 255, 255, 0.125);
+    --headerbar-shade-color: rgba(0, 0, 0, 0);
+    --sidebar-bg-color: #242426;
+    --sidebar-fg-color: #F5F5F7;
+    --sidebar-backdrop-color: #242426;
+    --sidebar-border-color: rgba(255, 255, 255, 0.125);
+    --secondary-sidebar-bg-color: #1E1E20;
+    --secondary-sidebar-backdrop-color: #1E1E20;
+    --card-bg-color: #29272D;
+    --card-fg-color: #F5F5F7;
+    --dialog-bg-color: #262227;
+    --dialog-fg-color: #F5F5F7;
+    --popover-bg-color: #1E1F24;
+    --popover-fg-color: rgba(255, 255, 255, 0.85);
+    --thumbnail-bg-color: #29292C;
+    --destructive-bg-color: #812E25;
+    --border-color: rgba(255, 255, 255, 0.125);
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  @import url("palette-light.css");
+
+  :root {
+    --window-bg-color: #FFFFFF;
+    --window-fg-color: #1D1D1F;
+    --view-bg-color: #FFFFFF;
+    --view-fg-color: #1D1D1F;
+    --headerbar-bg-color: #F6F6F6;
+    --headerbar-fg-color: #1D1D1F;
+    --headerbar-backdrop-color: #F6F6F6;
+    --headerbar-border-color: rgba(0, 0, 0, 0.094);
+    --headerbar-shade-color: rgba(0, 0, 0, 0);
+    --sidebar-bg-color: #F2F2F2;
+    --sidebar-fg-color: #1D1D1F;
+    --sidebar-backdrop-color: #F2F2F2;
+    --sidebar-border-color: rgba(0, 0, 0, 0.094);
+    --secondary-sidebar-bg-color: #FFFFFF;
+    --secondary-sidebar-backdrop-color: #FFFFFF;
+    --card-bg-color: #FFFFFF;
+    --card-fg-color: #1D1D1F;
+    --dialog-bg-color: #FFFFFF;
+    --dialog-fg-color: #1D1D1F;
+    --popover-bg-color: #F6F6F8;
+    --popover-fg-color: rgba(0, 0, 0, 0.85);
+    --thumbnail-bg-color: #F6F6F6;
+    --destructive-bg-color: #D70015;
+    --border-color: rgba(0, 0, 0, 0.094);
+  }
+}
+
+@import url("gtk-4.0/rmac.css");
+
+/* libadwaita's own nodes. */
+
+.navigation-sidebar,
+.sidebar-pane {
+  background-color: var(--sidebar-bg-color);
+}
+
+.boxed-list,
+.card {
+  border-radius: 12px;
+}
+
+.boxed-list > row,
+.boxed-list-separate > row {
+  min-height: 38px;
+}
+
+/* libadwaita puts the window controls in their own header-bar box; keep the
+ * Mac's inset from the window edge there too. */
+headerbar windowcontrols.start:not(.empty) {
+  margin-left: 11px;
+}

@@ -7,3 +7,5 @@ authors.workspace = true
 
 [dependencies]
 async-channel.workspace = true
+rmac-appearance.workspace = true
+rmac-theme.workspace = true

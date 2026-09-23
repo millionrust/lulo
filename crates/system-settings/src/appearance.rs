@@ -143,6 +143,15 @@ pub(super) async fn apply_theme_change_authoritatively(
     if theme.preferences != requested {
         return Err("the saved appearance preference did not match after readback".to_string());
     }
+    // Tell third-party GTK, libadwaita, Qt and browser windows now rather
+    // than on the session supervisor's next poll. The rmac preference is
+    // already saved, so a toolkit failure does not undo it.
+    #[cfg(target_os = "linux")]
+    {
+        if let Err(error) = rmac_gtk_settings::sync_toolkit_appearance(&theme.preferences) {
+            eprintln!("rmac-system-settings: {error}");
+        }
+    }
     Ok(ThemeLoad {
         host: fresh.host,
         theme,

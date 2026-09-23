@@ -431,6 +431,10 @@ fn every_window_uses_the_measured_radius_and_active_inactive_shadows() {
     // is a title-bar window like TextEdit and keeps the 16 pt default.
     assert!(shell.contains("|SystemMonitor)$\"#\n    geometry-corner-radius 27"));
     assert!(!shell.contains("TextEditor)$\"#\n    geometry-corner-radius 27"));
+    // Header-bar apps under the rmac GTK theme are toolbar windows as well.
+    assert!(shell.contains(
+        "match app-id=r#\"^org\\.gnome\\.\"#\n    match app-id=r#\"^(firefox|org\\.mozilla\\.firefox|google-chrome|chromium|chromium-browser)$\"#\n    geometry-corner-radius 27"
+    ));
 }
 
 #[test]

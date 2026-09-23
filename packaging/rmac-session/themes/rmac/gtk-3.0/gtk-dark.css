@@ -1,0 +1,6 @@
+/* rmac GTK 3 theme, dark. GTK 3 cannot follow the portal colour scheme, so
+ * rmac writes gtk-application-prefer-dark-theme to ~/.config/gtk-3.0/
+ * settings.ini while it is in Dark, and GTK then loads this file. */
+@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained-dark.css");
+@import url("../palette-dark.css");
+@import url("rmac.css");

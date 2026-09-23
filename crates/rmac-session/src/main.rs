@@ -2,6 +2,7 @@ use std::process::{Command, ExitCode};
 use std::thread;
 use std::time::Duration;
 
+use rmac_gtk_settings::ToolkitFollower;
 use rmac_session::{DiagnosticReport, Supervisor, COMPONENT_UNITS};
 use rmac_shell_settings::ShellSettingsStore;
 
@@ -38,9 +39,24 @@ fn run(arguments: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
         }
         [command] if command == "monitor" => {
             let supervisor = Supervisor::from_environment()?;
+            // Third-party GTK, libadwaita, Qt and browser windows follow the
+            // rmac Appearance choice; System Settings applies a change at
+            // once and this catches every other path, including login.
+            let mut toolkits = ToolkitFollower::default();
+            let mut reported_toolkit_error: Option<String> = None;
             loop {
                 if let Err(error) = supervisor.write_health() {
                     eprintln!("{error}");
+                }
+                match toolkits.poll() {
+                    Ok(_) => reported_toolkit_error = None,
+                    Err(error) => {
+                        let message = error.to_string();
+                        if reported_toolkit_error.as_deref() != Some(message.as_str()) {
+                            eprintln!("{message}");
+                            reported_toolkit_error = Some(message);
+                        }
+                    }
                 }
                 thread::sleep(Duration::from_secs(5));
             }

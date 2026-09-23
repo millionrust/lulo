@@ -5775,6 +5775,8 @@ name = "rmac-gtk-settings"
 version = "0.1.0"
 dependencies = [
  "async-channel",
+ "rmac-appearance",
+ "rmac-theme",
 ]
 
 [[package]]
@@ -6299,6 +6301,7 @@ dependencies = [
 name = "rmac-session"
 version = "0.1.0"
 dependencies = [
+ "rmac-gtk-settings",
  "rmac-shell-settings",
  "rmac-storage",
  "serde",

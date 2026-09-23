@@ -1,0 +1,19 @@
+# rmac session defaults for third-party apps (FEEL_SPEC.md §D.7 item 3).
+# The ":rmac" groups apply only while XDG_CURRENT_DESKTOP names rmac, so the
+# stock GNOME recovery session keeps its own look. A value the user sets
+# explicitly still wins; rmac's System Settings and session supervisor keep
+# color-scheme and accent-color in step with the rmac Appearance choice.
+
+[org.gnome.desktop.interface:rmac]
+gtk-theme='rmac'
+font-name='Inter 9.75'
+document-font-name='Inter 9.75'
+cursor-theme='rmac'
+cursor-size=24
+color-scheme='prefer-dark'
+accent-color='blue'
+overlay-scrolling=true
+
+[org.gnome.desktop.wm.preferences:rmac]
+button-layout='close,minimize,maximize:'
+titlebar-font='Inter Bold 9.75'

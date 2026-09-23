@@ -75,7 +75,7 @@ pub(crate) trait Runner {
     fn run(&self, arguments: &[&str]) -> io::Result<CommandOutput>;
 }
 
-struct RealRunner;
+pub(crate) struct RealRunner;
 
 impl Runner for RealRunner {
     fn run(&self, arguments: &[&str]) -> io::Result<CommandOutput> {

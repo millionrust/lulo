@@ -19,6 +19,13 @@ MAX_MANIFEST_BYTES = 64 * 1024
 _CURSOR_THEME = (
     Path(__file__).resolve().parents[2] / "assets" / "cursors" / "rmac"
 )
+# Original rmac GTK theme shipped by the session package (FEEL_SPEC.md §D.7).
+_GTK_THEME = (
+    Path(__file__).resolve().parents[2] / "packaging" / "rmac-session" / "themes" / "rmac"
+)
+_DESKTOP_OVERRIDE = Path(
+    "usr/share/glib-2.0/schemas/91_rmac-desktop.gschema.override"
+)
 _DOCK_SPECIAL_ICONS = ("application.svg", "trash-empty.svg", "trash-full.svg")
 _SOUND_FILES = (
     "alert.wav",
@@ -97,6 +104,7 @@ EXPECTED_PATHS = {
     Path("usr/share/rmac/session/lock-policy.json"),
     Path("usr/share/rmac/greeter/rmac-aurora.svg"),
     Path("usr/share/glib-2.0/schemas/90_rmac-greeter.gschema.override"),
+    _DESKTOP_OVERRIDE,
     Path("etc/fonts/conf.d/99-rmac.conf"),
     Path("usr/share/xdg-desktop-portal/portals/rmac.portal"),
     Path("usr/share/xdg-desktop-portal/portals/rmac-file-chooser.portal"),
@@ -117,6 +125,10 @@ EXPECTED_PATHS = {
 } | {
     Path("usr/share/icons/rmac") / path.name
     for path in _CURSOR_THEME.iterdir()
+} | {
+    Path("usr/share/themes/rmac") / path.relative_to(_GTK_THEME)
+    for path in _GTK_THEME.rglob("*")
+    if path.is_file()
 } | {
     Path("usr/share/rmac/dock/icons") / name for name in _DOCK_SPECIAL_ICONS
 } | {
@@ -272,6 +284,8 @@ def verify_tree(root: Path, *, exact_tree: bool = True) -> None:
     ):
         raise VerificationError("GDM appearance override exceeds the reviewed boundary")
 
+    _verify_desktop_override(root / _DESKTOP_OVERRIDE)
+
     for relative in claimed:
         if relative.parent == Path("usr/lib/systemd/user"):
             raw, _mode = _regular_bytes(root / relative, 1024 * 1024)
@@ -290,6 +304,33 @@ def verify_tree(root: Path, *, exact_tree: bool = True) -> None:
         or desktop.get("DesktopNames") != "rmac;niri"
     ):
         raise VerificationError("rmac GDM session entry is invalid")
+
+
+def _verify_desktop_override(path: Path) -> None:
+    """The rmac defaults must stay desktop-specific: every group names the
+    rmac desktop, so the GNOME recovery session keeps its own look."""
+    raw, mode = _regular_bytes(path, 16 * 1024)
+    if mode != 0o644:
+        raise VerificationError("rmac desktop override has the wrong mode")
+    parser = configparser.ConfigParser(interpolation=None, strict=True)
+    parser.optionxform = str
+    try:
+        parser.read_string(raw.decode("utf-8"))
+    except (UnicodeDecodeError, configparser.Error) as error:
+        raise VerificationError("rmac desktop override is invalid") from error
+    if set(parser.sections()) != {
+        "org.gnome.desktop.interface:rmac",
+        "org.gnome.desktop.wm.preferences:rmac",
+    }:
+        raise VerificationError("rmac desktop override leaves the rmac desktop")
+    interface = parser["org.gnome.desktop.interface:rmac"]
+    if (
+        interface.get("gtk-theme") != "'rmac'"
+        or interface.get("cursor-theme") != "'rmac'"
+        or parser["org.gnome.desktop.wm.preferences:rmac"].get("button-layout")
+        != "'close,minimize,maximize:'"
+    ):
+        raise VerificationError("rmac desktop override lost the rmac toolkit defaults")
 
 
 def _desktop_entry(path: Path) -> dict[str, str]:

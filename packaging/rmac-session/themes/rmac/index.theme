@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=X-GNOME-Metatheme
+Name=rmac
+Comment=Mac-like GTK 3 and GTK 4 theme for the rmac desktop (original work, MIT)
+Encoding=UTF-8
+
+[X-GNOME-Metatheme]
+GtkTheme=rmac
+CursorTheme=rmac
+ButtonLayout=close,minimize,maximize:

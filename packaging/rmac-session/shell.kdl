@@ -159,6 +159,15 @@ window-rule {
     geometry-corner-radius 27
 }
 
+// GNOME and libadwaita apps and the browsers are header-bar windows, which
+// the rmac GTK theme draws as the 52 pt unified toolbar
+// (packaging/rmac-session/themes/rmac), so they take the toolbar radius too.
+window-rule {
+    match app-id=r#"^org\.gnome\."#
+    match app-id=r#"^(firefox|org\.mozilla\.firefox|google-chrome|chromium|chromium-browser)$"#
+    geometry-corner-radius 27
+}
+
 // Finder opens at its last saved size (never maximized) and lets niri clip and
 // blur the translucent source-list material behind its unified toolbar.
 window-rule {

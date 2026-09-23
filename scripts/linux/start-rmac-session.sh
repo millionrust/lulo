@@ -66,6 +66,19 @@ elif [ "${graphical_invocation}" = true ]; then
     # niri cursor rule, this is for GTK/Qt/Electron clients.
     export XCURSOR_THEME="rmac"
     export XCURSOR_SIZE="24"
+    # Qt apps take their font, palette and dark mode from the rmac GTK theme
+    # through Qt's GTK 3 platform theme (qt6-gtk-platformtheme); without the
+    # plugin Qt warns once and keeps its own defaults (FEEL_SPEC.md §D.7).
+    export QT_QPA_PLATFORMTHEME="gtk3"
+    # Qt's built-in Wayland title bar looks like no desktop at all. Use the
+    # GNOME-style decoration plugin when it is installed.
+    for qt_decoration in \
+        /usr/lib/*/qt6/plugins/wayland-decoration-client/libqadwaitadecorations.so; do
+        if [ -f "${qt_decoration}" ]; then
+            export QT_WAYLAND_DECORATION="adwaita"
+            break
+        fi
+    done
 fi
 
 set --
@@ -83,6 +96,8 @@ if [ "${graphical_invocation}" = true ]; then
     [ "${RMAC_COLOR_SCHEME+x}" = x ] && set -- "$@" RMAC_COLOR_SCHEME
     [ "${XCURSOR_THEME+x}" = x ] && set -- "$@" XCURSOR_THEME
     [ "${XCURSOR_SIZE+x}" = x ] && set -- "$@" XCURSOR_SIZE
+    [ "${QT_QPA_PLATFORMTHEME+x}" = x ] && set -- "$@" QT_QPA_PLATFORMTHEME
+    [ "${QT_WAYLAND_DECORATION+x}" = x ] && set -- "$@" QT_WAYLAND_DECORATION
 fi
 
 if [ "$#" -gt 0 ]; then

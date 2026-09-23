@@ -1,0 +1,83 @@
+/* rmac GTK theme: dark palette. Original rmac work, MIT licensed.
+ *
+ * Values come from crates/rmac-design (color.rs) and the Mac measurements in
+ * design-lab/chrome.html, menus.html and gtk-theme.html (macOS 26.2 dark).
+ * GTK 3 and GTK 4 both import this file. Named colours resolve through the
+ * style cascade, so ~/.config/gtk-*.0/gtk.css may redefine @rmac_accent. */
+
+@define-color rmac_accent #1372F9;
+@define-color rmac_on_accent #FFFFFF;
+@define-color rmac_focus alpha(@rmac_accent, 0.5);
+@define-color rmac_text_selection alpha(@rmac_accent, 0.33);
+
+@define-color rmac_window #1E1E20;
+@define-color rmac_view #1E1E20;
+@define-color rmac_chrome #29292C;
+@define-color rmac_sidebar #242426;
+
+@define-color rmac_fg #F5F5F7;
+@define-color rmac_fg_secondary #B9B9BF;
+@define-color rmac_fg_disabled rgba(255, 255, 255, 0.25);
+@define-color rmac_separator rgba(255, 255, 255, 0.125);
+@define-color rmac_hover rgba(255, 255, 255, 0.055);
+@define-color rmac_selection_off rgba(255, 255, 255, 0.11);
+
+/* Push button: white 6.5 % over the surface, no edge (measured). */
+@define-color rmac_button rgba(255, 255, 255, 0.065);
+@define-color rmac_button_hover rgba(255, 255, 255, 0.10);
+@define-color rmac_button_active rgba(255, 255, 255, 0.16);
+@define-color rmac_button_edge rgba(0, 0, 0, 0);
+@define-color rmac_button_drop rgba(0, 0, 0, 0);
+@define-color rmac_destructive #812E25;
+
+/* Text field: window fill, 1 px border. */
+@define-color rmac_field #1E1E20;
+@define-color rmac_field_border rgba(255, 255, 255, 0.10);
+
+@define-color rmac_check_off #3E3F49;
+@define-color rmac_check_edge rgba(0, 0, 0, 0);
+@define-color rmac_switch_off #3D3D46;
+@define-color rmac_thumb #E2E2E4;
+@define-color rmac_thumb_on #E1EBFE;
+@define-color rmac_trough #3D3D47;
+@define-color rmac_knob #DFDFE1;
+
+/* Overlay scroller: #9A9A9A over #1E1E1E (TextEdit, 2026-09-23). */
+@define-color rmac_scroll rgba(255, 255, 255, 0.55);
+@define-color rmac_scroll_hover rgba(255, 255, 255, 0.70);
+
+/* Menus: composite over a dark window, rims from menus.html. */
+@define-color rmac_menu #1E1F24;
+@define-color rmac_menu_fg rgba(255, 255, 255, 0.85);
+@define-color rmac_menu_dim rgba(255, 255, 255, 0.25);
+@define-color rmac_menu_separator rgba(255, 255, 255, 0.14);
+@define-color rmac_menu_rim rgba(255, 255, 255, 0.30);
+
+/* Title bar and toolbar. */
+@define-color rmac_title #E9E9EA;
+@define-color rmac_title_plain #9F9EAB;
+@define-color rmac_title_backdrop #64636F;
+@define-color rmac_capsule rgba(255, 255, 255, 0.045);
+@define-color rmac_capsule_rim rgba(255, 255, 255, 0.12);
+
+/* Traffic lights, centre and rim (chrome.html). */
+@define-color rmac_close #EC6765;
+@define-color rmac_close_ring #DE2F2C;
+@define-color rmac_minimize #F2CA44;
+@define-color rmac_minimize_ring #E5B102;
+@define-color rmac_zoom #65C466;
+@define-color rmac_zoom_ring #2CA92F;
+@define-color rmac_light_off #454551;
+@define-color rmac_light_off_ring #4F4F5C;
+
+/* The public names applications use for their own drawing. */
+@define-color theme_bg_color @rmac_window;
+@define-color theme_fg_color @rmac_fg;
+@define-color theme_base_color @rmac_view;
+@define-color theme_text_color @rmac_fg;
+@define-color theme_selected_bg_color @rmac_accent;
+@define-color theme_selected_fg_color @rmac_on_accent;
+@define-color insensitive_fg_color @rmac_fg_disabled;
+@define-color borders @rmac_separator;
+@define-color accent_bg_color @rmac_accent;
+@define-color accent_color @rmac_accent;

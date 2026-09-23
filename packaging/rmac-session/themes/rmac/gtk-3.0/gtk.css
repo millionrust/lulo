@@ -1,0 +1,5 @@
+/* rmac GTK 3 theme, light. Original rmac work, MIT licensed.
+ * GTK's built-in Adwaita styles every widget rmac does not restyle. */
+@import url("resource:///org/gtk/libgtk/theme/Adwaita/gtk-contained.css");
+@import url("../palette-light.css");
+@import url("rmac.css");

@@ -1,0 +1,76 @@
+/* rmac GTK theme: light palette. Original rmac work, MIT licensed.
+ *
+ * Surfaces, labels and traffic lights come from crates/rmac-design
+ * (color.rs, light scheme). The reference Mac runs Dark, so the control
+ * fills below are starting values (S) until Light is captured. */
+
+@define-color rmac_accent #1372F9;
+@define-color rmac_on_accent #FFFFFF;
+@define-color rmac_focus alpha(@rmac_accent, 0.5);
+@define-color rmac_text_selection alpha(@rmac_accent, 0.25);
+
+@define-color rmac_window #FFFFFF;
+@define-color rmac_view #FFFFFF;
+@define-color rmac_chrome #F6F6F6;
+@define-color rmac_sidebar #F2F2F2;
+
+@define-color rmac_fg #1D1D1F;
+@define-color rmac_fg_secondary #66666C;
+@define-color rmac_fg_disabled rgba(0, 0, 0, 0.25);
+@define-color rmac_separator rgba(0, 0, 0, 0.094);
+@define-color rmac_hover rgba(0, 0, 0, 0.04);
+@define-color rmac_selection_off rgba(0, 0, 0, 0.08);
+
+/* S: a white button lifted by a hairline and a soft drop. */
+@define-color rmac_button #FFFFFF;
+@define-color rmac_button_hover #F4F4F6;
+@define-color rmac_button_active #E6E6EA;
+@define-color rmac_button_edge rgba(0, 0, 0, 0.14);
+@define-color rmac_button_drop rgba(0, 0, 0, 0.12);
+@define-color rmac_destructive #D70015;
+
+@define-color rmac_field #FFFFFF;
+@define-color rmac_field_border rgba(0, 0, 0, 0.14);
+
+@define-color rmac_check_off #FFFFFF;
+@define-color rmac_check_edge rgba(0, 0, 0, 0.25);
+@define-color rmac_switch_off #E3E3E6;
+@define-color rmac_thumb #FFFFFF;
+@define-color rmac_thumb_on #FFFFFF;
+@define-color rmac_trough #E3E3E6;
+@define-color rmac_knob #FFFFFF;
+
+@define-color rmac_scroll rgba(0, 0, 0, 0.45);
+@define-color rmac_scroll_hover rgba(0, 0, 0, 0.60);
+
+@define-color rmac_menu #F6F6F8;
+@define-color rmac_menu_fg rgba(0, 0, 0, 0.85);
+@define-color rmac_menu_dim rgba(0, 0, 0, 0.25);
+@define-color rmac_menu_separator rgba(0, 0, 0, 0.10);
+@define-color rmac_menu_rim rgba(0, 0, 0, 0.10);
+
+@define-color rmac_title #1D1D1F;
+@define-color rmac_title_plain #4D4D52;
+@define-color rmac_title_backdrop #A1A1A6;
+@define-color rmac_capsule rgba(0, 0, 0, 0.035);
+@define-color rmac_capsule_rim rgba(255, 255, 255, 0.9);
+
+@define-color rmac_close #FF5F57;
+@define-color rmac_close_ring #E0443E;
+@define-color rmac_minimize #FEBC2E;
+@define-color rmac_minimize_ring #DEA123;
+@define-color rmac_zoom #28C840;
+@define-color rmac_zoom_ring #1AAB29;
+@define-color rmac_light_off #DDDDDD;
+@define-color rmac_light_off_ring #C8C8C8;
+
+@define-color theme_bg_color @rmac_window;
+@define-color theme_fg_color @rmac_fg;
+@define-color theme_base_color @rmac_view;
+@define-color theme_text_color @rmac_fg;
+@define-color theme_selected_bg_color @rmac_accent;
+@define-color theme_selected_fg_color @rmac_on_accent;
+@define-color insensitive_fg_color @rmac_fg_disabled;
+@define-color borders @rmac_separator;
+@define-color accent_bg_color @rmac_accent;
+@define-color accent_color @rmac_accent;

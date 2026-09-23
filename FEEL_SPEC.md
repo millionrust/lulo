@@ -356,6 +356,9 @@ This is the biggest missing block in the current plan.
    (colors from `rmac-design`, 8 px control radius, Inter as the UI font, macOS-style header bars
    with traffic lights on the left and 52 px height), plus `gtk-decoration-layout=close,minimize,maximize:`
    so GTK apps put their buttons on the **left** in the right order.
+   *Status:* the theme, the rmac-scoped GSettings defaults and the appearance sync are in place;
+   what libadwaita, Qt, the browsers and Electron can and cannot take is in
+   `docs/decisions/0019-third-party-toolkit-theming.md`.
 4. **Qt** via `qt6ct`/`QT_QPA_PLATFORMTHEME=gtk3` and a matching palette; **Electron** via
    `--enable-features=WaylandWindowDecorations` and a documented `~/.config/electron-flags.conf`.
 5. **Firefox**: ship `/usr/lib/firefox/browser/defaults/preferences/rmac.js` setting

@@ -170,6 +170,50 @@ class SessionPackageTests(unittest.TestCase):
                 shell.index('workspace "rmac-parking"'),
             )
 
+    def test_ships_the_rmac_gtk_theme_and_desktop_scoped_defaults(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.stage(Path(temporary))
+            theme = root / "usr/share/themes/rmac"
+            for relative in (
+                "index.theme",
+                "palette-dark.css",
+                "palette-light.css",
+                "libadwaita.css",
+                "gtk-3.0/gtk.css",
+                "gtk-3.0/gtk-dark.css",
+                "gtk-3.0/rmac.css",
+                "gtk-4.0/gtk.css",
+                "gtk-4.0/gtk-dark.css",
+                "gtk-4.0/rmac.css",
+            ):
+                self.assertTrue((theme / relative).is_file(), relative)
+            dark = (theme / "palette-dark.css").read_text(encoding="utf-8")
+            self.assertIn("@define-color rmac_accent #1372F9;", dark)
+            self.assertIn(
+                '@import url("../palette-dark.css");',
+                (theme / "gtk-3.0/gtk-dark.css").read_text(encoding="utf-8"),
+            )
+            override = root / "usr/share/glib-2.0/schemas/91_rmac-desktop.gschema.override"
+            text = override.read_text(encoding="utf-8")
+            self.assertIn("[org.gnome.desktop.interface:rmac]\n", text)
+            self.assertIn("button-layout='close,minimize,maximize:'\n", text)
+
+            # Widening the defaults past the rmac desktop is refused.
+            override.write_text(
+                text.replace(
+                    "[org.gnome.desktop.interface:rmac]", "[org.gnome.desktop.interface]"
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                verify_package.VerificationError, "installed content differs"
+            ):
+                verify_package.verify_tree(root)
+            with self.assertRaisesRegex(
+                verify_package.VerificationError, "leaves the rmac desktop"
+            ):
+                verify_package._verify_desktop_override(override)
+
     def test_refuses_live_root_relative_and_nonempty_destinations(self):
         with self.assertRaises(stage_package.PackageError):
             stage_package.stage(Path("/"))

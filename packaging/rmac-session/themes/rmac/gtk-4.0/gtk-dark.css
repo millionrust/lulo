@@ -1,0 +1,5 @@
+/* rmac GTK 4 theme, dark variant: GTK asks for it by name when an app or
+ * GtkSettings prefers dark. */
+@import url("resource:///org/gtk/libgtk/theme/Default/Default-dark.css");
+@import url("../palette-dark.css");
+@import url("rmac.css");

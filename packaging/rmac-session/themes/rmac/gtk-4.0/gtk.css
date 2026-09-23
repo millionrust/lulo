@@ -1,0 +1,13 @@
+/* rmac GTK 4 theme. Original rmac work, MIT licensed. Requires GTK 4.16 or
+ * later for colour-scheme media queries; GTK reloads this file when the
+ * portal's color-scheme changes. GTK's built-in Default theme styles every
+ * widget rmac does not restyle. */
+@media (prefers-color-scheme: dark) {
+  @import url("resource:///org/gtk/libgtk/theme/Default/Default-dark.css");
+  @import url("../palette-dark.css");
+}
+@media (prefers-color-scheme: light) {
+  @import url("resource:///org/gtk/libgtk/theme/Default/Default-light.css");
+  @import url("../palette-light.css");
+}
+@import url("rmac.css");

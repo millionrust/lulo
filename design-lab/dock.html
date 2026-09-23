@@ -55,6 +55,17 @@
   Not measured (no capture yet): the hover tooltip. It keeps the current rmac
   pill (radius 8, 13 pt text, 6 above the shelf) until one is captured.
   Magnification is off by default; launch bounce is two ≈ 0.6 s hops.
+  Keyboard focus (⌃F3, captured 2026-09-23 23:38, ⌃F3 → → → ↑ → Esc):
+    there is NO focus ring. The focused tile is darkened exactly like the
+    menu-open tile (black 52.5 % over the icon squircle: Finder 35,180,255 →
+    17,85,121) and its name bubble is shown, as if hovered. ← / → move both.
+    ↑ opens the tile's Dock menu with no row selected; the tile stays dark.
+    Name bubble (keyboard focus shows the same bubble as hover):
+      body 23 tall, fully rounded (radius 11.5), "Finder" 66.5 wide
+      (13 pt text + ≈ 14 each side), centred on the tile;
+      pointer ≈ 10 wide × 8.5 tall under the body's centre, its tip 6.5
+      above the shelf's top rim (body bottom 15 above it);
+      fill ≈ rgb(40,41,43) over the blur, 1 pt rim white ≈ 15 %.
 -->
 <style>
   :root {
@@ -90,6 +101,15 @@
     width: calc(var(--T) * 0.8125); height: calc(var(--T) * 0.8125);
     border-radius: calc(var(--T) * 0.203); background: rgba(0,0,0,.53); }
   .tile.trash.menu-open img { filter: brightness(.47); }
+  /* ⌃F3 keyboard focus: the menu-open darkening, no ring. */
+  .tile.kb-focus::after { content: ""; position: absolute;
+    width: calc(var(--T) * 0.8125); height: calc(var(--T) * 0.8125);
+    border-radius: calc(var(--T) * 0.203); background: rgba(0,0,0,.525); }
+  .bubble { position: absolute; transform: translateX(-50%); white-space: nowrap;
+    height: 23px; box-sizing: border-box; padding: 0 14px; display: flex; align-items: center;
+    border-radius: 11.5px; color: #f5f5f7; background: rgba(40,41,43,.92);
+    backdrop-filter: blur(20px); box-shadow: inset 0 0 0 1px rgba(255,255,255,.15); }
+  .bubble svg { position: absolute; left: 50%; top: 100%; margin-left: -6px; margin-top: -1px; overflow: visible; }
   .tile.running::before { content: ""; position: absolute; left: 50%;
     bottom: calc(-1 * (var(--dot) / 2 + var(--T) * 0.0625));
     width: var(--dot); height: var(--dot); margin-left: calc(var(--dot) / -2);
@@ -120,6 +140,8 @@
 <div class="scene" id="s1"></div>
 <!-- Scene 2: the Files tile's right-click menu -->
 <div class="scene" id="s2"></div>
+<!-- Scene 3: ⌃F3 keyboard focus on the first tile -->
+<div class="scene" id="s3"></div>
 <script>
 const APPS = [
   ["Files", "../packaging/rmac-apps/icons/org.rmac.Files.svg", true],
@@ -130,11 +152,11 @@ const APPS = [
   ["Activity Monitor", "../packaging/rmac-apps/icons/org.rmac.SystemMonitor.svg", true],
   ["System Settings", "../packaging/rmac-apps/icons/org.rmac.SystemSettings.svg", false],
 ];
-function dock(scene, open) {
+function dock(scene, open, focused) {
   const d = document.createElement("div"); d.className = "dock";
   APPS.forEach(([name, src, running], i) => {
     const t = document.createElement("div");
-    t.className = "tile" + (running ? " running" : "") + (open === i ? " menu-open" : "");
+    t.className = "tile" + (running ? " running" : "") + (open === i ? " menu-open" : "") + (focused === i ? " kb-focus" : "");
     t.dataset.name = name; t.innerHTML = `<img src="${src}" alt="">`; d.appendChild(t);
   });
   d.insertAdjacentHTML("beforeend", `<div class="sep"></div>
@@ -175,6 +197,16 @@ menu.innerHTML = rows.map(r => r === null ? `<div class="sep-row"><i></i></div>`
 s2.appendChild(menu);
 menu.style.left = (centerX(s2, d2.children[0]) - 26.5) + "px";
 menu.style.bottom = (shelfTop + 25.5) + "px";
+
+// ⌃F3: first tile focused — darkened, with its name bubble (measured).
+const s3 = document.getElementById("s3"), d3 = dock(s3, undefined, 0);
+const bubble = document.createElement("div"); bubble.className = "bubble";
+bubble.innerHTML = `Files<svg width="12" height="10" viewBox="-1 -1 12 10">
+  <path d="M0 0 L4.2 7.2 Q5 8.4 5.8 7.2 L10 0 Z" fill="rgba(40,41,43,.92)"/>
+  <path d="M0 0 L4.2 7.2 Q5 8.4 5.8 7.2 L10 0" fill="none" stroke="rgba(255,255,255,.15)"/></svg>`;
+bubble.style.left = centerX(s3, d3.children[0]) + "px";
+bubble.style.bottom = (shelfTop + 15) + "px";
+s3.appendChild(bubble);
 </script>
 </body>
 </html>

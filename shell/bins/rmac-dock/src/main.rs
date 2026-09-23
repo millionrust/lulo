@@ -202,6 +202,8 @@ mod linux_wayland {
         /// Clock for tile animations (bounce, slide, fade).
         epoch: std::time::Instant,
         bounces: rmac_dock::bounce::BounceTracker,
+        /// The tile under a held primary button: macOS darkens it.
+        pressed: Option<String>,
     }
 
     impl Dock {
@@ -233,6 +235,7 @@ mod linux_wayland {
                 drag_order: None,
                 epoch: std::time::Instant::now(),
                 bounces: rmac_dock::bounce::BounceTracker::default(),
+                pressed: None,
             }
         }
 
@@ -539,48 +542,47 @@ mod linux_wayland {
                 window.set_input_region(Some(&regions));
                 self.input_region = Some(input_region);
             }
-            let tooltip = (!self.hidden)
-                .then_some(self.hovered_item.as_ref())
-                .flatten()
-                .map(|(relative_center, label)| {
-                    let icon_center = shelf_start + *relative_center;
-                    let tooltip_bottom = TOOLTIP_BOTTOM.max(
-                        magnified_icon_size(
-                            *relative_center,
-                            Some(*relative_center),
-                            &dock_settings,
-                        ) + 36.0,
+            let tooltip = (!self.hidden
+                && self.context_menu.is_none()
+                && self.drag_order.is_none())
+            .then_some(self.hovered_item.as_ref())
+            .flatten()
+            .map(|(relative_center, label)| {
+                let icon_center = shelf_start + *relative_center;
+                let tooltip_bottom = TOOLTIP_BOTTOM.max(
+                    magnified_icon_size(*relative_center, Some(*relative_center), &dock_settings)
+                        + 36.0,
+                );
+                let tooltip = div()
+                    .absolute()
+                    .w(px(TOOLTIP_WIDTH))
+                    .flex()
+                    .justify_center()
+                    .child(
+                        div()
+                            .px_3()
+                            .py_1()
+                            .rounded(px(tokens::tooltip_radius()))
+                            .bg(rgba(tokens::tooltip_tint()))
+                            .border_1()
+                            .border_color(rgba(tokens::light_border()))
+                            .shadow_lg()
+                            .text_sm()
+                            .text_color(rgba(tokens::primary_text()))
+                            .child(label.clone()),
                     );
-                    let tooltip = div()
-                        .absolute()
-                        .w(px(TOOLTIP_WIDTH))
-                        .flex()
-                        .justify_center()
-                        .child(
-                            div()
-                                .px_3()
-                                .py_1()
-                                .rounded(px(tokens::tooltip_radius()))
-                                .bg(rgba(tokens::tooltip_tint()))
-                                .border_1()
-                                .border_color(rgba(tokens::light_border()))
-                                .shadow_lg()
-                                .text_sm()
-                                .text_color(rgba(tokens::primary_text()))
-                                .child(label.clone()),
-                        );
-                    match self.placement {
-                        rmac_shell_settings::DockPlacement::Bottom => tooltip
-                            .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
-                            .bottom(px(tooltip_bottom)),
-                        rmac_shell_settings::DockPlacement::Left => tooltip
-                            .left(px(EXCLUSIVE_ZONE + 8.0))
-                            .top(px(icon_center - 18.0)),
-                        rmac_shell_settings::DockPlacement::Right => tooltip
-                            .right(px(EXCLUSIVE_ZONE + 8.0))
-                            .top(px(icon_center - 18.0)),
-                    }
-                });
+                match self.placement {
+                    rmac_shell_settings::DockPlacement::Bottom => tooltip
+                        .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
+                        .bottom(px(tooltip_bottom)),
+                    rmac_shell_settings::DockPlacement::Left => tooltip
+                        .left(px(EXCLUSIVE_ZONE + 8.0))
+                        .top(px(icon_center - 18.0)),
+                    rmac_shell_settings::DockPlacement::Right => tooltip
+                        .right(px(EXCLUSIVE_ZONE + 8.0))
+                        .top(px(icon_center - 18.0)),
+                }
+            });
             let autohide = effective_autohide;
             let root = div()
                 .id(format!("dock-{}", self.display_id))
@@ -596,6 +598,14 @@ mod linux_wayland {
                         cx.notify();
                     }
                 }))
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &gpui::MouseUpEvent, _, cx| {
+                        if this.pressed.take().is_some() {
+                            cx.notify();
+                        }
+                    }),
+                )
                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                     this.pointer_inside = *hovered;
                     this.hide_generation = this.hide_generation.saturating_add(1);
@@ -738,7 +748,6 @@ mod linux_wayland {
                         .font_weight(FontWeight::BOLD)
                         .rounded(px(tokens::dock_tile_radius(ICON_SIZE)))
                         .cursor_pointer()
-                        .hover(|style| style.opacity(0.88))
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(move |this, _, _, cx| {
@@ -868,14 +877,16 @@ mod linux_wayland {
                             .when(actionable, |visual| {
                                 let drag_entry =
                                     rmac_dock::presentation::EntryId::Application(app_id.clone());
+                                let press_app_id = app_id.clone();
                                 visual
                                     .cursor_pointer()
-                                    .hover(|style| style.opacity(0.88))
-                                    .on_mouse_down(
+                                                .on_mouse_down(
                                         MouseButton::Left,
                                         cx.listener(
                                             move |this, event: &gpui::MouseDownEvent, _, cx| {
                                                 cx.stop_propagation();
+                                                this.pressed = Some(press_app_id.clone());
+                                                cx.notify();
                                                 if index >= pinned_count {
                                                     return;
                                                 }
@@ -1024,7 +1035,7 @@ mod linux_wayland {
                                     .child(item_mark(&entry.label)),
                             );
                         }
-                        if menu_open {
+                        if menu_open || self.pressed.as_deref() == Some(app_id.as_str()) {
                             let inset = (visual_size - squircle) / 2.0;
                             visual = visual.child(
                                 div()
@@ -1129,8 +1140,7 @@ mod linux_wayland {
                             .items_center()
                             .justify_center()
                             .rounded(px(tokens::dock_tile_radius(ICON_SIZE)))
-                            .hover(|style| style.opacity(0.88))
-                            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                 if *hovered {
                                     this.hovered_item = Some((trash_center, "Trash".into()));
                                     cx.notify();

@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Menu dropdowns — exact</title>
+<!--
+  Every menu-bar dropdown at 1:1 logical points, measured from the owner's
+  Mac (macOS 26.2, dark, 2026-09-23: recorded frames + Accessibility-API
+  geometry, Retina ÷ 2). Rust (shell/bins/rmac-menubar) copies these numbers;
+  the icons are shell/assets/menu (original drawings, not Apple artwork).
+
+  App menus (rmac/Apple menu, app menu, File…Help) — AX + pixels:
+    panel         y = bar bottom + 1; x = title item x − 4 (= title text − 14;
+                  logo menu at 6); width = content (Apple 295, Finder 197,
+                  File 295, Edit 237, View 251, Help 360); radius 12
+    material      ≈ rgb(30,31,36) over a dark window: tint rgba(33,33,38,.84)
+                  + blur; 1 pt inner edge rgba(255,255,255,.30); 0.5 pt outer
+                  hairline rgba(0,0,0,.85)
+    padding       5 top and bottom
+    rows          24; text 13 regular rgba(255,255,255,.85) (= 222 grey)
+    disabled      text, icon, shortcut and chevron rgba(255,255,255,.25)
+    separator     11: 5 · 1 pt line · 5; rgba(255,255,255,.14), inset 16
+    text column   16.5 without icons; with icons the glyphs centre at 24.5 and
+                  text starts 39 (41.5 in the Apple menu, whose laptop glyph
+                  is 14.5 wide); a checkmark column adds 7.5 to both
+                  (checkmark 9 × 8.5 centred 14)
+    shortcuts     rgba(255,255,255,.25); modifier glyphs in 13.75 cells, the
+                  key letter left-aligned 26 from the right edge, ⌘ centred 36
+    submenu       chevron 5 × 9 ending 17 from the right edge
+    badge         "6 updates": 16 tall pill, 8.5 side padding, 11 semibold,
+                  rgba(255,255,255,.10), ending 14.5 from the right edge
+    Help search   40 pt first row; 25 tall capsule 9.5 in from the top/sides,
+                  rgb(46,46,46); magnifier 12 pt at 22, "Search" at 44 in
+                  rgba(255,255,255,.55)
+
+  Status menus (Wi-Fi f021, Battery ax/status-Battery):
+    panel         width 308, radius 15; x = status highlight left, flipped to
+                  end at the highlight's right edge when it would overflow
+                  (Wi-Fi does, Battery does not); y = bar bottom + 1
+    material      ≈ rgb(24,25,30): tint rgba(26,27,33,.86); 1 pt inner edge
+                  rgba(255,255,255,.14); no dark hairline
+    padding       5 top, 5.5 bottom; text 14.5 from the left edge
+    title row     31: 13 bold rgba(255,255,255,.9); Wi-Fi switch 54 × 24,
+                  14 from the right, track accent, knob 32 × 20 rgb(225,235,254)
+                  inset 2; Battery "38%" 13 regular rgba(255,255,255,.7), 15
+                  from the right
+    info row      20 ("Power Source: Battery"), 13 regular rgba(255,255,255,.67)
+    item row      24, 13 regular rgba(255,255,255,.9) (= 233 grey)
+    separator     9: 4 · 1 pt line · 4; rgba(255,255,255,.09), inset 14
+    section head  23 (text centred 12 down), 13 bold rgba(255,255,255,.67)
+    badge row     32: 26 circle at 14.5, rgba(255,255,255,.10) (accent when
+                  on/connected), white glyph (unlit Wi-Fi arcs 35%); label at
+                  48.5; Wi-Fi lock 8 × 12 secondary ending 16.5 from the right
+    app row       22: 16 pt app icon at 14, name at 39
+    group end     a badge/app group adds 1 before its separator
+    disclosure    "Other Networks": 24, section-head style, chevron ends 15
+  Not captured: Option-click (Wi-Fi and Battery) and a highlighted row; those
+  mocks use the measured styles and macOS 26 row names but are unverified.
+-->
+<style>
+  :root {
+    --font: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif;
+    --accent: rgb(56,123,246);
+    --accent-badge: rgb(63,143,247);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0e1014; }
+  body { width: 1300px; height: 1560px; font: 400 13px/1 var(--font);
+         -webkit-font-smoothing: antialiased; letter-spacing: -0.08px; }
+  .stage { position: absolute; overflow: hidden;
+           background: repeating-linear-gradient(0deg,#0f1115 0 40px,#12151a 40px 80px); }
+  .bar { position: absolute; left: 0; right: 0; top: 0; height: 33px; background: #100884; }
+  .slot { position: absolute; top: 4px; height: 25px; border-radius: 12.5px;
+          background: rgba(255,255,255,.14); }
+
+  /* ---------- app menus ---------- */
+  .menu { position: absolute; top: 34px; padding: 5px 0;
+          border-radius: 12px; color: rgba(255,255,255,.85);
+          background: rgba(33,33,38,.84); backdrop-filter: blur(30px);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,.30), 0 0 0 .5px rgba(0,0,0,.85),
+                      0 10px 32px rgba(0,0,0,.35); }
+  .menu .row { height: 24px; margin: 0 5px; padding: 0 9px 0 11.5px;
+               display: flex; align-items: center; border-radius: 7px; white-space: nowrap; }
+  .menu .row .label { flex: 1; }
+  .menu .row.hl { background: var(--accent); color: #fff; }
+  .menu .row.hl .keys, .menu .row.hl .ico img { color: #fff; opacity: 1; }
+  .menu .row.off { color: rgba(255,255,255,.25); }
+  .menu .row.off img { opacity: .25; }
+  /* icon column: glyph centre 24.5, text 39 (Apple menu: 25 / 41.5) */
+  .menu.icons .row .ico { width: 16px; height: 16px; margin: 0 6.5px 0 0; flex: none; }
+  .menu.icons.wide .row .ico { margin: 0 8.5px 0 .5px; }
+  .menu.icons .row .ico img { width: 16px; height: 16px; opacity: .85; display: block; }
+  .menu .sep { height: 1px; margin: 5px 16px; background: rgba(255,255,255,.14); }
+  .menu .keys { display: flex; color: rgba(255,255,255,.25); margin-left: 24px; }
+  .menu .keys span { width: 13.75px; text-align: center; }
+  .menu .keys span.key { width: 12px; margin-left: 3.1px; text-align: left; }
+  .menu .chev { width: 16px; height: 16px; margin-right: -1.65px; opacity: .85; }
+  .menu .row.off .chev { opacity: .25; }
+  .menu .badge { height: 16px; padding: 0 8.5px; margin: 0 -.5px 0 24px;
+                 border-radius: 8px; background: rgba(255,255,255,.10);
+                 font: 600 11px/16px var(--font); color: rgba(255,255,255,.86); }
+  .menu .search { height: 25px; margin: 4.5px 9.5px 5.5px; border-radius: 12.5px;
+                  background: rgb(46,46,46); display: flex; align-items: center;
+                  padding-left: 12.5px; color: rgba(255,255,255,.55); }
+  .menu .search img { width: 14px; height: 14px; margin-right: 9px; opacity: .6; }
+
+  /* ---------- status menus ---------- */
+  .status { position: absolute; top: 34px; width: 308px; padding: 5px 0 5.5px;
+            border-radius: 15px; color: rgba(255,255,255,.9);
+            background: rgba(26,27,33,.86); backdrop-filter: blur(30px);
+            box-shadow: inset 0 0 0 1px rgba(255,255,255,.14), 0 10px 32px rgba(0,0,0,.35); }
+  .status .title { height: 31px; padding: 0 14px 0 14.5px; display: flex; align-items: center;
+                   font-weight: 700; }
+  .status .title .label { flex: 1; }
+  .status .title .value { font-weight: 400; color: rgba(255,255,255,.7); margin-right: 1px; }
+  .switch { width: 54px; height: 24px; border-radius: 12px; background: var(--accent);
+            position: relative; flex: none; }
+  .switch::after { content: ""; position: absolute; right: 2px; top: 2px; width: 32px; height: 20px;
+                   border-radius: 10px; background: rgb(225,235,254); }
+  .status .info { height: 20px; padding: 0 14.5px 2.5px; display: flex; align-items: center;
+                  color: rgba(255,255,255,.67); }
+  .status .item { height: 24px; margin: 0 5px; padding: 0 9.4px 0 9.5px; display: flex;
+                  align-items: center; border-radius: 7px; white-space: nowrap; }
+  .status .item .label { flex: 1; }
+  .status .item.dim { color: rgba(255,255,255,.67); }
+  .status .item img { width: 14px; height: 14px; opacity: .67; }
+  .status .sep { height: 1px; margin: 4px 14px; background: rgba(255,255,255,.09); }
+  .status .head { height: 23px; padding: 1px 14.5px 0; display: flex; align-items: center;
+                  font-weight: 700; color: rgba(255,255,255,.67); }
+  .status .head.disclosure { height: 24px; margin: 0 5px; padding: 0 5.35px 0 9.5px; border-radius: 7px; }
+  .status .head .label { flex: 1; }
+  .status .head img { width: 16px; height: 16px; opacity: .67; }
+  .status .net { height: 32px; margin: 0 5px; padding: 0 7.5px 0 9.5px; display: flex;
+                 align-items: center; border-radius: 7px; white-space: nowrap; }
+  .status .net .badge { width: 26px; height: 26px; border-radius: 13px; margin-right: 8px;
+                        background: rgba(255,255,255,.10); display: flex; align-items: center;
+                        justify-content: center; flex: none; }
+  .status .net .badge img { width: 16px; height: 16px; }
+  .status .net .badge img.bat { width: 20px; height: 20px; }
+  .status .net.on .badge { background: var(--accent-badge); }
+  .status .net .label { flex: 1; }
+  .status .net .lock { width: 16px; height: 16px; opacity: .67; }
+  .status .app { height: 22px; margin: 0 5px; padding: 0 9.5px 0 9px; display: flex;
+                 align-items: center; border-radius: 7px; color: rgba(255,255,255,.86); }
+  .status .app .appicon { width: 16px; height: 16px; border-radius: 4px; margin-right: 9px;
+                          background: linear-gradient(#3a3a40,#16161a);
+                          box-shadow: inset 0 0 0 .5px rgba(255,255,255,.25); }
+  .status .groupend { height: 1px; }
+  .status .detail { height: 16px; margin: 0 5px; padding-left: 43.5px; display: flex;
+                    align-items: center; font-size: 11px; color: rgba(255,255,255,.67); }
+</style>
+</head>
+<body>
+
+<!-- A · rmac (Apple) menu — f040 / ax menu-Apple: 295 × 305 at x 6. -->
+<div class="stage" style="left:0;top:0;width:620px;height:360px">
+  <div class="bar"></div><div class="slot" style="left:5px;width:43.5px"></div>
+  <div class="menu icons wide" style="left:6px;width:295px">
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/laptop.svg"></span><span class="label">About This Computer</span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/gear.svg"></span><span class="label">System Settings…</span></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/store.svg"></span><span class="label">Software Center…</span><span class="badge">6 updates</span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/clock.svg"></span><span class="label">Recent Items</span><img class="chev" src="../shell/assets/menu/chevron-right.svg"></div>
+    <div class="sep"></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/force-quit.svg"></span><span class="label">Force Quit…</span><span class="keys"><span>⌥</span><span>⌘</span><span class="key">⎋</span></span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/sleep.svg"></span><span class="label">Sleep</span></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/restart.svg"></span><span class="label">Restart…</span></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/power.svg"></span><span class="label">Shut Down…</span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/lock.svg"></span><span class="label">Lock Screen</span><span class="keys"><span>⌃</span><span>⌘</span><span class="key">Q</span></span></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/person.svg"></span><span class="label">Log Out Account Name…</span><span class="keys"><span>⇧</span><span>⌘</span><span class="key">Q</span></span></div>
+  </div>
+</div>
+
+<!-- B · app-name menu (ax menu-Finder: 197 wide) and Help (ax menu-Help: 360 × 93). -->
+<div class="stage" style="left:640px;top:0;width:660px;height:360px">
+  <div class="bar"></div><div class="slot" style="left:44px;width:62px"></div>
+  <div class="menu icons" style="left:40px;width:207px">
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/info.svg"></span><span class="label">About Files</span></div>
+    <div class="sep"></div>
+    <div class="row off"><span class="ico"><img src="../shell/assets/menu/services.svg"></span><span class="label">Services</span><img class="chev" src="../shell/assets/menu/chevron-right.svg"></div>
+    <div class="sep"></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/hide.svg"></span><span class="label">Hide Files</span><span class="keys"><span>⌘</span><span class="key">H</span></span></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/hide-others.svg"></span><span class="label">Hide Others</span><span class="keys"><span>⌥</span><span>⌘</span><span class="key">H</span></span></div>
+    <div class="row off"><span class="ico"><img src="../shell/assets/menu/show-all.svg"></span><span class="label">Show All</span></div>
+  </div>
+  <div class="slot" style="left:285px;width:48px"></div>
+  <div class="menu" style="left:281px;width:360px">
+    <div class="search"><img src="../shell/assets/menu/search.svg"><span>Search</span></div>
+    <div class="row"><span class="ico" style="display:none"></span><span class="label">Files Help</span></div>
+    <div class="row"><span class="label">Keyboard Shortcuts</span></div>
+  </div>
+</div>
+
+<!-- C · Finder File menu — ax menu-File: 295 wide at title x − 4. -->
+<div class="stage" style="left:0;top:380px;width:620px;height:560px">
+  <div class="bar"></div><div class="slot" style="left:106px;width:42px"></div>
+  <div class="menu icons" style="left:102px;width:295px">
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/new-window.svg"></span><span class="label">New Window</span><span class="keys"><span>⌘</span><span class="key">N</span></span></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/new-folder.svg"></span><span class="label">New Folder</span><span class="keys"><span>⇧</span><span>⌘</span><span class="key">N</span></span></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/new-tab.svg"></span><span class="label">New Tab</span><span class="keys"><span>⌘</span><span class="key">T</span></span></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/open.svg"></span><span class="label">Open</span><span class="keys"><span>⌘</span><span class="key">O</span></span></div>
+    <div class="row off"><span class="ico"></span><span class="label">Open With</span><img class="chev" src="../shell/assets/menu/chevron-right.svg"></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/close.svg"></span><span class="label">Close Window</span><span class="keys"><span>⌘</span><span class="key">W</span></span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/info.svg"></span><span class="label">Get Info</span><span class="keys"><span>⌘</span><span class="key">I</span></span></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/rename.svg"></span><span class="label">Rename</span></div>
+    <div class="row hl"><span class="ico"><img src="../shell/assets/menu/duplicate.svg"></span><span class="label">Duplicate</span><span class="keys"><span>⌘</span><span class="key">D</span></span></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/eye.svg"></span><span class="label">Quick Look</span><span class="keys"><span>⌘</span><span class="key">Y</span></span></div>
+    <div class="row off"><span class="ico"><img src="../shell/assets/menu/print.svg"></span><span class="label">Print</span><span class="keys"><span>⌘</span><span class="key">P</span></span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/share.svg"></span><span class="label">Share…</span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/star.svg"></span><span class="label">Add to Sidebar</span><span class="keys"><span>⌃</span><span>⌘</span><span class="key">T</span></span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/trash.svg"></span><span class="label">Move to Trash</span><span class="keys"><span>⌘</span><span class="key">⌫</span></span></div>
+    <div class="row off"><span class="ico"><img src="../shell/assets/menu/eject.svg"></span><span class="label">Eject</span><span class="keys"><span>⌘</span><span class="key">E</span></span></div>
+    <div class="sep"></div>
+    <div class="row"><span class="ico"><img src="../shell/assets/menu/search.svg"></span><span class="label">Find</span><span class="keys"><span>⌘</span><span class="key">F</span></span></div>
+  </div>
+</div>
+
+<!-- D · Wi-Fi menu — f021: 308 × 326, flipped to end at the icon's highlight. -->
+<div class="stage" style="left:640px;top:380px;width:660px;height:380px">
+  <div class="bar"></div><div class="slot" style="left:596px;width:42px"></div>
+  <div class="status" style="left:330px">
+    <div class="title"><span class="label">Wi-Fi</span><span class="switch"></span></div>
+    <div class="item"><span class="label">Weak Security…</span><img src="../shell/assets/menu/warning.svg"></div>
+    <div class="sep"></div>
+    <div class="head"><span class="label">Personal Hotspot</span></div>
+    <div class="net"><span class="badge"><img src="../shell/assets/menu/wifi-3.svg"></span><span class="label">Phone</span></div>
+    <div class="groupend"></div>
+    <div class="sep"></div>
+    <div class="head"><span class="label">Known Networks</span></div>
+    <div class="net"><span class="badge"><img src="../shell/assets/menu/wifi-2.svg"></span><span class="label">Cafe Network 5G</span><img class="lock" src="../shell/assets/menu/lock-fill.svg"></div>
+    <div class="net"><span class="badge"><img src="../shell/assets/menu/wifi-3.svg"></span><span class="label">Home Wi-Fi 5G</span><img class="lock" src="../shell/assets/menu/lock-fill.svg"></div>
+    <div class="net on"><span class="badge"><img src="../shell/assets/menu/wifi-3.svg"></span><span class="label">Home Wi-Fi</span><img class="lock" src="../shell/assets/menu/lock-fill.svg"></div>
+    <div class="groupend"></div>
+    <div class="sep"></div>
+    <div class="head disclosure"><span class="label">Other Networks</span><img src="../shell/assets/menu/chevron-right.svg"></div>
+    <div class="sep"></div>
+    <div class="item"><span class="label">Wi-Fi Settings…</span></div>
+  </div>
+</div>
+
+<!-- E · Option-click Wi-Fi with Other Networks expanded (unverified rows). -->
+<div class="stage" style="left:0;top:960px;width:620px;height:560px">
+  <div class="bar"></div><div class="slot" style="left:556px;width:42px"></div>
+  <div class="status" style="left:290px">
+    <div class="title"><span class="label">Wi-Fi</span><span class="switch"></span></div>
+    <div class="info"><span>Interface Name: wlan0</span></div>
+    <div class="info"><span>Address: 00:00:00:00:00:00</span></div>
+    <div class="sep"></div>
+    <div class="head"><span class="label">Known Networks</span></div>
+    <div class="net"><span class="badge"><img src="../shell/assets/menu/wifi-2.svg"></span><span class="label">Cafe Network 5G</span><img class="lock" src="../shell/assets/menu/lock-fill.svg"></div>
+    <div class="net on"><span class="badge"><img src="../shell/assets/menu/wifi-3.svg"></span><span class="label">Home Wi-Fi</span><img class="lock" src="../shell/assets/menu/lock-fill.svg"></div>
+    <div class="detail">IP Address: 192.168.1.20</div>
+    <div class="detail">Router: 192.168.1.1</div>
+    <div class="detail">Security: WPA2 Personal</div>
+    <div class="groupend"></div>
+    <div class="sep"></div>
+    <div class="head disclosure"><span class="label">Other Networks</span><img src="../shell/assets/menu/chevron-down.svg"></div>
+    <div class="net"><span class="badge"><img src="../shell/assets/menu/wifi-1.svg"></span><span class="label">Neighbour</span><img class="lock" src="../shell/assets/menu/lock-fill.svg"></div>
+    <div class="net"><span class="badge"><img src="../shell/assets/menu/wifi-2.svg"></span><span class="label">Guest</span></div>
+    <div class="groupend"></div>
+    <div class="sep"></div>
+    <div class="item"><span class="label">Wi-Fi Settings…</span></div>
+  </div>
+</div>
+
+<!-- F · Battery menu — ax status-Battery: 308 × 213 at the icon highlight's left. -->
+<div class="stage" style="left:640px;top:780px;width:660px;height:300px">
+  <div class="bar"></div><div class="slot" style="left:280px;width:46.5px"></div>
+  <div class="status" style="left:280px">
+    <div class="title"><span class="label">Battery</span><span class="value">38%</span></div>
+    <div class="info"><span>Power Source: Battery</span></div>
+    <div class="sep"></div>
+    <div class="head"><span class="label">Energy Mode</span></div>
+    <div class="net"><span class="badge"><img class="bat" src="../shell/assets/menu/battery-low.svg"></span><span class="label">Low Power</span></div>
+    <div class="groupend"></div>
+    <div class="sep"></div>
+    <div class="head"><span class="label">Using Significant Energy</span></div>
+    <div class="app"><span class="appicon"></span><span>Editor</span></div>
+    <div class="groupend"></div>
+    <div class="sep"></div>
+    <div class="item"><span class="label">Battery Settings…</span></div>
+  </div>
+</div>
+
+<!-- G · rmac Battery menu as shipped: no per-app energy data exists, so that
+     section is left out rather than invented; Low Power on. -->
+<div class="stage" style="left:640px;top:1100px;width:660px;height:260px">
+  <div class="bar"></div><div class="slot" style="left:280px;width:46.5px"></div>
+  <div class="status" style="left:280px">
+    <div class="title"><span class="label">Battery</span><span class="value">82%</span></div>
+    <div class="info"><span>Power Source: Power Adapter</span></div>
+    <div class="sep"></div>
+    <div class="head"><span class="label">Energy Mode</span></div>
+    <div class="net on"><span class="badge"><img class="bat" src="../shell/assets/menu/battery-low.svg"></span><span class="label">Low Power</span></div>
+    <div class="groupend"></div>
+    <div class="sep"></div>
+    <div class="item"><span class="label">Battery Settings…</span></div>
+  </div>
+</div>
+</body>
+</html>

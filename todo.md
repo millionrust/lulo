@@ -1,24 +1,209 @@
 # To do
 
+The current plan is [PLAN_NEW.md](PLAN_NEW.md). The standing direction below
+comes from [PLAN_V2.md](PLAN_V2.md) and applies to every task in this file.
+
+## Direction
+
+### Principles
+
+- **Linux is the product; macOS is a development port.** A feature isn't done
+  because it works on macOS. No Linux code path may call macOS tools.
+- **Build on niri; don't fork a compositor before 1.0.** Use layer-shell for
+  the menu bar, Dock, Spotlight and overlays.
+- **Use platform services, not command output.** XDG portals, desktop entries,
+  NetworkManager, BlueZ, UPower, PipeWire, polkit. Never parse human-readable
+  CLI output on Linux.
+- **Accessibility and performance are release gates, not polish.** Shared
+  components expose semantics, keyboard and focus behaviour before apps adopt
+  them.
+- **Idle means idle.** No unconditional redraw timers; animation renders only
+  while it runs, and reduced motion is honoured.
+- **Cut scope, never gates.** Data safety, accessibility and security gates are
+  never waived.
+- **An honest limitation beats simulated system behaviour.** Prefer the
+  smallest complete journey that is safe, accessible and measurable.
+
+### Not before 1.0
+
+- Writing our own compositor
+- Replacing every Ubuntu settings backend
+- Universal global menus for GTK, Qt, Electron, XWayland and games
+- A package manager or app store
+- Cloud sync, accounts or telemetry
+- Rich-text editing, unless GPUI gains an accessible rich-text primitive
+- Distributions other than Ubuntu 26.04 LTS
+
+## Product journeys
+
+These decide priority. Each needs an automated or scripted acceptance test
+and a manual accessibility check on the reference laptop.
+
+- [ ] 1. Log in, launch an app from the Dock or Spotlight, switch apps, and
+      close it.
+- [ ] 2. Find a file, preview it, copy, move, rename and trash it, and undo a
+      destructive operation.
+- [ ] 3. Open Terminal, run a command, scroll, select, copy and paste, and
+      manage tabs.
+- [ ] 4. Create, search and edit a note, and recover it after a crash.
+- [ ] 5. Open, edit and save a text file through the portal without losing
+      content.
+- [ ] 6. Inspect resource use and safely stop a process, with confirmation.
+- [ ] 7. Join Wi-Fi, connect Bluetooth, change audio output and check battery.
+- [ ] 8. Complete journeys 1–7 with the keyboard only.
+- [ ] 9. Complete the core of journeys 1–7 with Orca at 200% scaling.
+
+## 1.0 scope per app
+
+Check each item against the app and tick what's already done. "Done" includes
+loading, empty, unavailable, permission-denied and error states.
+
+- [ ] **Text Editor:** UTF-8 text, open/save, find/replace, crash recovery,
+      status, a printing or export path. Later: rich text.
+- [ ] **Notes:** folders, tags, search, attachments, pinning, import/export,
+      recovery. Later: collaboration.
+- [ ] **Terminal:** real PTY, dynamic resize, scrollback, selection, search,
+      tabs, profiles. Later: multiplexing.
+- [ ] **Files:** safe file operations, Trash, undo, mounts, search, previews,
+      open-with actions. Later: universal remote filesystems.
+- [ ] **System Monitor:** process and resource views, search and sort, safe
+      terminate, history. Never invent per-process GPU numbers.
+- [ ] **Apps:** standards-compliant discovery, icons, actions, search and
+      launch. Later: installing apps.
+- [ ] **System Settings:** only panes with a real backend (Network,
+      Bluetooth, Power, Sound, Display info, Appearance). No placeholder panes.
+
+Files safety rules: never block the UI thread on recursive I/O; never follow
+symlinks during recursive copy or delete; every overwrite has an explicit
+conflict policy; cancel leaves the source intact; Trash comes before permanent
+deletion. Tests cover cross-filesystem moves, permission errors, low disk,
+name collisions, disappearing mounts and interrupted operations.
+
+## Quality
+
+### CI
+
+Every pull request runs `cargo fmt --check`, Clippy with `-D warnings`, tests
+and `cargo deny`. The main branch is never left red.
+
+- [ ] Move the Linux jobs from `ubuntu-24.04` to Ubuntu 26.04 (self-hosted
+      until GitHub offers the image).
+- [ ] Add a Linux aarch64 job: cross-build first, native smoke test before
+      Beta.
+- [ ] Add a minimum-supported-Rust-version job.
+- [ ] Add a scheduled dependency and security audit.
+- [ ] Add a release build and package smoke test.
+- [ ] Add bounded fuzz runs for desktop entries, config files, terminal input
+      and niri IPC JSON.
+- [ ] Add a Windows job once the Windows port starts (PLAN_NEW workstream C).
+
+### Tests
+
+- [ ] Every platform adapter has contract tests against fake and live
+      D-Bus, portal or niri fixtures.
+- [ ] Every service interface (`AppCatalog`, `FileOperations`,
+      `SystemMonitor`, network, Bluetooth, power, audio, portals, compositor,
+      settings store) has an in-memory fake; app tests use fakes, not the live
+      system bus.
+- [ ] Visual reference screenshots of rmac at 100%, 150% and 200% for critical
+      screens, with reviewed diffs.
+- [ ] Every bug fix adds a regression test, or a golden screenshot if the fix
+      is visual.
+
+### Accessibility gates
+
+- [ ] Audit every shared `rmac-ui` component. Each interactive element has:
+    - [ ] a stable accessible identity, role, name, state, value and actions;
+    - [ ] a correct tab order and a visible focus ring;
+    - [ ] full keyboard operation, with no pointer-only controls;
+    - [ ] announcements for asynchronous status and errors;
+    - [ ] no clipping at 200% text and UI scaling;
+    - [ ] usable high-contrast colours;
+    - [ ] reduced motion read from the Settings portal.
+- [ ] Verify each release journey with Orca on Ubuntu.
+- [ ] Automate semantic-tree assertions where GPUI allows it.
+
+### Performance budgets
+
+Measure on the reference laptop at 100%, 125%, 150% and 200% scaling, with
+multiple monitors, suspend/resume and hotplug. The budgets may be adjusted once,
+with a decision record.
+
+| Metric | Budget |
+|---|---|
+| Warm launch to interactive | p95 ≤ 500 ms for simple apps; ≤ 900 ms for Files and Terminal |
+| Idle CPU | ≤ 0.3% per app; ≤ 1% for all shell surfaces combined |
+| Idle wake-ups | No redraw while nothing changes |
+| Input to visible response | p95 ≤ 50 ms |
+| 60 Hz animation | ≥ 99% of frames within 16.67 ms |
+| 120 Hz animation | ≥ 95% of frames within 8.33 ms |
+| Memory | Per-app budget, no leaks over an 8-hour soak |
+
+- [ ] Record every metric on the reference laptop and commit the results.
+- [ ] Repeat on an NVIDIA system before Beta.
+
+### Code rules to check
+
+- [ ] No destructive-operation error is dropped with `let _ = ...`.
+- [ ] Persisted data uses versioned serde formats, written to a temporary
+      sibling, flushed and atomically renamed, keeping the last known-good copy.
+- [ ] User-visible failures return typed errors with a recovery action.
+- [ ] Logs redact secrets and document contents.
+- [ ] Domain crates never import GPUI, Wayland, D-Bus or platform FFI.
+
+## How we work
+
+**Every issue states:** the user outcome; what's in and out of scope; failure
+and recovery behaviour; accessibility behaviour; performance impact; the test
+plan; screenshots or a recording if visual; the platforms; and the docs to
+update.
+
+**A feature is done when:**
+- it meets its acceptance criteria, including failure states;
+- unit, component and integration tests pass;
+- keyboard and accessible semantics are verified;
+- it adds no polling or main-thread blocking;
+- errors are visible and actionable;
+- it works on the reference laptop, and the macOS build impact is known;
+- formatting, Clippy, tests, audit and packaging checks pass;
+- the docs and known limitations are updated;
+- a reviewer can reproduce it from a clean checkout.
+
+**Milestones:** one active phase at a time; small vertical slices; a decision
+record for every GPUI, compositor, data-format, privilege or packaging choice;
+a demo of a real user journey every two weeks.
+
+- [ ] Review the risk register in PLAN_V2 §9 and PLAN_NEW §7 at every phase
+      gate.
+
+## After Beta (research, never blocks 1.0)
+
+Each item starts with a two-week spike and a go/no-go decision.
+
+- [ ] Global menus for third-party apps through GIO exported menus and D-Bus
+      menus, where detected; never claim universal coverage.
+- [ ] Richer Mission Control (per-window pictures; needs our own compositor).
+- [ ] Dragging files out of apps, if GPUI and Wayland allow it.
+- [ ] Our own compositor on Smithay (ADR 0007).
+- [ ] An Ubuntu flavour or remix with a graphical installer.
+- [ ] Other distributions and compositors.
+
 ## Rename rmac to Lulo OS
 
-The public name is now Lulo OS, and the README uses it. The code still says
+The public name is now Lulo OS, and the README uses it. The repository lives
+at [millionrust/lulo](https://github.com/millionrust/lulo). The code still says
 `rmac` in about 12,000 places across 1,224 files. Rename it in stages so
 nothing breaks and existing test machines keep their settings.
 
 ### Claim the name
 
-- [ ] Search the USPTO and EUIPO trademark registers for "Lulo" in software
-      before announcing it.
-- [ ] Create the `lulo-os` GitHub organization (free as of 2026-09-23; the
-      `luloos` account is already taken).
+- [x] Move the repository to `millionrust/lulo` and make it public. GitHub
+      redirects `snehacodex/rmac`.
+- [ ] Point local clones at the new address:
+      `git remote set-url origin https://github.com/millionrust/lulo.git`.
 - [ ] Register a domain (`lulo-os.org`, `lulo-os.dev`, `luloos.dev` and
       `luloos.org` had no DNS as of 2026-09-23). Point it at GitHub Pages; it
       becomes the APT repository address below.
-- [ ] Transfer `snehacodex/rmac` to `lulo-os/lulo`. GitHub redirects the old
-      URL.
-- [ ] Design a logo that isn't a single fruit with a leaf (see Apple's 2020
-      opposition to Prepear's pear logo).
 
 ### Rename what people see
 
@@ -26,7 +211,6 @@ nothing breaks and existing test machines keep their settings.
       `packaging/rmac-session/rmac.desktop`.
 - [ ] About windows, the system menu and any remaining "rmac" UI strings.
 - [ ] User guide, install and troubleshooting docs.
-- [ ] Remove "rmac" from the About text once no user-visible string is left.
 
 ### Rename the technical names (one pull request each)
 
@@ -58,15 +242,13 @@ custom downloader. curl is used only to bootstrap the first install.
 git tag vX.Y.Z → GitHub Actions builds .debs (amd64, arm64)
   → attaches them to the GitHub Release
   → builds and signs the APT repository → deploys it to GitHub Pages
-  → machines: apt / PackageKit read https://<owner>.github.io/<repo>/
+  → machines: apt / PackageKit read https://millionrust.github.io/lulo/
 ```
 
 ### Decisions needed
 
-- [ ] Make the repository public before launch, or use a separate public repo
-      (such as `rmac-apt`) for Pages. Pages on a private repo needs a paid plan,
-      and assets on private releases can't be downloaded anonymously.
-- [ ] Choose the address: `https://<owner>.github.io/<repo>/`, or a custom
+- [x] Make the repository public (done: `millionrust/lulo`).
+- [ ] Choose the address: `https://millionrust.github.io/lulo/`, or a custom
       domain pointed at Pages so hosting can move later without changing
       clients. It fills `@RMAC_REPOSITORY_URI@` in
       `packaging/apt/rmac.sources.in`.
@@ -112,7 +294,7 @@ git tag vX.Y.Z → GitHub Actions builds .debs (amd64, arm64)
     - [ ] Never touch the GNOME session.
     - [ ] Put the whole body in `main` and call it on the last line, so a
           partial download can't run.
-    - [ ] Finish with "Log out and choose rmac on the login screen".
+    - [ ] Finish with "Log out and choose Lulo OS on the login screen".
 - [ ] Write `uninstall.sh`: `apt purge rmac-session rmac-apps
       rmac-archive-keyring` and remove the repository configuration.
 - [ ] Update `docs/install.md` with the one-line install and the same steps

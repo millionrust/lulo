@@ -10,10 +10,10 @@ mod linux_wayland {
 
     use futures_util::FutureExt as _;
     use gpui::{
-        canvas, div, img, layer_shell::*, point, prelude::*, px, rgba, AnyWindowHandle, App,
-        Bounds, Context, DisplayId, Entity, ExternalPaths, FontWeight, MouseButton, PathBuilder,
-        PlatformDisplay, QuitMode, Role, Size, Window, WindowBackgroundAppearance, WindowBounds,
-        WindowKind, WindowOptions,
+        canvas, div, img, layer_shell::*, point, prelude::*, px, rgba, AccessibleAction,
+        AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, ExternalPaths, FontWeight,
+        MouseButton, PathBuilder, PlatformDisplay, QuitMode, Role, Size, Window,
+        WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use rmac_shell_ui::tokens;
@@ -975,6 +975,11 @@ mod linux_wayland {
         fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             self.render_count = self.render_count.saturating_add(1);
             record_render_count(window, self.display_id, self.render_count);
+            // `on_a11y_action` listeners run outside `Context<Self>` (they
+            // get `&mut App`, not `&mut Context<Self>`, since AT-SPI can
+            // dispatch to any node at any time); an owned entity handle
+            // lets them reach the same activation path a mouse click uses.
+            let a11y_entity = cx.entity();
             let launcher = self.status.read(cx).launcher.clone();
             let (dock_settings, model, mut entries, content) = {
                 let status = self.status.read(cx);
@@ -1386,6 +1391,22 @@ mod linux_wayland {
                                 );
                             }),
                         )
+                        // Assistive technology (AT-SPI/Orca) invokes the
+                        // node's default action rather than synthesizing a
+                        // mouse click; wire it to the same restore path.
+                        .on_a11y_action(AccessibleAction::Click, {
+                            let entity = a11y_entity.clone();
+                            move |_, _, cx| {
+                                entity.update(cx, |this, cx| {
+                                    this.dispatch_action(
+                                        rmac_dock::menu::Action::ActivateEntry(
+                                            rmac_dock::presentation::EntryId::Minimized(window),
+                                        ),
+                                        cx,
+                                    );
+                                });
+                            }
+                        })
                         .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                             if *hovered {
                                 this.hovered_item = Some((center, tooltip_label.clone()));
@@ -1515,6 +1536,19 @@ mod linux_wayland {
                         } else {
                             item.top(px(slide))
                         };
+                        if actionable {
+                            // Assistive technology (AT-SPI/Orca) dispatches
+                            // the node's default action rather than a mouse
+                            // press-and-release pair; run the same launch
+                            // path a plain left click runs.
+                            let entity = a11y_entity.clone();
+                            let click_app_id = activate_app_id.clone();
+                            item = item.on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
+                                entity.update(cx, |this, cx| {
+                                    this.activate_entry(&click_app_id, false, cx);
+                                });
+                            });
+                        }
                         let mut visual = div()
                             .id(format!("dock-visual-{}-{index}", self.display_id))
                             .absolute()
@@ -1811,6 +1845,23 @@ mod linux_wayland {
                                     );
                                 }),
                             );
+                            // Assistive technology (AT-SPI/Orca) dispatches
+                            // the node's default action rather than a mouse
+                            // press-and-release pair; run the same open path.
+                            let entity = a11y_entity.clone();
+                            trash =
+                                trash.on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
+                                    entity.update(cx, |this, cx| {
+                                        this.dispatch_action(
+                                            rmac_dock::menu::Action::ActivateEntry(
+                                                rmac_dock::presentation::EntryId::Special(
+                                                    rmac_dock::SpecialItemKind::Trash,
+                                                ),
+                                            ),
+                                            cx,
+                                        );
+                                    });
+                                });
                         }
                         trash = trash.on_mouse_down(
                             MouseButton::Right,

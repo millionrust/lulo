@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Menu bar — exact</title>
+<!--
+  The rmac menu bar at 1:1 logical points, measured from the owner's Mac
+  (macOS 26.2, 2026-09-23, Retina capture ÷ 2). Rust (shell/bins/rmac-menubar)
+  copies these numbers; the icons are the same files the shell loads.
+
+  Measured on the Mac (logical pt):
+    logo glyph        x 21–33.5, 12.5 × 14.5, vertically 8–22.5
+    first title text  x 55 (bold app name); title text-to-text gap 22–23
+    title cap height  9.5 (13 pt text), baseline ≈ 20.5
+    status glyphs     battery ≈ 26 × 12.5, Wi-Fi 17 × 11.5, Spotlight 12.5,
+                      Control Center 12.5; glyph-to-glyph gaps 19.5–24.5
+    clock text        ends 18 from the right edge; date–time gap ≈ 10
+  The notched MacBook bar is 33 tall; rmac targets displays without a notch
+  and keeps the 29 pt bar (see docs/reference-captures-2026-09-18.md).
+-->
+<style>
+  :root {
+    --bar-h: 29px;
+    --lead: 10px;          /* bar edge → logo slot */
+    --logo-slot: 34px;     /* logo glyph centred at x = 27 */
+    --title-pad: 11px;     /* each side of a title → 22 between texts */
+    --trail: 7px;          /* bar edge → clock slot */
+    --status-pad: 10px;    /* each side of a status glyph → 20 between glyphs */
+    --clock-pad: 11px;
+    --text: #FFFFFF;
+    --font: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  }
+  html, body { margin: 0; background: #1b1b6e; }
+  body { width: 1470px; }
+  .wall { height: 120px; background: linear-gradient(90deg, #13127a, #1e1a8c 60%, #2c6fa8); }
+  .bar {
+    height: var(--bar-h); display: flex; align-items: center;
+    padding: 0 var(--trail) 0 var(--lead);
+    color: var(--text); font: 400 13px/1 var(--font);
+    -webkit-font-smoothing: antialiased; letter-spacing: -0.08px;
+  }
+  .slot { height: 22px; display: flex; align-items: center; justify-content: center;
+          border-radius: 6px; }
+  .slot:hover { background: rgba(255,255,255,.14); }
+  .logo { width: var(--logo-slot); }
+  .logo img { width: 13px; height: 15px; }
+  .title { padding: 0 var(--title-pad); }
+  .title.app { font-weight: 700; }
+  .spacer { flex: 1; }
+  .status { padding: 0 var(--status-pad); }
+  .status img { display: block; }
+  .clock { padding: 0 var(--clock-pad); font-variant-numeric: tabular-nums; }
+  .clock .gap { display: inline-block; width: 7px; }
+  /* battery is drawn, not an icon, so its level is live */
+  .battery { width: 25px; height: 12px; position: relative; box-sizing: border-box;
+             border: 1.2px solid rgba(255,255,255,.55); border-radius: 3.6px; }
+  .battery::after { content: ""; position: absolute; right: -3.2px; top: 3.4px;
+                    width: 1.6px; height: 3.6px; border-radius: 0 1px 1px 0;
+                    background: rgba(255,255,255,.55); }
+  .battery .level { position: absolute; left: 1.4px; top: 1.4px; bottom: 1.4px;
+                    border-radius: 1.8px; background: #FFFFFF; }
+</style>
+</head>
+<body>
+<div class="wall">
+  <div class="bar">
+    <span class="slot logo"><img src="../shell/assets/status/rmac.svg" alt=""></span>
+    <span class="slot title app">Files</span>
+    <span class="slot title">File</span>
+    <span class="slot title">Edit</span>
+    <span class="slot title">View</span>
+    <span class="slot title">Go</span>
+    <span class="slot title">Window</span>
+    <span class="slot title">Help</span>
+    <span class="spacer"></span>
+    <span class="slot status"><span class="battery"><span class="level" style="width:9px"></span></span></span>
+    <span class="slot status"><img src="../shell/assets/status/wifi.svg" width="17" height="12.3" alt=""></span>
+    <span class="slot status"><img src="../shell/assets/status/spotlight.svg" width="13" height="13" alt=""></span>
+    <span class="slot status"><img src="../shell/assets/status/control-center.svg" width="13" height="13" alt=""></span>
+    <span class="slot clock">Wed 23 Sep<span class="gap"></span>12:17 PM</span>
+  </div>
+</div>
+</body>
+</html>

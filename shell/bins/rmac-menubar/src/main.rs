@@ -23,7 +23,7 @@ mod linux_wayland {
     use rmac_shell_ui::tokens;
     use rmac_shell_ui::{
         app_display_name, delay_until_next_clock_tick, top_bar_active_app_name,
-        top_bar_clock_pattern, top_bar_indicator_labels, top_bar_workspace_label,
+        top_bar_clock_parts, top_bar_indicator_labels, top_bar_workspace_label,
         TopBarIndicatorKind,
     };
     use uuid::Uuid;
@@ -34,6 +34,14 @@ mod linux_wayland {
     const MENU_SURFACE_HEIGHT: f32 = 520.0;
     /// Width of the logout/restart confirmation shown in place of a menu.
     const CONFIRMATION_MENU_WIDTH: f32 = 248.0;
+    // Menu bar geometry measured on macOS 26 (design-lab/menubar.html).
+    const BAR_LEAD: f32 = 10.0;
+    const BAR_TRAIL: f32 = 7.0;
+    const LOGO_SLOT: f32 = 34.0;
+    const TITLE_PAD: f32 = 11.0;
+    const STATUS_PAD: f32 = 10.0;
+    const CLOCK_DATE_TIME_GAP: f32 = 7.0;
+    const SLOT_HEIGHT: f32 = 22.0;
     /// Highlight inset from the panel edge and text inset within it.
     const MENU_ROW_INSET: f32 = 5.0;
     const MENU_ROW_PADDING: f32 = 9.0;
@@ -544,10 +552,14 @@ mod linux_wayland {
             let now = Local::now();
             let status = self.status.read(cx);
             let snapshot = &status.update.snapshot.status;
-            let clock = now
-                .format(top_bar_clock_pattern(&snapshot.clock))
-                .to_string();
-            let clock_label = clock.clone();
+            // macOS leaves a wider gap between the date and the time.
+            let (date_pattern, time_pattern) = top_bar_clock_parts(&snapshot.clock);
+            let clock_date = date_pattern.map(|pattern| now.format(pattern).to_string());
+            let clock = now.format(time_pattern).to_string();
+            let clock_label = match &clock_date {
+                Some(date) => format!("{date} {clock}"),
+                None => clock.clone(),
+            };
             // Opening a popup moves keyboard focus to this layer surface, so the
             // live focused window drops to None. Use the last app the status
             // runtime reported (kept across those blips) for the app menu, and
@@ -605,7 +617,7 @@ mod linux_wayland {
             let screen_width = f32::from(window.bounds().size.width);
             let menu_left = self
                 .open_menu
-                .map(|index| menu_anchor_x(&active_app, &menus, index))
+                .map(|index| menu_anchor_x(&active_app, &menus, index, window))
                 .zip(menu_width)
                 .map(|(left, width)| left.min(screen_width - width - 4.0).max(4.0));
             let menu_height = if self.pending_system_action.is_some() {
@@ -711,8 +723,9 @@ mod linux_wayland {
                         .aria_label(format!("{} menu", menu.label))
                         .focusable()
                         .tab_stop(true)
-                        .h(px(22.0))
-                        .px_1()
+                        .h(px(SLOT_HEIGHT))
+                        .px(px(TITLE_PAD))
+                        .font_weight(FontWeight::MEDIUM)
                         .flex()
                         .items_center()
                         .rounded(px(tokens::menu_item_radius()))
@@ -1025,22 +1038,22 @@ mod linux_wayland {
                 .h(px(BAR_HEIGHT))
                 .flex()
                 .items_center()
-                .px_4()
+                .pl(px(BAR_LEAD))
+                .pr(px(BAR_TRAIL))
                 .text_color(rgba(tokens::menubar_text()))
                 .text_size(px(tokens::body_text_size()))
                 .child(
                     div()
                         .flex()
                         .items_center()
-                        .gap_3()
                         .flex_1()
                         .child(
                             div()
                                 .id(format!("desktop-mark-{}", self.display_id))
                                 .role(Role::Button)
                                 .aria_label("rmac menu")
-                                .w(px(16.0))
-                                .h(px(16.0))
+                                .w(px(LOGO_SLOT))
+                                .h(px(SLOT_HEIGHT))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -1061,7 +1074,7 @@ mod linux_wayland {
                                 .child(
                                     svg()
                                         .path(shell_icon_path("rmac.svg"))
-                                        .w(px(15.0))
+                                        .w(px(13.0))
                                         .h(px(15.0))
                                         .text_color(rgba(tokens::primary_text())),
                                 ),
@@ -1075,8 +1088,8 @@ mod linux_wayland {
                                 .aria_label(format!("{active_app} menu"))
                                 .focusable()
                                 .tab_stop(true)
-                                .h(px(22.0))
-                                .px_1()
+                                .h(px(SLOT_HEIGHT))
+                                .px(px(TITLE_PAD))
                                 .flex()
                                 .items_center()
                                 .rounded(px(tokens::menu_item_radius()))
@@ -1093,7 +1106,7 @@ mod linux_wayland {
                                 }))
                                 .child(
                                     div()
-                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .font_weight(FontWeight::BOLD)
                                         .child(active_app.clone()),
                                 )
                         })
@@ -1110,7 +1123,6 @@ mod linux_wayland {
                     div()
                         .flex()
                         .items_center()
-                        .gap_2()
                         .justify_end()
                         .children(
                             indicators
@@ -1121,32 +1133,39 @@ mod linux_wayland {
                                 .enumerate()
                                 .map(|(index, indicator)| {
                                     let icon = indicator_icon_path(indicator.kind);
+                                    let is_battery = indicator.kind == TopBarIndicatorKind::Battery;
                                     let mut item = div()
                                         .id(format!("status-{}-{index}", self.display_id))
                                         .role(Role::Button)
                                         .aria_label(indicator.accessible)
+                                        .h(px(SLOT_HEIGHT))
                                         .flex()
                                         .items_center()
-                                        .gap_1()
-                                        .px_1()
+                                        .gap(px(5.0))
+                                        .px(px(STATUS_PAD))
                                         .rounded(px(tokens::menu_item_radius()))
                                         .cursor_pointer()
                                         .hover(|style| style.bg(rgba(tokens::light_hover())))
                                         .on_click(|_, _, cx| {
                                             dispatch_shortcut("quick-settings", cx)
                                         })
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .child(
-                                            svg()
-                                                .path(icon)
-                                                .w(px(14.0))
-                                                .h(px(14.0))
-                                                .text_color(rgba(tokens::primary_text())),
-                                        );
+                                        .font_weight(FontWeight::MEDIUM);
+                                    // macOS puts the percentage before the glyph.
                                     if !indicator.visible.is_empty() {
                                         item = item.child(indicator.visible);
                                     }
-                                    item
+                                    if is_battery {
+                                        item.child(battery_glyph(snapshot.battery.clone()))
+                                    } else {
+                                        let (width, height) = status_icon_size(indicator.kind);
+                                        item.child(
+                                            svg()
+                                                .path(icon)
+                                                .w(px(width))
+                                                .h(px(height))
+                                                .text_color(rgba(tokens::primary_text())),
+                                        )
+                                    }
                                 }),
                         )
                         .child(
@@ -1154,8 +1173,8 @@ mod linux_wayland {
                                 .id(format!("spotlight-{}", self.display_id))
                                 .role(Role::Button)
                                 .aria_label("Spotlight")
-                                .w(px(22.0))
-                                .h(px(22.0))
+                                .h(px(SLOT_HEIGHT))
+                                .px(px(STATUS_PAD))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -1166,8 +1185,8 @@ mod linux_wayland {
                                 .child(
                                     svg()
                                         .path(shell_icon_path("spotlight.svg"))
-                                        .w(px(14.0))
-                                        .h(px(14.0))
+                                        .w(px(13.0))
+                                        .h(px(13.0))
                                         .text_color(rgba(tokens::primary_text())),
                                 ),
                         )
@@ -1176,8 +1195,8 @@ mod linux_wayland {
                                 .id(format!("control-center-{}", self.display_id))
                                 .role(Role::Button)
                                 .aria_label("Control Center")
-                                .w(px(22.0))
-                                .h(px(22.0))
+                                .h(px(SLOT_HEIGHT))
+                                .px(px(STATUS_PAD))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -1188,8 +1207,8 @@ mod linux_wayland {
                                 .child(
                                     svg()
                                         .path(shell_icon_path("control-center.svg"))
-                                        .w(px(15.0))
-                                        .h(px(15.0))
+                                        .w(px(13.0))
+                                        .h(px(13.0))
                                         .text_color(rgba(tokens::primary_text())),
                                 ),
                         )
@@ -1200,16 +1219,18 @@ mod linux_wayland {
                                 .aria_label(format!(
                                     "Date and time: {clock_label}. Open Notification Center"
                                 ))
-                                .px_1()
-                                .h(px(22.0))
+                                .px(px(TITLE_PAD))
+                                .h(px(SLOT_HEIGHT))
                                 .flex()
                                 .items_center()
+                                .gap(px(CLOCK_DATE_TIME_GAP))
                                 .rounded(px(tokens::menu_item_radius()))
                                 .cursor_pointer()
                                 .hover(|style| style.bg(rgba(tokens::light_hover())))
                                 .on_click(|_, _, cx| dispatch_shortcut("notification-center", cx))
                                 .font_weight(FontWeight::MEDIUM)
                                 .font_features(rmac_shell_ui::tabular_font_features())
+                                .children(clock_date)
                                 .child(clock),
                         ),
                 );
@@ -1258,20 +1279,88 @@ mod linux_wayland {
             .max(tokens::current().metrics.menu_min_width)
     }
 
-    fn menu_anchor_x(active_app: &str, menus: &[rmac_app_menu::Menu], index: usize) -> f32 {
+    /// Left edge of a menu title's highlight, from the same slot geometry the
+    /// bar is laid out with, so each menu opens exactly under its title.
+    fn menu_anchor_x(
+        active_app: &str,
+        menus: &[rmac_app_menu::Menu],
+        index: usize,
+        window: &Window,
+    ) -> f32 {
         if index == 0 {
-            return 4.0;
+            return BAR_LEAD;
         }
-        let app_width = active_app.chars().count() as f32 * 7.2 + 16.0;
-        // Index 1 is the synthesized app menu, drawn as the bold app name
-        // itself, so only menus after it add width before `index`.
+        let title_slot = |label: &str, weight| {
+            rmac_shell_ui::text_width(window, label, weight) + 2.0 * TITLE_PAD
+        };
+        let app_slot = title_slot(active_app, FontWeight::BOLD);
         let preceding = menus
             .iter()
             .skip(2)
             .take(index.saturating_sub(2))
-            .map(|menu| menu.label.chars().count() as f32 * 7.0 + 16.0)
+            .map(|menu| title_slot(&menu.label, FontWeight::MEDIUM))
             .sum::<f32>();
-        (44.0 + app_width + preceding).max(16.0)
+        BAR_LEAD
+            + LOGO_SLOT
+            + if index == 1 {
+                0.0
+            } else {
+                app_slot + preceding
+            }
+    }
+
+    fn status_icon_size(kind: TopBarIndicatorKind) -> (f32, f32) {
+        match kind {
+            TopBarIndicatorKind::Network => (17.0, 12.3),
+            _ => (15.0, 15.0),
+        }
+    }
+
+    /// The battery is drawn rather than loaded so its fill tracks the level,
+    /// turning red at 10% or below while discharging, as on macOS.
+    fn battery_glyph(battery: Option<rmac_shell_status::BatteryIndicator>) -> impl IntoElement {
+        const WIDTH: f32 = 25.0;
+        const HEIGHT: f32 = 12.0;
+        const INSET: f32 = 1.4;
+        let (percentage, low) = battery
+            .map(|battery| {
+                (
+                    battery.percentage.min(100),
+                    battery.on_battery && battery.percentage <= 10,
+                )
+            })
+            .unwrap_or((100, false));
+        let fill_width = ((WIDTH - 2.0 * INSET - 2.4) * f32::from(percentage) / 100.0).max(1.5);
+        div()
+            .flex()
+            .items_center()
+            .child(
+                div()
+                    .relative()
+                    .w(px(WIDTH))
+                    .h(px(HEIGHT))
+                    .rounded(px(3.6))
+                    .border(px(1.2))
+                    .border_color(rgba(0xFFFFFF8C))
+                    .child(
+                        div()
+                            .absolute()
+                            .left(px(INSET - 1.2 + 0.2))
+                            .top(px(INSET - 1.2 + 0.2))
+                            .h(px(HEIGHT - 2.0 * INSET - 0.4))
+                            .w(px(fill_width))
+                            .rounded(px(1.8))
+                            .bg(rgba(if low { 0xFF453AFF } else { 0xFFFFFFFF })),
+                    ),
+            )
+            .child(
+                div()
+                    .ml(px(1.0))
+                    .w(px(1.6))
+                    .h(px(3.6))
+                    .rounded_r(px(1.0))
+                    .bg(rgba(0xFFFFFF8C)),
+            )
     }
 
     fn system_menu() -> rmac_app_menu::Menu {

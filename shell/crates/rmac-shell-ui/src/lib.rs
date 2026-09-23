@@ -75,6 +75,18 @@ pub fn top_bar_clock_pattern(settings: &rmac_shell_settings::ClockSettings) -> &
     }
 }
 
+/// The clock split into its optional date and its time, so the menu bar can
+/// set the wider macOS gap between them.
+pub fn top_bar_clock_parts(
+    settings: &rmac_shell_settings::ClockSettings,
+) -> (Option<&'static str>, &'static str) {
+    let pattern = top_bar_clock_pattern(settings);
+    match pattern.strip_prefix("%a %-d %b ") {
+        Some(time) => (Some("%a %-d %b"), time),
+        None => (None, pattern),
+    }
+}
+
 pub fn top_bar_workspace_label(snapshot: &rmac_shell_status::Snapshot) -> Option<String> {
     snapshot.clock.show_workspace.then(|| {
         snapshot
@@ -175,42 +187,8 @@ pub fn top_bar_indicator_labels(
             },
         });
     }
-    if let Some(network) = &snapshot.network {
-        let strength = network
-            .wifi_bars
-            .map(|bars| format!(", signal {bars} of 3 bars"))
-            .unwrap_or_default();
-        labels.push(TopBarIndicatorLabel {
-            kind: TopBarIndicatorKind::Network,
-            visible: String::new(),
-            accessible: format!("Wi-Fi {}{strength}", network_state_label(network.state)),
-        });
-    }
-    if let Some(bluetooth) = snapshot
-        .bluetooth
-        .as_ref()
-        .filter(|bluetooth| bluetooth.powered)
-    {
-        labels.push(TopBarIndicatorLabel {
-            kind: TopBarIndicatorKind::Bluetooth,
-            visible: String::new(),
-            accessible: format!(
-                "Bluetooth on, {} connected devices",
-                bluetooth.connected_devices
-            ),
-        });
-    }
-    if let Some(sound) = snapshot.sound.filter(|sound| sound.available) {
-        labels.push(TopBarIndicatorLabel {
-            kind: TopBarIndicatorKind::Sound,
-            visible: String::new(),
-            accessible: if sound.muted {
-                "Sound muted".into()
-            } else {
-                format!("Sound volume {} percent", sound.volume)
-            },
-        });
-    }
+    // macOS order and defaults: battery, then Wi-Fi; Bluetooth and Sound
+    // live in Control Center and are not shown in the menu bar by default.
     if let Some(battery) = snapshot.battery {
         let percentage = format!("{}%", battery.percentage);
         labels.push(TopBarIndicatorLabel {
@@ -221,6 +199,17 @@ pub fn top_bar_indicator_labels(
                 String::new()
             },
             accessible: format!("Battery {percentage}, {}", battery.state.label()),
+        });
+    }
+    if let Some(network) = &snapshot.network {
+        let strength = network
+            .wifi_bars
+            .map(|bars| format!(", signal {bars} of 3 bars"))
+            .unwrap_or_default();
+        labels.push(TopBarIndicatorLabel {
+            kind: TopBarIndicatorKind::Network,
+            visible: String::new(),
+            accessible: format!("Wi-Fi {}{strength}", network_state_label(network.state)),
         });
     }
     if let Some(notifications) = snapshot
@@ -337,6 +326,20 @@ mod tests {
     }
 
     #[test]
+    fn clock_parts_split_the_date_from_the_time() {
+        let mut settings = rmac_shell_settings::ClockSettings::default();
+        settings.show_date = true;
+        settings.show_seconds = false;
+        settings.format = rmac_shell_settings::ClockFormat::TwelveHour;
+        assert_eq!(
+            top_bar_clock_parts(&settings),
+            (Some("%a %-d %b"), "%-I:%M %p")
+        );
+        settings.show_date = false;
+        assert_eq!(top_bar_clock_parts(&settings), (None, "%-I:%M %p"));
+    }
+
+    #[test]
     fn hidden_indicators_do_not_create_placeholder_items() {
         let snapshot = rmac_shell_status::Snapshot::default();
         assert!(top_bar_indicator_labels(&snapshot).is_empty());
@@ -365,8 +368,9 @@ mod tests {
             muted: false,
         });
 
+        // Sound lives in Control Center, as on macOS, not in the menu bar.
         let labels = top_bar_indicator_labels(&snapshot);
+        assert_eq!(labels.len(), 1);
         assert_eq!(labels[0].accessible, "Wi-Fi connected, signal 3 of 3 bars");
-        assert_eq!(labels[1].accessible, "Sound volume 37 percent");
     }
 }

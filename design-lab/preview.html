@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Preview — exact</title>
+<!--
+  Preview (images and PDFs) at 1:1 logical points, measured on the owner's
+  Mac (macOS 26.2, dark, 2026-09-23): Accessibility frames of a 3-page Letter
+  PDF, three 800×600 PNGs and one PNG, plus Retina pixels ÷ 2. The Rust port
+  (crates/preview/src/metrics.rs) copies these numbers; icons are
+  crates/preview/assets/icons/preview (original drawings).
+
+  Window         PDF opens 1121 × 789; an image opens at its own size + the
+                 52 pt toolbar (800×600 → 800 × 652), fitted into 1121 × 789.
+                 Window and toolbar fill rgb(32,34,44); corner radius 27.
+  Traffic lights 14 pt, centres (26,26) (49,26) (72,26).
+  Toolbar        52 tall, no hairline. Controls are 36 pt capsules, fill
+                 rgb(38,39,55), 1 px edge rgb(67,69,103), glyphs rgb(233,233,235).
+  Sidebar toggle sidebar hidden: capsule x 103.5–154, y 7.5–43.5, glyph 19.5 at
+                 113.5, chevron 6 wide at 138.5. Sidebar shown: no capsule,
+                 glyph at 123.5 and chevron at 148.5 (inside the sidebar panel).
+  Title          sidebar hidden x 175, shown x 188. One line (images): 15 bold,
+                 centred. Two lines (PDF, several images): 13 bold on a 16 line
+                 at y 11, then 11 regular rgb(143,144,149) on a 14 line at y 27
+                 ("1 page" / "Page 1 of 3" / "3 documents, 3 total pages").
+  Right group    search field 177 × 36, ends 8 from the right edge, fill as a
+                 capsule, magnifier at +11.5, "Search" 13 pt rgb(146,147,155) at
+                 +39. Gap 10.5 → info circle 36 (glyph 7.5 × 15.5). Gap 18.5 →
+                 rotate circle 36 (glyph 16 × 17.5). Gap 16.5 → zoom capsule
+                 110 wide: − / actual size / + (glyphs 15.5 pt), dividers 1 × 20
+                 at y 16 in rgb(56,57,73).
+                 Markup, Remove Background, Form Filling and Share are omitted
+                 in rmac (no backend).
+  Sidebar        floating panel x 8–168, y 8 to 8 from the bottom, radius 19,
+                 fill rgb(32,33,43), 1 px edge rgb(65,67,94). Content starts at
+                 y 52. Thumbnail 120 wide (x 28), height from the page aspect;
+                 selection rgb(52,120,246) radius 8 around it with 6 pt padding
+                 and a 19 pt label strip below (x 22–154). Label 13 pt centred
+                 (white on the selection, rgb(200,200,205) otherwise).
+                 Item pitch = 6 + thumb + 19 + 10.
+  Document       background rgb(38,39,52) from x 168 (or 0) and y 52. PDF
+                 pages continuous: 16 top margin, 16 between pages, width fit
+                 = viewport − 25. Zoom in/out ×/÷ 2^(1/4) (PDF, measured
+                 1092 → 1298 → 1544 → 1836). Images: fit = contain, measured
+                 zoom-out steps 1 → .75 → .5 → .4 → .3 → .2.
+  Get Info       right panel 279 wide (separator rgb(75,76,85) then fill
+                 rgb(30,31,43)); cards x +19 … −10, fill rgb(41,42,52), radius
+                 10, 36 pt rows with 1 px separators rgb(58,58,68) inset 10,
+                 10 pt between cards. Label 12 semibold rgb(245,245,246) at +10,
+                 value right-aligned rgb(157,157,164).
+-->
+<style>
+  body { margin: 0; background: #111; font-family: Inter, -apple-system, sans-serif; color: rgb(233,233,235); }
+  .stage { padding: 20px; display: flex; flex-direction: column; gap: 24px; }
+  .win { position: relative; background: rgb(32,34,44); border-radius: 27px; overflow: hidden;
+         box-shadow: 0 0 0 1px rgb(14,14,16), inset 0 0 0 1px rgb(75,76,89); }
+  .abs { position: absolute; }
+  .light { position: absolute; width: 14px; height: 14px; border-radius: 50%; top: 19px; }
+  .cap { position: absolute; top: 8px; height: 36px; box-sizing: border-box; border-radius: 18px;
+         background: rgb(38,39,55); border: 1px solid rgb(67,69,103); }
+  .glyph { position: absolute; width: 21px; height: 21px; }
+  .glyph img { width: 100%; height: 100%; filter: invert(93%); }
+  .div { position: absolute; top: 8px; width: 1px; height: 20px; background: rgb(56,57,73); }
+  .title { position: absolute; font-weight: 700; white-space: nowrap; }
+  .sub { position: absolute; font-size: 11px; line-height: 14px; color: rgb(143,144,149); white-space: nowrap; }
+  .doc { position: absolute; background: rgb(38,39,52); overflow: hidden; }
+  .page { position: absolute; background: #fff; color: #000; font-family: Helvetica, Arial, sans-serif; }
+  .panel { position: absolute; left: 8px; top: 8px; bottom: 8px; width: 160px; border-radius: 19px;
+           background: rgb(32,33,43); box-shadow: inset 0 0 0 1px rgb(65,67,94); }
+  .sel { position: absolute; left: 22px; width: 132px; border-radius: 8px; background: rgb(52,120,246); }
+  .thumb { position: absolute; left: 28px; width: 120px; background: #fff; border-radius: 3px; }
+  .label { position: absolute; left: 22px; width: 132px; text-align: center; font-size: 13px; line-height: 19px; }
+</style>
+</head>
+<body>
+<div class="stage">
+
+<!-- A: three-page PDF with the thumbnail sidebar -->
+<div class="win" id="pdf" style="width:1121px;height:789px">
+  <div class="panel"></div>
+  <div class="light" style="left:19px;background:rgb(255,95,87)"></div>
+  <div class="light" style="left:42px;background:rgb(254,188,46)"></div>
+  <div class="light" style="left:65px;background:rgb(40,200,64)"></div>
+  <!-- sidebar toggle, no capsule while the sidebar shows -->
+  <div class="abs" style="left:121px;top:14px;width:24px;height:24px"><img src="../crates/preview/assets/icons/preview/sidebar.svg" style="width:23px;filter:invert(93%)"></div>
+  <div class="abs" style="left:147.5px;top:22px;width:8px;height:8px"><img src="../crates/preview/assets/icons/preview/chevron-down.svg" style="width:8px;filter:invert(93%)"></div>
+  <div class="title" style="left:188px;top:11px;font-size:13px;line-height:16px">three-pages.pdf</div>
+  <div class="sub" style="left:188px;top:27px">Page 1 of 3</div>
+  <!-- right group, laid out from the right edge -->
+  <div class="cap" style="left:936px;width:177px">
+    <div class="glyph" style="left:10.5px;top:7px;width:16px;height:16px"><img src="../crates/preview/assets/icons/preview/search.svg" style="filter:invert(60%)"></div>
+    <div class="abs" style="left:38px;top:0;line-height:34px;font-size:13px;color:rgb(146,147,155)">Search</div>
+  </div>
+  <div class="cap" style="left:889.5px;width:36px"><div class="glyph" style="left:6.5px;top:6.5px"><img src="../crates/preview/assets/icons/preview/info.svg"></div></div>
+  <div class="cap" style="left:835px;width:36px"><div class="glyph" style="left:6.5px;top:6.5px"><img src="../crates/preview/assets/icons/preview/rotate-left.svg"></div></div>
+  <div class="cap" style="left:708.5px;width:110px">
+    <div class="glyph" style="left:7px;top:6.5px"><img src="../crates/preview/assets/icons/preview/zoom-out.svg"></div>
+    <div class="div" style="left:35px;top:7px"></div>
+    <div class="glyph" style="left:44px;top:6.5px"><img src="../crates/preview/assets/icons/preview/zoom-actual.svg"></div>
+    <div class="div" style="left:72px;top:7px"></div>
+    <div class="glyph" style="left:81px;top:6.5px"><img src="../crates/preview/assets/icons/preview/zoom-in.svg"></div>
+  </div>
+  <!-- sidebar thumbnails: 612×792 pages → 120 × 155.3 -->
+  <div class="sel" style="top:52px;height:181px"></div>
+  <div class="thumb" style="top:58px;height:155.3px"></div>
+  <div class="label" style="top:214px">1</div>
+  <div class="thumb" style="top:249px;height:155.3px"></div>
+  <div class="label" style="top:405px;color:rgb(200,200,205)">2</div>
+  <div class="thumb" style="top:440px;height:155.3px"></div>
+  <div class="label" style="top:596px;color:rgb(200,200,205)">3</div>
+  <!-- document: fit width = (1121 − 168) − 25 = 928 -->
+  <div class="doc" style="left:168px;top:52px;right:0;bottom:0">
+    <div class="page" style="left:12.5px;top:16px;width:928px;height:1201px">
+      <div style="position:absolute;left:146px;top:122px;font-size:54.6px">Page 1 of 3</div>
+      <div style="position:absolute;left:146px;top:238px;font-size:21.2px">The quick brown fox jumps over the lazy dog.</div>
+    </div>
+  </div>
+</div>
+
+<!-- B: one 800×600 PNG, sidebar hidden -->
+<div class="win" id="png" style="width:800px;height:652px">
+  <div class="light" style="left:19px;background:rgb(255,95,87)"></div>
+  <div class="light" style="left:42px;background:rgb(254,188,46)"></div>
+  <div class="light" style="left:65px;background:rgb(40,200,64)"></div>
+  <div class="cap" style="left:103.5px;width:50.5px;top:7.5px">
+    <div class="abs" style="left:7px;top:5px;width:24px"><img src="../crates/preview/assets/icons/preview/sidebar.svg" style="width:23px;filter:invert(93%)"></div>
+    <div class="abs" style="left:34px;top:13.5px;width:8px"><img src="../crates/preview/assets/icons/preview/chevron-down.svg" style="width:8px;filter:invert(93%)"></div>
+  </div>
+  <div class="title" style="left:175px;top:0;font-size:15px;line-height:52px">img1.png</div>
+  <div class="cap" style="left:615px;width:177px">
+    <div class="glyph" style="left:10.5px;top:7px;width:16px;height:16px"><img src="../crates/preview/assets/icons/preview/search.svg" style="filter:invert(60%)"></div>
+    <div class="abs" style="left:38px;top:0;line-height:34px;font-size:13px;color:rgb(146,147,155)">Search</div>
+  </div>
+  <div class="cap" style="left:568.5px;width:36px"><div class="glyph" style="left:6.5px;top:6.5px"><img src="../crates/preview/assets/icons/preview/info.svg"></div></div>
+  <div class="cap" style="left:514px;width:36px"><div class="glyph" style="left:6.5px;top:6.5px"><img src="../crates/preview/assets/icons/preview/rotate-left.svg"></div></div>
+  <div class="cap" style="left:387.5px;width:110px">
+    <div class="glyph" style="left:7px;top:6.5px"><img src="../crates/preview/assets/icons/preview/zoom-out.svg"></div>
+    <div class="div" style="left:35px;top:7px"></div>
+    <div class="glyph" style="left:44px;top:6.5px"><img src="../crates/preview/assets/icons/preview/zoom-actual.svg"></div>
+    <div class="div" style="left:72px;top:7px"></div>
+    <div class="glyph" style="left:81px;top:6.5px"><img src="../crates/preview/assets/icons/preview/zoom-in.svg"></div>
+  </div>
+  <div class="doc" style="left:0;top:52px;right:0;bottom:0;background:rgb(240,240,240)">
+    <div style="position:absolute;left:250px;top:150px;width:300px;height:300px;border-radius:50%;background:rgb(98,138,214)"></div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

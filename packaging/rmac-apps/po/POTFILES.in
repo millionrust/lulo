@@ -9,6 +9,7 @@ applications/org.rmac.SystemMonitor.desktop
 applications/org.rmac.SystemSettings.desktop
 applications/org.rmac.Terminal.desktop
 applications/org.rmac.TextEditor.desktop
+applications/org.rmac.Weather.desktop
 metainfo/org.rmac.AppDrawer.metainfo.xml
 metainfo/org.rmac.ArchiveUtility.metainfo.xml
 metainfo/org.rmac.Calculator.metainfo.xml
@@ -20,3 +21,4 @@ metainfo/org.rmac.SystemMonitor.metainfo.xml
 metainfo/org.rmac.SystemSettings.metainfo.xml
 metainfo/org.rmac.Terminal.metainfo.xml
 metainfo/org.rmac.TextEditor.metainfo.xml
+metainfo/org.rmac.Weather.metainfo.xml

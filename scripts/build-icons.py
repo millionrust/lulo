@@ -262,6 +262,12 @@ ICONS: dict[str, tuple[tuple[str, str] | None, str, str]] = {
   <path d="M512 560L512 300" stroke="#F09748" stroke-width="8" stroke-linecap="round"/>
   <circle cx="512" cy="512" r="18" fill="#F09748"/>"""),
 
+    "weather": (("#5AA9F5", "#1F66C9"), grad("sunny", "#FFE266", "#FFB31F"), """
+  <circle cx="598" cy="404" r="132" fill="url(#sunny)" filter="url(#lift)"/>
+  <path d="M348 704c-66 0-118-52-118-116 0-58 42-106 98-114 14-86 88-150 176-150
+           76 0 142 48 166 118 8-2 18-2 26-2 72 0 130 58 130 130s-58 134-130 134z"
+        fill="url(#frost)" stroke="url(#edge)" stroke-width="6" filter="url(#lift)"/>"""),
+
     "application": (("#A3ACBB", "#5A6679"), grad("pane", "#5A96F7", "#2C60D2"), """
   <rect x="252" y="292" width="520" height="440" rx="60" fill="url(#frost)"
         stroke="url(#edge)" stroke-width="5" filter="url(#lift)"/>
@@ -311,6 +317,7 @@ PACKAGED = {
     "org.rmac.Calculator": "calculator",
     "org.rmac.Preview": "preview",
     "org.rmac.Clock": "clock",
+    "org.rmac.Weather": "weather",
 }
 
 # The Dock's embedded artwork -> icon name (Application is the fallback for

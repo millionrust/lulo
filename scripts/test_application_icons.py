@@ -15,7 +15,6 @@ ROOT = Path(__file__).parents[1]
 ICON_DIR = ROOT / "packaging/rmac-apps/icons"
 DOCK_DIR = ROOT / "crates/rmac-dock/assets/icons"
 IDENTITIES = (
-    "org.rmac.Clock",
     "org.rmac.Files",
     "org.rmac.Terminal",
     "org.rmac.Notes",
@@ -26,6 +25,8 @@ IDENTITIES = (
     "org.rmac.Calculator",
     "org.rmac.Preview",
     "org.rmac.ArchiveUtility",
+    "org.rmac.Clock",
+    "org.rmac.Weather",
 )
 DOCK_ICONS = ("application", "files", "downloads", "trash-empty", "trash-full", "more")
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"

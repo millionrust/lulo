@@ -58,6 +58,7 @@ APPLICATION_BINARIES = (
     "rmac-system-settings",
     "rmac-terminal",
     "rmac-text-editor",
+    "rmac-weather",
 )
 
 SESSION_BINARIES = (
@@ -109,6 +110,7 @@ PACKAGE_SPECS = (
         binaries=APPLICATION_BINARIES,
         static_dependencies=(
             "bluez",
+            "curl",
             "dbus-user-session",
             "fonts-inter",
             "fonts-jetbrains-mono",

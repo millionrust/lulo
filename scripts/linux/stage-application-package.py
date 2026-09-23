@@ -29,6 +29,7 @@ APPLICATION_IDS = (
     "org.rmac.SystemSettings",
     "org.rmac.Terminal",
     "org.rmac.TextEditor",
+    "org.rmac.Weather",
 )
 LOCALIZATION_FILES = {
     "LINGUAS",

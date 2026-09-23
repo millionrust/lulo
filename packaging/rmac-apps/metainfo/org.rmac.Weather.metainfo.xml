@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<component type="desktop-application">
+  <id>org.rmac.Weather</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Weather</name>
+  <name xml:lang="hi">मौसम</name>
+  <summary>Current conditions and forecasts for chosen cities</summary>
+  <summary xml:lang="hi">चुने गए शहरों का वर्तमान मौसम और पूर्वानुमान</summary>
+  <description>
+    <p>Weather shows current conditions, an hourly forecast and ten days ahead for the cities you choose.</p>
+    <p>It never looks up your location. Forecasts come from Open-Meteo and the last one stays available offline.</p>
+  </description>
+  <launchable type="desktop-id">org.rmac.Weather.desktop</launchable>
+  <icon type="stock">org.rmac.Weather</icon>
+  <provides><binary>rmac-weather</binary></provides>
+  <url type="homepage">https://github.com/snehacodex/rmac</url>
+  <developer id="org.rmac"><name>rmac contributors</name></developer>
+  <releases><release version="0.1.0" date="2026-07-25"/></releases>
+  <content_rating type="oars-1.1"/>
+</component>

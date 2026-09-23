@@ -46,7 +46,7 @@ pub use window::*;
 pub mod app_id {
     pub use rmac_apps::identity::{
         APP_DRAWER, CALCULATOR, CLOCK, FILES, NOTES, PREVIEW, SYSTEM_MONITOR, SYSTEM_SETTINGS,
-        TERMINAL, TEXT_EDITOR,
+        TERMINAL, TEXT_EDITOR, WEATHER,
     };
 }
 

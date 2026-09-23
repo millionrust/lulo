@@ -153,6 +153,15 @@ APPLICATIONS = {
         "categories": "Utility;TextEditor;",
         "hidden": False,
     },
+    "org.rmac.Weather": {
+        "name": "Weather",
+        "generic": "Weather Forecast",
+        "summary": "Current conditions and forecasts for chosen cities",
+        "keywords": "weather;forecast;temperature;rain;climate;",
+        "binary": "rmac-weather",
+        "categories": "Utility;",
+        "hidden": False,
+    },
 }
 HINDI = {
     "Apps": "ऐप्स",
@@ -197,6 +206,10 @@ HINDI = {
     "Clock": "घड़ी",
     "World clock, alarms, stopwatch and timers": "विश्व घड़ी, अलार्म, स्टॉपवॉच और टाइमर",
     "clock;alarm;timer;stopwatch;time;world;": "घड़ी;अलार्म;टाइमर;स्टॉपवॉच;समय;विश्व;",
+    "Weather": "मौसम",
+    "Weather Forecast": "मौसम पूर्वानुमान",
+    "Current conditions and forecasts for chosen cities": "चुने गए शहरों का वर्तमान मौसम और पूर्वानुमान",
+    "weather;forecast;temperature;rain;climate;": "मौसम;पूर्वानुमान;तापमान;बारिश;जलवायु;",
 }
 LOCALIZATION_FILES = {
     "LINGUAS",

@@ -67,7 +67,7 @@ from native_package_contract import ALL_BINARIES
 print("\n".join(ALL_BINARIES))
 ' "$repo_root/scripts/linux")" || fail "native package inventory could not be loaded"
 mapfile -t binary_names <<<"$inventory"
-[[ ${#binary_names[@]} -eq 34 ]] || fail "native package inventory is not exact"
+[[ ${#binary_names[@]} -eq 35 ]] || fail "native package inventory is not exact"
 
 # Reuse the repository's one normal target graph even if the caller exports a
 # different Cargo target directory.
@@ -79,6 +79,7 @@ export CARGO_TARGET_DIR="$target_dir"
     -p rmac-archive-utility --bin rmac-archive-utility \
     -p rmac-calculator --bin rmac-calculator \
     -p rmac-clock --bin rmac-clock \
+    -p rmac-weather --bin rmac-weather \
     -p rmac-finder --bin rmac-files \
     -p rmac-notes --bin rmac-notes \
     -p rmac-preview --bin rmac-preview \

@@ -10,8 +10,9 @@ pub const SYSTEM_SETTINGS: &str = "org.rmac.SystemSettings";
 pub const CALCULATOR: &str = "org.rmac.Calculator";
 pub const PREVIEW: &str = "org.rmac.Preview";
 pub const CLOCK: &str = "org.rmac.Clock";
+pub const WEATHER: &str = "org.rmac.Weather";
 
-pub const ALL: [&str; 10] = [
+pub const ALL: [&str; 11] = [
     FILES,
     TERMINAL,
     NOTES,
@@ -22,6 +23,7 @@ pub const ALL: [&str; 10] = [
     CALCULATOR,
     PREVIEW,
     CLOCK,
+    WEATHER,
 ];
 
 /// Stable user-facing native window title for a first-party desktop identity.
@@ -40,6 +42,7 @@ pub fn window_title(app_id: &str) -> Option<&'static str> {
         CALCULATOR => Some("Calculator"),
         PREVIEW => Some("Preview"),
         CLOCK => Some("Clock"),
+        WEATHER => Some("Weather"),
         _ => None,
     }
 }

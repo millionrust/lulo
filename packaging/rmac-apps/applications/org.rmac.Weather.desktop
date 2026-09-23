@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Weather
+Name[hi]=मौसम
+GenericName=Weather Forecast
+GenericName[hi]=मौसम पूर्वानुमान
+Comment=Current conditions and forecasts for chosen cities
+Comment[hi]=चुने गए शहरों का वर्तमान मौसम और पूर्वानुमान
+Keywords=weather;forecast;temperature;rain;climate;
+Keywords[hi]=मौसम;पूर्वानुमान;तापमान;बारिश;जलवायु;
+TryExec=/usr/bin/rmac-weather
+Exec=/usr/bin/rmac-weather
+Icon=org.rmac.Weather
+Terminal=false
+Categories=Utility;
+StartupWMClass=org.rmac.Weather

@@ -138,3 +138,15 @@ msgstr "विश्व घड़ी, अलार्म, स्टॉपवॉ�
 
 msgid "clock;alarm;timer;stopwatch;time;world;"
 msgstr "घड़ी;अलार्म;टाइमर;स्टॉपवॉच;समय;विश्व;"
+
+msgid "Weather"
+msgstr "मौसम"
+
+msgid "Weather Forecast"
+msgstr "मौसम पूर्वानुमान"
+
+msgid "Current conditions and forecasts for chosen cities"
+msgstr "चुने गए शहरों का वर्तमान मौसम और पूर्वानुमान"
+
+msgid "weather;forecast;temperature;rain;climate;"
+msgstr "मौसम;पूर्वानुमान;तापमान;बारिश;जलवायु;"

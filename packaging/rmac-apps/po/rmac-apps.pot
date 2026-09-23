@@ -139,3 +139,15 @@ msgstr ""
 
 msgid "clock;alarm;timer;stopwatch;time;world;"
 msgstr ""
+
+msgid "Weather"
+msgstr ""
+
+msgid "Weather Forecast"
+msgstr ""
+
+msgid "Current conditions and forecasts for chosen cities"
+msgstr ""
+
+msgid "weather;forecast;temperature;rain;climate;"
+msgstr ""

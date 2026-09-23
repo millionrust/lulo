@@ -331,6 +331,25 @@ const CLOCK_MENUS: &[MenuSpec] = &[
     },
 ];
 
+const WEATHER_MENUS: &[MenuSpec] = &[
+    MenuSpec {
+        label: "File",
+        items: &[item!("Close Window", "weather::CloseWindow", "⌘W")],
+    },
+    MenuSpec {
+        label: "Edit",
+        items: &[item!("Find", "weather::FindCity", "⌘F")],
+    },
+    MenuSpec {
+        label: "View",
+        items: &[
+            item!("Celsius", "weather::UseCelsius", ""),
+            item!("Fahrenheit", "weather::UseFahrenheit", ""),
+            item!("Refresh", "weather::Refresh", "⌘R", separator),
+        ],
+    },
+];
+
 fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
     match app_id {
         rmac_apps::identity::FILES => Some(FILES_MENUS),
@@ -342,6 +361,7 @@ fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
         rmac_apps::identity::CALCULATOR => Some(CALCULATOR_MENUS),
         rmac_apps::identity::PREVIEW => Some(PREVIEW_MENUS),
         rmac_apps::identity::CLOCK => Some(CLOCK_MENUS),
+        rmac_apps::identity::WEATHER => Some(WEATHER_MENUS),
         _ => None,
     }
 }
@@ -357,6 +377,7 @@ pub fn bus_name(app_id: &str) -> Option<&'static str> {
         rmac_apps::identity::CALCULATOR => Some("org.rmac.Calculator.Menu"),
         rmac_apps::identity::PREVIEW => Some("org.rmac.Preview.Menu"),
         rmac_apps::identity::CLOCK => Some("org.rmac.Clock.Menu"),
+        rmac_apps::identity::WEATHER => Some("org.rmac.Weather.Menu"),
         _ => None,
     }
 }
@@ -777,6 +798,24 @@ mod tests {
         );
         assert_eq!(menus[1].items[2].label, "Stopwatch");
         assert_eq!(menus[1].items[2].shortcut, "⌘3");
+        assert!(validate_menus(&menus).is_ok());
+    }
+
+    #[test]
+    fn weather_exports_its_menus() {
+        let actions = WEATHER_MENUS
+            .iter()
+            .flat_map(|menu| menu.items.iter().map(|item| item.action))
+            .collect::<Vec<_>>();
+        let menus = definition(rmac_apps::identity::WEATHER, &actions).unwrap();
+        assert_eq!(
+            menus
+                .iter()
+                .map(|menu| menu.label.as_str())
+                .collect::<Vec<_>>(),
+            ["File", "Edit", "View"]
+        );
+        assert_eq!(menus[2].items[2].shortcut, "⌘R");
         assert!(validate_menus(&menus).is_ok());
     }
 

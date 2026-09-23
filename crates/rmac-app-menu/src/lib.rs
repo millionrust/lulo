@@ -260,6 +260,51 @@ const CALCULATOR_MENUS: &[MenuSpec] = &[
     },
 ];
 
+const PREVIEW_MENUS: &[MenuSpec] = &[
+    MenuSpec {
+        label: "File",
+        items: &[
+            item!("Open…", "preview::OpenFile", "⌘O"),
+            item!("Close Window", "preview::CloseWindow", "⌘W", separator),
+        ],
+    },
+    MenuSpec {
+        label: "Edit",
+        items: &[
+            item!("Copy", "preview::Copy", "⌘C"),
+            item!("Find", "preview::Find", "⌘F", separator),
+            item!("Find Next", "preview::FindNext", "⌘G"),
+            item!("Find Previous", "preview::FindPrevious", "⇧⌘G"),
+        ],
+    },
+    MenuSpec {
+        label: "View",
+        items: &[
+            item!("Hide Sidebar", "preview::HideSidebar", "⌥⌘1"),
+            item!("Thumbnails", "preview::ShowThumbnails", "⌥⌘2"),
+            item!("Actual Size", "preview::ActualSize", "⌘0", separator),
+            item!("Zoom to Fit", "preview::ZoomToFit", "⌘9"),
+            item!("Zoom In", "preview::ZoomIn", "⌘+"),
+            item!("Zoom Out", "preview::ZoomOut", "⌘−"),
+        ],
+    },
+    MenuSpec {
+        label: "Go",
+        items: &[
+            item!("Previous Item", "preview::PreviousItem", "⌥↑"),
+            item!("Next Item", "preview::NextItem", "⌥↓"),
+        ],
+    },
+    MenuSpec {
+        label: "Tools",
+        items: &[
+            item!("Show Inspector", "preview::ShowInspector", "⌘I"),
+            item!("Rotate Left", "preview::RotateLeft", "⌘L", separator),
+            item!("Rotate Right", "preview::RotateRight", "⌘R"),
+        ],
+    },
+];
+
 fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
     match app_id {
         rmac_apps::identity::FILES => Some(FILES_MENUS),
@@ -269,6 +314,7 @@ fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
         rmac_apps::identity::SYSTEM_MONITOR => Some(MONITOR_MENUS),
         rmac_apps::identity::SYSTEM_SETTINGS => Some(SETTINGS_MENUS),
         rmac_apps::identity::CALCULATOR => Some(CALCULATOR_MENUS),
+        rmac_apps::identity::PREVIEW => Some(PREVIEW_MENUS),
         _ => None,
     }
 }
@@ -282,6 +328,7 @@ pub fn bus_name(app_id: &str) -> Option<&'static str> {
         rmac_apps::identity::SYSTEM_MONITOR => Some("org.rmac.SystemMonitor.Menu"),
         rmac_apps::identity::SYSTEM_SETTINGS => Some("org.rmac.SystemSettings.Menu"),
         rmac_apps::identity::CALCULATOR => Some("org.rmac.Calculator.Menu"),
+        rmac_apps::identity::PREVIEW => Some("org.rmac.Preview.Menu"),
         _ => None,
     }
 }
@@ -647,6 +694,38 @@ mod tests {
         assert_eq!(menus[0].items[0].label, "as Icons");
         assert_eq!(menus[1].items[0].action, "finder::GoBack");
         assert_eq!(menus[2].items[1].shortcut, "⌃⇥");
+        assert!(validate_menus(&menus).is_ok());
+    }
+
+    #[test]
+    fn preview_exports_its_measured_menus() {
+        assert_eq!(
+            bus_name(rmac_apps::identity::PREVIEW),
+            Some("org.rmac.Preview.Menu")
+        );
+        let actions = PREVIEW_MENUS
+            .iter()
+            .flat_map(|menu| menu.items.iter().map(|item| item.action))
+            .collect::<Vec<_>>();
+        let menus = definition(rmac_apps::identity::PREVIEW, &actions).unwrap();
+        assert_eq!(
+            menus
+                .iter()
+                .map(|menu| menu.label.as_str())
+                .collect::<Vec<_>>(),
+            ["File", "Edit", "View", "Go", "Tools"]
+        );
+        let shortcut = |label: &str| {
+            menus
+                .iter()
+                .flat_map(|menu| &menu.items)
+                .find(|item| item.label == label)
+                .map(|item| item.shortcut.clone())
+        };
+        assert_eq!(shortcut("Hide Sidebar").as_deref(), Some("⌥⌘1"));
+        assert_eq!(shortcut("Actual Size").as_deref(), Some("⌘0"));
+        assert_eq!(shortcut("Rotate Right").as_deref(), Some("⌘R"));
+        assert_eq!(shortcut("Next Item").as_deref(), Some("⌥↓"));
         assert!(validate_menus(&menus).is_ok());
     }
 

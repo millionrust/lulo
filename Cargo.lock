@@ -6037,6 +6037,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-preview"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "image",
+ "rmac-portal",
+ "rmac-ui",
+ "rust-embed",
+]
+
+[[package]]
 name = "rmac-print"
 version = "0.1.0"
 dependencies = [

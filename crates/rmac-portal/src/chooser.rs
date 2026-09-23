@@ -41,6 +41,62 @@ pub async fn choose_desktop_entry() -> Result<Option<PathBuf>, Error> {
     }
 }
 
+/// Ask the desktop portal for one or more local images or PDFs to open in
+/// Preview. An empty list means the person cancelled.
+///
+/// The filter is chooser guidance only; Preview recognises every returned
+/// file from its contents before showing it.
+pub async fn choose_preview_documents() -> Result<Vec<PathBuf>, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        use ashpd::desktop::file_chooser::{FileFilter, OpenFileRequest};
+        use ashpd::{desktop::ResponseError, Error as PortalError};
+
+        let request = OpenFileRequest::default()
+            .title("Open")
+            .accept_label("Open")
+            .modal(true)
+            .multiple(true)
+            .filter(
+                FileFilter::new("Images and PDF documents")
+                    .mimetype("application/pdf")
+                    .mimetype("image/png")
+                    .mimetype("image/jpeg")
+                    .mimetype("image/gif")
+                    .mimetype("image/webp")
+                    .mimetype("image/bmp")
+                    .mimetype("image/tiff"),
+            )
+            .send()
+            .await
+            .map_err(choose_failure)?;
+        let response = match request.response() {
+            Ok(response) => response,
+            Err(PortalError::Response(ResponseError::Cancelled)) => return Ok(Vec::new()),
+            Err(error) => return Err(choose_failure(error)),
+        };
+        response
+            .uris()
+            .iter()
+            .map(|uri| {
+                uri.to_file_path().map_err(|()| Error {
+                    operation: Operation::Choose,
+                    path: PathBuf::new(),
+                    detail: "the portal returned a non-local document".into(),
+                })
+            })
+            .collect()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the Preview open panel is available in the supported Linux session".into(),
+        })
+    }
+}
+
 /// Ask the desktop portal for one local PNG, JPEG, or WebP wallpaper file.
 ///
 /// The filter is only chooser guidance. Callers must still validate the file

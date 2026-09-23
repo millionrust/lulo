@@ -66,9 +66,9 @@ class NativePackageContractTests(unittest.TestCase):
                 self.assertIn(f'{crate} = {{ version = "=0.1.0",', manifest)
 
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
-        self.assertEqual(len(contract.APPLICATION_BINARIES), 8)
+        self.assertEqual(len(contract.APPLICATION_BINARIES), 9)
         self.assertEqual(len(contract.SESSION_BINARIES), 21)
-        self.assertEqual(len(contract.ALL_BINARIES), 27)
+        self.assertEqual(len(contract.ALL_BINARIES), 28)
         self.assertEqual(
             set(contract.ALL_BINARIES),
             set(contract.APPLICATION_BINARIES) | set(contract.SESSION_BINARIES),

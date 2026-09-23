@@ -105,3 +105,15 @@ msgstr "बुनियादी अंकगणितीय गणनाएँ 
 
 msgid "calculator;math;arithmetic;numbers;"
 msgstr "कैलकुलेटर;गणित;अंकगणित;संख्याएँ;"
+
+msgid "Preview"
+msgstr "प्रीव्यू"
+
+msgid "Document Viewer"
+msgstr "दस्तावेज़ दर्शक"
+
+msgid "View images and PDF documents"
+msgstr "छवियाँ और PDF दस्तावेज़ देखें"
+
+msgid "preview;image;photo;pdf;viewer;"
+msgstr "प्रीव्यू;छवि;फ़ोटो;पीडीएफ़;दर्शक;"

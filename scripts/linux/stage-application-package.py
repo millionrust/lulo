@@ -22,6 +22,7 @@ APPLICATION_IDS = (
     "org.rmac.Calculator",
     "org.rmac.Files",
     "org.rmac.Notes",
+    "org.rmac.Preview",
     "org.rmac.SystemMonitor",
     "org.rmac.SystemSettings",
     "org.rmac.Terminal",

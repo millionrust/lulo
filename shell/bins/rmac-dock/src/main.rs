@@ -1486,6 +1486,7 @@ mod linux_wayland {
             rmac_apps::identity::SYSTEM_MONITOR => "org.rmac.SystemMonitor.svg",
             rmac_apps::identity::SYSTEM_SETTINGS => "org.rmac.SystemSettings.svg",
             rmac_apps::identity::CALCULATOR => "org.rmac.Calculator.svg",
+            rmac_apps::identity::PREVIEW => "org.rmac.Preview.svg",
             _ => return None,
         };
         Some(
@@ -1523,6 +1524,7 @@ mod linux_wayland {
             rmac_apps::identity::SYSTEM_MONITOR => 0x34a875ff,
             rmac_apps::identity::SYSTEM_SETTINGS => 0x8d929aff,
             rmac_apps::identity::CALCULATOR => 0xff9500ff,
+            rmac_apps::identity::PREVIEW => 0x2f6fd6ff,
             _ => {
                 let hash = app_id.bytes().fold(0x811c9dc5u32, |hash, byte| {
                     hash.wrapping_mul(0x01000193) ^ u32::from(byte)

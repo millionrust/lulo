@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<component type="desktop-application">
+  <id>org.rmac.Preview</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Preview</name>
+  <name xml:lang="hi">प्रीव्यू</name>
+  <summary>View images and PDF documents</summary>
+  <summary xml:lang="hi">छवियाँ और PDF दस्तावेज़ देखें</summary>
+  <description>
+    <p>Preview shows photos, pictures and PDF documents with a thumbnail sidebar, zoom and rotation.</p>
+    <p>PDF pages scroll continuously, can be searched, and render only as they come into view.</p>
+  </description>
+  <launchable type="desktop-id">org.rmac.Preview.desktop</launchable>
+  <icon type="stock">org.rmac.Preview</icon>
+  <provides><binary>rmac-preview</binary></provides>
+  <url type="homepage">https://github.com/snehacodex/rmac</url>
+  <developer id="org.rmac"><name>rmac contributors</name></developer>
+  <releases><release version="0.1.0" date="2026-07-25"/></releases>
+  <content_rating type="oars-1.1"/>
+</component>

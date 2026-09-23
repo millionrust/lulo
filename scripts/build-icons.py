@@ -144,6 +144,16 @@ GLYPHS: dict[str, tuple[str, str, str, str]] = {
           <circle cx="638" cy="618" r="34"/><circle cx="638" cy="702" r="34"/>
         </g>
     """),
+    "preview": ("#4F8FF0", "#2459B8", "#FFFFFF", """
+        <rect x="318" y="236" width="340" height="452" rx="36" fill="#F4F7FB"/>
+        <rect x="360" y="280" width="256" height="170" rx="18" fill="#8FB8EE"/>
+        <path d="M360 450l80-80 58 58 46-34 72 56z" fill="#3F7F4F"/>
+        <g stroke="#9AA7B8" stroke-width="22" stroke-linecap="round">
+          <path d="M360 510h256"/><path d="M360 562h256"/><path d="M360 614h160"/>
+        </g>
+        <circle cx="618" cy="612" r="92" fill="none" stroke="#1B2A44" stroke-width="40"/>
+        <path d="M684 678l72 72" stroke="#1B2A44" stroke-width="46" stroke-linecap="round"/>
+    """),
     "trash": ("#D8D8DE", "#A5A5AC", "#FFFFFF", """
         <path d="M368 372h288l-28 348c-2 26-24 46-50 46H446c-26 0-48-20-50-46z"
               fill="#FFFFFF" opacity=".92"/>

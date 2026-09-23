@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Preview
+Name[hi]=प्रीव्यू
+GenericName=Document Viewer
+GenericName[hi]=दस्तावेज़ दर्शक
+Comment=View images and PDF documents
+Comment[hi]=छवियाँ और PDF दस्तावेज़ देखें
+Keywords=preview;image;photo;pdf;viewer;
+Keywords[hi]=प्रीव्यू;छवि;फ़ोटो;पीडीएफ़;दर्शक;
+TryExec=/usr/bin/rmac-preview
+Exec=/usr/bin/rmac-preview %F
+Icon=org.rmac.Preview
+Terminal=false
+Categories=Graphics;Viewer;
+MimeType=application/pdf;image/png;image/jpeg;image/gif;image/webp;image/bmp;image/tiff;
+StartupWMClass=org.rmac.Preview

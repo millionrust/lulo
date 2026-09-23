@@ -14,9 +14,10 @@ AppStream component ID, and every GPUI Wayland toplevel `app_id`.
 | Applications | `org.rmac.AppDrawer` | `rmac-app-drawer` |
 | System Settings | `org.rmac.SystemSettings` | `rmac-system-settings` |
 | Calculator | `org.rmac.Calculator` | `rmac-calculator` |
+| Preview | `org.rmac.Preview` | `rmac-preview` |
 
 Each identity now has original MIT-licensed scalable artwork under
-`packaging/rmac-apps/icons`. The eight icons share a 128-unit canvas, 28-unit
+`packaging/rmac-apps/icons`. The nine icons share a 128-unit canvas, 28-unit
 outer corner, quiet solid background, and high-contrast geometric foreground.
 They contain no Apple artwork, names, logos, fonts, embedded raster images,
 external references, scripts, filters, or text. Their motifs are rmac-owned:

@@ -27,6 +27,17 @@ TEXT_MIME_TYPES = (
     "text/rtf",
     "application/rtf",
 )
+# Preview claims only the formats it decodes (the image crate's PNG, JPEG,
+# GIF, WebP, BMP and TIFF, and PDF through poppler), not every image/*.
+PREVIEW_MIME_TYPES = (
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp",
+    "image/bmp",
+    "image/tiff",
+)
 APPLICATIONS = {
     "org.rmac.AppDrawer": {
         "name": "Apps",
@@ -62,6 +73,15 @@ APPLICATIONS = {
         "keywords": "notes;writing;lists;organize;",
         "binary": "rmac-notes",
         "categories": "Office;",
+        "hidden": False,
+    },
+    "org.rmac.Preview": {
+        "name": "Preview",
+        "generic": "Document Viewer",
+        "summary": "View images and PDF documents",
+        "keywords": "preview;image;photo;pdf;viewer;",
+        "binary": "rmac-preview",
+        "categories": "Graphics;Viewer;",
         "hidden": False,
     },
     "org.rmac.SystemMonitor": {
@@ -133,6 +153,10 @@ HINDI = {
     "Calculator": "कैलकुलेटर",
     "Perform basic arithmetic calculations": "बुनियादी अंकगणितीय गणनाएँ करें",
     "calculator;math;arithmetic;numbers;": "कैलकुलेटर;गणित;अंकगणित;संख्याएँ;",
+    "Preview": "प्रीव्यू",
+    "Document Viewer": "दस्तावेज़ दर्शक",
+    "View images and PDF documents": "छवियाँ और PDF दस्तावेज़ देखें",
+    "preview;image;photo;pdf;viewer;": "प्रीव्यू;छवि;फ़ोटो;पीडीएफ़;दर्शक;",
 }
 LOCALIZATION_FILES = {
     "LINGUAS",
@@ -278,7 +302,7 @@ def _verify_desktop(root: Path, identity: str, specification: dict[str, object])
     entry = parser["Desktop Entry"]
     binary = str(specification["binary"])
     expected_exec = f"/usr/bin/{binary}"
-    if identity == "org.rmac.TextEditor":
+    if identity in ("org.rmac.TextEditor", "org.rmac.Preview"):
         expected_exec += " %F"
     required = {
         "Version": "1.5",
@@ -316,6 +340,11 @@ def _verify_desktop(root: Path, identity: str, specification: dict[str, object])
             "Exec": "/usr/bin/rmac-text-editor --new-document",
         }:
             raise VerificationError("Text Editor new-document action is invalid")
+    elif identity == "org.rmac.Preview":
+        if entry.get("MimeType") != ";".join(PREVIEW_MIME_TYPES) + ";":
+            raise VerificationError("Preview MIME declarations are invalid")
+        if "Actions" in entry:
+            raise VerificationError("Preview action inventory is invalid")
     elif any(key in entry for key in ("MimeType", "Actions")) or "%" in entry["Exec"]:
         raise VerificationError(f"desktop entry claims unsupported activation: {identity}")
 

@@ -106,3 +106,15 @@ msgstr ""
 
 msgid "calculator;math;arithmetic;numbers;"
 msgstr ""
+
+msgid "Preview"
+msgstr ""
+
+msgid "Document Viewer"
+msgstr ""
+
+msgid "View images and PDF documents"
+msgstr ""
+
+msgid "preview;image;photo;pdf;viewer;"
+msgstr ""

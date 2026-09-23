@@ -51,6 +51,7 @@ APPLICATION_BINARIES = (
     "rmac-calculator",
     "rmac-files",
     "rmac-notes",
+    "rmac-preview",
     "rmac-system-monitor",
     "rmac-system-settings",
     "rmac-terminal",
@@ -107,6 +108,7 @@ PACKAGE_SPECS = (
             "network-manager",
             "packagekit",
             "pipewire-bin",
+            "poppler-utils",
             "power-profiles-daemon",
             "upower",
             "wireplumber",
@@ -117,7 +119,7 @@ PACKAGE_SPECS = (
         summary="macOS-inspired applications for the rmac Linux desktop",
         description=(
             "Provides Files, Terminal, Notes, Text Editor, System Monitor, "
-            "Calculator, Apps, and Settings with their original rmac desktop "
+            "Calculator, Preview, Apps, and Settings with their original rmac desktop "
             "metadata and assets."
         ),
     ),

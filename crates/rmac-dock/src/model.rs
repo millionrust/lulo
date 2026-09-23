@@ -112,6 +112,13 @@ pub enum Activation {
         spec: rmac_apps::LaunchSpec,
     },
     FocusWindow(rmac_compositor::WindowId),
+    /// Bring every window of an application forward, as a macOS Dock click
+    /// does: the windows are focused back to front so the most recently used
+    /// one (the last entry) ends up focused on top.
+    FocusApplication {
+        app_id: String,
+        windows: Vec<rmac_compositor::WindowId>,
+    },
     /// Restore a parked window to the workspace it was minimized from.
     RestoreWindow {
         window: rmac_compositor::WindowId,

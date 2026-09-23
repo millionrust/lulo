@@ -128,6 +128,18 @@ impl Model {
             };
         };
         if item.windows.is_empty() {
+            // macOS restores the most recently minimized window when every
+            // window of the clicked application is in the Dock.
+            if let Some(parked) = self.minimized.iter().rev().find(|parked| {
+                parked
+                    .app_id
+                    .as_deref()
+                    .is_some_and(|app_id| canonical_app_id(app_id) == canonical)
+            }) {
+                return Activation::RestoreWindow {
+                    window: parked.window,
+                };
+            }
             return match &item.launch {
                 Some(spec) => Activation::Launch {
                     app_id: item.id.clone(),
@@ -140,28 +152,32 @@ impl Model {
             };
         }
 
-        let focused = item.windows.iter().position(|window| window.focused);
-        let target = match focused {
-            None => item.windows.first().map(|window| window.id),
-            Some(index) => match self.repeated_click {
-                rmac_shell_settings::RepeatedClickBehavior::CycleWindows
-                    if item.windows.len() > 1 =>
-                {
-                    Some(item.windows[(index + 1) % item.windows.len()].id)
-                }
-                rmac_shell_settings::RepeatedClickBehavior::CycleWindows
-                | rmac_shell_settings::RepeatedClickBehavior::DoNothing => None,
-                rmac_shell_settings::RepeatedClickBehavior::HideApplication => {
-                    return Activation::Unavailable {
-                        app_id: item.id.clone(),
-                        detail: "niri does not expose application hiding".into(),
-                    };
-                }
-            },
+        let Some(index) = item.windows.iter().position(|window| window.focused) else {
+            // A background application comes forward with all of its windows.
+            // `windows` is most recent first, so focus runs in reverse.
+            if item.windows.len() == 1 {
+                return Activation::FocusWindow(item.windows[0].id);
+            }
+            return Activation::FocusApplication {
+                app_id: item.id.clone(),
+                windows: item.windows.iter().rev().map(|window| window.id).collect(),
+            };
         };
-        target
-            .map(Activation::FocusWindow)
-            .unwrap_or(Activation::NoAction)
+        // Clicking the frontmost application does nothing on macOS; the
+        // optional rmac behaviours below are opt-in settings.
+        match self.repeated_click {
+            rmac_shell_settings::RepeatedClickBehavior::CycleWindows if item.windows.len() > 1 => {
+                Activation::FocusWindow(item.windows[(index + 1) % item.windows.len()].id)
+            }
+            rmac_shell_settings::RepeatedClickBehavior::CycleWindows
+            | rmac_shell_settings::RepeatedClickBehavior::DoNothing => Activation::NoAction,
+            rmac_shell_settings::RepeatedClickBehavior::HideApplication => {
+                Activation::Unavailable {
+                    app_id: item.id.clone(),
+                    detail: "niri does not expose application hiding".into(),
+                }
+            }
+        }
     }
 
     pub fn context_menu(&self, app_id: &str) -> Option<ContextMenu> {

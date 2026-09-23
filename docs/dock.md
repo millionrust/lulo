@@ -29,11 +29,14 @@ applications whose Wayland identity differs from their desktop-file ID.
 
 ## Primary click
 
-- An installed app with no windows returns its exact shell-free `LaunchSpec`.
-- A running background app focuses its most recently focused window.
-- Repeated click with `cycle-windows` focuses the next recent window and is a
-  no-op when only one window exists.
-- `do-nothing` is an explicit no-op.
+- An installed app with no windows returns its exact shell-free `LaunchSpec`,
+  unless all of its windows are minimized: then the newest minimized window is
+  restored, as on macOS.
+- A running background app brings every window forward: the windows are
+  focused back to front so the most recently used one ends on top.
+- Clicking the frontmost app does nothing (`do-nothing`, the macOS default).
+- The opt-in `cycle-windows` focuses the next recent window and is a no-op when
+  only one window exists.
 - `hide-application` reports unavailable because niri exposes no truthful
   application-hide operation; the Dock does not simulate hiding.
 

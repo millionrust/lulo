@@ -152,11 +152,18 @@ fn repeated_click_cycles_recent_windows_and_single_window_is_a_noop() {
         ],
         ..Default::default()
     };
-    let model = Model::build(&pinned, &Default::default(), &catalog, &compositor);
+    let cycle = rmac_shell_settings::DockSettings {
+        repeated_click: rmac_shell_settings::RepeatedClickBehavior::CycleWindows,
+        ..Default::default()
+    };
+    let model = Model::build(&pinned, &cycle, &catalog, &compositor);
     assert_eq!(
         model.activate("terminal"),
         Activation::FocusWindow(rmac_compositor::WindowId(3))
     );
+    // macOS default: clicking the frontmost application does nothing.
+    let model = Model::build(&pinned, &Default::default(), &catalog, &compositor);
+    assert_eq!(model.activate("terminal"), Activation::NoAction);
 
     let compositor = rmac_compositor::Snapshot {
         windows: vec![window(2, "terminal", true, false, 20)],
@@ -164,6 +171,63 @@ fn repeated_click_cycles_recent_windows_and_single_window_is_a_noop() {
     };
     let model = Model::build(&pinned, &Default::default(), &catalog, &compositor);
     assert_eq!(model.activate("terminal"), Activation::NoAction);
+}
+
+#[test]
+fn background_click_brings_every_window_forward_most_recent_last() {
+    let catalog = [application("terminal.desktop", "Terminal")];
+    let pinned = [rmac_shell_settings::AppId("terminal.desktop".into())];
+    let compositor = rmac_compositor::Snapshot {
+        windows: vec![
+            window(1, "terminal", false, false, 10),
+            window(2, "terminal", false, false, 30),
+            window(3, "terminal", false, false, 20),
+        ],
+        ..Default::default()
+    };
+    let model = Model::build(&pinned, &Default::default(), &catalog, &compositor);
+    assert_eq!(
+        model.activate("terminal"),
+        Activation::FocusApplication {
+            app_id: "terminal.desktop".into(),
+            windows: vec![
+                rmac_compositor::WindowId(1),
+                rmac_compositor::WindowId(3),
+                rmac_compositor::WindowId(2),
+            ],
+        }
+    );
+}
+
+#[test]
+fn click_on_an_app_whose_windows_are_all_minimized_restores_the_newest() {
+    let catalog = [application("terminal.desktop", "Terminal")];
+    let pinned = [rmac_shell_settings::AppId("terminal.desktop".into())];
+    let parked = |id| rmac_compositor::Window {
+        workspace: Some(rmac_compositor::WorkspaceId(9)),
+        ..window(id, "terminal", false, false, 5)
+    };
+    let compositor = rmac_compositor::Snapshot {
+        windows: vec![parked(4), parked(6)],
+        workspaces: vec![rmac_compositor::Workspace {
+            id: rmac_compositor::WorkspaceId(9),
+            index: 9,
+            name: Some(rmac_compositor::PARKING_WORKSPACE.into()),
+            output: None,
+            urgent: false,
+            active: false,
+            focused: false,
+            active_window: None,
+        }],
+        ..Default::default()
+    };
+    let model = Model::build(&pinned, &Default::default(), &catalog, &compositor);
+    assert_eq!(
+        model.activate("terminal"),
+        Activation::RestoreWindow {
+            window: rmac_compositor::WindowId(6)
+        }
+    );
 }
 
 #[test]

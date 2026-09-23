@@ -785,11 +785,10 @@ mod linux_wayland {
                         };
                         let activation = model.activate(&app_id);
                         let available = entry.enabled;
-                        let actionable = matches!(
-                            activation,
-                            rmac_dock::Activation::Launch { .. }
-                                | rmac_dock::Activation::FocusWindow(_)
-                        );
+                        // The frontmost app's tile still presses, drags and
+                        // opens its menu; its click simply does nothing.
+                        let actionable =
+                            !matches!(activation, rmac_dock::Activation::Unavailable { .. });
                         let menu_open = menu_anchor == Some(relative_center);
                         let running =
                             entry.activity != rmac_dock::presentation::ActivityIndicator::None;

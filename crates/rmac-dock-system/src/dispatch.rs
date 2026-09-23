@@ -423,9 +423,11 @@ fn prepare_application_activation(
     let activation = model.activate(&menu.app_id);
     let operation = match &activation {
         rmac_dock::Activation::Launch { .. } => Operation::Launch,
-        rmac_dock::Activation::FocusWindow(_) => Operation::Focus,
-        // An application activation never restores a parked window; minimized
-        // tiles take the dedicated path below.
+        rmac_dock::Activation::FocusWindow(_) | rmac_dock::Activation::FocusApplication { .. } => {
+            Operation::Focus
+        }
+        // An application whose windows are all minimized restores the most
+        // recently minimized one, as the macOS Dock does.
         rmac_dock::Activation::RestoreWindow { .. } => Operation::Restore,
         rmac_dock::Activation::NoAction => return Ok(Preparation::NoAction),
         rmac_dock::Activation::Unavailable { .. } => Operation::Resolve,

@@ -28,6 +28,32 @@ pub async fn execute(
                     error.detail,
                 )
             }),
+        rmac_dock::Activation::FocusApplication { app_id, windows } => {
+            // Focus back to front; every window is floating, so each focus
+            // raises it and the most recent window finishes on top.
+            let Some(last) = windows.last().copied() else {
+                return Err(Error::new(
+                    Operation::Focus,
+                    FailureKind::Unsupported,
+                    app_id,
+                    "the application has no windows to bring forward",
+                ));
+            };
+            for window in windows {
+                backend
+                    .focus_window(request_id, *window)
+                    .await
+                    .map_err(|error| {
+                        Error::new(
+                            Operation::Focus,
+                            error.kind,
+                            format!("window {}", window.0),
+                            error.detail,
+                        )
+                    })?;
+            }
+            Ok(Outcome::FocusRequested { window: last })
+        }
         rmac_dock::Activation::RestoreWindow { window } => backend
             .restore_window(request_id, *window)
             .await

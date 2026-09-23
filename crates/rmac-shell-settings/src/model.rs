@@ -31,9 +31,10 @@ pub enum OutputScope {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum RepeatedClickBehavior {
-    #[default]
     CycleWindows,
     HideApplication,
+    /// macOS: clicking the frontmost application's Dock icon does nothing.
+    #[default]
     DoNothing,
 }
 
@@ -62,7 +63,7 @@ impl Default for DockSettings {
             magnification: false,
             magnification_scale: default_magnification_scale(),
             reserve_space: true,
-            repeated_click: RepeatedClickBehavior::CycleWindows,
+            repeated_click: RepeatedClickBehavior::DoNothing,
         }
     }
 }

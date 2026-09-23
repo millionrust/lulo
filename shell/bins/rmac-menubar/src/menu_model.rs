@@ -1,0 +1,1109 @@
+//! Pure menu geometry and status-menu models, measured on macOS 26
+//! (design-lab/menus.html has the numbers and where each came from). Kept
+//! free of GPUI so it is unit tested on every host.
+
+use rmac_app_menu::Item;
+use rmac_network::{NetworkDevice, WifiNetwork, WifiNetworkId, WifiSecurity, WifiSnapshot};
+
+// ---- App menus (rmac menu, app menu, exported menus) ----
+
+/// A dropdown hangs one point below the bar.
+pub const MENU_TOP_GAP: f32 = 1.0;
+/// Title menus open 4 pt left of the title's item frame, which sits 1 pt
+/// inside rmac's highlight slot.
+pub const TITLE_MENU_OFFSET: f32 = -3.0;
+/// The rmac (Apple) menu opens 4 pt left of the logo slot.
+pub const LOGO_MENU_OFFSET: f32 = -4.0;
+pub const APP_MENU_RADIUS: f32 = 12.0;
+pub const APP_MENU_PADDING: f32 = 5.0;
+pub const APP_ROW_HEIGHT: f32 = 24.0;
+/// 5 pt · 1 pt line · 5 pt.
+pub const APP_SEPARATOR_HEIGHT: f32 = 11.0;
+pub const APP_SEPARATOR_INSET: f32 = 16.0;
+/// Highlight inset from the panel edge.
+pub const ROW_INSET: f32 = 5.0;
+/// Text column without icons.
+pub const APP_TEXT_INSET: f32 = 16.5;
+/// Icon glyphs centre here; text follows at [`APP_ICON_TEXT`].
+pub const APP_ICON_CENTRE: f32 = 24.5;
+pub const APP_ICON_TEXT: f32 = 39.0;
+/// The Apple menu's laptop glyph is 14.5 wide, which pushes its text column.
+pub const APP_WIDE_ICON_CENTRE: f32 = 25.0;
+pub const APP_WIDE_ICON_TEXT: f32 = 41.5;
+/// Icons are drawn in a 16 pt box.
+pub const MENU_ICON_BOX: f32 = 16.0;
+/// Modifier glyphs sit centred in 13.75 pt cells; the key itself is left
+/// aligned 26 pt from the right edge (a 12 pt cell ending 14 pt in).
+pub const KEY_CELL: f32 = 13.75;
+pub const KEY_LETTER_GAP: f32 = 3.1;
+pub const KEY_LETTER_WIDTH: f32 = 12.0;
+pub const KEY_RIGHT: f32 = 14.0;
+/// Submenu chevron: 5 × 9 glyph ending 17 pt from the right edge.
+pub const CHEVRON_RIGHT: f32 = 17.0;
+pub const CHEVRON_WIDTH: f32 = 5.0;
+/// Minimum space between a title and its shortcut or chevron.
+pub const SHORTCUT_GAP: f32 = 24.0;
+/// Exported and synthesized menus mark a submenu with this shortcut.
+pub const SUBMENU_MARK: &str = "›";
+const MODIFIERS: [char; 5] = ['⌃', '⌥', '⇧', '⌘', '🌐'];
+
+pub fn app_menu_height(items: &[Item]) -> f32 {
+    let separators = items.iter().filter(|item| item.separator_before).count() as f32;
+    2.0 * APP_MENU_PADDING + APP_ROW_HEIGHT * items.len() as f32 + APP_SEPARATOR_HEIGHT * separators
+}
+
+/// Top of item `index` measured from the panel's top edge.
+pub fn app_menu_item_top(items: &[Item], index: usize) -> f32 {
+    let separators = items
+        .iter()
+        .take(index + 1)
+        .filter(|item| item.separator_before)
+        .count() as f32;
+    APP_MENU_PADDING + APP_ROW_HEIGHT * index as f32 + APP_SEPARATOR_HEIGHT * separators
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Shortcut {
+    pub modifiers: Vec<char>,
+    pub key: String,
+}
+
+/// Splits "⇧⌘N" into its modifier glyphs and the key they apply to.
+pub fn split_shortcut(shortcut: &str) -> Shortcut {
+    let modifiers = shortcut
+        .chars()
+        .take_while(|glyph| MODIFIERS.contains(glyph))
+        .collect::<Vec<_>>();
+    let key = shortcut.chars().skip(modifiers.len()).collect::<String>();
+    Shortcut { modifiers, key }
+}
+
+/// Width of the shortcut column for `shortcut`, 0 when there is none.
+pub fn shortcut_width(shortcut: &str) -> f32 {
+    if shortcut.is_empty() || shortcut == SUBMENU_MARK {
+        return 0.0;
+    }
+    let parts = split_shortcut(shortcut);
+    parts.modifiers.len() as f32 * KEY_CELL
+        + if parts.key.is_empty() {
+            0.0
+        } else {
+            KEY_LETTER_GAP + KEY_LETTER_WIDTH
+        }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IconColumn {
+    None,
+    Standard,
+    Wide,
+}
+
+impl IconColumn {
+    pub fn for_icons<'a>(icons: impl IntoIterator<Item = Option<&'a str>>) -> Self {
+        let mut column = Self::None;
+        for icon in icons.into_iter().flatten() {
+            if icon == "laptop" {
+                return Self::Wide;
+            }
+            column = Self::Standard;
+        }
+        column
+    }
+
+    pub fn text_x(self) -> f32 {
+        match self {
+            Self::None => APP_TEXT_INSET,
+            Self::Standard => APP_ICON_TEXT,
+            Self::Wide => APP_WIDE_ICON_TEXT,
+        }
+    }
+
+    /// Left edge of the 16 pt icon box.
+    pub fn icon_x(self) -> f32 {
+        match self {
+            Self::None | Self::Standard => APP_ICON_CENTRE - MENU_ICON_BOX / 2.0,
+            Self::Wide => APP_WIDE_ICON_CENTRE - MENU_ICON_BOX / 2.0,
+        }
+    }
+}
+
+/// A content-sized menu: the widest title plus its shortcut or chevron.
+pub fn app_menu_width(
+    items: &[Item],
+    column: IconColumn,
+    min_width: f32,
+    label_width: impl Fn(&str) -> f32,
+) -> f32 {
+    let content = items
+        .iter()
+        .map(|item| {
+            let trailing = if item.shortcut == SUBMENU_MARK {
+                SHORTCUT_GAP + CHEVRON_WIDTH + CHEVRON_RIGHT
+            } else if item.shortcut.is_empty() {
+                APP_TEXT_INSET
+            } else {
+                SHORTCUT_GAP + shortcut_width(&item.shortcut) + KEY_RIGHT
+            };
+            column.text_x() + label_width(&item.label) + trailing
+        })
+        .fold(0.0, f32::max);
+    content.ceil().max(min_width)
+}
+
+/// macOS 26 decorates standard menu items with a symbol. The rmac menu and
+/// the synthesized app menu are matched by action; exported menus by title.
+pub fn menu_item_icon(action: &str, label: &str) -> Option<&'static str> {
+    let by_action = match action {
+        "system::about" => Some("laptop"),
+        "system::settings" => Some("gear"),
+        "system::software-center" => Some("store"),
+        "system::recents" => Some("clock"),
+        "system::force-quit" => Some("force-quit"),
+        "system::sleep" => Some("sleep"),
+        "system::restart" => Some("restart"),
+        "system::shutdown" => Some("power"),
+        "system::lock" => Some("lock"),
+        "system::logout" => Some("person"),
+        "app::about" => Some("info"),
+        "app::services" => Some("services"),
+        "app::hide" => Some("hide"),
+        "app::hide-others" => Some("hide-others"),
+        "app::show-all" => Some("show-all"),
+        _ => None,
+    };
+    if by_action.is_some() || action.starts_with("system::") || action.starts_with("app::") {
+        return by_action;
+    }
+    let title = label
+        .split(" “")
+        .next()
+        .unwrap_or(label)
+        .trim_end_matches('…')
+        .trim_end_matches("...");
+    Some(match title {
+        "New Window" | "New Finder Window" => "new-window",
+        "New Folder" => "new-folder",
+        "New Tab" => "new-tab",
+        "Open" => "open",
+        "Close" | "Close Window" | "Close Tab" => "close",
+        "Get Info" => "info",
+        "Rename" => "rename",
+        "Duplicate" => "duplicate",
+        "Quick Look" => "eye",
+        "Print" => "print",
+        "Share" => "share",
+        "Add to Sidebar" => "star",
+        "Move to Trash" | "Move to Bin" => "trash",
+        "Eject" => "eject",
+        "Find" => "search",
+        "Undo" => "undo",
+        "Redo" => "redo",
+        "Cut" => "cut",
+        "Copy" => "copy",
+        "Paste" => "paste",
+        "Select All" => "select-all",
+        "Show Clipboard" => "clipboard",
+        "Minimize" | "Minimise" => "minimize",
+        "Zoom" => "zoom",
+        "Show Sidebar" | "Hide Sidebar" => "sidebar",
+        "Enter Full Screen" | "Exit Full Screen" => "full-screen",
+        "Settings" | "Preferences" => "settings",
+        _ => return None,
+    })
+}
+
+// ---- Status menus (Wi-Fi, Battery) ----
+
+pub const STATUS_MENU_WIDTH: f32 = 308.0;
+pub const STATUS_MENU_RADIUS: f32 = 15.0;
+pub const STATUS_PADDING_TOP: f32 = 5.0;
+pub const STATUS_PADDING_BOTTOM: f32 = 5.5;
+pub const STATUS_TEXT_INSET: f32 = 14.5;
+pub const STATUS_SEPARATOR_INSET: f32 = 14.0;
+pub const STATUS_SWITCH_RIGHT: f32 = 14.0;
+pub const STATUS_BADGE: f32 = 26.0;
+pub const STATUS_BADGE_TEXT: f32 = 48.5;
+pub const STATUS_DETAIL_SIZE: f32 = 11.0;
+pub const SWITCH_WIDTH: f32 = 54.0;
+pub const SWITCH_HEIGHT: f32 = 24.0;
+pub const SWITCH_KNOB_WIDTH: f32 = 32.0;
+pub const SWITCH_KNOB_HEIGHT: f32 = 20.0;
+pub const MAX_LISTED_NETWORKS: usize = 8;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum StatusMenuKind {
+    Wifi,
+    Battery,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum StatusAction {
+    ToggleWifi,
+    Join(WifiNetworkId),
+    ToggleOtherNetworks,
+    OpenSettings(&'static str),
+    ToggleLowPower,
+}
+
+impl StatusAction {
+    /// Whether choosing it dismisses the menu (switches and the disclosure
+    /// act in place, as on macOS).
+    pub fn closes_menu(&self) -> bool {
+        matches!(self, Self::Join(_) | Self::OpenSettings(_))
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BadgeGlyph {
+    Wifi(u8),
+    LowPower,
+}
+
+impl BadgeGlyph {
+    pub fn icon(self) -> &'static str {
+        match self {
+            Self::Wifi(1) => "wifi-1",
+            Self::Wifi(2) => "wifi-2",
+            Self::Wifi(_) => "wifi-3",
+            Self::LowPower => "battery-low",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum StatusRow {
+    /// Bold title with an optional trailing value or switch.
+    Title {
+        label: String,
+        value: Option<String>,
+        switch: Option<bool>,
+        action: Option<StatusAction>,
+    },
+    /// Secondary text line such as "Power Source: Battery".
+    Info(String),
+    Item {
+        label: String,
+        warning: bool,
+        action: StatusAction,
+    },
+    Separator,
+    Header(String),
+    Disclosure {
+        label: String,
+        expanded: bool,
+    },
+    /// A row led by a 26 pt circular badge (networks, Low Power).
+    Badge {
+        label: String,
+        glyph: BadgeGlyph,
+        on: bool,
+        locked: bool,
+        action: Option<StatusAction>,
+    },
+    /// Small secondary line under a network (Option-click details).
+    Detail(String),
+    /// The extra point that closes a badge group before its separator.
+    GroupEnd,
+}
+
+impl StatusRow {
+    pub fn height(&self) -> f32 {
+        match self {
+            Self::Title { .. } => 31.0,
+            Self::Info(_) => 20.0,
+            Self::Item { .. } | Self::Disclosure { .. } => 24.0,
+            Self::Separator => 9.0,
+            Self::Header(_) => 23.0,
+            Self::Badge { .. } => 32.0,
+            Self::Detail(_) => 16.0,
+            Self::GroupEnd => 1.0,
+        }
+    }
+
+    pub fn action(&self) -> Option<StatusAction> {
+        match self {
+            Self::Title { action, .. } | Self::Badge { action, .. } => action.clone(),
+            Self::Item { action, .. } => Some(action.clone()),
+            Self::Disclosure { .. } => Some(StatusAction::ToggleOtherNetworks),
+            _ => None,
+        }
+    }
+
+    /// Rows the arrow keys stop on: every actionable row except the title,
+    /// whose switch is reached with the pointer.
+    pub fn selectable(&self) -> bool {
+        !matches!(self, Self::Title { .. }) && self.action().is_some()
+    }
+}
+
+pub fn status_menu_height(rows: &[StatusRow]) -> f32 {
+    STATUS_PADDING_TOP + rows.iter().map(StatusRow::height).sum::<f32>() + STATUS_PADDING_BOTTOM
+}
+
+/// Top of row `index` measured from the panel's top edge.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn status_row_top(rows: &[StatusRow], index: usize) -> f32 {
+    STATUS_PADDING_TOP + rows.iter().take(index).map(StatusRow::height).sum::<f32>()
+}
+
+/// Status menus start at the item's highlight and flip to end at its right
+/// edge when they would run off the screen (the Wi-Fi menu does).
+pub fn status_menu_left(slot_left: f32, slot_right: f32, width: f32, screen_width: f32) -> f32 {
+    if slot_left + width <= screen_width {
+        slot_left
+    } else {
+        (slot_right - width).max(0.0)
+    }
+}
+
+/// The next selectable row from `current` (none selected when `None`).
+pub fn next_status_selection(
+    rows: &[StatusRow],
+    current: Option<usize>,
+    forward: bool,
+) -> Option<usize> {
+    let selectable = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| row.selectable())
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let position = current.and_then(|current| selectable.iter().position(|&i| i == current));
+    let next = match (position, forward) {
+        (None, true) => 0,
+        (None, false) => selectable.len().checked_sub(1)?,
+        (Some(position), true) => (position + 1) % selectable.len(),
+        (Some(position), false) => position.checked_sub(1).unwrap_or(selectable.len() - 1),
+    };
+    selectable.get(next).copied()
+}
+
+/// Evidence capture: which status menu to open on the first frame.
+pub fn parse_capture_status(value: &str) -> Option<(StatusMenuKind, bool)> {
+    match value {
+        "wifi" => Some((StatusMenuKind::Wifi, false)),
+        "wifi-option" => Some((StatusMenuKind::Wifi, true)),
+        "battery" => Some((StatusMenuKind::Battery, false)),
+        _ => None,
+    }
+}
+
+pub fn wifi_bars(strength: u8) -> u8 {
+    match strength.min(100) {
+        0..=32 => 1,
+        33..=65 => 2,
+        _ => 3,
+    }
+}
+
+pub fn security_label(security: WifiSecurity) -> &'static str {
+    match security {
+        WifiSecurity::Open => "None",
+        WifiSecurity::EnhancedOpen => "Enhanced Open",
+        WifiSecurity::Personal(rmac_network::WifiPersonalMode::Psk) => "WPA/WPA2 Personal",
+        WifiSecurity::Personal(rmac_network::WifiPersonalMode::Sae) => "WPA3 Personal",
+        WifiSecurity::Personal(rmac_network::WifiPersonalMode::Transition) => "WPA2/WPA3 Personal",
+        WifiSecurity::Enterprise => "Enterprise",
+        WifiSecurity::Legacy => "WEP",
+        WifiSecurity::Protected => "Protected",
+    }
+}
+
+pub struct WifiMenuInput<'a> {
+    pub wifi: Option<&'a WifiSnapshot>,
+    /// The Wi-Fi device, for Option-click details.
+    pub device: Option<&'a NetworkDevice>,
+    pub option: bool,
+    pub others_expanded: bool,
+}
+
+/// One entry per network name: the connected access point, else the
+/// strongest, sorted by name as the Mac lists them.
+fn unique_networks<'a>(networks: impl Iterator<Item = &'a WifiNetwork>) -> Vec<&'a WifiNetwork> {
+    let mut unique: Vec<&WifiNetwork> = Vec::new();
+    for network in networks.filter(|network| !network.ssid.is_empty()) {
+        match unique.iter_mut().find(|seen| seen.ssid == network.ssid) {
+            Some(seen) => {
+                if (network.connected, network.strength) > (seen.connected, seen.strength) {
+                    *seen = network;
+                }
+            }
+            None => unique.push(network),
+        }
+    }
+    unique.sort_by(|left, right| {
+        left.ssid
+            .to_lowercase()
+            .cmp(&right.ssid.to_lowercase())
+            .then_with(|| left.ssid.cmp(&right.ssid))
+    });
+    unique.truncate(MAX_LISTED_NETWORKS);
+    unique
+}
+
+fn network_row(network: &WifiNetwork) -> StatusRow {
+    // Saved and open networks join directly; a new protected network needs
+    // credentials, which Wi-Fi Settings asks for.
+    let action = if network.connected {
+        None
+    } else if network.known
+        || matches!(
+            network.security,
+            WifiSecurity::Open | WifiSecurity::EnhancedOpen
+        )
+    {
+        Some(StatusAction::Join(network.id.clone()))
+    } else {
+        Some(StatusAction::OpenSettings("wifi"))
+    };
+    StatusRow::Badge {
+        label: network.ssid.clone(),
+        glyph: BadgeGlyph::Wifi(wifi_bars(network.strength)),
+        on: network.connected,
+        locked: network.security.is_secure(),
+        action,
+    }
+}
+
+fn first_ipv4(addresses: &[String]) -> Option<&str> {
+    addresses
+        .iter()
+        .map(|address| address.split('/').next().unwrap_or(address))
+        .find(|address| address.contains('.'))
+}
+
+fn connected_details(network: &WifiNetwork, device: Option<&NetworkDevice>) -> Vec<StatusRow> {
+    let mut rows = Vec::new();
+    if let Some(address) = device.and_then(|device| first_ipv4(&device.addresses)) {
+        rows.push(StatusRow::Detail(format!("IP Address: {address}")));
+    }
+    if let Some(router) = device.and_then(|device| device.gateway.as_deref()) {
+        rows.push(StatusRow::Detail(format!("Router: {router}")));
+    }
+    rows.push(StatusRow::Detail(format!(
+        "Security: {}",
+        security_label(network.security)
+    )));
+    rows
+}
+
+pub fn wifi_menu_rows(input: WifiMenuInput<'_>) -> Vec<StatusRow> {
+    let settings = StatusRow::Item {
+        label: "Wi-Fi Settings…".into(),
+        warning: false,
+        action: StatusAction::OpenSettings("wifi"),
+    };
+    let Some(wifi) = input.wifi else {
+        return vec![
+            StatusRow::Title {
+                label: "Wi-Fi".into(),
+                value: None,
+                switch: None,
+                action: None,
+            },
+            StatusRow::Separator,
+            settings,
+        ];
+    };
+    let mut rows = vec![StatusRow::Title {
+        label: "Wi-Fi".into(),
+        value: None,
+        switch: wifi.available.then_some(wifi.enabled),
+        action: wifi.available.then_some(StatusAction::ToggleWifi),
+    }];
+    if !wifi.available {
+        rows.push(StatusRow::Info("Wi-Fi Unavailable".into()));
+    }
+    if input.option {
+        if let Some(interface) = &wifi.interface {
+            rows.push(StatusRow::Info(format!("Interface Name: {interface}")));
+        }
+        if let Some(address) = input
+            .device
+            .and_then(|device| device.hardware_address.as_deref())
+        {
+            rows.push(StatusRow::Info(format!("Address: {address}")));
+        }
+    }
+    if wifi.available && wifi.enabled {
+        let connected = wifi.networks.iter().find(|network| network.connected);
+        if connected.is_some_and(|network| {
+            matches!(network.security, WifiSecurity::Open | WifiSecurity::Legacy)
+        }) {
+            rows.push(StatusRow::Item {
+                label: "Weak Security…".into(),
+                warning: true,
+                action: StatusAction::OpenSettings("wifi"),
+            });
+        }
+        let known = unique_networks(wifi.networks.iter().filter(|network| network.known));
+        if !known.is_empty() {
+            rows.push(StatusRow::Separator);
+            rows.push(StatusRow::Header("Known Networks".into()));
+            for network in known.iter().copied() {
+                rows.push(network_row(network));
+                if input.option && network.connected {
+                    rows.extend(connected_details(network, input.device));
+                }
+            }
+            rows.push(StatusRow::GroupEnd);
+        }
+        let known_names = known
+            .iter()
+            .map(|network| network.ssid.as_str())
+            .collect::<Vec<_>>();
+        let others = unique_networks(
+            wifi.networks
+                .iter()
+                .filter(|network| !network.known && !known_names.contains(&network.ssid.as_str())),
+        );
+        rows.push(StatusRow::Separator);
+        rows.push(StatusRow::Disclosure {
+            label: "Other Networks".into(),
+            expanded: input.others_expanded,
+        });
+        if input.others_expanded {
+            if others.is_empty() {
+                rows.push(StatusRow::Info("No Other Networks".into()));
+            } else {
+                for network in others {
+                    rows.push(network_row(network));
+                    if input.option && network.connected {
+                        rows.extend(connected_details(network, input.device));
+                    }
+                }
+                rows.push(StatusRow::GroupEnd);
+            }
+        }
+    }
+    rows.push(StatusRow::Separator);
+    rows.push(settings);
+    rows
+}
+
+pub fn battery_menu_rows(snapshot: Option<&rmac_power::Snapshot>) -> Vec<StatusRow> {
+    let battery = snapshot.and_then(|snapshot| snapshot.battery.as_ref());
+    let mut rows = vec![StatusRow::Title {
+        label: "Battery".into(),
+        value: battery.map(|battery| format!("{}%", battery.percentage.min(100))),
+        switch: None,
+        action: None,
+    }];
+    if let Some(battery) = battery {
+        rows.push(StatusRow::Info(
+            if battery.on_battery {
+                "Power Source: Battery"
+            } else {
+                "Power Source: Power Adapter"
+            }
+            .into(),
+        ));
+    }
+    if let Some(profiles) = snapshot
+        .map(|snapshot| &snapshot.profiles)
+        .filter(|profiles| {
+            profiles.available
+                && profiles
+                    .supported
+                    .contains(&rmac_power::PowerProfile::PowerSaver)
+        })
+    {
+        rows.push(StatusRow::Separator);
+        rows.push(StatusRow::Header("Energy Mode".into()));
+        rows.push(StatusRow::Badge {
+            label: "Low Power".into(),
+            glyph: BadgeGlyph::LowPower,
+            on: profiles.active == Some(rmac_power::PowerProfile::PowerSaver),
+            locked: false,
+            action: Some(StatusAction::ToggleLowPower),
+        });
+        rows.push(StatusRow::GroupEnd);
+    }
+    rows.push(StatusRow::Separator);
+    rows.push(StatusRow::Item {
+        label: "Battery Settings…".into(),
+        warning: false,
+        action: StatusAction::OpenSettings("battery"),
+    });
+    rows
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn item(label: &str, shortcut: &str, separator_before: bool) -> Item {
+        Item {
+            label: label.into(),
+            action: format!("test::{label}"),
+            shortcut: shortcut.into(),
+            enabled: true,
+            separator_before,
+        }
+    }
+
+    /// The Apple menu's shape: 10 rows, 5 separators — 295 × 305 on the Mac.
+    fn apple_shape() -> Vec<Item> {
+        [
+            false, true, false, true, true, true, false, false, true, false,
+        ]
+        .iter()
+        .enumerate()
+        .map(|(index, &separator)| item(&format!("Row {index}"), "", separator))
+        .collect()
+    }
+
+    #[test]
+    fn app_menu_geometry_matches_the_mac_apple_menu() {
+        let items = apple_shape();
+        assert_eq!(app_menu_height(&items), 305.0);
+        // AX: About 39, System Settings 74, Recent Items 133, Sleep 203,
+        // Lock Screen 286 — minus the panel top at 34.
+        assert_eq!(app_menu_item_top(&items, 0), 5.0);
+        assert_eq!(app_menu_item_top(&items, 1), 40.0);
+        assert_eq!(app_menu_item_top(&items, 3), 99.0);
+        assert_eq!(app_menu_item_top(&items, 5), 169.0);
+        assert_eq!(app_menu_item_top(&items, 8), 252.0);
+    }
+
+    #[test]
+    fn shortcuts_split_into_modifier_cells_and_a_key() {
+        assert_eq!(
+            split_shortcut("⇧⌘N"),
+            Shortcut {
+                modifiers: vec!['⇧', '⌘'],
+                key: "N".into()
+            }
+        );
+        assert_eq!(split_shortcut("⌘+").key, "+");
+        assert_eq!(shortcut_width(""), 0.0);
+        assert_eq!(shortcut_width(SUBMENU_MARK), 0.0);
+        assert_eq!(
+            shortcut_width("⌘Q"),
+            KEY_CELL + KEY_LETTER_GAP + KEY_LETTER_WIDTH
+        );
+        assert_eq!(
+            shortcut_width("⌥⌘H"),
+            2.0 * KEY_CELL + KEY_LETTER_GAP + KEY_LETTER_WIDTH
+        );
+    }
+
+    #[test]
+    fn menu_width_is_the_widest_row_and_never_below_the_minimum() {
+        let items = vec![
+            item("Short", "", false),
+            item("A much longer title", "⇧⌘N", false),
+        ];
+        let width = app_menu_width(&items, IconColumn::Standard, 100.0, |label| {
+            label.len() as f32 * 7.0
+        });
+        let expected =
+            APP_ICON_TEXT + 19.0 * 7.0 + SHORTCUT_GAP + shortcut_width("⇧⌘N") + KEY_RIGHT;
+        assert_eq!(width, expected.ceil());
+        assert_eq!(
+            app_menu_width(&[item("x", "", false)], IconColumn::None, 180.0, |_| 7.0),
+            180.0
+        );
+    }
+
+    #[test]
+    fn icon_column_follows_the_widest_glyph() {
+        assert_eq!(IconColumn::for_icons([None, None]), IconColumn::None);
+        assert_eq!(
+            IconColumn::for_icons([None, Some("copy")]),
+            IconColumn::Standard
+        );
+        assert_eq!(
+            IconColumn::for_icons([Some("gear"), Some("laptop")]),
+            IconColumn::Wide
+        );
+        assert_eq!(IconColumn::Standard.text_x(), 39.0);
+        assert_eq!(IconColumn::Wide.text_x(), 41.5);
+    }
+
+    #[test]
+    fn standard_items_get_their_macos_symbols() {
+        assert_eq!(
+            menu_item_icon("system::about", "About This rmac"),
+            Some("laptop")
+        );
+        assert_eq!(menu_item_icon("app::quit", "Quit Files"), None);
+        assert_eq!(menu_item_icon("terminal::Copy", "Copy"), Some("copy"));
+        assert_eq!(menu_item_icon("x", "Copy “notes”"), Some("copy"));
+        assert_eq!(
+            menu_item_icon("text_editor::OpenFile", "Open…"),
+            Some("open")
+        );
+        assert_eq!(menu_item_icon("terminal::Clear", "Clear"), None);
+    }
+
+    fn network(
+        name: &str,
+        strength: u8,
+        known: bool,
+        connected: bool,
+        security: WifiSecurity,
+    ) -> WifiNetwork {
+        WifiNetwork {
+            id: WifiNetworkId::from_bytes(name.as_bytes().to_vec(), security).unwrap(),
+            ssid: name.into(),
+            strength,
+            security,
+            known,
+            connected,
+        }
+    }
+
+    fn psk() -> WifiSecurity {
+        WifiSecurity::Personal(rmac_network::WifiPersonalMode::Psk)
+    }
+
+    fn snapshot(networks: Vec<WifiNetwork>) -> WifiSnapshot {
+        WifiSnapshot {
+            available: true,
+            enabled: true,
+            interface: Some("wlan0".into()),
+            current_ssid: None,
+            networks,
+            saved_networks: Vec::new(),
+        }
+    }
+
+    fn labels(rows: &[StatusRow]) -> Vec<String> {
+        rows.iter()
+            .map(|row| match row {
+                StatusRow::Title { label, .. } => format!("title:{label}"),
+                StatusRow::Info(label) => format!("info:{label}"),
+                StatusRow::Item { label, .. } => format!("item:{label}"),
+                StatusRow::Separator => "---".into(),
+                StatusRow::Header(label) => format!("head:{label}"),
+                StatusRow::Disclosure { label, .. } => format!("more:{label}"),
+                StatusRow::Badge { label, .. } => format!("badge:{label}"),
+                StatusRow::Detail(label) => format!("detail:{label}"),
+                StatusRow::GroupEnd => "end".into(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn wifi_menu_lists_known_networks_by_name_and_folds_the_rest() {
+        let wifi = snapshot(vec![
+            network("Home Wi-Fi", 90, true, true, psk()),
+            network("cafe", 40, true, false, psk()),
+            network("Home Wi-Fi", 20, true, false, psk()),
+            network("Neighbour", 70, false, false, psk()),
+        ]);
+        let rows = wifi_menu_rows(WifiMenuInput {
+            wifi: Some(&wifi),
+            device: None,
+            option: false,
+            others_expanded: false,
+        });
+        assert_eq!(
+            labels(&rows),
+            [
+                "title:Wi-Fi",
+                "---",
+                "head:Known Networks",
+                "badge:cafe",
+                "badge:Home Wi-Fi",
+                "end",
+                "---",
+                "more:Other Networks",
+                "---",
+                "item:Wi-Fi Settings…",
+            ]
+        );
+        // The connected network is highlighted and has nothing to do.
+        let StatusRow::Badge {
+            on, action, glyph, ..
+        } = &rows[4]
+        else {
+            panic!("expected the connected network");
+        };
+        assert!(*on);
+        assert_eq!(*action, None);
+        assert_eq!(*glyph, BadgeGlyph::Wifi(3));
+        assert!(matches!(
+            rows[3],
+            StatusRow::Badge {
+                action: Some(StatusAction::Join(_)),
+                glyph: BadgeGlyph::Wifi(2),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn other_networks_expand_and_new_protected_ones_open_settings() {
+        let wifi = snapshot(vec![
+            network("Neighbour", 70, false, false, psk()),
+            network("Guest", 10, false, false, WifiSecurity::Open),
+        ]);
+        let rows = wifi_menu_rows(WifiMenuInput {
+            wifi: Some(&wifi),
+            device: None,
+            option: false,
+            others_expanded: true,
+        });
+        assert_eq!(
+            labels(&rows)[1..6],
+            [
+                "---",
+                "more:Other Networks",
+                "badge:Guest",
+                "badge:Neighbour",
+                "end"
+            ]
+        );
+        assert!(matches!(
+            &rows[3],
+            StatusRow::Badge {
+                action: Some(StatusAction::Join(_)),
+                locked: false,
+                ..
+            }
+        ));
+        assert!(matches!(
+            &rows[4],
+            StatusRow::Badge {
+                action: Some(StatusAction::OpenSettings("wifi")),
+                locked: true,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn option_click_adds_interface_and_connection_details() {
+        let wifi = snapshot(vec![network("Home Wi-Fi", 90, true, true, psk())]);
+        let device = NetworkDevice {
+            interface: "wlan0".into(),
+            kind: rmac_network::DeviceKind::WiFi,
+            state: rmac_network::DeviceState::Connected,
+            connection: Some("Home Wi-Fi".into()),
+            primary: true,
+            addresses: vec!["fe80::1/64".into(), "192.168.1.20/24".into()],
+            gateway: Some("192.168.1.1".into()),
+            dns: Vec::new(),
+            hardware_address: Some("00:11:22:33:44:55".into()),
+            configuration: None,
+            configuration_error: None,
+        };
+        let rows = wifi_menu_rows(WifiMenuInput {
+            wifi: Some(&wifi),
+            device: Some(&device),
+            option: true,
+            others_expanded: false,
+        });
+        assert_eq!(
+            labels(&rows)[..9],
+            [
+                "title:Wi-Fi",
+                "info:Interface Name: wlan0",
+                "info:Address: 00:11:22:33:44:55",
+                "---",
+                "head:Known Networks",
+                "badge:Home Wi-Fi",
+                "detail:IP Address: 192.168.1.20",
+                "detail:Router: 192.168.1.1",
+                "detail:Security: WPA/WPA2 Personal",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_weak_connection_is_flagged_and_wifi_off_hides_the_lists() {
+        let wifi = snapshot(vec![network("Cafe", 90, true, true, WifiSecurity::Open)]);
+        let rows = wifi_menu_rows(WifiMenuInput {
+            wifi: Some(&wifi),
+            device: None,
+            option: false,
+            others_expanded: false,
+        });
+        assert_eq!(labels(&rows)[1], "item:Weak Security…");
+
+        let mut off = snapshot(Vec::new());
+        off.enabled = false;
+        let rows = wifi_menu_rows(WifiMenuInput {
+            wifi: Some(&off),
+            device: None,
+            option: false,
+            others_expanded: false,
+        });
+        assert_eq!(
+            labels(&rows),
+            ["title:Wi-Fi", "---", "item:Wi-Fi Settings…"]
+        );
+        assert!(matches!(
+            rows[0],
+            StatusRow::Title {
+                switch: Some(false),
+                action: Some(StatusAction::ToggleWifi),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn status_geometry_matches_the_mac_wifi_menu() {
+        // f021: title, Weak Security, hotspot section, three known
+        // networks, Other Networks, Wi-Fi Settings — 326 tall.
+        let badge = || StatusRow::Badge {
+            label: "n".into(),
+            glyph: BadgeGlyph::Wifi(3),
+            on: false,
+            locked: true,
+            action: None,
+        };
+        let rows = vec![
+            StatusRow::Title {
+                label: "Wi-Fi".into(),
+                value: None,
+                switch: Some(true),
+                action: None,
+            },
+            StatusRow::Item {
+                label: "Weak Security…".into(),
+                warning: true,
+                action: StatusAction::OpenSettings("wifi"),
+            },
+            StatusRow::Separator,
+            StatusRow::Header("Personal Hotspot".into()),
+            badge(),
+            StatusRow::GroupEnd,
+            StatusRow::Separator,
+            StatusRow::Header("Known Networks".into()),
+            badge(),
+            badge(),
+            badge(),
+            StatusRow::GroupEnd,
+            StatusRow::Separator,
+            StatusRow::Disclosure {
+                label: "Other Networks".into(),
+                expanded: false,
+            },
+            StatusRow::Separator,
+            StatusRow::Item {
+                label: "Wi-Fi Settings…".into(),
+                warning: false,
+                action: StatusAction::OpenSettings("wifi"),
+            },
+        ];
+        assert_eq!(status_menu_height(&rows), 325.5);
+        // Row centres measured on the Mac: Weak Security 48, hotspot 107.75,
+        // known networks 172.75, Wi-Fi Settings 307.75.
+        assert_eq!(status_row_top(&rows, 1) + 12.0, 48.0);
+        assert_eq!(status_row_top(&rows, 4) + 16.0, 108.0);
+        assert_eq!(status_row_top(&rows, 8) + 16.0, 173.0);
+        assert_eq!(status_row_top(&rows, 15) + 12.0, 308.0);
+    }
+
+    #[test]
+    fn capture_hook_names_each_status_menu() {
+        assert_eq!(
+            parse_capture_status("wifi-option"),
+            Some((StatusMenuKind::Wifi, true))
+        );
+        assert_eq!(
+            parse_capture_status("battery"),
+            Some((StatusMenuKind::Battery, false))
+        );
+        assert_eq!(parse_capture_status("clock"), None);
+    }
+
+    #[test]
+    fn status_menus_flip_at_the_screen_edge() {
+        // Battery fits and starts at its highlight; Wi-Fi would overflow a
+        // 1470 pt screen so it ends at its highlight's right edge.
+        assert_eq!(status_menu_left(1150.5, 1197.0, 308.0, 1470.0), 1150.5);
+        assert_eq!(status_menu_left(1192.5, 1234.5, 308.0, 1470.0), 926.5);
+    }
+
+    #[test]
+    fn arrow_keys_skip_titles_headers_and_separators() {
+        let wifi = snapshot(vec![
+            network("A", 90, true, true, psk()),
+            network("B", 90, true, false, psk()),
+        ]);
+        let rows = wifi_menu_rows(WifiMenuInput {
+            wifi: Some(&wifi),
+            device: None,
+            option: false,
+            others_expanded: false,
+        });
+        // A is connected (no action): first stop is B, then the disclosure,
+        // then Wi-Fi Settings, then back to B.
+        let first = next_status_selection(&rows, None, true);
+        assert_eq!(first, Some(4));
+        let second = next_status_selection(&rows, first, true);
+        assert!(matches!(
+            rows[second.unwrap()],
+            StatusRow::Disclosure { .. }
+        ));
+        let third = next_status_selection(&rows, second, true);
+        assert!(matches!(rows[third.unwrap()], StatusRow::Item { .. }));
+        assert_eq!(next_status_selection(&rows, third, true), first);
+        assert_eq!(next_status_selection(&rows, first, false), third);
+        assert_eq!(next_status_selection(&[], None, true), None);
+    }
+
+    #[test]
+    fn battery_menu_reports_source_and_low_power_only_when_backed() {
+        let battery = rmac_power::Battery {
+            percentage: 38,
+            state: rmac_power::BatteryState::Discharging,
+            on_battery: true,
+            seconds_remaining: None,
+            capacity: None,
+            charge_cycles: None,
+            energy_rate_watts: None,
+            model: None,
+            charge_threshold: Default::default(),
+            history: Default::default(),
+        };
+        let mut snapshot = rmac_power::Snapshot {
+            battery: Some(battery),
+            profiles: rmac_power::Profiles::default(),
+        };
+        assert_eq!(
+            labels(&battery_menu_rows(Some(&snapshot))),
+            [
+                "title:Battery",
+                "info:Power Source: Battery",
+                "---",
+                "item:Battery Settings…"
+            ]
+        );
+        snapshot.profiles = rmac_power::Profiles {
+            available: true,
+            active: Some(rmac_power::PowerProfile::PowerSaver),
+            supported: vec![
+                rmac_power::PowerProfile::PowerSaver,
+                rmac_power::PowerProfile::Balanced,
+            ],
+            performance_degraded: None,
+        };
+        let rows = battery_menu_rows(Some(&snapshot));
+        assert_eq!(
+            labels(&rows),
+            [
+                "title:Battery",
+                "info:Power Source: Battery",
+                "---",
+                "head:Energy Mode",
+                "badge:Low Power",
+                "end",
+                "---",
+                "item:Battery Settings…",
+            ]
+        );
+        assert!(
+            matches!(rows[0], StatusRow::Title { value: Some(ref value), .. } if value == "38%")
+        );
+        assert!(matches!(rows[4], StatusRow::Badge { on: true, .. }));
+        // Measured Battery menu without the per-app energy section.
+        assert_eq!(status_menu_height(&rows), 159.5);
+    }
+}

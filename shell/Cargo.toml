@@ -29,7 +29,9 @@ rmac-desktop = { version = "=0.1.0", path = "../crates/rmac-desktop" }
 rmac-dock = { version = "=0.1.0", path = "../crates/rmac-dock" }
 rmac-dock-runtime = { version = "=0.1.0", path = "../crates/rmac-dock-runtime" }
 rmac-dock-system = { version = "=0.1.0", path = "../crates/rmac-dock-system" }
+rmac-network = { version = "=0.1.0", path = "../crates/rmac-network" }
 rmac-places = { version = "=0.1.0", path = "../crates/rmac-places" }
+rmac-power = { version = "=0.1.0", path = "../crates/rmac-power" }
 rmac-recent-documents = { version = "=0.1.0", path = "../crates/rmac-recent-documents" }
 rmac-search = { version = "=0.1.0", path = "../crates/rmac-search" }
 rmac-osd = { version = "=0.1.0", path = "../crates/rmac-osd" }

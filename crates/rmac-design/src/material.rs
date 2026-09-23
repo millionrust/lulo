@@ -100,8 +100,10 @@ impl Materials {
                 }
             }
             ResolvedColorScheme::Dark => {
+                // macOS 26 menus composite to ≈ rgb(30,31,36) over a dark
+                // window (design-lab/menus.html).
                 let menu = Material {
-                    tint: Rgba::from_rgba(0x2c2c32cc),
+                    tint: Rgba::from_rgba(0x212126d6),
                     blur: true,
                     border: Rgba::from_rgba(0xffffff1f),
                     highlight: Rgba::from_rgba(0xffffff14),

@@ -1,6 +1,10 @@
+#[cfg_attr(not(all(target_os = "linux", feature = "wayland")), allow(dead_code))]
+mod menu_model;
+
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod linux_wayland {
     use std::borrow::Cow;
+    use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
     use std::env;
     use std::fs::{self, OpenOptions};
@@ -14,10 +18,11 @@ mod linux_wayland {
     use chrono::Local;
     use futures_util::FutureExt as _;
     use gpui::{
-        div, layer_shell::*, point, prelude::*, px, rgba, svg, AnyWindowHandle, App, AssetSource,
-        Bounds, Context, DisplayId, Entity, FocusHandle, FontWeight, KeyDownEvent, PlatformDisplay,
-        QuitMode, Role, SharedString, Size, Subscription, Window, WindowBackgroundAppearance,
-        WindowBounds, WindowKind, WindowOptions,
+        canvas, div, layer_shell::*, point, prelude::*, px, rgba, svg, AnyElement, AnyWindowHandle,
+        App, AssetSource, Bounds, BoxShadow, ClickEvent, Context, DisplayId, Entity, FocusHandle,
+        FontWeight, KeyDownEvent, ModifiersChangedEvent, PlatformDisplay, QuitMode, Role,
+        SharedString, Size, Subscription, Window, WindowBackgroundAppearance, WindowBounds,
+        WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use rmac_shell_ui::tokens;
@@ -28,10 +33,24 @@ mod linux_wayland {
     };
     use uuid::Uuid;
 
+    use crate::menu_model::{
+        self, app_menu_height, app_menu_item_top, app_menu_width, battery_menu_rows,
+        menu_item_icon, next_status_selection, split_shortcut, status_menu_height,
+        status_menu_left, wifi_menu_rows, BadgeGlyph, IconColumn, StatusAction, StatusMenuKind,
+        StatusRow, WifiMenuInput,
+    };
+
     // Measured from the reference Mac 2026-09-18 (FEEL_SPEC.md §C.2): the bar
     // occupies rows 0–28 and is fully transparent.
     const BAR_HEIGHT: f32 = 29.0;
-    const MENU_SURFACE_HEIGHT: f32 = 520.0;
+    /// Tall enough for the longest status menu (Option-click Wi-Fi with
+    /// Other Networks expanded); input regions keep the rest click-through.
+    const MENU_SURFACE_HEIGHT: f32 = 680.0;
+    /// Panel edge width; layout offsets measured from the outer edge
+    /// subtract it because GPUI lays children out inside the border.
+    const EDGE: f32 = 1.0;
+    /// Scans finish a moment after the menu opens; list them when they land.
+    const WIFI_RESCAN_DELAY: Duration = Duration::from_millis(2500);
     /// Width of the logout/restart confirmation shown in place of a menu.
     const CONFIRMATION_MENU_WIDTH: f32 = 248.0;
     // Menu bar geometry measured on macOS 26 (design-lab/menubar.html).
@@ -44,12 +63,10 @@ mod linux_wayland {
     const SLOT_HEIGHT: f32 = 22.0;
     /// macOS opens a menu with nothing highlighted until hover or arrow keys.
     const NO_ITEM: usize = usize::MAX;
-    /// Highlight inset from the panel edge and text inset within it.
-    const MENU_ROW_INSET: f32 = 5.0;
-    const MENU_ROW_PADDING: f32 = 9.0;
-    /// Space between an item's title and its keyboard shortcut.
-    const MENU_SHORTCUT_GAP: f32 = 24.0;
+    const MENU_TEXT_SIZE: f32 = 13.0;
     const RECENT_MENU_WIDTH: f32 = 286.0;
+    /// "Documents" heading row of the Recent Items submenu.
+    const RECENT_HEADER_HEIGHT: f32 = 22.0;
     const MAX_RECENT_ITEMS: usize = 10;
     const FULLSCREEN_REVEAL_EDGE: f32 = 2.0;
     const FULLSCREEN_HIDE_DELAY: Duration = Duration::from_millis(500);
@@ -70,10 +87,92 @@ mod linux_wayland {
         "status/wifi.svg",
     ];
 
+    /// Menu glyphs (shell/assets/menu), original drawings sized to the
+    /// macOS 26 menu symbols.
+    macro_rules! menu_icons {
+        ($($name:literal),* $(,)?) => {
+            const MENU_ICON_NAMES: &[&str] = &[$(concat!("menu/", $name, ".svg")),*];
+
+            fn menu_icon_bytes(path: &str) -> Option<&'static [u8]> {
+                $(
+                    if path == concat!("menu/", $name, ".svg") {
+                        return Some(include_bytes!(concat!(
+                            "../../../assets/menu/",
+                            $name,
+                            ".svg"
+                        )));
+                    }
+                )*
+                None
+            }
+        };
+    }
+
+    menu_icons!(
+        "battery-low",
+        "checkmark",
+        "chevron-down",
+        "chevron-right",
+        "clipboard",
+        "clock",
+        "close",
+        "copy",
+        "cut",
+        "duplicate",
+        "eject",
+        "eye",
+        "force-quit",
+        "full-screen",
+        "gear",
+        "help-book",
+        "hide-others",
+        "hide",
+        "info",
+        "laptop",
+        "lock-fill",
+        "lock",
+        "minimize",
+        "new-folder",
+        "new-tab",
+        "new-window",
+        "open",
+        "paste",
+        "person",
+        "power",
+        "print",
+        "redo",
+        "rename",
+        "restart",
+        "search",
+        "select-all",
+        "services",
+        "settings",
+        "share",
+        "show-all",
+        "sidebar",
+        "sleep",
+        "star",
+        "store",
+        "trash",
+        "undo",
+        "warning",
+        "wifi-1",
+        "wifi-2",
+        "wifi-3",
+        "zoom",
+    );
+
+    fn menu_icon_path(name: &str) -> SharedString {
+        SharedString::from(format!("menu/{name}.svg"))
+    }
+
     struct MenuBarAssets;
 
     impl AssetSource for MenuBarAssets {
         fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
+            if let Some(bytes) = menu_icon_bytes(path) {
+                return Ok(Some(Cow::Borrowed(bytes)));
+            }
             let bytes: Option<&'static [u8]> = match path {
                 "status/battery.svg" => Some(include_bytes!("../../../assets/status/battery.svg")),
                 "status/bluetooth.svg" => {
@@ -101,6 +200,7 @@ mod linux_wayland {
         fn list(&self, path: &str) -> gpui::Result<Vec<SharedString>> {
             Ok(STATUS_ASSET_NAMES
                 .iter()
+                .chain(MENU_ICON_NAMES.iter())
                 .filter(|asset| asset.starts_with(path))
                 .map(|asset| SharedString::from(*asset))
                 .collect())
@@ -222,6 +322,116 @@ mod linux_wayland {
         top: f32,
         width: f32,
         height: f32,
+        radius: f32,
+        tint: u32,
+    }
+
+    /// The live data a status menu is drawn from, loaded when it opens.
+    struct WifiMenuData {
+        wifi: rmac_network::WifiSnapshot,
+        device: Option<rmac_network::NetworkDevice>,
+    }
+
+    /// Measured macOS 26 dark menu colours (design-lab/menus.html); light
+    /// appearance keeps the design tokens.
+    struct MenuPalette {
+        text: u32,
+        status_text: u32,
+        secondary: u32,
+        value: u32,
+        disabled: u32,
+        separator: u32,
+        status_separator: u32,
+        edge: u32,
+        status_edge: u32,
+        hairline: u32,
+        badge: u32,
+        badge_on: u32,
+        switch_off: u32,
+        knob: u32,
+        status_hover: u32,
+        selected_text: u32,
+        selected_shortcut: u32,
+        app_tint: u32,
+        status_tint: u32,
+    }
+
+    fn menu_palette() -> MenuPalette {
+        let accent = tokens::accent();
+        let app_tint = tokens::regular_dark_tint();
+        // Dark text is light: the primary label's red channel says which
+        // appearance is live.
+        if tokens::primary_text() >> 24 > 0x80 {
+            MenuPalette {
+                text: 0xFFFFFFD9,
+                status_text: 0xFFFFFFE6,
+                secondary: 0xFFFFFFAB,
+                value: 0xFFFFFFB3,
+                disabled: 0xFFFFFF40,
+                separator: 0xFFFFFF24,
+                status_separator: 0xFFFFFF17,
+                edge: 0xFFFFFF4D,
+                status_edge: 0xFFFFFF24,
+                hairline: 0x000000D9,
+                badge: 0xFFFFFF1A,
+                badge_on: accent,
+                switch_off: 0xFFFFFF24,
+                knob: 0xE1EBFEFF,
+                status_hover: 0xFFFFFF1A,
+                selected_text: 0xFFFFFFFF,
+                selected_shortcut: 0xFFFFFFB3,
+                app_tint,
+                // The status menus measure ≈ 20% darker than app menus.
+                status_tint: darken(app_tint, 0.8),
+            }
+        } else {
+            MenuPalette {
+                text: tokens::primary_text(),
+                status_text: tokens::primary_text(),
+                secondary: tokens::secondary_text(),
+                value: tokens::secondary_text(),
+                disabled: tokens::disabled_text(),
+                separator: tokens::separator(),
+                status_separator: tokens::separator(),
+                edge: 0x0000001A,
+                status_edge: 0x0000001A,
+                hairline: 0x00000026,
+                badge: 0x0000000F,
+                badge_on: accent,
+                switch_off: 0x00000017,
+                knob: 0xFFFFFFFF,
+                status_hover: 0x0000000F,
+                selected_text: 0xFFFFFFFF,
+                selected_shortcut: 0xFFFFFFB3,
+                app_tint,
+                status_tint: app_tint,
+            }
+        }
+    }
+
+    fn darken(rgba_hex: u32, factor: f32) -> u32 {
+        let channel = |shift: u32| {
+            let value = ((rgba_hex >> shift) & 0xFF) as f32 * factor;
+            (value.round() as u32).min(0xFF) << shift
+        };
+        channel(24) | channel(16) | channel(8) | (rgba_hex & 0xFF)
+    }
+
+    fn menu_shadows(hairline: u32) -> Vec<BoxShadow> {
+        vec![
+            BoxShadow {
+                color: rgba(hairline).into(),
+                offset: point(px(0.0), px(0.0)),
+                blur_radius: px(0.0),
+                spread_radius: px(0.5),
+            },
+            BoxShadow {
+                color: rgba(0x00000059).into(),
+                offset: point(px(0.0), px(10.0)),
+                blur_radius: px(32.0),
+                spread_radius: px(0.0),
+            },
+        ]
     }
 
     type MenuBackdropUpdate = (Uuid, Option<Vec<MenuBackdropPanel>>);
@@ -241,6 +451,18 @@ mod linux_wayland {
         recent_submenu_open: bool,
         recent_selected_item: usize,
         pending_system_action: Option<String>,
+        /// The Wi-Fi or Battery menu, open under its status item.
+        status_menu: Option<StatusMenuKind>,
+        status_selected: Option<usize>,
+        /// Option-click: the Wi-Fi menu shows interface and connection details.
+        status_option: bool,
+        status_generation: u64,
+        wifi_menu: Option<WifiMenuData>,
+        wifi_others_expanded: bool,
+        battery_menu: Option<rmac_power::Snapshot>,
+        /// Each status item's highlight edges (left, right), recorded while
+        /// painting, so its menu opens exactly under it.
+        status_slots: Rc<RefCell<BTreeMap<StatusMenuKind, (f32, f32)>>>,
         fullscreen: bool,
         revealed: bool,
         pointer_inside: bool,
@@ -252,6 +474,9 @@ mod linux_wayland {
         /// Evidence capture: `RMAC_CAPTURE_MENU=<index>` opens that menu on
         /// the first frame so screenshots can compare it with macOS.
         capture_menu: Option<usize>,
+        /// `RMAC_CAPTURE_STATUS_MENU=wifi|wifi-option|battery` does the
+        /// same for a status menu.
+        capture_status: Option<(StatusMenuKind, bool)>,
         _blur: Subscription,
     }
 
@@ -287,6 +512,14 @@ mod linux_wayland {
                 recent_submenu_open: false,
                 recent_selected_item: 0,
                 pending_system_action: None,
+                status_menu: None,
+                status_selected: None,
+                status_option: false,
+                status_generation: 0,
+                wifi_menu: None,
+                wifi_others_expanded: false,
+                battery_menu: None,
+                status_slots: Rc::new(RefCell::new(BTreeMap::new())),
                 fullscreen,
                 revealed: !fullscreen,
                 pointer_inside: false,
@@ -297,12 +530,22 @@ mod linux_wayland {
                 capture_menu: std::env::var("RMAC_CAPTURE_MENU")
                     .ok()
                     .and_then(|value| value.parse().ok()),
+                capture_status: std::env::var("RMAC_CAPTURE_STATUS_MENU")
+                    .ok()
+                    .and_then(|value| menu_model::parse_capture_status(&value)),
                 focus,
                 _blur: blur,
             }
         }
 
         fn close_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            if self.status_menu.take().is_some() {
+                self.status_selected = None;
+                self.status_option = false;
+                self.status_generation = self.status_generation.saturating_add(1);
+                window.refresh();
+                cx.notify();
+            }
             if self.open_menu.take().is_some() {
                 self.open_app_id = None;
                 self.recent_submenu_open = false;
@@ -324,6 +567,8 @@ mod linux_wayland {
             window: &mut Window,
             cx: &mut Context<Self>,
         ) {
+            self.status_menu = None;
+            self.status_selected = None;
             self.open_menu = Some(index);
             self.hide_generation = self.hide_generation.saturating_add(1);
             self.revealed = true;
@@ -381,6 +626,482 @@ mod linux_wayland {
             .detach();
         }
 
+        fn open_status_menu(
+            &mut self,
+            kind: StatusMenuKind,
+            option: bool,
+            window: &mut Window,
+            cx: &mut Context<Self>,
+        ) {
+            self.open_menu = None;
+            self.open_app_id = None;
+            self.selected_item = NO_ITEM;
+            self.recent_submenu_open = false;
+            self.pending_system_action = None;
+            self.status_menu = Some(kind);
+            self.status_selected = None;
+            self.status_option = option;
+            self.wifi_others_expanded = false;
+            self.hide_generation = self.hide_generation.saturating_add(1);
+            self.revealed = true;
+            self.load_status_menu(kind, true, cx);
+            window.focus(&self.focus, cx);
+            window.refresh();
+            cx.notify();
+        }
+
+        /// Reads the menu's live data off the UI thread. Opening the Wi-Fi
+        /// menu also asks for a scan and reloads once it has had time to
+        /// finish, as macOS lists fresh networks while the menu is open.
+        fn load_status_menu(&mut self, kind: StatusMenuKind, rescan: bool, cx: &mut Context<Self>) {
+            self.status_generation = self.status_generation.saturating_add(1);
+            let generation = self.status_generation;
+            match kind {
+                StatusMenuKind::Wifi => {
+                    cx.spawn(async move |this, cx| {
+                        let data = cx
+                            .background_executor()
+                            .spawn(async move {
+                                blocking::unblock(move || load_wifi_menu(rescan)).await
+                            })
+                            .await;
+                        let loaded = this
+                            .update(cx, |this, cx| {
+                                if this.status_generation != generation
+                                    || this.status_menu != Some(StatusMenuKind::Wifi)
+                                {
+                                    return false;
+                                }
+                                this.wifi_menu = data;
+                                cx.notify();
+                                true
+                            })
+                            .unwrap_or(false);
+                        if loaded && rescan {
+                            cx.background_executor().timer(WIFI_RESCAN_DELAY).await;
+                            let _ = this.update(cx, |this, cx| {
+                                if this.status_generation == generation
+                                    && this.status_menu == Some(StatusMenuKind::Wifi)
+                                {
+                                    this.load_status_menu(StatusMenuKind::Wifi, false, cx);
+                                }
+                            });
+                        }
+                    })
+                    .detach();
+                }
+                StatusMenuKind::Battery => {
+                    cx.spawn(async move |this, cx| {
+                        let snapshot = cx
+                            .background_executor()
+                            .spawn(async move {
+                                blocking::unblock(move || rmac_power::snapshot().ok()).await
+                            })
+                            .await;
+                        let _ = this.update(cx, |this, cx| {
+                            if this.status_generation == generation
+                                && this.status_menu == Some(StatusMenuKind::Battery)
+                            {
+                                this.battery_menu = snapshot;
+                                cx.notify();
+                            }
+                        });
+                    })
+                    .detach();
+                }
+            }
+        }
+
+        fn status_rows(&self, kind: StatusMenuKind) -> Vec<StatusRow> {
+            match kind {
+                StatusMenuKind::Wifi => wifi_menu_rows(WifiMenuInput {
+                    wifi: self.wifi_menu.as_ref().map(|data| &data.wifi),
+                    device: self
+                        .wifi_menu
+                        .as_ref()
+                        .and_then(|data| data.device.as_ref()),
+                    option: self.status_option,
+                    others_expanded: self.wifi_others_expanded,
+                }),
+                StatusMenuKind::Battery => battery_menu_rows(self.battery_menu.as_ref()),
+            }
+        }
+
+        fn run_status_action(
+            &mut self,
+            action: StatusAction,
+            window: &mut Window,
+            cx: &mut Context<Self>,
+        ) {
+            if action.closes_menu() {
+                self.close_menu(window, cx);
+            }
+            match action {
+                StatusAction::ToggleWifi => {
+                    let Some(data) = self.wifi_menu.as_mut() else {
+                        return;
+                    };
+                    let enabled = !data.wifi.enabled;
+                    // Flip the switch now; the reload confirms or reverts it.
+                    data.wifi.enabled = enabled;
+                    cx.notify();
+                    cx.spawn(async move |this, cx| {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async move {
+                                blocking::unblock(move || rmac_network::set_enabled(enabled)).await
+                            })
+                            .await;
+                        if let Err(error) = result {
+                            eprintln!(
+                                "could not turn Wi-Fi {}: {error}",
+                                if enabled { "on" } else { "off" }
+                            );
+                        }
+                        let _ = this.update(cx, |this, cx| {
+                            if this.status_menu == Some(StatusMenuKind::Wifi) {
+                                this.load_status_menu(StatusMenuKind::Wifi, enabled, cx);
+                            }
+                        });
+                    })
+                    .detach();
+                }
+                StatusAction::Join(network) => {
+                    cx.background_executor()
+                        .spawn(async move {
+                            let result =
+                                blocking::unblock(move || rmac_network::connect(&network)).await;
+                            if let Err(error) = result {
+                                eprintln!("could not join the Wi-Fi network: {error}");
+                            }
+                        })
+                        .detach();
+                }
+                StatusAction::ToggleOtherNetworks => {
+                    self.wifi_others_expanded = !self.wifi_others_expanded;
+                    cx.notify();
+                }
+                StatusAction::OpenSettings(pane) => open_settings_pane(pane, cx),
+                StatusAction::ToggleLowPower => {
+                    let Some(profiles) = self
+                        .battery_menu
+                        .as_mut()
+                        .map(|snapshot| &mut snapshot.profiles)
+                    else {
+                        return;
+                    };
+                    let target = if profiles.active == Some(rmac_power::PowerProfile::PowerSaver) {
+                        rmac_power::PowerProfile::Balanced
+                    } else {
+                        rmac_power::PowerProfile::PowerSaver
+                    };
+                    profiles.active = Some(target);
+                    cx.notify();
+                    cx.spawn(async move |this, cx| {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async move {
+                                blocking::unblock(move || rmac_power::set_profile(target)).await
+                            })
+                            .await;
+                        if let Err(error) = result {
+                            eprintln!("could not change the energy mode: {error}");
+                        }
+                        let _ = this.update(cx, |this, cx| {
+                            if this.status_menu == Some(StatusMenuKind::Battery) {
+                                this.load_status_menu(StatusMenuKind::Battery, false, cx);
+                            }
+                        });
+                    })
+                    .detach();
+                }
+            }
+        }
+
+        fn handle_status_key(
+            &mut self,
+            kind: StatusMenuKind,
+            event: &KeyDownEvent,
+            window: &mut Window,
+            cx: &mut Context<Self>,
+        ) {
+            let rows = self.status_rows(kind);
+            match event.keystroke.key.as_str() {
+                "escape" => self.close_menu(window, cx),
+                "down" | "up" => {
+                    self.status_selected = next_status_selection(
+                        &rows,
+                        self.status_selected,
+                        event.keystroke.key == "down",
+                    );
+                    cx.notify();
+                }
+                "enter" | "space" => {
+                    if let Some(action) = self
+                        .status_selected
+                        .and_then(|index| rows.get(index))
+                        .and_then(StatusRow::action)
+                    {
+                        self.run_status_action(action, window, cx);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        /// One row of the Wi-Fi or Battery menu at the measured macOS 26
+        /// geometry (menu_model and design-lab/menus.html).
+        fn render_status_row(
+            &self,
+            index: usize,
+            row: StatusRow,
+            selected: bool,
+            palette: &MenuPalette,
+            cx: &Context<Self>,
+        ) -> AnyElement {
+            let id = format!("status-row-{}-{index}", self.display_id);
+            let height = row.height();
+            let action = row.action();
+            let hover_fill = palette.status_hover;
+            // A pointer-reachable row: hover and arrow keys share the
+            // selection, and choosing it runs its action.
+            let interactive = |element: gpui::Stateful<gpui::Div>| {
+                let action = action.clone();
+                element
+                    .h(px(height))
+                    .mx(px(menu_model::ROW_INSET - EDGE))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .rounded(px(tokens::menu_item_radius()))
+                    .when(selected, |style| style.bg(rgba(hover_fill)))
+                    .cursor_pointer()
+                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                        if *hovered && this.status_selected != Some(index) {
+                            this.status_selected = Some(index);
+                            cx.notify();
+                        } else if !*hovered && this.status_selected == Some(index) {
+                            this.status_selected = None;
+                            cx.notify();
+                        }
+                    }))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        if let Some(action) = action.clone() {
+                            this.run_status_action(action, window, cx);
+                        }
+                    }))
+            };
+            // Left padding inside a highlighted row so its text sits at the
+            // measured 14.5 pt column.
+            let row_text_pad = menu_model::STATUS_TEXT_INSET - menu_model::ROW_INSET;
+            match row {
+                StatusRow::Title {
+                    label,
+                    value,
+                    switch,
+                    action,
+                } => div()
+                    .id(id)
+                    .h(px(height))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .pl(px(menu_model::STATUS_TEXT_INSET - EDGE))
+                    .pr(px(menu_model::STATUS_SWITCH_RIGHT - EDGE))
+                    .font_weight(FontWeight::BOLD)
+                    .child(div().flex_1().child(label))
+                    .children(value.map(|value| {
+                        div()
+                            .mr(px(1.0))
+                            .font_weight(FontWeight::NORMAL)
+                            .text_color(rgba(palette.value))
+                            .child(value)
+                    }))
+                    .children(switch.map(|on| {
+                        let knob = if on { palette.knob } else { 0xFFFFFFFF };
+                        div()
+                            .id(format!("status-switch-{}", self.display_id))
+                            .role(Role::Switch)
+                            .aria_label(if on {
+                                "Turn Wi-Fi Off"
+                            } else {
+                                "Turn Wi-Fi On"
+                            })
+                            .relative()
+                            .flex_none()
+                            .w(px(menu_model::SWITCH_WIDTH))
+                            .h(px(menu_model::SWITCH_HEIGHT))
+                            .rounded(px(menu_model::SWITCH_HEIGHT / 2.0))
+                            .bg(rgba(if on {
+                                tokens::accent()
+                            } else {
+                                palette.switch_off
+                            }))
+                            .cursor_pointer()
+                            .child(
+                                div()
+                                    .absolute()
+                                    .top(px(2.0))
+                                    .when(on, |knob| knob.right(px(2.0)))
+                                    .when(!on, |knob| knob.left(px(2.0)))
+                                    .w(px(menu_model::SWITCH_KNOB_WIDTH))
+                                    .h(px(menu_model::SWITCH_KNOB_HEIGHT))
+                                    .rounded(px(menu_model::SWITCH_KNOB_HEIGHT / 2.0))
+                                    .bg(rgba(knob)),
+                            )
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                cx.stop_propagation();
+                                if let Some(action) = action.clone() {
+                                    this.run_status_action(action, window, cx);
+                                }
+                            }))
+                    }))
+                    .into_any_element(),
+                StatusRow::Info(label) => div()
+                    .id(id)
+                    .h(px(height))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .pl(px(menu_model::STATUS_TEXT_INSET - EDGE))
+                    // The Mac sets this line 1.25 pt above the row's centre.
+                    .pb(px(2.5))
+                    .whitespace_nowrap()
+                    .text_color(rgba(palette.secondary))
+                    .child(label)
+                    .into_any_element(),
+                StatusRow::Item { label, warning, .. } => {
+                    interactive(div().id(id).role(Role::MenuItem).aria_label(label.clone()))
+                        .pl(px(row_text_pad))
+                        .pr(px(9.4))
+                        .child(div().flex_1().whitespace_nowrap().child(label))
+                        .when(warning, |row| {
+                            row.child(
+                                svg()
+                                    .flex_none()
+                                    .w(px(14.0))
+                                    .h(px(14.0))
+                                    .path(menu_icon_path("warning"))
+                                    .text_color(rgba(palette.secondary)),
+                            )
+                        })
+                        .into_any_element()
+                }
+                StatusRow::Separator => div()
+                    .id(id)
+                    .flex_none()
+                    .h(px(1.0))
+                    .mx(px(menu_model::STATUS_SEPARATOR_INSET - EDGE))
+                    .my(px((height - 1.0) / 2.0))
+                    .bg(rgba(palette.status_separator))
+                    .into_any_element(),
+                StatusRow::Header(label) => div()
+                    .id(id)
+                    .h(px(height))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .pt(px(1.0))
+                    .pl(px(menu_model::STATUS_TEXT_INSET - EDGE))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(rgba(palette.secondary))
+                    .child(label)
+                    .into_any_element(),
+                StatusRow::Disclosure { label, expanded } => {
+                    interactive(div().id(id).role(Role::MenuItem).aria_label(label.clone()))
+                        .pl(px(row_text_pad))
+                        .pr(px(5.35))
+                        .font_weight(FontWeight::BOLD)
+                        .text_color(rgba(palette.secondary))
+                        .child(div().flex_1().child(label))
+                        .child(
+                            svg()
+                                .flex_none()
+                                .w(px(menu_model::MENU_ICON_BOX))
+                                .h(px(menu_model::MENU_ICON_BOX))
+                                .path(menu_icon_path(if expanded {
+                                    "chevron-down"
+                                } else {
+                                    "chevron-right"
+                                }))
+                                .text_color(rgba(palette.secondary)),
+                        )
+                        .into_any_element()
+                }
+                StatusRow::Badge {
+                    label,
+                    glyph,
+                    on,
+                    locked,
+                    action,
+                } => {
+                    let glyph_size = if glyph == BadgeGlyph::LowPower {
+                        20.0
+                    } else {
+                        16.0
+                    };
+                    let badge = div()
+                        .flex_none()
+                        .w(px(menu_model::STATUS_BADGE))
+                        .h(px(menu_model::STATUS_BADGE))
+                        .mr(px(menu_model::STATUS_BADGE_TEXT
+                            - menu_model::STATUS_TEXT_INSET
+                            - menu_model::STATUS_BADGE))
+                        .rounded(px(menu_model::STATUS_BADGE / 2.0))
+                        .bg(rgba(if on { palette.badge_on } else { palette.badge }))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            svg()
+                                .w(px(glyph_size))
+                                .h(px(glyph_size))
+                                .path(menu_icon_path(glyph.icon()))
+                                .text_color(rgba(0xFFFFFFFF)),
+                        );
+                    let base = div().id(id).role(Role::MenuItem).aria_label(label.clone());
+                    let row = if action.is_some() {
+                        interactive(base)
+                    } else {
+                        base.h(px(height))
+                            .mx(px(menu_model::ROW_INSET - EDGE))
+                            .flex()
+                            .flex_none()
+                            .items_center()
+                    };
+                    row.pl(px(row_text_pad))
+                        .pr(px(7.5))
+                        .child(badge)
+                        .child(div().flex_1().whitespace_nowrap().child(label))
+                        .when(locked, |row| {
+                            row.child(
+                                svg()
+                                    .flex_none()
+                                    .w(px(menu_model::MENU_ICON_BOX))
+                                    .h(px(menu_model::MENU_ICON_BOX))
+                                    .path(menu_icon_path("lock-fill"))
+                                    .text_color(rgba(palette.secondary)),
+                            )
+                        })
+                        .into_any_element()
+                }
+                StatusRow::Detail(label) => div()
+                    .id(id)
+                    .h(px(height))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .pl(px(menu_model::STATUS_BADGE_TEXT - EDGE))
+                    .text_size(px(menu_model::STATUS_DETAIL_SIZE))
+                    .text_color(rgba(palette.secondary))
+                    .whitespace_nowrap()
+                    .child(label)
+                    .into_any_element(),
+                StatusRow::GroupEnd => div().id(id).flex_none().h(px(height)).into_any_element(),
+            }
+        }
+
         fn schedule_fullscreen_hide(&mut self, cx: &mut Context<Self>) {
             if !self.fullscreen {
                 return;
@@ -393,6 +1114,7 @@ mod linux_wayland {
                     if this.hide_generation == generation
                         && !this.pointer_inside
                         && this.open_menu.is_none()
+                        && this.status_menu.is_none()
                     {
                         this.revealed = false;
                         cx.notify();
@@ -413,7 +1135,7 @@ mod linux_wayland {
                     self.revealed = true;
                     cx.notify();
                 }
-            } else if self.open_menu.is_none() {
+            } else if self.open_menu.is_none() && self.status_menu.is_none() {
                 self.schedule_fullscreen_hide(cx);
             }
         }
@@ -424,6 +1146,10 @@ mod linux_wayland {
             window: &mut Window,
             cx: &mut Context<Self>,
         ) {
+            if let Some(kind) = self.status_menu {
+                self.handle_status_key(kind, event, window, cx);
+                return;
+            }
             let (mut menus, window_id) = {
                 let status = self.status.read(cx);
                 (
@@ -568,6 +1294,9 @@ mod linux_wayland {
                 };
                 self.open_menu(index, app_id, window, cx);
             }
+            if let Some((kind, option)) = self.capture_status.take() {
+                self.open_status_menu(kind, option, window, cx);
+            }
             record_render_count(window, self.display_id, self.render_count);
             let now = Local::now();
             let status = self.status.read(cx);
@@ -624,7 +1353,12 @@ mod linux_wayland {
                 self.open_app_id = None;
                 self.selected_item = NO_ITEM;
             }
-            let visible = !self.fullscreen || self.revealed || self.open_menu.is_some();
+            let visible = !self.fullscreen
+                || self.revealed
+                || self.open_menu.is_some()
+                || self.status_menu.is_some();
+            let palette = menu_palette();
+            let menu_top = BAR_HEIGHT + menu_model::MENU_TOP_GAP;
             // Menus are as wide as their widest item, as on macOS, and stay
             // on screen near the right edge.
             let menu_width = if self.pending_system_action.is_some() {
@@ -645,7 +1379,7 @@ mod linux_wayland {
             } else {
                 self.open_menu
                     .and_then(|index| menus.get(index))
-                    .map(menu_panel_height)
+                    .map(|menu| app_menu_height(&menu.items))
             };
             let recent_submenu_top = self.recent_submenu_open.then(|| {
                 menus
@@ -656,33 +1390,63 @@ mod linux_wayland {
                             .position(|item| item.action == "system::recents")
                             .map(|index| menu_item_top(menu, index))
                     })
-                    .unwrap_or(BAR_HEIGHT + 2.0)
+                    .unwrap_or(menu_top)
+            });
+            let recent_height = recent_menu_height(
+                self.recent_items.len(),
+                self.recent_items_loading,
+                self.recent_items_unavailable,
+            );
+            // The Wi-Fi or Battery menu opens under its own status item.
+            let status_panel = self.status_menu.map(|kind| {
+                let rows = self.status_rows(kind);
+                let width = menu_model::STATUS_MENU_WIDTH;
+                let left = self
+                    .status_slots
+                    .borrow()
+                    .get(&kind)
+                    .map(|&(slot_left, slot_right)| {
+                        status_menu_left(slot_left, slot_right, width, screen_width)
+                    })
+                    .unwrap_or(screen_width - width - BAR_TRAIL);
+                let height = status_menu_height(&rows).min(MENU_SURFACE_HEIGHT - menu_top - 8.0);
+                (kind, rows, left, width, height)
             });
             let backdrop_panels = if visible {
-                match (menu_left, menu_width, menu_height) {
-                    (Some(left), Some(width), Some(height)) => {
-                        let mut panels = vec![MenuBackdropPanel {
-                            left,
-                            top: BAR_HEIGHT + 2.0,
-                            width,
-                            height,
-                        }];
-                        if let Some(top) = recent_submenu_top {
-                            panels.push(MenuBackdropPanel {
-                                left: left + width - 4.0,
-                                top,
-                                width: RECENT_MENU_WIDTH,
-                                height: recent_menu_height(
-                                    self.recent_items.len(),
-                                    self.recent_items_loading,
-                                    self.recent_items_unavailable,
-                                ),
-                            });
-                        }
-                        Some(panels)
+                let mut panels = Vec::new();
+                if let (Some(left), Some(width), Some(height)) =
+                    (menu_left, menu_width, menu_height)
+                {
+                    panels.push(MenuBackdropPanel {
+                        left,
+                        top: menu_top,
+                        width,
+                        height,
+                        radius: menu_model::APP_MENU_RADIUS,
+                        tint: palette.app_tint,
+                    });
+                    if let Some(top) = recent_submenu_top {
+                        panels.push(MenuBackdropPanel {
+                            left: left + width - 4.0,
+                            top,
+                            width: RECENT_MENU_WIDTH,
+                            height: recent_height,
+                            radius: menu_model::APP_MENU_RADIUS,
+                            tint: palette.app_tint,
+                        });
                     }
-                    _ => None,
                 }
+                if let Some((_, _, left, width, height)) = &status_panel {
+                    panels.push(MenuBackdropPanel {
+                        left: *left,
+                        top: menu_top,
+                        width: *width,
+                        height: *height,
+                        radius: menu_model::STATUS_MENU_RADIUS,
+                        tint: palette.status_tint,
+                    });
+                }
+                (!panels.is_empty()).then_some(panels)
             } else {
                 None
             };
@@ -710,21 +1474,20 @@ mod linux_wayland {
                 {
                     input_regions.push(Bounds {
                         origin: point(px(left), px(BAR_HEIGHT)),
-                        size: Size::new(px(width), px(height + 4.0)),
+                        size: Size::new(px(width), px(height + menu_top - BAR_HEIGHT)),
                     });
                     if let Some(top) = recent_submenu_top {
                         input_regions.push(Bounds {
                             origin: point(px(left + width - 4.0), px(top)),
-                            size: Size::new(
-                                px(RECENT_MENU_WIDTH),
-                                px(recent_menu_height(
-                                    self.recent_items.len(),
-                                    self.recent_items_loading,
-                                    self.recent_items_unavailable,
-                                )),
-                            ),
+                            size: Size::new(px(RECENT_MENU_WIDTH), px(recent_height)),
                         });
                     }
+                }
+                if let Some((_, _, left, width, height)) = &status_panel {
+                    input_regions.push(Bounds {
+                        origin: point(px(*left), px(BAR_HEIGHT)),
+                        size: Size::new(px(*width), px(*height + menu_top - BAR_HEIGHT)),
+                    });
                 }
             }
             window.set_input_region(Some(&input_regions));
@@ -781,17 +1544,18 @@ mod linux_wayland {
                     .role(Role::Menu)
                     .aria_label(format!("{} menu", menu.label))
                     .absolute()
-                    .top(px(BAR_HEIGHT + 2.0))
+                    .top(px(menu_top))
                     .left(px(left))
                     .w(px(width))
-                    .py_1()
-                    .rounded(px(tokens::menu_radius()))
+                    .pt(px(menu_model::APP_MENU_PADDING - EDGE))
+                    .pb(px(menu_model::APP_MENU_PADDING - EDGE))
+                    .rounded(px(menu_model::APP_MENU_RADIUS))
                     .bg(rgba(tokens::transparent()))
-                    .text_size(px(tokens::body_text_size()))
-                    .text_color(rgba(tokens::primary_text()))
-                    .border_1()
-                    .border_color(rgba(tokens::light_border()))
-                    .shadow_lg()
+                    .text_size(px(MENU_TEXT_SIZE))
+                    .text_color(rgba(palette.text))
+                    .border(px(EDGE))
+                    .border_color(rgba(palette.edge))
+                    .shadow(menu_shadows(palette.hairline))
                     .occlude();
                 if let Some(action) = self.pending_system_action.clone() {
                     let (title, detail, confirm) = system_confirmation_copy(&action);
@@ -863,16 +1627,35 @@ mod linux_wayland {
                     );
                     return Some(panel);
                 }
+                let (icons, column) = menu_icon_column(&menu);
                 for (item_index, item) in menu.items.into_iter().enumerate() {
                     if item.separator_before {
-                        panel = panel
-                            .child(div().h(px(1.0)).mx_2().my_1().bg(rgba(tokens::separator())));
+                        panel = panel.child(
+                            div()
+                                .h(px(1.0))
+                                .mx(px(menu_model::APP_SEPARATOR_INSET - EDGE))
+                                .my(px((menu_model::APP_SEPARATOR_HEIGHT - 1.0) / 2.0))
+                                .bg(rgba(palette.separator)),
+                        );
                     }
                     let action = item.action.clone();
                     let item_app_id = app_id.clone();
                     let enabled = item.enabled;
                     let opens_recents =
                         item_app_id == SYSTEM_MENU_ID && action == "system::recents";
+                    let highlighted = enabled && selected == item_index;
+                    let foreground = if !enabled {
+                        palette.disabled
+                    } else if highlighted {
+                        palette.selected_text
+                    } else {
+                        palette.text
+                    };
+                    let shortcut_color = if highlighted {
+                        palette.selected_shortcut
+                    } else {
+                        palette.disabled
+                    };
                     let mut row = div()
                         .id(format!(
                             "app-menu-item-{}-{menu_index}-{item_index}",
@@ -880,35 +1663,65 @@ mod linux_wayland {
                         ))
                         .role(Role::MenuItem)
                         .aria_label(item.label.clone())
-                        .h(px(tokens::menu_row_height()))
-                        .mx(px(MENU_ROW_INSET))
-                        .px(px(MENU_ROW_PADDING))
+                        .relative()
+                        .h(px(menu_model::APP_ROW_HEIGHT))
+                        .mx(px(menu_model::ROW_INSET - EDGE))
+                        .pl(px(column.text_x() - menu_model::ROW_INSET))
+                        .pr(px(menu_model::KEY_RIGHT - menu_model::ROW_INSET))
                         .flex()
                         .items_center()
-                        .justify_between()
                         .rounded(px(tokens::menu_item_radius()))
-                        .when(selected == item_index, |style| {
-                            style.bg(rgba(tokens::accent()))
-                        })
-                        .when(!enabled, |style| {
-                            style.text_color(rgba(tokens::disabled_text()))
-                        })
-                        .child(item.label);
-                    if !item.shortcut.is_empty() {
+                        .text_color(rgba(foreground))
+                        .when(highlighted, |style| style.bg(rgba(tokens::accent())))
+                        .children(icons[item_index].map(|icon| {
+                            svg()
+                                .absolute()
+                                .left(px(column.icon_x() - menu_model::ROW_INSET))
+                                .top(px(
+                                    (menu_model::APP_ROW_HEIGHT - menu_model::MENU_ICON_BOX) / 2.0
+                                ))
+                                .w(px(menu_model::MENU_ICON_BOX))
+                                .h(px(menu_model::MENU_ICON_BOX))
+                                .path(menu_icon_path(icon))
+                                .text_color(rgba(foreground))
+                        }))
+                        .child(div().flex_1().whitespace_nowrap().child(item.label));
+                    if item.shortcut == menu_model::SUBMENU_MARK {
                         row = row.child(
-                            div()
-                                .text_color(rgba(tokens::secondary_text()))
-                                .child(item.shortcut),
+                            svg()
+                                .flex_none()
+                                .ml(px(menu_model::SHORTCUT_GAP))
+                                .mr(px(menu_model::CHEVRON_RIGHT
+                                    - menu_model::KEY_RIGHT
+                                    - (menu_model::MENU_ICON_BOX - CHEVRON_GLYPH_RIGHT)))
+                                .w(px(menu_model::MENU_ICON_BOX))
+                                .h(px(menu_model::MENU_ICON_BOX))
+                                .path(menu_icon_path("chevron-right"))
+                                .text_color(rgba(foreground)),
                         );
+                    } else if !item.shortcut.is_empty() {
+                        row = row.child(shortcut_keys(&item.shortcut, shortcut_color));
                     }
                     if enabled {
                         row = row
                             .cursor_pointer()
-                            .hover(|style| style.bg(rgba(tokens::accent())))
                             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                                if *hovered && this.recent_submenu_open != opens_recents {
-                                    this.recent_submenu_open = opens_recents;
-                                    this.recent_selected_item = 0;
+                                if *hovered {
+                                    let mut changed = this.selected_item != item_index;
+                                    this.selected_item = item_index;
+                                    if this.recent_submenu_open != opens_recents {
+                                        this.recent_submenu_open = opens_recents;
+                                        this.recent_selected_item = 0;
+                                        changed = true;
+                                    }
+                                    if changed {
+                                        cx.notify();
+                                    }
+                                } else if this.selected_item == item_index
+                                    && !this.recent_submenu_open
+                                {
+                                    // Leaving the menu clears the highlight.
+                                    this.selected_item = NO_ITEM;
                                     cx.notify();
                                 }
                             }))
@@ -942,6 +1755,27 @@ mod linux_wayland {
                 if self.recent_submenu_open && menu_index == 0 {
                     let submenu_top = recent_submenu_top?;
                     let selected = self.recent_selected_item;
+                    let selected_text = palette.selected_text;
+                    let recent_row = move |id: String, label: String, highlighted: bool| {
+                        div()
+                            .id(id)
+                            .role(Role::MenuItem)
+                            .aria_label(label)
+                            .h(px(menu_model::APP_ROW_HEIGHT))
+                            .mx(px(menu_model::ROW_INSET - EDGE))
+                            .pl(px(menu_model::APP_TEXT_INSET - menu_model::ROW_INSET))
+                            .pr(px(menu_model::APP_TEXT_INSET - menu_model::ROW_INSET))
+                            .flex()
+                            .items_center()
+                            .rounded(px(tokens::menu_item_radius()))
+                            .whitespace_nowrap()
+                            .cursor_pointer()
+                            .when(highlighted, |style| {
+                                style
+                                    .bg(rgba(tokens::accent()))
+                                    .text_color(rgba(selected_text))
+                            })
+                    };
                     let mut submenu = div()
                         .id(format!("recent-items-panel-{}", self.display_id))
                         .role(Role::Menu)
@@ -950,101 +1784,126 @@ mod linux_wayland {
                         .top(px(submenu_top))
                         .left(px(left + width - 4.0))
                         .w(px(RECENT_MENU_WIDTH))
-                        .py_1()
-                        .rounded(px(tokens::menu_radius()))
+                        .pt(px(menu_model::APP_MENU_PADDING - EDGE))
+                        .pb(px(menu_model::APP_MENU_PADDING - EDGE))
+                        .rounded(px(menu_model::APP_MENU_RADIUS))
                         .bg(rgba(tokens::transparent()))
-                        .text_size(px(tokens::body_text_size()))
-                        .text_color(rgba(tokens::primary_text()))
-                        .border_1()
-                        .border_color(rgba(tokens::light_border()))
-                        .shadow_lg()
+                        .text_size(px(MENU_TEXT_SIZE))
+                        .text_color(rgba(palette.text))
+                        .border(px(EDGE))
+                        .border_color(rgba(palette.edge))
+                        .shadow(menu_shadows(palette.hairline))
                         .occlude()
                         .child(
                             div()
-                                .h(px(22.0))
-                                .px_3()
+                                .h(px(RECENT_HEADER_HEIGHT))
+                                .pl(px(menu_model::APP_TEXT_INSET - EDGE))
                                 .flex()
                                 .items_center()
                                 .text_size(px(11.0))
                                 .font_weight(FontWeight::SEMIBOLD)
-                                .text_color(rgba(tokens::disabled_text()))
+                                .text_color(rgba(palette.secondary))
                                 .child("Documents"),
                         );
                     if self.recent_items_loading {
-                        submenu = submenu.child(recent_status_row("Loading…"));
+                        submenu = submenu.child(recent_status_row("Loading…", palette.disabled));
                     } else if self.recent_items_unavailable {
-                        submenu = submenu.child(recent_status_row("Recent Items Unavailable"));
+                        submenu = submenu.child(recent_status_row(
+                            "Recent Items Unavailable",
+                            palette.disabled,
+                        ));
                     } else if self.recent_items.is_empty() {
-                        submenu = submenu.child(recent_status_row("None"));
+                        submenu = submenu.child(recent_status_row("None", palette.disabled));
                     } else {
                         for (index, path) in self.recent_items.iter().cloned().enumerate() {
                             let label = recent_item_label(&path);
                             submenu = submenu.child(
-                                div()
-                                    .id(format!("recent-item-{}-{index}", self.display_id))
-                                    .role(Role::MenuItem)
-                                    .aria_label(format!("Open {label}"))
-                                    .h(px(tokens::menu_row_height()))
-                                    .mx_1()
-                                    .px_2()
-                                    .flex()
-                                    .items_center()
-                                    .rounded(px(tokens::menu_item_radius()))
-                                    .when(selected == index, |style| {
-                                        style.bg(rgba(tokens::accent()))
-                                    })
-                                    .cursor_pointer()
-                                    .hover(|style| style.bg(rgba(tokens::accent())))
-                                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                                        if *hovered && this.recent_selected_item != index {
-                                            this.recent_selected_item = index;
-                                            cx.notify();
-                                        }
-                                    }))
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        cx.stop_propagation();
-                                        this.close_menu(window, cx);
-                                        dispatch_recent_item(path.clone(), cx);
-                                    }))
-                                    .child(label),
+                                recent_row(
+                                    format!("recent-item-{}-{index}", self.display_id),
+                                    format!("Open {label}"),
+                                    selected == index,
+                                )
+                                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                                    if *hovered && this.recent_selected_item != index {
+                                        this.recent_selected_item = index;
+                                        cx.notify();
+                                    }
+                                }))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    cx.stop_propagation();
+                                    this.close_menu(window, cx);
+                                    dispatch_recent_item(path.clone(), cx);
+                                }))
+                                .child(label),
                             );
                         }
                         let clear_index = self.recent_items.len();
                         submenu = submenu
-                            .child(div().h(px(1.0)).mx_2().my_1().bg(rgba(tokens::separator())))
                             .child(
                                 div()
-                                    .id(format!("recent-items-clear-{}", self.display_id))
-                                    .role(Role::MenuItem)
-                                    .aria_label("Clear Recent Items")
-                                    .h(px(tokens::menu_row_height()))
-                                    .mx_1()
-                                    .px_2()
-                                    .flex()
-                                    .items_center()
-                                    .rounded(px(tokens::menu_item_radius()))
-                                    .when(selected == clear_index, |style| {
-                                        style.bg(rgba(tokens::accent()))
-                                    })
-                                    .cursor_pointer()
-                                    .hover(|style| style.bg(rgba(tokens::accent())))
-                                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                                        if *hovered && this.recent_selected_item != clear_index {
-                                            this.recent_selected_item = clear_index;
-                                            cx.notify();
-                                        }
-                                    }))
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        cx.stop_propagation();
-                                        this.close_menu(window, cx);
-                                        clear_recent_items(cx);
-                                    }))
-                                    .child("Clear Menu"),
+                                    .h(px(1.0))
+                                    .mx(px(menu_model::APP_SEPARATOR_INSET - EDGE))
+                                    .my(px((menu_model::APP_SEPARATOR_HEIGHT - 1.0) / 2.0))
+                                    .bg(rgba(palette.separator)),
+                            )
+                            .child(
+                                recent_row(
+                                    format!("recent-items-clear-{}", self.display_id),
+                                    "Clear Recent Items".into(),
+                                    selected == clear_index,
+                                )
+                                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                                    if *hovered && this.recent_selected_item != clear_index {
+                                        this.recent_selected_item = clear_index;
+                                        cx.notify();
+                                    }
+                                }))
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    cx.stop_propagation();
+                                    this.close_menu(window, cx);
+                                    clear_recent_items(cx);
+                                }))
+                                .child("Clear Menu"),
                             );
                     }
                     surfaces = surfaces.child(submenu);
                 }
                 Some(surfaces)
+            });
+
+            let status_popup = status_panel.map(|(kind, rows, left, width, height)| {
+                let mut panel = div()
+                    .id(format!("status-menu-panel-{}", self.display_id))
+                    .role(Role::Menu)
+                    .aria_label(match kind {
+                        StatusMenuKind::Wifi => "Wi-Fi",
+                        StatusMenuKind::Battery => "Battery",
+                    })
+                    .absolute()
+                    .top(px(menu_top))
+                    .left(px(left))
+                    .w(px(width))
+                    .h(px(height))
+                    .overflow_hidden()
+                    .pt(px(menu_model::STATUS_PADDING_TOP - EDGE))
+                    .pb(px(menu_model::STATUS_PADDING_BOTTOM - EDGE))
+                    .flex()
+                    .flex_col()
+                    .rounded(px(menu_model::STATUS_MENU_RADIUS))
+                    .bg(rgba(tokens::transparent()))
+                    .text_size(px(MENU_TEXT_SIZE))
+                    .text_color(rgba(palette.status_text))
+                    .border(px(EDGE))
+                    .border_color(rgba(palette.status_edge))
+                    .shadow(menu_shadows(0))
+                    .occlude()
+                    // Clicks on headings and separators keep the menu open.
+                    .on_click(|_, _, cx| cx.stop_propagation());
+                for (index, row) in rows.into_iter().enumerate() {
+                    let selected = self.status_selected == Some(index);
+                    panel = panel.child(self.render_status_row(index, row, selected, &palette, cx));
+                }
+                panel
             });
 
             let bar = div()
@@ -1155,10 +2014,22 @@ mod linux_wayland {
                                 .map(|(index, indicator)| {
                                     let icon = indicator_icon_path(indicator.kind);
                                     let is_battery = indicator.kind == TopBarIndicatorKind::Battery;
+                                    // Wi-Fi and Battery open their own menus
+                                    // under the icon; the rest open Control
+                                    // Center.
+                                    let menu_kind = match indicator.kind {
+                                        TopBarIndicatorKind::Network => Some(StatusMenuKind::Wifi),
+                                        TopBarIndicatorKind::Battery => {
+                                            Some(StatusMenuKind::Battery)
+                                        }
+                                        _ => None,
+                                    };
+                                    let slots = self.status_slots.clone();
                                     let mut item = div()
                                         .id(format!("status-{}-{index}", self.display_id))
                                         .role(Role::Button)
                                         .aria_label(indicator.accessible)
+                                        .relative()
                                         .h(px(SLOT_HEIGHT))
                                         .flex()
                                         .items_center()
@@ -1166,11 +2037,46 @@ mod linux_wayland {
                                         .px(px(STATUS_PAD))
                                         .rounded(px(tokens::menu_item_radius()))
                                         .cursor_pointer()
+                                        .when(
+                                            menu_kind.is_some() && self.status_menu == menu_kind,
+                                            |style| style.bg(rgba(tokens::light_selection())),
+                                        )
                                         .hover(|style| style.bg(rgba(tokens::light_hover())))
-                                        .on_click(|_, _, cx| {
-                                            dispatch_shortcut("quick-settings", cx)
-                                        })
-                                        .font_weight(FontWeight::MEDIUM);
+                                        .on_click(cx.listener(
+                                            move |this, event: &ClickEvent, window, cx| {
+                                                cx.stop_propagation();
+                                                let Some(kind) = menu_kind else {
+                                                    dispatch_shortcut("quick-settings", cx);
+                                                    return;
+                                                };
+                                                if this.status_menu == Some(kind) {
+                                                    this.close_menu(window, cx);
+                                                } else {
+                                                    let option = event.modifiers().alt
+                                                        || window.modifiers().alt;
+                                                    this.open_status_menu(kind, option, window, cx);
+                                                }
+                                            },
+                                        ))
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .children(menu_kind.map(|kind| {
+                                            // Record the highlight's edges so
+                                            // the menu can open under it.
+                                            canvas(
+                                                move |bounds, _, _| {
+                                                    slots.borrow_mut().insert(
+                                                        kind,
+                                                        (
+                                                            f32::from(bounds.left()),
+                                                            f32::from(bounds.right()),
+                                                        ),
+                                                    );
+                                                },
+                                                |_, _, _, _| {},
+                                            )
+                                            .absolute()
+                                            .inset_0()
+                                        }));
                                     // macOS puts the percentage before the glyph.
                                     if !indicator.visible.is_empty() {
                                         item = item.child(indicator.visible);
@@ -1263,8 +2169,17 @@ mod linux_wayland {
                 .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
                     this.set_pointer_inside(*hovered, cx);
                 }))
+                .font_family("Inter")
+                .on_modifiers_changed(cx.listener(|this, event: &ModifiersChangedEvent, _, cx| {
+                    // Holding Option while the Wi-Fi menu is open reveals its
+                    // details, as on macOS.
+                    if this.status_menu.is_some() && event.modifiers.alt && !this.status_option {
+                        this.status_option = true;
+                        cx.notify();
+                    }
+                }))
                 .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                    if this.open_menu.is_some() {
+                    if this.open_menu.is_some() || this.status_menu.is_some() {
                         cx.stop_propagation();
                         this.handle_key(event, window, cx);
                     }
@@ -1274,34 +2189,24 @@ mod linux_wayland {
                 }))
                 .child(bar)
                 .children(popup)
+                .children(status_popup)
         }
     }
 
-    /// The widest item's title and shortcut plus the row insets and border,
+    /// The widest item's title and shortcut plus the measured columns,
     /// never narrower than the macOS minimum menu width.
     fn menu_panel_width(menu: &rmac_app_menu::Menu, window: &Window) -> f32 {
-        let content = menu
-            .items
-            .iter()
-            .map(|item| {
-                let shortcut =
-                    rmac_shell_ui::text_width(window, &item.shortcut, FontWeight::NORMAL);
-                rmac_shell_ui::text_width(window, &item.label, FontWeight::NORMAL)
-                    + if shortcut > 0.0 {
-                        MENU_SHORTCUT_GAP + shortcut
-                    } else {
-                        0.0
-                    }
-            })
-            .fold(0.0, f32::max);
-        let chrome = 2.0 * (MENU_ROW_INSET + MENU_ROW_PADDING) + 2.0;
-        (content + chrome)
-            .ceil()
-            .max(tokens::current().metrics.menu_min_width)
+        let (_, column) = menu_icon_column(menu);
+        app_menu_width(
+            &menu.items,
+            column,
+            tokens::current().metrics.menu_min_width,
+            |label| rmac_shell_ui::text_width(window, label, FontWeight::NORMAL),
+        )
     }
 
-    /// Left edge of a menu title's highlight, from the same slot geometry the
-    /// bar is laid out with, so each menu opens exactly under its title.
+    /// Left edge of a menu, from the same slot geometry the bar is laid out
+    /// with: macOS opens it 4 pt left of the title's item frame.
     fn menu_anchor_x(
         active_app: &str,
         menus: &[rmac_app_menu::Menu],
@@ -1309,7 +2214,7 @@ mod linux_wayland {
         window: &Window,
     ) -> f32 {
         if index == 0 {
-            return BAR_LEAD;
+            return BAR_LEAD + menu_model::LOGO_MENU_OFFSET;
         }
         let title_slot = |label: &str, weight| {
             rmac_shell_ui::text_width(window, label, weight) + 2.0 * TITLE_PAD
@@ -1323,11 +2228,78 @@ mod linux_wayland {
             .sum::<f32>();
         BAR_LEAD
             + LOGO_SLOT
+            + menu_model::TITLE_MENU_OFFSET
             + if index == 1 {
                 0.0
             } else {
                 app_slot + preceding
             }
+    }
+
+    /// The glyph each item shows and the text column they set.
+    fn menu_icon_column(menu: &rmac_app_menu::Menu) -> (Vec<Option<&'static str>>, IconColumn) {
+        let icons = menu
+            .items
+            .iter()
+            .map(|item| menu_item_icon(&item.action, &item.label))
+            .collect::<Vec<_>>();
+        let column = IconColumn::for_icons(icons.iter().copied());
+        (icons, column)
+    }
+
+    /// Where the chevron glyph ends inside its 16 pt icon box.
+    const CHEVRON_GLYPH_RIGHT: f32 = 11.35;
+
+    /// A shortcut drawn the macOS way: each modifier centred in its own
+    /// cell, the key left-aligned in the last one.
+    fn shortcut_keys(shortcut: &str, color: u32) -> impl IntoElement {
+        let parts = split_shortcut(shortcut);
+        div()
+            .flex()
+            .flex_none()
+            .ml(px(menu_model::SHORTCUT_GAP))
+            .text_color(rgba(color))
+            .children(parts.modifiers.iter().map(|modifier| {
+                div()
+                    .w(px(menu_model::KEY_CELL))
+                    .flex()
+                    .justify_center()
+                    .child(modifier.to_string())
+            }))
+            .when(!parts.key.is_empty(), |keys| {
+                keys.child(
+                    div()
+                        .ml(px(menu_model::KEY_LETTER_GAP))
+                        .min_w(px(menu_model::KEY_LETTER_WIDTH))
+                        .child(parts.key.clone()),
+                )
+            })
+    }
+
+    fn load_wifi_menu(rescan: bool) -> Option<WifiMenuData> {
+        let wifi = rmac_network::snapshot().ok()?;
+        if rescan && wifi.enabled {
+            // Best effort: the menu still lists what NetworkManager knows.
+            let _ = rmac_network::request_scan();
+        }
+        let device = rmac_network::network_snapshot().ok().and_then(|network| {
+            network.devices.into_iter().find(|device| {
+                device.kind == rmac_network::DeviceKind::WiFi
+                    && wifi
+                        .interface
+                        .as_deref()
+                        .is_none_or(|interface| interface == device.interface)
+            })
+        });
+        Some(WifiMenuData { wifi, device })
+    }
+
+    fn open_settings_pane(pane: &'static str, cx: &mut App) {
+        let args: &'static [&'static str] = match pane {
+            "battery" => &["--pane", "battery"],
+            _ => &["--pane", "wifi"],
+        };
+        spawn_command("/usr/bin/rmac-system-settings", args, cx);
     }
 
     fn status_icon_size(kind: TopBarIndicatorKind) -> (f32, f32) {
@@ -1552,23 +2524,12 @@ mod linux_wayland {
         }
     }
 
-    fn menu_panel_height(menu: &rmac_app_menu::Menu) -> f32 {
-        let separators = menu
-            .items
-            .iter()
-            .filter(|item| item.separator_before)
-            .count() as f32;
-        8.0 + tokens::menu_row_height() * menu.items.len() as f32 + separators * 9.0
-    }
-
+    /// Top of the Recent Items submenu: its first row lines up with the
+    /// parent row, as macOS submenus do.
     fn menu_item_top(menu: &rmac_app_menu::Menu, index: usize) -> f32 {
-        let separators = menu
-            .items
-            .iter()
-            .take(index + 1)
-            .filter(|item| item.separator_before)
-            .count() as f32;
-        BAR_HEIGHT + 6.0 + tokens::menu_row_height() * index as f32 + separators * 9.0
+        BAR_HEIGHT + menu_model::MENU_TOP_GAP + app_menu_item_top(&menu.items, index)
+            - menu_model::APP_MENU_PADDING
+            - RECENT_HEADER_HEIGHT
     }
 
     fn recent_action_count(items: &[PathBuf], loading: bool, unavailable: bool) -> usize {
@@ -1580,30 +2541,28 @@ mod linux_wayland {
     }
 
     fn recent_menu_height(items: usize, loading: bool, unavailable: bool) -> f32 {
-        let rows = if loading || unavailable || items == 0 {
-            1
-        } else {
-            items + 1
-        };
-        30.0 + rows as f32 * tokens::menu_row_height()
-            + if items > 0 && !loading && !unavailable {
-                9.0
+        let listed = items > 0 && !loading && !unavailable;
+        let rows = if listed { items + 1 } else { 1 };
+        2.0 * menu_model::APP_MENU_PADDING
+            + RECENT_HEADER_HEIGHT
+            + rows as f32 * menu_model::APP_ROW_HEIGHT
+            + if listed {
+                menu_model::APP_SEPARATOR_HEIGHT
             } else {
                 0.0
             }
     }
 
-    fn recent_status_row(label: &'static str) -> impl IntoElement {
+    fn recent_status_row(label: &'static str, color: u32) -> impl IntoElement {
         div()
             .id(format!("recent-items-status-{label}"))
             .role(Role::MenuItem)
             .aria_label(label)
-            .h(px(tokens::menu_row_height()))
-            .mx_1()
-            .px_2()
+            .h(px(menu_model::APP_ROW_HEIGHT))
+            .pl(px(menu_model::APP_TEXT_INSET - EDGE))
             .flex()
             .items_center()
-            .text_color(rgba(tokens::disabled_text()))
+            .text_color(rgba(color))
             .child(label)
     }
 
@@ -1867,14 +2826,17 @@ mod linux_wayland {
         cx.new(|cx| ShellStatus::new(status_rx, cx))
     }
 
-    struct MenuBackdrop;
+    struct MenuBackdrop {
+        radius: f32,
+        tint: u32,
+    }
 
     impl Render for MenuBackdrop {
         fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
             div()
                 .size_full()
-                .rounded(px(tokens::menu_radius()))
-                .bg(rgba(tokens::regular_dark_tint()))
+                .rounded(px(self.radius))
+                .bg(rgba(self.tint))
         }
     }
 
@@ -1922,6 +2884,7 @@ mod linux_wayland {
         panel: &MenuBackdropPanel,
         cx: &mut App,
     ) -> AnyWindowHandle {
+        let (radius, tint) = (panel.radius, panel.tint);
         cx.open_window(
             WindowOptions {
                 titlebar: None,
@@ -1946,7 +2909,7 @@ mod linux_wayland {
                 }),
                 ..Default::default()
             },
-            |_, cx| cx.new(|_| MenuBackdrop),
+            move |_, cx| cx.new(move |_| MenuBackdrop { radius, tint }),
         )
         .expect("open menu material layer surface")
         .into()

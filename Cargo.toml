@@ -119,6 +119,8 @@ rmac-system-info = { version = "=0.1.0", path = "crates/rmac-system-info" }
 rmac-thumbnails = { version = "=0.1.0", path = "crates/rmac-thumbnails" }
 rmac-theme = { version = "=0.1.0", path = "crates/rmac-theme" }
 rmac-time = { version = "=0.1.0", path = "crates/rmac-time" }
+# The library alone; the Weather app enables its `app` feature itself.
+rmac-weather = { version = "=0.1.0", path = "crates/weather", default-features = false }
 rmac-time-linux = { version = "=0.1.0", path = "crates/rmac-time-linux" }
 rmac-top-bar = { version = "=0.1.0", path = "crates/rmac-top-bar" }
 rmac-top-bar-runtime = { version = "=0.1.0", path = "crates/rmac-top-bar-runtime" }

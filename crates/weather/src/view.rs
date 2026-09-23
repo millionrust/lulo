@@ -950,38 +950,7 @@ fn attribution(status: Option<String>) -> impl IntoElement {
 /// A weather glyph built from the bundled parts, coloured like the Mac's
 /// multicolour symbols.
 fn sky_icon(sky: Sky, day: bool, size: f32) -> impl IntoElement {
-    const WHITE: u32 = 0xFFFFFF;
-    const SUN: u32 = 0xFFD60A;
-    const RAIN: u32 = 0x5AC8FA;
-    let parts: &[(&str, u32, f32, f32, f32)] = match (sky, day) {
-        (Sky::Clear, true) => &[("sun", SUN, 0.0, 0.0, 1.0)],
-        (Sky::Clear, false) => &[("moon", WHITE, 0.0, 0.0, 1.0)],
-        (Sky::MostlyClear | Sky::PartlyCloudy, true) => &[
-            ("sun-small", SUN, 0.1, 0.02, 0.55),
-            ("cloud-front", WHITE, 0.0, 0.0, 1.0),
-        ],
-        (Sky::MostlyClear | Sky::PartlyCloudy, false) => &[
-            ("moon-small", WHITE, 0.1, 0.02, 0.55),
-            ("cloud-front", WHITE, 0.0, 0.0, 1.0),
-        ],
-        (Sky::Cloudy, _) => &[("cloud", WHITE, 0.0, 0.0, 1.0)],
-        (Sky::Fog, _) => &[
-            ("cloud-top", WHITE, 0.0, 0.0, 1.0),
-            ("fog", WHITE, 0.0, 0.0, 1.0),
-        ],
-        (Sky::Snow | Sky::HeavySnow | Sky::SnowShowers, _) => &[
-            ("cloud-top", WHITE, 0.0, 0.0, 1.0),
-            ("snow", WHITE, 0.0, 0.0, 1.0),
-        ],
-        (Sky::Thunderstorms, _) => &[
-            ("cloud-top", WHITE, 0.0, 0.0, 1.0),
-            ("bolt", SUN, 0.0, 0.0, 1.0),
-        ],
-        _ => &[
-            ("cloud-top", WHITE, 0.0, 0.0, 1.0),
-            ("rain", RAIN, 0.0, 0.0, 1.0),
-        ],
-    };
+    let parts = summary::sky_parts(sky, day);
     div()
         .relative()
         .size(px(size))

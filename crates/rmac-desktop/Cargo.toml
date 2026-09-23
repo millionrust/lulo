@@ -8,3 +8,6 @@ publish = false
 
 [dependencies]
 notify.workspace = true
+rmac-storage.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -1,4 +1,12 @@
-//! Bounded, framework-neutral Desktop directory projection.
+//! Bounded, framework-neutral Desktop directory projection, plus the pure
+//! parts of the macOS 26 desktop: the icon grid (`grid`), Stacks
+//! (`stacks`), widgets (`widgets`) and the saved desktop state
+//! (`settings`).
+
+pub mod grid;
+pub mod settings;
+pub mod stacks;
+pub mod widgets;
 
 use std::ffi::OsStr;
 use std::fmt;
@@ -236,11 +244,76 @@ pub fn watch(
     Ok(Watcher { _inner: watcher })
 }
 
+/// Watches one file by name in `directory` (which must exist), calling
+/// `changed` whenever it is created, written or removed.
+pub fn watch_file(
+    directory: &Path,
+    file_name: &'static str,
+    mut changed: impl FnMut() + Send + 'static,
+) -> Result<Watcher, Error> {
+    use notify::Watcher as _;
+
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        let Ok(event) = event else {
+            return;
+        };
+        if matches!(event.kind, notify::EventKind::Access(_)) {
+            return;
+        }
+        if event
+            .paths
+            .iter()
+            .any(|path| path.file_name() == Some(OsStr::new(file_name)))
+        {
+            changed();
+        }
+    })
+    .map_err(|_| Error::Watch)?;
+    watcher
+        .watch(directory, notify::RecursiveMode::NonRecursive)
+        .map_err(|_| Error::Watch)?;
+    Ok(Watcher { _inner: watcher })
+}
+
+/// A unique "name copy" path for Duplicate, as Finder names copies.
+pub fn duplicate_path(path: &Path) -> Option<PathBuf> {
+    let parent = path.parent()?;
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    let (stem, extension) = match name.rsplit_once('.') {
+        Some((stem, extension)) if !stem.is_empty() => (stem.to_owned(), format!(".{extension}")),
+        _ => (name.clone(), String::new()),
+    };
+    (1..10_000u32)
+        .map(|index| match index {
+            1 => parent.join(format!("{stem} copy{extension}")),
+            _ => parent.join(format!("{stem} copy {index}{extension}")),
+        })
+        .find(|candidate| fs::symlink_metadata(candidate).is_err())
+}
+
+/// Copies a regular file to [`duplicate_path`]; folders and links are not
+/// duplicated.
+pub fn duplicate_file(path: &Path) -> Result<PathBuf, Error> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| Error::Io(error.kind()))?;
+    if !metadata.is_file() {
+        return Err(Error::Io(io::ErrorKind::Unsupported));
+    }
+    let target = duplicate_path(path).ok_or(Error::Io(io::ErrorKind::AlreadyExists))?;
+    let mut source = fs::File::open(path).map_err(|error| Error::Io(error.kind()))?;
+    let mut destination = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&target)
+        .map_err(|error| Error::Io(error.kind()))?;
+    io::copy(&mut source, &mut destination).map_err(|error| Error::Io(error.kind()))?;
+    Ok(target)
+}
+
 fn sort_items(items: &mut [Item], sort: SortOrder) {
     items.sort_by(|left, right| {
         let order = match sort {
             SortOrder::Name => left.name.to_lowercase().cmp(&right.name.to_lowercase()),
-            SortOrder::Kind => left.kind.cmp(&right.kind),
+            SortOrder::Kind => stacks::kind_label(left).cmp(stacks::kind_label(right)),
             SortOrder::DateModified => left.modified_millis.cmp(&right.modified_millis).reverse(),
             SortOrder::Size => left.size_bytes.cmp(&right.size_bytes).reverse(),
         };
@@ -340,6 +413,23 @@ mod tests {
         );
         #[cfg(unix)]
         assert_eq!(snapshot.items[3].kind, ItemKind::SymbolicLink);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn duplicates_are_named_like_finder_copies() {
+        let root = temporary("duplicate");
+        fs::write(root.join("Report.pdf"), b"1").unwrap();
+        let first = duplicate_file(&root.join("Report.pdf")).unwrap();
+        assert_eq!(first, root.join("Report copy.pdf"));
+        let second = duplicate_file(&root.join("Report.pdf")).unwrap();
+        assert_eq!(second, root.join("Report copy 2.pdf"));
+        fs::create_dir(root.join("Folder")).unwrap();
+        assert!(duplicate_file(&root.join("Folder")).is_err());
+        assert_eq!(
+            duplicate_path(&root.join("notes")).unwrap(),
+            root.join("notes copy")
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

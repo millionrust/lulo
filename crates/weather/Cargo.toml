@@ -11,13 +11,21 @@ path = "src/lib.rs"
 [[bin]]
 name = "rmac-weather"
 path = "src/main.rs"
+required-features = ["app"]
+
+# The library (forecast parsing, the saved places and cache, the widget
+# summary) has no UI dependencies, so the shell's desktop widgets can use it
+# without compiling the app's window stack.
+[features]
+default = ["app"]
+app = ["dep:gpui", "dep:gpui-component", "dep:gpui-component-assets", "dep:rmac-ui", "dep:rust-embed"]
 
 [dependencies]
-gpui.workspace = true
-gpui-component.workspace = true
-gpui-component-assets.workspace = true
+gpui = { workspace = true, optional = true }
+gpui-component = { workspace = true, optional = true }
+gpui-component-assets = { workspace = true, optional = true }
 rmac-storage.workspace = true
-rmac-ui.workspace = true
-rust-embed.workspace = true
+rmac-ui = { workspace = true, optional = true }
+rust-embed = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true

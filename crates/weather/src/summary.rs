@@ -239,6 +239,44 @@ pub fn current_fraction(temperature: f64, days: &[Day]) -> f32 {
     ((temperature - low) / (high - low).max(1.0)).clamp(0.0, 1.0) as f32
 }
 
+/// The layered glyph parts a Mac multicolour weather symbol is drawn from:
+/// (asset name under icons/weather, colour 0xRRGGBB, x and y offset and
+/// scale as fractions of the icon size).
+pub fn sky_parts(sky: Sky, day: bool) -> &'static [(&'static str, u32, f32, f32, f32)] {
+    const WHITE: u32 = 0xFFFFFF;
+    const SUN: u32 = 0xFFD60A;
+    const RAIN: u32 = 0x5AC8FA;
+    match (sky, day) {
+        (Sky::Clear, true) => &[("sun", SUN, 0.0, 0.0, 1.0)],
+        (Sky::Clear, false) => &[("moon", WHITE, 0.0, 0.0, 1.0)],
+        (Sky::MostlyClear | Sky::PartlyCloudy, true) => &[
+            ("sun-small", SUN, 0.1, 0.02, 0.55),
+            ("cloud-front", WHITE, 0.0, 0.0, 1.0),
+        ],
+        (Sky::MostlyClear | Sky::PartlyCloudy, false) => &[
+            ("moon-small", WHITE, 0.1, 0.02, 0.55),
+            ("cloud-front", WHITE, 0.0, 0.0, 1.0),
+        ],
+        (Sky::Cloudy, _) => &[("cloud", WHITE, 0.0, 0.0, 1.0)],
+        (Sky::Fog, _) => &[
+            ("cloud-top", WHITE, 0.0, 0.0, 1.0),
+            ("fog", WHITE, 0.0, 0.0, 1.0),
+        ],
+        (Sky::Snow | Sky::HeavySnow | Sky::SnowShowers, _) => &[
+            ("cloud-top", WHITE, 0.0, 0.0, 1.0),
+            ("snow", WHITE, 0.0, 0.0, 1.0),
+        ],
+        (Sky::Thunderstorms, _) => &[
+            ("cloud-top", WHITE, 0.0, 0.0, 1.0),
+            ("bolt", SUN, 0.0, 0.0, 1.0),
+        ],
+        _ => &[
+            ("cloud-top", WHITE, 0.0, 0.0, 1.0),
+            ("rain", RAIN, 0.0, 0.0, 1.0),
+        ],
+    }
+}
+
 /// Background gradient (top, bottom) as 0xRRGGBB, by sky and daylight (S).
 pub fn backdrop(sky: Sky, day: bool) -> (u32, u32) {
     match (sky.family(), day) {

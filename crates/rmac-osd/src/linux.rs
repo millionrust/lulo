@@ -106,6 +106,19 @@ impl Backlight {
         percentage.min(100) as u8
     }
 
+    /// The raw level for a percentage. A non-zero percentage never rounds
+    /// to 0, which would switch the panel off; macOS's slider never does.
+    fn level_for_percentage(&self, percentage: u8) -> u32 {
+        let percentage = u64::from(percentage.min(100));
+        let level = (percentage * u64::from(self.maximum) + 50) / 100;
+        let level = u32::try_from(level).unwrap_or(self.maximum);
+        if percentage > 0 {
+            level.max(1)
+        } else {
+            level
+        }
+    }
+
     fn adjusted(&self, direction: Direction) -> u32 {
         let step = self.maximum.div_ceil(16).max(1);
         match direction {
@@ -131,20 +144,35 @@ fn execute_brightness(command: Command) -> Result<Presentation, Error> {
     };
     if let Some(direction) = direction {
         let target = backlight.adjusted(direction);
-        set_brightness(&backlight.name, target)?;
-        let deadline = Instant::now() + VERIFY_TIMEOUT;
-        loop {
-            backlight = read_backlight(&backlight.name)?;
-            if backlight.current == target {
-                break;
-            }
-            if Instant::now() >= deadline {
-                return Err(Error::new(Operation::ChangeBrightness));
-            }
-            std::thread::sleep(VERIFY_INTERVAL);
-        }
+        backlight = apply_brightness(&backlight.name, target)?;
     }
     Presentation::new(Kind::Display, "Display", backlight.percentage(), false)
+}
+
+/// Set a backlight through logind and wait until sysfs reports the level.
+fn apply_brightness(name: &str, target: u32) -> Result<Backlight, Error> {
+    set_brightness(name, target)?;
+    let deadline = Instant::now() + VERIFY_TIMEOUT;
+    loop {
+        let backlight = read_backlight(name)?;
+        if backlight.current == target {
+            return Ok(backlight);
+        }
+        if Instant::now() >= deadline {
+            return Err(Error::new(Operation::ChangeBrightness));
+        }
+        std::thread::sleep(VERIFY_INTERVAL);
+    }
+}
+
+pub(super) fn brightness() -> Result<u8, Error> {
+    Ok(preferred_backlight()?.percentage())
+}
+
+pub(super) fn set_brightness_percentage(percentage: u8) -> Result<u8, Error> {
+    let backlight = preferred_backlight()?;
+    let target = backlight.level_for_percentage(percentage);
+    Ok(apply_brightness(&backlight.name, target)?.percentage())
 }
 
 fn preferred_backlight() -> Result<Backlight, Error> {
@@ -438,6 +466,25 @@ mod tests {
             ..device
         };
         assert_eq!(full.adjusted(Direction::Up), 937);
+    }
+
+    #[test]
+    fn percentages_map_to_levels_without_switching_the_panel_off() {
+        let device = Backlight {
+            name: "intel_backlight".into(),
+            current: 0,
+            maximum: 937,
+            kind: "raw".into(),
+        };
+        assert_eq!(device.level_for_percentage(50), 469);
+        assert_eq!(device.level_for_percentage(100), 937);
+        assert_eq!(device.level_for_percentage(250), 937);
+        assert_eq!(device.level_for_percentage(0), 0);
+        let coarse = Backlight {
+            maximum: 7,
+            ..device
+        };
+        assert_eq!(coarse.level_for_percentage(1), 1);
     }
 
     #[test]

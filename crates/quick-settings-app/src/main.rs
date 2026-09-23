@@ -16,23 +16,33 @@ use gpui::{
 use crate::view::QuickSettingsView;
 
 #[cfg(not(target_os = "linux"))]
-const WIDTH: f32 = 304.0;
+const WIDTH: f32 = rmac_quick_settings::surface::LOGICAL_WIDTH as f32;
 #[cfg(not(target_os = "linux"))]
-const HEIGHT: f32 = 360.0;
+const HEIGHT: f32 = rmac_quick_settings::surface::LOGICAL_HEIGHT as f32;
 #[cfg(not(target_os = "linux"))]
-const EDGE_GAP: f32 = 12.0;
+const EDGE_GAP: f32 = rmac_quick_settings::surface::RIGHT_MARGIN as f32;
+/// The development window has no menu bar exclusive zone to sit below.
 #[cfg(not(target_os = "linux"))]
-const TOP_GAP: f32 = 44.0;
+const TOP_GAP: f32 = 29.0 + rmac_quick_settings::surface::TOP_MARGIN as f32;
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "../system-settings/assets"]
 #[include = "icons/**/*.svg"]
 struct QuickSettingsAssets;
 
+/// Control Center glyphs, shared with `design-lab/control-center.html`.
+#[derive(rust_embed::RustEmbed)]
+#[folder = "assets"]
+#[include = "cc/**/*.svg"]
+struct ControlCenterAssets;
+
 struct CombinedAssets;
 
 impl AssetSource for CombinedAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        if let Some(asset) = ControlCenterAssets::get(path) {
+            return Ok(Some(asset.data));
+        }
         if let Some(asset) = QuickSettingsAssets::get(path) {
             return Ok(Some(asset.data));
         }
@@ -40,7 +50,8 @@ impl AssetSource for CombinedAssets {
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        let mut assets = QuickSettingsAssets::iter()
+        let mut assets = ControlCenterAssets::iter()
+            .chain(QuickSettingsAssets::iter())
             .filter(|asset| asset.starts_with(path))
             .map(|asset| SharedString::from(asset.to_string()))
             .collect::<Vec<_>>();

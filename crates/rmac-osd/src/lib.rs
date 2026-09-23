@@ -169,6 +169,33 @@ pub fn execute(command: Command) -> Result<Presentation, Error> {
     }
 }
 
+/// The preferred backlight's level in percent; an error when the machine has
+/// no backlight Control Center can drive.
+pub fn brightness() -> Result<u8, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::brightness()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(Error::new(Operation::ReadBrightness))
+    }
+}
+
+/// Set the preferred backlight to `percentage` through logind and return the
+/// level read back from sysfs.
+pub fn set_brightness(percentage: u8) -> Result<u8, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::set_brightness_percentage(percentage)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = percentage;
+        Err(Error::new(Operation::ChangeBrightness))
+    }
+}
+
 #[cfg(target_os = "linux")]
 pub use linux::{send, Listener};
 

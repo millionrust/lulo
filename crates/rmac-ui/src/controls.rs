@@ -4,8 +4,8 @@ use std::rc::Rc;
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, rgba, AnyElement, App, ClickEvent, Context, ElementId,
-    Entity, InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, RenderOnce,
-    SharedString, StyleRefinement, Styled, Window,
+    Entity, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _,
+    RenderOnce, SharedString, StyleRefinement, Styled, Window,
 };
 use gpui_component::{
     button::{
@@ -50,6 +50,47 @@ pub enum ToggleState {
 
 type ClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 type MenuBuilder = Rc<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu>;
+
+/// Paint rmac-owned colours onto a gpui-component button.
+///
+/// The pinned gpui-component treats `ButtonCustomVariant` as a *tint*, not a
+/// fill: the resting background is `color` at 20 % alpha, the hover and
+/// pressed backgrounds are `color` at 30 % / 40 %, and the label is drawn in
+/// `color` itself — `foreground` is never read. rmac passed its fill there, so
+/// a Secondary button drew its label in its own grey fill (blank boxes such as
+/// Control Center's Power Mode buttons), a Primary button became a faint blue
+/// outline with blue text, and every transparent control (Ghost buttons,
+/// checkbox, radio and list-row labels) drew a transparent label.
+///
+/// rmac owns these colours, so it paints them itself. The component is kept
+/// in its `selected` styling branch, the only branch that installs no hover or
+/// pressed style of its own (installing ours as well would trip GPUI's
+/// "hover style already set" assertion), and the refinement painted here is
+/// applied after every variant style. macOS push buttons have no hover
+/// highlight; `hover` adds one only for controls that want it.
+fn painted(
+    button: ComponentButton,
+    fill: Hsla,
+    text: Hsla,
+    hover: Option<Hsla>,
+    disabled: bool,
+    cx: &App,
+) -> ComponentButton {
+    let variant = ButtonCustomVariant::new(cx)
+        .color(text)
+        .foreground(text)
+        .hover(fill)
+        .active(fill);
+    let button = button
+        .custom(variant)
+        .selected(true)
+        .bg(if disabled { fill.opacity(0.5) } else { fill })
+        .text_color(if disabled { mac::text_tertiary() } else { text });
+    match hover {
+        Some(hover) if !disabled => button.hover(move |style| style.bg(hover)),
+        _ => button,
+    }
+}
 
 /// Keyboard-focusable rmac button with semantic roles and live theme tokens.
 #[derive(IntoElement)]
@@ -213,24 +254,26 @@ impl RenderOnce for Button {
                 mac::hover(),
             ),
         };
-        let variant = ButtonCustomVariant::new(cx)
-            .color(color)
-            .foreground(foreground)
-            .hover(hover)
-            .active(active)
-            .shadow(matches!(
-                self.role,
-                ButtonRole::Primary | ButtonRole::Destructive
-            ));
-        let mut button = ComponentButton::new(self.id)
-            .custom(variant)
-            .with_size(self.size)
-            .disabled(self.disabled)
-            .loading(self.busy)
-            .selected(self.selected)
-            .border_1()
-            .border_color(border)
-            .refine_style(&self.style);
+        let _ = active;
+        let (fill, hover) = match (self.role, self.selected) {
+            (_, true) => (mac::control_fill_hover(), None),
+            (ButtonRole::Ghost, false) => (color, Some(hover)),
+            _ => (color, None),
+        };
+        let mut button = painted(
+            ComponentButton::new(self.id)
+                .with_size(self.size)
+                .disabled(self.disabled)
+                .loading(self.busy),
+            fill,
+            foreground,
+            hover,
+            self.disabled,
+            cx,
+        )
+        .border_1()
+        .border_color(border)
+        .refine_style(&self.style);
         if let Some(label) = self.label {
             button = button.label(label);
         }
@@ -304,17 +347,21 @@ impl Styled for PopUpButton {
 
 impl RenderOnce for PopUpButton {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let variant = ButtonCustomVariant::new(cx)
-            .color(mac::button_secondary())
-            .foreground(mac::text())
-            .hover(mac::control_fill_hover())
-            .active(mac::hover());
-        let button = ComponentButton::new(self.id.clone())
-            .custom(variant)
-            .label(self.label)
-            .selected(self.selected)
-            .border_1()
-            .border_color(mac::separator());
+        let fill = if self.selected {
+            mac::control_fill_hover()
+        } else {
+            mac::button_secondary()
+        };
+        let button = painted(
+            ComponentButton::new(self.id.clone()).label(self.label),
+            fill,
+            mac::text(),
+            None,
+            self.disabled,
+            cx,
+        )
+        .border_1()
+        .border_color(mac::separator());
         let mut dropdown = DropdownButton::new(self.id).button(button).compact();
         if let Some(builder) = self.menu {
             dropdown = dropdown.dropdown_menu(move |menu, window, cx| builder(menu, window, cx));
@@ -431,11 +478,6 @@ impl RenderOnce for Toggle {
         let active = self.state != ToggleState::Off;
         let next = !matches!(self.state, ToggleState::On);
         let (width, height, thumb) = self.size.dimensions();
-        let variant = ButtonCustomVariant::new(cx)
-            .color(transparent)
-            .foreground(mac::text())
-            .hover(mac::control_fill_hover())
-            .active(mac::hover());
         let indicator = if self.pending {
             div()
                 .size(px(10.0))
@@ -483,13 +525,19 @@ impl RenderOnce for Toggle {
             .gap_2()
             .child(track)
             .when_some(self.label, |content, label| content.child(label));
-        let mut button = ComponentButton::new(self.id)
-            .custom(variant)
-            .with_size(Size::Small)
-            .compact()
-            .disabled(self.disabled || self.pending)
-            .selected(active)
-            .child(content);
+        let disabled = self.disabled || self.pending;
+        let mut button = painted(
+            ComponentButton::new(self.id)
+                .with_size(Size::Small)
+                .compact()
+                .disabled(disabled)
+                .child(content),
+            transparent,
+            mac::text(),
+            None,
+            disabled,
+            cx,
+        );
         if let Some(tooltip) = self.tooltip {
             button = button.tooltip(tooltip);
         }
@@ -589,17 +637,18 @@ impl RenderOnce for Checkbox {
             .gap_2()
             .child(box_)
             .when_some(self.label, |content, label| content.child(label));
-        let variant = ButtonCustomVariant::new(cx)
-            .color(rgba(0x00000000).into())
-            .foreground(mac::text())
-            .hover(mac::control_fill_hover())
-            .active(mac::hover());
-        let mut button = ComponentButton::new(self.id)
-            .custom(variant)
-            .compact()
-            .disabled(self.disabled)
-            .selected(active)
-            .child(content);
+        let _ = active;
+        let mut button = painted(
+            ComponentButton::new(self.id)
+                .compact()
+                .disabled(self.disabled)
+                .child(content),
+            rgba(0x00000000).into(),
+            mac::text(),
+            None,
+            self.disabled,
+            cx,
+        );
         if let Some(handler) = self.on_change {
             button = button.on_click(move |_, window, cx| handler(&next, window, cx));
         }
@@ -677,17 +726,17 @@ impl RenderOnce for Radio {
             .gap_2()
             .child(circle)
             .when_some(self.label, |content, label| content.child(label));
-        let variant = ButtonCustomVariant::new(cx)
-            .color(rgba(0x00000000).into())
-            .foreground(mac::text())
-            .hover(mac::control_fill_hover())
-            .active(mac::hover());
-        let mut button = ComponentButton::new(self.id)
-            .custom(variant)
-            .compact()
-            .disabled(self.disabled)
-            .selected(self.selected)
-            .child(content);
+        let mut button = painted(
+            ComponentButton::new(self.id)
+                .compact()
+                .disabled(self.disabled)
+                .child(content),
+            rgba(0x00000000).into(),
+            mac::text(),
+            None,
+            self.disabled,
+            cx,
+        );
         if let Some(handler) = self.on_change {
             button = button.on_click(move |_, window, cx| handler(&true, window, cx));
         }
@@ -1192,22 +1241,27 @@ impl Styled for ListRow {
 
 impl RenderOnce for ListRow {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let transparent = rgba(0x00000000).into();
-        let variant = ButtonCustomVariant::new(cx)
-            .color(transparent)
-            .foreground(mac::text())
-            .hover(mac::hover())
-            .active(mac::accent());
-        let mut row = ComponentButton::new(self.id)
-            .custom(variant)
-            .with_size(Size::Small)
-            .selected(self.selected)
-            .disabled(self.disabled)
-            .w_full()
-            .h(px(mac::list_row_height()))
-            .justify_start()
-            .refine_style(&self.style)
-            .child(self.content);
+        let transparent: Hsla = rgba(0x00000000).into();
+        let (fill, text, hover) = if self.selected {
+            (mac::accent(), mac::on_accent(), None)
+        } else {
+            (transparent, mac::text(), Some(mac::hover()))
+        };
+        let mut row = painted(
+            ComponentButton::new(self.id)
+                .with_size(Size::Small)
+                .disabled(self.disabled),
+            fill,
+            text,
+            hover,
+            self.disabled,
+            cx,
+        )
+        .w_full()
+        .h(px(mac::list_row_height()))
+        .justify_start()
+        .refine_style(&self.style)
+        .child(self.content);
         if let Some(handler) = self.on_activate {
             row = row.on_click(move |event, window, cx| handler(event, window, cx));
         }

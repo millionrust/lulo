@@ -3,10 +3,15 @@
 use std::fmt;
 
 pub const NAMESPACE: &str = "rmac-quick-settings";
-pub const LOGICAL_WIDTH: f64 = 304.0;
-pub const LOGICAL_HEIGHT: f64 = 360.0;
-pub const TOP_MARGIN: f64 = 44.0;
-pub const RIGHT_MARGIN: f64 = 12.0;
+pub const LOGICAL_WIDTH: f64 = crate::layout::SURFACE_WIDTH;
+/// The surface opens at the height of its always-present modules and is then
+/// resized to fit what it shows (see [`crate::layout::Modules`]).
+pub const LOGICAL_HEIGHT: f64 = crate::layout::MIN_SURFACE_HEIGHT;
+/// Measured on macOS 26: the first module row starts 40 below the menu bar
+/// and the modules end 14 from the screen edge; the surface padding sits
+/// outside them.
+pub const TOP_MARGIN: f64 = 40.0 - crate::layout::PADDING;
+pub const RIGHT_MARGIN: f64 = 14.0 - crate::layout::PADDING;
 pub const MAX_SEAT_ID_BYTES: usize = 128;
 const MAX_SCALE: f64 = 8.0;
 
@@ -164,7 +169,7 @@ pub fn plan(
         return Err(PlanError::InvalidGeometry);
     }
     if logical.size.width < LOGICAL_WIDTH + RIGHT_MARGIN
-        || logical.size.height < LOGICAL_HEIGHT + TOP_MARGIN
+        || logical.size.height < crate::layout::MAX_SURFACE_HEIGHT + TOP_MARGIN
     {
         return Err(PlanError::DoesNotFit);
     }

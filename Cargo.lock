@@ -6090,6 +6090,8 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "rmac-media",
+ "rmac-osd",
  "rmac-quick-settings",
  "rmac-quick-settings-system",
  "rmac-shell-activation-runtime",

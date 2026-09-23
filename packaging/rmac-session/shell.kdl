@@ -212,9 +212,11 @@ recent-windows {
 // receiving keyboard focus. Niri owns the backdrop sampling and rounded blur.
 // Single-card shell panels fill their surface, so the compositor blur and
 // shadow take the card's own corner radius (popover 20, large surface 24).
+// Control Center's surface is sized to its modules and rounded concentric
+// with them (rmac_quick_settings::layout::SURFACE_RADIUS).
 layer-rule {
     match namespace=r#"^rmac-quick-settings$"#
-    geometry-corner-radius 20
+    geometry-corner-radius 44
     shadow {
         on
         softness 30

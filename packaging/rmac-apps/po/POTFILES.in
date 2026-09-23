@@ -4,6 +4,7 @@ applications/org.rmac.Calculator.desktop
 applications/org.rmac.Clock.desktop
 applications/org.rmac.Files.desktop
 applications/org.rmac.Notes.desktop
+applications/org.rmac.Player.desktop
 applications/org.rmac.Preview.desktop
 applications/org.rmac.SystemMonitor.desktop
 applications/org.rmac.SystemSettings.desktop
@@ -16,6 +17,7 @@ metainfo/org.rmac.Calculator.metainfo.xml
 metainfo/org.rmac.Clock.metainfo.xml
 metainfo/org.rmac.Files.metainfo.xml
 metainfo/org.rmac.Notes.metainfo.xml
+metainfo/org.rmac.Player.metainfo.xml
 metainfo/org.rmac.Preview.metainfo.xml
 metainfo/org.rmac.SystemMonitor.metainfo.xml
 metainfo/org.rmac.SystemSettings.metainfo.xml

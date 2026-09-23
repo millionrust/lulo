@@ -55,6 +55,7 @@ fn identified_window_options_publish_stable_native_titles() {
         (app_id::PREVIEW, "Preview"),
         (app_id::CLOCK, "Clock"),
         (app_id::WEATHER, "Weather"),
+        (app_id::PLAYER, "Media Player"),
     ];
 
     for (app_id, expected) in cases {

@@ -1,0 +1,28 @@
+[package]
+name = "rmac-player"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rmac-player"
+path = "src/main.rs"
+
+[dependencies]
+async-channel.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+gpui-component-assets.workspace = true
+image.workspace = true
+libloading.workspace = true
+rmac-portal.workspace = true
+rmac-ui.workspace = true
+rust-embed.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+rmac-apps.workspace = true
+zbus.workspace = true

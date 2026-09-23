@@ -1492,6 +1492,7 @@ mod linux_wayland {
             rmac_apps::identity::PREVIEW => "org.rmac.Preview.svg",
             rmac_apps::identity::CLOCK => "org.rmac.Clock.svg",
             rmac_apps::identity::WEATHER => "org.rmac.Weather.svg",
+            rmac_apps::identity::PLAYER => "org.rmac.Player.svg",
             _ => return None,
         };
         // The installed theme copy first (user, then system), then the
@@ -1547,6 +1548,7 @@ mod linux_wayland {
             rmac_apps::identity::PREVIEW => 0x2f6fd6ff,
             rmac_apps::identity::CLOCK => 0x2c2d31ff,
             rmac_apps::identity::WEATHER => 0x3a86e8ff,
+            rmac_apps::identity::PLAYER => 0x2a2c31ff,
             _ => {
                 let hash = app_id.bytes().fold(0x811c9dc5u32, |hash, byte| {
                     hash.wrapping_mul(0x01000193) ^ u32::from(byte)

@@ -151,3 +151,12 @@ msgstr ""
 
 msgid "weather;forecast;temperature;rain;climate;"
 msgstr ""
+
+msgid "Media Player"
+msgstr ""
+
+msgid "Play audio and video files"
+msgstr ""
+
+msgid "video;audio;music;movie;player;media;"
+msgstr ""

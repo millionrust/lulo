@@ -268,6 +268,14 @@ ICONS: dict[str, tuple[tuple[str, str] | None, str, str]] = {
            76 0 142 48 166 118 8-2 18-2 26-2 72 0 130 58 130 130s-58 134-130 134z"
         fill="url(#frost)" stroke="url(#edge)" stroke-width="6" filter="url(#lift)"/>"""),
 
+    "player": (("#5B5E66", "#1E2024"), grad("screen", "#3E8BF7", "#1B4FB8"), """
+  <rect x="236" y="300" width="552" height="376" rx="56" fill="url(#frost)"
+        stroke="url(#edge)" stroke-width="6" filter="url(#lift)"/>
+  <rect x="270" y="334" width="484" height="308" rx="30" fill="url(#screen)"/>
+  <path d="M470 414v148c0 12 13 19 23 13l118-74c10-6 10-20 0-26l-118-74c-10-6-23 1-23 13z"
+        fill="#FFFFFF"/>
+  <rect x="340" y="712" width="344" height="30" rx="15" fill="url(#frost)"/>"""),
+
     "application": (("#A3ACBB", "#5A6679"), grad("pane", "#5A96F7", "#2C60D2"), """
   <rect x="252" y="292" width="520" height="440" rx="60" fill="url(#frost)"
         stroke="url(#edge)" stroke-width="5" filter="url(#lift)"/>
@@ -318,6 +326,7 @@ PACKAGED = {
     "org.rmac.Preview": "preview",
     "org.rmac.Clock": "clock",
     "org.rmac.Weather": "weather",
+    "org.rmac.Player": "player",
 }
 
 # The Dock's embedded artwork -> icon name (Application is the fallback for

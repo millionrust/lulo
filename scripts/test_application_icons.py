@@ -27,6 +27,7 @@ IDENTITIES = (
     "org.rmac.ArchiveUtility",
     "org.rmac.Clock",
     "org.rmac.Weather",
+    "org.rmac.Player",
 )
 DOCK_ICONS = ("application", "files", "downloads", "trash-empty", "trash-full", "more")
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"

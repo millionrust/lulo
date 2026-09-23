@@ -97,6 +97,74 @@ pub async fn choose_preview_documents() -> Result<Vec<PathBuf>, Error> {
     }
 }
 
+/// Ask the desktop portal for audio and video files for Media Player. The
+/// MIME types match its desktop entry.
+pub async fn choose_media_files() -> Result<Vec<PathBuf>, Error> {
+    #[cfg(target_os = "linux")]
+    {
+        use ashpd::desktop::file_chooser::{FileFilter, OpenFileRequest};
+        use ashpd::{desktop::ResponseError, Error as PortalError};
+
+        let filter = [
+            "audio/mpeg",
+            "audio/mp4",
+            "audio/x-m4a",
+            "audio/aac",
+            "audio/flac",
+            "audio/x-flac",
+            "audio/ogg",
+            "audio/opus",
+            "audio/x-vorbis+ogg",
+            "audio/x-wav",
+            "audio/wav",
+            "video/mp4",
+            "video/x-m4v",
+            "video/quicktime",
+            "video/x-matroska",
+            "video/webm",
+            "video/x-msvideo",
+            "video/mpeg",
+            "video/ogg",
+        ]
+        .into_iter()
+        .fold(FileFilter::new("Movies and Audio"), FileFilter::mimetype);
+        let request = OpenFileRequest::default()
+            .title("Open")
+            .accept_label("Open")
+            .modal(true)
+            .multiple(true)
+            .filter(filter)
+            .send()
+            .await
+            .map_err(choose_failure)?;
+        let response = match request.response() {
+            Ok(response) => response,
+            Err(PortalError::Response(ResponseError::Cancelled)) => return Ok(Vec::new()),
+            Err(error) => return Err(choose_failure(error)),
+        };
+        response
+            .uris()
+            .iter()
+            .map(|uri| {
+                uri.to_file_path().map_err(|()| Error {
+                    operation: Operation::Choose,
+                    path: PathBuf::new(),
+                    detail: "the portal returned a non-local file".into(),
+                })
+            })
+            .collect()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(Error {
+            operation: Operation::Choose,
+            path: PathBuf::new(),
+            detail: "the Media Player open panel is available in the supported Linux session"
+                .into(),
+        })
+    }
+}
+
 /// Ask the desktop portal for one local PNG, JPEG, or WebP wallpaper file.
 ///
 /// The filter is only chooser guidance. Callers must still validate the file

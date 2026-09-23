@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT
+[Desktop Entry]
+Version=1.5
+Type=Application
+Name=Media Player
+Name[hi]=मीडिया प्लेयर
+GenericName=Media Player
+GenericName[hi]=मीडिया प्लेयर
+Comment=Play audio and video files
+Comment[hi]=ऑडियो और वीडियो फ़ाइलें चलाएँ
+Keywords=video;audio;music;movie;player;media;
+Keywords[hi]=वीडियो;ऑडियो;संगीत;फ़िल्म;प्लेयर;मीडिया;
+TryExec=/usr/bin/rmac-player
+Exec=/usr/bin/rmac-player %F
+Icon=org.rmac.Player
+Terminal=false
+Categories=AudioVideo;Player;Audio;Video;
+MimeType=audio/mpeg;audio/mp4;audio/x-m4a;audio/aac;audio/flac;audio/x-flac;audio/ogg;audio/opus;audio/x-vorbis+ogg;audio/x-wav;audio/wav;video/mp4;video/x-m4v;video/quicktime;video/x-matroska;video/webm;video/x-msvideo;video/mpeg;video/ogg;
+StartupWMClass=org.rmac.Player

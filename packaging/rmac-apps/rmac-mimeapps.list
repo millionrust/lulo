@@ -2,7 +2,8 @@
 # Defaults for XDG_CURRENT_DESKTOP=rmac (installed as
 # /usr/share/applications/rmac-mimeapps.list). A user's own choice in
 # ~/.config/mimeapps.list still wins. Archives open with Archive Utility,
-# which expands them next to themselves, as on macOS.
+# which expands them next to themselves, as on macOS; audio and video open
+# in Media Player, as they open in QuickTime Player.
 [Default Applications]
 application/zip=org.rmac.ArchiveUtility.desktop
 application/x-tar=org.rmac.ArchiveUtility.desktop
@@ -14,3 +15,22 @@ application/gzip=org.rmac.ArchiveUtility.desktop
 application/x-bzip2=org.rmac.ArchiveUtility.desktop
 application/x-bzip=org.rmac.ArchiveUtility.desktop
 application/x-xz=org.rmac.ArchiveUtility.desktop
+audio/mpeg=org.rmac.Player.desktop
+audio/mp4=org.rmac.Player.desktop
+audio/x-m4a=org.rmac.Player.desktop
+audio/aac=org.rmac.Player.desktop
+audio/flac=org.rmac.Player.desktop
+audio/x-flac=org.rmac.Player.desktop
+audio/ogg=org.rmac.Player.desktop
+audio/opus=org.rmac.Player.desktop
+audio/x-vorbis+ogg=org.rmac.Player.desktop
+audio/x-wav=org.rmac.Player.desktop
+audio/wav=org.rmac.Player.desktop
+video/mp4=org.rmac.Player.desktop
+video/x-m4v=org.rmac.Player.desktop
+video/quicktime=org.rmac.Player.desktop
+video/x-matroska=org.rmac.Player.desktop
+video/webm=org.rmac.Player.desktop
+video/x-msvideo=org.rmac.Player.desktop
+video/mpeg=org.rmac.Player.desktop
+video/ogg=org.rmac.Player.desktop

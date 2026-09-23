@@ -11,8 +11,9 @@ pub const CALCULATOR: &str = "org.rmac.Calculator";
 pub const PREVIEW: &str = "org.rmac.Preview";
 pub const CLOCK: &str = "org.rmac.Clock";
 pub const WEATHER: &str = "org.rmac.Weather";
+pub const PLAYER: &str = "org.rmac.Player";
 
-pub const ALL: [&str; 11] = [
+pub const ALL: [&str; 12] = [
     FILES,
     TERMINAL,
     NOTES,
@@ -24,6 +25,7 @@ pub const ALL: [&str; 11] = [
     PREVIEW,
     CLOCK,
     WEATHER,
+    PLAYER,
 ];
 
 /// Stable user-facing native window title for a first-party desktop identity.
@@ -43,6 +45,7 @@ pub fn window_title(app_id: &str) -> Option<&'static str> {
         PREVIEW => Some("Preview"),
         CLOCK => Some("Clock"),
         WEATHER => Some("Weather"),
+        PLAYER => Some("Media Player"),
         _ => None,
     }
 }

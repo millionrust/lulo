@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<component type="desktop-application">
+  <id>org.rmac.Player</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Media Player</name>
+  <name xml:lang="hi">मीडिया प्लेयर</name>
+  <summary>Play audio and video files</summary>
+  <summary xml:lang="hi">ऑडियो और वीडियो फ़ाइलें चलाएँ</summary>
+  <description>
+    <p>Media Player opens music and video files in a minimal window with a floating controller, full screen and volume.</p>
+    <p>The keyboard media keys and Now Playing in Control Center play, pause and skip what it is playing.</p>
+  </description>
+  <launchable type="desktop-id">org.rmac.Player.desktop</launchable>
+  <icon type="stock">org.rmac.Player</icon>
+  <provides><binary>rmac-player</binary></provides>
+  <url type="homepage">https://github.com/snehacodex/rmac</url>
+  <developer id="org.rmac"><name>rmac contributors</name></developer>
+  <releases><release version="0.1.0" date="2026-07-25"/></releases>
+  <content_rating type="oars-1.1"/>
+</component>

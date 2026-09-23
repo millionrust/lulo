@@ -52,6 +52,29 @@ ARCHIVE_MIME_TYPES = (
     "application/x-bzip",
     "application/x-xz",
 )
+# Media Player claims the formats its libmpv build plays and the open panel
+# offers; rmac-mimeapps.list makes it the rmac default for them.
+PLAYER_MIME_TYPES = (
+    "audio/mpeg",
+    "audio/mp4",
+    "audio/x-m4a",
+    "audio/aac",
+    "audio/flac",
+    "audio/x-flac",
+    "audio/ogg",
+    "audio/opus",
+    "audio/x-vorbis+ogg",
+    "audio/x-wav",
+    "audio/wav",
+    "video/mp4",
+    "video/x-m4v",
+    "video/quicktime",
+    "video/x-matroska",
+    "video/webm",
+    "video/x-msvideo",
+    "video/mpeg",
+    "video/ogg",
+)
 MIMEAPPS = Path("usr/share/applications/rmac-mimeapps.list")
 APPLICATIONS = {
     "org.rmac.AppDrawer": {
@@ -106,6 +129,15 @@ APPLICATIONS = {
         "keywords": "notes;writing;lists;organize;",
         "binary": "rmac-notes",
         "categories": "Office;",
+        "hidden": False,
+    },
+    "org.rmac.Player": {
+        "name": "Media Player",
+        "generic": "Media Player",
+        "summary": "Play audio and video files",
+        "keywords": "video;audio;music;movie;player;media;",
+        "binary": "rmac-player",
+        "categories": "AudioVideo;Player;Audio;Video;",
         "hidden": False,
     },
     "org.rmac.Preview": {
@@ -210,6 +242,9 @@ HINDI = {
     "Weather Forecast": "मौसम पूर्वानुमान",
     "Current conditions and forecasts for chosen cities": "चुने गए शहरों का वर्तमान मौसम और पूर्वानुमान",
     "weather;forecast;temperature;rain;climate;": "मौसम;पूर्वानुमान;तापमान;बारिश;जलवायु;",
+    "Media Player": "मीडिया प्लेयर",
+    "Play audio and video files": "ऑडियो और वीडियो फ़ाइलें चलाएँ",
+    "video;audio;music;movie;player;media;": "वीडियो;ऑडियो;संगीत;फ़िल्म;प्लेयर;मीडिया;",
 }
 LOCALIZATION_FILES = {
     "LINGUAS",
@@ -356,7 +391,12 @@ def _verify_desktop(root: Path, identity: str, specification: dict[str, object])
     entry = parser["Desktop Entry"]
     binary = str(specification["binary"])
     expected_exec = f"/usr/bin/{binary}"
-    if identity in ("org.rmac.TextEditor", "org.rmac.Preview", "org.rmac.ArchiveUtility"):
+    if identity in (
+        "org.rmac.TextEditor",
+        "org.rmac.Preview",
+        "org.rmac.ArchiveUtility",
+        "org.rmac.Player",
+    ):
         expected_exec += " %F"
     required = {
         "Version": "1.5",
@@ -399,6 +439,11 @@ def _verify_desktop(root: Path, identity: str, specification: dict[str, object])
             raise VerificationError("Preview MIME declarations are invalid")
         if "Actions" in entry:
             raise VerificationError("Preview action inventory is invalid")
+    elif identity == "org.rmac.Player":
+        if entry.get("MimeType") != ";".join(PLAYER_MIME_TYPES) + ";":
+            raise VerificationError("Media Player MIME declarations are invalid")
+        if "Actions" in entry:
+            raise VerificationError("Media Player action inventory is invalid")
     elif identity == "org.rmac.ArchiveUtility":
         if entry.get("MimeType") != ";".join(ARCHIVE_MIME_TYPES) + ";":
             raise VerificationError("Archive Utility MIME declarations are invalid")
@@ -517,6 +562,7 @@ def _verify_mimeapps(root: Path) -> None:
     except (UnicodeDecodeError, configparser.Error) as error:
         raise VerificationError("rmac MIME defaults are invalid") from error
     expected = {mime: "org.rmac.ArchiveUtility.desktop" for mime in ARCHIVE_MIME_TYPES}
+    expected.update({mime: "org.rmac.Player.desktop" for mime in PLAYER_MIME_TYPES})
     if parser.sections() != ["Default Applications"] or dict(
         parser["Default Applications"]
     ) != expected:

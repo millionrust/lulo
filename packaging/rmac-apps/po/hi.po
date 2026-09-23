@@ -150,3 +150,12 @@ msgstr "चुने गए शहरों का वर्तमान मौ�
 
 msgid "weather;forecast;temperature;rain;climate;"
 msgstr "मौसम;पूर्वानुमान;तापमान;बारिश;जलवायु;"
+
+msgid "Media Player"
+msgstr "मीडिया प्लेयर"
+
+msgid "Play audio and video files"
+msgstr "ऑडियो और वीडियो फ़ाइलें चलाएँ"
+
+msgid "video;audio;music;movie;player;media;"
+msgstr "वीडियो;ऑडियो;संगीत;फ़िल्म;प्लेयर;मीडिया;"

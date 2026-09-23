@@ -16,6 +16,7 @@ AppStream component ID, and every GPUI Wayland toplevel `app_id`.
 | Calculator | `org.rmac.Calculator` | `rmac-calculator` |
 | Preview | `org.rmac.Preview` | `rmac-preview` |
 | Archive Utility (hidden) | `org.rmac.ArchiveUtility` | `rmac-archive-utility` |
+| Media Player | `org.rmac.Player` | `rmac-player` |
 | Weather | `org.rmac.Weather` | `rmac-weather` |
 | Clock | `org.rmac.Clock` | `rmac-clock` |
 

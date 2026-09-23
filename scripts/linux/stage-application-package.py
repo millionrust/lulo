@@ -24,6 +24,7 @@ APPLICATION_IDS = (
     "org.rmac.Clock",
     "org.rmac.Files",
     "org.rmac.Notes",
+    "org.rmac.Player",
     "org.rmac.Preview",
     "org.rmac.SystemMonitor",
     "org.rmac.SystemSettings",

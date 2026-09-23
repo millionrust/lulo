@@ -350,6 +350,37 @@ const WEATHER_MENUS: &[MenuSpec] = &[
     },
 ];
 
+const PLAYER_MENUS: &[MenuSpec] = &[
+    MenuSpec {
+        label: "File",
+        items: &[
+            item!("Open File…", "player::OpenFile", "⌘O"),
+            item!("Close", "player::CloseWindow", "⌘W", separator),
+        ],
+    },
+    MenuSpec {
+        label: "View",
+        items: &[item!(
+            "Enter Full Screen",
+            "player::ToggleFullScreen",
+            "⌃⌘F"
+        )],
+    },
+    MenuSpec {
+        label: "Playback",
+        items: &[
+            item!("Play", "player::PlayPause", "Space"),
+            item!("Skip Back", "player::SkipBack", "←", separator),
+            item!("Skip Forward", "player::SkipForward", "→"),
+            item!("Previous", "player::PreviousItem", "⌘←", separator),
+            item!("Next", "player::NextItem", "⌘→"),
+            item!("Increase Volume", "player::VolumeUp", "⌘↑", separator),
+            item!("Decrease Volume", "player::VolumeDown", "⌘↓"),
+            item!("Mute", "player::ToggleMute", "M"),
+        ],
+    },
+];
+
 fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
     match app_id {
         rmac_apps::identity::FILES => Some(FILES_MENUS),
@@ -362,6 +393,7 @@ fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
         rmac_apps::identity::PREVIEW => Some(PREVIEW_MENUS),
         rmac_apps::identity::CLOCK => Some(CLOCK_MENUS),
         rmac_apps::identity::WEATHER => Some(WEATHER_MENUS),
+        rmac_apps::identity::PLAYER => Some(PLAYER_MENUS),
         _ => None,
     }
 }
@@ -378,6 +410,7 @@ pub fn bus_name(app_id: &str) -> Option<&'static str> {
         rmac_apps::identity::PREVIEW => Some("org.rmac.Preview.Menu"),
         rmac_apps::identity::CLOCK => Some("org.rmac.Clock.Menu"),
         rmac_apps::identity::WEATHER => Some("org.rmac.Weather.Menu"),
+        rmac_apps::identity::PLAYER => Some("org.rmac.Player.Menu"),
         _ => None,
     }
 }
@@ -816,6 +849,24 @@ mod tests {
             ["File", "Edit", "View"]
         );
         assert_eq!(menus[2].items[2].shortcut, "⌘R");
+        assert!(validate_menus(&menus).is_ok());
+    }
+
+    #[test]
+    fn player_exports_playback_menus() {
+        let actions = PLAYER_MENUS
+            .iter()
+            .flat_map(|menu| menu.items.iter().map(|item| item.action))
+            .collect::<Vec<_>>();
+        let menus = definition(rmac_apps::identity::PLAYER, &actions).unwrap();
+        assert_eq!(
+            menus
+                .iter()
+                .map(|menu| menu.label.as_str())
+                .collect::<Vec<_>>(),
+            ["File", "View", "Playback"]
+        );
+        assert_eq!(menus[1].items[0].shortcut, "⌃⌘F");
         assert!(validate_menus(&menus).is_ok());
     }
 

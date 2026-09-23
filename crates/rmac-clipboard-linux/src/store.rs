@@ -123,9 +123,18 @@ impl Store {
         fs::read(self.payload_path(id)).map_err(|_| Error::NotFound)
     }
 
+    /// Remove payload files for the given ids. A missing file is not an
+    /// error (it may already be gone); any other failure is logged so a
+    /// payload that could not be deleted is never silently left on disk
+    /// while callers believe the item is gone. `load_history` sweeps any
+    /// surviving orphan on the next start as a backstop.
     pub fn remove_payloads(&self, ids: &[u64]) {
         for id in ids {
-            let _ = fs::remove_file(self.payload_path(*id));
+            if let Err(error) = fs::remove_file(self.payload_path(*id)) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    eprintln!("rmac-clipboard: could not remove payload {id}: {error}");
+                }
+            }
         }
     }
 

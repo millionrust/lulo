@@ -58,16 +58,21 @@ impl FinderView {
         self.start_transfer("Duplicating", tasks, false, cx);
     }
 
+    /// "Delete Immediately" skips Trash entirely, so — like macOS — it must
+    /// never run without the user confirming an unrecoverable delete first.
+    /// No confirmation dialog is wired up for this action yet, so it refuses
+    /// rather than deleting: silently permitting an unconfirmed, untrashed
+    /// delete the moment something (a future keybinding or menu item) calls
+    /// this is exactly the trap this guard exists to prevent.
     pub(super) fn delete_immediately(&mut self, cx: &mut Context<Self>) {
         if self.block_mutation_during_transfer(cx) {
             return;
         }
-        let mut failures = Vec::new();
-        for p in self.selected_paths() {
-            if let Err(failure) = file_ops::delete(&file_ops::RealFileSystem, &p) {
-                failures.push(failure);
-            }
+        if self.selected_paths().is_empty() {
+            return;
         }
-        self.finish_file_operations(failures, cx);
+        self.operation_error =
+            Some("Delete Immediately needs a confirmation step that isn't available yet".into());
+        cx.notify();
     }
 }

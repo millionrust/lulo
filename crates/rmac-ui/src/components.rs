@@ -41,8 +41,9 @@ pub enum DialogButtonKind {
     Destructive,
 }
 
-/// A macOS pill dialog button. Returns a stateful element the caller wires with
-/// `.on_click(cx.listener(...))` and then `.into_any_element()`.
+/// A macOS pill dialog button: 28 pt tall and fully round, as in NSAlert on
+/// macOS 26 (design-lab/chrome.html). Returns a stateful element the caller
+/// wires with `.on_click(cx.listener(...))` and then `.into_any_element()`.
 ///
 /// ```ignore
 /// dialog_button("ok", "Restore", DialogButtonKind::Primary)
@@ -59,7 +60,10 @@ pub fn dialog_button(
         DialogButtonKind::Destructive => ButtonRole::Destructive,
         DialogButtonKind::Normal => ButtonRole::Secondary,
     };
-    Button::new(id, label).role(role)
+    Button::new(id, label)
+        .role(role)
+        .h(px(rmac_design::Metrics::default().alert_button_height))
+        .rounded_full()
 }
 
 /// Wrap arbitrary content in a centered modal: a dimmed full-window scrim with
@@ -79,8 +83,10 @@ pub fn dialog(id: impl Into<ElementId>, content: impl IntoElement) -> gpui::Stat
         .child(content)
 }
 
-/// A standard macOS alert: a centered card with an optional bold title, a
-/// secondary message, and a right-aligned row of buttons (default rightmost).
+/// A standard macOS 26 alert, measured on NSAlert (design-lab/chrome.html):
+/// a 260 pt card, 13 pt bold title and 13 pt message in a 180 pt column,
+/// and the buttons as equal-width pills side by side (stacked when there
+/// are more than two), default rightmost.
 ///
 /// Render this as the LAST child of the app root, gated on the app's
 /// "is a dialog open?" state.
@@ -89,26 +95,60 @@ pub fn alert(
     message: impl Into<SharedString>,
     buttons: Vec<AnyElement>,
 ) -> impl IntoElement {
+    alert_with_icon(None, title, message, buttons)
+}
+
+/// [`alert`] with the app icon drawn 64 pt at the top left, as macOS does.
+pub fn alert_with_icon(
+    icon: Option<AnyElement>,
+    title: impl Into<SharedString>,
+    message: impl Into<SharedString>,
+    buttons: Vec<AnyElement>,
+) -> impl IntoElement {
     let title: SharedString = title.into();
     let message: SharedString = message.into();
+    let metrics = rmac_design::Metrics::default();
+    let stacked = buttons.len() > 2;
+    // Each button sits in a flex cell whose column stretches it to the
+    // cell's full width, so two buttons share the row equally.
+    let cells = buttons.into_iter().map(|button| {
+        div()
+            .when(!stacked, |cell| cell.flex_1())
+            .flex()
+            .flex_col()
+            .child(button)
+            .into_any_element()
+    });
 
     let card = div()
         .v_flex()
         .tab_group()
-        .w(px(300.0))
-        .p(px(20.0))
-        .gap_2()
-        .rounded(px(mac::radius_popover()))
+        .w(px(metrics.alert_width))
+        .pt(px(20.0))
+        .px(px(metrics.alert_padding))
+        .pb(px(metrics.alert_padding))
+        .rounded(px(rmac_design::Radii::default().alert))
         .bg(mac::sheet())
         .border_1()
         .border_color(mac::separator())
         .shadow_xl()
         // Clicks on the card shouldn't dismiss via the scrim.
         .occlude()
+        .when_some(icon, |el, icon| {
+            el.child(
+                div()
+                    .pl(px(4.0))
+                    .size(px(metrics.alert_icon + 4.0))
+                    .child(icon),
+            )
+        })
         .when(!title.is_empty(), |el| {
             el.child(
                 div()
-                    .text_size(crate::text_px(15.0))
+                    .mt(px(16.0))
+                    .px(px(6.0))
+                    .max_w(px(metrics.alert_text_width + 12.0))
+                    .text_size(crate::text_px(13.0))
                     .font_weight(mac::BOLD)
                     .text_color(mac::text())
                     .child(title),
@@ -117,18 +157,21 @@ pub fn alert(
         .when(!message.is_empty(), |el| {
             el.child(
                 div()
+                    .mt(px(9.0))
+                    .px(px(6.0))
+                    .max_w(px(metrics.alert_text_width + 12.0))
                     .text_size(crate::text_px(13.0))
-                    .text_color(mac::text_secondary())
+                    .text_color(mac::text())
                     .child(message),
             )
         })
         .child(
             div()
-                .h_flex()
-                .justify_end()
-                .gap_2()
-                .pt_2()
-                .children(buttons),
+                .mt(px(16.0))
+                .flex()
+                .when(stacked, |row| row.flex_col())
+                .gap(px(metrics.alert_button_gap))
+                .children(cells),
         );
 
     dialog("rmac-alert", card)

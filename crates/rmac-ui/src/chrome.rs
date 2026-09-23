@@ -1,21 +1,23 @@
+use std::time::Duration;
+
 use gpui::{
-    div, prelude::FluentBuilder as _, px, rgba, App, ElementId, Hsla, InteractiveElement as _,
-    IntoElement, ParentElement as _, SharedString, Styled as _, Window, WindowControlArea,
+    canvas, deferred, div, point, prelude::FluentBuilder as _, px, App, Bounds, Context, Entity,
+    Hsla, InteractiveElement as _, IntoElement, ParentElement as _, PathBuilder, Pixels,
+    RenderOnce, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    WindowControlArea,
 };
-use gpui_component::{
-    button::{Button as ComponentButton, ButtonVariants as _},
-    ActiveTheme as _, InteractiveElementExt as _, StyledExt as _, TITLE_BAR_HEIGHT,
-};
+use gpui_component::{ActiveTheme as _, InteractiveElementExt as _, StyledExt as _};
+use rmac_compositor::TileRegion;
 
 use crate::{components, mac, text_px};
 
-/// One traffic-light button: a colored circle that reveals its glyph on hover
-/// and runs `on_click` (a window-control action). The glyph is always present
-/// but transparent until hover, giving the macOS reveal-on-hover effect.
+/// A window-management request from the traffic lights or the green
+/// button's Move & Resize menu, carried out by the compositor.
 #[derive(Clone, Copy)]
 enum WindowAction {
     ToggleFullscreen,
     Fill,
+    Tile(TileRegion),
     Minimize,
 }
 
@@ -43,6 +45,7 @@ fn send_window_action(action: WindowAction, cx: &mut App) {
                 rmac_compositor::Action::FullscreenWindow { window, on: true }
             }
             WindowAction::Fill => rmac_compositor::Action::FillWindow { window },
+            WindowAction::Tile(region) => rmac_compositor::Action::TileWindow { window, region },
             WindowAction::Minimize => {
                 let mut store = rmac_compositor::ParkingStore::load_default();
                 store.record_from(&snapshot, &[window]);
@@ -117,133 +120,447 @@ async fn capture_thumbnail(
     }
 }
 
+/// The glyph a traffic light reveals while the pointer is over the group.
+#[derive(Clone, Copy)]
+enum Glyph {
+    Close,
+    Minimize,
+    FullScreen,
+}
+
+/// Paint `glyph` in a light's 14 pt circle as vector paths, black at 50 %
+/// as measured on macOS 26 (design-lab/chrome.html): × with ±3.5 arms, an
+/// 8 pt −, and the full-screen pair of right triangles with 4.75 pt legs.
+fn paint_glyph(glyph: Glyph, bounds: Bounds<Pixels>, window: &mut Window) {
+    let scale = f32::from(bounds.size.width) / 14.0;
+    let left = f32::from(bounds.origin.x);
+    let top = f32::from(bounds.origin.y);
+    let at = |x: f32, y: f32| point(px(left + x * scale), px(top + y * scale));
+    let color = mac::black().opacity(0.5);
+    let stroke = |width: f32, segments: &[((f32, f32), (f32, f32))], window: &mut Window| {
+        let mut path = PathBuilder::stroke(px(width * scale));
+        for &((x0, y0), (x1, y1)) in segments {
+            path.move_to(at(x0, y0));
+            path.line_to(at(x1, y1));
+        }
+        if let Ok(path) = path.build() {
+            window.paint_path(path, color);
+        }
+    };
+    match glyph {
+        Glyph::Close => stroke(
+            1.5,
+            &[((3.5, 3.5), (10.5, 10.5)), ((10.5, 3.5), (3.5, 10.5))],
+            window,
+        ),
+        Glyph::Minimize => stroke(1.75, &[((3.0, 7.0), (11.0, 7.0))], window),
+        Glyph::FullScreen => {
+            let mut path = PathBuilder::fill();
+            for triangle in [
+                [(3.75, 3.75), (8.5, 3.75), (3.75, 8.5)],
+                [(10.25, 10.25), (5.5, 10.25), (10.25, 5.5)],
+            ] {
+                path.move_to(at(triangle[0].0, triangle[0].1));
+                path.line_to(at(triangle[1].0, triangle[1].1));
+                path.line_to(at(triangle[2].0, triangle[2].1));
+                path.close();
+            }
+            if let Ok(path) = path.build() {
+                window.paint_path(path, color);
+            }
+        }
+    }
+}
+
+const LIGHTS_GROUP: &str = "rmac-traffic-lights";
+
+/// One light: a 16 pt hit box (the AX button frame) holding the 14 pt circle.
+/// Glyphs appear when the pointer is anywhere over the group, and an inactive
+/// window's grey lights regain their colours at the same moment.
 fn traffic_light(
-    id: impl Into<ElementId>,
-    fill: Hsla,
-    border: Hsla,
-    glyph: &'static str,
-    tooltip: &'static str,
+    id: &'static str,
+    (fill, border): (Hsla, Hsla),
+    glyph: Glyph,
     active: bool,
-    on_click: impl Fn(bool, &mut Window, &mut App) + 'static,
-) -> impl IntoElement {
-    ComponentButton::new(id)
-        .ghost()
-        .tooltip(tooltip)
-        .w(px(mac::traffic_light_hit_width()))
-        .h(px(mac::traffic_light_hit_height()))
-        .p_0()
+    enabled: bool,
+) -> gpui::Stateful<gpui::Div> {
+    let (inactive_fill, inactive_border) = mac::traffic_inactive();
+    let lit = active && enabled;
+    let circle = div()
+        .relative()
+        .size(px(mac::traffic_light_diameter()))
         .rounded_full()
-        .bg(rgba(0x00000000))
-        .border_color(rgba(0x00000000))
-        .shadow_none()
-        .child(
-            div()
-                .size(px(mac::traffic_light_diameter()))
-                .rounded_full()
-                .bg(fill)
-                .border_1()
-                .border_color(border)
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(text_px(9.0))
-                .font_weight(mac::BOLD)
-                .text_color(rgba(0x00000000))
-                .when(active, |circle| {
-                    circle.hover(|c| c.text_color(mac::black().opacity(0.55)))
-                })
-                .child(glyph),
-        )
-        .on_click(move |event, window, cx| on_click(event.modifiers().alt, window, cx))
-}
-
-/// The rmac traffic-light cluster (close / minimize / zoom), wired to the GPUI
-/// window controls. Reusable so unified-toolbar apps can place it themselves.
-pub fn traffic_lights() -> impl IntoElement {
-    traffic_lights_active(true)
-}
-
-/// [`traffic_lights`] for an inactive window: the three buttons share the
-/// inactive gray pair and do not reveal glyphs on hover.
-pub fn traffic_lights_active(active: bool) -> impl IntoElement {
-    traffic_light_cluster(active, true)
-}
-
-/// [`traffic_lights`] for a fixed-size window such as Calculator: macOS draws
-/// the zoom button in the inactive gray and it does nothing.
-pub fn traffic_lights_fixed_size(active: bool) -> impl IntoElement {
-    traffic_light_cluster(active, false)
-}
-
-fn traffic_light_cluster(active: bool, zoom_enabled: bool) -> impl IntoElement {
-    let (close_fill, close_border) = if active {
-        mac::traffic_close()
-    } else {
-        mac::traffic_inactive()
-    };
-    let (min_fill, min_border) = if active {
-        mac::traffic_minimize()
-    } else {
-        mac::traffic_inactive()
-    };
-    let (zoom_fill, zoom_border) = if active && zoom_enabled {
-        mac::traffic_zoom()
-    } else {
-        mac::traffic_inactive()
-    };
+        .border_1()
+        .bg(if lit { fill } else { inactive_fill })
+        .border_color(if lit { border } else { inactive_border })
+        .when(enabled && !active, |circle| {
+            circle.group_hover(LIGHTS_GROUP, move |style| {
+                style.bg(fill).border_color(border)
+            })
+        })
+        .when(enabled, |circle| {
+            circle.child(
+                div()
+                    .absolute()
+                    .inset_0()
+                    .opacity(0.0)
+                    .group_hover(LIGHTS_GROUP, |style| style.opacity(1.0))
+                    .child(
+                        canvas(
+                            |_, _, _| (),
+                            move |bounds, (), window, _| paint_glyph(glyph, bounds, window),
+                        )
+                        .size_full(),
+                    ),
+            )
+        });
     div()
+        .id(id)
+        .size(px(mac::traffic_light_hit_width()))
+        .flex_none()
         .flex()
         .items_center()
-        .child(traffic_light(
-            "tl-close",
-            close_fill,
-            close_border,
-            "✕",
-            "Close",
-            active,
-            // Route through the app's close guard (e.g. unsaved-changes prompt)
-            // rather than closing the window directly. Apps bind `RequestClose`.
-            |_, window, cx| window.dispatch_action(Box::new(components::RequestClose), cx),
-        ))
-        .child(traffic_light(
-            "tl-min",
-            min_fill,
-            min_border,
-            "—",
-            "Minimize",
-            active,
-            |_, _, cx| send_window_action(WindowAction::Minimize, cx),
-        ))
-        .child(traffic_light(
-            "tl-zoom",
-            zoom_fill,
-            zoom_border,
-            "+",
-            "Zoom",
-            active && zoom_enabled,
-            move |alt, _, cx| {
-                if !zoom_enabled {
-                    return;
+        .justify_center()
+        .child(circle)
+}
+
+/// Hover state behind the green button's Move & Resize menu.
+#[derive(Default)]
+struct ZoomMenu {
+    open: bool,
+    over_button: bool,
+    over_menu: bool,
+    generation: u64,
+}
+
+/// macOS opens the menu after the pointer rests on the green button.
+const ZOOM_MENU_OPEN_DELAY: Duration = Duration::from_millis(500);
+/// …and closes it shortly after the pointer leaves both button and menu.
+const ZOOM_MENU_CLOSE_DELAY: Duration = Duration::from_millis(250);
+
+impl ZoomMenu {
+    fn set_hover(
+        &mut self,
+        over_button: Option<bool>,
+        over_menu: Option<bool>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(over) = over_button {
+            self.over_button = over;
+        }
+        if let Some(over) = over_menu {
+            self.over_menu = over;
+        }
+        self.generation = self.generation.wrapping_add(1);
+        let generation = self.generation;
+        let (delay, open) = if self.over_button || self.over_menu {
+            if self.open {
+                return;
+            }
+            (ZOOM_MENU_OPEN_DELAY, true)
+        } else {
+            if !self.open {
+                return;
+            }
+            (ZOOM_MENU_CLOSE_DELAY, false)
+        };
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(delay).await;
+            let _ = this.update(cx, |menu, cx| {
+                if menu.generation == generation && menu.open != open {
+                    menu.open = open;
+                    cx.notify();
                 }
+            });
+        })
+        .detach();
+    }
+
+    fn close(&mut self, cx: &mut Context<Self>) {
+        self.open = false;
+        self.over_button = false;
+        self.over_menu = false;
+        self.generation = self.generation.wrapping_add(1);
+        cx.notify();
+    }
+}
+
+/// A Move & Resize icon: a 25 × 20 rounded outline holding the filled part
+/// of the screen the window will take.
+fn tile_icon(fill: (f32, f32, f32, f32)) -> gpui::Div {
+    let metrics = rmac_design::Metrics::default();
+    let (width, height) = (metrics.tile_icon_width, metrics.tile_icon_height);
+    let (x, y, w, h) = fill;
+    // The fill sits 3 pt inside the outline, as drawn by macOS.
+    let inner_w = width - 6.0;
+    let inner_h = height - 6.0;
+    div()
+        .relative()
+        .w(px(width))
+        .h(px(height))
+        .rounded(px(4.0))
+        .border(px(1.5))
+        .border_color(mac::text())
+        .child(
+            div()
+                .absolute()
+                .left(px(1.5 + x * inner_w))
+                .top(px(1.5 + y * inner_h))
+                .w(px(w * inner_w))
+                .h(px(h * inner_h))
+                .rounded(px(1.5))
+                .bg(mac::text()),
+        )
+}
+
+/// The popover the green button shows on hover: Move & Resize halves, Fill,
+/// and Full Screen, each a compositor action on this window. The Mac's
+/// multi-window Arrange layouts and the Full Screen tiling submenu need a
+/// window arranger rmac does not have, so they are not drawn.
+fn zoom_menu(menu: Entity<ZoomMenu>) -> impl IntoElement {
+    let metrics = rmac_design::Metrics::default();
+    let pitch = metrics.tile_icon_pitch;
+    let item = |id: &'static str, icon: gpui::Div, action: WindowAction, menu: Entity<ZoomMenu>| {
+        div().id(id).child(icon).on_click(move |_, _, cx| {
+            menu.update(cx, |menu, cx| menu.close(cx));
+            send_window_action(action, cx);
+        })
+    };
+    let header = |label: &'static str| {
+        div()
+            .px(px(17.0))
+            .h(px(16.0))
+            .text_size(text_px(13.0))
+            .font_weight(mac::SEMIBOLD)
+            .text_color(mac::text_tertiary())
+            .child(label)
+    };
+    let separator = || div().mx(px(14.0)).h(px(1.0)).bg(mac::separator());
+    let row = |children: Vec<gpui::AnyElement>| {
+        div()
+            .h(px(41.0))
+            .pl(px(22.5))
+            .flex()
+            .items_center()
+            .gap(px(pitch - metrics.tile_icon_width))
+            .children(children)
+    };
+    let halves = [
+        ("tile-left", (0.0, 0.0, 0.5, 1.0), TileRegion::Left),
+        ("tile-right", (0.5, 0.0, 0.5, 1.0), TileRegion::Right),
+        ("tile-top", (0.0, 0.0, 1.0, 0.5), TileRegion::Top),
+        ("tile-bottom", (0.0, 0.5, 1.0, 0.5), TileRegion::Bottom),
+    ]
+    .into_iter()
+    .map(|(id, fill, region)| {
+        item(
+            id,
+            tile_icon(fill),
+            WindowAction::Tile(region),
+            menu.clone(),
+        )
+        .into_any_element()
+    })
+    .collect();
+    let hover_menu = menu.clone();
+    let outside_menu = menu.clone();
+    div()
+        .id("rmac-zoom-menu")
+        .occlude()
+        .w(px(metrics.tile_popover_width))
+        .h(px(metrics.tile_popover_height))
+        .pt(px(12.0))
+        .flex()
+        .flex_col()
+        .rounded(px(rmac_design::Radii::default().tile_popover))
+        .bg(mac::material_popover())
+        .border_1()
+        .border_color(mac::separator())
+        .shadow_lg()
+        .text_size(text_px(13.0))
+        .text_color(mac::text())
+        .on_hover(move |hovered, _, cx| {
+            let hovered = *hovered;
+            hover_menu.update(cx, |menu, cx| menu.set_hover(None, Some(hovered), cx));
+        })
+        .on_mouse_down_out(move |_, _, cx| {
+            outside_menu.update(cx, |menu, cx| menu.close(cx));
+        })
+        .child(header("Move & Resize"))
+        .child(row(halves))
+        .child(div().pt(px(6.0)).child(separator()))
+        .child(div().pt(px(11.0)).child(header("Fill & Arrange")))
+        .child(row(vec![item(
+            "tile-fill",
+            tile_icon((0.0, 0.0, 1.0, 1.0)),
+            WindowAction::Fill,
+            menu.clone(),
+        )
+        .into_any_element()]))
+        .child(div().pt(px(6.0)).child(separator()))
+        .child(
+            div()
+                .id("tile-full-screen")
+                .h(px(36.0))
+                .px(px(17.0))
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .child(
+                    div()
+                        .relative()
+                        .w(px(16.0))
+                        .h(px(12.0))
+                        .rounded(px(2.5))
+                        .border(px(1.5))
+                        .border_color(mac::text())
+                        .child(
+                            div()
+                                .absolute()
+                                .left(px(4.5))
+                                .top_0()
+                                .bottom_0()
+                                .w(px(1.5))
+                                .bg(mac::text()),
+                        ),
+                )
+                .child("Full Screen")
+                .on_click(move |_, _, cx| {
+                    menu.update(cx, |menu, cx| menu.close(cx));
+                    send_window_action(WindowAction::ToggleFullscreen, cx);
+                }),
+        )
+}
+
+/// The close / minimise / zoom cluster, laid out as the Mac's AX frames:
+/// 16 pt hit boxes 23 apart. Place its top-left corner at the first light's
+/// centre minus half a hit box ([`traffic_lights_origin`]).
+#[derive(IntoElement)]
+pub struct TrafficLights {
+    /// `None` follows the window's own key state.
+    active: Option<bool>,
+    zoom_enabled: bool,
+}
+
+impl RenderOnce for TrafficLights {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let active = self.active.unwrap_or_else(|| window.is_window_active());
+        let menu = window.use_keyed_state("rmac-zoom-menu-state", cx, |_, _| ZoomMenu::default());
+        let open = self.zoom_enabled && menu.read(cx).open;
+        let hit = mac::traffic_light_hit_width();
+        let metrics = rmac_design::Metrics::default();
+        let zoom_enabled = self.zoom_enabled;
+        let hover_menu = menu.clone();
+        let zoom = traffic_light(
+            "tl-zoom",
+            mac::traffic_zoom(),
+            Glyph::FullScreen,
+            active,
+            zoom_enabled,
+        )
+        .when(zoom_enabled, |zoom| {
+            zoom.on_hover(move |hovered, _, cx| {
+                let hovered = *hovered;
+                hover_menu.update(cx, |menu, cx| menu.set_hover(Some(hovered), None, cx));
+            })
+            .on_click(move |event, _, cx| {
+                // ⌥-click fills instead of entering full screen, as on macOS.
                 send_window_action(
-                    if alt {
+                    if event.modifiers().alt {
                         WindowAction::Fill
                     } else {
                         WindowAction::ToggleFullscreen
                     },
                     cx,
                 )
-            },
-        ))
+            })
+        });
+        div()
+            .group(LIGHTS_GROUP)
+            .relative()
+            .flex()
+            .items_center()
+            .gap(px(metrics.traffic_spacing - hit))
+            .child(
+                traffic_light("tl-close", mac::traffic_close(), Glyph::Close, active, true)
+                    // Route through the app's close guard (e.g. an unsaved-changes
+                    // prompt) rather than closing the window directly.
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(components::RequestClose), cx)
+                    }),
+            )
+            .child(
+                traffic_light(
+                    "tl-min",
+                    mac::traffic_minimize(),
+                    Glyph::Minimize,
+                    active,
+                    true,
+                )
+                .on_click(|_, _, cx| send_window_action(WindowAction::Minimize, cx)),
+            )
+            .child(zoom)
+            .when(open, |cluster| {
+                // Measured: the popover's left edge 26.5 and top 27.5 from the
+                // cluster's top-left, a 10 pt arrow under the green button.
+                cluster.child(deferred(
+                    div()
+                        .absolute()
+                        .left(px(26.5))
+                        .top(px(27.5))
+                        .child(zoom_menu(menu)),
+                ))
+            })
+    }
+}
+
+/// Where a [`TrafficLights`] cluster's top-left corner goes for a window with
+/// or without a unified toolbar, from the measured first-light centre.
+pub fn traffic_lights_origin(unified_toolbar: bool) -> f32 {
+    let metrics = rmac_design::Metrics::default();
+    let center = if unified_toolbar {
+        metrics.traffic_center_toolbar
+    } else {
+        metrics.traffic_center_titlebar
+    };
+    center - metrics.traffic_hit / 2.0
+}
+
+/// The rmac traffic-light cluster (close / minimise / zoom). It follows the
+/// window's key state: grey while the window is inactive, coloured again when
+/// the pointer is over the group. Reusable so toolbar apps place it
+/// themselves.
+pub fn traffic_lights() -> TrafficLights {
+    TrafficLights {
+        active: None,
+        zoom_enabled: true,
+    }
+}
+
+/// [`traffic_lights`] with an explicit key state.
+pub fn traffic_lights_active(active: bool) -> TrafficLights {
+    TrafficLights {
+        active: Some(active),
+        zoom_enabled: true,
+    }
+}
+
+/// [`traffic_lights`] for a fixed-size window such as Calculator: macOS draws
+/// the zoom button in the inactive grey and it does nothing.
+pub fn traffic_lights_fixed_size(active: bool) -> TrafficLights {
+    TrafficLights {
+        active: Some(active),
+        zoom_enabled: false,
+    }
 }
 
 /// A draggable client title bar that deliberately has no platform control
 /// cluster. gpui-component's `TitleBar` adds Linux minimize/maximize/close
 /// buttons on the right, which duplicated rmac's traffic lights.
-fn client_title_bar(children: impl IntoElement) -> impl IntoElement {
+fn client_bar(height: f32, children: impl IntoElement) -> impl IntoElement {
     div()
         .id("rmac-title-bar")
-        .h(TITLE_BAR_HEIGHT)
+        .h(px(height))
         .w_full()
         .flex_shrink_0()
         .flex()
@@ -257,35 +574,58 @@ fn client_title_bar(children: impl IntoElement) -> impl IntoElement {
         .child(div().h_full().flex_1().child(children))
 }
 
-/// Overlay our traffic lights in the left gutter (x=13) of the draggable bar,
-/// leaving the application-owned title content independent of the controls.
-fn with_traffic_lights(bar: impl IntoElement) -> impl IntoElement {
+/// Overlay the traffic lights at their measured position on a bar.
+fn with_traffic_lights(unified_toolbar: bool, bar: impl IntoElement) -> impl IntoElement {
+    let origin = traffic_lights_origin(unified_toolbar);
     div().relative().w_full().flex_shrink_0().child(bar).child(
         div()
             .absolute()
-            .left(px(13.0))
-            .top_0()
-            .bottom_0()
-            .flex()
-            .items_center()
+            .left(px(origin))
+            .top(px(origin))
             .child(traffic_lights()),
     )
 }
 
-/// The shared title bar: our own traffic lights on the left, centered title.
-/// Apps put this at the top of their root `div`. The bar remains a compositor
-/// drag region without adding a second platform control cluster.
+/// Width from a title bar's left edge to where its title starts: the lights'
+/// hit boxes plus the measured gap (TextEdit's title sits at x + 83).
+fn title_bar_title_inset() -> f32 {
+    let metrics = rmac_design::Metrics::default();
+    traffic_lights_origin(false)
+        + 3.0 * metrics.traffic_hit
+        + 2.0 * (metrics.traffic_spacing - metrics.traffic_hit)
+        + metrics.title_gap
+}
+
+/// The shared title bar of a title-bar-only window (TextEdit, Terminal):
+/// 32 pt tall, the lights centred 16 from the corner and the title in 13 pt
+/// bold secondary text immediately after them.
 pub fn title_bar(title: impl Into<SharedString>) -> impl IntoElement {
     let title: SharedString = title.into();
-    with_traffic_lights(client_title_bar(
-        div()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .text_sm()
-            .child(title),
-    ))
+    let metrics = rmac_design::Metrics::default();
+    with_traffic_lights(
+        false,
+        client_bar(
+            metrics.titlebar_height,
+            div()
+                .size_full()
+                .flex()
+                .items_center()
+                .pl(px(title_bar_title_inset() - 12.0))
+                .text_size(text_px(metrics.title_titlebar_size))
+                .font_weight(mac::BOLD)
+                .text_color(mac::text_secondary())
+                .truncate()
+                .child(title),
+        ),
+    )
+}
+
+/// A title-bar-only window's bar with application-owned content.
+pub fn title_bar_content(children: impl IntoElement) -> impl IntoElement {
+    with_traffic_lights(
+        false,
+        client_bar(rmac_design::Metrics::default().titlebar_height, children),
+    )
 }
 
 /// A full-bleed page background using the active theme — the base every app
@@ -299,20 +639,32 @@ pub fn body_bg(cx: &App) -> gpui::Hsla {
     cx.theme().background
 }
 
-/// A unified macOS toolbar/title bar with the chrome color and a hairline base.
+/// A unified 52 pt toolbar with the chrome colour and a hairline base; the
+/// lights sit centred 26 from the corner, as in Finder and Notes.
 pub fn toolbar(children: impl IntoElement) -> impl IntoElement {
-    with_traffic_lights(client_title_bar(children))
+    with_traffic_lights(true, client_bar(mac::toolbar_height(), children))
 }
 
-/// A grouped glass capsule for toolbar items (Tahoe): a rounded translucent
-/// container that holds 28×28 icon buttons.
-pub fn toolbar_group(children: impl IntoElement) -> impl IntoElement {
+/// A toolbar window's title: 15 pt bold primary text (Finder "jake").
+pub fn toolbar_title(title: impl Into<SharedString>) -> impl IntoElement {
     div()
-        .h(px(32.0))
-        .px(px(2.0))
+        .text_size(text_px(rmac_design::Metrics::default().title_toolbar_size))
+        .font_weight(mac::BOLD)
+        .text_color(mac::text())
+        .truncate()
+        .child(title.into())
+}
+
+/// A grouped glass capsule for toolbar items (Tahoe): 36 pt tall, like
+/// Finder's back/forward pair and view switcher.
+pub fn toolbar_group(children: impl IntoElement) -> impl IntoElement {
+    let height = rmac_design::Metrics::default().toolbar_group_height;
+    div()
+        .h(px(height))
+        .px(px(4.0))
         .flex()
         .items_center()
-        .rounded(px(16.0))
+        .rounded(px(height / 2.0))
         .bg(mac::material_clear())
         .border_1()
         .border_color(mac::separator())

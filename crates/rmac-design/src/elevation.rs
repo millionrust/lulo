@@ -77,19 +77,23 @@ impl Elevation {
                 spread: 0.0,
                 alpha: alpha(0.24),
             },
+            // Measured 2026-09-23 (design-lab/chrome.html): a Gaussian fit
+            // to the darkening below TextEdit's bottom edge on a flat
+            // backdrop, 0.56 at the edge falling to 0.10 at 40 pt when key,
+            // 0.32 falling to 0.08 at 20 pt when not.
             window_active: WindowShadow {
-                softness: 32.0,
+                softness: 42.0,
                 spread: 0.0,
-                offset_y: 12.0,
-                color: Rgba::from_rgba(0x00000073)
-                    .with_alpha((0x73 as f32 * scale).min(255.0) as u8),
+                offset_y: 16.0,
+                color: Rgba::from_rgba(0x000000bd)
+                    .with_alpha((0xbd as f32 * scale).min(255.0) as u8),
             },
             window_inactive: WindowShadow {
-                softness: 12.0,
+                softness: 26.0,
                 spread: 0.0,
-                offset_y: 4.0,
-                color: Rgba::from_rgba(0x0000004d)
-                    .with_alpha((0x4d as f32 * scale).min(255.0) as u8),
+                offset_y: 8.0,
+                color: Rgba::from_rgba(0x00000075)
+                    .with_alpha((0x75 as f32 * scale).min(255.0) as u8),
             },
             dock: ElevationLevel {
                 offset_x: 0.0,

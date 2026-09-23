@@ -97,7 +97,7 @@ impl FinderView {
             .flex_none()
             .flex()
             .items_center()
-            .pl(px(13.0))
+            .pl(px(rmac_ui::traffic_lights_origin(true)))
             .pr_2()
             .child(rmac_ui::traffic_lights())
             .child(div().flex_1())
@@ -200,28 +200,28 @@ impl FinderView {
             .when(layout.view_control_visible, |toolbar| {
                 toolbar.child(div().ml(px(16.0)).child(view_control))
             })
-            .when(layout.view_control_visible, |toolbar| toolbar.child(sort_control))
+            .when(layout.view_control_visible, |toolbar| {
+                toolbar.child(sort_control)
+            })
             .child(div().flex_1())
             // The ⋯ button opens the item context menu (anchored below itself).
-            .child(
-                rmac_ui::toolbar_group(
-                    Button::new("more", "")
-                        .icon(Icon::new(IconName::Ellipsis).text_color(rmac_ui::mac::text()))
-                        .ghost()
-                        .with_size(Size::Small)
-                        .tooltip("More Actions")
-                        .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
-                            this.menu_purpose = MenuPurpose::Context;
-                            this.menu_at = Some(rmac_ui::ContextMenuState::open(
-                                ev.position(),
-                                &this.focus,
-                                window,
-                                cx,
-                            ));
-                            cx.notify();
-                        })),
-                ),
-            )
+            .child(rmac_ui::toolbar_group(
+                Button::new("more", "")
+                    .icon(Icon::new(IconName::Ellipsis).text_color(rmac_ui::mac::text()))
+                    .ghost()
+                    .with_size(Size::Small)
+                    .tooltip("More Actions")
+                    .on_click(cx.listener(|this, ev: &ClickEvent, window, cx| {
+                        this.menu_purpose = MenuPurpose::Context;
+                        this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                            ev.position(),
+                            &this.focus,
+                            window,
+                            cx,
+                        ));
+                        cx.notify();
+                    })),
+            ))
             .child(search)
     }
 

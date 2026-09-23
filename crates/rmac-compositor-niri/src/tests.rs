@@ -116,12 +116,6 @@ fn targeted_window_actions_focus_then_act() {
             r#"{"FullscreenWindow":{}}"#,
         ),
         (
-            domain::Action::FillWindow {
-                window: domain::WindowId(7),
-            },
-            r#"{"ExpandColumnToAvailableWidth":{}}"#,
-        ),
-        (
             domain::Action::CenterWindow {
                 window: domain::WindowId(7),
             },
@@ -164,23 +158,41 @@ fn minimize_and_restore_use_the_named_parking_workspace() {
 }
 
 #[test]
-fn unsupported_tile_regions_are_rejected_before_any_request() {
-    let error = convert_action_sequence(&domain::Action::TileWindow {
-        window: domain::WindowId(7),
-        region: domain::TileRegion::TopLeft,
-    })
-    .unwrap_err();
-    assert_eq!(error.kind, domain::ActionErrorKind::Unsupported);
-
-    let left = convert_action_sequence(&domain::Action::TileWindow {
-        window: domain::WindowId(7),
-        region: domain::TileRegion::Left,
-    })
-    .unwrap();
-    assert_eq!(left.len(), 2);
+fn fill_and_tiling_set_the_whole_floating_frame_by_id() {
+    let json = |action: domain::Action| {
+        convert_action_sequence(&action)
+            .unwrap()
+            .iter()
+            .map(|wire| serde_json::to_string(wire).unwrap())
+            .collect::<Vec<_>>()
+    };
     assert_eq!(
-        serde_json::to_string(&left[1]).unwrap(),
-        r#"{"MoveColumnToFirst":{}}"#
+        json(domain::Action::FillWindow {
+            window: domain::WindowId(7),
+        }),
+        [
+            r#"{"SetWindowWidth":{"id":7,"change":{"SetProportion":100.0}}}"#,
+            r#"{"SetWindowHeight":{"id":7,"change":{"SetProportion":100.0}}}"#,
+            r#"{"MoveFloatingWindow":{"id":7,"x":{"SetProportion":0.0},"y":{"SetProportion":0.0}}}"#,
+        ]
+    );
+    assert_eq!(
+        json(domain::Action::TileWindow {
+            window: domain::WindowId(7),
+            region: domain::TileRegion::Right,
+        }),
+        [
+            r#"{"SetWindowWidth":{"id":7,"change":{"SetProportion":50.0}}}"#,
+            r#"{"SetWindowHeight":{"id":7,"change":{"SetProportion":100.0}}}"#,
+            r#"{"MoveFloatingWindow":{"id":7,"x":{"SetProportion":50.0},"y":{"SetProportion":0.0}}}"#,
+        ]
+    );
+    assert_eq!(
+        json(domain::Action::TileWindow {
+            window: domain::WindowId(7),
+            region: domain::TileRegion::BottomLeft,
+        })[2],
+        r#"{"MoveFloatingWindow":{"id":7,"x":{"SetProportion":0.0},"y":{"SetProportion":50.0}}}"#
     );
 }
 

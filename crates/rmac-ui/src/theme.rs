@@ -431,8 +431,10 @@ impl ThemeTokens {
             switch_mini_width: design.metrics.switch_mini_width,
             switch_mini_height: design.metrics.switch_mini_height,
             switch_mini_thumb: design.metrics.switch_mini_thumb,
-            traffic_light_hit_width: design.metrics.traffic_spacing,
-            traffic_light_hit_height: design.metrics.hit_target_min,
+            // The AX button frame is a 16 pt square; the 23 pt pitch comes
+            // from the 7 pt gap the cluster adds between frames.
+            traffic_light_hit_width: design.metrics.traffic_hit,
+            traffic_light_hit_height: design.metrics.traffic_hit,
             traffic_light_diameter: design.metrics.traffic_diameter,
         };
 

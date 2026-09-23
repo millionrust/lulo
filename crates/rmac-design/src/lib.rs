@@ -11,6 +11,8 @@ mod elevation;
 mod geometry;
 mod material;
 mod motion;
+#[cfg(test)]
+mod tokens_css;
 mod typography;
 
 pub use color::{tint, Colors, Rgba};
@@ -211,14 +213,14 @@ mod tests {
     fn window_elevation_matches_the_design_lab_mapping() {
         let elevation =
             Tokens::resolve(appearance(ResolvedColorScheme::Dark, Contrast::Normal)).elevation;
-        assert_eq!(elevation.window_active.softness, 32.0);
+        assert_eq!(elevation.window_active.softness, 42.0);
         assert_eq!(elevation.window_active.spread, 0.0);
-        assert_eq!(elevation.window_active.offset_y, 12.0);
-        assert_eq!(elevation.window_active.color, Rgba::from_rgba(0x00000073));
-        assert_eq!(elevation.window_inactive.softness, 12.0);
+        assert_eq!(elevation.window_active.offset_y, 16.0);
+        assert_eq!(elevation.window_active.color, Rgba::from_rgba(0x000000bd));
+        assert_eq!(elevation.window_inactive.softness, 26.0);
         assert_eq!(elevation.window_inactive.spread, 0.0);
-        assert_eq!(elevation.window_inactive.offset_y, 4.0);
-        assert_eq!(elevation.window_inactive.color, Rgba::from_rgba(0x0000004d));
+        assert_eq!(elevation.window_inactive.offset_y, 8.0);
+        assert_eq!(elevation.window_inactive.color, Rgba::from_rgba(0x00000075));
     }
 
     #[test]

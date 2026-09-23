@@ -317,14 +317,16 @@ impl Colors {
                 white: Rgba::rgb(0xffffff),
                 black: Rgba::rgb(0x000000),
 
-                traffic_close: Rgba::rgb(0xff5f57),
-                traffic_close_border: Rgba::rgb(0xe0443e),
-                traffic_minimize: Rgba::rgb(0xfebc2e),
-                traffic_minimize_border: Rgba::rgb(0xdea123),
-                traffic_zoom: Rgba::rgb(0x28c840),
-                traffic_zoom_border: Rgba::rgb(0x1aab29),
-                traffic_inactive: Rgba::rgb(0x4e4e50),
-                traffic_inactive_border: Rgba::rgb(0x3e3e40),
+                // Measured 2026-09-23 at the centre and rim of TextEdit's
+                // lights, macOS 26.2 dark (design-lab/chrome.html).
+                traffic_close: Rgba::rgb(0xec6765),
+                traffic_close_border: Rgba::rgb(0xde2f2c),
+                traffic_minimize: Rgba::rgb(0xf2ca44),
+                traffic_minimize_border: Rgba::rgb(0xe5b102),
+                traffic_zoom: Rgba::rgb(0x65c466),
+                traffic_zoom_border: Rgba::rgb(0x2ca92f),
+                traffic_inactive: Rgba::rgb(0x454551),
+                traffic_inactive_border: Rgba::rgb(0x4f4f5c),
             },
         }
     }

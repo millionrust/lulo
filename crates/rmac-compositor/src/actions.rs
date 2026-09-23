@@ -23,8 +23,9 @@ pub enum ActionKind {
     RestoreWindow,
 }
 
-/// Target region for [`Action::TileWindow`]. niri's scrolling layout only
-/// supports the horizontal `Left`/`Right` placements; the rest are rejected.
+/// Target region for [`Action::TileWindow`]: the halves offered by the green
+/// button's Move & Resize menu and the quarters of Window › Move & Resize.
+/// rmac windows float, so every region is a floating-window frame.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TileRegion {
@@ -36,6 +37,23 @@ pub enum TileRegion {
     TopRight,
     BottomLeft,
     BottomRight,
+}
+
+impl TileRegion {
+    /// The region as `(x, y, width, height)` percentages of the output's
+    /// working area (the area below the menu bar and beside the Dock).
+    pub const fn frame_percent(self) -> (f64, f64, f64, f64) {
+        match self {
+            Self::Left => (0.0, 0.0, 50.0, 100.0),
+            Self::Right => (50.0, 0.0, 50.0, 100.0),
+            Self::Top => (0.0, 0.0, 100.0, 50.0),
+            Self::Bottom => (0.0, 50.0, 100.0, 50.0),
+            Self::TopLeft => (0.0, 0.0, 50.0, 50.0),
+            Self::TopRight => (50.0, 0.0, 50.0, 50.0),
+            Self::BottomLeft => (0.0, 50.0, 50.0, 50.0),
+            Self::BottomRight => (50.0, 50.0, 50.0, 50.0),
+        }
+    }
 }
 
 /// The hidden workspace that holds minimized windows.
@@ -177,7 +195,7 @@ pub enum Action {
         window: WindowId,
         on: bool,
     },
-    /// Maximize `window` into the available width without full screen.
+    /// Fill the working area without full screen (the green button's Fill).
     FillWindow {
         window: WindowId,
     },

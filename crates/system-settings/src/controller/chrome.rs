@@ -78,7 +78,7 @@ impl Settings {
                     .flex()
                     .items_center()
                     .gap_2()
-                    .pl(px(13.0))
+                    .pl(px(rmac_ui::traffic_lights_origin(true)))
                     .child(rmac_ui::traffic_lights())
                     .when(layout.compact, |leading| leading.child(sidebar_toggle)),
             )

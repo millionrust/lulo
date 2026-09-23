@@ -392,6 +392,15 @@ impl SwitchSize {
             Self::Mini => mac::switch_mini(),
         }
     }
+
+    /// Width of the thumb. macOS 26 draws the regular thumb as a 21 × 13
+    /// capsule; the unmeasured smaller sizes keep a round thumb.
+    fn thumb_width(self) -> f32 {
+        match self {
+            Self::Regular => rmac_design::Metrics::default().switch_regular_thumb_width,
+            Self::Small | Self::Mini => self.dimensions().2,
+        }
+    }
 }
 
 /// Keyboard-focusable binary or mixed-state toggle.
@@ -478,16 +487,21 @@ impl RenderOnce for Toggle {
         let active = self.state != ToggleState::Off;
         let next = !matches!(self.state, ToggleState::On);
         let (width, height, thumb) = self.size.dimensions();
+        let thumb_width = self.size.thumb_width();
+        // Measured (design-lab/chrome.html): the thumb sits 1.5 inside a
+        // fully round track with no border.
+        let inset = (height - thumb) / 2.0;
         let indicator = if self.pending {
             div()
-                .size(px(10.0))
+                .size(px(thumb))
                 .rounded_full()
                 .border_2()
                 .border_color(mac::white())
                 .into_any_element()
         } else {
             div()
-                .size(px(thumb))
+                .w(px(thumb_width))
+                .h(px(thumb))
                 .rounded_full()
                 .bg(mac::white())
                 .shadow_sm()
@@ -496,7 +510,7 @@ impl RenderOnce for Toggle {
         let track = div()
             .w(px(width))
             .h(px(height))
-            .px(px(2.0))
+            .px(px(inset))
             .flex()
             .items_center()
             .rounded_full()
@@ -504,12 +518,6 @@ impl RenderOnce for Toggle {
                 mac::accent()
             } else {
                 mac::control_fill()
-            })
-            .border_1()
-            .border_color(if active {
-                mac::accent()
-            } else {
-                mac::separator()
             })
             .when(self.state == ToggleState::Off, |track| {
                 track.justify_start()
@@ -617,18 +625,19 @@ impl RenderOnce for Checkbox {
                 .into_any_element(),
             ToggleState::Off => div().into_any_element(),
         };
+        let metrics = rmac_design::Metrics::default();
+        // Measured on TextEdit Settings: 14 pt, radius 4, a flat control
+        // fill when off and the accent when on, no border.
         let box_ = div()
-            .size(px(14.0))
-            .rounded(px(4.0))
+            .size(px(metrics.checkbox_size))
+            .rounded(px(metrics.checkbox_radius))
             .flex()
             .items_center()
             .justify_center()
-            .bg(if active { mac::accent() } else { mac::raised() })
-            .border_1()
-            .border_color(if active {
+            .bg(if active {
                 mac::accent()
             } else {
-                mac::separator()
+                mac::control_fill()
             })
             .child(marker);
         let content = div()
@@ -700,8 +709,9 @@ impl Radio {
 
 impl RenderOnce for Radio {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let metrics = rmac_design::Metrics::default();
         let circle = div()
-            .size(px(14.0))
+            .size(px(metrics.radio_size))
             .rounded_full()
             .flex()
             .items_center()
@@ -709,16 +719,15 @@ impl RenderOnce for Radio {
             .bg(if self.selected {
                 mac::accent()
             } else {
-                mac::raised()
-            })
-            .border_1()
-            .border_color(if self.selected {
-                mac::accent()
-            } else {
-                mac::separator()
+                mac::control_fill()
             })
             .when(self.selected, |circle| {
-                circle.child(div().size(px(6.0)).rounded_full().bg(mac::white()))
+                circle.child(
+                    div()
+                        .size(px(metrics.radio_dot))
+                        .rounded_full()
+                        .bg(mac::white()),
+                )
             });
         let content = div()
             .flex()

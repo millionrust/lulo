@@ -145,19 +145,14 @@ pub(super) fn convert_action(action: &domain::Action) -> wire::Action {
         domain::Action::SetOverview { visible: true } => wire::Action::OpenOverview {},
         domain::Action::SetOverview { visible: false } => wire::Action::CloseOverview {},
         domain::Action::FullscreenWindow { .. } => wire::Action::FullscreenWindow {},
-        domain::Action::FillWindow { .. } => wire::Action::ExpandColumnToAvailableWidth {},
+        // Fill and tiling resize as well as move; `convert_action_sequence`
+        // sends the whole frame. Alone, each maps to its final placement.
+        domain::Action::FillWindow { window } => move_floating(*window, 0.0, 0.0),
         domain::Action::CenterWindow { .. } => wire::Action::CenterWindow {},
-        domain::Action::TileWindow {
-            region: domain::TileRegion::Left,
-            ..
-        } => wire::Action::MoveColumnToFirst {},
-        domain::Action::TileWindow {
-            region: domain::TileRegion::Right,
-            ..
-        } => wire::Action::MoveColumnToLast {},
-        // niri's scrolling layout has no vertical split; the caller receives an
-        // explicit Unsupported error from `convert_action_sequence`.
-        domain::Action::TileWindow { .. } => wire::Action::CenterWindow {},
+        domain::Action::TileWindow { window, region } => {
+            let (x, y, _, _) = region.frame_percent();
+            move_floating(*window, x, y)
+        }
         domain::Action::MinimizeWindow { window } => wire::Action::MoveWindowToWorkspace {
             window_id: Some(window.0),
             reference: wire::WorkspaceReference::Name(domain::PARKING_WORKSPACE.into()),
@@ -173,25 +168,48 @@ pub(super) fn convert_action(action: &domain::Action) -> wire::Action {
     }
 }
 
-/// niri window-management actions apply to the focused window, so a targeted
-/// action is a focus step followed by the action on its own socket. Regions
-/// niri cannot express return an explicit `Unsupported` error.
+fn move_floating(window: domain::WindowId, x: f64, y: f64) -> wire::Action {
+    wire::Action::MoveFloatingWindow {
+        id: Some(window.0),
+        x: wire::PositionChange::SetProportion(x),
+        y: wire::PositionChange::SetProportion(y),
+    }
+}
+
+/// Resize then move a floating window to a frame given in working-area
+/// percentages, the way the green button's Move & Resize and Fill do.
+fn floating_frame(
+    window: domain::WindowId,
+    (x, y, width, height): (f64, f64, f64, f64),
+) -> Vec<wire::Action> {
+    vec![
+        wire::Action::SetWindowWidth {
+            id: Some(window.0),
+            change: wire::SizeChange::SetProportion(width),
+        },
+        wire::Action::SetWindowHeight {
+            id: Some(window.0),
+            change: wire::SizeChange::SetProportion(height),
+        },
+        move_floating(window, x, y),
+    ]
+}
+
+/// niri's full-screen and centre actions apply to the focused window, so
+/// those are a focus step followed by the action on its own socket. Fill and
+/// tiling address the window by id and set its whole frame.
 pub(super) fn convert_action_sequence(
     action: &domain::Action,
 ) -> Result<Vec<wire::Action>, domain::ActionError> {
     match action {
-        domain::Action::TileWindow { region, .. }
-            if !matches!(region, domain::TileRegion::Left | domain::TileRegion::Right) =>
-        {
-            Err(domain::ActionError {
-                kind: domain::ActionErrorKind::Unsupported,
-                message: "niri cannot tile to vertical or quarter regions".into(),
-            })
+        domain::Action::FillWindow { window } => {
+            Ok(floating_frame(*window, (0.0, 0.0, 100.0, 100.0)))
+        }
+        domain::Action::TileWindow { window, region } => {
+            Ok(floating_frame(*window, region.frame_percent()))
         }
         domain::Action::FullscreenWindow { window, .. }
-        | domain::Action::FillWindow { window }
-        | domain::Action::CenterWindow { window }
-        | domain::Action::TileWindow { window, .. } => Ok(vec![
+        | domain::Action::CenterWindow { window } => Ok(vec![
             wire::Action::FocusWindow { id: window.0 },
             convert_action(action),
         ]),

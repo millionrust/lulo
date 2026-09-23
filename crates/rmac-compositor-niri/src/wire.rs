@@ -40,10 +40,34 @@ pub enum Action {
     OpenOverview {},
     CloseOverview {},
     FullscreenWindow {},
-    ExpandColumnToAvailableWidth {},
     CenterWindow {},
-    MoveColumnToFirst {},
-    MoveColumnToLast {},
+    SetWindowWidth {
+        id: Option<u64>,
+        change: SizeChange,
+    },
+    SetWindowHeight {
+        id: Option<u64>,
+        change: SizeChange,
+    },
+    MoveFloatingWindow {
+        id: Option<u64>,
+        x: PositionChange,
+        y: PositionChange,
+    },
+}
+
+/// niri-ipc `SizeChange`; proportions are percentages of the working area
+/// ("50%" on the command line is `SetProportion(50.0)`).
+#[derive(Debug, Serialize)]
+pub enum SizeChange {
+    SetProportion(f64),
+}
+
+/// niri-ipc `PositionChange` for floating windows, in percentages of the
+/// working area.
+#[derive(Debug, Serialize)]
+pub enum PositionChange {
+    SetProportion(f64),
 }
 
 #[derive(Debug, Serialize)]

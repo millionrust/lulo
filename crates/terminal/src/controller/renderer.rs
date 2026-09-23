@@ -63,7 +63,7 @@ impl Render for TerminalView {
             .relative()
             .v_flex()
             .bg(hsla(active().bg))
-            .child(rmac_ui::toolbar(
+            .child(rmac_ui::title_bar_content(
                 // Three flex sections: a left spacer balances the right chip so
                 // "Terminal" stays centered. No absolute positioning — that broke
                 // click hit-testing for the chip inside the TitleBar.

@@ -122,20 +122,40 @@ workspace "rmac-parking"
 // of exposing the scrolling-tiler layout as the product experience.
 window-rule {
     open-floating true
-    // macOS 27 standardized one window radius for every window; the old
-    // 12/16 toolbar split is gone (FEEL_SPEC.md §B).
+    // macOS 26 rounds title-bar-only windows (TextEdit, Terminal) at 16 and
+    // unified-toolbar windows at 27 (design-lab/chrome.html); the toolbar
+    // apps are matched below. Third-party windows take the title-bar value.
     geometry-corner-radius 16
     clip-to-geometry true
     focus-ring { off; }
     border { off; }
+    // The inactive-window shadow, a Gaussian fit to macOS 26: 0.32 dark at
+    // the edge, fading by 20 pt (rmac-design elevation.window_inactive).
     shadow {
         on
-        softness 32
+        softness 26
         spread 0
-        offset x=0 y=12
-        color "#00000073"
-        inactive-color "#0000004d"
+        offset x=0 y=8
+        color "#00000075"
+        inactive-color "#00000075"
     }
+}
+
+// The key window's deeper shadow: 0.56 at the edge, fading by 40 pt
+// (rmac-design elevation.window_active).
+window-rule {
+    match is-focused=true
+    shadow {
+        softness 42
+        offset x=0 y=16
+        color "#000000bd"
+    }
+}
+
+// rmac apps drawn with a unified 52 pt toolbar get the toolbar radius.
+window-rule {
+    match app-id=r#"^org\.rmac\.(Files|SystemSettings|Calculator|Notes|SystemMonitor|TextEditor)$"#
+    geometry-corner-radius 27
 }
 
 // Finder opens at its last saved size (never maximized) and lets niri clip and

@@ -379,11 +379,16 @@ fn every_window_uses_the_measured_radius_and_active_inactive_shadows() {
     assert!(!rule.contains("match app-id="));
     assert!(rule.contains("geometry-corner-radius 16"));
     assert!(rule.contains("clip-to-geometry true"));
-    assert!(rule.contains("softness 32"));
+    // Inactive shadow on every window; the key window's deeper one below.
+    assert!(rule.contains("softness 26"));
     assert!(rule.contains("spread 0"));
-    assert!(rule.contains("offset x=0 y=12"));
-    assert!(rule.contains("color \"#00000073\""));
-    assert!(rule.contains("inactive-color \"#0000004d\""));
+    assert!(rule.contains("offset x=0 y=8"));
+    assert!(rule.contains("inactive-color \"#00000075\""));
+    assert!(shell.contains(
+        "match is-focused=true\n    shadow {\n        softness 42\n        offset x=0 y=16\n        color \"#000000bd\""
+    ));
+    // Unified-toolbar apps take the 27 pt toolbar-window radius.
+    assert!(shell.contains("|TextEditor)$\"#\n    geometry-corner-radius 27"));
 }
 
 #[test]

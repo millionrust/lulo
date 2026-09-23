@@ -17,12 +17,13 @@ pub mod theme;
 mod window;
 
 pub use chrome::{
-    body_bg, page, title_bar, toolbar, toolbar_group, traffic_lights, traffic_lights_active,
-    traffic_lights_fixed_size,
+    body_bg, page, title_bar, title_bar_content, toolbar, toolbar_group, toolbar_title,
+    traffic_lights, traffic_lights_active, traffic_lights_fixed_size, traffic_lights_origin,
+    TrafficLights,
 };
 pub use components::{
-    alert, dialog, dialog_button, type_select_match, ContextMenu, ContextMenuState,
-    DialogButtonKind, DismissMenu, MenuCheck, RequestClose,
+    alert, alert_with_icon, dialog, dialog_button, type_select_match, ContextMenu,
+    ContextMenuState, DialogButtonKind, DismissMenu, MenuCheck, RequestClose,
 };
 pub use controls::{
     Button, ButtonRole, Checkbox, CollectionState, InputEvent, InputState, List, ListRow,

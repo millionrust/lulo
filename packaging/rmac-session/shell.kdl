@@ -246,9 +246,11 @@ layer-rule {
     geometry-corner-radius 28
 }
 
+// The OSD is the Control Center Sound/Display module shown on its own:
+// 292 × 64 with the module's 22 pt corner radius.
 layer-rule {
     match namespace=r#"^rmac-osd-"#
-    geometry-corner-radius 28
+    geometry-corner-radius 22
     shadow {
         on
         softness 24

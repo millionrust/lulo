@@ -129,6 +129,12 @@ fn apply(tokens: DesignTokens, cx: &mut AsyncApp) {
 // Semantic accessors used by the shell hosts. Each reads the live tokens so a
 // repaint after an appearance change recolors every surface.
 
+/// Whether the resolved appearance is dark. Surfaces measured only against
+/// the owner's dark-mode Mac use this to pick their dark glass values.
+pub fn is_dark() -> bool {
+    current().color_scheme == rmac_appearance::ResolvedColorScheme::Dark
+}
+
 pub fn primary_text() -> u32 {
     hex(current().colors.label_primary)
 }

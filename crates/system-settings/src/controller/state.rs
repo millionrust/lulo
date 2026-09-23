@@ -102,6 +102,14 @@ pub(super) struct Settings {
     pub(super) search: Entity<InputState>,
     pub(super) search_selection: usize,
     pub(super) compact_sidebar_open: bool,
+    /// Trackpad's selected tab (Point & Click, Scroll & Zoom).
+    pub(super) trackpad_tab: usize,
+    /// Storage categories measured on the home volume.
+    pub(super) storage_categories: Option<crate::storage_categories::Categories>,
+    pub(super) storage_categories_busy: bool,
+    /// The Keyboard Shortcuts sheet and its selected category.
+    pub(super) keyboard_shortcuts_open: bool,
+    pub(super) keyboard_shortcuts_category: usize,
     pub(super) focus: FocusHandle,
     pub(super) native_window_title: String,
     pub(super) focused_once: bool,

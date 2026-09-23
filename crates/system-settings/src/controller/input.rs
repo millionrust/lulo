@@ -3,6 +3,7 @@
 use super::*;
 
 mod render;
+mod shortcuts;
 
 impl Settings {
     pub(super) fn finish_input_update(
@@ -108,78 +109,27 @@ impl Settings {
         })
         .detach();
     }
-    pub(super) fn input_header(&self, cx: &Context<Self>) -> Div {
+    /// The right-aligned Refresh under Keyboard, Mouse and Trackpad.
+    pub(super) fn input_refresh_button(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .px(px(style::ROW_PADDING))
-            .pb(px(style::SECTION_BOTTOM))
-            .child(
-                div()
-                    .text_size(rmac_ui::text_px(13.0))
-                    .font_weight(rmac_ui::mac::BOLD)
-                    .text_color(style::heading_text())
-                    .child("niri · libinput"),
-            )
-            .child(
-                Button::new("input-refresh", "Refresh")
-                    .ghost()
-                    .busy(self.input_busy)
-                    .disabled(self.input_loading || self.input_busy)
-                    .on_click(move |_, _, cx| {
-                        view.update(cx, |settings, cx| settings.refresh_input(cx));
-                    }),
-            )
+        footer_buttons(vec![push_button("input-refresh", "Refresh")
+            .busy(self.input_busy)
+            .disabled(self.input_loading || self.input_busy)
+            .on_click(move |_, _, cx| {
+                view.update(cx, |settings, cx| settings.refresh_input(cx));
+            })
+            .into_any_element()])
     }
 
     pub(super) fn input_unavailable_card(&self) -> Option<Div> {
         if self.input_loading {
-            return Some(note_card("Loading input settings from niri…"));
+            return Some(note_card("Loading input settings…"));
         }
         if !self.input.available || !self.input.can_configure {
             return Some(note_card(self.input.detail.clone().unwrap_or_else(|| {
-                "Input configuration is unavailable in this desktop session.".into()
+                "Input settings are unavailable in this desktop session.".into()
             })));
         }
         None
-    }
-
-    pub(super) fn input_devices_card(
-        &self,
-        kinds: &[rmac_input::DeviceKind],
-        empty: &'static str,
-    ) -> Div {
-        let rows = self
-            .input
-            .devices
-            .iter()
-            .filter(|device| kinds.contains(&device.kind))
-            .map(|device| {
-                value_row(
-                    match device.kind {
-                        rmac_input::DeviceKind::Keyboard => "icons/keyboard.svg",
-                        rmac_input::DeviceKind::Touchpad => "icons/touchpad.svg",
-                        _ => "icons/mouse.svg",
-                    },
-                    secondary(),
-                    device.name.clone().into(),
-                    device.kind.label().into(),
-                )
-            })
-            .collect::<Vec<_>>();
-        if rows.is_empty() {
-            note_card(empty)
-        } else {
-            card(rows)
-        }
-    }
-
-    pub(super) fn has_input_devices(&self, kinds: &[rmac_input::DeviceKind]) -> bool {
-        self.input
-            .devices
-            .iter()
-            .any(|device| kinds.contains(&device.kind))
     }
 }

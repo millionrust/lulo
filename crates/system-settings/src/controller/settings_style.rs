@@ -263,6 +263,155 @@ pub(super) fn control_fill() -> Hsla {
     }
 }
 
+// ---- second wave (Network … Storage) -------------------------------------
+
+/// Icon rows (Network services, notification apps, Focus modes, background
+/// items): 52 tall with a 26 pt icon at x + 11 and the text at x + 48.
+pub(super) const LARGE_ROW_HEIGHT: f32 = 52.0;
+pub(super) const LARGE_ICON: f32 = 26.0;
+pub(super) const LARGE_ICON_X: f32 = 11.0;
+pub(super) const LARGE_ICON_GAP: f32 = 11.0;
+/// Sharing's service rows are 50 tall.
+pub(super) const SHARING_ROW_HEIGHT: f32 = 50.0;
+/// The status dot before "Connected" / "Not connected".
+pub(super) const STATUS_DOT: f32 = 8.0;
+pub(super) const STATUS_DOT_GAP: f32 = 4.0;
+/// Header cards (Notifications, Privacy, Accessibility, Spotlight): 65 tall,
+/// the icon 12 from the top.
+pub(super) const HEADER_CARD_HEIGHT: f32 = 65.0;
+pub(super) const HEADER_ICON_TOP: f32 = 2.0;
+/// A section note sits 2 under its head and 10 above the group.
+pub(super) const SECTION_NOTE_GAP: f32 = 2.0;
+/// Slider rows (Trackpad, Mouse): a 242 pt control from x + 208.
+pub(super) const SLIDER_WIDTH: f32 = 242.0;
+/// Keyboard's two sliders share a 75 pt group, 210 wide each, 20 apart.
+pub(super) const TWIN_SLIDER_WIDTH: f32 = 210.0;
+pub(super) const TWIN_SLIDER_GAP: f32 = 20.0;
+pub(super) const SLIDER_TRACK: f32 = 6.0;
+pub(super) const SLIDER_KNOB_WIDTH: f32 = 20.0;
+pub(super) const SLIDER_KNOB_HEIGHT: f32 = 16.0;
+/// Trackpad's tab bar: 24 tall, radius 6, the group 18 under it.
+pub(super) const TAB_HEIGHT: f32 = 24.0;
+pub(super) const TAB_RADIUS: f32 = 6.0;
+pub(super) const TAB_GAP_BELOW: f32 = 18.0;
+/// Table wells: 28 pt header, 24 pt rows and a 24 pt +/− bar.
+pub(super) const WELL_HEADER_HEIGHT: f32 = 28.0;
+pub(super) const WELL_ROW_HEIGHT: f32 = 24.0;
+pub(super) const WELL_BAR_HEIGHT: f32 = 24.0;
+/// Radio circles and the checkboxes in wells and previews.
+pub(super) const RADIO: f32 = 16.0;
+pub(super) const RADIO_GAP: f32 = 14.0;
+/// Storage: the bar is 21 tall, radius 3, with 1 pt gaps between segments.
+pub(super) const STORAGE_BAR_HEIGHT: f32 = 21.0;
+pub(super) const STORAGE_BAR_RADIUS: f32 = 3.0;
+/// Sheets (Keyboard Shortcuts): radius 26, a 200 pt sidebar panel inset 8,
+/// content from x 228, a 65 pt footer under a 1 pt rule.
+pub(super) const SHEET_RADIUS: f32 = 26.0;
+pub(super) const SHEET_SIDEBAR_WIDTH: f32 = 200.0;
+pub(super) const SHEET_FOOTER_HEIGHT: f32 = 65.0;
+
+pub(super) fn status_connected() -> Hsla {
+    rgb(0x68ce67).into()
+}
+
+pub(super) fn status_disconnected() -> Hsla {
+    rgb(0xeb534e).into()
+}
+
+pub(super) fn status_inactive() -> Hsla {
+    rgb(0x5c5d65).into()
+}
+
+/// Section notes under a head (Notification Centre, Login Items).
+pub(super) fn note_text() -> Hsla {
+    if dark() {
+        rgb(0x9a9ba0).into()
+    } else {
+        rmac_ui::mac::text_secondary()
+    }
+}
+
+/// The accent drawn by switches, sliders and the selected tab.
+pub(super) fn control_accent() -> Hsla {
+    if dark() {
+        rgb(0x397cf7).into()
+    } else {
+        rmac_ui::mac::accent()
+    }
+}
+
+pub(super) fn control_off() -> Hsla {
+    if dark() {
+        rgb(0x3c3d47).into()
+    } else {
+        rmac_ui::mac::control_fill()
+    }
+}
+
+pub(super) fn slider_knob() -> Hsla {
+    if dark() {
+        rgb(0xdfdfe1).into()
+    } else {
+        gpui::white()
+    }
+}
+
+pub(super) fn tab_fill() -> Hsla {
+    if dark() {
+        rgb(0x30313c).into()
+    } else {
+        rmac_ui::mac::control_fill()
+    }
+}
+
+/// Storage categories in the Mac's order; System Data is grey.
+pub(super) const STORAGE_COLORS: [u32; 6] =
+    [0xeb534e, 0xf09748, 0xf8d849, 0x68ce67, 0x63d7c3, 0x5fcfdd];
+
+pub(super) fn storage_system_data() -> Hsla {
+    rgb(0x808080).into()
+}
+
+pub(super) fn storage_free() -> Hsla {
+    if dark() {
+        rgb(0x44454e).into()
+    } else {
+        rmac_ui::mac::control_fill()
+    }
+}
+
+pub(super) fn storage_gap() -> Hsla {
+    if dark() {
+        rgb(0x31323c).into()
+    } else {
+        rmac_ui::mac::separator()
+    }
+}
+
+pub(super) fn sheet_fill() -> Hsla {
+    if dark() {
+        rgb(0x1f212c).into()
+    } else {
+        rmac_ui::mac::raised()
+    }
+}
+
+pub(super) fn sheet_sidebar() -> Hsla {
+    if dark() {
+        rgb(0x1b1c23).into()
+    } else {
+        rmac_ui::mac::material_sidebar()
+    }
+}
+
+pub(super) fn sheet_edge() -> Hsla {
+    if dark() {
+        white(0.12)
+    } else {
+        rmac_ui::mac::separator()
+    }
+}
+
 /// The Displays pane's arrangement well, darker than the window.
 pub(super) fn well_fill() -> Hsla {
     if dark() {

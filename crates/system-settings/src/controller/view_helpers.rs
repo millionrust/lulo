@@ -4,6 +4,7 @@ mod appearance_input;
 mod bluetooth;
 mod displays;
 mod focus;
+mod form;
 mod locale;
 mod network;
 mod power;
@@ -16,6 +17,7 @@ pub(super) use appearance_input::*;
 pub(super) use bluetooth::*;
 pub(super) use displays::*;
 pub(super) use focus::*;
+pub(super) use form::*;
 pub(super) use locale::*;
 pub(super) use network::*;
 pub(super) use power::*;
@@ -222,35 +224,6 @@ pub(super) fn first_section_header(title: impl Into<SharedString>) -> Div {
     section_header(title).pt(px(0.0))
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(super) fn notification_toggle_row(
-    view: &Entity<Settings>,
-    app_id: &str,
-    id: &'static str,
-    title: &'static str,
-    subtitle: Option<&'static str>,
-    checked: bool,
-    disabled: bool,
-    change: fn(bool) -> NotificationPolicyChange,
-) -> AnyElement {
-    let app = app_id.to_owned();
-    let control_view = view.clone();
-    let toggle = Toggle::new(ElementId::from(SharedString::from(format!(
-        "notification-{id}-{app_id}"
-    ))))
-    .checked(checked)
-    .disabled(disabled)
-    .on_click(move |value, _, cx| {
-        control_view.update(cx, |settings, cx| {
-            settings.apply_notification_policy(app.clone(), change(*value), cx);
-        });
-    });
-    row_base()
-        .child(text_block(title.into(), subtitle.map(Into::into)))
-        .child(toggle)
-        .into_any_element()
-}
-
 pub(super) fn application_icon(
     icon: Option<&PathBuf>,
     fallback_icon: &'static str,
@@ -264,50 +237,6 @@ pub(super) fn application_icon(
             .into_any_element(),
         None => tile(fallback_icon, fallback_color, style::ROW_ICON).into_any_element(),
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-pub(super) fn application_nav_row(
-    view: &Entity<Settings>,
-    app_id: &str,
-    display_name: &str,
-    icon: Option<&PathBuf>,
-    status: &'static str,
-    enabled: bool,
-    target: SubPage,
-) -> AnyElement {
-    let target_view = view.clone();
-    let content = div()
-        .w_full()
-        .flex()
-        .items_center()
-        .gap(px(style::NAV_ICON_GAP))
-        .child(application_icon(
-            icon,
-            "icons/bell.svg",
-            if enabled { accent() } else { secondary() },
-        ))
-        .child(text_block(display_name.to_owned().into(), None))
-        .child(
-            div()
-                .text_size(rmac_ui::text_px(13.0))
-                .text_color(secondary())
-                .child(status),
-        )
-        .child(glyph(
-            "icons/chevron-right.svg",
-            style::NAV_CHEVRON,
-            style::chevron(),
-        ));
-    nav_list_row(
-        SharedString::from(format!("notification-app-{app_id}")),
-        content,
-    )
-    .on_activate(move |_, _, cx| {
-        let target = target.clone();
-        target_view.update(cx, |settings, cx| settings.push(target, cx));
-    })
-    .into_any_element()
 }
 
 /// A clickable navigation row that pushes a subpage onto the back stack.
@@ -377,7 +306,7 @@ fn nav_content(
 }
 
 /// A 42 pt navigation row with no fill of its own (the group supplies it).
-fn nav_list_row(id: impl Into<ElementId>, content: impl IntoElement) -> ListRow {
+pub(super) fn nav_list_row(id: impl Into<ElementId>, content: impl IntoElement) -> ListRow {
     ListRow::new(id, content)
         .selected(true)
         .bg(gpui::transparent_black())

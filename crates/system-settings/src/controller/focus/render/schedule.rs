@@ -53,10 +53,10 @@ impl Settings {
         )]));
         body = body.child(section_header("Repeat"));
         body = body.child(
-            div()
-                .flex()
+            group()
+                .flex_row()
                 .gap_1()
-                .mb_3()
+                .p(px(style::ROW_PADDING))
                 .children(FOCUS_DAYS.into_iter().map(|(day, label)| {
                     focus_day_button(
                         &view,
@@ -80,19 +80,17 @@ impl Settings {
             ),
             focus_time_row(&view, schedule_id, "To", false, schedule.end_minute, busy),
         ]));
-        body = body.child(note_card(
+        body = body.child(footnote(
             "Times use this computer’s local time. A finish time before the start time continues into the next day.",
         ));
         let remove_view = view.clone();
         let remove_schedule_id = schedule_id.to_owned();
-        body.child(card(vec![ListRow::new(
+        body.child(footer_buttons(vec![push_button(
             SharedString::from(format!("focus-remove-schedule-{schedule_id}")),
-            div()
-                .text_color(rmac_ui::mac::danger())
-                .child("Delete Schedule"),
+            "Delete Schedule",
         )
         .disabled(busy)
-        .on_activate(move |_, _, cx| {
+        .on_click(move |_, _, cx| {
             remove_view.update(cx, |settings, cx| {
                 settings.remove_focus_schedule(remove_schedule_id.clone(), cx);
             });

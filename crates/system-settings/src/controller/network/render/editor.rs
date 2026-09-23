@@ -24,13 +24,6 @@ impl Settings {
         let cancel_view = view.clone();
         let save_view = view.clone();
         let mut sections = vec![
-            section_header(format!(
-                "{} · {}",
-                editor.configuration.name, editor.interface
-            )),
-            note_card(
-                "IP and DNS changes are staged on the active connection and verified before the complete profile is saved. Proxy-only changes are saved atomically. On failure, rmac restores the previous authority only when no newer external edit would be overwritten.",
-            ),
             section_header("IPv4"),
             card(vec![
                 network_ip_method_row(

@@ -31,6 +31,7 @@ impl Settings {
                             this.storage = storage;
                             this.storage_error = None;
                             this.storage_stream_error = None;
+                            this.measure_storage_categories(cx);
                         }
                         Err(_) => {
                             this.storage_stream_error =
@@ -77,6 +78,7 @@ impl Settings {
                         this.storage = volumes;
                         this.storage_error = None;
                         this.storage_stream_error = None;
+                        this.measure_storage_categories(cx);
                     }
                     Err(error) => {
                         this.storage_error =
@@ -86,6 +88,59 @@ impl Settings {
                 this.run_pending_storage_refresh(cx);
                 cx.notify();
             });
+        })
+        .detach();
+    }
+
+    /// The mounted volume that holds the home folder: the one whose mount
+    /// point is the longest prefix of `$HOME`.
+    pub(super) fn home_volume(&self) -> Option<&rmac_mounts::Volume> {
+        let home = std::env::var_os("HOME").map(PathBuf::from)?;
+        self.storage
+            .iter()
+            .filter(|volume| home.starts_with(&volume.mount.path))
+            .max_by_key(|volume| volume.mount.path.components().count())
+    }
+
+    /// Measure the home volume's Storage categories on the background
+    /// executor. Called when volumes refresh and when Storage opens.
+    pub(super) fn measure_storage_categories(&mut self, cx: &mut Context<Self>) {
+        if self.storage_categories_busy {
+            return;
+        }
+        let Some(volume_path) = self.home_volume().map(|volume| volume.mount.path.clone()) else {
+            self.storage_categories = None;
+            return;
+        };
+        self.storage_categories_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let measured = cx
+                .background_executor()
+                .spawn(async move { crate::storage_categories::measure_home(volume_path) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.storage_categories_busy = false;
+                this.storage_categories = measured;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Open one category's folder in Files.
+    pub(super) fn reveal_storage_category(&mut self, folder: PathBuf, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let name = folder
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            if rmac_app_launch::open_item(folder).await.is_err() {
+                let _ = this.update(cx, |this: &mut Settings, cx| {
+                    this.storage_error = Some(format!("Could not open {name} in Files").into());
+                    cx.notify();
+                });
+            }
         })
         .detach();
     }

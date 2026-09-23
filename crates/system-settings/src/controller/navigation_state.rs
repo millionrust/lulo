@@ -99,8 +99,12 @@ impl Settings {
         if self.nav.len() >= rmac_system_settings::accessibility::MAX_NAVIGATION_DEPTH {
             return;
         }
+        let measure_storage = matches!(sub, SubPage::Storage);
         self.nav.push(sub);
         self.forward.clear();
+        if measure_storage {
+            self.measure_storage_categories(cx);
+        }
         self.sidebar_focused = false;
         cx.notify();
     }

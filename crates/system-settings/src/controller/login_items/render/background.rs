@@ -1,4 +1,4 @@
-//! Background-service inventory projection.
+//! App Background Activity: one 52 pt row per systemd user service.
 
 use super::*;
 
@@ -9,13 +9,19 @@ impl Settings {
         snapshot: &rmac_login_items::Snapshot,
         cards: &mut Vec<Div>,
     ) {
-        cards.push(section_header("Allow in background"));
+        cards.push(section_with_note(
+            "App Background Activity",
+            "These services start with your session and can keep running in the background. Changes take effect the next time you log in.",
+            false,
+        ));
         if snapshot.background_services.is_empty() {
-            cards.push(note_card(if snapshot.background_services_error.is_some() {
-                "The systemd user manager is unavailable. XDG application login items remain usable."
-            } else {
-                "No enabled or user-installed systemd background services were found."
-            }));
+            cards.push(group().child(group_placeholder(
+                if snapshot.background_services_error.is_some() {
+                    "Background services are unavailable."
+                } else {
+                    "No background services."
+                },
+            )));
         } else {
             let rows = snapshot
                 .background_services
@@ -27,71 +33,52 @@ impl Settings {
                     let reveal_view = view.clone();
                     let busy_key = format!("systemd:{}", service.id);
                     let busy = self.login_item_busy.as_deref() == Some(busy_key.as_str());
-                    let reveal_key = format!("reveal:{}", service.id);
-                    let revealing = self.login_item_busy.as_deref() == Some(reveal_key.as_str());
-                    let subtitle = format!("{} · {}", service.detail, service.state.label());
-                    row_base()
-                        .child(tile("icons/settings.svg", secondary(), style::ROW_ICON))
-                        .child(text_block(
-                            service.name.clone().into(),
-                            Some(subtitle.into()),
-                        ))
-                        .when(service.source.is_some(), |row| {
-                            row.child(
-                                Button::new(
-                                    ElementId::from(SharedString::from(format!(
-                                        "reveal-background-service-{}",
-                                        service.id
-                                    ))),
-                                    "Show in Files",
-                                )
-                                .busy(revealing)
-                                .disabled(self.login_item_busy.is_some())
-                                .on_click(move |_, _, cx| {
-                                    reveal_view.update(cx, |settings, cx| {
-                                        settings.reveal_login_item(reveal_id.clone(), true, cx);
-                                    });
-                                }),
-                            )
-                        })
-                        .child(
-                            Toggle::new(ElementId::from(SharedString::from(format!(
-                                "background-service-{}",
-                                service.id
-                            ))))
-                            .checked(service.enabled)
-                            .disabled(self.login_item_busy.is_some() || !service.can_toggle)
-                            .on_click(move |enabled, _, cx| {
-                                toggle_view.update(cx, |settings, cx| {
-                                    settings.set_background_service_enabled(
-                                        id.clone(),
-                                        *enabled,
-                                        cx,
-                                    );
+                    let subtitle = if busy {
+                        "Saving…".to_string()
+                    } else {
+                        format!("{} · {}", service.detail, service.state.label())
+                    };
+                    large_row(
+                        tile26("icons/settings.svg", hsl(0x8e8e93)),
+                        service.name.clone(),
+                        Some(subtitle_text(subtitle)),
+                    )
+                    .when(service.source.is_some(), |row| {
+                        row.child(reveal_button(
+                            SharedString::from(format!("reveal-background-service-{}", service.id)),
+                            move |_, cx| {
+                                reveal_view.update(cx, |settings, cx| {
+                                    settings.reveal_login_item(reveal_id.clone(), true, cx);
                                 });
-                            }),
-                        )
-                        .when(busy, |row| {
-                            row.child(
-                                div()
-                                    .text_size(rmac_ui::text_px(11.0))
-                                    .text_color(secondary())
-                                    .child("Saving…"),
-                            )
-                        })
-                        .into_any_element()
+                            },
+                        ))
+                    })
+                    .child(
+                        Toggle::new(ElementId::from(SharedString::from(format!(
+                            "background-service-{}",
+                            service.id
+                        ))))
+                        .checked(service.enabled)
+                        .disabled(self.login_item_busy.is_some() || !service.can_toggle)
+                        .on_click(move |enabled, _, cx| {
+                            toggle_view.update(cx, |settings, cx| {
+                                settings.set_background_service_enabled(id.clone(), *enabled, cx);
+                            });
+                        }),
+                    )
+                    .into_any_element()
                 })
                 .collect();
             cards.push(card(rows));
         }
         if let Some(error) = &snapshot.background_services_error {
-            cards.push(note_card(format!(
+            cards.push(footnote(format!(
                 "Background service status is unavailable: {error}"
             )));
         }
         if snapshot.background_services_truncated {
-            cards.push(note_card(
-                "The systemd user service inventory exceeded the bounded display limit.",
+            cards.push(footnote(
+                "Some background services are not shown because the list is too long.",
             ));
         }
     }

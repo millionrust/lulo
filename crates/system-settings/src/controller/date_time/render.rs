@@ -48,45 +48,96 @@ impl Settings {
             .into_any_element(),
         )
     }
+    /// macOS 26 Date & Time (design-lab/settings.html): the automatic switch,
+    /// the date and time with Set… while automatic time is off, and the time
+    /// zone with Set…, each in its own group; Refresh sits under them.
     pub(in crate::controller) fn render_date_time(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let refresh_view = view.clone();
-        let refresh = Button::new("refresh-date-time", "Refresh")
+        let refresh = push_button("refresh-date-time", "Refresh")
             .busy(self.time_busy || self.time_stream_refreshing)
             .disabled(self.time_loading || self.time_busy || self.time_stream_refreshing)
             .on_click(move |_, _, cx| {
                 refresh_view.update(cx, |settings, cx| settings.refresh_time(cx));
-            });
+            })
+            .into_any_element();
         let Some(snapshot) = &self.time else {
             return self.pane(vec![
-                card(vec![row_base()
-                    .child(tile("icons/clock.svg", secondary(), style::ROW_ICON))
-                    .child(text_block(
-                        "System date and time".into(),
-                        Some("systemd-timedated".into()),
-                    ))
-                    .child(refresh)
-                    .into_any_element()]),
                 note_card(if self.time_loading {
-                    "Reading authoritative date and time state from systemd-timedated…"
+                    "Reading date and time from systemd-timedated…"
                 } else {
-                    "The system date and time service is unavailable. No local fallback controls are shown."
+                    "The system date and time service is unavailable."
                 }),
+                footer_buttons(vec![refresh]),
             ]);
+        };
+
+        let ntp_view = view.clone();
+        let automatic = switch_row(
+            "automatic-time",
+            "Set time and date automatically",
+            (!snapshot.can_ntp).then(|| "No compatible network time service is installed".into()),
+            snapshot.ntp_enabled,
+            !self.time_busy && snapshot.can_ntp,
+            move |enabled, _, cx| {
+                ntp_view.update(cx, |settings, cx| settings.set_automatic_time(enabled, cx));
+            },
+        );
+
+        let now: SharedString = snapshot
+            .formatted_local_time_at(current_system_time_usec().unwrap_or(snapshot.time_usec))
+            .into();
+        let clock_row = if let Some(editor) = &self.clock_editor {
+            let review_view = view.clone();
+            let cancel_view = view.clone();
+            row_base()
+                .child(text_block(
+                    "Date and time".into(),
+                    Some("Use YYYY-MM-DD HH:MM:SS ±HH:MM".into()),
+                ))
+                .child(div().w(px(220.0)).child(TextField::new(editor).small()))
+                .child(
+                    push_button("clock-edit-cancel", "Cancel")
+                        .disabled(self.time_busy)
+                        .on_click(move |_, _, cx| {
+                            cancel_view.update(cx, |settings, cx| settings.cancel_clock_edit(cx));
+                        }),
+                )
+                .child(
+                    Button::new("clock-edit-review", "Review…")
+                        .primary()
+                        .disabled(self.time_busy)
+                        .on_click(move |_, _, cx| {
+                            review_view
+                                .update(cx, |settings, cx| settings.prepare_clock_change(cx));
+                        }),
+                )
+                .into_any_element()
+        } else {
+            let edit_view = view.clone();
+            // The Mac offers Set… only while automatic time is off.
+            let set = (!snapshot.ntp_enabled).then(|| {
+                push_button("clock-edit", "Set…")
+                    .disabled(self.time_busy || self.timezone_editor.is_some())
+                    .on_click(move |_, window, cx| {
+                        edit_view.update(cx, |settings, cx| settings.start_clock_edit(window, cx));
+                    })
+                    .into_any_element()
+            });
+            value_button_row("Date and time", None, Some(now), set)
         };
 
         let timezone_row = if let Some(editor) = &self.timezone_editor {
             let save_view = view.clone();
             let cancel_view = view.clone();
             row_base()
-                .child(tile("icons/globe.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Time zone".into(),
-                    Some("Enter an exact system zone such as Asia/Kolkata".into()),
+                    Some("Enter an installed zone such as Asia/Kolkata".into()),
                 ))
                 .child(div().w(px(180.0)).child(TextField::new(editor).small()))
                 .child(
-                    Button::new("timezone-cancel", "Cancel")
+                    push_button("timezone-cancel", "Cancel")
                         .disabled(self.time_busy)
                         .on_click(move |_, _, cx| {
                             cancel_view
@@ -105,20 +156,12 @@ impl Settings {
                 .into_any_element()
         } else {
             let edit_view = view.clone();
-            row_base()
-                .child(tile("icons/globe.svg", accent(), style::ROW_ICON))
-                .child(text_block(
-                    "Time zone".into(),
-                    Some("Validated against zones installed on this system".into()),
-                ))
-                .child(
-                    div()
-                        .text_size(rmac_ui::text_px(13.0))
-                        .text_color(secondary())
-                        .child(snapshot.timezone.clone()),
-                )
-                .child(
-                    Button::new("timezone-edit", "Edit")
+            value_button_row(
+                "Time zone",
+                None,
+                Some(snapshot.timezone.clone().into()),
+                Some(
+                    push_button("timezone-edit", "Set…")
                         .disabled(
                             self.time_busy
                                 || self.clock_editor.is_some()
@@ -128,151 +171,23 @@ impl Settings {
                             edit_view.update(cx, |settings, cx| {
                                 settings.start_timezone_edit(window, cx)
                             });
-                        }),
-                )
-                .into_any_element()
+                        })
+                        .into_any_element(),
+                ),
+            )
         };
 
-        let clock_row = if let Some(editor) = &self.clock_editor {
-            let review_view = view.clone();
-            let cancel_view = view.clone();
-            row_base()
-                .child(tile("icons/clock.svg", accent(), style::ROW_ICON))
-                .child(text_block(
-                    "Set date and time".into(),
-                    Some("Use YYYY-MM-DD HH:MM:SS ±HH:MM".into()),
-                ))
-                .child(div().w(px(250.0)).child(TextField::new(editor).small()))
-                .child(
-                    Button::new("clock-edit-cancel", "Cancel")
-                        .disabled(self.time_busy)
-                        .on_click(move |_, _, cx| {
-                            cancel_view.update(cx, |settings, cx| settings.cancel_clock_edit(cx));
-                        }),
-                )
-                .child(
-                    Button::new("clock-edit-review", "Review…")
-                        .primary()
-                        .disabled(self.time_busy)
-                        .on_click(move |_, _, cx| {
-                            review_view
-                                .update(cx, |settings, cx| settings.prepare_clock_change(cx));
-                        }),
-                )
-                .into_any_element()
-        } else {
-            let edit_view = view.clone();
-            row_base()
-                .child(tile("icons/clock.svg", accent(), style::ROW_ICON))
-                .child(text_block(
-                    "Set date and time".into(),
-                    Some(
-                        if snapshot.ntp_enabled {
-                            "Turn off automatic time to edit the system clock"
-                        } else {
-                            "Authorization may be required"
-                        }
-                        .into(),
-                    ),
-                ))
-                .child(
-                    Button::new("clock-edit", "Edit")
-                        .disabled(
-                            self.time_busy
-                                || snapshot.ntp_enabled
-                                || self.timezone_editor.is_some(),
-                        )
-                        .on_click(move |_, window, cx| {
-                            edit_view
-                                .update(cx, |settings, cx| settings.start_clock_edit(window, cx));
-                        }),
-                )
-                .into_any_element()
-        };
-
-        let ntp_view = view.clone();
-        let automatic = Toggle::new("automatic-time")
-            .checked(snapshot.ntp_enabled)
-            .disabled(self.time_busy || !snapshot.can_ntp)
-            .on_click(move |enabled, _, cx| {
-                ntp_view.update(cx, |settings, cx| settings.set_automatic_time(*enabled, cx));
-            });
-        let synchronization = if !snapshot.can_ntp {
-            "No synchronization service"
-        } else if snapshot.synchronized {
-            "Synchronized"
-        } else if snapshot.ntp_enabled {
-            "Synchronizing"
-        } else {
-            "Off"
-        };
         let mut cards = vec![
-            card(vec![
-                value_row(
-                    "icons/clock.svg",
-                    secondary(),
-                    "Current time".into(),
-                    snapshot
-                        .formatted_local_time_at(
-                            current_system_time_usec().unwrap_or(snapshot.time_usec),
-                        )
-                        .into(),
-                ),
-                value_row(
-                    "icons/refresh-cw.svg",
-                    if snapshot.synchronized {
-                        hsl(0x34c759)
-                    } else {
-                        secondary()
-                    },
-                    "Synchronization".into(),
-                    synchronization.into(),
-                ),
-                row_base()
-                    .child(tile("icons/refresh-cw.svg", accent(), style::ROW_ICON))
-                    .child(text_block(
-                        "Set time automatically".into(),
-                        Some(if snapshot.can_ntp {
-                            "Use the system network time service".into()
-                        } else {
-                            "No compatible network time service is installed".into()
-                        }),
-                    ))
-                    .child(automatic)
-                    .into_any_element(),
-                clock_row,
-            ]),
+            card(vec![automatic]),
+            card(vec![clock_row]),
             card(vec![timezone_row]),
-            card(vec![
-                value_row(
-                    "icons/settings.svg",
-                    secondary(),
-                    "Hardware clock".into(),
-                    if snapshot.local_rtc {
-                        "Local time"
-                    } else {
-                        "UTC"
-                    }
-                    .into(),
-                ),
-                row_base()
-                    .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
-                    .child(text_block(
-                        "Authoritative state".into(),
-                        Some("Live timedated changes · refresh on demand".into()),
-                    ))
-                    .child(refresh)
-                    .into_any_element(),
-            ]),
         ];
         if snapshot.timezones_truncated {
-            cards.push(note_card(
-                "The installed time-zone inventory exceeded the bounded validation list.",
+            cards.push(footnote(
+                "The installed time-zone list was too long to check completely.",
             ));
         }
-        cards.push(note_card(
-            "Manual input includes a numeric UTC offset so daylight-saving transitions are never guessed. The hardware-clock mode remains read-only; UTC is the recommended Linux configuration.",
-        ));
+        cards.push(footer_buttons(vec![refresh]));
         self.pane(cards)
     }
 }

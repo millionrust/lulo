@@ -1,6 +1,9 @@
-//! Open-at-login inventory and review projection.
+//! Open at Login: the Mac's Item | Kind table with its +/− bar.
 
 use super::*;
+
+/// The Kind column starts 230 into the table, as on the Mac.
+const KIND_COLUMN_X: f32 = 230.0;
 
 impl Settings {
     pub(super) fn append_open_at_login(
@@ -9,210 +12,197 @@ impl Settings {
         snapshot: &rmac_login_items::Snapshot,
         cards: &mut Vec<Div>,
     ) {
-        let choose_view = view.clone();
-        cards.push(section_header("Open at login"));
-        cards.push(card(vec![row_base()
-            .child(tile("icons/app-window.svg", accent(), style::ROW_ICON))
-            .child(text_block(
-                "Add application entry".into(),
-                Some("Choose a local .desktop file to review".into()),
-            ))
+        let busy_any = self.login_item_busy.is_some();
+        cards.push(section_with_note(
+            "Open at Login",
+            "These items will open automatically when you log in.",
+            true,
+        ));
+
+        let rows = snapshot
+            .items
+            .iter()
+            .map(|item| {
+                let id = item.id.clone();
+                let toggle_view = view.clone();
+                let reveal_view = view.clone();
+                let reveal_id = item.id.clone();
+                let remove_view = view.clone();
+                let remove_id = item.id.clone();
+                let busy = self.login_item_busy.as_deref() == Some(item.id.as_str());
+                let can_toggle = item.can_toggle && !busy_any;
+                let enabled = item.enabled;
+                let removable = item.user_owned && !item.managed_override;
+                let kind = item.session_detail.clone().unwrap_or_else(|| {
+                    if item.user_owned {
+                        "User entry".into()
+                    } else {
+                        "System entry".into()
+                    }
+                });
+                let content = div()
+                    .flex()
+                    .items_center()
+                    .w_full()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .id(SharedString::from(format!("login-item-{}", item.id)))
+                            .when(can_toggle, |check| {
+                                check.cursor_pointer().on_click(move |_, _, cx| {
+                                    toggle_view.update(cx, |settings, cx| {
+                                        settings.set_login_item_enabled(id.clone(), !enabled, cx);
+                                    });
+                                })
+                            })
+                            .when(!can_toggle, |check| check.opacity(0.5))
+                            .child(form_checkbox(enabled)),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .text_size(rmac_ui::text_px(13.0))
+                            .text_color(label())
+                            .child(item.name.clone()),
+                    )
+                    .child(
+                        div()
+                            .w(px(KIND_COLUMN_X - 2.0 * style::ROW_PADDING - 20.0))
+                            .flex_none()
+                            .text_size(rmac_ui::text_px(13.0))
+                            .text_color(label())
+                            .child(if busy { "Saving…".to_string() } else { kind }),
+                    )
+                    .child(reveal_button(
+                        SharedString::from(format!("reveal-login-item-{}", item.id)),
+                        move |_, cx| {
+                            reveal_view.update(cx, |settings, cx| {
+                                settings.reveal_login_item(reveal_id.clone(), false, cx);
+                            });
+                        },
+                    ))
+                    .when(removable, |row| {
+                        row.child(
+                            div()
+                                .id(SharedString::from(format!("remove-login-item-{}", item.id)))
+                                .w(px(style::INFO_BUTTON))
+                                .flex_none()
+                                .text_center()
+                                .text_size(rmac_ui::text_px(13.0))
+                                .text_color(label())
+                                .cursor_pointer()
+                                .on_click(move |_, _, cx| {
+                                    remove_view.update(cx, |settings, cx| {
+                                        settings.request_remove_login_item(remove_id.clone(), cx);
+                                    });
+                                })
+                                .child("−"),
+                        )
+                    });
+                well_row(
+                    SharedString::from(format!("login-item-row-{}", item.id)),
+                    false,
+                    content,
+                    None,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let header = div()
+            .flex()
+            .w_full()
+            .child(div().flex_1().pl(px(24.0)).child("Item"))
             .child(
-                Button::new("choose-login-item", "Add…")
-                    .busy(self.login_item_busy.as_deref() == Some("choose"))
-                    .disabled(self.login_item_busy.is_some())
-                    .on_click(move |_, _, cx| {
-                        choose_view.update(cx, |settings, cx| settings.choose_login_item(cx));
-                    }),
+                div()
+                    .w(px(KIND_COLUMN_X - 2.0 * style::ROW_PADDING - 20.0))
+                    .flex_none()
+                    .child("Kind"),
             )
-            .into_any_element()]));
+            .child(div().w(px(2.0 * style::INFO_BUTTON + 8.0)).flex_none())
+            .into_any_element();
+        let choose_view = view.clone();
+        let add: Option<FormHandler> = (!busy_any).then(|| {
+            Rc::new(move |_: &mut Window, cx: &mut App| {
+                choose_view.update(cx, |settings, cx| settings.choose_login_item(cx));
+            }) as FormHandler
+        });
+        cards.push(well(Some(header), rows, 3, add, None));
+
         if let Some(preview) = &self.login_item_add {
             let cancel_view = view.clone();
             let confirm_view = view.clone();
-            cards.push(note_card(format!(
-                "Review “{}” ({}). This command will be allowed to run at sign-in. {}",
+            cards.push(footnote(format!(
+                "“{}” ({}) will be allowed to run at login. {}",
                 preview.name,
                 preview.id,
                 if preview.replacing {
-                    "A user entry with this filename exists and will be replaced only after confirmation."
+                    "It replaces your existing entry with the same name."
                 } else {
-                    "The validated entry will be copied into your user autostart directory."
+                    "A copy is placed in your autostart folder."
                 }
             )));
-            cards.push(card(vec![row_base()
-                .child(tile(
-                    "icons/info.svg",
-                    rmac_ui::mac::warning_text(),
-                    style::ROW_ICON,
-                ))
-                .child(text_block(
-                    "Command at sign-in".into(),
+            cards.push(card(vec![
+                value_button_row(
+                    "Command at login",
                     Some(preview.command.clone().into()),
-                ))
-                .into_any_element()]));
-            cards.push(card(vec![row_base()
-                .child(tile("icons/info.svg", secondary(), style::ROW_ICON))
-                .child(text_block(
-                    if preview.replacing {
-                        "Replace existing login item"
-                    } else {
-                        "Add login item"
-                    }
-                    .into(),
-                    Some("The installed copy will start enabled".into()),
-                ))
-                .child(
-                    Button::new("cancel-add-login-item", "Cancel")
-                        .disabled(self.login_item_busy.is_some())
+                    None,
+                    None,
+                ),
+                button_row(vec![
+                    push_button("cancel-add-login-item", "Cancel")
+                        .disabled(busy_any)
                         .on_click(move |_, _, cx| {
                             cancel_view.update(cx, |settings, cx| {
                                 settings.login_item_add = None;
                                 cx.notify();
                             });
-                        }),
-                )
-                .child(
+                        })
+                        .into_any_element(),
                     Button::new(
                         "confirm-add-login-item",
                         if preview.replacing { "Replace" } else { "Add" },
                     )
                     .primary()
+                    .h(px(24.0))
                     .busy(self.login_item_busy.as_deref() == Some("add"))
-                    .disabled(self.login_item_busy.is_some())
+                    .disabled(busy_any)
                     .on_click(move |_, _, cx| {
                         confirm_view.update(cx, |settings, cx| settings.confirm_add_login_item(cx));
-                    }),
-                )
-                .into_any_element()]));
-        }
-        if snapshot.items.is_empty() {
-            cards.push(note_card("No effective XDG autostart entries were found."));
-        } else {
-            let rows = snapshot
-                .items
-                .iter()
-                .map(|item| {
-                    let id = item.id.clone();
-                    let reveal_id = item.id.clone();
-                    let toggle_view = view.clone();
-                    let reveal_view = view.clone();
-                    let remove_view = view.clone();
-                    let remove_id = item.id.clone();
-                    let busy = self.login_item_busy.as_deref() == Some(item.id.as_str());
-                    let remove_key = format!("prepare-remove:{}", item.id);
-                    let preparing_remove =
-                        self.login_item_busy.as_deref() == Some(remove_key.as_str());
-                    let reveal_key = format!("reveal:{}", item.id);
-                    let revealing = self.login_item_busy.as_deref() == Some(reveal_key.as_str());
-                    let subtitle = item.session_detail.clone().unwrap_or_else(|| {
-                        if item.user_owned {
-                            "User autostart entry".into()
-                        } else {
-                            "System autostart entry".into()
-                        }
-                    });
-                    row_base()
-                        .child(tile("icons/app-window.svg", accent(), style::ROW_ICON))
-                        .child(text_block(item.name.clone().into(), Some(subtitle.into())))
-                        .when(item.user_owned && !item.managed_override, |row| {
-                            row.child(
-                                Button::new(
-                                    ElementId::from(SharedString::from(format!(
-                                        "remove-login-item-{}",
-                                        item.id
-                                    ))),
-                                    "Remove…",
-                                )
-                                .busy(preparing_remove)
-                                .disabled(self.login_item_busy.is_some())
-                                .on_click(move |_, _, cx| {
-                                    remove_view.update(cx, |settings, cx| {
-                                        settings.request_remove_login_item(remove_id.clone(), cx);
-                                    });
-                                }),
-                            )
-                        })
-                        .child(
-                            Button::new(
-                                ElementId::from(SharedString::from(format!(
-                                    "reveal-login-item-{}",
-                                    item.id
-                                ))),
-                                "Show in Files",
-                            )
-                            .busy(revealing)
-                            .disabled(self.login_item_busy.is_some())
-                            .on_click(move |_, _, cx| {
-                                reveal_view.update(cx, |settings, cx| {
-                                    settings.reveal_login_item(reveal_id.clone(), false, cx);
-                                });
-                            }),
-                        )
-                        .child(
-                            Toggle::new(ElementId::from(SharedString::from(format!(
-                                "login-item-{}",
-                                item.id
-                            ))))
-                            .checked(item.enabled)
-                            .disabled(self.login_item_busy.is_some() || !item.can_toggle)
-                            .on_click(move |enabled, _, cx| {
-                                toggle_view.update(cx, |settings, cx| {
-                                    settings.set_login_item_enabled(id.clone(), *enabled, cx);
-                                });
-                            }),
-                        )
-                        .when(busy, |row| {
-                            row.child(
-                                div()
-                                    .text_size(rmac_ui::text_px(11.0))
-                                    .text_color(secondary())
-                                    .child("Saving…"),
-                            )
-                        })
-                        .into_any_element()
-                })
-                .collect();
-            cards.push(card(rows));
+                    })
+                    .into_any_element(),
+                ]),
+            ]));
         }
         if let Some(preview) = &self.login_item_remove {
             let cancel_view = view.clone();
             let confirm_view = view.clone();
-            cards.push(note_card(format!(
-                "Remove “{}”? Its user-owned desktop entry will be moved to Trash. If a system entry with the same filename exists, it will remain visible but disabled.",
+            cards.push(footnote(format!(
+                "Remove “{}”? Its entry moves to the Bin; the application itself is not deleted. A system entry with the same name stays listed but off.",
                 preview.name
             )));
-            cards.push(card(vec![row_base()
-                .child(tile(
-                    "icons/info.svg",
-                    rmac_ui::mac::warning_text(),
-                    style::ROW_ICON,
-                ))
-                .child(text_block(
-                    "Confirm removal".into(),
-                    Some("This does not delete the application itself".into()),
-                ))
-                .child(
-                    Button::new("cancel-remove-login-item", "Cancel")
-                        .disabled(self.login_item_busy.is_some())
-                        .on_click(move |_, _, cx| {
-                            cancel_view.update(cx, |settings, cx| {
-                                settings.login_item_remove = None;
-                                cx.notify();
-                            });
-                        }),
-                )
-                .child(
-                    Button::new("confirm-remove-login-item", "Move to Trash")
-                        .primary()
-                        .busy(self.login_item_busy.as_deref() == Some("remove"))
-                        .disabled(self.login_item_busy.is_some())
-                        .on_click(move |_, _, cx| {
-                            confirm_view.update(cx, |settings, cx| {
-                                settings.confirm_remove_login_item(cx);
-                            });
-                        }),
-                )
-                .into_any_element()]));
+            cards.push(footer_buttons(vec![
+                push_button("cancel-remove-login-item", "Cancel")
+                    .disabled(busy_any)
+                    .on_click(move |_, _, cx| {
+                        cancel_view.update(cx, |settings, cx| {
+                            settings.login_item_remove = None;
+                            cx.notify();
+                        });
+                    })
+                    .into_any_element(),
+                Button::new("confirm-remove-login-item", "Move to Bin")
+                    .primary()
+                    .h(px(24.0))
+                    .busy(self.login_item_busy.as_deref() == Some("remove"))
+                    .disabled(busy_any)
+                    .on_click(move |_, _, cx| {
+                        confirm_view.update(cx, |settings, cx| {
+                            settings.confirm_remove_login_item(cx);
+                        });
+                    })
+                    .into_any_element(),
+            ]));
         }
     }
 }

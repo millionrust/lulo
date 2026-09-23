@@ -9,7 +9,7 @@ impl Settings {
     pub(in crate::controller) fn render_login_items(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let refresh_view = view.clone();
-        let refresh = Button::new("refresh-login-items", "Refresh")
+        let refresh = push_button("refresh-login-items", "Refresh")
             .busy(
                 self.login_item_busy.as_deref() == Some("refresh")
                     || self.login_items_stream_refreshing,
@@ -21,22 +21,21 @@ impl Settings {
             )
             .on_click(move |_, _, cx| {
                 refresh_view.update(cx, |settings, cx| settings.refresh_login_items(cx));
-            });
+            })
+            .into_any_element();
         let Some(snapshot) = &self.login_items else {
             return self.pane(vec![
-                card(vec![row_base()
-                    .child(tile("icons/app-window.svg", secondary(), style::ROW_ICON))
-                    .child(text_block(
-                        "Open at login".into(),
-                        Some("XDG autostart directories".into()),
-                    ))
-                    .child(refresh)
-                    .into_any_element()]),
-                note_card(if self.login_items_loading {
-                    "Reading effective XDG autostart entries…"
+                section_with_note(
+                    "Open at Login",
+                    "These items will open automatically when you log in.",
+                    true,
+                ),
+                group().child(group_placeholder(if self.login_items_loading {
+                    "Loading…"
                 } else {
-                    "Autostart entries are unavailable. No private fallback toggles are shown."
-                }),
+                    "Login items are unavailable."
+                })),
+                footer_buttons(vec![refresh]),
             ]);
         };
 
@@ -45,18 +44,14 @@ impl Settings {
         self.append_background_services(view, snapshot, &mut cards);
 
         if !snapshot.issues.is_empty() {
-            cards.push(section_header("Entries needing attention"));
+            cards.push(section_header("Entries Needing Attention"));
             cards.push(card(
                 snapshot
                     .issues
                     .iter()
                     .map(|issue| {
                         row_base()
-                            .child(tile(
-                                "icons/info.svg",
-                                rmac_ui::mac::warning_text(),
-                                style::ROW_ICON,
-                            ))
+                            .items_start()
                             .child(text_block(
                                 issue.file.clone().into(),
                                 Some(issue.detail.clone().into()),
@@ -66,23 +61,12 @@ impl Settings {
                     .collect(),
             ));
         }
-        let refresh_row = row_base()
-            .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
-            .child(text_block(
-                "Authoritative state".into(),
-                Some("Live XDG files · systemd user unit changes".into()),
-            ))
-            .child(refresh)
-            .into_any_element();
-        cards.push(card(vec![refresh_row]));
         if snapshot.truncated {
-            cards.push(note_card(
-                "The autostart inventory exceeded the bounded display limit.",
+            cards.push(footnote(
+                "Some login items are not shown because the list is too long.",
             ));
         }
-        cards.push(note_card(
-            "Changes to systemd user services take effect at the next sign-in; this pane does not start or stop running services. Adding or removing systemd unit files remains an administrator workflow.",
-        ));
+        cards.push(footer_buttons(vec![refresh]));
         self.pane(cards)
     }
 }

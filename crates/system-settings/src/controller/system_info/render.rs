@@ -53,6 +53,8 @@ impl Settings {
         ];
         self.pane(cards)
     }
+    /// macOS 26 About: the machine centred over its name, then the Name,
+    /// chip and memory group, the operating system and the startup volume.
     pub(in crate::controller) fn about_body(&self, cx: &Context<Self>) -> Div {
         let si = &self.sysinfo;
         let view = cx.entity();
@@ -60,14 +62,14 @@ impl Settings {
             let save_view = view.clone();
             let cancel_view = view.clone();
             row_base()
-                .child(tile("icons/info.svg", secondary(), style::ROW_ICON))
+                .items_start()
                 .child(text_block(
-                    "Hostname".into(),
+                    "Name".into(),
                     Some("Letters, numbers, and hyphens · 63 bytes maximum".into()),
                 ))
-                .child(div().w(px(190.0)).child(TextField::new(editor).small()))
+                .child(div().w(px(170.0)).child(TextField::new(editor).small()))
                 .child(
-                    Button::new("hostname-cancel", "Cancel")
+                    push_button("hostname-cancel", "Cancel")
                         .disabled(self.system_data_busy)
                         .on_click(move |_, _, cx| {
                             cancel_view
@@ -77,6 +79,7 @@ impl Settings {
                 .child(
                     Button::new("hostname-save", "Save")
                         .primary()
+                        .h(px(24.0))
                         .busy(self.system_data_busy)
                         .disabled(self.system_data_busy)
                         .on_click(move |_, _, cx| {
@@ -86,152 +89,143 @@ impl Settings {
                 .into_any_element()
         } else {
             let edit_view = view.clone();
-            row_base()
-                .child(tile("icons/info.svg", secondary(), style::ROW_ICON))
-                .child(text_block(
-                    "Hostname".into(),
-                    si.hostname_unavailable_reason.clone().map(Into::into),
-                ))
-                .child(
-                    div()
-                        .text_size(rmac_ui::text_px(13.0))
-                        .text_color(secondary())
-                        .child(si.display_hostname().to_owned()),
-                )
-                .when(si.hostname_mutable, |row| {
-                    row.child(Button::new("hostname-edit", "Edit").on_click(
-                        move |_, window, cx| {
+            value_button_row(
+                "Name",
+                si.hostname_unavailable_reason.clone().map(Into::into),
+                Some(si.display_hostname().to_owned().into()),
+                si.hostname_mutable.then(|| {
+                    push_button("hostname-edit", "Edit…")
+                        .on_click(move |_, window, cx| {
                             edit_view.update(cx, |settings, cx| {
                                 settings.start_hostname_edit(window, cx)
                             });
-                        },
-                    ))
-                })
-                .into_any_element()
+                        })
+                        .into_any_element()
+                }),
+            )
         };
 
-        let mut facts = Vec::new();
-        if let Some(vendor) = &si.hardware_vendor {
-            facts.push(value_row(
-                "icons/monitor.svg",
-                secondary(),
-                "Manufacturer".into(),
-                vendor.clone().into(),
-            ));
-        }
-        facts.extend([
-            value_row(
-                "icons/monitor.svg",
-                secondary(),
-                "Model".into(),
-                si.hardware_model
-                    .clone()
-                    .unwrap_or_else(|| "—".into())
-                    .into(),
-            ),
-            value_row(
-                "icons/settings.svg",
-                secondary(),
-                "Processor".into(),
-                si.processor.clone().unwrap_or_else(|| "—".into()).into(),
-            ),
-            value_row(
-                "icons/database.svg",
-                secondary(),
-                "Memory".into(),
-                si.memory.clone().unwrap_or_else(|| "—".into()).into(),
-            ),
-            value_row(
-                "icons/refresh-cw.svg",
-                secondary(),
-                "Operating System".into(),
-                si.operating_system.clone().into(),
-            ),
-            value_row(
-                "icons/info.svg",
-                secondary(),
-                "Kernel".into(),
-                si.kernel.clone().into(),
-            ),
-            value_row(
-                "icons/settings.svg",
-                secondary(),
-                "Architecture".into(),
-                si.architecture.clone().into(),
-            ),
-        ]);
+        let mut facts = vec![hostname_row];
+        let chip = si.processor.clone().unwrap_or_else(|| "—".into());
+        facts.push(fact_row("Chip", chip));
+        facts.push(fact_row(
+            "Memory",
+            si.memory.clone().unwrap_or_else(|| "—".into()),
+        ));
         if let Some(graphics) = &si.graphics {
-            facts.push(value_row(
-                "icons/monitor.svg",
-                secondary(),
-                "Graphics".into(),
-                graphics.clone().into(),
-            ));
+            facts.push(fact_row("Graphics", graphics.clone()));
         }
-        if let Some(session) = &si.session {
-            facts.push(value_row(
-                "icons/panel-top.svg",
-                secondary(),
-                "Session".into(),
-                session.clone().into(),
-            ));
-        }
+        facts.push(fact_row("Architecture", si.architecture.clone()));
+
+        let mut session = Vec::new();
+        session.push(
+            large_row(
+                tile26("icons/settings.svg", hsl(0x8e8e93)),
+                si.operating_system.clone(),
+                None,
+            )
+            .child(trailing_value(si.kernel.clone()))
+            .into_any_element(),
+        );
         if let Some(desktop) = &si.desktop {
-            facts.push(value_row(
-                "icons/panel-top.svg",
-                secondary(),
-                "Desktop".into(),
-                desktop.clone().into(),
-            ));
+            session.push(fact_row("Desktop", desktop.clone()));
+        }
+        if let Some(name) = &si.session {
+            session.push(fact_row("Session", name.clone()));
+        }
+
+        let model = si
+            .hardware_model
+            .clone()
+            .unwrap_or_else(|| si.display_hostname().to_owned());
+        let mut body = div()
+            .v_flex()
+            .child(
+                div()
+                    .v_flex()
+                    .items_center()
+                    .pt(px(10.0))
+                    .pb(px(20.0))
+                    .child(glyph("icons/monitor.svg", 96.0, label()))
+                    .child(
+                        div()
+                            .mt(px(8.0))
+                            .text_size(rmac_ui::text_px(26.0))
+                            .line_height(px(31.0))
+                            .font_weight(rmac_ui::mac::BOLD)
+                            .text_color(label())
+                            .child(model),
+                    )
+                    .when_some(si.hardware_vendor.clone(), |header, vendor| {
+                        header.child(
+                            div()
+                                .mt(px(2.0))
+                                .text_size(rmac_ui::text_px(11.0))
+                                .line_height(px(14.0))
+                                .text_color(secondary())
+                                .child(vendor),
+                        )
+                    }),
+            )
+            .child(card(facts))
+            .child(section_header("Operating System"))
+            .child(card(session));
+
+        if let Some(volume) = self.home_volume() {
+            if let Some(usage) = volume.usage {
+                let storage_view = view.clone();
+                body = body.child(section_header("Storage")).child(card(vec![
+                    large_row(
+                        tile26("icons/hard-drive.svg", hsl(0x8e8e93)),
+                        volume.mount.name.clone(),
+                        None,
+                    )
+                    .child(trailing_value(format!(
+                        "{} available of {}",
+                        fmt_gb(usage.available),
+                        fmt_gb(usage.total)
+                    )))
+                    .into_any_element(),
+                    button_row(vec![push_button("about-storage", "Storage Settings…")
+                        .on_click(move |_, _, cx| {
+                            storage_view
+                                .update(cx, |settings, cx| settings.push(SubPage::Storage, cx));
+                        })
+                        .into_any_element()]),
+                ]));
+            }
         }
 
         let refresh_view = view.clone();
         let diagnostics_view = view.clone();
-        let diagnostics = card(vec![
-            row_base()
-                .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
-                .child(text_block(
-                    "System information".into(),
-                    Some("Refresh facts changed outside rmac".into()),
-                ))
+        body.child(
+            div()
+                .flex()
+                .justify_center()
+                .gap(px(10.0))
+                .mt(px(style::GROUP_GAP))
                 .child(
-                    Button::new("refresh-system-information", "Refresh")
-                        .busy(self.system_data_busy)
-                        .disabled(self.system_data_busy)
-                        .on_click(move |_, _, cx| {
-                            refresh_view
-                                .update(cx, |settings, cx| settings.refresh_system_info(cx));
-                        }),
-                )
-                .into_any_element(),
-            row_base()
-                .child(tile("icons/info.svg", accent(), style::ROW_ICON))
-                .child(text_block(
-                    "System report".into(),
-                    Some(
-                        "Excludes hostname, username, serial numbers, addresses, and paths".into(),
-                    ),
-                ))
-                .child(
-                    Button::new(
+                    push_button(
                         "copy-system-report",
                         if self.diagnostics_copied {
                             "Copied"
                         } else {
-                            "Copy"
+                            "Copy System Report"
                         },
                     )
                     .on_click(move |_, _, cx| {
                         diagnostics_view.update(cx, |settings, cx| settings.copy_diagnostics(cx));
                     }),
                 )
-                .into_any_element(),
-        ]);
-
-        div()
-            .v_flex()
-            .child(card(vec![hostname_row]))
-            .child(card(facts))
-            .child(diagnostics)
+                .child(
+                    push_button("refresh-system-information", "Refresh")
+                        .busy(self.system_data_busy)
+                        .disabled(self.system_data_busy)
+                        .on_click(move |_, _, cx| {
+                            refresh_view
+                                .update(cx, |settings, cx| settings.refresh_system_info(cx));
+                        }),
+                ),
+        )
     }
 }

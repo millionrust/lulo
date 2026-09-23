@@ -23,17 +23,16 @@ pub(in crate::controller) fn focus_schedule_row(
     });
     let edit_view = view.clone();
     row_base()
-        .child(tile("icons/clock.svg", accent(), style::ROW_ICON))
+        .child(tile("icons/clock.svg", hsl(0x5e5ce6), style::ROW_ICON))
         .child(text_block(
             mode_name.to_owned().into(),
             Some(focus_schedule_summary(schedule).into()),
         ))
         .child(
-            Button::new(
+            push_button(
                 SharedString::from(format!("focus-edit-schedule-{schedule_id}")),
-                "Edit",
+                "Edit…",
             )
-            .ghost()
             .disabled(disabled)
             .on_click(move |_, _, cx| {
                 let schedule_id = schedule_id.clone();
@@ -65,7 +64,7 @@ pub(in crate::controller) fn focus_schedule_toggle_row(
         });
     });
     row_base()
-        .child(tile("icons/moon.svg", accent(), style::ROW_ICON))
+        .child(tile("icons/moon.svg", hsl(0x5e5ce6), style::ROW_ICON))
         .child(text_block(
             mode_name.to_owned().into(),
             Some("Turn this schedule on automatically".into()),
@@ -179,8 +178,8 @@ pub(in crate::controller) fn focus_urgent_row(
     });
     row_base()
         .child(text_block(
-            "Allow urgent notifications".into(),
-            Some("Let urgent notifications through while this Focus is on".into()),
+            "Time Sensitive Notifications".into(),
+            Some("Let notifications marked urgent through while this Focus is on".into()),
         ))
         .child(toggle)
         .into_any_element()

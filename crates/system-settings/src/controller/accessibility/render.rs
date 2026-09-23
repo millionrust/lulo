@@ -1,153 +1,206 @@
-//! Accessibility settings presentation.
+//! Accessibility settings presentation, laid out like macOS 26: a header
+//! card, then Vision and Motor lists whose rows open section pages
+//! (design-lab/settings.html).
 
 use super::*;
 
 mod motor;
 mod screen_reader;
 
+const SCREEN_READER: &str = "Screen Reader";
+const DISPLAY: &str = "Display";
+const MOTION: &str = "Motion";
+const POINTER_CONTROL: &str = "Pointer Control";
+
+fn page_row(
+    view: &Entity<Settings>,
+    icon: &'static str,
+    color: Hsla,
+    page: &'static str,
+) -> AnyElement {
+    let open_view = view.clone();
+    icon_nav_row(
+        SharedString::from(format!("accessibility-page-{page}")),
+        tile(icon, color, style::ROW_ICON).into_any_element(),
+        page,
+        None,
+        move |_, cx| {
+            open_view.update(cx, |settings, cx| {
+                settings.push(
+                    SubPage::AccessibilityPage {
+                        page: page.to_owned(),
+                    },
+                    cx,
+                );
+            });
+        },
+    )
+}
+
 impl Settings {
     pub(in crate::controller) fn render_accessibility(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
-        let refresh_view = view.clone();
-        let gtk_refresh_view = view.clone();
-        let mut cards = vec![card(vec![row_base()
-            .child(tile("icons/accessibility.svg", accent(), style::ROW_ICON))
-            .child(text_block(
-                "Visual preferences".into(),
-                Some("Live across rmac apps and shell surfaces".into()),
-            ))
-            .child(
-                Button::new("accessibility-refresh", "Refresh")
-                    .busy(self.theme_busy || self.theme_stream_refreshing)
-                    .disabled(self.theme_loading || self.theme_busy || self.theme_stream_refreshing)
-                    .on_click(move |_, _, cx| {
-                        refresh_view.update(cx, |settings, cx| settings.refresh_theme(cx));
-                    }),
-            )
-            .into_any_element()])];
-        if self.theme_loading {
-            cards.push(note_card("Loading accessibility preferences…"));
-            return self.pane(cards);
+        let keyboard_view = view.clone();
+        let cards = vec![
+            header_card(
+                tile26("icons/accessibility.svg", accent()),
+                "Accessibility",
+                "Personalise rmac in ways that work best for you with accessibility features for vision and motor.",
+                None,
+            ),
+            section_header("Vision"),
+            card(vec![
+                page_row(&view, "icons/accessibility.svg", hsl(0x1d1d1f), SCREEN_READER),
+                page_row(&view, "icons/monitor.svg", accent(), DISPLAY),
+                page_row(&view, "icons/sparkles.svg", hsl(0x34c759), MOTION),
+            ]),
+            section_header("Motor"),
+            card(vec![
+                icon_nav_row(
+                    "accessibility-keyboard",
+                    tile("icons/keyboard.svg", hsl(0x8e8e93), style::ROW_ICON).into_any_element(),
+                    "Keyboard",
+                    None,
+                    move |_, cx| {
+                        keyboard_view
+                            .update(cx, |settings, cx| settings.select_category("Keyboard", cx));
+                    },
+                ),
+                page_row(&view, "icons/mouse.svg", hsl(0x8e8e93), POINTER_CONTROL),
+            ]),
+        ];
+        self.pane(cards)
+    }
+
+    /// Accessibility › Display, Motion, Screen Reader or Pointer Control.
+    pub(in crate::controller) fn accessibility_page_body(
+        &self,
+        page: &str,
+        cx: &Context<Self>,
+    ) -> Div {
+        let view = cx.entity();
+        match page {
+            DISPLAY => self.accessibility_display_page(view),
+            MOTION => self.accessibility_motion_page(view),
+            SCREEN_READER => self.accessibility_screen_reader_page(view),
+            POINTER_CONTROL => self.accessibility_pointer_page(cx),
+            _ => note_card("This Accessibility page is not available."),
         }
-        if let Some(theme) = &self.theme {
+    }
+
+    fn theme_refresh_footer(&self, view: Entity<Self>) -> Div {
+        footer_buttons(vec![push_button("accessibility-refresh", "Refresh")
+            .disabled(
+                self.theme_loading
+                    || self.theme_busy
+                    || self.theme_stream_refreshing
+                    || self.gtk_text_loading
+                    || self.gtk_text_busy
+                    || self.gtk_text_stream_refreshing,
+            )
+            .on_click(move |_, _, cx| {
+                view.update(cx, |settings, cx| {
+                    settings.refresh_theme(cx);
+                    settings.refresh_gtk_text(cx);
+                });
+            })
+            .into_any_element()])
+    }
+
+    /// Display: contrast, then a Text section with the rmac and GTK text
+    /// sizes, as the Mac's Display page groups them.
+    fn accessibility_display_page(&self, view: Entity<Self>) -> Div {
+        let mut body = div().v_flex();
+        let theme_enabled = !self.theme_busy && !self.theme_stream_refreshing;
+        let mut text_rows = Vec::new();
+        if self.theme_loading {
+            body = body.child(footnote("Loading accessibility preferences…"));
+        } else if let Some(theme) = &self.theme {
             let preferences = &theme.preferences;
-            cards.push(section_header("Vision"));
-            cards.push(card(vec![
-                theme_segment_row(
-                    view.clone(),
-                    "accessibility-contrast",
-                    "Display contrast",
-                    &THEME_CONTRAST_OPTIONS,
-                    match preferences.contrast {
-                        rmac_theme::ContrastPreference::Automatic => 0,
-                        rmac_theme::ContrastPreference::Normal => 1,
-                        rmac_theme::ContrastPreference::Higher => 2,
-                    },
-                    !self.theme_busy && !self.theme_stream_refreshing,
-                ),
-                theme_segment_row(
-                    view.clone(),
-                    "accessibility-motion",
-                    "Interface motion",
-                    &THEME_MOTION_OPTIONS,
-                    match preferences.motion {
-                        rmac_theme::MotionPreferenceSetting::Automatic => 0,
-                        rmac_theme::MotionPreferenceSetting::Full => 1,
-                        rmac_theme::MotionPreferenceSetting::Reduced => 2,
-                    },
-                    !self.theme_busy && !self.theme_stream_refreshing,
-                ),
-                theme_segment_row(
-                    view.clone(),
-                    "accessibility-text-scale",
-                    "Text size",
-                    &THEME_TEXT_SCALE_OPTIONS,
-                    match preferences.text_scale {
-                        rmac_theme::TextScalePreference::Standard => 0,
-                        rmac_theme::TextScalePreference::Large => 1,
-                        rmac_theme::TextScalePreference::ExtraLarge => 2,
-                    },
-                    !self.theme_busy && !self.theme_stream_refreshing,
-                ),
-                value_row(
-                    "icons/info.svg",
-                    secondary(),
-                    "Effective visual mode".into(),
-                    format!(
-                        "{} contrast · {} motion · {}% text",
-                        match theme.effective.contrast {
-                            rmac_appearance::Contrast::Normal => "Normal",
-                            rmac_appearance::Contrast::Higher => "Higher",
-                        },
-                        match theme.effective.motion {
-                            rmac_appearance::MotionPreference::Full => "Full",
-                            rmac_appearance::MotionPreference::Reduced => "Reduced",
-                        },
-                        (theme.effective.text_scale.factor() * 100.0).round() as u16,
-                    )
-                    .into(),
-                ),
-            ]));
+            body = body.child(card(vec![theme_segment_row(
+                view.clone(),
+                "accessibility-contrast",
+                "Contrast",
+                &THEME_CONTRAST_OPTIONS,
+                match preferences.contrast {
+                    rmac_theme::ContrastPreference::Automatic => 0,
+                    rmac_theme::ContrastPreference::Normal => 1,
+                    rmac_theme::ContrastPreference::Higher => 2,
+                },
+                theme_enabled,
+            )]));
+            text_rows.push(theme_segment_row(
+                view.clone(),
+                "accessibility-text-scale",
+                "Text size",
+                &THEME_TEXT_SCALE_OPTIONS,
+                match preferences.text_scale {
+                    rmac_theme::TextScalePreference::Standard => 0,
+                    rmac_theme::TextScalePreference::Large => 1,
+                    rmac_theme::TextScalePreference::ExtraLarge => 2,
+                },
+                theme_enabled,
+            ));
         } else {
-            cards.push(note_card(
+            body = body.child(note_card(
                 "The rmac visual accessibility preference service is unavailable.",
             ));
         }
-
-        cards.push(section_header("GTK Application Text"));
-        cards.push(card(vec![row_base()
-            .child(tile("icons/app-window.svg", secondary(), style::ROW_ICON))
-            .child(text_block(
-                "GTK text scaling".into(),
-                Some("GNOME interface authority; separate from rmac and display scale".into()),
-            ))
-            .child(
-                Button::new("gtk-text-refresh", "Refresh")
-                    .busy(self.gtk_text_busy || self.gtk_text_stream_refreshing)
-                    .disabled(
-                        self.gtk_text_loading
-                            || self.gtk_text_busy
-                            || self.gtk_text_stream_refreshing,
-                    )
-                    .on_click(move |_, _, cx| {
-                        gtk_refresh_view.update(cx, |settings, cx| settings.refresh_gtk_text(cx));
-                    }),
-            )
-            .into_any_element()]));
-        if self.gtk_text_loading {
-            cards.push(note_card("Loading GTK text scaling from GSettings…"));
-        } else if let Some(snapshot) = &self.gtk_text {
+        let mut gtk_note = None;
+        if let Some(snapshot) = self.gtk_text.as_ref().filter(|_| !self.gtk_text_loading) {
             if snapshot.available {
                 let selected = GTK_TEXT_SCALE_OPTIONS
                     .iter()
                     .position(|(_, factor)| (snapshot.factor - factor).abs() < 0.001);
-                cards.push(card(vec![
-                    gtk_text_scale_row(
-                        view.clone(),
-                        selected,
-                        snapshot.writable
-                            && !self.gtk_text_busy
-                            && !self.gtk_text_stream_refreshing,
-                    ),
-                    value_row(
-                        "icons/app-window.svg",
-                        secondary(),
-                        "Effective GTK text".into(),
-                        format!("{}%", (snapshot.factor * 100.0).round() as u16).into(),
-                    ),
-                ]));
-                if let Some(detail) = &snapshot.detail {
-                    cards.push(note_card(detail.clone()));
-                }
+                text_rows.push(gtk_text_scale_row(
+                    view.clone(),
+                    selected,
+                    snapshot.writable && !self.gtk_text_busy && !self.gtk_text_stream_refreshing,
+                ));
+                gtk_note = snapshot.detail.clone();
             } else {
-                cards.push(note_card(snapshot.detail.clone().unwrap_or_else(|| {
+                gtk_note = Some(snapshot.detail.clone().unwrap_or_else(|| {
                     "The GNOME interface text-scaling authority is unavailable.".into()
-                })));
+                }));
             }
         }
+        if !text_rows.is_empty() {
+            body = body
+                .child(section_header("Text"))
+                .child(card(text_rows))
+                .child(footnote(
+                    "Text size applies to rmac's own interface text; GTK application text changes GNOME applications. Neither changes display scaling.",
+                ));
+        }
+        if let Some(note) = gtk_note {
+            body = body.child(footnote(note));
+        }
+        body.child(self.theme_refresh_footer(view))
+    }
 
-        self.append_accessibility_motor(view.clone(), cx, &mut cards);
-        self.append_accessibility_screen_reader(view, &mut cards);
-        self.pane(cards)
+    /// Motion: the rmac motion preference.
+    fn accessibility_motion_page(&self, view: Entity<Self>) -> Div {
+        let mut body = div().v_flex();
+        if self.theme_loading {
+            body = body.child(footnote("Loading accessibility preferences…"));
+        } else if let Some(theme) = &self.theme {
+            body = body.child(card(vec![theme_segment_row(
+                view.clone(),
+                "accessibility-motion",
+                "Motion",
+                &THEME_MOTION_OPTIONS,
+                match theme.preferences.motion {
+                    rmac_theme::MotionPreferenceSetting::Automatic => 0,
+                    rmac_theme::MotionPreferenceSetting::Full => 1,
+                    rmac_theme::MotionPreferenceSetting::Reduced => 2,
+                },
+                !self.theme_busy && !self.theme_stream_refreshing,
+            )]));
+        } else {
+            body = body.child(note_card(
+                "The rmac visual accessibility preference service is unavailable.",
+            ));
+        }
+        body.child(self.theme_refresh_footer(view))
     }
 }

@@ -89,17 +89,19 @@ pub(in crate::controller) fn shortcut_configuration_available(
     )
 }
 
+/// A "Results from System" row: 20 pt icon, the provider name and a switch.
+#[allow(clippy::too_many_arguments)]
 pub(in crate::controller) fn spotlight_provider_row(
     view: Entity<Settings>,
     id: &'static str,
+    icon: &'static str,
+    color: Hsla,
     title: &'static str,
-    subtitle: &'static str,
     checked: bool,
     enabled: bool,
 ) -> AnyElement {
     let toggle_view = view.clone();
-    row_base()
-        .child(text_block(title.into(), Some(subtitle.into())))
+    icon_row(tile(icon, color, style::ROW_ICON).into_any_element(), title)
         .child(
             Toggle::new(ElementId::from(SharedString::from(format!(
                 "spotlight-provider-{id}"

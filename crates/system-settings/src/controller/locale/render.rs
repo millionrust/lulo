@@ -6,102 +6,133 @@ mod formats;
 mod input_sources;
 
 impl Settings {
+    /// macOS 26 Language & Region (design-lab/settings.html): Preferred
+    /// Languages as a one-row list with Edit…, then the Region group opened
+    /// by the centred format examples, then the Keyboard section; Refresh and
+    /// Revert sit under the last group.
     pub(in crate::controller) fn render_language_region(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let refresh_view = view.clone();
-        let refresh = Button::new("refresh-language-region", "Refresh")
+        let refresh = push_button("refresh-language-region", "Refresh")
             .busy(self.locale_busy || self.locale_stream_refreshing)
             .disabled(self.locale_loading || self.locale_busy || self.locale_stream_refreshing)
             .on_click(move |_, _, cx| {
                 refresh_view.update(cx, |settings, cx| settings.refresh_locale(cx));
-            });
+            })
+            .into_any_element();
         let Some(snapshot) = &self.locale else {
             return self.pane(vec![
-                card(vec![row_base()
-                    .child(tile("icons/languages.svg", secondary(), style::ROW_ICON))
-                    .child(text_block(
-                        "System language and formats".into(),
-                        Some("systemd-localed".into()),
-                    ))
-                    .child(refresh)
-                    .into_any_element()]),
                 note_card(if self.locale_loading {
-                    "Reading authoritative locale state and installed locales…"
+                    "Reading the system language and formats…"
                 } else {
-                    "The system locale service is unavailable. No local fallback controls are shown."
+                    "The system locale service is unavailable."
                 }),
+                footer_buttons(vec![refresh]),
             ]);
         };
 
-        let language_row = if let Some(editor) = &self.locale_editor {
+        // Preferred Languages: the list row, then Edit… (or the editor).
+        let mut languages = group().child(group_heading("Preferred Languages", None));
+        if let Some(editor) = &self.locale_editor {
             let cancel_view = view.clone();
             let apply_view = view.clone();
-            row_base()
-                .child(tile("icons/languages.svg", accent(), style::ROW_ICON))
-                .child(text_block(
-                    "Language".into(),
-                    Some("Enter an exact locale installed on this computer".into()),
-                ))
-                .child(div().w(px(180.0)).child(TextField::new(editor).small()))
+            languages = languages
                 .child(
-                    Button::new("locale-cancel", "Cancel")
+                    row_base()
+                        .child(text_block(
+                            "Language".into(),
+                            Some("Enter a locale installed on this computer".into()),
+                        ))
+                        .child(div().w(px(200.0)).child(TextField::new(editor).small())),
+                )
+                .child(button_row(vec![
+                    push_button("locale-cancel", "Cancel")
                         .disabled(self.locale_busy)
                         .on_click(move |_, _, cx| {
                             cancel_view.update(cx, |settings, cx| settings.cancel_locale_edit(cx));
-                        }),
-                )
-                .child(
+                        })
+                        .into_any_element(),
                     Button::new("locale-apply", "Apply")
                         .primary()
                         .busy(self.locale_busy)
                         .disabled(self.locale_busy)
                         .on_click(move |_, _, cx| {
                             apply_view.update(cx, |settings, cx| settings.submit_locale(cx));
-                        }),
-                )
-                .into_any_element()
+                        })
+                        .into_any_element(),
+                ]));
         } else {
             let edit_view = view.clone();
-            row_base()
-                .child(tile("icons/languages.svg", accent(), style::ROW_ICON))
-                .child(text_block(
-                    "Language".into(),
-                    Some("Validated against the system's installed locales".into()),
-                ))
-                .child(
+            languages = languages
+                .child(well_row(
+                    "preferred-language",
+                    false,
                     div()
+                        .w_full()
+                        .flex()
+                        .items_center()
+                        .justify_between()
                         .text_size(rmac_ui::text_px(13.0))
-                        .text_color(secondary())
-                        .child(snapshot.language().to_owned()),
-                )
-                .child(
-                    Button::new("locale-edit", "Edit")
-                        .disabled(
-                            self.locale_busy
-                                || self.region_editor.is_some()
-                                || self.x11_layout_editor.is_some(),
+                        .child(
+                            div()
+                                .text_color(label())
+                                .child(snapshot.language().to_owned()),
                         )
-                        .on_click(move |_, window, cx| {
-                            edit_view.update(cx, |settings, cx| {
-                                settings.start_locale_edit(window, cx);
-                            });
-                        }),
-                )
-                .into_any_element()
-        };
+                        .child(div().text_color(secondary()).child("Primary")),
+                    None,
+                ))
+                .child(button_row(vec![push_button("locale-edit", "Edit…")
+                    .disabled(
+                        self.locale_busy
+                            || self.region_editor.is_some()
+                            || self.x11_layout_editor.is_some(),
+                    )
+                    .on_click(move |_, window, cx| {
+                        edit_view.update(cx, |settings, cx| {
+                            settings.start_locale_edit(window, cx);
+                        });
+                    })
+                    .into_any_element()]));
+        }
+        let mut cards = vec![languages];
+        if let Some(editor) = &self.locale_editor {
+            let value = editor.read(cx).value();
+            match snapshot.preview_language(value.trim()) {
+                Ok(preview) => {
+                    cards.push(section_header("Changes applied to the system"));
+                    cards.push(card(
+                        preview
+                            .iter()
+                            .map(|assignment| {
+                                fact_row(assignment.key.clone(), assignment.value.clone())
+                            })
+                            .collect(),
+                    ));
+                    if preview
+                        .iter()
+                        .any(|assignment| assignment.key.starts_with("LC_"))
+                    {
+                        cards.push(footnote(
+                            "Existing format overrides are kept. Applying changes the language only.",
+                        ));
+                    }
+                }
+                Err(error) => cards.push(note_card(error.to_string())),
+            }
+        }
 
+        // Region: the examples, then the region with Edit… (or the editor).
         let region_row = if let Some(editor) = &self.region_editor {
             let cancel_view = view.clone();
             let apply_view = view.clone();
             row_base()
-                .child(tile("icons/globe.svg", accent(), style::ROW_ICON))
                 .child(text_block(
                     "Region".into(),
-                    Some("Sets date, number, currency, and regional formats".into()),
+                    Some("Sets date, number, currency and measurement formats".into()),
                 ))
-                .child(div().w(px(180.0)).child(TextField::new(editor).small()))
+                .child(div().w(px(160.0)).child(TextField::new(editor).small()))
                 .child(
-                    Button::new("region-cancel", "Cancel")
+                    push_button("region-cancel", "Cancel")
                         .disabled(self.locale_busy)
                         .on_click(move |_, _, cx| {
                             cancel_view.update(cx, |settings, cx| settings.cancel_region_edit(cx));
@@ -124,20 +155,12 @@ impl Settings {
             } else {
                 snapshot.region_locale().to_owned()
             };
-            row_base()
-                .child(tile("icons/globe.svg", accent(), style::ROW_ICON))
-                .child(text_block(
-                    "Region".into(),
-                    Some("System-wide formats, independent of display language".into()),
-                ))
-                .child(
-                    div()
-                        .text_size(rmac_ui::text_px(13.0))
-                        .text_color(secondary())
-                        .child(value),
-                )
-                .child(
-                    Button::new("region-edit", "Edit")
+            value_button_row(
+                "Region",
+                None,
+                Some(value.into()),
+                Some(
+                    push_button("region-edit", "Edit…")
                         .disabled(
                             self.locale_busy
                                 || self.locale_editor.is_some()
@@ -147,98 +170,50 @@ impl Settings {
                             edit_view.update(cx, |settings, cx| {
                                 settings.start_region_edit(window, cx);
                             });
-                        }),
-                )
-                .into_any_element()
+                        })
+                        .into_any_element(),
+                ),
+            )
         };
-
-        let mut cards = vec![card(vec![language_row, region_row])];
-        if let Some(editor) = &self.locale_editor {
-            let value = editor.read(cx).value();
-            match snapshot.preview_language(value.trim()) {
-                Ok(preview) => {
-                    cards.push(section_header("Assignments applied to the system"));
-                    cards.push(card(
-                        preview
-                            .iter()
-                            .map(|assignment| {
-                                value_row(
-                                    "icons/settings.svg",
-                                    secondary(),
-                                    assignment.key.clone().into(),
-                                    assignment.value.clone().into(),
-                                )
-                            })
-                            .collect(),
-                    ));
-                    if preview
-                        .iter()
-                        .any(|assignment| assignment.key.starts_with("LC_"))
-                    {
-                        cards.push(note_card(
-                            "Existing LC_* format overrides are preserved. Applying changes LANG only.",
-                        ));
-                    }
-                }
-                Err(error) => cards.push(note_card(error.to_string())),
-            }
+        let mut region = group();
+        if let Some(examples) = self.locale_format_examples(snapshot) {
+            region = region.child(examples).child(row_separator());
+        }
+        cards.push(region.child(region_row));
+        if let Some(error) = &snapshot.format_preview_error {
+            cards.push(footnote(format!(
+                "Format examples are unavailable: {error}."
+            )));
         }
         if let Some(editor) = &self.region_editor {
             let value = editor.read(cx).value();
-            match snapshot.preview_region(value.trim()) {
-                Ok(_) => cards.push(note_card(
-                    "Applying changes regional date, number, currency, paper, address, telephone, and measurement formats without changing the display language or message locale.",
-                )),
-                Err(error) => cards.push(note_card(error.to_string())),
+            if let Err(error) = snapshot.preview_region(value.trim()) {
+                cards.push(note_card(error.to_string()));
             }
         }
 
-        self.append_locale_formats(snapshot, &mut cards);
         self.append_locale_input_sources(view.clone(), snapshot, &mut cards);
 
-        let mut authority_rows = vec![row_base()
-            .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
-            .child(text_block(
-                "Authoritative state".into(),
-                Some(
-                    format!(
-                        "Live localed changes · {} installed locales",
-                        snapshot.installed_locales.len()
-                    )
-                    .into(),
-                ),
-            ))
-            .child(refresh)
-            .into_any_element()];
+        if snapshot.installed_locales_truncated {
+            cards.push(footnote(
+                "The installed language list was too long to check completely.",
+            ));
+        }
+        let mut buttons = Vec::new();
         if self.locale_revert.is_some() {
             let revert_view = view.clone();
-            authority_rows.push(
-                row_base()
-                    .child(tile("icons/refresh-cw.svg", secondary(), style::ROW_ICON))
-                    .child(text_block(
-                        "Previous locale assignments".into(),
-                        Some("Reverts only if the complete applied state is still current".into()),
-                    ))
-                    .child(
-                        Button::new("locale-revert", "Revert")
-                            .busy(self.locale_busy)
-                            .disabled(self.locale_busy)
-                            .on_click(move |_, _, cx| {
-                                revert_view.update(cx, |settings, cx| settings.revert_locale(cx));
-                            }),
-                    )
+            buttons.push(
+                push_button("locale-revert", "Revert Language & Region")
+                    .busy(self.locale_busy)
+                    .disabled(self.locale_busy)
+                    .on_click(move |_, _, cx| {
+                        revert_view.update(cx, |settings, cx| settings.revert_locale(cx));
+                    })
                     .into_any_element(),
             );
         }
-        cards.push(card(authority_rows));
-        if snapshot.installed_locales_truncated {
-            cards.push(note_card(
-                "The installed locale inventory exceeded the bounded validation list.",
-            ));
-        }
-        cards.push(note_card(
-            "New applications and services use an applied locale immediately. Sign out and back in before judging the current desktop session.",
-        ));
+        buttons.push(refresh);
+        cards.push(footer_buttons(buttons));
         self.pane(cards)
     }
 }

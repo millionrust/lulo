@@ -4,49 +4,6 @@ mod render;
 
 use super::*;
 
-fn lock_policy_choice_row(
-    id: SharedString,
-    icon: &'static str,
-    title: &'static str,
-    detail: &'static str,
-    selected: bool,
-    disabled: bool,
-) -> ListRow {
-    let foreground = if selected { on_accent() } else { label() };
-    let secondary_foreground = if selected { on_accent() } else { secondary() };
-    let content = div()
-        .w_full()
-        .flex()
-        .items_center()
-        .gap_3()
-        .child(tile(icon, secondary_foreground, style::ROW_ICON))
-        .child(
-            div()
-                .v_flex()
-                .flex_1()
-                .child(
-                    div()
-                        .text_size(rmac_ui::text_px(13.0))
-                        .text_color(foreground)
-                        .child(title),
-                )
-                .child(
-                    div()
-                        .text_size(rmac_ui::text_px(11.0))
-                        .text_color(secondary_foreground)
-                        .child(detail),
-                ),
-        )
-        .when(selected, |row| {
-            row.child(glyph("icons/check.svg", 14.0, on_accent()))
-        });
-    ListRow::new(ElementId::from(id), content)
-        .selected(selected)
-        .disabled(disabled)
-        .h(px(60.0))
-        .px_3()
-}
-
 impl Settings {
     pub(super) fn finish_lock_policy_update(
         &mut self,

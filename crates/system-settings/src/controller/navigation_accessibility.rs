@@ -69,6 +69,23 @@ impl Settings {
                 })
                 .unwrap_or_else(|| "Focus".into()),
             SubPage::FocusSchedule { .. } => "Schedule".into(),
+            SubPage::NetworkService { interface } => self
+                .network
+                .devices
+                .iter()
+                .find(|device| &device.interface == interface)
+                .map(|device| {
+                    device
+                        .connection
+                        .clone()
+                        .unwrap_or_else(|| device.kind.label().to_string())
+                })
+                .unwrap_or_else(|| interface.clone()),
+            SubPage::PrivacyResource { resource } => match resource.as_str() {
+                "microphone" => "Microphone".into(),
+                _ => "Camera".into(),
+            },
+            SubPage::AccessibilityPage { page } => page.clone(),
         }
     }
 

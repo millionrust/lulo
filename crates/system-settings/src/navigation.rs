@@ -19,9 +19,27 @@ pub(super) enum SubPage {
     About,
     SoftwareUpdate,
     Storage,
-    NotificationApp { app_id: String },
-    FocusMode { mode_id: String },
-    FocusSchedule { schedule_id: String },
+    NotificationApp {
+        app_id: String,
+    },
+    FocusMode {
+        mode_id: String,
+    },
+    FocusSchedule {
+        schedule_id: String,
+    },
+    /// One Network service (an interface), opened from the Network list.
+    NetworkService {
+        interface: String,
+    },
+    /// Privacy & Security › Camera or Microphone.
+    PrivacyResource {
+        resource: String,
+    },
+    /// An Accessibility section page (Display, Motion, Pointer Control …).
+    AccessibilityPage {
+        page: String,
+    },
 }
 
 pub(super) const GENERAL_DESTINATIONS: [&str; 3] = ["About", "Software Update", "Storage"];

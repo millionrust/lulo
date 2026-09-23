@@ -75,11 +75,11 @@ impl Settings {
             )
     }
 
-    /// macOS 26 opens General and Accessibility with a hero group (large
+    /// macOS 26 opens General (only) with a hero group (large
     /// icon, title and description) and leaves their toolbar untitled; every
     /// other pane starts directly with its first group under a titled toolbar.
     pub(super) fn pane_has_hero(&self) -> bool {
-        matches!(self.current().name.as_ref(), "General" | "Accessibility")
+        self.current().name.as_ref() == "General"
     }
 
     /// General's hero: a 164 pt group with the 52 pt icon 24 from the top,
@@ -140,6 +140,9 @@ impl Settings {
             SubPage::NotificationApp { app_id } => self.notification_app_body(app_id, cx),
             SubPage::FocusMode { mode_id } => self.focus_mode_body(mode_id, cx),
             SubPage::FocusSchedule { schedule_id } => self.focus_schedule_body(schedule_id, cx),
+            SubPage::NetworkService { interface } => self.network_service_body(interface, cx),
+            SubPage::PrivacyResource { resource } => self.privacy_resource_body(resource, cx),
+            SubPage::AccessibilityPage { page } => self.accessibility_page_body(page, cx),
         };
 
         // The toolbar carries the subpage title and the back button, as on

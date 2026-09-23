@@ -3,43 +3,26 @@
 use super::*;
 
 impl Settings {
-    pub(super) fn append_locale_formats(
-        &self,
-        snapshot: &rmac_locale::Snapshot,
-        cards: &mut Vec<Div>,
-    ) {
-        cards.push(section_header("Format examples"));
-        let preview = snapshot.format_preview.as_ref();
-        cards.push(card(vec![
-            locale_preview_row(
-                "icons/clock.svg",
-                "Dates and times",
-                locale_format(snapshot, "LC_TIME"),
-                preview.map(|preview| preview.date_time.as_str()),
-            ),
-            locale_preview_row(
-                "icons/info.svg",
-                "Numbers",
-                locale_format(snapshot, "LC_NUMERIC"),
-                preview.map(|preview| preview.number.as_str()),
-            ),
-            locale_preview_row(
-                "icons/database.svg",
-                "Currency",
-                locale_format(snapshot, "LC_MONETARY"),
-                preview.map(|preview| preview.currency.as_str()),
-            ),
-            locale_preview_row(
-                "icons/settings.svg",
-                "Measurement",
-                locale_format(snapshot, "LC_MEASUREMENT"),
-                None,
-            ),
-        ]));
-        if let Some(error) = &snapshot.format_preview_error {
-            cards.push(note_card(format!(
-                "Format examples are unavailable: {error}. Locale assignments remain authoritative."
-            )));
-        }
+    /// The Mac's centred examples at the top of the Region group: the full
+    /// date and time on one 11 pt line, then the short number and currency
+    /// forms. None when the locale service reported no preview.
+    pub(super) fn locale_format_examples(&self, snapshot: &rmac_locale::Snapshot) -> Option<Div> {
+        let preview = snapshot.format_preview.as_ref()?;
+        let line = |text: String| {
+            div()
+                .text_size(rmac_ui::text_px(11.0))
+                .line_height(px(16.0))
+                .text_color(secondary())
+                .child(text)
+        };
+        Some(
+            div()
+                .v_flex()
+                .items_center()
+                .pt(px(9.0))
+                .pb(px(12.0))
+                .child(line(preview.date_time.clone()))
+                .child(line(format!("{}    {}", preview.currency, preview.number))),
+        )
     }
 }

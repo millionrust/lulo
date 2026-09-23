@@ -34,6 +34,7 @@ impl Render for Settings {
         let vpn_secret_clear_dialog = self.render_vpn_secret_clear_dialog(cx);
         let vpn_delete_dialog = self.render_vpn_delete_dialog(cx);
         let update_install_dialog = self.render_update_install_dialog(cx);
+        let keyboard_shortcuts_sheet = self.render_keyboard_shortcuts_sheet(cx);
         div()
             .id(rmac_system_settings::accessibility::ROOT_ID)
             .size_full()
@@ -49,6 +50,9 @@ impl Render for Settings {
                 {
                     cx.stop_propagation();
                     this.confirm_clock_change(cx);
+                } else if event.keystroke.key == "escape" && this.keyboard_shortcuts_open {
+                    cx.stop_propagation();
+                    this.close_keyboard_shortcuts(cx);
                 } else if event.keystroke.key == "escape" && this.clock_confirmation.is_some() {
                     cx.stop_propagation();
                     this.cancel_clock_confirmation(cx);
@@ -142,6 +146,10 @@ impl Render for Settings {
             }))
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 if this.clock_setting {
+                    return;
+                }
+                if this.keyboard_shortcuts_open {
+                    this.close_keyboard_shortcuts(cx);
                     return;
                 }
                 if this.recent_history_busy {
@@ -300,5 +308,6 @@ impl Render for Settings {
             .when_some(vpn_secret_clear_dialog, |root, dialog| root.child(dialog))
             .when_some(vpn_delete_dialog, |root, dialog| root.child(dialog))
             .when_some(update_install_dialog, |root, dialog| root.child(dialog))
+            .when_some(keyboard_shortcuts_sheet, |root, sheet| root.child(sheet))
     }
 }

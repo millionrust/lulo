@@ -8,17 +8,6 @@ mod editor;
 impl Settings {
     pub(in crate::controller) fn render_vpn(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
-        let connected = self
-            .vpn
-            .profiles
-            .iter()
-            .filter(|profile| profile.state == rmac_network::VpnState::Connected)
-            .count();
-        let status = match connected {
-            0 => "No VPN Connected".to_string(),
-            1 => "1 VPN Connected".to_string(),
-            count => format!("{count} VPNs Connected"),
-        };
         let refresh_view = view.clone();
         let refresh_label = if self.vpn_delete_busy || self.vpn_delete_preparing.is_some() {
             "Deleting…"
@@ -63,49 +52,24 @@ impl Settings {
             || self.vpn_secret_busy
             || self.vpn_delete_preparing.is_some()
             || self.vpn_delete_busy;
-        let mut cards = vec![card(vec![value_row(
-            "icons/key.svg",
-            if connected > 0 {
-                hsl(0x34c759)
-            } else {
-                secondary()
-            },
-            "Status".into(),
-            status.into(),
-        )])];
-        cards.push(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .px(px(style::ROW_PADDING))
-                .pt(px(style::SECTION_TOP))
-                .pb(px(style::SECTION_BOTTOM))
-                .child(
-                    div()
-                        .text_size(rmac_ui::text_px(13.0))
-                        .font_weight(rmac_ui::mac::BOLD)
-                        .text_color(style::heading_text())
-                        .child("VPN Configurations"),
-                )
-                .child(
-                    Button::new("vpn-refresh", refresh_label)
-                        .ghost()
-                        .busy(refresh_busy)
-                        .disabled(refresh_disabled)
-                        .on_click(move |_, _, cx| {
-                            refresh_view.update(cx, |settings, cx| settings.refresh_vpn(cx));
-                        }),
-                ),
-        );
+        let refresh_footer = footer_buttons(vec![push_button("vpn-refresh", refresh_label)
+            .busy(refresh_busy)
+            .disabled(refresh_disabled)
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| settings.refresh_vpn(cx));
+            })
+            .into_any_element()]);
+        let mut cards = Vec::new();
         if self.vpn_loading {
             cards.push(note_card("Loading VPN configurations from the system…"));
+            cards.push(refresh_footer);
             return self.pane(cards);
         }
         if !self.vpn.available {
             cards.push(note_card(
                 "The system VPN service is not available on this computer.",
             ));
+            cards.push(refresh_footer);
             return self.pane(cards);
         }
         if self.vpn_editor_loading.is_some() {
@@ -115,9 +79,7 @@ impl Settings {
             cards.extend(self.render_vpn_editor(cx));
         }
         if self.vpn.profiles.is_empty() {
-            cards.push(note_card(
-                "No VPN configurations are installed. Import a configuration below.",
-            ));
+            cards.push(group().child(group_placeholder("No VPN Configurations")));
         } else {
             let rows = self
                 .vpn
@@ -143,7 +105,7 @@ impl Settings {
                         format!("{} · {}", profile.service, profile.state.label())
                     };
                     let control = if connecting {
-                        Button::new(("vpn-stop", index), "Stop")
+                        push_button(("vpn-stop", index), "Stop")
                             .on_click(move |_, _, cx| {
                                 profile_view
                                     .update(cx, |settings, cx| settings.cancel_vpn_activation(cx));
@@ -174,44 +136,24 @@ impl Settings {
                         })
                         .into_any_element()
                     };
+                    let locked = self.vpn_busy.is_some()
+                        || self.vpn_refreshing
+                        || self.vpn_import_busy
+                        || self.vpn_import_preview.is_some()
+                        || self.vpn_editor_loading.is_some()
+                        || self.vpn_editor_busy
+                        || self.vpn_editor.is_some()
+                        || self.vpn_delete_preparing.is_some()
+                        || self.vpn_delete_busy
+                        || self.vpn_delete_preview.is_some();
                     let controls = div()
                         .flex()
                         .items_center()
-                        .gap_2()
+                        .gap(px(10.0))
                         .when(cfg!(target_os = "linux"), |controls| {
                             controls
                                 .child(
-                                    Button::new(
-                                        ("vpn-edit", index),
-                                        if self.vpn_editor_loading.as_ref() == Some(&id) {
-                                            "Opening…"
-                                        } else {
-                                            "Details…"
-                                        },
-                                    )
-                                    .disabled(
-                                        self.vpn_busy.is_some()
-                                            || self.vpn_refreshing
-                                            || self.vpn_import_busy
-                                            || self.vpn_import_preview.is_some()
-                                            || self.vpn_editor_loading.is_some()
-                                            || self.vpn_editor_busy
-                                            || self.vpn_editor.is_some()
-                                            || self.vpn_delete_preparing.is_some()
-                                            || self.vpn_delete_busy
-                                            || self.vpn_delete_preview.is_some(),
-                                    )
-                                    .on_click(
-                                        move |_, window, cx| {
-                                            let id = edit_id.clone();
-                                            edit_view.update(cx, |settings, cx| {
-                                                settings.start_vpn_edit(id, window, cx)
-                                            });
-                                        },
-                                    ),
-                                )
-                                .child(
-                                    Button::new(
+                                    push_button(
                                         ("vpn-delete", index),
                                         if preparing_delete {
                                             "Preparing…"
@@ -219,18 +161,7 @@ impl Settings {
                                             "Delete…"
                                         },
                                     )
-                                    .disabled(
-                                        self.vpn_busy.is_some()
-                                            || self.vpn_refreshing
-                                            || self.vpn_import_busy
-                                            || self.vpn_import_preview.is_some()
-                                            || self.vpn_editor_loading.is_some()
-                                            || self.vpn_editor_busy
-                                            || self.vpn_editor.is_some()
-                                            || self.vpn_delete_preparing.is_some()
-                                            || self.vpn_delete_busy
-                                            || self.vpn_delete_preview.is_some(),
-                                    )
+                                    .disabled(locked)
                                     .on_click(
                                         move |_, _, cx| {
                                             let id = delete_id.clone();
@@ -240,18 +171,24 @@ impl Settings {
                                         },
                                     ),
                                 )
+                                .child(div().when(locked, |info| info.opacity(0.5)).child(
+                                    info_button(
+                                        ("vpn-edit", index),
+                                        "Details",
+                                        move |window, cx| {
+                                            if locked {
+                                                return;
+                                            }
+                                            let id = edit_id.clone();
+                                            edit_view.update(cx, |settings, cx| {
+                                                settings.start_vpn_edit(id, window, cx)
+                                            });
+                                        },
+                                    ),
+                                ))
                         })
                         .child(control);
                     row_base()
-                        .child(tile(
-                            "icons/key.svg",
-                            if profile.state == rmac_network::VpnState::Connected {
-                                hsl(0x34c759)
-                            } else {
-                                accent()
-                            },
-                            22.0,
-                        ))
                         .child(text_block(
                             profile.name.clone().into(),
                             Some(subtitle.into()),
@@ -262,7 +199,7 @@ impl Settings {
                 .collect();
             cards.push(card(rows));
         }
-        cards.push(section_header("Import Configuration"));
+        cards.push(section_header("Add VPN Configuration"));
         if self.vpn_import_loading {
             cards.push(note_card("Checking installed VPN importers…"));
         } else if !self.vpn_import_capabilities.available {
@@ -286,13 +223,12 @@ impl Settings {
                     let capability_id = capability.id.clone();
                     let import_view = view.clone();
                     row_base()
-                        .child(tile("icons/key.svg", accent(), 20.0))
                         .child(text_block(
                             capability.name.clone().into(),
                             Some(capability.format_hint.clone().into()),
                         ))
                         .child(
-                            Button::new(("vpn-import", index), "Import…")
+                            push_button(("vpn-import", index), "Import…")
                                 .disabled(
                                     self.vpn_import_busy
                                         || self.vpn_busy.is_some()
@@ -319,9 +255,7 @@ impl Settings {
                 cards.push(note_card(limitation.clone()));
             }
         }
-        cards.push(note_card(
-            "Connections are controlled by the system network service. Authentication prompts are handled by the installed VPN plugin.",
-        ));
+        cards.push(refresh_footer);
         self.pane(cards)
     }
 }

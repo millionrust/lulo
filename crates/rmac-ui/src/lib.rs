@@ -12,6 +12,7 @@ pub mod mac;
 mod runtime;
 pub mod scroll;
 pub mod shortcuts;
+mod text_keys;
 pub mod theme;
 mod window;
 

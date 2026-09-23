@@ -2,7 +2,7 @@ use std::{env, fs};
 
 use gpui::{px, AnyView, App, AppContext as _, Context, SharedString, Styled as _, Window};
 
-use crate::{components, theme};
+use crate::{components, text_keys, theme};
 
 const BENCHMARK_READY_FILE_ENV: &str = "RMAC_BENCHMARK_READY_FILE";
 const COLOR_SCHEME_ENV: &str = "RMAC_COLOR_SCHEME";
@@ -21,6 +21,7 @@ pub fn init_application(cx: &mut App) {
     seed_initial_theme();
     warn_if_ui_font_missing(cx);
     gpui_component::init(cx);
+    text_keys::init(cx);
     components::init(cx);
     apply_component_theme(cx);
     start_theme_runtime(cx);

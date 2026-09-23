@@ -17,3 +17,8 @@ target/
 .idea/
 .vscode/
 *.swp
+
+# Screenshots of macOS are reference material only; never commit them.
+design-lab/ref/
+*-vs-mac.png
+*-mac.png

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Control Center — exact</title>
+<!--
+  The rmac Control Center at 1:1 logical points, dark appearance, showing only
+  modules rmac can really back. Rust (crates/quick-settings-app +
+  crates/rmac-quick-settings/src/layout.rs) copies these numbers; the glyphs
+  are the same files the app loads (crates/quick-settings-app/assets/cc).
+
+  Reference: the owner's Mac, macOS 26, 2026-09-23, Retina capture
+  target/evidence/mac-2026-09-23/menus/f028.png (2940 × 1912, ÷ 2 for points),
+  cross-checked with the 1× capture in
+  target/evidence/rmac-2026-09-19-task2/pairs/control-center-vs-mac.png.
+  Neither capture is committed (private data).
+
+  Measured (M, logical pt):
+    grid              4 columns of 64, gap 12 (pitch 76) both ways → 292 wide
+    modules           pill 140 × 64 (radius 32), circle 64, Now Playing 140 × 140,
+                      slider module 292 × 64, radius 26
+    position          modules' right edge 14 from the screen edge, first row
+                      40 below the menu bar
+    module fill       white 15.8 % over the darkened backdrop (47 over 8)
+    module rim        1 pt, white ≈ 34 % (two Retina rows: 51 % then 17 %)
+    backdrop          macOS darkens everything behind the modules by ≈ 38 %
+                      (14 → 8, 55 → 34) with a soft edge; there is no
+                      hard-edged panel
+    icon circle       36, inset 14 (concentric with the pill end); on = white
+                      with a #007AFF glyph, off = white 24.5 % with a white glyph
+    glyphs            Wi-Fi 20 × 14.5, Bluetooth 11 × 17.5, moon 17 × 17,
+                      screenshot ≈ 22 × 22, play 17.5 × 17, previous/next
+                      22 × 12.5, Display accessory glyph 15 × 13
+    pill text         title 13 pt semibold (cap 9) at x 56.5, baseline 28.5;
+                      subtitle 11 pt (cap 7.5) baseline 43.5, white 70 %;
+                      title peak white 87–91 %
+    Focus pill label  12 pt semibold (cap 8), x 57, baseline 36
+    Now Playing       artwork 40 × 40 at (14, 14), radius 8, white 13.5 %;
+                      title 13 pt semibold x 15 baseline 85.5; transport row
+                      centred at y 113, glyph centres x 34.5 / 70.5 / 106.5;
+                      unavailable transport glyphs white ≈ 40 %
+    slider modules    title 13 pt bold x 16.5 baseline 23; track 4 thick,
+                      centred at y 42, black 43 %, fill white, no knob;
+                      Display track x 36.5–219.5, suns centred at 22.75 and
+                      233.5 (14.5 and 16 wide); Sound track x 34–213.5,
+                      speaker glyphs 8.5 × 12.5 at x 16.5 and 20 × 14.5 at
+                      x 220.5; accessory circle 26, centre (265, 42),
+                      white 24.5 %
+
+  What rmac leaves out, because nothing backs it: AirDrop, Stage Manager,
+  Screen Mirroring, the Light/Dark appearance circle (no appearance setter
+  yet) and Edit Controls (Control Center is not customisable). Power Mode is
+  not a default macOS module; it is the Low Power Mode circle macOS offers,
+  toggling power-profiles-daemon between power-saver and balanced.
+
+  Start values (S — rmac's own, there is nothing on the Mac to measure):
+    surface padding   12 (= the module gap) and radius 44 (concentric with the
+                      32-radius pills). niri blurs and shadows the whole layer
+                      surface, so rmac needs a panel where the Mac has only a
+                      soft backdrop; it is tinted with the measured 38 %
+                      darkening and placed so the modules land on the Mac's
+                      positions: top margin 40 − 12 = 28, right margin
+                      14 − 12 = 2.
+    Now Playing with a track: title baseline 81, artist 11 pt baseline 95.
+    error banner      40 tall, radius 12, one line.
+-->
+<style>
+  :root {
+    --cell: 64px;
+    --gap: 12px;
+    --pad: 12px;
+    --bar-h: 29px;
+    --text: #FFFFFF;
+    --title: rgba(255,255,255,.9);
+    --sub: rgba(255,255,255,.7);
+    --module: rgba(255,255,255,.158);
+    --rim: rgba(255,255,255,.34);
+    --circle-off: rgba(255,255,255,.245);
+    --glyph-on: #007AFF;
+    --track: rgba(0,0,0,.43);
+    --dim-glyph: rgba(255,255,255,.4);
+    --backdrop: rgba(0,0,0,.38);
+    --font: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif;
+  }
+  html, body { margin: 0; }
+  body { width: 1536px; height: 560px; overflow: hidden;
+         background: linear-gradient(135deg, #1b2156 0%, #3a47b0 38%, #2a8fa6 70%, #c7739b 100%);
+         font-family: var(--font); color: var(--text);
+         -webkit-font-smoothing: antialiased; position: relative; }
+  .bar { height: var(--bar-h); display: flex; align-items: center; justify-content: flex-end;
+         padding: 0 18px; font: 400 13px/1 var(--font); letter-spacing: -0.08px; gap: 20px; }
+  .bar .cc { width: 30px; height: 22px; border-radius: 6px; background: rgba(255,255,255,.2);
+             display: flex; align-items: center; justify-content: center; }
+  .bar img { display: block; }
+
+  /* The layer surface: anchored top-right, 28 below the bar, 2 from the edge. */
+  .panel { position: absolute; top: calc(var(--bar-h) + 28px); right: 2px;
+           width: 316px; box-sizing: border-box; padding: var(--pad);
+           border-radius: 44px; background: var(--backdrop);
+           backdrop-filter: blur(40px) saturate(150%);
+           box-shadow: 0 10px 30px rgba(0,0,0,.33); }
+  .grid { display: grid; grid-template-columns: repeat(4, var(--cell));
+          grid-auto-rows: var(--cell); gap: var(--gap); }
+  .m { background: var(--module); box-shadow: inset 0 0 0 1px var(--rim); position: relative; }
+  .pill { grid-column: span 2; border-radius: 32px; }
+  .circle { border-radius: 32px; display: flex; align-items: center; justify-content: center; }
+  .wide { grid-column: span 4; border-radius: 26px; }
+  .np { grid-column: 3 / span 2; grid-row: span 2; border-radius: 26px; }
+
+  .ic { display: block; background: currentColor;
+        -webkit-mask: var(--src) center / contain no-repeat; mask: var(--src) center / contain no-repeat; }
+  .badge { position: absolute; left: 14px; top: 14px; width: 36px; height: 36px; border-radius: 18px;
+           display: flex; align-items: center; justify-content: center; }
+  .badge.on { background: #FFFFFF; color: var(--glyph-on); }
+  .badge.off { background: var(--circle-off); color: #FFFFFF; }
+  .t { position: absolute; white-space: nowrap; }
+  .title { font: 600 13px/1 var(--font); color: var(--title); }
+  .subtitle { font: 400 11px/1 var(--font); color: var(--sub); }
+  /* Baselines: Inter's ascent is .969 em, so top = baseline − .969 × size. */
+  .pill .title { left: 56.5px; top: calc(28.5px - 12.6px); }
+  .pill .subtitle { left: 56.5px; top: calc(43.5px - 10.66px); }
+  .pill.single .title { font-size: 12px; left: 57px; top: calc(36px - 11.63px); }
+
+  .np .art { position: absolute; left: 14px; top: 14px; width: 40px; height: 40px;
+             border-radius: 8px; background: rgba(255,255,255,.135); }
+  .np .title { left: 15px; top: calc(81px - 12.6px); max-width: 112px; overflow: hidden; text-overflow: ellipsis; }
+  .np .subtitle { left: 15px; top: calc(95px - 10.66px); max-width: 112px; overflow: hidden; text-overflow: ellipsis; }
+  .np .transport { position: absolute; top: 113px; left: 0; right: 0; }
+  .np .transport span { position: absolute; transform: translate(-50%, -50%); }
+
+  .wide .title { font-weight: 700; left: 16.5px; top: calc(23px - 12.6px); }
+  .track { position: absolute; top: 40px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+  .track i { position: absolute; left: 0; top: 0; bottom: 0; background: #FFFFFF; }
+  .glyph { position: absolute; transform: translate(-50%, -50%); top: 42px; }
+  .acc { position: absolute; left: 252px; top: 29px; width: 26px; height: 26px; border-radius: 13px;
+         background: var(--circle-off); display: flex; align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <img src="../shell/assets/status/wifi.svg" width="17" height="12.3" alt="">
+  <img src="../shell/assets/status/spotlight.svg" width="13" height="13" alt="">
+  <span class="cc"><img src="../shell/assets/status/control-center.svg" width="13" height="13" alt=""></span>
+  <span>Wed 23 Sep&nbsp;&nbsp;12:29 PM</span>
+</div>
+
+<div class="panel">
+  <div class="grid">
+    <!-- Row 1–2: Wi-Fi, Bluetooth | Now Playing (hidden when no MPRIS player) -->
+    <div class="m pill">
+      <span class="badge on"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/wifi.svg);width:20px;height:14.5px"></span></span>
+      <span class="t title">Wi-Fi</span><span class="t subtitle">Samas Wifi</span>
+    </div>
+    <div class="m np">
+      <span class="art"></span>
+      <span class="t title">Weightless</span><span class="t subtitle">Marconi Union</span>
+      <div class="transport">
+        <span style="left:34.5px"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/backward.svg);width:22px;height:12.5px"></span></span>
+        <span style="left:70.5px"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/pause.svg);width:17.5px;height:17px"></span></span>
+        <span style="left:106.5px"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/forward.svg);width:22px;height:12.5px"></span></span>
+      </div>
+    </div>
+    <div class="m pill">
+      <span class="badge on"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/bluetooth.svg);width:11px;height:17.5px"></span></span>
+      <span class="t title">Bluetooth</span><span class="t subtitle">On</span>
+    </div>
+
+    <!-- Row 3: Low Power Mode, Screenshot | Focus -->
+    <div class="m circle"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/low-power.svg);width:24px;height:12px"></span></div>
+    <div class="m circle"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/screenshot.svg);width:22px;height:20px"></span></div>
+    <div class="m pill single">
+      <span class="badge off"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/moon.svg);width:17px;height:17px"></span></span>
+      <span class="t title">Focus</span>
+    </div>
+
+    <!-- Display (only with a /sys/class/backlight device) -->
+    <div class="m wide">
+      <span class="t title">Display</span>
+      <span class="glyph" style="left:22.75px"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/sun-min.svg);width:14.5px;height:14.5px"></span></span>
+      <span class="track" style="left:36.5px;width:183px"><i style="width:62%"></i></span>
+      <span class="glyph" style="left:233.5px"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/sun-max.svg);width:16px;height:16px"></span></span>
+      <span class="acc"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/display.svg);width:15px;height:13px"></span></span>
+    </div>
+
+    <!-- Sound -->
+    <div class="m wide">
+      <span class="t title">Sound</span>
+      <span class="glyph" style="left:20.75px"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/speaker.svg);width:8.5px;height:12.5px"></span></span>
+      <span class="track" style="left:34px;width:179.5px"><i style="width:67%"></i></span>
+      <span class="glyph" style="left:230.5px"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/speaker-wave.svg);width:20px;height:14.5px"></span></span>
+      <span class="acc"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/airplay-audio.svg);width:12.5px;height:12.5px"></span></span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

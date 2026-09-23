@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Screenshots — exact</title>
+<!--
+  ⇧⌘3 / ⇧⌘4 / ⇧⌘5 and the floating thumbnail at 1:1 logical points, measured
+  on the owner's Mac (macOS 26.2 Tahoe, dark, 2026-09-23; screencapture -C of
+  the live UI, Retina ÷ 2, 1470 × 956 pt screen). Rust copies these numbers:
+  shell/bins/rmac-screenshot. Glyphs: shell/assets/screenshot (original
+  drawings) plus shell/assets/menu/{checkmark,chevron-down}.svg.
+
+  ⇧⌘4 crosshair readout (cursor shape itself comes from the rmac cursor theme)
+    idle          pointer x / y in points, two lines
+    dragging      width / height, |Δ| + 1 (a 300 pt drag reads 301)
+    text          9 pt, line pitch 9, black with a white copy 0.5 right and
+                  1 down behind it; left edge 8.5 right of the hotspot,
+                  cap top 3.5 below it
+    selection     fill white ≈ 11.5 % (30 → 56 grey), 1 pt solid white edge
+                  drawn inside the rectangle, no dim outside
+    window mode   (Space) the window under the pointer is covered with
+                  rgba(146,184,228,.5) (black → 88,107,129, white → 200,219,241)
+
+  ⇧⌘5 toolbar
+    panel         height 50, radius 15, ≈ rgb(41,41,49) over dark content;
+                  centred horizontally (the Mac sits 7.5 right of centre),
+                  bottom 97 above the screen bottom (= 7 above the 90 pt Dock)
+    close         16 circle rgb(169,169,173), centre x 22.25, dark X
+    capture       entire screen / window / selection glyphs 28 × 22,
+                  centres 63.75 · 111.75 · 159.75 (pitch 48); glyph
+                  rgb(169,169,173), selected rgb(176,176,179) on a 44 × 35
+                  plate rgb(58,58,66), radius 7
+    separator     1 × 23 at x 190, rgb(58,58,66)
+    record group  three record buttons + a second separator (185 pt) follow
+                  on the Mac; omitted here: rmac has no screen recorder yet
+    Options       13 pt rgb(169,169,173) 16 after the separator, chevron
+                  5 × 4 ten after the text
+    Capture       78.5 × 36, radius 10, rgb(31,174,255), 13 pt white label,
+                  7 from the top and the right edge
+    selection     dashed 1 pt edge: 4 white / 4 black; 8 handles, 8 circles
+                  rgb(146,146,146) with a 1 pt white ring; outside dimmed by
+                  black 50 %
+    Options menu  width 196, radius 13, app-menu material (inner 1 pt
+                  rgba(255,255,255,.30), outer .5 black hairline); left 10.5
+                  before the "Options" text, bottom 27 below the toolbar top.
+                  Padding 5; section headers 24 (12 bold, rgba(255,255,255,.25),
+                  x 25); rows 24 (13 regular, .85 white, text x 25.5, check
+                  9.5 × 9 centred x 15.75); separators 11 (1 pt at 5,
+                  inset 16.5, rgba(255,255,255,.14)).
+                  Mac sections: Save to (Desktop, Documents, [last custom],
+                  Clipboard, Mail, Preview, Other Location…), Timer (None,
+                  5 Seconds, 10 Seconds), Options (Show Floating Thumbnail,
+                  Remember Last Selection), Capture (Show Mouse Pointer).
+                  Mail, Preview and Other Location… are omitted (no backend);
+                  Downloads stays as the Mac lists the last custom folder.
+
+  Floating thumbnail (⇧⌘3 at t = 0.25, 1.15, 5.35, 5.65 s)
+    frame         155 × 103.5, 4 pt black border, outer radius 3; the image
+                  (147 × 95.5 for a 1470 × 956 screen) has a 0.5 pt white
+                  inner edge
+    place         12 from the right edge, 102 above the screen bottom
+                  (12 above the Dock)
+    motion        slides in from the right (not yet in at 0.25 s), holds,
+                  starts sliding out at ≈ 5.2 s; the file appears only after
+                  it leaves. Click opens the file; a swipe right saves now.
+
+  File name: "Screenshot 2026-09-23 at 1.36.39 PM.png" — 12-hour, no leading
+  zero, U+202F NARROW NO-BREAK SPACE before AM/PM.
+-->
+<style>
+  :root { --font: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0e1015; }
+  body { width: 1470px; font: 400 13px/1 var(--font); -webkit-font-smoothing: antialiased; color: #fff; }
+  h2 { font: 600 14px var(--font); margin: 24px 16px 8px; color: #aaa; }
+  .screen { position: relative; width: 1470px; height: 956px; overflow: hidden;
+            background: linear-gradient(160deg, #1a2350, #0b0d24 60%, #20305f); }
+  .win { position: absolute; background: #1e1e1e; border-radius: 16px;
+         box-shadow: 0 0 0 .5px rgba(255,255,255,.18), 0 18px 50px rgba(0,0,0,.5); }
+  .win .lines { position: absolute; inset: 44px 24px 24px; background:
+         repeating-linear-gradient(#1e1e1e 0 14px, #444 14px 15px, #1e1e1e 15px 24px); opacity: .6; }
+  .dock { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+          width: 700px; height: 72px; border-radius: 29px; background: rgba(60,70,120,.45);
+          box-shadow: inset 0 .5px 0 rgba(255,255,255,.4); }
+
+  /* ⇧⌘4 */
+  .drag { position: absolute; background: rgba(255,255,255,.115); box-shadow: inset 0 0 0 1px #fff; }
+  .readout { position: absolute; font: 400 9px/9px var(--font); color: #000;
+             text-shadow: .5px 1px 0 #fff; white-space: pre; }
+  .cross { position: absolute; width: 25px; height: 25px; margin: -12.5px 0 0 -12.5px; }
+  .cross::before, .cross::after { content: ""; position: absolute; background: #000;
+             box-shadow: 0 0 0 1px rgba(110,110,110,.9); }
+  .cross::before { left: 12px; top: 0; width: 1px; height: 25px; }
+  .cross::after { top: 12px; left: 0; height: 1px; width: 25px; }
+  .hilite { position: absolute; background: rgba(146,184,228,.5); border-radius: 16px; }
+
+  /* ⇧⌘5 */
+  .dim { position: absolute; background: rgba(0,0,0,.5); }
+  .sel { position: absolute; }
+  .sel .edge { position: absolute; background:
+             repeating-linear-gradient(90deg, #fff 0 4px, #000 4px 8px); }
+  .sel .edge.v { background: repeating-linear-gradient(180deg, #fff 0 4px, #000 4px 8px); }
+  .handle { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%;
+            background: #929292; box-shadow: inset 0 0 0 1px #fff; }
+  .toolbar { position: absolute; height: 50px; width: 364.5px; border-radius: 15px;
+             background: rgb(41,41,49); box-shadow: 0 0 0 .5px rgba(0,0,0,.6), 0 8px 24px rgba(0,0,0,.35); }
+  .close { position: absolute; left: 14.25px; top: 17px; width: 16px; height: 16px; border-radius: 50%;
+           background: rgb(169,169,173); }
+  .close img { width: 16px; height: 16px; filter: brightness(0) invert(.17); }
+  .glyph { position: absolute; top: 14px; width: 28px; height: 22px; }
+  .plate { position: absolute; top: 7.5px; width: 44px; height: 35px; border-radius: 7px; background: rgb(58,58,66); }
+  /* the glyph files are white; brightness() gives the measured greys
+     (file:// blocks CSS masks, so the mock tints with filters) */
+  .gl { display: block; width: 28px; height: 22px; filter: brightness(.663); }
+  .gl.on { filter: brightness(.69); }
+  .sep { position: absolute; left: 190px; top: 13.5px; width: 1px; height: 23px; background: rgb(58,58,66); }
+  .options { position: absolute; left: 206px; top: 0; height: 50px; display: flex; align-items: center;
+             color: rgb(169,169,173); font-size: 13px; }
+  .chev { width: 9px; height: 9px; margin-left: 8px; filter: brightness(.663); }
+  .capture { position: absolute; right: 7px; top: 7px; width: 78.5px; height: 36px; border-radius: 10px;
+             background: rgb(31,174,255); display: flex; align-items: center; justify-content: center;
+             font-size: 13px; color: #fff; }
+  .menu { position: absolute; width: 196px; padding: 5px 0; border-radius: 13px;
+          background: rgba(31,31,38,.97); color: rgba(255,255,255,.85);
+          box-shadow: inset 0 0 0 1px rgba(255,255,255,.30), 0 0 0 .5px rgba(0,0,0,.85), 0 10px 32px rgba(0,0,0,.35); }
+  .menu .h { height: 24px; line-height: 24px; padding-left: 25px; font: 700 12px/24px var(--font); color: rgba(255,255,255,.25); }
+  .menu .r { position: relative; height: 24px; line-height: 24px; margin: 0 5px; padding-left: 20.5px; border-radius: 5px; }
+  .menu .r.hl { background: rgb(56,123,246); color: #fff; }
+  .menu .r .ck { position: absolute; left: 2.75px; top: 4px; width: 16px; height: 16px; opacity: .85; }
+  .menu .r.hl .ck { opacity: 1; }
+  .menu .s { height: 11px; position: relative; }
+  .menu .s::after { content: ""; position: absolute; left: 16.5px; right: 16.5px; top: 5px; height: 1px; background: rgba(255,255,255,.14); }
+
+  /* thumbnail */
+  .thumb { position: absolute; right: 12px; bottom: 102px; width: 155px; height: 103.5px;
+           background: #000; border-radius: 3px; padding: 4px; }
+  .thumb .img { width: 147px; height: 95.5px; box-shadow: inset 0 0 0 .5px #fff;
+                background: linear-gradient(160deg, #1a2350, #0b0d24 60%, #20305f); position: relative; overflow: hidden; }
+  .thumb .img i { position: absolute; background: #1e1e1e; border-radius: 1.6px; }
+</style>
+</head>
+<body>
+
+<h2>⇧⌘5 — selection mode with the Options menu open</h2>
+<div class="screen" id="s5">
+  <div class="win" style="left:160px;top:60px;width:760px;height:520px"><div class="lines"></div></div>
+  <div class="win" style="left:640px;top:180px;width:700px;height:560px"><div class="lines"></div></div>
+  <div class="dock"></div>
+</div>
+
+<h2>⇧⌘4 — idle readout, dragging, window mode (Space)</h2>
+<div class="screen" id="s4">
+  <div class="win" style="left:160px;top:60px;width:760px;height:520px"><div class="lines"></div></div>
+  <div class="win" style="left:980px;top:120px;width:420px;height:360px"><div class="lines"></div></div>
+  <div class="dock"></div>
+  <div class="hilite" style="left:980px;top:120px;width:420px;height:360px"></div>
+  <!-- idle -->
+  <div class="cross" style="left:1100px;top:640px"></div>
+  <div class="readout" style="left:1108.5px;top:642px">1100
+640</div>
+  <!-- drag from (400,300) to (700,500) -->
+  <div class="drag" style="left:400px;top:300px;width:300px;height:200px"></div>
+  <div class="cross" style="left:700px;top:500px"></div>
+  <div class="readout" style="left:708.5px;top:502px">301
+201</div>
+</div>
+
+<h2>After ⇧⌘3 — floating thumbnail</h2>
+<div class="screen" id="t">
+  <div class="win" style="left:160px;top:60px;width:760px;height:520px"><div class="lines"></div></div>
+  <div class="dock"></div>
+  <div class="thumb"><div class="img"><i style="left:16px;top:6px;width:76px;height:52px"></i></div></div>
+</div>
+
+<script>
+// ⇧⌘5 composition, same arithmetic as shell/bins/rmac-screenshot/src/model.rs
+const W = 1470, H = 956;
+const s5 = document.getElementById('s5');
+const sel = { x: 300, y: 150, w: 870, h: 560 };
+const add = (cls, style, html = '') => { const d = document.createElement('div'); d.className = cls;
+  Object.assign(d.style, style); d.innerHTML = html; s5.appendChild(d); return d; };
+const px = v => v + 'px';
+// dim outside the selection
+add('dim', { left: 0, top: 0, width: px(W), height: px(sel.y) });
+add('dim', { left: 0, top: px(sel.y + sel.h), width: px(W), height: px(H - sel.y - sel.h) });
+add('dim', { left: 0, top: px(sel.y), width: px(sel.x), height: px(sel.h) });
+add('dim', { left: px(sel.x + sel.w), top: px(sel.y), width: px(W - sel.x - sel.w), height: px(sel.h) });
+const frame = add('sel', { left: px(sel.x), top: px(sel.y), width: px(sel.w), height: px(sel.h) });
+frame.innerHTML = `<div class="edge" style="left:0;top:0;right:0;height:1px"></div>
+  <div class="edge" style="left:0;bottom:0;right:0;height:1px"></div>
+  <div class="edge v" style="left:0;top:0;bottom:0;width:1px"></div>
+  <div class="edge v" style="right:0;top:0;bottom:0;width:1px"></div>`;
+for (const [fx, fy] of [[0,0],[.5,0],[1,0],[0,.5],[1,.5],[0,1],[.5,1],[1,1]])
+  add('handle', { left: px(sel.x + sel.w * fx), top: px(sel.y + sel.h * fy) });
+const TW = 364.5, TH = 50, BOTTOM = 97;
+const tl = (W - TW) / 2, tt = H - BOTTOM - TH;
+const tb = add('toolbar', { left: px(tl), top: px(tt) });
+tb.innerHTML = `
+  <div class="close"><img src="../shell/assets/screenshot/close-x.svg"></div>
+  <div class="plate" style="left:${159.75 - 22}px"></div>
+  <div class="glyph" style="left:${63.75 - 14}px"><img class="gl" src="../shell/assets/screenshot/capture-screen.svg"></div>
+  <div class="glyph" style="left:${111.75 - 14}px"><img class="gl" src="../shell/assets/screenshot/capture-window.svg"></div>
+  <div class="glyph" style="left:${159.75 - 14}px"><img class="gl on" src="../shell/assets/screenshot/capture-selection.svg"></div>
+  <div class="sep"></div>
+  <div class="options">Options<img class="chev" src="../shell/assets/menu/chevron-down.svg"></div>
+  <div class="capture">Capture</div>`;
+const MENU_H = 5 + 4 * 24 + 10 * 24 + 3 * 11 + 5;
+const menu = add('menu', { left: px(tl + 206 - 10.5), top: px(tt + 27 - MENU_H) });
+const row = (label, on, hl) => `<div class="r${hl ? ' hl' : ''}">${on ? '<img class="ck" src="../shell/assets/menu/checkmark.svg">' : ''}${label}</div>`;
+menu.innerHTML =
+  '<div class="h">Save to</div>' + row('Desktop', true) + row('Documents') + row('Downloads') + row('Clipboard') +
+  '<div class="s"></div><div class="h">Timer</div>' + row('None', true) + row('5 Seconds') + row('10 Seconds', false, true) +
+  '<div class="s"></div><div class="h">Options</div>' + row('Show Floating Thumbnail', true) + row('Remember Last Selection', true) +
+  '<div class="s"></div><div class="h">Capture</div>' + row('Show Mouse Pointer');
+</script>
+</body>
+</html>

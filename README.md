@@ -1,16 +1,19 @@
-# rmac
+# Lulo OS
 
-rmac is an open-source desktop for Linux that feels like a Mac. It gives you a
-menu bar, a Dock, Spotlight, Mission Control, Control Center and notifications,
-along with a set of apps built to match macOS 26. Everything is written in Rust
-and drawn with [GPUI](https://github.com/zed-industries/zed), the GPU UI
-framework behind the Zed editor.
+Lulo OS is an open-source desktop for Linux that feels like a Mac. It gives
+you a menu bar, a Dock, Spotlight, Mission Control, Control Center and
+notifications, along with a set of apps built to match macOS 26. Everything is
+written in Rust and drawn with [GPUI](https://github.com/zed-industries/zed),
+the GPU UI framework behind the Zed editor.
 
 It runs on Ubuntu 26.04 as its own login session on top of the
 [niri](https://github.com/niri-wm/niri) Wayland compositor. Your normal Ubuntu
 desktop stays installed, so you can always log back into it.
 
-> **Status:** early and moving fast. rmac isn't ready for daily use yet. See
+Lulo OS was called rmac until September 2026. The code, packages and settings
+still use the `rmac` name while the rename is in progress.
+
+> **Status:** early and moving fast. Lulo OS isn't ready for daily use yet. See
 > [known limitations](docs/known-limitations.md) and the [plan](PLAN_NEW.md).
 
 ## What's in it

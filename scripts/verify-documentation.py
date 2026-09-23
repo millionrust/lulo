@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = REPO_ROOT / "scripts/documentation-set.json"
 MAX_BYTES = 512 * 1024
 DOCUMENTS = (
-    ("README.md", "# rmac"),
+    ("README.md", "# Lulo OS"),
     ("CONTRIBUTING.md", "# Contributing"),
     ("docs/install.md", "# Install rmac"),
     ("docs/hardware-support.md", "# Hardware support"),

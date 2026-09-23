@@ -170,6 +170,10 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             _read_regular(notifications / "rmac-portals.conf"),
             0o644,
         ),
+        "usr/share/polkit-1/actions/org.rmac.mac-keyboard.policy": (
+            _read_regular(package / "polkit" / "org.rmac.mac-keyboard.policy"),
+            0o644,
+        ),
         "usr/share/doc/rmac-session/copyright": (
             _read_regular(REPO_ROOT / "LICENSE"),
             0o644,

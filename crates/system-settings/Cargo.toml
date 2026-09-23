@@ -31,6 +31,7 @@ rmac-focus-linux.workspace = true
 rmac-focus-settings.workspace = true
 rmac-gtk-settings.workspace = true
 rmac-input.workspace = true
+rmac-keyboard.workspace = true
 rmac-login-items.workspace = true
 rmac-login-items-linux.workspace = true
 rmac-launcher-providers.workspace = true

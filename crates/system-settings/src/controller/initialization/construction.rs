@@ -323,6 +323,10 @@ impl Settings {
             input_generation: 0,
             input_refresh_pending: false,
             input_stream_refreshing: false,
+
+            mac_keyboard: None,
+            mac_keyboard_busy: false,
+            mac_keyboard_error: None,
         }
     }
 }

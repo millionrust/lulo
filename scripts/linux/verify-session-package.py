@@ -65,6 +65,7 @@ REQUIRED_RMAC_EXECUTABLES = (
     "rmac-lock-provider",
     "rmac-lock-coordinator",
     "rmac-idle-locker",
+    "rmac-mac-keyboard",
 )
 EXPECTED_SYSTEMD_UNITS = (
     "rmac-app-drawer.service",
@@ -79,6 +80,7 @@ EXPECTED_SYSTEMD_UNITS = (
     "rmac-lock-coordinator.service",
     "rmac-lock.service",
     "rmac-lock-fallback.service",
+    "rmac-mac-keyboard.service",
     "rmac-mission-control.service",
     "rmac-notification-center-panel.service",
     "rmac-notification-center.service",
@@ -110,6 +112,7 @@ EXPECTED_PATHS = {
     Path("usr/share/xdg-desktop-portal/portals/rmac-file-chooser.portal"),
     Path("usr/share/xdg-desktop-portal/rmac-portals.conf"),
     Path("usr/share/doc/rmac-session/copyright"),
+    Path("usr/share/polkit-1/actions/org.rmac.mac-keyboard.policy"),
     Path(
         "usr/share/dbus-1/services/"
         "org.freedesktop.impl.portal.desktop.rmac.service"

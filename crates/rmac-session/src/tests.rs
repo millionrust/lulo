@@ -281,6 +281,15 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     assert!(normal_target.contains("rmac-idle-lock.service"));
     assert!(safe_target.contains("Wants=rmac-idle-lock.service"));
 
+    let mac_keyboard = include_str!("../units/rmac-mac-keyboard.service");
+    assert!(mac_keyboard.contains("ConditionPathExists=/etc/keyd/rmac.conf"));
+    assert!(mac_keyboard.contains("ExecStart=%h/.local/libexec/rmac/rmac-mac-keyboard follow"));
+    assert!(mac_keyboard.contains("ExecStopPost=-%h/.local/libexec/rmac/rmac-mac-keyboard reset"));
+    assert!(mac_keyboard.contains("Restart=on-failure"));
+    assert!(!mac_keyboard.contains("/bin/sh"));
+    assert!(normal_target.contains("rmac-mac-keyboard.service"));
+    assert!(!safe_target.contains("rmac-mac-keyboard.service"));
+
     let default_policy = include_str!("../lock-policy.json");
     assert!(default_policy.contains("\"version\": 1"));
     assert!(default_policy.contains("\"lock_after_seconds\": 300"));

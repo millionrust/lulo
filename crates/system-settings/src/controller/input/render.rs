@@ -155,6 +155,8 @@ impl Settings {
             .into_any_element()]),
         ]));
 
+        cards.extend(self.mac_keyboard_cards(cx));
+
         // Text Input: the system layouts localed reports, edited on Language
         // & Region where their editor lives.
         cards.push(section_header("Text Input"));

@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+# Removing rmac-session removes the keyd configuration it wrote, so keyd (if
+# it stays installed) stops rewriting keys for a desktop that is gone. Only a
+# file carrying rmac's header is touched.
+
+config=/etc/keyd/rmac.conf
+
+case "$1" in
+remove|purge)
+    if [ -f "$config" ] && head -n 1 "$config" | grep -q '^# rmac-mac-keyboard '; then
+        rm -f "$config"
+        if command -v systemctl >/dev/null 2>&1; then
+            if ls /etc/keyd/*.conf >/dev/null 2>&1; then
+                systemctl try-restart keyd.service >/dev/null 2>&1 || true
+            else
+                systemctl disable --now keyd.service >/dev/null 2>&1 || true
+            fi
+        fi
+    fi
+    ;;
+esac
+
+exit 0

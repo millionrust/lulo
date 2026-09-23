@@ -106,6 +106,18 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
+                .spawn(async { rmac_keyboard::status() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_mac_keyboard_update(result);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
                 .spawn(async { rmac_gtk_settings::snapshot() })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {

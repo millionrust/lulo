@@ -307,4 +307,9 @@ pub(super) struct Settings {
     pub(super) input_generation: u64,
     pub(super) input_refresh_pending: bool,
     pub(super) input_stream_refreshing: bool,
+
+    // Keyboard › PC Keyboard (docs/decisions/0017-mac-keyboard.md)
+    pub(super) mac_keyboard: Option<rmac_keyboard::Status>,
+    pub(super) mac_keyboard_busy: bool,
+    pub(super) mac_keyboard_error: Option<SharedString>,
 }

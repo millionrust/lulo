@@ -77,6 +77,7 @@ rmac-dock = { version = "=0.1.0", path = "crates/rmac-dock" }
 rmac-dock-system = { version = "=0.1.0", path = "crates/rmac-dock-system" }
 rmac-dock-runtime = { version = "=0.1.0", path = "crates/rmac-dock-runtime" }
 rmac-input = { version = "=0.1.0", path = "crates/rmac-input" }
+rmac-keyboard = { version = "=0.1.0", path = "crates/rmac-keyboard" }
 rmac-launcher = { version = "=0.1.0", path = "crates/rmac-launcher" }
 rmac-launcher-providers = { version = "=0.1.0", path = "crates/rmac-launcher-providers" }
 rmac-launcher-runtime = { version = "=0.1.0", path = "crates/rmac-launcher-runtime" }

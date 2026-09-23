@@ -1,0 +1,18 @@
+[Unit]
+Description=rmac Mac shortcuts in all apps (keyd focus follower)
+PartOf=rmac-session.target
+After=rmac-session-supervisor.service
+# Present only while System Settings > Keyboard > "Use Mac shortcuts in all
+# apps" is on (docs/decisions/0017-mac-keyboard.md).
+ConditionPathExists=/etc/keyd/rmac.conf
+ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-mac-keyboard
+StartLimitIntervalSec=60s
+StartLimitBurst=4
+
+[Service]
+ExecStart=%h/.local/libexec/rmac/rmac-mac-keyboard follow
+ExecStopPost=-%h/.local/libexec/rmac/rmac-mac-keyboard reset
+Restart=on-failure
+RestartSec=1s
+NoNewPrivileges=yes
+PrivateTmp=yes

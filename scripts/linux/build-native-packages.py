@@ -27,6 +27,7 @@ from native_package_contract import (
     control_bytes,
     dependency_entries,
     inspect_elf,
+    maintainer_scripts,
     native_version,
     normalize_tree_timestamps,
     package_filename,
@@ -398,6 +399,10 @@ def build(
                     )
                 )
                 control.chmod(0o644)
+                for name, raw in maintainer_scripts(REPO_ROOT, spec).items():
+                    script = control.parent / name
+                    script.write_bytes(raw)
+                    script.chmod(0o755)
                 normalize_tree_timestamps(root, epoch)
             except (OSError, ContractError) as error:
                 raise PackageBuildError(

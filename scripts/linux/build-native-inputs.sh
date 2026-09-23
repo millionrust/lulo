@@ -104,7 +104,8 @@ export CARGO_TARGET_DIR="$target_dir"
       --bin rmac-idle-locker \
     -p rmac-lock-provider-linux --features provider \
       --bin rmac-lock-provider \
-    -p rmac-sound --bin rmac-sound
+    -p rmac-sound --bin rmac-sound \
+    -p rmac-keyboard --bin rmac-mac-keyboard
 )
 (
   cd "$lab_dir"

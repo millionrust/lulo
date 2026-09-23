@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- System Settings > Keyboard: Mac shortcuts in all apps and the Mac key
+     layout (docs/decisions/0017-mac-keyboard.md). The helper accepts only
+     enumerated arguments; see crates/rmac-keyboard/src/helper.rs. -->
+<policyconfig>
+  <vendor>rmac</vendor>
+  <action id="org.rmac.mac-keyboard.apply">
+    <description>Change how the keyboard's Mac keys work</description>
+    <message>System Settings wants to change how Command, Option and Caps Lock work for all users.</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/rmac/rmac-mac-keyboard</annotate>
+  </action>
+</policyconfig>

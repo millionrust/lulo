@@ -69,8 +69,8 @@ class NativePackageContractTests(unittest.TestCase):
 
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
         self.assertEqual(len(contract.APPLICATION_BINARIES), 13)
-        self.assertEqual(len(contract.SESSION_BINARIES), 25)
-        self.assertEqual(len(contract.ALL_BINARIES), 36)
+        self.assertEqual(len(contract.SESSION_BINARIES), 26)
+        self.assertEqual(len(contract.ALL_BINARIES), 37)
         self.assertEqual(
             set(contract.ALL_BINARIES),
             set(contract.APPLICATION_BINARIES) | set(contract.SESSION_BINARIES),
@@ -103,6 +103,11 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("rmac-clipboard-service", session.binaries)
         self.assertIn("rmac-lock-provider", session.binaries)
         self.assertIn("rmac-sound", session.binaries)
+        self.assertIn("rmac-mac-keyboard", session.binaries)
+        self.assertEqual(session.maintainer_scripts, ("postinst", "postrm"))
+        scripts = contract.maintainer_scripts(Path(__file__).parents[1], session)
+        self.assertIn(b"\"$helper\" regenerate", scripts["postinst"])
+        self.assertIn(b"/etc/keyd/rmac.conf", scripts["postrm"])
 
     def test_accepts_exact_amd64_and_arm64_elf_inventories(self):
         for architecture, machine in contract.ARCHITECTURES.items():
@@ -169,7 +174,8 @@ class NativePackageContractTests(unittest.TestCase):
         ).decode("utf-8")
         self.assertIn("Package: rmac-session\n", control)
         self.assertIn("Architecture: arm64\n", control)
-        self.assertIn("Recommends: gdm3, qt6-gtk-platformtheme\n", control)
+        self.assertIn("Recommends: gdm3, keyd, pkexec, qt6-gtk-platformtheme
+", control)
         self.assertTrue(control.endswith("\n"))
         with self.assertRaisesRegex(contract.ContractError, "unsupported relation"):
             contract.dependency_entries("libc6; touch /tmp/not-allowed")

@@ -2,6 +2,7 @@
 
 use super::*;
 
+mod mac_keyboard;
 mod render;
 mod shortcuts;
 
@@ -116,7 +117,10 @@ impl Settings {
             .busy(self.input_busy)
             .disabled(self.input_loading || self.input_busy)
             .on_click(move |_, _, cx| {
-                view.update(cx, |settings, cx| settings.refresh_input(cx));
+                view.update(cx, |settings, cx| {
+                    settings.refresh_input(cx);
+                    settings.refresh_mac_keyboard(cx);
+                });
             })
             .into_any_element()])
     }

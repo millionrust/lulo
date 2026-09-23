@@ -20,6 +20,8 @@ ARCHITECTURES = {
     "arm64": 183,
 }
 MAINTAINER = "Jacob Samas <samasjacob@icloud.com>"
+MAINTAINER_SCRIPT_NAMES = ("postinst", "prerm", "postrm")
+MAX_MAINTAINER_SCRIPT_BYTES = 64 * 1024
 
 
 class ContractError(RuntimeError):
@@ -36,6 +38,8 @@ class PackageSpec:
     recommends: tuple[str, ...]
     summary: str
     description: str
+    # Debian maintainer scripts read from packaging/<name>/debian/.
+    maintainer_scripts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -88,6 +92,7 @@ SESSION_BINARIES = (
     "rmac-lock-provider",
     "rmac-lock-coordinator",
     "rmac-idle-locker",
+    "rmac-mac-keyboard",
 )
 
 # The seven shell surfaces are built from the separately locked Linux GPUI
@@ -158,13 +163,17 @@ PACKAGE_SPECS = (
             "xdg-desktop-portal-gnome",
             "xdg-desktop-portal-gtk",
         ),
-        recommends=("gdm3", "qt6-gtk-platformtheme"),
+        # keyd and pkexec serve the opt-in "Use Mac shortcuts in all apps"
+        # (docs/decisions/0017-mac-keyboard.md); the Qt platform theme gives Qt
+        # apps the rmac look (docs/decisions/0019-third-party-toolkit-theming.md).
+        recommends=("gdm3", "keyd", "pkexec", "qt6-gtk-platformtheme"),
         summary="niri-based rmac Wayland desktop session",
         description=(
             "Provides the supervised rmac shell services, GDM session entry, "
             "portal selection, secure-lock integration, and immutable session "
             "defaults while retaining stock GNOME as the recovery session."
         ),
+        maintainer_scripts=("postinst", "postrm"),
     ),
 )
 
@@ -324,6 +333,31 @@ def combined_dependencies(
     return tuple(
         sorted(set(resolved_static_dependencies(spec, version)) | set(shared_libraries))
     )
+
+
+def maintainer_scripts(repo_root: Path, spec: PackageSpec) -> dict[str, bytes]:
+    """Read and validate one package's Debian maintainer scripts."""
+    scripts: dict[str, bytes] = {}
+    for name in spec.maintainer_scripts:
+        if name not in MAINTAINER_SCRIPT_NAMES or name in scripts:
+            raise ContractError("maintainer script name is not supported")
+        path = repo_root / "packaging" / spec.name / "debian" / name
+        if path.is_symlink() or not path.is_file():
+            raise ContractError(f"maintainer script is missing: {name}")
+        try:
+            raw = path.read_bytes()
+        except OSError as error:
+            raise ContractError(f"maintainer script is unreadable: {name}") from error
+        if (
+            len(raw) > MAX_MAINTAINER_SCRIPT_BYTES
+            or b"\0" in raw
+            or b"\r" in raw
+            or not raw.startswith(b"#!/bin/sh\nset -e\n")
+            or not raw.endswith(b"\n")
+        ):
+            raise ContractError(f"maintainer script is not a strict shell script: {name}")
+        scripts[name] = raw
+    return scripts
 
 
 def control_bytes(

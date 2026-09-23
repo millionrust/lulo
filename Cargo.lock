@@ -5801,6 +5801,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-keyboard"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "libc",
+ "rmac-compositor",
+ "rmac-compositor-niri",
+ "rmac-locale",
+ "rmac-locale-linux",
+ "rmac-storage",
+]
+
+[[package]]
 name = "rmac-launcher"
 version = "0.1.0"
 dependencies = [
@@ -6492,6 +6506,7 @@ dependencies = [
  "rmac-focus-settings",
  "rmac-gtk-settings",
  "rmac-input",
+ "rmac-keyboard",
  "rmac-launcher-providers",
  "rmac-locale",
  "rmac-locale-linux",

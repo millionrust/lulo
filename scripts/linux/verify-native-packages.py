@@ -25,6 +25,7 @@ from native_package_contract import (
     control_bytes,
     dependency_entries,
     inspect_elf,
+    maintainer_scripts,
     native_version,
     package_filename,
     resolved_static_dependencies,
@@ -383,11 +384,23 @@ def verify_directory(
 
             extracted = temporary_root / specification.name
             _run_extract(dpkg_deb, archive, extracted)
+            try:
+                scripts = maintainer_scripts(REPO_ROOT, specification)
+            except ContractError as error:
+                raise VerificationError(str(error)) from error
             if _control_entries(extracted) != {
                 Path("DEBIAN"),
                 Path("DEBIAN/control"),
-            }:
+            } | {Path("DEBIAN") / name for name in scripts}:
                 raise VerificationError("native package control inventory is not exact")
+            for name, expected_script in scripts.items():
+                script, script_mode = _regular_bytes(
+                    extracted / "DEBIAN" / name, MAX_CONTROL_BYTES
+                )
+                if script_mode != 0o755 or script != expected_script:
+                    raise VerificationError(
+                        f"native package maintainer script differs: {name}"
+                    )
             control, control_mode = _regular_bytes(
                 extracted / "DEBIAN/control", MAX_CONTROL_BYTES
             )

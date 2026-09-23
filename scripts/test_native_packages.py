@@ -68,8 +68,8 @@ class NativePackageContractTests(unittest.TestCase):
 
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
         self.assertEqual(len(contract.APPLICATION_BINARIES), 9)
-        self.assertEqual(len(contract.SESSION_BINARIES), 23)
-        self.assertEqual(len(contract.ALL_BINARIES), 30)
+        self.assertEqual(len(contract.SESSION_BINARIES), 24)
+        self.assertEqual(len(contract.ALL_BINARIES), 31)
         self.assertEqual(
             set(contract.ALL_BINARIES),
             set(contract.APPLICATION_BINARIES) | set(contract.SESSION_BINARIES),

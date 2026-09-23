@@ -47,6 +47,7 @@ rmac-clipboard-linux = { version = "=0.1.0", path = "crates/rmac-clipboard-linux
 rmac-compositor = { version = "=0.1.0", path = "crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.1.0", path = "crates/rmac-compositor-niri" }
 rmac-editor = { version = "=0.1.0", path = "crates/rmac-editor" }
+rmac-finder = { version = "=0.1.0", path = "crates/finder" }
 rmac-focus = { version = "=0.1.0", path = "crates/rmac-focus" }
 rmac-focus-store = { version = "=0.1.0", path = "crates/rmac-focus-store" }
 rmac-focus-runtime = { version = "=0.1.0", path = "crates/rmac-focus-runtime" }

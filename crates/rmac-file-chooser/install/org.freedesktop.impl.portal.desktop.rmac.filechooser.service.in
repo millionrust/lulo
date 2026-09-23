@@ -1,0 +1,4 @@
+[D-BUS Service]
+Name=org.freedesktop.impl.portal.desktop.rmac.filechooser
+Exec=@RMAC_FILE_CHOOSER_EXEC@
+SystemdService=rmac-file-chooser.service

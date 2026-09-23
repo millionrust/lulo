@@ -1,0 +1,17 @@
+[Unit]
+Description=rmac Open and Save panels (portal FileChooser backend)
+PartOf=rmac-session.target
+After=rmac-session-supervisor.service
+StartLimitIntervalSec=60s
+StartLimitBurst=4
+ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-file-chooser
+
+# D-Bus activated by the first Open/Save request; the session target never
+# starts it. No PrivateTmp: the panel must browse the real /tmp.
+[Service]
+Type=dbus
+BusName=org.freedesktop.impl.portal.desktop.rmac.filechooser
+ExecStart=%h/.local/libexec/rmac/rmac-file-chooser
+Restart=on-failure
+RestartSec=1s
+NoNewPrivileges=yes

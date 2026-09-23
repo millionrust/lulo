@@ -40,11 +40,13 @@ LEGACY_APPLICATION_IDS = (
 )
 DBUS_SERVICES = (
     "org.freedesktop.impl.portal.desktop.rmac.service",
+    "org.freedesktop.impl.portal.desktop.rmac.filechooser.service",
     "org.rmac.Focus1.service",
     "org.rmac.NotificationCenter1.service",
 )
 PORTAL_FILES = (
     Path("portals/rmac.portal"),
+    Path("portals/rmac-file-chooser.portal"),
     Path("rmac-portals.conf"),
 )
 PRESERVED_AUXILIARY_UNITS = (

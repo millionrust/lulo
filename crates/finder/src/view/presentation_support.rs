@@ -109,9 +109,5 @@ pub(super) const SIZE_W: f32 = 97.0;
 pub(super) const KIND_W: f32 = 115.0;
 
 pub(super) fn root_volume_name() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "Macintosh HD"
-    } else {
-        "Computer"
-    }
+    rmac_finder::places::root_volume_name()
 }

@@ -8,11 +8,6 @@ use shortcuts::*;
 impl FinderView {
     pub(super) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".to_string()));
-        let host = home
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| root_volume_name().to_string());
-        let icloud = home.join("Library/Mobile Documents/com~apple~CloudDocs");
         let file_words = rmac_locale::FileVocabulary::from_environment();
 
         let p =
@@ -24,24 +19,22 @@ impl FinderView {
                 kind,
             };
 
+        // Folder places come from the shared Files model (also used by the
+        // Open/Save panel), so both sidebars list the same real folders.
+        let from_spec = |spec: rmac_finder::places::PlaceSpec| {
+            let tint = if spec.secondary_tint {
+                drive_gray()
+            } else {
+                accent()
+            };
+            p(&spec.name, spec.path, spec.icon, tint, PlaceKind::Item)
+        };
+
         // Real mounted volumes.
-        let mut locations = Vec::new();
-        if icloud.is_dir() {
-            locations.push(p(
-                "iCloud Drive",
-                icloud,
-                "icons/cloud.svg",
-                accent(),
-                PlaceKind::Item,
-            ));
-        }
-        locations.extend([p(
-            &host,
-            home.clone(),
-            "icons/house.svg",
-            drive_gray(),
-            PlaceKind::Item,
-        )]);
+        let mut locations: Vec<Place> = rmac_finder::places::standard_locations(&home)
+            .into_iter()
+            .map(from_spec)
+            .collect();
         let (mounts, mount_error) = match rmac_mounts::discover() {
             Ok(mounts) => (mounts, None),
             Err(error) => (
@@ -72,15 +65,8 @@ impl FinderView {
             accent(),
             PlaceKind::Recents,
         )];
-        let shared = home.join("Public");
-        if shared.is_dir() {
-            prominent.push(p(
-                "Shared",
-                shared,
-                "icons/shared-folder.svg",
-                accent(),
-                PlaceKind::Item,
-            ));
+        if let Some(shared) = rmac_finder::places::shared_folder(&home) {
+            prominent.push(from_spec(shared));
         }
 
         let mut favorites = vec![p(
@@ -90,42 +76,11 @@ impl FinderView {
             accent(),
             PlaceKind::Applications,
         )];
-        // The owner's Finder order; the Mac hides Macintosh HD and Movies
-        // from the sidebar by default, so Files does too (⇧⌘C and the path
-        // bar still reach the root).
-        favorites.extend([
-            p(
-                "Downloads",
-                home.join("Downloads"),
-                "icons/circle-arrow-down.svg",
-                accent(),
-                PlaceKind::Item,
-            ),
-            p(
-                "Documents",
-                home.join("Documents"),
-                "icons/file.svg",
-                accent(),
-                PlaceKind::Item,
-            ),
-            p(
-                "Desktop",
-                home.join("Desktop"),
-                "icons/desktop.svg",
-                accent(),
-                PlaceKind::Item,
-            ),
-        ]);
-        let projects = home.join("Projects");
-        if projects.is_dir() {
-            favorites.push(p(
-                "Projects",
-                projects,
-                "icons/folder.svg",
-                accent(),
-                PlaceKind::Item,
-            ));
-        }
+        favorites.extend(
+            rmac_finder::places::favourite_folders(&home)
+                .into_iter()
+                .map(from_spec),
+        );
         #[cfg(target_os = "linux")]
         locations.push(p(
             file_words.bin(),

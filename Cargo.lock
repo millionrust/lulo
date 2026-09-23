@@ -5613,6 +5613,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-file-chooser"
+version = "0.1.0"
+dependencies = [
+ "async-channel",
+ "async-io",
+ "futures-lite",
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "rmac-appearance",
+ "rmac-finder",
+ "rmac-locale",
+ "rmac-mounts",
+ "rmac-search",
+ "rmac-ui",
+ "rust-embed",
+ "serde",
+ "url",
+ "zbus",
+]
+
+[[package]]
 name = "rmac-finder"
 version = "0.1.0"
 dependencies = [

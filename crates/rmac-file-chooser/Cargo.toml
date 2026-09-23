@@ -1,0 +1,35 @@
+[package]
+name = "rmac-file-chooser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rmac-file-chooser"
+path = "src/main.rs"
+
+[dependencies]
+async-channel.workspace = true
+futures-lite.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+gpui-component-assets.workspace = true
+rmac-appearance.workspace = true
+rmac-finder.workspace = true
+rmac-locale.workspace = true
+rmac-mounts.workspace = true
+rmac-search.workspace = true
+rmac-ui.workspace = true
+rust-embed.workspace = true
+url.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+async-io.workspace = true
+# zvariant's dict derives expand to serde derives that name `serde`.
+serde.workspace = true
+zbus.workspace = true

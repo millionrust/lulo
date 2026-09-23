@@ -260,73 +260,13 @@ pub(super) fn free_space(path: &Path) -> Option<u64> {
 }
 
 pub(super) fn human_size(bytes: u64) -> String {
-    const K: f64 = 1024.0;
-    let b = bytes as f64;
-    if b >= K * K * K {
-        format!("{:.2} GB", b / (K * K * K))
-    } else if b >= K * K {
-        format!("{:.1} MB", b / (K * K))
-    } else if b >= K {
-        format!("{:.0} KB", b / K)
-    } else {
-        format!("{bytes} bytes")
-    }
+    rmac_finder::listing::human_size(bytes)
 }
 
 fn kind_of(path: &Path, is_dir: bool) -> String {
-    if is_dir {
-        return "Folder".to_string();
-    }
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    match ext.as_str() {
-        "rs" => "Rust Source".into(),
-        "toml" => "TOML Document".into(),
-        "md" => "Markdown Document".into(),
-        "txt" => "Plain Text Document".into(),
-        "json" => "JSON document".into(),
-        "lock" => "Document".into(),
-        "png" => "PNG image".into(),
-        "jpg" | "jpeg" => "JPEG image".into(),
-        "gif" => "GIF image".into(),
-        "webp" => "WebP image".into(),
-        "pdf" => "PDF document".into(),
-        "zip" => "ZIP archive".into(),
-        "gz" | "tar" => "Archive".into(),
-        "app" => "Application".into(),
-        "" => "Document".into(),
-        other => format!("{} document", other.to_uppercase()),
-    }
+    rmac_finder::listing::kind_of(path, is_dir)
 }
 
 fn date_label(t: SystemTime) -> String {
-    let dt: DateTime<Local> = t.into();
-    let now = Local::now();
-    let (h12, ap) = {
-        let h = dt.hour();
-        if h == 0 {
-            (12, "AM")
-        } else if h < 12 {
-            (h, "AM")
-        } else if h == 12 {
-            (12, "PM")
-        } else {
-            (h - 12, "PM")
-        }
-    };
-    let time = format!("{}:{:02} {}", h12, dt.minute(), ap);
-    let days = now
-        .date_naive()
-        .signed_duration_since(dt.date_naive())
-        .num_days();
-    if days == 0 {
-        format!("Today at {time}")
-    } else if days == 1 {
-        format!("Yesterday at {time}")
-    } else {
-        format!("{} {} {} at {time}", dt.day(), dt.format("%b"), dt.year())
-    }
+    rmac_finder::listing::date_label(t)
 }

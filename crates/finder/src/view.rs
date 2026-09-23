@@ -51,7 +51,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use chrono::{DateTime, Datelike, Local, Timelike};
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, AssetSource,
     ClickEvent, ClipboardItem, Context, Div, Entity, ExternalPaths, FocusHandle, Focusable as _,

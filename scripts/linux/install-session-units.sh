@@ -6,6 +6,7 @@ repo_root=$(CDPATH= cd -- "${script_dir}/../.." && pwd)
 source_dir="${repo_root}/crates/rmac-session/units"
 notification_install_dir="${repo_root}/crates/rmac-notifications-linux/install"
 focus_install_dir="${repo_root}/crates/rmac-focus-linux/install"
+file_chooser_install_dir="${repo_root}/crates/rmac-file-chooser/install"
 lock_config_source="${repo_root}/crates/rmac-session/swaylock.conf"
 lock_policy_source="${repo_root}/crates/rmac-session/lock-policy.json"
 config_home=${XDG_CONFIG_HOME:-"${HOME}/.config"}
@@ -52,6 +53,7 @@ esac
     -p rmac-notification-center-app --bin rmac-notification-center \
     -p rmac-focus-linux --bin rmac-focus-service \
     -p rmac-clipboard-linux --bin rmac-clipboard-service \
+    -p rmac-file-chooser --bin rmac-file-chooser \
     -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch --bin rmac-locker --bin rmac-lock-coordinator --bin rmac-idle-locker)
 
 install -d -m 0755 "${unit_dir}"
@@ -66,6 +68,7 @@ install -m 0755 "${target_dir}/release/rmac-system-settings" "${libexec_dir}/rma
 install -m 0755 "${target_dir}/release/rmac-notification-center" "${libexec_dir}/rmac-notification-center"
 install -m 0755 "${target_dir}/release/rmac-focus-service" "${libexec_dir}/rmac-focus-service"
 install -m 0755 "${target_dir}/release/rmac-clipboard-service" "${libexec_dir}/rmac-clipboard-service"
+install -m 0755 "${target_dir}/release/rmac-file-chooser" "${libexec_dir}/rmac-file-chooser"
 install -m 0755 "${target_dir}/release/rmac-shortcut-broker" "${libexec_dir}/rmac-shortcut-broker"
 install -m 0755 "${target_dir}/release/rmac-shortcut-dispatch" "${libexec_dir}/rmac-shortcut-dispatch"
 install -m 0755 "${target_dir}/release/rmac-locker" "${libexec_dir}/rmac-locker"
@@ -90,6 +93,7 @@ dbus_service_dir="${data_home}/dbus-1/services"
 install -d -m 0755 "${portal_dir}" "${portal_config_dir}" "${dbus_service_dir}"
 install -m 0644 "${notification_install_dir}/rmac.portal" "${portal_dir}/rmac.portal"
 install -m 0644 "${notification_install_dir}/rmac-portals.conf" "${portal_config_dir}/rmac-portals.conf"
+install -m 0644 "${file_chooser_install_dir}/rmac-file-chooser.portal" "${portal_dir}/rmac-file-chooser.portal"
 activation_tmp=$(mktemp "${TMPDIR:-/tmp}/rmac-portal-service.XXXXXX")
 trap 'rm -f "${activation_tmp}"' EXIT HUP INT TERM
 sed "s|@RMAC_NOTIFICATION_EXEC@|${libexec_dir}/rmac-notification-center|g" \
@@ -102,6 +106,11 @@ sed "s|@RMAC_NOTIFICATION_EXEC@|${libexec_dir}/rmac-notification-center|g" \
     >"${activation_tmp}"
 install -m 0644 "${activation_tmp}" \
     "${dbus_service_dir}/org.rmac.NotificationCenter1.service"
+sed "s|@RMAC_FILE_CHOOSER_EXEC@|${libexec_dir}/rmac-file-chooser|g" \
+    "${file_chooser_install_dir}/org.freedesktop.impl.portal.desktop.rmac.filechooser.service.in" \
+    >"${activation_tmp}"
+install -m 0644 "${activation_tmp}" \
+    "${dbus_service_dir}/org.freedesktop.impl.portal.desktop.rmac.filechooser.service"
 rm -f "${activation_tmp}"
 trap - EXIT HUP INT TERM
 
@@ -131,6 +140,7 @@ echo "Installed rmac user units in ${unit_dir}."
 echo "Installed the supervisor in ${libexec_dir}."
 echo "Installed the supervised Apps, notification service, on-demand Center and Quick Settings panels, and rmac notification portal backend."
 echo "Installed the Focus policy authority."
+echo "Installed the rmac Open/Save panel as the portal FileChooser backend (restart xdg-desktop-portal to select it)."
 echo "Installed the rmac lock screen with fail-closed swaylock recovery, logind coordination, idle locking, and default lock policy."
 echo "The four upstream shell surfaces remain an explicit framework-gated development candidate."
 echo "Check them with: bash ${script_dir}/install-upstream-shell-candidate.sh --check"

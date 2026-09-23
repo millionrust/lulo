@@ -57,7 +57,7 @@ fn capsule_button(
 
 /// The 1 × 20 rule between two unselected neighbours in a capsule; beside
 /// the selected pill it is hidden, as in Finder.
-fn capsule_divider(visible: bool) -> Div {
+fn capsule_rule(visible: bool) -> Div {
     div()
         .w(px(1.0))
         .h(px(CAPSULE_DIVIDER_HEIGHT))
@@ -86,7 +86,7 @@ impl FinderView {
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
             )
-            .child(capsule_divider(true))
+            .child(capsule_rule(true))
             .child(
                 capsule_button(
                     "fwd",
@@ -110,7 +110,7 @@ impl FinderView {
             if index > 0 {
                 let previous = modes[index - 1].3;
                 view_control =
-                    view_control.child(capsule_divider(self.view != mode && self.view != previous));
+                    view_control.child(capsule_rule(self.view != mode && self.view != previous));
             }
             view_control = view_control.child(
                 capsule_button(id, glyph, TOOLBAR_GLYPH, tooltip, self.view == mode, true)

@@ -79,6 +79,7 @@ def package_files() -> dict[str, tuple[bytes, int]]:
     session = REPO_ROOT / "crates" / "rmac-session"
     notifications = REPO_ROOT / "crates" / "rmac-notifications-linux" / "install"
     focus = REPO_ROOT / "crates" / "rmac-focus-linux" / "install"
+    file_chooser = REPO_ROOT / "crates" / "rmac-file-chooser" / "install"
 
     files: dict[str, tuple[bytes, int]] = {
         "usr/share/wayland-sessions/rmac.desktop": (
@@ -139,6 +140,10 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             _read_regular(notifications / "rmac.portal"),
             0o644,
         ),
+        "usr/share/xdg-desktop-portal/portals/rmac-file-chooser.portal": (
+            _read_regular(file_chooser / "rmac-file-chooser.portal"),
+            0o644,
+        ),
         "usr/share/xdg-desktop-portal/rmac-portals.conf": (
             _read_regular(notifications / "rmac-portals.conf"),
             0o644,
@@ -161,6 +166,15 @@ def package_files() -> dict[str, tuple[bytes, int]]:
                 notifications / "org.rmac.NotificationCenter1.service.in",
                 "@RMAC_NOTIFICATION_EXEC@",
                 f"{SYSTEM_LIBEXEC}/rmac-notification-center",
+            ),
+            0o644,
+        ),
+        "usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.rmac.filechooser.service": (
+            _dbus_service(
+                file_chooser
+                / "org.freedesktop.impl.portal.desktop.rmac.filechooser.service.in",
+                "@RMAC_FILE_CHOOSER_EXEC@",
+                f"{SYSTEM_LIBEXEC}/rmac-file-chooser",
             ),
             0o644,
         ),

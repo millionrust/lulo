@@ -64,6 +64,7 @@ EXPECTED_SYSTEMD_UNITS = (
     "rmac-clipboard.service",
     "rmac-component-failure@.service",
     "rmac-dock.service",
+    "rmac-file-chooser.service",
     "rmac-focus.service",
     "rmac-idle-lock.service",
     "rmac-launcher.service",
@@ -97,6 +98,7 @@ EXPECTED_PATHS = {
     Path("usr/share/glib-2.0/schemas/90_rmac-greeter.gschema.override"),
     Path("etc/fonts/conf.d/99-rmac.conf"),
     Path("usr/share/xdg-desktop-portal/portals/rmac.portal"),
+    Path("usr/share/xdg-desktop-portal/portals/rmac-file-chooser.portal"),
     Path("usr/share/xdg-desktop-portal/rmac-portals.conf"),
     Path("usr/share/doc/rmac-session/copyright"),
     Path(
@@ -105,6 +107,10 @@ EXPECTED_PATHS = {
     ),
     Path("usr/share/dbus-1/services/org.rmac.NotificationCenter1.service"),
     Path("usr/share/dbus-1/services/org.rmac.Focus1.service"),
+    Path(
+        "usr/share/dbus-1/services/"
+        "org.freedesktop.impl.portal.desktop.rmac.filechooser.service"
+    ),
 } | {
     Path("usr/lib/systemd/user") / unit for unit in EXPECTED_SYSTEMD_UNITS
 } | {

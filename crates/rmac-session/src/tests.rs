@@ -422,7 +422,13 @@ fn notification_portal_assets_select_only_the_rmac_backend_interface() {
     let selection = include_str!("../../rmac-notifications-linux/install/rmac-portals.conf");
     assert!(selection.contains("default=gnome;gtk;*"));
     assert!(selection.contains("org.freedesktop.impl.portal.Notification=rmac"));
-    assert!(!selection.contains("org.freedesktop.impl.portal.FileChooser=rmac"));
+    // The notification process never claims FileChooser; the separate
+    // rmac-file-chooser backend does, with GNOME as the fallback.
+    assert!(!selection.contains("org.freedesktop.impl.portal.FileChooser=rmac\n"));
+    assert!(
+        selection.contains("org.freedesktop.impl.portal.FileChooser=rmac-file-chooser;gnome;gtk")
+    );
+    assert!(!descriptor.contains("FileChooser"));
 
     let activation = include_str!(
         "../../rmac-notifications-linux/install/org.freedesktop.impl.portal.desktop.rmac.service.in"
@@ -436,6 +442,33 @@ fn notification_portal_assets_select_only_the_rmac_backend_interface() {
     assert!(center_activation.contains("Name=org.rmac.NotificationCenter1"));
     assert!(center_activation.contains("@RMAC_NOTIFICATION_EXEC@"));
     assert!(center_activation.contains("SystemdService=rmac-notification-center.service"));
+}
+
+#[test]
+fn file_chooser_backend_is_a_separate_activated_portal() {
+    let descriptor = include_str!("../../rmac-file-chooser/install/rmac-file-chooser.portal");
+    assert!(descriptor.contains("DBusName=org.freedesktop.impl.portal.desktop.rmac.filechooser"));
+    assert!(descriptor.contains("Interfaces=org.freedesktop.impl.portal.FileChooser;"));
+    assert!(descriptor.contains("UseIn=rmac"));
+
+    let activation = include_str!(
+        "../../rmac-file-chooser/install/org.freedesktop.impl.portal.desktop.rmac.filechooser.service.in"
+    );
+    assert!(activation.contains("Name=org.freedesktop.impl.portal.desktop.rmac.filechooser"));
+    assert!(activation.contains("@RMAC_FILE_CHOOSER_EXEC@"));
+    assert!(activation.contains("SystemdService=rmac-file-chooser.service"));
+
+    let unit = include_str!("../units/rmac-file-chooser.service");
+    assert!(unit.contains("Type=dbus"));
+    assert!(unit.contains("BusName=org.freedesktop.impl.portal.desktop.rmac.filechooser"));
+    assert!(unit.contains("ExecStart=%h/.local/libexec/rmac/rmac-file-chooser"));
+    assert!(unit.contains("NoNewPrivileges=yes"));
+    assert!(!unit.contains("PrivateTmp"));
+    assert!(!unit.contains("/bin/sh"));
+    // Activated on demand: neither wanted by the session nor supervised.
+    let target = include_str!("../units/rmac-session.target");
+    assert!(!target.contains("rmac-file-chooser.service"));
+    assert!(!COMPONENT_UNITS.contains(&"rmac-file-chooser.service"));
 }
 
 #[test]

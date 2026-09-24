@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[features]
+# Exposes `FakePowerService`, the `PowerService` seam, and the shared
+# contract assertions in `contract` for other crates' tests.
+test-support = []
+
 [dependencies]
 async-channel.workspace = true
 

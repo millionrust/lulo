@@ -1,6 +1,17 @@
 //! Focused power service contracts.
 
 use super::*;
+use crate::fake::SystemPowerService;
+
+/// Runs the read-only half of the [`crate::fake::PowerService`] contract
+/// against the real UPower/power-profiles-daemon backend. `#[ignore]`d
+/// because it needs a D-Bus session; run it deliberately on the reference
+/// laptop with `cargo test -p rmac-power -- --ignored`.
+#[test]
+#[ignore = "needs a live UPower/power-profiles-daemon session; run on the reference laptop"]
+fn system_power_service_snapshot_is_well_formed() {
+    contract::assert_power_service_is_observable(&SystemPowerService);
+}
 
 #[test]
 fn upower_states_and_percentages_are_normalized() {

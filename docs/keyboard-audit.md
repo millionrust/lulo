@@ -68,19 +68,20 @@ Files marked "excluded" below are other agents' territory this pass
 |---|---|---|---|
 | **System Settings** | Sidebar → content Tab order | **Fixed** (arrows) + Partial | Sidebar rows are built on the shared `ListRow`/`.on_activate` pattern (`crates/system-settings/src/controller/chrome.rs`), so each row is its own Tab stop and Return/Space activates it — Tab-through-every-row still has no roving arrow-key equivalent for the search-result list's own separate handling, but the plain (non-searching) category list previously had **no** Up/Down at all outside of an active search query. Added `Settings::move_category_selection` (`controller/navigation_state.rs`) and a `capture_key_down` on the sidebar's list container (`controller/chrome.rs`) so Up/Down move the highlighted category the same way the Mac's own sidebar does |
 | System Settings | Visible focus ring | Partial (S) | Inherits the cross-cutting `Button`/`ListRow` ring caveat from `accessibility-audit.md` (gpui-component's own 1.5 px ring, not rmac's measured 3 pt one) — not independently re-checked here |
-| System Settings | Dialogs/sheets trap focus | Partial (corrected) | Every dialog/sheet in the crate (`wifi/render/dialogs.rs`, `bluetooth/render/dialogs.rs`, `vpn/render/dialogs.rs`, `software_updates/render/dialog.rs`, `date_time/render.rs`, and `view_helpers/form.rs`'s `settings_sheet`) is built through `rmac_ui::dialog(...)` or `rmac_ui::alert(...)`, and `alert`'s card does call `.tab_group()` (`crates/rmac-ui/src/components.rs:139`) — but see the cross-cutting "`tab_group()` is not a focus trap" note below: this does not by itself keep Tab from reaching the sidebar/content behind the scrim. `rmac_ui::dialog()` itself (used by the Wi-Fi/Bluetooth/VPN/update sheets) doesn't even call `.tab_group()` — only `alert()` does. Not independently re-verified live |
-| System Settings | Dialog initial focus | Partial | Text-entry sheets correctly focus their field on open (Wi-Fi password/enterprise `credentials.rs:76,53`, Bluetooth pairing `pairing.rs:45,198`). Pure confirmation alerts with no field (Wi-Fi/Bluetooth forget, VPN delete/secret-clear, clock-change — `wifi/connection.rs:56`, `bluetooth/forget.rs:21`, `vpn/destructive.rs:33,145`, `date_time.rs:263`) never call `window.focus(...)` on open, so Tab's first stop is whatever last had focus behind the scrim rather than the dialog's own default button. Not fixed here: `Button`/`dialog_button` don't expose a retrievable `FocusHandle` before render, so this needs a small `rmac-ui` API addition first |
-| System Settings | Esc / Return in dialogs | Works | Each dialog wires its own `capture_key_down` for both, e.g. `wifi/render/dialogs.rs` (`"escape"` cancels, `"enter"` submits via `submit_wifi_password`), matching the pattern in `shell_render.rs`'s root cascade |
-| System Settings | Focus lands in the new pane's content after picking a sidebar category | **Missing — Large** | `select_position` (`controller/navigation_state.rs`) never calls `window.focus(...)`; the crate has exactly one window-level `FocusHandle` (`controller/state.rs:113`) and no per-pane content target, so after selecting a pane the next Tab continues through the *remaining sidebar rows* rather than entering the new pane's controls. Not fixed here: needs a second `content_focus: FocusHandle` field, `.track_focus(&content_focus.tab_stop(false))` on the detail column (`controller/shell_render.rs`, the column built around line 227), and `window.focus(&content_focus, cx); window.focus_next(cx);` in `select_position` — which needs a `window: &mut Window` parameter threaded through its 4 call sites. A real, well-defined GPUI pattern, but with no local precedent in this codebase and no cargo available here to verify it compiles — flagged for the coordinator to land and check on the laptop rather than committed unverified |
+| System Settings | Dialogs/sheets trap focus | **Fixed** (rmac-ui) | Every dialog/sheet in the crate is built through `rmac_ui::dialog(...)`/`rmac_ui::alert(...)`, which now return a real `Dialog` (`crates/rmac-ui/src/components.rs`) that traps Tab/Shift-Tab for as long as it's on screen, the same `window.focus_next`/`focus_prev` + `contains_focused` technique `ContextMenu` already used — see `docs/accessibility-audit.md`'s updated "A real Tab-trap" section. No call site in this crate needed changing (`dialog()`/`alert()`'s public signatures are unchanged); `view_helpers/form.rs`'s `settings_sheet` needed its own return type loosened from `gpui::Stateful<Div>` to `impl IntoElement` since it named the old concrete type. Not independently re-verified live |
+| System Settings | Dialog initial focus | **Fixed** (rmac-ui) | The same `Dialog` fix lands initial (and wrap-around) focus inside the dialog itself the frame it appears — the dialog's own container first, then its first tab stop (`dialog()`) or last/default one (`alert()`, since macOS puts the default action rightmost) once that content has actually been painted. Text-entry sheets that already called `window.focus(&field, cx)` themselves on open are unaffected (that focus is already inside the dialog, so the new self-heal is a no-op for them). Not independently re-verified live |
+| System Settings | Esc / Return in dialogs | Works | Each dialog wires its own `capture_key_down` for both, e.g. `wifi/render/dialogs.rs` (`"escape"` cancels, `"enter"` submits via `submit_wifi_password`), matching the pattern in `shell_render.rs`'s root cascade — unaffected by the `Dialog` fix above, which only intercepts Tab/Shift-Tab and passes every other key through unchanged |
+| System Settings | Focus lands in the new pane's content after picking a sidebar category | **Fixed** | `Settings` gained a second `content_focus: FocusHandle` (`controller/state.rs`), tracked (`tab_stop(false)`, a boundary rather than a stop of its own) on the detail column (`controller/shell_render.rs`). `select_position` (`controller/navigation_state.rs`) now moves focus there through a new `enter_content_focus`, which steps onto the pane's first real control — deliberately two frames, not one, the same reason as the `Dialog` fix above (`window.focus_next` reads the *last painted* frame's tab stops, which don't yet include a pane's content the instant it changes). Shift-Tab from that control returns to the sidebar for free, since the sidebar precedes the detail column in tab order. Up/Down browsing the sidebar's own highlight is unaffected — it now calls a new `select_position_keeping_focus` (the same state change, without moving focus), so arrowing through categories still keeps focus in the list rather than jumping into each pane's content on every arrow-press. `select_position`/`select_category`/`go_back` now take `window: &mut Window`; all call sites already had it in scope in their existing closures, just unnamed. Not independently re-verified live |
 | System Settings | ⌘W / ⌘Q close | **Fixed** | Both bound to the existing `RequestClose` handler; `controller.rs` |
 | **System Monitor** | Table/list Tab order + arrows | Works | Uses `rmac_ui::Table` (`accessibility-audit.md`: "Pass — gpui-component's own keyboard model") |
 | System Monitor | Quit/Force Quit/Confirm/Cancel/Find | Works | `src/main.rs` binds ⌘F/⌘⌫/⇧⌘⌫/Return/Esc; handled in `src/view/render.rs` |
-| System Monitor | Confirmation dialog traps focus, Esc/Return | **Fixed** (Escape) + Partial (no real trap) | **Was broken**: the process table keeps its own `FocusHandle` while the "Quit Process?" dialog is open, and the vendored `DataTable`'s own key context also binds Escape (to clear its row selection) at a *deeper* context than the view's root — GPUI resolves the deepest match first, so Escape silently cleared the table's highlight instead of dismissing the dialog. Fixed by moving focus to the view's root `FocusHandle` when `request_kill` opens the dialog (`src/view.rs`), so Escape/Return now resolve at the root's `CancelKill`/`ConfirmKill` handlers. Still only `.tab_group()` (ordering, not an enforced trap, per `accessibility-audit.md`'s existing Focus ring/tab-stop finding) — a real trap needs gpui-component's `focus_trap` primitive, which would add new `gpui_component` surface to `rmac-ui` against ADR 0015; flagged, not attempted |
+| System Monitor | Confirmation dialog traps focus, Esc/Return | **Fixed** (Escape) + **Fixed** (real trap, rmac-ui) | **Was broken**: the process table keeps its own `FocusHandle` while the "Quit Process?" dialog is open, and the vendored `DataTable`'s own key context also binds Escape (to clear its row selection) at a *deeper* context than the view's root — GPUI resolves the deepest match first, so Escape silently cleared the table's highlight instead of dismissing the dialog. Fixed by moving focus to the view's root `FocusHandle` when `request_kill` opens the dialog (`src/view.rs`), so Escape/Return now resolve at the root's `CancelKill`/`ConfirmKill` handlers. The dialog itself (`rmac_ui::alert`) now traps Tab for real too — see the System Settings dialog rows above and `docs/accessibility-audit.md`'s "A real Tab-trap" section — no `crates/activity-monitor` change was needed for that part |
 | System Monitor | ⌘W / ⌘Q close | **Fixed** | Both bound to the existing `RequestClose` handler; `src/main.rs` |
-| System Monitor | Visible focus ring while Tabbing | Partial | `rmac_ui::Button`/`Table` draw one when focused, but the 5 metric-tab pills (Cpu/Memory/Energy/Disk/Network, `view/render/chrome.rs`) are plain `div().on_click(...)` with no `.track_focus` — not Tab-reachable at all. Not fixed here (the tab strip's own render/selection logic would need real tab-stop wiring, more than a one-line change) |
+| System Monitor | Visible focus ring while Tabbing | **Fixed** | `rmac_ui::Button`/`Table` draw one when focused; the 5 metric-tab pills (Cpu/Memory/Energy/Disk/Network, `view/render/chrome.rs`) are now real tab stops too (a keyed `FocusHandle` per pill, the same `window.use_keyed_state` technique `rmac-ui`'s own `Toggle`/`Checkbox`/`Radio` use), with Left/Right/Home/End moving focus and selection together across the strip (mirroring `rmac_ui::SegmentedControl`'s own roving convention; pure index math in `tab_roving_target`, unit tested) |
+| System Monitor | Column headers clickable/sortable from the keyboard and AT-SPI | **Fixed** | `process_table.rs`'s `render_th` (AT-SPI `ColumnHeader`, but Accessible/Component interfaces only per `docs/journey-suite.md`'s journey 6) is now a tab stop; Space and `AccessibleAction::Click` both call a new `activate_sort`, reusing `ProcessTableDelegate::perform_sort` — the same path the table widget's own mouse-driven header click already takes, so the real sort order stays correct regardless of trigger. `aria_label` now folds in "sorted ascending"/"sorted descending" so a screen reader always reports the true order. Deliberately no new `on_click` on the header (would double-fire, and double-toggle the sort direction, alongside the table widget's own mouse click handling — see the commit for the full reasoning); the one honest gap left is that the table widget's own sort-chevron icon, driven by a private field only its mouse-click path can set, won't flip when a header is sorted from the keyboard or AT-SPI, though the data and `aria_label` both stay correct either way |
 | **Setup Assistant** (`crates/setup-assistant`) | Initial focus on open | **Fixed** | Added a `focus: FocusHandle` field, created and focused in `SetupView::new` (`src/view.rs`), matching every other first-party app; before this pass the crate had zero `track_focus`/`FocusHandle`/`KeyBinding`/`actions!` usage anywhere (confirmed by grep) |
 | Setup Assistant | Return activates the default button | **Fixed** | Added a `Continue` action bound to Return in the `"SetupAssistant"` key context, calling the same `continue_pressed()` every screen's own Continue button already calls (`src/main.rs`, `src/view.rs`). This specifically unblocks the **Welcome** screen, which had no other keyboard-reachable way to advance — its round "Get Started" button is a plain, unfocusable `div` (next row), and "Skip Setup" ends the whole assistant rather than proceeding |
-| Setup Assistant | Tab/Shift-Tab through every field/button | Partial | Text fields, language/region rows, Wi-Fi network rows, and all bottom-bar buttons are real Tab stops (`ListRow`/`Button` both wrap `gpui_component::button::Button`, `tab_stop` by default). Three controls are still plain `div()`s with no `.track_focus`, so Tab skips them entirely: Welcome's round "Get Started" button (`src/view.rs`, `~455`), Appearance's Light/Dark/Auto cards (`~815`), and Account's photo-picker frames (`face_frame`, `~1216`). Not fixed here — needs threading `window: &mut Window` into three more render functions plus a keyed `FocusHandle` per control (the technique gpui-component's own `Button` uses internally); the Return fix above already unblocks the one screen (Welcome) this would otherwise have blocked entirely |
+| Setup Assistant | Tab/Shift-Tab through every field/button | **Fixed** | Text fields, language/region rows, Wi-Fi network rows, and all bottom-bar buttons were already real Tab stops (`ListRow`/`Button`, `tab_stop` by default). The three remaining plain `div()`s now are too, each with its own keyed `FocusHandle` (`window.use_keyed_state`, the technique `rmac-ui`'s own `Toggle`/`Checkbox`/`Radio` use) and a focus ring: Welcome's round "Get Started" button (role Button, name "Get Started" — GPUI's generic focused-click mapping already turns Space/Return into a click once it's a tab stop, so no new key handling was needed), Appearance's Light/Dark/Auto cards (role RadioButton with `aria_selected`, plus Left/Up/Right/Down/Home/End roving focus+selection across the three, mirroring `rmac_ui::RadioGroup`'s own ARIA radiogroup convention; pure index math in `appearance_roving_target`, unit tested), and Account's photo-picker frames (role RadioButton, `aria_selected`, and a real accessible name — "Current picture" / "Picture N") |
 | Setup Assistant | Dialogs/confirmations trap focus, Esc/Return | N/A | No dialog/alert exists anywhere in this crate; the native window-close goes straight through `window.on_window_should_close` → `Event::Close` with no confirmation prompt to audit |
 | Files (`crates/finder`, **excluded**) | Arrow-key file-list navigation with a real keyboard | Works (S) | `crates/finder/src/view/list_presentation.rs:800-828` has real `on_key_down` up/down handling independent of AT-SPI; this contradicts nothing in `docs/journey-suite.md`'s Files findings, which are specifically about the AT-SPI tree exposing no row nodes (an Orca/journey-9 concern), not about whether a physical keyboard can drive the list |
 | Files (excluded) | Rename, ⌘↓ open, ⌘⌫ trash, ⌘Z undo, menus | Works | `crates/finder/src/view/startup/shortcuts.rs` binds all of it: `ENTER` → `RenameItem` (line 63), `OPEN_SELECTION` (⌘↓) → `OpenItems` (line 58), `DELETE` (⌘⌫) → `MoveToTrash` (line 33), `UNDO` (⌘Z) → `UndoOperation` (line 24), plus ⌘1-4 view modes, tab management, Space for Quick Look. `docs/journey-suite.md`'s journey-2 script's rename failure is specifically about driving it over AT-SPI with no row selection reachable that way — a different failure mode than a plain keyboard user Tabbing to a row and pressing Return, which this binding supports directly. One real gap found: the places sidebar has no arrow-key roving of its own (rows are `ListRow` Tab stops, per `accessibility-audit.md`, so Tab reaches every place one at a time but there's no Up/Down within it the way the file list has it, `list_presentation.rs:800-820`). Owned by the Files a11y agent this pass |
@@ -132,6 +133,39 @@ Twelve commits, each small and independently reviewable:
 12. `crates/activity-monitor/{main.rs,view/render.rs}` — the same ⌘M wiring
     for System Monitor.
 
+### A later pass: the four gaps this document listed under "Larger gaps"
+
+Four more commits, closing every gap the section above used to list by
+name:
+
+13. `crates/rmac-ui/{src/components.rs,src/lib.rs}` — `dialog()`/`alert()`
+    now return a `Dialog` that really traps Tab/Shift-Tab (the same
+    `window.focus_next`/`focus_prev` + `contains_focused` technique
+    `ContextMenu` already used, generalized into a shared
+    `cycle_focus_within`) and claims initial focus itself. Additive: no
+    existing caller's code needed to change except System Settings'
+    `settings_sheet`, whose declared return type named the old concrete
+    type.
+14. `crates/setup-assistant/src/view.rs` — the Welcome "Get Started" circle,
+    the three Appearance cards, and every photo-picker frame get a real
+    keyed `FocusHandle`, a focus ring, and a role/name/selected state;
+    Appearance's cards get Left/Up/Right/Down/Home/End roving
+    focus+selection.
+15. `crates/activity-monitor/{process_table.rs,metrics.rs,view/render.rs,
+    view/render/chrome.rs}` — column headers become real tab stops with
+    Space and `AccessibleAction::Click` both sorting (reusing the table's
+    own `perform_sort`, deliberately without a new `on_click` — see the
+    row above for why); the five metric-tab pills become tab stops with
+    Left/Right/Home/End roving.
+16. `crates/system-settings/{controller/state.rs,controller/
+    initialization/construction.rs,controller/navigation_state.rs,
+    controller/shell_render.rs,controller/chrome.rs,controller/
+    view_helpers.rs,controller/input/render.rs,controller/accessibility/
+    render.rs}` — a second `content_focus: FocusHandle`, and
+    `select_position` moving focus there (two frames, not one, for the
+    same reason item 13's dialog fix is) whenever a category is actually
+    chosen rather than merely browsed with Up/Down.
+
 ## What still needs a laptop check
 
 - ⌘Q in System Settings reuses the `RequestClose` cascade, so with a sheet
@@ -168,15 +202,37 @@ Twelve commits, each small and independently reviewable:
 - Control Centre / Notification Centre: confirm they are indeed unreachable
   from any physical key today (this pass found no bind, but niri config
   outside `packaging/rmac-session/shell.kdl` was not exhaustively searched).
+- `rmac_ui::Dialog`'s new Tab trap: confirm Tab/Shift-Tab actually cycle
+  within an open dialog/alert/sheet across a few real ones (a Wi-Fi password
+  sheet, a destructive confirmation alert, System Monitor's Quit Process
+  dialog) without ever reaching the window behind the scrim, that initial
+  focus lands somewhere sensible (the container the first frame, a real
+  control the next), and that this didn't regress any dialog's own
+  Esc/Return handling (it shouldn't — the new trap only intercepts Tab —
+  but this is unverified against a real event loop).
+- Setup Assistant's Get Started circle, Appearance cards, and photo-picker
+  frames: confirm Tab reaches all three, Space/Return activate the Get
+  Started circle and photo frames, and Left/Right/Home/End move and select
+  across the Appearance cards without also scrolling the page.
+- System Monitor's column headers: confirm Space and Tab both reach and
+  sort a header, that the sort order is correct (ascending first pick,
+  toggling thereafter), and specifically confirm a real mouse click on a
+  header still sorts exactly as before (this pass deliberately avoided
+  adding a second `on_click` there to prevent a double-toggle, so this is
+  the one regression risk most worth re-checking by hand) — and that the
+  metric-tab pills' Left/Right/Home/End roving doesn't fight the table's
+  own arrow-key row navigation once focus is inside it.
+- System Settings: confirm choosing a category (click, Return on a focused
+  sidebar row, a search result, or an in-pane "jump to Keyboard…" link)
+  actually lands visible focus on the new pane's first real control, that
+  Shift-Tab from there returns to the sidebar, and that Up/Down browsing
+  the sidebar's own highlight still keeps focus in the list across several
+  presses in a row (the two-frame focus technique this needed has no
+  cargo-verified precedent in this crate).
 - Everything marked **S** above.
 
 ## Larger gaps (not fixed here, listed per the brief)
 
-- **System Settings: focus doesn't land in a pane's content after picking
-  it from the sidebar.** `select_position` never calls `window.focus`, and
-  there's only one window-level `FocusHandle` in the whole crate — see the
-  System Settings row above for the exact 4-call-site fix this needs (a
-  second `content_focus` handle, `tab_stop(false)` + `focus_next`).
 - **⌃F2 (menu bar focus)**: known limitation, needs the Dock's invisible-
   overlay-surface mechanism plus a new menu-bar state; `shell/bins/rmac-menubar`
   is excluded from this pass.
@@ -202,22 +258,12 @@ Twelve commits, each small and independently reviewable:
   still has no ⌘M; wiring it there is the same three-line
   action/binding/`on_action` shape used for System Settings and System
   Monitor, just not done for apps outside this pass's touched set.
-- **Setup Assistant's three plain-`div` controls** (Welcome's "Get Started"
-  circle, Appearance's Light/Dark/Auto cards, Account's photo-picker frames):
-  none has `.track_focus`, so Tab skips all three. The Return fix above
-  unblocks Welcome regardless, but a full fix needs a keyed `FocusHandle` per
-  control and threading `window: &mut Window` into three more render
-  functions — bounded, but more than the mechanical bindings made in this
-  pass.
-- **System Monitor's metric-tab pills** (Cpu/Memory/Energy/Disk/Network) and
-  **column-header sorting**: both mouse-only, both would need new
-  `track_focus`/keyboard wiring on custom widgets rather than a binding.
-- **A real Tab-trap for `rmac_ui::dialog()`/`alert()`**: today's
-  `.tab_group()` only affects ordering priority, not an enforced trap (Tab
-  can still leave a dialog for the window's first/last tab stop) — and
-  `dialog()` itself (used by every Wi-Fi/Bluetooth/VPN/update sheet in
-  System Settings, and by Notes'/Finder's/Text Editor's own dialogs) doesn't
-  even call `.tab_group()`, only `alert()` does. The clean fix is
-  gpui-component's own `focus_trap::FocusTrapElement`, but wiring it into
-  `rmac_ui` would add new `gpui_component` surface against ADR 0015 — a
-  policy call, not made here.
+**Fixed in a later pass** (kept here, struck through in spirit, for the
+record — see the App rows above for each one's detail): Setup Assistant's
+three plain-`div` controls; System Monitor's metric-tab pills and
+column-header sorting; a real Tab-trap for `rmac_ui::dialog()`/`alert()`
+(built on `Dialog`'s own `window.focus_next`/`focus_prev` +
+`contains_focused`, the same technique `ContextMenu` already used —
+**not** gpui-component's `focus_trap::FocusTrapElement`, so this stays
+clear of ADR 0015); and System Settings' sidebar → pane content focus
+handoff.

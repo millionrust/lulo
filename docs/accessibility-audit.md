@@ -73,7 +73,7 @@ by this and already has correct role/name/value.
 | `SegmentedControl` (`controls.rs:1647`) | **Fixed** — segments now call `.selected(index == selected)`, so `aria_selected` finally reflects which segment is chosen (it was always `false` before) | Partial — same ring caveat as `Button` (S) | **Fixed** — Left/Right/Home/End now call the control's own `wrapped_selection` helper, which existed but was never wired to a key handler, so arrow keys previously did nothing | N/A | Pass | Pass | N/A |
 | `PopUpButton` (`controls.rs:304`) | **Fixed for `.form()`** (the only variant with a current caller) — its trigger is rebuilt directly on `div()` as `PopUpButtonTrigger`, reporting `Role::ComboBox`, `aria_value` set to the selected option, and `aria_expanded` tracking the popover's real open state. The plain (non-form) variant is unchanged and remains **Gap**: it still wraps `Button`/`DropdownButton`, neither of which sets `Role::ComboBox`/`aria_expanded`, and has no current caller to verify a rebuild against. Either way, the **opened menu itself** is a `gpui_component::menu::PopupMenu`, which does get `Role::Menu` with `Role::MenuItem` rows and `aria_selected`/`aria_label` (`menu/popup_menu.rs:1319`, `menu/menu_item.rs:97`) — Pass | **Fixed for `.form()`** — its own keyboard focus ring; non-form variant keeps the `Button` ring caveat (S) | Partial — the opened `PopupMenu` supports arrow/Home/End/Esc internally (gpui-component); **the trigger itself only opens on mouse-down** — `gpui_component::popover::Popover::render()` wires its open/close toggle to `on_mouse_down` directly with no `on_click`, so GPUI's generic focused-Enter/Space-to-click mapping never fires for it. This is true of every `Popover`-based dropdown trigger in the app today, not something this pass introduced or could fix from rmac-ui (**Blocked**; see "What still needs gpui-kit/gpui-component work" below) | N/A | Pass | Pass | N/A |
 | `ContextMenu` (`components.rs`) | **Fixed** — the panel has `Role::Menu`; items now report `Role::MenuItem` (`Role::MenuItemCheckBox` + `aria_toggled` for a checked item) with an explicit `aria_label` of just the item's label (previously content-derived, which also read out the checkmark glyph and shortcut hint), and a disabled item is now actually marked disabled instead of staying in keyboard navigation with no handler behind it | Pass — menu keeps and traps focus (`ContextMenuState`, `move_context_menu_focus`) | Pass — Up/Down/Tab navigate, Escape (`DismissMenu`) closes, type-select exists (`type_select_match`). rmac-ui's `ContextMenu` has no submenu concept, so there is no Left/Right/`aria_expanded` submenu contract to give it | N/A | Pass — width is `min_w`, content reflows | Pass | N/A |
-| `alert`/`alert_with_icon`/`dialog` (`components.rs`) | **Fixed** — `dialog()` now sets `Role::Dialog`; `alert_with_icon` narrows to `Role::AlertDialog` and sets the title (or message) as `aria_label`. Previously no role at all | Pass — `.tab_group()` traps Tab inside the card; default button is rightmost per macOS convention | Pass — Escape dismisses via `DismissMenu`'s key binding context; buttons are ordinary `Button`s | N/A (an alert appearing is itself the "announcement"; `Role::AlertDialog` is the accesskit signal for that) | Pass — fixed 260 pt card width is the measured macOS metric | Pass | N/A |
+| `alert`/`alert_with_icon`/`dialog` (`components.rs`) | **Fixed** — `dialog()` now sets `Role::Dialog`; `alert_with_icon` narrows to `Role::AlertDialog` and sets the title (or message) as `aria_label`. Previously no role at all | **Fixed** (real trap) — `dialog()`/`alert()` now return a `Dialog` that really traps Tab/Shift-Tab (see "A real Tab-trap" below, which replaces the `.tab_group()`-only description this row used to give — `.tab_group()` only ever set ordering priority, not an enforced trap; default button is rightmost per macOS convention, and initial focus now lands there too) | Pass — Escape dismisses via `DismissMenu`'s key binding context; buttons are ordinary `Button`s | N/A (an alert appearing is itself the "announcement"; `Role::AlertDialog` is the accesskit signal for that) | Pass — fixed 260 pt card width is the measured macOS metric | Pass | N/A |
 | `Toast` (`feedback.rs`) | **Fixed** — now `Role::Alert` (accesskit's live-region equivalent, matching `gpui-component/alert.rs:192`) with title+message combined into one `aria_label`. Previously **no announcement mechanism of any kind** — a toast appearing was invisible to a screen reader unless focus happened to land on it | N/A (not a focus target) | N/A | **Fixed** — see identity column | Pass — `pr_20()` reserves room for the dismiss button; message wraps in a flex column | Pass | N/A |
 | `EmptyState` (`feedback.rs`) | **Fixed** — the `error` variant now announces as `Role::Alert` with the title and message combined into its accessible name, the same pattern `Toast` uses. A non-error empty state stays a silent, unlabeled container | N/A | N/A | **Fixed** (see identity) | Pass | Pass | N/A |
 | `Spinner` / `Progress` (`feedback.rs`) | **Fixed** — both report `Role::ProgressIndicator`; determinate `Progress` sets `aria_numeric_value`/`aria_min_numeric_value`/`aria_max_numeric_value` (0.0–1.0), indeterminate leaves them unset per the ARIA convention for a busy indicator | N/A | N/A | **Fixed** | Pass | Pass | N/A |
@@ -259,6 +259,54 @@ caller to break and because rebuilding its two-button visual without a way to
 compare it on the laptop was judged a worse risk than leaving the documented
 `Gap`.
 
+## A real Tab-trap for `dialog()`/`alert()` (third pass)
+
+`docs/keyboard-audit.md` found the exact shape of `.tab_group()`'s limit
+this document's own "alert/dialog" row used to gloss over: it only sets
+*ordering priority* among a group's own tab stops (confirmed by reading
+`gpui`'s `tab_stop.rs`), not an enforced trap — Tab could still walk out of
+an open dialog onto the window's other tab stops behind the scrim, and
+`dialog()` itself (used by every Wi-Fi/Bluetooth/VPN/update sheet in System
+Settings, and by Notes'/Finder's/Text Editor's own dialogs) never even
+called `.tab_group()`; only `alert()` did.
+
+`dialog()`/`alert()`/`alert_with_icon()` now return a new `Dialog`
+(`#[derive(IntoElement)]` + `RenderOnce`, the same shape as `Button`/
+`ListRow`/`Toggle`) instead of a plain `gpui::Stateful<gpui::Div>`. Inside
+its own `render()` — which GPUI calls with a live `window`/`cx`, unlike the
+free functions that used to build the div eagerly — it:
+
+- gets a persistent, per-dialog `FocusHandle` via `window.use_keyed_state`
+  keyed by the dialog's own id (the same pattern `Radio`/`RadioGroup`
+  already use for a stable handle across renders without the caller owning
+  a field for it);
+- traps Tab/Shift-Tab with a new `cycle_focus_within`, which generalizes
+  `ContextMenu`'s own proven `move_context_menu_focus` (`window.focus_next`/
+  `focus_prev`, wrapping back in via `contains_focused` rather than letting
+  focus escape) — `ContextMenu` now calls the same shared function;
+- claims focus itself if it currently isn't inside the dialog, landing on
+  the dialog's own container the first frame and stepping onto its first
+  tab stop (`dialog()`) or last one (`alert()`, since macOS puts the
+  default action rightmost — `.initial_focus_last()`) once that content has
+  actually been painted at least once. This is deliberately two frames, not
+  one: `window.focus_next`/`focus_prev` read the *last painted* frame's tab
+  stops, which don't yet include a dialog's own content the instant it
+  first appears.
+
+`dialog()`'s own public signature is unchanged (`fn dialog(id, content) ->
+Dialog`), so none of its ~13 existing callers across `crates/terminal`,
+`crates/activity-monitor`, `crates/text-editor`, `crates/system-settings`,
+`crates/notes`, and `crates/finder` needed to change — `Dialog` implements
+`IntoElement`/`.into_any_element()` like every other `rmac-ui` control, and
+gained its own `.capture_key_down(...)` builder method so the several
+System Settings sheets that already chain their own Escape/Return handler
+onto the result keep compiling and working unchanged (both listeners run;
+this one only ever calls `cx.stop_propagation()` for Tab/Shift-Tab, so it
+never swallows a caller's own Escape/Enter). The one exception was System
+Settings' `view_helpers/form.rs::settings_sheet`, whose declared return
+type named the old concrete `gpui::Stateful<Div>`, loosened to `impl
+IntoElement`. Not independently re-verified live.
+
 ## What still needs gpui-kit/gpui-component work (Blocked)
 
 - `gpui_component::button::Button`'s accessibility fields (role, `aria_label`,
@@ -343,3 +391,28 @@ folding into whichever future pass picks up the `Gap`s above: per-cell
 `Role::Cell`, and the column-chooser popover's checkbox-like rows (the same
 `ListRow`-shaped gap already tracked in the "List/ListRow" row of the table
 above).
+
+A later pass closed one more gap this section left standing:
+`render_th`'s `Role::ColumnHeader` cells reported the Accessible/Component
+AT-SPI interfaces only, with no `Action` and no keyboard path either
+(`docs/journey-suite.md`'s journey 6, "Remaining real product bugs" #2).
+Each header is now a real tab stop; Space and `AccessibleAction::Click`
+both call a new `activate_sort`, which reuses `ProcessTableDelegate::
+perform_sort` — the same path the table widget's own mouse-driven header
+click already takes, so the real sort order stays correct regardless of
+how a header was activated. `aria_label` folds in "sorted ascending"/
+"sorted descending" so the true order is always announced. Deliberately no
+new `on_click` on the header div: the table widget's own wrapper already
+calls back into its private sort method on a real mouse click (bubbled up
+from this div), and GPUI's generic Space/Return-activates-a-focused-click
+mapping only re-fires a div's own click listeners, not an ancestor's — a
+second `on_click` here would double-fire, and double-toggle the sort
+direction, on every mouse click. The one honest gap this leaves: the table
+widget's own sort-chevron icon is driven by a private field only its
+mouse-click path can set, so it won't flip when a header is sorted from
+the keyboard or AT-SPI — the data and `aria_label` both stay correct
+either way. `crates/activity-monitor/src/view/render/chrome.rs`'s five
+metric-tab pills (Cpu/Memory/Energy/Disk/Network), plain `div().on_click
+(...)` with no way to reach them from the keyboard, were fixed the same
+pass: each is a real tab stop, with Left/Right/Home/End roving focus and
+selection together across the strip.

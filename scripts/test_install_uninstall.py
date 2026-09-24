@@ -271,6 +271,16 @@ class InstallReleaseAssetNameTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "rmac-apps_0.9.0~beta.1-1_amd64.deb")
 
+    def test_finds_a_beta_package_under_the_name_github_stores(self):
+        # release.yml renames "~" to "." before checksumming and upload.
+        listing = (
+            "aa  rmac-apps_0.9.0.beta.1-38_amd64.deb\n"
+            "bb  rmac-session_0.9.0.beta.1-38_amd64.deb\n"
+        )
+        result = self._asset(listing, "rmac-session")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "rmac-session_0.9.0.beta.1-38_amd64.deb")
+
     def test_finds_a_final_release_package(self):
         result = self._asset("aa  rmac-session_1.2.3-1_amd64.deb\n", "rmac-session")
         self.assertEqual(result.returncode, 0, result.stderr)

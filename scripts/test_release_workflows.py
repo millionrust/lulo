@@ -153,3 +153,53 @@ def test_fetched_repository_values_never_expand_inside_run_scripts():
                         f"{path.name}:{job_name}:{step.get('name')} expands "
                         f"{expression} into shell text"
                     )
+
+
+def test_uploaded_asset_names_match_sha256sums_after_github_renames_tildes():
+    # GitHub stores "~" in an uploaded asset's name as ".", so a Debian
+    # pre-release like 0.9.0~beta.1 must be renamed before SHA256SUMS is
+    # written and before upload, or the listing names files that do not exist.
+    import shutil
+    import subprocess
+    import tempfile
+
+    attach = _load(RELEASE)["jobs"]["attach-release"]
+    steps = {step.get("name", ""): step for step in attach["steps"]}
+    assemble = next(step["run"] for name, step in steps.items() if name.startswith("Assemble"))
+    start = assemble.index('for path in "$bundle"/*~*; do')
+    end = assemble.index("ls -l")
+    snippet = assemble[start:end]
+    assert "sha256sum" in snippet
+    upload = next(step["run"] for name, step in steps.items() if name.startswith("Create or update"))
+    assert "gh release upload \"$tag\" release-bundle/*" in upload
+    provenance = next(step for name, step in steps.items() if name.startswith("Generate build provenance"))
+    assert provenance["with"]["subject-path"] == "release-bundle/*"
+    assert assemble.index("*~*") < assemble.index("sha256sum")
+
+    if shutil.which("sha256sum") is None or shutil.which("bash") is None:
+        return
+    with tempfile.TemporaryDirectory() as temporary:
+        bundle = Path(temporary)
+        for name in (
+            "rmac-apps_0.9.0~beta.1-38_amd64.deb",
+            "rmac-session_0.9.0~beta.1-38_amd64.deb",
+            "niri_26.04-0lulo1_amd64.deb",
+        ):
+            (bundle / name).write_bytes(name.encode())
+        subprocess.run(
+            ["bash", "-euo", "pipefail", "-c", f'bundle="{bundle}"\n{snippet}'],
+            check=True,
+            capture_output=True,
+        )
+        names = sorted(path.name for path in bundle.iterdir())
+        assert names == [
+            "SHA256SUMS",
+            "niri_26.04-0lulo1_amd64.deb",
+            "rmac-apps_0.9.0.beta.1-38_amd64.deb",
+            "rmac-session_0.9.0.beta.1-38_amd64.deb",
+        ]
+        listed = sorted(
+            line.split()[-1]
+            for line in (bundle / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+        )
+        assert listed == [name for name in names if name != "SHA256SUMS"]

@@ -16,6 +16,7 @@ pub enum ActionTarget {
         window: rmac_compositor::WindowId,
     },
     Special(rmac_dock::SpecialItemKind),
+    Stack(rmac_shell_settings::DockStackKind),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

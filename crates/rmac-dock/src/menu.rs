@@ -5,7 +5,7 @@ use std::fmt;
 use crate::presentation::{EntryId, OverflowGroup};
 use crate::{
     ContextAction, ContextMenu, PinCommand, SpecialActivation, SpecialContextAction,
-    SpecialContextMenu, SpecialItemKind, StackActivation, StackContextAction, StackContextMenu,
+    SpecialContextMenu, SpecialItemKind, StackActivation, StackCommand, StackContextMenu,
 };
 
 pub const MAX_MENU_ROWS: usize = 512;
@@ -72,7 +72,7 @@ pub enum Action {
     ActivateEntry(EntryId),
     Context(ContextAction),
     SpecialContext(SpecialContextAction),
-    StackContext(StackContextAction),
+    StackContext(StackCommand),
 }
 
 impl fmt::Debug for Action {
@@ -519,7 +519,7 @@ impl Session {
     /// A stack's context menu: Open "<name>", Sort By, Display As, View
     /// Content As, then Options ▸ Remove from Dock (§ folder/file stacks).
     pub fn stack(menu: &StackContextMenu) -> Result<Self, MenuError> {
-        let available = matches!(menu.open, StackActivation::OpenPopover { .. });
+        let available = matches!(menu.open, StackActivation::OpenDirectory { .. });
         let name = bounded(&menu.name);
         let mut rows = vec![Row {
             id: RowId::OpenStack,
@@ -560,7 +560,10 @@ impl Session {
                 checked: menu.sort_by == sort_by,
                 urgent: false,
                 destructive: false,
-                primary: Some(Action::StackContext(StackContextAction::SetSortBy(sort_by))),
+                primary: Some(Action::StackContext(StackCommand::SetSortBy {
+                    kind: menu.kind.clone(),
+                    sort_by,
+                })),
                 secondary: None,
                 alternate_label: None,
                 submenu: Some(Submenu::SortBy),
@@ -579,9 +582,10 @@ impl Session {
                 checked: menu.display_as == display_as,
                 urgent: false,
                 destructive: false,
-                primary: Some(Action::StackContext(StackContextAction::SetDisplayAs(
+                primary: Some(Action::StackContext(StackCommand::SetDisplayAs {
+                    kind: menu.kind.clone(),
                     display_as,
-                ))),
+                })),
                 secondary: None,
                 alternate_label: None,
                 submenu: Some(Submenu::DisplayAs),
@@ -605,9 +609,10 @@ impl Session {
                 checked: menu.view_content_as == view_content_as,
                 urgent: false,
                 destructive: false,
-                primary: Some(Action::StackContext(StackContextAction::SetViewContentAs(
+                primary: Some(Action::StackContext(StackCommand::SetViewContentAs {
+                    kind: menu.kind.clone(),
                     view_content_as,
-                ))),
+                })),
                 secondary: None,
                 alternate_label: None,
                 submenu: Some(Submenu::ViewContentAs),
@@ -622,7 +627,9 @@ impl Session {
             checked: false,
             urgent: false,
             destructive: false,
-            primary: Some(Action::StackContext(StackContextAction::Remove)),
+            primary: Some(Action::StackContext(StackCommand::Remove(
+                menu.kind.clone(),
+            ))),
             secondary: None,
             alternate_label: None,
             submenu: Some(Submenu::Options),
@@ -1241,7 +1248,7 @@ mod tests {
             kind: kind.clone(),
             name: name.into(),
             open: if available {
-                StackActivation::OpenPopover {
+                StackActivation::OpenDirectory {
                     kind: kind.clone(),
                     path: std::path::PathBuf::from(format!("/home/test/{name}")),
                 }
@@ -1339,9 +1346,10 @@ mod tests {
         assert_eq!(
             session.handle_key(KeyCommand::Return),
             Effect::Activate {
-                action: Action::StackContext(StackContextAction::SetSortBy(
-                    rmac_shell_settings::DockStackSortBy::Kind
-                )),
+                action: Action::StackContext(StackCommand::SetSortBy {
+                    kind: rmac_shell_settings::DockStackKind::Downloads,
+                    sort_by: rmac_shell_settings::DockStackSortBy::Kind,
+                }),
                 restore_focus: EntryId::Stack(rmac_shell_settings::DockStackKind::Downloads),
             }
         );

@@ -160,6 +160,9 @@ pub enum Outcome {
     StacksUpdated {
         stacks: Vec<rmac_shell_settings::DockStackEntry>,
     },
+    StackOpened {
+        kind: rmac_shell_settings::DockStackKind,
+    },
     HideRequested {
         app_id: String,
         windows: usize,

@@ -496,7 +496,7 @@ pub(super) fn project_stacks(
                 }
             };
             let activation = match (resolved.available, path) {
-                (true, Some(path)) => StackActivation::OpenPopover {
+                (true, Some(path)) => StackActivation::OpenDirectory {
                     kind: resolved.entry.kind.clone(),
                     path,
                 },
@@ -508,7 +508,7 @@ pub(super) fn project_stacks(
             StackPlace {
                 kind: resolved.entry.kind.clone(),
                 name,
-                available: matches!(activation, StackActivation::OpenPopover { .. }),
+                available: matches!(activation, StackActivation::OpenDirectory { .. }),
                 display_as: resolved.entry.display_as,
                 view_content_as: resolved.entry.view_content_as,
                 sort_by: resolved.entry.sort_by,

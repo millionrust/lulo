@@ -111,9 +111,11 @@ pub struct StackPlace {
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum StackActivation {
-    /// Open the stack's popover (Fan or Grid, resolved from
-    /// `view_content_as`).
-    OpenPopover {
+    /// Open the stack's folder in Files, exactly as macOS's Dock stack
+    /// "Open <name>" row does. A left-click on the stack tile instead opens
+    /// its Fan/Grid popover, a Dock-local UI state that never reaches the
+    /// backend dispatch layer this activation belongs to.
+    OpenDirectory {
         kind: rmac_shell_settings::DockStackKind,
         path: PathBuf,
     },
@@ -126,8 +128,8 @@ pub enum StackActivation {
 impl fmt::Debug for StackActivation {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::OpenPopover { kind, .. } => formatter
-                .debug_struct("OpenPopover")
+            Self::OpenDirectory { kind, .. } => formatter
+                .debug_struct("OpenDirectory")
                 .field("kind", kind)
                 .field("path", &"<private>")
                 .finish(),
@@ -138,14 +140,6 @@ impl fmt::Debug for StackActivation {
                 .finish(),
         }
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum StackContextAction {
-    SetDisplayAs(rmac_shell_settings::DockStackDisplayAs),
-    SetViewContentAs(rmac_shell_settings::DockStackViewContentAs),
-    SetSortBy(rmac_shell_settings::DockStackSortBy),
-    Remove,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

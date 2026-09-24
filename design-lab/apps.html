@@ -12,22 +12,44 @@
   Wallpaper-tinted surfaces are shown with the owner's tint (#1E202C); rmac
   draws them from mac::window() which carries the same tint.
 
-  TEXTEDIT, plain-text document (M; new document, ⌘N, the Mac's default is
-  plain text here, so there is no ruler or format bar)
-    window         586 × 488 (new Untitled), radius 16, title-bar window
+  TEXTEDIT, plain-text document (M, re-measured 2026-09-24 on 26.2 dark with
+  sample.txt, long.txt (300 lines) and a new document converted to plain
+  text; captures in the agent scratchpad, never committed)
+    defaults       no com.apple.TextEdit RichText/font keys are set, so ⌘N
+                   opens a RICH text window (586 × 488 with ruler and format
+                   bar). rmac is plain-text only: it follows the Mac's
+                   plain-text window, 656 × 422 = 90 Menlo 11 columns by 30
+                   13 pt lines + the 32 bar (sample.txt and long.txt both
+                   opened at 656 × 422; cascade 146,71 → 204,129). Plain-text
+                   font Menlo Regular 11 (advance 6.6: 44 chars = 290 pt).
+    window         radius 16 at all four corners (top and bottom identical at
+                   2×); title-bar window, no toolbar, no status bar
     title bar      32 incl. 1 pt base line #232323; fill = window tint #22212E
-    proxy icon     18 × 18 frame at x 81 y 6 (document page, light grey)
-    title          13 bold at x 100, #E8E8EA; " — Edited" follows in the
-                   tertiary colour when dirty (te-a capture)
-    ▾ menu button  the title + chevron form one 55 × 18 "document actions"
-                   button at x 172 (Untitled). rmac fills it with the
-                   document's encoding and line-ending choices (backed by
-                   rmac's saver); the Mac's Rename/Move/Duplicate/Revert/Lock
-                   are omitted — no backend.
-    text           bg #1E1E1E edge to edge. Menlo 11 → JetBrains Mono 11
-                   (advance 6.6), line pitch 13; caret x 9, first line top 0,
-                   so text origin x 10, y 0. Caret #3478F6 2 × 13.
-    no toolbar, no status bar (both removed; every action is in the menu bar)
+    proxy icon     18 × 18 frame at x 81 y 6 (ink 84.5–95.5, document page)
+    title          13 bold at x 100 (ink 102.5), #9F9EAB in the key window,
+                   #64636F behind another window. Dirty: " — Edited" follows
+                   in #63626F medium (dash ink 176.5–187.5 after "sample.txt"
+                   ending 170.5, "Edited" ink 195–231.5). It clears on undo.
+    ▾ chevron      only while the pointer is over the title; title + ▾ are
+                   one button opening the document menu. rmac fills it with
+                   the document's encoding and line-ending choices (backed by
+                   rmac's saver); Rename/Move/Duplicate/Revert/Lock are
+                   omitted — no backend. AX name S → "Document options".
+    text           bg #1E1E1E edge to edge, text #FFFFFF. Menlo 11 →
+                   JetBrains Mono 11, line pitch 13; first glyph ink x 11,
+                   cap top y 33.5, so text origin x 10, first line top y 32
+                   (no top inset). Lines wrap at the window width.
+    caret          #3478F6, 2 wide × 13 tall (12 on an empty document), x 9
+                   (straddles the text origin), top y 32; blinks ≈0.5 s on /
+                   0.5 s off (S: sampled at 0.17–0.2 s intervals). A new or
+                   opened document shows it immediately — the text has focus.
+    selection      opaque #476288 behind white text (key window)
+    scroller       overlay: nothing drawn at rest. On scroll a knob appears,
+                   6 wide, right edge 3 from the window edge, radius 3,
+                   #9A9A9A (= white 55 % over #1E1E1E), length ∝ visible/
+                   total over the text area (y 32 → bottom); fades ≈1 s
+                   after scrolling stops (gone at +2.4 s). rmac: 6 wide,
+                   right edge 4 from the edge (gpui-component constant).
 
   TERMINAL, new window, Basic profile in dark (M)
     window         580 × 385 = 80 × 24; title bar 32 (1 pt #232323 base)
@@ -173,14 +195,24 @@
 </head>
 <body>
 <div class="stage">
-<h2>TextEdit — new plain-text document (586 × 488)</h2>
-<div class="win r16 tb32" style="width:586px;height:488px">
+<h2>TextEdit — plain-text document (656 × 422), key window, dirty, text selected, scrolling</h2>
+<div class="win r16 tb32" style="width:656px;height:422px">
   <div class="bar32" style="background:#22212E"></div>
   <div class="tl"><i class="c"><b></b></i><i class="m"><b></b></i><i class="z"><b></b></i></div>
   <div class="doc"></div>
-  <div class="title" style="left:100px;color:#E8E8EA">Untitled <span style="color:#6E6F78;font-weight:600">— Edited</span> <span style="color:#8E8F95;font-weight:400">⌄</span></div>
-  <div class="te-text mono"><span class="caret"></span>The quick brown fox jumps over the lazy dog.
-Line two.</div>
+  <div class="title" style="left:100px;color:#9F9EAB">sample.txt<span style="color:#63626F;font-weight:500">&nbsp;— Edited</span></div>
+  <div class="te-text mono">The <span style="background:#476288">quick</span> brown fox jumps over the lazy dog.
+Line two of the sample.<span class="caret" style="margin-left:0"></span>
+
+Wide line: WWWWWWWWWW iiiiiiiiii 0123456789</div>
+  <div class="abs" style="right:3px;top:70px;width:6px;height:37px;border-radius:3px;background:rgba(255,255,255,.55)"></div>
+</div>
+<div class="win r16 tb32" style="width:656px;height:422px">
+  <div class="bar32" style="background:#22212E"></div>
+  <div class="tl"><i class="c"><b></b></i><i class="m"><b></b></i><i class="z"><b></b></i></div>
+  <div class="doc"></div>
+  <div class="title" style="left:100px;color:#9F9EAB">Untitled <span style="color:#9F9EAB;font-weight:400">⌄</span></div>
+  <div class="te-text mono"><span class="caret" style="height:12px;margin-left:-1px"></span></div>
 </div>
 
 <h2>Terminal — new window, Basic (580 × 385) and with two tabs (580 × 421)</h2>

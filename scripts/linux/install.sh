@@ -182,6 +182,12 @@ release_asset_name() {
 # is never treated as authentication on its own; the checksum (and, when
 # available, the attestation) is what is actually trusted, matching the
 # APT-repository path's stance in docs/update-trust.md.
+#
+# Sets $downloaded_package_dir rather than returning the path on stdout: a
+# caller capturing this function's output with "$(...)" would run it in a
+# subshell, and the `trap ... EXIT` below would then fire -- deleting the
+# work directory -- the moment that subshell exits, before the caller ever
+# gets to use the path it just printed.
 download_release_packages() {
     tag="$1"
     [ -n "$tag" ] || fail "--from-release requires a release tag, e.g. v0.5.0"
@@ -216,7 +222,7 @@ download_release_packages() {
         echo "install.sh: 'gh' is not installed; skipping the optional build-provenance attestation check (SHA256SUMS was still verified)" >&2
     fi
 
-    printf '%s' "$work_dir"
+    downloaded_package_dir="$work_dir"
 }
 
 # Verify the SHA256SUMS entries for exactly the rmac-apps and rmac-session
@@ -309,8 +315,8 @@ main() {
             ;;
         release)
             check_platform
-            package_dir="$(download_release_packages "$release_tag")"
-            install_local_packages "$package_dir"
+            download_release_packages "$release_tag"
+            install_local_packages "$downloaded_package_dir"
             ;;
         dir)
             check_platform

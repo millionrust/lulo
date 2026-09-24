@@ -33,6 +33,10 @@ FORBIDDEN = (
 )
 
 
+# A Rust line carrying this trailing comment holds a literal the user never
+# sees (a program name to match, a word to screen error text for).
+INTERNAL_MARKER = "// wording: internal"
+
 # Desktop-entry fields that are shown to the user.
 DESKTOP_KEY = re.compile(r"^(Name|GenericName|Comment|X-GNOME-FullName)=")
 
@@ -63,6 +67,19 @@ def scan_literal(relative: Path, number: int, literal: str) -> str | None:
     return None
 
 
+def scan_rust_line(relative: Path, number: int, line: str) -> list[str]:
+    stripped = line.lstrip()
+    if stripped.startswith("//") or line.rstrip().endswith(INTERNAL_MARKER):
+        return []
+    found = []
+    for match in STRING.finditer(line):
+        literal = match.group(1) or match.group(2) or ""
+        violation = scan_literal(relative, number, literal)
+        if violation is not None:
+            found.append(violation)
+    return found
+
+
 def main() -> int:
     violations: list[str] = []
     for path in rust_sources():
@@ -70,14 +87,9 @@ def main() -> int:
         source = path.read_text(encoding="utf-8", errors="replace")
         source = source.split("#[cfg(test)]", 1)[0]
         for number, line in enumerate(source.splitlines(), 1):
-            stripped = line.lstrip()
-            if stripped.startswith("//"):
-                continue
-            for match in STRING.finditer(line):
-                literal = match.group(1) or match.group(2) or ""
-                found = scan_literal(path.relative_to(REPO_ROOT), number, literal)
-                if found is not None:
-                    violations.append(found)
+            violations.extend(
+                scan_rust_line(path.relative_to(REPO_ROOT), number, line)
+            )
     for path in desktop_sources():
         for number, line in enumerate(
             path.read_text(encoding="utf-8", errors="replace").splitlines(), 1

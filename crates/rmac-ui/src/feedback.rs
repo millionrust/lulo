@@ -56,7 +56,7 @@ pub fn user_error_message(
     let exposes_internal_name = [
         "niri",
         "socket",
-        "dbus",
+        "dbus", // wording: internal
         "wayland",
         "caused by",
         "backtrace",

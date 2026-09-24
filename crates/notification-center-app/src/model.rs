@@ -52,7 +52,7 @@ pub(crate) struct ApplicationCatalog {
 const LAUNCHER_PROGRAMS: &[&str] = &[
     "bash",
     "dash",
-    "dbus-run-session",
+    "dbus-run-session", // wording: internal
     "electron",
     "env",
     "fish",

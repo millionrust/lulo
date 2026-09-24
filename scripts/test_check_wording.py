@@ -41,6 +41,19 @@ class WordingGateTests(unittest.TestCase):
                     check_wording.scan_literal(Path("crates/x/src/lib.rs"), 1, literal)
                 )
 
+    def test_internal_marker_exempts_only_its_own_line(self) -> None:
+        relative = Path("crates/x/src/lib.rs")
+        self.assertEqual(
+            check_wording.scan_rust_line(
+                relative, 1, '    "dbus-run-session", // wording: internal'
+            ),
+            [],
+        )
+        self.assertEqual(
+            len(check_wording.scan_rust_line(relative, 1, '    "dbus-run-session",')),
+            1,
+        )
+
     def test_desktop_key_matcher_covers_visible_fields(self) -> None:
         for line in ("Name=Files", "Comment=Open a file", "GenericName=Editor"):
             self.assertIsNotNone(check_wording.DESKTOP_KEY.match(line))

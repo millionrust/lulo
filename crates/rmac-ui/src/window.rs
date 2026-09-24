@@ -6,7 +6,11 @@ use gpui::{
     point, px, size, App, AppContext as _, Bounds, Context, Decorations, Edges, Pixels, Render,
     SharedString, Size, TitlebarOptions, Window, WindowBounds, WindowDecorations, WindowOptions,
 };
-use gpui_component::Root;
+// Re-exported (not just imported) so a window opened outside a `boot*` entry
+// point — an app's own auxiliary window — can wrap its view without another
+// file needing its own `gpui_component` import (ADR 0015 keeps that boundary
+// at exactly the files that already cross it).
+pub use gpui_component::Root;
 use rmac_window_state::{DisplayBounds, Store as WindowStateStore, WindowMode, WindowState};
 
 use crate::{init_application, install_app_menu, prepare_surface_window};
@@ -647,7 +651,7 @@ where
     V: Render + 'static,
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
-    boot_with_assets(gpui_component_assets::Assets, title, width, height, build);
+    boot_with_assets(default_assets(), title, width, height, build);
 }
 
 /// [`boot`] with an explicit desktop/Wayland identity.
@@ -661,14 +665,13 @@ pub fn boot_app<V, F>(
     V: Render + 'static,
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
-    boot_app_with_assets(
-        app_id,
-        gpui_component_assets::Assets,
-        title,
-        width,
-        height,
-        build,
-    );
+    boot_app_with_assets(app_id, default_assets(), title, width, height, build);
+}
+
+/// gpui-component's bundled fonts and icons — the default asset source every
+/// `boot*` entry point falls back to when the app has none of its own.
+fn default_assets() -> impl gpui::AssetSource {
+    gpui_component_assets::Assets
 }
 
 /// [`boot_with_assets`] with an explicit desktop/Wayland identity.
@@ -717,6 +720,166 @@ pub fn boot_app_with_assets<A, V, F>(
 
             cx.activate(true);
         });
+}
+
+/// [`boot_app_instance_with_assets`] with gpui-component's default assets.
+pub fn boot_app_instance<V, F>(
+    app_id: &'static str,
+    title: impl Into<SharedString>,
+    width: f32,
+    height: f32,
+    windows: Vec<Vec<String>>,
+    build: F,
+) where
+    V: Render + 'static,
+    F: Fn(&[String], &mut Window, &mut Context<V>) -> V + 'static,
+{
+    boot_app_instance_with_assets(
+        app_id,
+        default_assets(),
+        title,
+        width,
+        height,
+        windows,
+        build,
+    );
+}
+
+/// [`boot_app_with_assets`] for an app that keeps every window in one
+/// process, as a macOS app does. `windows` holds one argument list per
+/// window this launch asks for (none means one default window). If the app
+/// is already running, this launch hands each list to it over D-Bus, the
+/// running process opens a window for each, and this function returns
+/// without starting GPUI. Otherwise it opens the windows itself, keeps
+/// running with its menu after the last one closes (as the Mac's Dock
+/// does), and serves later launches' requests with `build` too.
+pub fn boot_app_instance_with_assets<A, V, F>(
+    app_id: &'static str,
+    assets: A,
+    title: impl Into<SharedString>,
+    width: f32,
+    height: f32,
+    windows: Vec<Vec<String>>,
+    build: F,
+) where
+    A: gpui::AssetSource,
+    V: Render + 'static,
+    F: Fn(&[String], &mut Window, &mut Context<V>) -> V + 'static,
+{
+    let mut windows = windows;
+    if windows.is_empty() {
+        windows.push(Vec::new());
+    }
+    #[cfg(target_os = "linux")]
+    match async_io::block_on(rmac_app_menu::open_window_in_running_instance(
+        app_id,
+        &windows[0],
+    )) {
+        Ok(true) => {
+            for arguments in &windows[1..] {
+                if let Err(error) = async_io::block_on(
+                    rmac_app_menu::open_window_in_running_instance(app_id, arguments),
+                ) {
+                    eprintln!("{app_id} could not open another window: {error}");
+                }
+            }
+            return;
+        }
+        Ok(false) => {}
+        // A process owns the name but did not answer: start normally, as
+        // before single-instance hand-off existed, rather than show nothing.
+        Err(error) => eprintln!("{app_id} could not reach its running process: {error}"),
+    }
+    let fallback_title: SharedString = title.into();
+    let title = rmac_apps::identity::window_title(app_id)
+        .map(SharedString::from)
+        .unwrap_or(fallback_title);
+    let build = Rc::new(build);
+    crate::application()
+        .with_assets(assets)
+        .run(move |cx: &mut App| {
+            init_application(cx);
+            let requested = build.clone();
+            let window_title = title.clone();
+            let opener: OpenWindow = Rc::new(move |arguments, cx| {
+                if let Err(error) = open_app_window(
+                    app_id,
+                    window_title.clone(),
+                    width,
+                    height,
+                    arguments,
+                    requested.clone(),
+                    cx,
+                ) {
+                    eprintln!("{app_id} could not open a new window: {error}");
+                }
+            });
+            cx.set_global(AppWindowOpener(opener.clone()));
+            crate::runtime::install_app_instance(
+                app_id,
+                move |arguments, cx| opener(arguments, cx),
+                cx,
+            );
+            let mut windows = windows.into_iter();
+            if let Some(first) = windows.next() {
+                open_app_window(
+                    app_id,
+                    title.clone(),
+                    width,
+                    height,
+                    first,
+                    build.clone(),
+                    cx,
+                )
+                .expect("failed to open window");
+            }
+            for arguments in windows {
+                if let Err(error) = open_app_window(
+                    app_id,
+                    title.clone(),
+                    width,
+                    height,
+                    arguments,
+                    build.clone(),
+                    cx,
+                ) {
+                    eprintln!("{app_id} could not open another window: {error}");
+                }
+            }
+            cx.activate(true);
+        });
+}
+
+fn open_app_window<V, F>(
+    app_id: &'static str,
+    title: SharedString,
+    width: f32,
+    height: f32,
+    arguments: Vec<String>,
+    build: Rc<F>,
+    cx: &mut App,
+) -> gpui::Result<()>
+where
+    V: Render + 'static,
+    F: Fn(&[String], &mut Window, &mut Context<V>) -> V + 'static,
+{
+    // The caller names the visible window's size (the Mac's); the outer
+    // bounds add the client frame around it.
+    let (outer_width, outer_height) = outer_window_size(width, height);
+    let mut options =
+        window_options_for_app_with_title(app_id, title, outer_width, outer_height, cx);
+    options.window_min_size = Some(minimum_window_size(width, height));
+    cx.open_window(options, move |window, cx| {
+        reserve_client_frame(window);
+        prepare_surface_window(window, cx);
+        fit_to_display_after_first_frame(window, cx);
+        let view = cx.new(|cx| {
+            observe_window_state(app_id, window, cx);
+            build(&arguments, window, cx)
+        });
+        cx.new(|cx| Root::new(view, window, cx))
+    })?;
+    Ok(())
 }
 
 /// Like [`boot`], but with a custom asset source (e.g. an app that embeds its

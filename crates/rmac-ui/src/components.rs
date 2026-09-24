@@ -12,7 +12,8 @@
 use gpui::{
     anchored, deferred, div, prelude::FluentBuilder as _, px, Action, AnyElement, App, Context,
     ElementId, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent,
-    MouseButton, ParentElement as _, Pixels, Point, SharedString, Styled as _, Window,
+    MouseButton, ParentElement as _, Pixels, Point, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window,
 };
 use gpui_component::StyledExt as _;
 
@@ -72,6 +73,9 @@ pub fn dialog_button(
 pub fn dialog(id: impl Into<ElementId>, content: impl IntoElement) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
+        // Identifies the whole overlay as a dialog surface; `alert_with_icon`
+        // narrows this to `AlertDialog` and adds the title as its name.
+        .role(Role::Dialog)
         .absolute()
         .inset_0()
         .flex()
@@ -107,6 +111,16 @@ pub fn alert_with_icon(
 ) -> impl IntoElement {
     let title: SharedString = title.into();
     let message: SharedString = message.into();
+    // NSAlert's accessible name is its title, falling back to the message for
+    // the (rare) title-less alert. Captured before both are moved into the
+    // card below.
+    let accessible_name = if !title.is_empty() {
+        Some(title.clone())
+    } else if !message.is_empty() {
+        Some(message.clone())
+    } else {
+        None
+    };
     let metrics = rmac_design::Metrics::default();
     let stacked = buttons.len() > 2;
     // Each button sits in a flex cell whose column stretches it to the
@@ -175,6 +189,8 @@ pub fn alert_with_icon(
         );
 
     dialog("rmac-alert", card)
+        .role(Role::AlertDialog)
+        .when_some(accessible_name, |el, name| el.aria_label(name))
 }
 
 // ---- Context menu ---------------------------------------------------------
@@ -434,6 +450,8 @@ impl ContextMenu {
         let navigation_focus = menu_focus.clone();
         let return_focus = state.return_focus.clone();
         let mut panel = div()
+            .id("rmac-context-menu")
+            .role(Role::Menu)
             .min_w(px(190.0))
             .py(px(5.0))
             .tab_group()

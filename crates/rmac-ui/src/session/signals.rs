@@ -164,6 +164,14 @@ mod tests {
 
     #[test]
     fn a_termination_signal_arrives_as_a_message_and_listening_is_once_only() {
+        // `listen` leaves an inherited SIG_IGN alone (as under `nohup`), so
+        // give the test's own signal its default action first; otherwise a
+        // test runner started with SIGHUP ignored would wait here forever.
+        // SAFETY: resets one signal's disposition before any handler exists.
+        assert_ne!(
+            unsafe { libc::signal(libc::SIGHUP, libc::SIG_DFL) },
+            libc::SIG_ERR
+        );
         let receiver = listen(None).expect("listen for termination signals");
         // SAFETY: the handler installed above only writes to its pipe.
         assert_eq!(unsafe { libc::raise(libc::SIGHUP) }, 0);

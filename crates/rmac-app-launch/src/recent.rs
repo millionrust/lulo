@@ -184,25 +184,8 @@ fn current_unix_ms() -> u64 {
 /// its `.desktop` suffix trimmed) was just launched. Best-effort: a failure
 /// here never means the launch itself failed.
 pub fn record_recent_launch(app_id: &str) -> Result<(), RecentLaunchError> {
-    if app_id.is_empty() || app_id.len() > MAX_ID_BYTES {
-        return Err(RecentLaunchError(ErrorKind::Invalid));
-    }
     let path = state_path().ok_or(RecentLaunchError(ErrorKind::Invalid))?;
-    let parent = path.parent().ok_or(RecentLaunchError(ErrorKind::Invalid))?;
-    rmac_storage::create_dir_all_private(parent)
-        .map_err(|error| RecentLaunchError(ErrorKind::Io(error.kind())))?;
-    let _lock = FileLock::acquire(&parent.join("recent-apps.lock"))?;
-    let mut stored = load_stored(&path);
-    stored.entries.retain(|entry| entry.id != app_id);
-    stored.entries.insert(
-        0,
-        StoredEntry {
-            id: app_id.to_owned(),
-            used_at_unix_ms: current_unix_ms(),
-        },
-    );
-    stored.entries.truncate(MAX_ENTRIES);
-    save(&path, &stored)
+    record_recent_launch_at(&path, app_id)
 }
 
 /// The most recently launched app ids, most recent first, deduplicated and
@@ -212,7 +195,37 @@ pub fn recent_app_ids(limit: usize) -> Vec<String> {
     let Some(path) = state_path() else {
         return Vec::new();
     };
-    let mut stored = load_stored(&path);
+    recent_app_ids_at(&path, limit)
+}
+
+/// The path-parameterized core of [`record_recent_launch`], kept separate
+/// so tests can exercise it against a private temporary file instead of
+/// racing other tests over the real, process-global `$XDG_STATE_HOME`.
+fn record_recent_launch_at(path: &Path, app_id: &str) -> Result<(), RecentLaunchError> {
+    if app_id.is_empty() || app_id.len() > MAX_ID_BYTES {
+        return Err(RecentLaunchError(ErrorKind::Invalid));
+    }
+    let parent = path.parent().ok_or(RecentLaunchError(ErrorKind::Invalid))?;
+    rmac_storage::create_dir_all_private(parent)
+        .map_err(|error| RecentLaunchError(ErrorKind::Io(error.kind())))?;
+    let _lock = FileLock::acquire(&parent.join("recent-apps.lock"))?;
+    let mut stored = load_stored(path);
+    stored.entries.retain(|entry| entry.id != app_id);
+    stored.entries.insert(
+        0,
+        StoredEntry {
+            id: app_id.to_owned(),
+            used_at_unix_ms: current_unix_ms(),
+        },
+    );
+    stored.entries.truncate(MAX_ENTRIES);
+    save(path, &stored)
+}
+
+/// The path-parameterized core of [`recent_app_ids`]; see
+/// [`record_recent_launch_at`] for why it takes a path.
+fn recent_app_ids_at(path: &Path, limit: usize) -> Vec<String> {
+    let mut stored = load_stored(path);
     stored
         .entries
         .sort_by_key(|entry| std::cmp::Reverse(entry.used_at_unix_ms));
@@ -222,4 +235,54 @@ pub fn recent_app_ids(limit: usize) -> Vec<String> {
         .map(|entry| entry.id)
         .take(limit)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    fn temp_store_path(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "rmac-app-launch-recent-{label}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn records_move_to_the_front_deduplicate_and_are_bounded() {
+        let path = temp_store_path("basic").join("recent-apps.json");
+        record_recent_launch_at(&path, "org.rmac.Files").unwrap();
+        record_recent_launch_at(&path, "org.rmac.Notes").unwrap();
+        record_recent_launch_at(&path, "org.rmac.Files").unwrap();
+        assert_eq!(
+            recent_app_ids_at(&path, 10),
+            ["org.rmac.Files", "org.rmac.Notes"]
+        );
+        assert_eq!(recent_app_ids_at(&path, 1), ["org.rmac.Files"]);
+
+        for index in 0..MAX_ENTRIES + 5 {
+            record_recent_launch_at(&path, &format!("app-{index}")).unwrap();
+        }
+        assert_eq!(recent_app_ids_at(&path, MAX_ENTRIES + 5).len(), MAX_ENTRIES);
+    }
+
+    #[test]
+    fn rejects_an_empty_or_oversized_id() {
+        let path = temp_store_path("invalid").join("recent-apps.json");
+        assert!(record_recent_launch_at(&path, "").is_err());
+        assert!(record_recent_launch_at(&path, &"x".repeat(MAX_ID_BYTES + 1)).is_err());
+        assert!(recent_app_ids_at(&path, 10).is_empty());
+    }
+
+    #[test]
+    fn a_missing_store_reads_as_empty() {
+        let path = temp_store_path("missing").join("recent-apps.json");
+        assert!(recent_app_ids_at(&path, 10).is_empty());
+    }
 }

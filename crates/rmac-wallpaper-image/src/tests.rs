@@ -36,6 +36,67 @@ fn color_summary_rejects_an_invalid_pixel_buffer() {
 }
 
 #[test]
+fn lock_thumbnail_is_the_fixed_lock_screen_size_and_averages_a_flat_colour() {
+    let (width, height) = (200_u32, 100_u32);
+    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+    for _ in 0..width * height {
+        rgba.extend_from_slice(&[10, 20, 30, 255]);
+    }
+    let image = Decoded {
+        width,
+        height,
+        rgba: Arc::from(rgba),
+    };
+    let thumbnail = lock_thumbnail(&image).unwrap();
+    assert_eq!(
+        thumbnail.len(),
+        (LOCK_THUMBNAIL_WIDTH * LOCK_THUMBNAIL_HEIGHT * 3) as usize
+    );
+    // A flat-colour source downsamples to the same flat colour everywhere.
+    for pixel in thumbnail.chunks_exact(3) {
+        assert_eq!(pixel, [10, 20, 30]);
+    }
+}
+
+#[test]
+fn lock_thumbnail_splits_a_two_colour_source_along_its_downsample_blocks() {
+    // Left half red, right half blue: each output column should stay a
+    // pure block average of whichever half it fell in, since the block
+    // boundaries land on whole source-pixel columns for this width.
+    let (width, height) = (LOCK_THUMBNAIL_WIDTH * 2, LOCK_THUMBNAIL_HEIGHT);
+    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+    for _ in 0..height {
+        for column in 0..width {
+            if column < width / 2 {
+                rgba.extend_from_slice(&[255, 0, 0, 255]);
+            } else {
+                rgba.extend_from_slice(&[0, 0, 255, 255]);
+            }
+        }
+    }
+    let image = Decoded {
+        width,
+        height,
+        rgba: Arc::from(rgba),
+    };
+    let thumbnail = lock_thumbnail(&image).unwrap();
+    let pixels = thumbnail.chunks_exact(3).collect::<Vec<_>>();
+    let row = &pixels[..LOCK_THUMBNAIL_WIDTH as usize];
+    assert_eq!(row[0], [255, 0, 0]);
+    assert_eq!(row[LOCK_THUMBNAIL_WIDTH as usize - 1], [0, 0, 255]);
+}
+
+#[test]
+fn lock_thumbnail_rejects_an_invalid_pixel_buffer() {
+    let image = Decoded {
+        width: 8,
+        height: 8,
+        rgba: Arc::from([0_u8; 4]),
+    };
+    assert_eq!(lock_thumbnail(&image), None);
+}
+
+#[test]
 fn procedural_default_is_deterministic_bounded_and_cached_by_target() {
     let cache = Cache::new(1024 * 1024);
     let source = || {

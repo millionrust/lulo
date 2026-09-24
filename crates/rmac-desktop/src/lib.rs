@@ -543,6 +543,29 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn aliases_are_named_like_finder_aliases_and_link_to_the_target() {
+        let root = temporary("alias");
+        fs::write(root.join("Report.pdf"), b"1").unwrap();
+        let first = make_alias(&root.join("Report.pdf")).unwrap();
+        assert_eq!(first, root.join("Report.pdf alias"));
+        assert_eq!(
+            fs::canonicalize(&first).unwrap(),
+            fs::canonicalize(root.join("Report.pdf")).unwrap()
+        );
+        let second = make_alias(&root.join("Report.pdf")).unwrap();
+        assert_eq!(second, root.join("Report.pdf alias 2"));
+        // A folder can be aliased too, unlike Duplicate.
+        fs::create_dir(root.join("Folder")).unwrap();
+        assert!(make_alias(&root.join("Folder")).is_ok());
+        assert_eq!(
+            alias_path(&root.join("notes")).unwrap(),
+            root.join("notes alias")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn rename_never_replaces_an_existing_item() {
         let root = temporary("rename");
         fs::write(root.join("notes.txt"), b"mine").unwrap();

@@ -8,7 +8,6 @@ impl AppDrawer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let (apps, mut catalog_error) = catalog::scan();
         let query = cx.new(|cx| InputState::new(window, cx).placeholder("Search Apps"));
 
         if let Some(token) = service_token {
@@ -45,57 +44,42 @@ impl AppDrawer {
         })
         .detach();
 
-        // Extract macOS bundle icons off the main thread, then fill them in.
-        #[cfg(target_os = "macos")]
-        {
-            let snapshot: Vec<(String, PathBuf)> = apps
-                .iter()
-                .map(|a| (a.name.to_string(), a.path.clone()))
-                .collect();
-            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-                let icons = cx
-                    .background_executor()
-                    .spawn(async move {
-                        let cache = catalog::cache_dir();
-                        snapshot
-                            .into_iter()
-                            .map(|(name, path)| {
-                                let icon = catalog::extract_icon(&name, &path, &cache);
-                                (path, icon)
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .await;
-                let _ = this.update(cx, |this: &mut AppDrawer, cx| {
-                    for (path, icon) in icons {
-                        if let Some(a) = this.apps.iter_mut().find(|app| app.path == path) {
-                            a.icon = icon;
-                        }
-                    }
-                    cx.notify();
-                });
-            })
-            .detach();
-        }
-
-        // Native filesystem notifications wake this task only when an app
-        // entry changes. The capacity-one channel coalesces event bursts before
-        // discovery and icon/category work runs off the UI thread.
+        // Native filesystem notifications wake the rescan task only when an
+        // app entry changes. The capacity-one channel coalesces event bursts
+        // before discovery and icon/category work runs off the UI thread.
         let (catalog_events, catalog_event_rx) = async_channel::bounded(1);
+        let mut watcher_error: Option<SharedString> = None;
         let catalog_watcher = match rmac_apps::watch_catalog(move || {
             catalog::signal_change(&catalog_events);
         }) {
             Ok(watcher) => Some(watcher),
             Err(error) => {
-                if catalog_error.is_none() {
-                    catalog_error = Some(
-                        format!("Apps loaded, but live updates are unavailable: {error}").into(),
-                    );
-                }
+                watcher_error =
+                    Some(format!("Apps loaded, but live updates are unavailable: {error}").into());
                 None
             }
         };
+
+        // The first catalog scan walks every XDG application directory
+        // (and, on macOS, extracts bundle icons) and can take real time on a
+        // slow disk, so it never runs on the UI thread: the drawer opens
+        // immediately in its loading state and this task fills it in once
+        // the scan finishes. After that it only wakes on a watcher event —
+        // no polling, so idle cost is zero.
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let (apps, scan_error) = cx.background_executor().spawn(scan_catalog()).await;
+            if this
+                .update(cx, |this: &mut AppDrawer, cx| {
+                    this.apps = apps;
+                    this.loading = false;
+                    this.catalog_error = scan_error.or_else(|| watcher_error.take());
+                    cx.notify();
+                })
+                .is_err()
+            {
+                return;
+            }
+
             while catalog_event_rx.recv().await.is_ok() {
                 for _ in 0..10 {
                     cx.background_executor()
@@ -107,22 +91,10 @@ impl AppDrawer {
                 }
                 while catalog_event_rx.try_recv().is_ok() {}
 
-                let result = cx
-                    .background_executor()
-                    .spawn(async move {
-                        let (apps, error) = catalog::scan();
-                        #[cfg(target_os = "macos")]
-                        let apps = {
-                            let mut apps = apps;
-                            catalog::hydrate_icons(&mut apps);
-                            apps
-                        };
-                        (apps, error)
-                    })
-                    .await;
+                let (apps, error) = cx.background_executor().spawn(scan_catalog()).await;
                 if this
                     .update(cx, |this: &mut AppDrawer, cx| {
-                        this.replace_catalog(result.0, result.1, cx)
+                        this.replace_catalog(apps, error, cx)
                     })
                     .is_err()
                 {
@@ -134,7 +106,7 @@ impl AppDrawer {
 
         Self {
             service_token,
-            apps,
+            apps: Vec::new(),
             query,
             focus,
             view: ViewMode::Grid,
@@ -143,9 +115,10 @@ impl AppDrawer {
             selection_visible: false,
             menu_at: None,
             cols: 6,
-            catalog_error,
+            catalog_error: None,
             action_error: None,
             launching: false,
+            loading: true,
             was_active: false,
             _catalog_watcher: catalog_watcher,
         }
@@ -195,4 +168,17 @@ impl AppDrawer {
             .unwrap_or(0);
         cx.notify();
     }
+}
+
+/// A full catalog scan (and, on macOS, icon extraction), packaged for
+/// `cx.background_executor().spawn` so it never runs on the UI thread.
+async fn scan_catalog() -> (Vec<App>, Option<SharedString>) {
+    let (apps, error) = catalog::scan();
+    #[cfg(target_os = "macos")]
+    let apps = {
+        let mut apps = apps;
+        catalog::hydrate_icons(&mut apps);
+        apps
+    };
+    (apps, error)
 }

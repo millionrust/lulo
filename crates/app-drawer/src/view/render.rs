@@ -7,7 +7,7 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 use rmac_app_drawer::accessibility::{DrawerEmptyState, OPENING_ANNOUNCEMENT};
-use rmac_ui::{mac, Button, EmptyState, SearchField};
+use rmac_ui::{mac, Button, EmptyState, SearchField, Spinner};
 
 use crate::catalog::{App, Category};
 use crate::{ClearSearch, Launch, MoveDown, MoveLeft, MoveRight, MoveUp, OpenApp, RevealInFinder};
@@ -35,7 +35,28 @@ impl Render for AppDrawer {
             (menu, state)
         });
 
-        let body: gpui::AnyElement = if visible.is_empty() {
+        let body: gpui::AnyElement = if self.loading {
+            div()
+                .min_h(px(320.0))
+                .w_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    div()
+                        .v_flex()
+                        .items_center()
+                        .gap_3()
+                        .child(Spinner::large())
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(13.0))
+                                .text_color(mac::text_secondary())
+                                .child("Loading Applications…"),
+                        ),
+                )
+                .into_any_element()
+        } else if visible.is_empty() {
             let empty = if self.apps.is_empty() {
                 let state = DrawerEmptyState::EmptyCatalog;
                 EmptyState::new(state.title()).message(state.message())

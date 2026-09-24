@@ -13,6 +13,7 @@ pub const APPS_NAME: &str = "Apps";
 pub const OPEN_ACTION_NAME: &str = "Open";
 pub const SHOW_IN_FOLDER_ACTION_NAME: &str = "Show in Folder";
 pub const OPENING_ANNOUNCEMENT: &str = "Opening application…";
+pub const LOADING_ANNOUNCEMENT: &str = "Loading applications…";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ApplicationCategory {
@@ -83,6 +84,9 @@ impl DrawerView {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DrawerFeedback<'a> {
     Ready,
+    /// The first catalog scan hasn't finished — the catalog is not yet
+    /// meaningfully empty, so no empty-catalog state is projected.
+    Loading,
     Busy,
     Error(&'a str),
 }
@@ -343,17 +347,31 @@ pub fn project_app_drawer<T: ApplicationSemantics>(
         None
     };
 
-    let empty_state = visible.is_empty().then_some(if applications.is_empty() {
-        DrawerEmptyState::EmptyCatalog
+    let empty_state = if matches!(state.feedback, DrawerFeedback::Loading) {
+        // The catalog being empty while the first scan is still running
+        // isn't the same fact as the catalog being empty once it's done.
+        None
     } else {
-        DrawerEmptyState::NoMatches
-    });
+        visible.is_empty().then_some(if applications.is_empty() {
+            DrawerEmptyState::EmptyCatalog
+        } else {
+            DrawerEmptyState::NoMatches
+        })
+    };
     if let Some(empty_state) = empty_state {
         budget.add(empty_state.title())?;
         budget.add(empty_state.message())?;
     }
     let announcement = match state.feedback {
         DrawerFeedback::Ready => None,
+        DrawerFeedback::Loading => {
+            let text = LOADING_ANNOUNCEMENT.to_string();
+            budget.add(&text)?;
+            Some(LiveAnnouncement {
+                text,
+                politeness: LivePoliteness::Polite,
+            })
+        }
         DrawerFeedback::Busy => {
             let text = OPENING_ANNOUNCEMENT.to_string();
             budget.add(&text)?;
@@ -703,6 +721,32 @@ mod tests {
         assert_eq!(
             no_match.announcement.unwrap().politeness,
             LivePoliteness::Assertive
+        );
+    }
+
+    #[test]
+    fn loading_suppresses_the_empty_catalog_state_but_still_announces() {
+        let loading = project_app_drawer::<Application>(
+            &[],
+            &[],
+            &[],
+            DrawerProjectionState {
+                view: DrawerView::Grid,
+                filter: None,
+                selected_index: None,
+                search_active: false,
+                context_menu_open: false,
+                feedback: DrawerFeedback::Loading,
+            },
+        )
+        .unwrap();
+        assert_eq!(loading.empty_state, None);
+        assert_eq!(
+            loading.announcement,
+            Some(LiveAnnouncement {
+                text: "Loading applications…".to_string(),
+                politeness: LivePoliteness::Polite,
+            })
         );
     }
 

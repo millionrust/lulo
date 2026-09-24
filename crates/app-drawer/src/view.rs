@@ -3,8 +3,6 @@
 mod lifecycle;
 mod render;
 
-#[cfg(target_os = "macos")]
-use std::path::PathBuf;
 use std::time::Duration;
 
 use gpui::{AppContext as _, Context, Entity, FocusHandle, Pixels, Point, SharedString, Window};
@@ -65,6 +63,8 @@ pub(crate) struct AppDrawer {
     catalog_error: Option<SharedString>,
     action_error: Option<SharedString>,
     launching: bool,
+    /// True until the first catalog scan (run off the UI thread) completes.
+    loading: bool,
     was_active: bool,
     _catalog_watcher: Option<rmac_apps::CatalogWatcher>,
 }
@@ -124,7 +124,9 @@ impl AppDrawer {
         let visible = self.visible_indices(cx);
         let selected_index =
             (!visible.is_empty()).then_some(self.selected.min(visible.len().saturating_sub(1)));
-        let feedback = if self.launching {
+        let feedback = if self.loading {
+            DrawerFeedback::Loading
+        } else if self.launching {
             DrawerFeedback::Busy
         } else if let Some(error) = self.action_error.as_ref().or(self.catalog_error.as_ref()) {
             DrawerFeedback::Error(error.as_ref())

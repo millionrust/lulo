@@ -202,15 +202,15 @@ fn open_confirmation_only_returns_existing_items_of_the_right_kind() {
     let file = root.join("a.txt");
     std::fs::write(&file, b"x").unwrap();
     assert_eq!(
-        confirm_open(&[file.clone()], false, false),
+        confirm_open(std::slice::from_ref(&file), false, false),
         Ok(vec![file.clone()])
     );
     assert_eq!(
-        confirm_open(&[root.clone()], false, false),
+        confirm_open(std::slice::from_ref(&root), false, false),
         Err(Rejection::WrongKind)
     );
     assert_eq!(
-        confirm_open(&[root.clone()], true, false),
+        confirm_open(std::slice::from_ref(&root), true, false),
         Ok(vec![root.clone()])
     );
     assert_eq!(

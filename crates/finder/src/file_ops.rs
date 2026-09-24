@@ -16,7 +16,6 @@ const MAX_FREE_SPACE_RESERVE: u64 = 512 * 1024 * 1024;
 pub(crate) enum Operation {
     Copy,
     CreateFolder,
-    Delete,
     Move,
     Rename,
     Replace,
@@ -32,7 +31,6 @@ impl Operation {
         match self {
             Self::Copy => "copy",
             Self::CreateFolder => "create folder",
-            Self::Delete => "delete",
             Self::Move => "move",
             Self::Rename => "rename",
             Self::Replace => "replace",
@@ -962,11 +960,6 @@ fn move_replace_cancellable(
     Ok(())
 }
 
-pub(crate) fn delete(fs: &impl FileSystem, path: &Path) -> Result<(), Failure> {
-    fs.remove(path)
-        .map_err(|error| Failure::from_io(Operation::Delete, path, None, error))
-}
-
 pub(crate) fn rename(
     fs: &impl FileSystem,
     source: &Path,
@@ -1806,21 +1799,6 @@ mod tests {
             &*fs.calls.borrow(),
             &["rename:source:dest", "copy:source:dest"]
         );
-    }
-
-    #[test]
-    fn delete_failure_preserves_the_typed_error() {
-        let fs = FakeFileSystem::with(
-            Ok(()),
-            Ok(()),
-            vec![error(io::ErrorKind::PermissionDenied, "read only")],
-        );
-
-        let failure = delete(&fs, Path::new("protected")).unwrap_err();
-
-        assert_eq!(failure.operation, Operation::Delete);
-        assert_eq!(failure.error_kind, io::ErrorKind::PermissionDenied);
-        assert_eq!(&*fs.calls.borrow(), &["remove:protected"]);
     }
 
     #[test]

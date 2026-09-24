@@ -153,7 +153,7 @@ impl FinderView {
                             })
                             .collect();
                     // Most recently modified first, capped so the list stays manageable.
-                    v.sort_by(|a, b| b.1.cmp(&a.1));
+                    v.sort_by_key(|(_, when)| std::cmp::Reverse(*when));
                     v.truncate(200);
                     Ok::<_, rmac_search::Error>(
                         v.into_iter().map(|(entry, _)| entry).collect::<Vec<_>>(),

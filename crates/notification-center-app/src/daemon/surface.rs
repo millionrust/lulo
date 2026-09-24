@@ -92,10 +92,7 @@ pub(crate) fn open(
     cx: &mut App,
 ) -> Option<AnyWindowHandle> {
     use gpui::layer_shell::{Anchor, KeyboardInteractivity, Layer, LayerShellOptions};
-    use gpui::{
-        point, PlatformDisplay as _, WindowBackgroundAppearance, WindowBounds, WindowKind,
-        WindowOptions,
-    };
+    use gpui::{point, WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions};
 
     // GPUI names each Wayland output by the same v5 UUID of its name that
     // the compositor snapshot uses.

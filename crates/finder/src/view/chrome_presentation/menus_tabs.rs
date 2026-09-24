@@ -22,6 +22,7 @@ impl FinderView {
 
     /// `compress_label` is Finder's "Compress “x”" / "Compress N Items",
     /// present exactly when items are selected.
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::view) fn build_context_menu(
         pos: Point<Pixels>,
         compress_label: Option<String>,

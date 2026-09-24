@@ -232,7 +232,7 @@ fn file_details(
     now: chrono::DateTime<chrono::Local>,
 ) -> Option<String> {
     let metadata = std::fs::symlink_metadata(path).ok()?;
-    let size = metadata.is_file().then(|| metadata.len());
+    let size = metadata.is_file().then_some(metadata.len());
     let modified = metadata
         .modified()
         .ok()

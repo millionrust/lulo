@@ -296,10 +296,6 @@ impl Player {
         self.command(&["seek", &format!("{:.3}", seconds.max(0.0)), "absolute"]);
     }
 
-    pub fn seek_by(&self, seconds: f64) {
-        self.command(&["seek", &format!("{seconds:.3}"), "relative"]);
-    }
-
     pub fn set_volume(&self, volume: f64) {
         self.set("volume", &format!("{:.1}", volume.clamp(0.0, 100.0)));
     }
@@ -416,13 +412,13 @@ fn property_event(
     let text = || {
         // SAFETY: FORMAT_STRING data is a `char **`.
         let pointer = unsafe { *(property.data as *const *const c_char) };
-        (!pointer.is_null())
-            .then(|| {
-                unsafe { CStr::from_ptr(pointer) }
-                    .to_string_lossy()
-                    .into_owned()
-            })
-            .unwrap_or_default()
+        if pointer.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(pointer) }
+                .to_string_lossy()
+                .into_owned()
+        }
     };
     match (name, property.format) {
         ("time-pos", FORMAT_DOUBLE) => Some(Event::TimePosition(double())),

@@ -37,15 +37,6 @@ impl FinderView {
         cx.notify();
     }
 
-    pub(super) fn finish_file_operations(
-        &mut self,
-        failures: Vec<file_ops::Failure>,
-        cx: &mut Context<Self>,
-    ) {
-        self.record_operation_failures(failures, cx);
-        self.reload(cx);
-    }
-
     pub(super) fn begin_search(&mut self) -> (u64, Arc<AtomicBool>) {
         self.cancel_search();
         self.search_generation = self.search_generation.wrapping_add(1);

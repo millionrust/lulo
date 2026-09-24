@@ -401,7 +401,7 @@ impl Panel {
                                             (item, when)
                                         })
                                         .collect();
-                                    items.sort_by(|a, b| b.1.cmp(&a.1));
+                                    items.sort_by_key(|(_, when)| std::cmp::Reverse(*when));
                                     items.truncate(200);
                                     items.into_iter().map(|(item, _)| item).collect()
                                 })

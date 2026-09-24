@@ -880,15 +880,11 @@ fn parse_trash_info(
             return Err(invalid_data("Trash metadata entry is invalid"));
         };
         match key {
-            "Path" => {
-                if encoded_path.replace(value).is_some() {
-                    return Err(invalid_data("Trash metadata has duplicate Path"));
-                }
+            "Path" if encoded_path.replace(value).is_some() => {
+                return Err(invalid_data("Trash metadata has duplicate Path"));
             }
-            "DeletionDate" => {
-                if deleted_at.replace(value).is_some() {
-                    return Err(invalid_data("Trash metadata has duplicate DeletionDate"));
-                }
+            "DeletionDate" if deleted_at.replace(value).is_some() => {
+                return Err(invalid_data("Trash metadata has duplicate DeletionDate"));
             }
             _ => {}
         }

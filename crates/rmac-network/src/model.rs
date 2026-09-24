@@ -150,7 +150,7 @@ impl WifiPassword {
         })
     }
 
-    #[cfg(any(not(target_os = "macos"), test))]
+    #[cfg(any(not(target_os = "macos"), test, feature = "test-support"))]
     pub(crate) fn expose<R>(&self, use_password: impl FnOnce(&str) -> R) -> R {
         // Construction accepts only a valid String, so this can fail only if
         // memory was corrupted. Never substitute a partial or lossy password.
@@ -236,7 +236,7 @@ impl WifiEnterpriseCredentials {
         })
     }
 
-    #[cfg(any(not(target_os = "macos"), test))]
+    #[cfg(any(not(target_os = "macos"), test, feature = "test-support"))]
     pub(crate) fn expose_password<R>(&self, use_password: impl FnOnce(&str) -> R) -> R {
         let value =
             std::str::from_utf8(&self.password).expect("enterprise password must remain UTF-8");

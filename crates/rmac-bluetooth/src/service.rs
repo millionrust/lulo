@@ -48,7 +48,7 @@ impl Error {
         }
     }
 
-    #[cfg(any(not(target_os = "macos"), test))]
+    #[cfg(any(not(target_os = "macos"), test, feature = "test-support"))]
     pub(crate) fn pairing(
         operation: &'static str,
         detail: impl Into<String>,

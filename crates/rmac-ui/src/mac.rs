@@ -352,7 +352,7 @@ pub fn focus_ring() -> Hsla {
 /// (design-lab/chrome.html: 3 pt, widened by the Increase Contrast setting).
 /// Chain with `.when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))` on
 /// any control that draws its own focus indication rather than relying on a
-/// wrapped `gpui_component` control's built-in ring.
+/// wrapped component-library control's built-in ring.
 pub fn focus_ring_shadow() -> Vec<gpui::BoxShadow> {
     let width = crate::theme::current().focus.ring_width;
     vec![

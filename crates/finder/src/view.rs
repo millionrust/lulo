@@ -86,12 +86,13 @@ use crate::watchers::{
 };
 #[cfg(target_os = "linux")]
 use crate::watchers::{next_mount_watch_retry, MountWatchHealth, MountWatchNotice};
-use crate::{directory_state, file_ops, operation_journal, pasteboard, undo_journal};
+use crate::{directory_state, file_ops, operation_journal, undo_journal};
 use filesystem_helpers::*;
 use finder_behaviour::*;
 use finder_style::*;
 use presentation_persistence::{FinderPersistence, MAX_RESTORED_TABS};
 use presentation_support::*;
+use rmac_finder::pasteboard;
 use search_helpers::*;
 use selection_controller::accessible_item;
 use transient_state::*;

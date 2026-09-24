@@ -310,6 +310,36 @@ pub fn duplicate_file(path: &Path) -> Result<PathBuf, Error> {
     Ok(target)
 }
 
+/// A unique "name alias" path for Make Alias, as Finder names aliases.
+pub fn alias_path(path: &Path) -> Option<PathBuf> {
+    let parent = path.parent()?;
+    let name = path.file_name()?.to_string_lossy().into_owned();
+    (1..10_000u32)
+        .map(|index| match index {
+            1 => parent.join(format!("{name} alias")),
+            _ => parent.join(format!("{name} alias {index}")),
+        })
+        .find(|candidate| fs::symlink_metadata(candidate).is_err())
+}
+
+/// Creates a symlink named [`alias_path`] beside `path`, pointing at its
+/// canonical target — the Linux stand-in for a macOS alias (Finder ▸ Make
+/// Alias). Unlike [`duplicate_file`], this works on files and folders alike.
+pub fn make_alias(path: &Path) -> Result<PathBuf, Error> {
+    let target = fs::canonicalize(path).map_err(|error| Error::Io(error.kind()))?;
+    let alias = alias_path(path).ok_or(Error::Io(io::ErrorKind::AlreadyExists))?;
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(&target, &alias).map_err(|error| Error::Io(error.kind()))?;
+        Ok(alias)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (target, alias);
+        Err(Error::Io(io::ErrorKind::Unsupported))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RenameError {
     /// Another item already has the name.

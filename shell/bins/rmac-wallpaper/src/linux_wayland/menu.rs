@@ -33,9 +33,10 @@ pub(crate) enum MenuTarget {
 pub(crate) enum Submenu {
     SortBy,
     CleanUpBy,
+    OpenWith,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Command {
     NewFolder,
     GetInfo,
@@ -47,9 +48,19 @@ pub(crate) enum Command {
     Arrange(Arrangement),
     ViewOptions,
     Open,
+    /// Revalidated against the item's current MIME type when it runs
+    /// (crates/rmac-app-launch/src/document.rs `open_file_with`).
+    OpenWith {
+        mime_type: String,
+        application_id: String,
+    },
     MoveToTrash,
     Rename,
+    Compress,
     Duplicate,
+    MakeAlias,
+    QuickLook,
+    Copy,
     RemoveWidget(u64),
     ShowSubmenu(Submenu),
 }
@@ -66,7 +77,7 @@ pub(crate) struct Row {
 
 impl Row {
     fn new(
-        label: &'static str,
+        label: impl Into<SharedString>,
         glyph: Option<&'static str>,
         command: Command,
         section: u8,
@@ -123,9 +134,9 @@ impl DesktopMenu {
 }
 
 /// The macOS 26 desktop menus. Rows without an rmac backend (Import from
-/// iPhone, Group Stacks By, Compress, Make Alias, Quick Look, Copy, Tags,
-/// Share) are left out, and so is Rename for several items (Finder's batch
-/// rename).
+/// iPhone, Group Stacks By, Tags, Share) are left out, and so is Rename and
+/// Make Alias for several items (Finder's batch rename has no rmac
+/// backend, and Make Alias mirrors Rename's single-item scope).
 pub(crate) fn rows(target: &MenuTarget, settings: &DesktopSettings, files: bool) -> Vec<Row> {
     let free = !settings.use_stacks && !settings.arrangement.is_sorted();
     match target {
@@ -154,17 +165,35 @@ pub(crate) fn rows(target: &MenuTarget, settings: &DesktopSettings, files: bool)
             Row::new("Show View Options", Some("gear"), Command::ViewOptions, 2),
         ],
         MenuTarget::Items(paths) => {
-            let mut rows = vec![
-                Row::new("Open", Some("open"), Command::Open, 0),
-                Row::new("Move to Trash", Some("trash"), Command::MoveToTrash, 1),
-                Row::new("Get Info", Some("info"), Command::GetInfo, 2),
-            ];
+            let single_file = paths.len() == 1 && files;
+            let mut rows = vec![Row::new("Open", Some("open"), Command::Open, 0)];
+            if single_file {
+                rows.push(Row::new(
+                    "Open With",
+                    None,
+                    Command::ShowSubmenu(Submenu::OpenWith),
+                    0,
+                ));
+            }
+            rows.push(Row::new(
+                "Move to Trash",
+                Some("trash"),
+                Command::MoveToTrash,
+                1,
+            ));
+            rows.push(Row::new("Get Info", Some("info"), Command::GetInfo, 2));
             if paths.len() == 1 {
                 rows.push(Row::new("Rename", Some("rename"), Command::Rename, 2));
             }
+            rows.push(Row::new("Compress", None, Command::Compress, 2));
             rows.push(
                 Row::new("Duplicate", Some("duplicate"), Command::Duplicate, 2).enabled(files),
             );
+            if paths.len() == 1 {
+                rows.push(Row::new("Make Alias", None, Command::MakeAlias, 2));
+            }
+            rows.push(Row::new("Quick Look", None, Command::QuickLook, 2));
+            rows.push(Row::new("Copy", None, Command::Copy, 2));
             rows
         }
         MenuTarget::Widget(id) => vec![
@@ -174,9 +203,40 @@ pub(crate) fn rows(target: &MenuTarget, settings: &DesktopSettings, files: bool)
     }
 }
 
-pub(crate) fn submenu_rows(submenu: Submenu, settings: &DesktopSettings) -> Vec<Row> {
+/// `open_with` is the association fetched for the single selected item when
+/// its context menu opened (DESK-01; `Wallpaper::open_context_menu`),
+/// `None` while that fetch is still in flight or the target isn't eligible.
+pub(crate) fn submenu_rows(
+    submenu: Submenu,
+    settings: &DesktopSettings,
+    open_with: Option<&rmac_apps::FileAssociation>,
+) -> Vec<Row> {
     use rmac_desktop::SortOrder;
     match submenu {
+        Submenu::OpenWith => match open_with {
+            Some(association) if !association.handlers.is_empty() => association
+                .handlers
+                .iter()
+                .map(|application| {
+                    let checked = association.default_application_id.as_deref()
+                        == Some(application.id.as_str());
+                    Row::new(
+                        application.name.clone(),
+                        None,
+                        Command::OpenWith {
+                            mime_type: association.mime_type.clone(),
+                            application_id: application.id.clone(),
+                        },
+                        0,
+                    )
+                    .checked(checked)
+                })
+                .collect(),
+            Some(_) => {
+                vec![Row::new("No Applications Available", None, Command::Open, 0).enabled(false)]
+            }
+            None => vec![Row::new("Opening…", None, Command::Open, 0).enabled(false)],
+        },
         Submenu::SortBy => [
             ("None", Arrangement::None, 0),
             ("Snap to Grid", Arrangement::SnapToGrid, 0),
@@ -266,7 +326,11 @@ impl Wallpaper {
 
     pub(crate) fn open_submenu_rows(&self, cx: &App) -> Vec<Row> {
         match self.desk.menu.as_ref().and_then(|menu| menu.submenu) {
-            Some(submenu) => submenu_rows(submenu, &self.status.read(cx).settings),
+            Some(submenu) => submenu_rows(
+                submenu,
+                &self.status.read(cx).settings,
+                self.desk.open_with.as_ref().map(|(_, assoc)| assoc),
+            ),
             None => Vec::new(),
         }
     }
@@ -274,6 +338,12 @@ impl Wallpaper {
     pub(crate) fn menu_key(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) {
         let rows = self.main_rows(cx);
         let sub_rows = self.open_submenu_rows(cx);
+        // Read before `menu` below borrows `self.desk.menu` mutably: this is
+        // a sibling field of the same `self.desk`, and the settings read
+        // further down needs a fully-owned value it can reach independent
+        // of that borrow.
+        let open_with = self.desk.open_with.as_ref().map(|(_, assoc)| assoc.clone());
+        let settings = self.status.read(cx).settings.clone();
         let Some(menu) = &mut self.desk.menu else {
             return;
         };
@@ -302,7 +372,7 @@ impl Wallpaper {
                 {
                     menu.submenu = Some(submenu);
                     menu.in_submenu = true;
-                    let fresh = submenu_rows(submenu, &self.status.read(cx).settings);
+                    let fresh = submenu_rows(submenu, &settings, open_with.as_ref());
                     if let Some(menu) = &mut self.desk.menu {
                         menu.submenu_selected = next_enabled(&fresh, None, true);
                     }
@@ -361,7 +431,11 @@ impl Wallpaper {
         let main = self.menu_panel(&rows, left, top, width, false, menu.selected, cx);
         let mut panels = vec![main];
         if let Some(submenu) = menu.submenu {
-            let sub_rows = submenu_rows(submenu, &self.status.read(cx).settings);
+            let sub_rows = submenu_rows(
+                submenu,
+                &self.status.read(cx).settings,
+                self.desk.open_with.as_ref().map(|(_, assoc)| assoc),
+            );
             let parent = rows
                 .iter()
                 .position(|row| row.submenu() == Some(submenu))
@@ -438,7 +512,7 @@ impl Wallpaper {
             }
             previous = Some(row.section);
             let highlighted = selected == Some(index) && row.enabled;
-            let command = row.command;
+            let command = row.command.clone();
             let enabled = row.enabled;
             let submenu = row.submenu();
             let foreground = if !enabled {
@@ -511,7 +585,7 @@ impl Wallpaper {
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .on_click(cx.listener(move |this, _, window, cx| {
                         cx.stop_propagation();
-                        this.menu_command(command, window, cx);
+                        this.menu_command(command.clone(), window, cx);
                     }));
             }
             children.push(element.into_any_element());

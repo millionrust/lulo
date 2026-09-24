@@ -13,6 +13,7 @@ use rmac_desktop::stacks::{self, StackKind, Tile};
 use rmac_desktop::widgets::{self as desk_widgets, Widget};
 use rmac_desktop::{Item, ItemKind, RenameError};
 use rmac_shell_ui::text_field::{TextField, TextFieldEvent, TextFieldStyle};
+use std::sync::atomic::AtomicBool;
 
 /// A press that moves further than this starts a drag.
 const DRAG_THRESHOLD: f32 = 3.0;
@@ -56,6 +57,10 @@ const ALERT_BUTTON_FILL: u32 = 0xFFFFFF26;
 pub(crate) struct DeskState {
     pub selection: BTreeSet<PathBuf>,
     pub menu: Option<DesktopMenu>,
+    /// Open With ▸ candidates for the single file the open context menu
+    /// targets (DESK-01), fetched once when the menu opens
+    /// (`Wallpaper::open_context_menu`) — never polled.
+    pub open_with: Option<(PathBuf, rmac_apps::FileAssociation)>,
     pub drag: Option<Drag>,
     pub expanded: BTreeSet<StackKind>,
     pub panel: Option<Panel>,
@@ -362,6 +367,28 @@ impl Wallpaper {
         self.dismiss_app_drawer(cx);
         self.desk.drag = None;
         self.desk.rename_click = self.desk.rename_click.wrapping_add(1);
+        self.desk.open_with = None;
+        // Open With ▸ (DESK-01) needs an XDG MIME lookup, which is async, so
+        // it is fetched once here rather than blocking the menu open. A
+        // single regular file matches Finder's own Open With scope.
+        if let MenuTarget::Items(paths) = &target {
+            if let [path] = paths.as_slice() {
+                if path.is_file() {
+                    let path = path.clone();
+                    cx.spawn(async move |this, cx| {
+                        if let Ok(association) =
+                            rmac_app_launch::file_association(path.clone()).await
+                        {
+                            let _ = this.update(cx, |this, cx| {
+                                this.desk.open_with = Some((path, association));
+                                cx.notify();
+                            });
+                        }
+                    })
+                    .detach();
+                }
+            }
+        }
         self.desk.menu = Some(DesktopMenu::new(position, target));
         window.focus(&self.focus, cx);
         cx.notify();
@@ -939,6 +966,101 @@ impl Wallpaper {
                 for path in selection {
                     spawn_item_action(path, ItemAction::Open, cx);
                 }
+            }
+            Command::OpenWith {
+                mime_type,
+                application_id,
+            } => {
+                if let [path] = selection.as_slice() {
+                    let path = path.clone();
+                    cx.spawn(async move |this, cx| {
+                        let result = rmac_app_launch::open_file_with(
+                            path,
+                            mime_type,
+                            application_id,
+                            false,
+                            false,
+                        )
+                        .await;
+                        let _ = this.update(cx, |this, cx| {
+                            if result.is_err() {
+                                this.action_error = Some("The item could not be opened".into());
+                            }
+                            cx.notify();
+                        });
+                    })
+                    .detach();
+                }
+            }
+            Command::Compress => {
+                if selection.is_empty() {
+                    return;
+                }
+                cx.spawn(async move |this, cx| {
+                    let result = blocking::unblock(move || {
+                        let cancel = AtomicBool::new(false);
+                        rmac_archive::compress(&selection, &cancel, &mut |_| {})
+                    })
+                    .await;
+                    let _ = this.update(cx, |this, cx| {
+                        if result.is_err() {
+                            this.action_error = Some("The items could not be compressed".into());
+                        }
+                        cx.notify();
+                    });
+                })
+                .detach();
+            }
+            Command::MakeAlias => {
+                if let [path] = selection.as_slice() {
+                    let path = path.clone();
+                    cx.spawn(async move |this, cx| {
+                        let result =
+                            blocking::unblock(move || rmac_desktop::make_alias(&path)).await;
+                        let _ = this.update(cx, |this, cx| {
+                            match result {
+                                Ok(alias) => this.desk.selection = BTreeSet::from([alias]),
+                                Err(_) => {
+                                    this.action_error =
+                                        Some("The alias could not be created".into())
+                                }
+                            }
+                            cx.notify();
+                        });
+                    })
+                    .detach();
+                }
+            }
+            Command::QuickLook => {
+                if selection.is_empty() {
+                    return;
+                }
+                // Files' own panel (crates/rmac-quick-look), opened directly
+                // in this process — it is a shared library, not a separate
+                // service. The desktop menu does not wire "Uncompress"
+                // (that is Files' progress-sheet flow), so archives just
+                // preview as files here.
+                let options = rmac_quick_look::Options { uncompress: false };
+                if rmac_quick_look::open(selection, 0, options, cx).is_none() {
+                    self.action_error = Some("Quick Look could not open its window".into());
+                }
+            }
+            Command::Copy => {
+                if selection.is_empty() {
+                    return;
+                }
+                cx.spawn(async move |this, cx| {
+                    let result = rmac_finder::pasteboard::write_file_list(selection, false)
+                        .wait()
+                        .await;
+                    let _ = this.update(cx, |this, cx| {
+                        if result.is_err() {
+                            this.action_error = Some("The items could not be copied".into());
+                        }
+                        cx.notify();
+                    });
+                })
+                .detach();
             }
             Command::MoveToTrash => {
                 if selection.is_empty() {

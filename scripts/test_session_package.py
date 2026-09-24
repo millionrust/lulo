@@ -399,6 +399,10 @@ class SessionPackageTests(unittest.TestCase):
             capture = root / "normal"
             systemctl_capture = root / "systemctl.log"
             environment = os.environ.copy()
+            # The wrapper honours XDG_CONFIG_HOME before $HOME/.config, and CI
+            # runners set it to the real home; the fixture HOME must win.
+            for inherited in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"):
+                environment.pop(inherited, None)
             environment.update(
                 {
                     "HOME": str(root / "home"),

@@ -265,6 +265,7 @@ impl FinderView {
                             })
                             .filter(|index| this.selected.contains(index))
                             .or_else(|| this.selected.iter().next().copied());
+                        this.select_first_for_gallery(cx);
                         this.renaming = renaming
                             .as_ref()
                             .filter(|(path, _)| path.exists())

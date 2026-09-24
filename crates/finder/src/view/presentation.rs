@@ -13,6 +13,7 @@ impl Render for FinderView {
             self.sidebar_width,
         );
         let window_active = window.is_window_active();
+        let window_height = f32::from(window.bounds().size.height);
         let info = self.info.clone();
         let multi = self.tabs.len() > 1;
         let menu_at = self.menu_at.clone();
@@ -385,7 +386,7 @@ impl Render for FinderView {
                         )
                     })
                     .when(multi, |el| el.child(self.render_tabs(cx)))
-                    .child(self.render_list(window_active, cx)),
+                    .child(self.render_list(window_active, window_height, cx)),
             )
             .when_some(info, |el, entry| el.child(self.render_info(&entry, cx)))
             .when_some(menu_at, |el, state| {

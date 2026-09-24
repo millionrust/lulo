@@ -49,6 +49,7 @@ impl FinderView {
     pub(super) fn render_list(
         &self,
         window_active: bool,
+        window_height: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         // Recursive content matches may not contain the query in their names.
@@ -191,24 +192,29 @@ impl FinderView {
             } else {
                 secondary_text()
             };
-            let glyph = if e.is_dir {
-                "icons/folder-artwork.svg"
-            } else {
-                "icons/file-fill.svg"
-            };
-            let icon_color = if e.is_dir {
-                folder_blue()
-            } else if selected {
-                selected_text(window_active)
-            } else {
-                secondary_text()
-            };
+            // Finder's list rows show the file's own thumbnail when it has
+            // one, else the full-colour folder or page artwork.
             let row_icon: gpui::AnyElement = e
                 .application
                 .as_ref()
                 .and_then(|application| application.icon.clone())
                 .map_or_else(
-                    || icon(glyph, LIST_ICON, icon_color).into_any_element(),
+                    || match self.thumbs.get(&e.path) {
+                        Some(thumbnail) => div()
+                            .size(px(LIST_ICON))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                img(thumbnail.clone())
+                                    .max_w(px(LIST_ICON))
+                                    .max_h(px(LIST_ICON - 4.0))
+                                    .rounded(px(2.0)),
+                            )
+                            .into_any_element(),
+                        None => item_artwork(e.is_dir, &e.name, LIST_ICON),
+                    },
                     |path| {
                         img(path)
                             .w(px(LIST_ICON))
@@ -458,16 +464,6 @@ impl FinderView {
                 let tile_position = position;
                 position += 1;
                 let selected = self.selected.contains(&ix);
-                let glyph = if e.is_dir {
-                    "icons/folder-artwork.svg"
-                } else {
-                    "icons/file-fill.svg"
-                };
-                let icon_color = if e.is_dir {
-                    folder_blue()
-                } else {
-                    secondary_text()
-                };
                 let visual: gpui::AnyElement = if let Some(path) = e
                     .application
                     .as_ref()
@@ -485,7 +481,7 @@ impl FinderView {
                             .max_h(px(icon_size - 6.0))
                             .rounded(px(rmac_ui::mac::radius_menu_item()))
                             .into_any_element(),
-                        None => icon(glyph, icon_size, icon_color).into_any_element(),
+                        None => item_artwork(e.is_dir, &e.name, icon_size),
                     }
                 };
                 let drag_paths = if selected {
@@ -682,7 +678,9 @@ impl FinderView {
                     )
                     .into_any_element(),
                 ViewMode::Column => self.render_columns(window_active, cx).into_any_element(),
-                ViewMode::Gallery => self.render_gallery(&visible_indices, cx).into_any_element(),
+                ViewMode::Gallery => self
+                    .render_gallery(&visible_indices, window_height, cx)
+                    .into_any_element(),
                 ViewMode::Icon => {
                     let marquee = self.marquee_rect();
                     div()

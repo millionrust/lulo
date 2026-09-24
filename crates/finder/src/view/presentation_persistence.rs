@@ -180,6 +180,7 @@ impl FinderView {
         if mode != ViewMode::Column {
             self.column_selection = None;
         }
+        self.select_first_for_gallery(cx);
         self.operation_error = None;
         self.persist_finder_state();
         cx.notify();

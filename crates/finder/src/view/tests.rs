@@ -231,3 +231,44 @@ fn ranked_search_entry_presents_match_reason_without_private_absolute_path() {
     assert_eq!(detail, "Contents · the needle line");
     assert!(!detail.contains(root.0.to_string_lossy().as_ref()));
 }
+
+#[test]
+fn generic_documents_carry_a_short_extension_badge() {
+    assert_eq!(document_badge("Archive.tar.gz").as_deref(), Some("GZ"));
+    assert_eq!(document_badge("notes.txt").as_deref(), Some("TXT"));
+    assert_eq!(document_badge("README"), None);
+    assert_eq!(document_badge(".bashrc"), None);
+    assert_eq!(document_badge("draft.markdown"), None);
+    assert_eq!(document_badge("weird.t-x"), None);
+}
+
+#[test]
+fn artwork_rasters_follow_the_drawn_size_and_are_embedded() {
+    assert_eq!(item_artwork_path(true, 16.0), "icons/folder-artwork-16.svg");
+    assert_eq!(item_artwork_path(true, 64.0), "icons/folder-artwork-96.svg");
+    assert_eq!(
+        item_artwork_path(true, 300.0),
+        "icons/folder-artwork-320.svg"
+    );
+    assert_eq!(
+        item_artwork_path(false, 13.0),
+        "icons/document-artwork-16.svg"
+    );
+    assert_eq!(
+        item_artwork_path(false, 128.0),
+        "icons/document-artwork-96.svg"
+    );
+    for path in [
+        "icons/folder-artwork-16.svg",
+        "icons/folder-artwork-96.svg",
+        "icons/folder-artwork-320.svg",
+        "icons/document-artwork-16.svg",
+        "icons/document-artwork-96.svg",
+        "icons/document-artwork-320.svg",
+    ] {
+        assert!(
+            CombinedAssets.load(path).ok().flatten().is_some(),
+            "{path} should be embedded"
+        );
+    }
+}

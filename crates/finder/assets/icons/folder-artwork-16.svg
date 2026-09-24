@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="back" x1="0" y1="8.5" x2="0" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#67afde"/>
+      <stop offset="1" stop-color="#5a9fd3"/>
+    </linearGradient>
+    <linearGradient id="front" x1="0" y1="17.5" x2="0" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9ad5f6"/>
+      <stop offset="0.45" stop-color="#83c6ee"/>
+      <stop offset="1" stop-color="#68b0de"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#back)" d="M3 12.5a4 4 0 0 1 4-4h15.2a4 4 0 0 1 3.1 1.45l2.05 2.5a3 3 0 0 0 2.3 1.05H57a4 4 0 0 1 4 4V52a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/>
+  <path fill="url(#front)" d="M3 21.5a4 4 0 0 1 4-4h50a4 4 0 0 1 4 4V52a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/>
+  <path fill="#c4e8fb" fill-opacity=".75" d="M7 17.5h50a4 4 0 0 1 4 4v.4a4 4 0 0 0-4-3.4H7a4 4 0 0 0-4 3.4v-.4a4 4 0 0 1 4-4Z"/>
+  <path fill="#3f86bd" fill-opacity=".28" d="M3 51.4a4 4 0 0 0 4 3.6h50a4 4 0 0 0 4-3.6V52a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/>
+</svg>

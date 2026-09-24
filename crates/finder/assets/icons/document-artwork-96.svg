@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="page" x1="0" y1="4" x2="0" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fbfbfb"/>
+      <stop offset="1" stop-color="#ececec"/>
+    </linearGradient>
+    <linearGradient id="fold" x1="41" y1="4" x2="53" y2="16" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e4e4e4"/>
+      <stop offset="1" stop-color="#c9c9c9"/>
+    </linearGradient>
+  </defs>
+  <path fill="#000" fill-opacity=".16" d="M12.5 4.25h28.9L53.75 16.6V58.2a2.05 2.05 0 0 1-2.05 2.05H12.3a2.05 2.05 0 0 1-2.05-2.05V6.5a2.25 2.25 0 0 1 2.25-2.25Z"/>
+  <path fill="url(#page)" d="M12.5 4.75h28.7L53.25 16.8V58a1.75 1.75 0 0 1-1.75 1.75h-39A1.75 1.75 0 0 1 10.75 58V6.5a1.75 1.75 0 0 1 1.75-1.75Z"/>
+  <path fill="url(#fold)" d="M41.2 4.75V14.8a2 2 0 0 0 2 2h10.05Z"/>
+</svg>

@@ -1,111 +1,68 @@
 use super::*;
 
 impl FinderView {
+    /// Gallery inspector (design-lab/finder.html): the item's name and
+    /// "kind – size" centred at the top, then an "Information" table whose
+    /// values sit right-aligned in semibold, rows split by hairlines.
     fn render_gallery_inspector(&self, active_index: Option<usize>) -> impl IntoElement {
         let contents = active_index
             .and_then(|index| self.entries.get(index))
             .map(|entry| {
-                let glyph = if entry.is_dir {
-                    "icons/folder-artwork.svg"
-                } else {
-                    "icons/file-fill.svg"
-                };
-                let artwork = entry
-                    .application
-                    .as_ref()
-                    .and_then(|application| application.icon.clone())
-                    .map_or_else(
-                        || {
-                            icon(
-                                glyph,
-                                40.0,
-                                if entry.is_dir {
-                                    folder_blue()
-                                } else {
-                                    secondary()
-                                },
-                            )
-                            .into_any_element()
-                        },
-                        |path| {
-                            img(path)
-                                .w(px(40.0))
-                                .h(px(40.0))
-                                .rounded(px(rmac_ui::mac::radius_menu()))
-                                .into_any_element()
-                        },
-                    );
                 let information = [
                     ("Kind", entry.kind.clone()),
                     ("Size", entry.size.clone()),
                     ("Modified", entry.modified.clone()),
                 ];
+                let summary = if entry.size.as_ref() == "--" {
+                    entry.kind.clone()
+                } else {
+                    SharedString::from(format!("{} – {}", entry.kind, entry.size))
+                };
                 div()
                     .v_flex()
-                    .gap_4()
                     .child(
-                        div().flex().items_center().gap_3().child(artwork).child(
-                            div()
-                                .min_w(px(0.0))
-                                .v_flex()
-                                .child(
-                                    div()
-                                        .truncate()
-                                        .text_size(rmac_ui::text_px(13.0))
-                                        .font_weight(rmac_ui::mac::SEMIBOLD)
-                                        .text_color(label())
-                                        .child(entry.name.clone()),
-                                )
-                                .child(
-                                    div()
-                                        .text_size(rmac_ui::text_px(11.0))
-                                        .text_color(secondary())
-                                        .child(entry.kind.clone()),
-                                ),
-                        ),
+                        div()
+                            .pt(px(GALLERY_INSPECTOR_TITLE_TOP))
+                            .pb(px(GALLERY_INSPECTOR_SECTION_GAP))
+                            .v_flex()
+                            .items_center()
+                            .child(
+                                div()
+                                    .max_w(gpui::relative(1.0))
+                                    .truncate()
+                                    .text_size(rmac_ui::text_px(15.0))
+                                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                                    .text_color(label())
+                                    .child(entry.name.clone()),
+                            )
+                            .child(
+                                div()
+                                    .max_w(gpui::relative(1.0))
+                                    .truncate()
+                                    .text_size(rmac_ui::text_px(13.0))
+                                    .text_color(secondary_text())
+                                    .child(summary),
+                            ),
                     )
                     .child(
                         div()
-                            .v_flex()
-                            .child(
-                                div()
-                                    .h(px(rmac_ui::mac::list_row_height()))
-                                    .flex()
-                                    .items_center()
-                                    .text_size(rmac_ui::text_px(13.0))
-                                    .font_weight(rmac_ui::mac::SEMIBOLD)
-                                    .text_color(label())
-                                    .child("Information"),
-                            )
-                            .children(information.into_iter().map(|(name, value)| {
-                                div()
-                                    .h(px(rmac_ui::mac::list_row_height()))
-                                    .flex()
-                                    .items_center()
-                                    .border_t_1()
-                                    .border_color(sep())
-                                    .text_size(rmac_ui::text_px(11.0))
-                                    .child(
-                                        div()
-                                            .w(px(68.0))
-                                            .flex_none()
-                                            .text_color(tertiary())
-                                            .child(name),
-                                    )
-                                    .child(
-                                        div()
-                                            .min_w(px(0.0))
-                                            .flex_1()
-                                            .truncate()
-                                            .text_color(label())
-                                            .child(value),
-                                    )
-                            })),
+                            .pb(px(4.0))
+                            .text_size(rmac_ui::text_px(13.0))
+                            .font_weight(rmac_ui::mac::BOLD)
+                            .text_color(label())
+                            .child("Information"),
+                    )
+                    .children(
+                        information
+                            .into_iter()
+                            .enumerate()
+                            .map(|(row, (name, value))| inspector_row(row > 0, name, value)),
                     )
                     .into_any_element()
             })
             .unwrap_or_else(|| {
                 div()
+                    .pt(px(GALLERY_INSPECTOR_TITLE_TOP))
                     .text_size(rmac_ui::text_px(12.0))
                     .text_color(secondary())
                     .child("Select an item to see its information.")
@@ -117,10 +74,31 @@ impl FinderView {
             .w(px(GALLERY_INSPECTOR_WIDTH))
             .h_full()
             .flex_none()
-            .p_3()
+            .pl(px(GALLERY_INSPECTOR_INSET))
+            .pr(px(GALLERY_INSPECTOR_TRAILING))
             .border_l_1()
             .border_color(dark_rule())
             .child(contents)
+    }
+
+    /// Like Finder, Gallery view always previews something: opening it on a
+    /// folder with nothing selected selects the first visible item.
+    pub(super) fn select_first_for_gallery(&mut self, cx: &gpui::App) {
+        if self.view != ViewMode::Gallery || !self.selected.is_empty() {
+            return;
+        }
+        let query = if self.search_summary.is_some() {
+            String::new()
+        } else {
+            self.query.read(cx).value().to_lowercase()
+        };
+        if let Some(first) = self
+            .entries
+            .iter()
+            .position(|entry| query.is_empty() || entry.name.to_lowercase().contains(&query))
+        {
+            self.select_single(first);
+        }
     }
 
     /// macOS-style Gallery view: one large selected-item preview above a
@@ -129,8 +107,21 @@ impl FinderView {
     pub(super) fn render_gallery(
         &self,
         visible_indices: &[usize],
+        window_height: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        // The preview fills about 70 % of the stage above the filmstrip, as
+        // Finder's does (design-lab/finder.html).
+        let stage_height = window_height
+            - TOOLBAR_HEIGHT
+            - STATUS_BAR_HEIGHT
+            - if self.show_path_bar {
+                PATH_BAR_HEIGHT
+            } else {
+                0.0
+            }
+            - (GALLERY_THUMB + 16.0);
+        let preview_size = (stage_height * 0.7).clamp(96.0, 512.0);
         let search_active =
             self.search_summary.is_some() || !self.query.read(cx).value().trim().is_empty();
         let active_index = self
@@ -181,58 +172,37 @@ impl FinderView {
                         .into_any_element()
                 },
                 |(index, entry)| {
-                    let glyph = if entry.is_dir {
-                        "icons/folder-artwork.svg"
-                    } else {
-                        "icons/file-fill.svg"
-                    };
                     let visual = entry
                         .application
                         .as_ref()
                         .and_then(|application| application.icon.clone())
                         .map(|path| {
                             img(path)
-                                .w(px(132.0))
-                                .h(px(132.0))
-                                .rounded(px(rmac_ui::mac::radius_pill()))
+                                .w(px(preview_size))
+                                .h(px(preview_size))
+                                .rounded(px(preview_size * 0.22))
                                 .into_any_element()
                         })
                         .unwrap_or_else(|| {
                             self.thumbs.get(&entry.path).map_or_else(
-                                || {
-                                    icon(
-                                        glyph,
-                                        132.0,
-                                        if entry.is_dir {
-                                            folder_blue()
-                                        } else {
-                                            secondary()
-                                        },
-                                    )
-                                    .into_any_element()
-                                },
+                                || item_artwork(entry.is_dir, &entry.name, preview_size),
                                 |thumbnail| {
                                     img(thumbnail.clone())
-                                        .max_w(px(440.0))
-                                        .max_h(px(280.0))
+                                        .max_w(px(preview_size * 1.6))
+                                        .max_h(px(preview_size))
                                         .rounded(px(rmac_ui::mac::radius_control()))
                                         .into_any_element()
                                 },
                             )
                         });
-                    let name = if selected_count > 1 {
-                        SharedString::from(format!("{} items selected", selected_count))
-                    } else {
-                        entry.name.clone()
-                    };
-                    let detail = if selected_count > 1 {
-                        SharedString::from("The focused item is shown")
-                    } else {
-                        SharedString::from(format!(
-                            "{}  •  {}  •  {}",
-                            entry.kind, entry.size, entry.modified
-                        ))
-                    };
+                    // Finder names the item in the inspector, not under the
+                    // preview; only a multiple selection is spelled out here.
+                    let multiple = (selected_count > 1).then(|| {
+                        div()
+                            .text_size(rmac_ui::text_px(13.0))
+                            .text_color(secondary_text())
+                            .child(format!("{selected_count} items selected"))
+                    });
 
                     div()
                         .id(("gallery-preview", index))
@@ -244,33 +214,8 @@ impl FinderView {
                         .gap_3()
                         .px_6()
                         .py_4()
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_h(px(0.0))
-                                .w_full()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(visual),
-                        )
-                        .child(
-                            div()
-                                .max_w(px(560.0))
-                                .text_size(rmac_ui::text_px(15.0))
-                                .font_weight(rmac_ui::mac::SEMIBOLD)
-                                .text_color(label())
-                                .truncate()
-                                .child(name),
-                        )
-                        .child(
-                            div()
-                                .max_w(px(560.0))
-                                .text_size(rmac_ui::text_px(11.0))
-                                .text_color(secondary())
-                                .truncate()
-                                .child(detail),
-                        )
+                        .child(visual)
+                        .children(multiple)
                         .into_any_element()
                 },
             );
@@ -283,11 +228,6 @@ impl FinderView {
             .filter_map(|(position, &index)| {
                 let entry = self.entries.get(index)?;
                 let selected = self.selected.contains(&index);
-                let glyph = if entry.is_dir {
-                    "icons/folder-artwork.svg"
-                } else {
-                    "icons/file-fill.svg"
-                };
                 let visual = entry
                     .application
                     .as_ref()
@@ -301,18 +241,7 @@ impl FinderView {
                     })
                     .unwrap_or_else(|| {
                         self.thumbs.get(&entry.path).map_or_else(
-                            || {
-                                icon(
-                                    glyph,
-                                    GALLERY_THUMB,
-                                    if entry.is_dir {
-                                        folder_blue()
-                                    } else {
-                                        secondary()
-                                    },
-                                )
-                                .into_any_element()
-                            },
+                            || item_artwork(entry.is_dir, &entry.name, GALLERY_THUMB),
                             |thumbnail| {
                                 img(thumbnail.clone())
                                     .max_w(px(58.0))

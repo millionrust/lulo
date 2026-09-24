@@ -311,12 +311,47 @@ pub(super) const COLUMN_ROW_HEIGHT: f32 = 22.0;
 pub(super) const COLUMN_ROW_INSET: f32 = 10.0;
 pub(super) const COLUMN_ICON_X: f32 = 7.0;
 pub(super) const COLUMN_TEXT_X: f32 = 26.0;
+/// A file's preview column: content inset 10, artwork up to 128 on top,
+/// the name 10 below it.
+pub(super) const COLUMN_PREVIEW_INSET: f32 = 10.0;
+pub(super) const COLUMN_PREVIEW_ARTWORK: f32 = 128.0;
+pub(super) const COLUMN_PREVIEW_TEXT_GAP: f32 = 10.0;
 
 // ---- gallery view ----------------------------------------------------------
 
 pub(super) const GALLERY_INSPECTOR_WIDTH: f32 = 250.0;
 pub(super) const GALLERY_THUMB: f32 = 48.0;
 pub(super) const GALLERY_THUMB_PITCH: f32 = 59.0;
+/// Inspector: text 9 in from its left edge (11 from the window's right),
+/// the name 26 below the toolbar, "Information" 24 below the summary line,
+/// then 23 pt rows split by hairlines.
+pub(super) const GALLERY_INSPECTOR_INSET: f32 = 9.0;
+pub(super) const GALLERY_INSPECTOR_TRAILING: f32 = 11.0;
+pub(super) const GALLERY_INSPECTOR_TITLE_TOP: f32 = 26.0;
+pub(super) const GALLERY_INSPECTOR_SECTION_GAP: f32 = 24.0;
+pub(super) const GALLERY_INSPECTOR_ROW_HEIGHT: f32 = 23.0;
+
+// ---- Get Info ------------------------------------------------------------------
+
+/// Finder's info window is 265 wide; its close button is centred 16 in.
+pub(super) const INFO_WIDTH: f32 = 265.0;
+pub(super) const INFO_MAX_HEIGHT: f32 = 620.0;
+pub(super) const INFO_TITLE_HEIGHT: f32 = 32.0;
+pub(super) const INFO_TITLE_TEXT_INSET: f32 = 40.0;
+pub(super) const INFO_CLOSE: f32 = 14.0;
+pub(super) const INFO_CLOSE_CENTRE: f32 = 16.0;
+/// Header icon 32; sections inset 10 with a 12 pt title row 25 tall.
+pub(super) const INFO_HEADER_ICON: f32 = 32.0;
+pub(super) const INFO_SECTION_INSET: f32 = 10.0;
+pub(super) const INFO_SECTION_HEADER: f32 = 25.0;
+pub(super) const INFO_SECTION_TEXT: f32 = 12.0;
+/// Rows: 12 pt on a 14 pt pitch; labels end 67 in, values start 5.5 later.
+pub(super) const INFO_ROW_TEXT: f32 = 12.0;
+pub(super) const INFO_ROW_LINE: f32 = 14.0;
+pub(super) const INFO_ROW_PITCH: f32 = 14.0;
+pub(super) const INFO_LABEL_RIGHT: f32 = 67.0;
+pub(super) const INFO_LABEL_GAP: f32 = 5.5;
+pub(super) const INFO_PREVIEW_HEIGHT: f32 = 130.0;
 
 // ---- path and status bars --------------------------------------------------
 

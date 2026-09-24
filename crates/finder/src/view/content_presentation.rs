@@ -1,6 +1,9 @@
 use super::*;
 
 impl FinderView {
+    /// Column-view preview (design-lab/finder.html): the preview fills the
+    /// top of the column, then the name, "kind – size" and an Information
+    /// table, all left-aligned 10 in from the column edge.
     fn render_column_preview(&self, entry: &Entry) -> gpui::AnyElement {
         let visual = entry
             .application
@@ -8,21 +11,23 @@ impl FinderView {
             .and_then(|application| application.icon.clone())
             .map(|path| {
                 img(path)
-                    .max_w(px(256.0))
-                    .max_h(px(256.0))
+                    .max_w(px(COLUMN_PREVIEW_ARTWORK))
+                    .max_h(px(COLUMN_PREVIEW_ARTWORK))
                     .rounded(px(rmac_ui::mac::radius_popover()))
                     .into_any_element()
             })
             .or_else(|| {
                 self.thumbs.get(&entry.path).map(|thumbnail| {
                     img(thumbnail.clone())
-                        .max_w(px(256.0))
-                        .max_h(px(256.0))
+                        .max_w(gpui::relative(1.0))
+                        .max_h(gpui::relative(1.0))
                         .rounded(px(rmac_ui::mac::radius_control()))
                         .into_any_element()
                 })
             })
-            .unwrap_or_else(|| icon("icons/file-fill.svg", 128.0, secondary()).into_any_element());
+            .unwrap_or_else(|| item_artwork(false, &entry.name, COLUMN_PREVIEW_ARTWORK));
+        let summary = SharedString::from(format!("{} – {}", entry.kind, entry.size));
+        let information = [("Modified", entry.modified.clone())];
 
         div()
             .id("column-preview")
@@ -30,12 +35,9 @@ impl FinderView {
             .flex_1()
             .h_full()
             .v_flex()
-            .items_center()
-            .justify_center()
-            .gap_3()
-            .p_4()
-            .border_r_1()
-            .border_color(sep())
+            .px(px(COLUMN_PREVIEW_INSET))
+            .pt(px(COLUMN_PREVIEW_INSET))
+            .pb(px(COLUMN_PREVIEW_INSET))
             .child(
                 div()
                     .flex_1()
@@ -48,7 +50,7 @@ impl FinderView {
             )
             .child(
                 div()
-                    .max_w(px(256.0))
+                    .pt(px(COLUMN_PREVIEW_TEXT_GAP))
                     .truncate()
                     .text_size(rmac_ui::text_px(15.0))
                     .font_weight(rmac_ui::mac::SEMIBOLD)
@@ -57,14 +59,25 @@ impl FinderView {
             )
             .child(
                 div()
-                    .max_w(px(256.0))
                     .truncate()
-                    .text_size(rmac_ui::text_px(11.0))
-                    .text_color(secondary())
-                    .child(format!(
-                        "{}  •  {}  •  {}",
-                        entry.kind, entry.size, entry.modified
-                    )),
+                    .text_size(rmac_ui::text_px(13.0))
+                    .text_color(secondary_text())
+                    .child(summary),
+            )
+            .child(
+                div()
+                    .pt(px(12.0))
+                    .pb(px(4.0))
+                    .text_size(rmac_ui::text_px(13.0))
+                    .font_weight(rmac_ui::mac::BOLD)
+                    .text_color(label())
+                    .child("Information"),
+            )
+            .children(
+                information
+                    .into_iter()
+                    .enumerate()
+                    .map(|(row, (name, value))| inspector_row(row > 0, name, value)),
             )
             .into_any_element()
     }
@@ -157,18 +170,6 @@ impl FinderView {
                         }))
                         .into_any_element(),
                 };
-                let glyph = if is_dir {
-                    "icons/folder-artwork.svg"
-                } else {
-                    "icons/file-fill.svg"
-                };
-                let icol = if is_dir {
-                    folder_blue()
-                } else if is_sel {
-                    row_text
-                } else {
-                    secondary_text()
-                };
                 col = col.child(
                     accessible_item(
                         div().id(SharedString::from(format!("colrow-{ci}-{}", e.name))),
@@ -195,7 +196,22 @@ impl FinderView {
                     .rounded(px(ROW_RADIUS))
                     .text_size(rmac_ui::text_px(13.0))
                     .when(is_sel, |el: Stateful<Div>| el.bg(selection(row_active)))
-                    .child(icon(glyph, LIST_ICON, icol))
+                    .child(match self.thumbs.get(&e.path) {
+                        Some(thumbnail) => div()
+                            .size(px(LIST_ICON))
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                img(thumbnail.clone())
+                                    .max_w(px(LIST_ICON))
+                                    .max_h(px(LIST_ICON - 4.0))
+                                    .rounded(px(2.0)),
+                            )
+                            .into_any_element(),
+                        None => item_artwork(is_dir, &e.name, LIST_ICON),
+                    })
                     .child(
                         div()
                             .w(px(COLUMN_TEXT_X - COLUMN_ICON_X - LIST_ICON))
@@ -611,15 +627,11 @@ impl FinderView {
                         .items_center()
                         .gap(px(PATH_BAR_ICON_GAP))
                         .cursor_pointer()
-                        .child(icon(
-                            glyph,
-                            PATH_BAR_ICON,
-                            if glyph == "icons/folder-fill.svg" {
-                                folder_blue()
-                            } else {
-                                chrome_text()
-                            },
-                        ))
+                        .child(if glyph == "icons/folder-fill.svg" {
+                            item_artwork(true, "", PATH_BAR_ICON)
+                        } else {
+                            icon(glyph, PATH_BAR_ICON, chrome_text()).into_any_element()
+                        })
                         .child(name)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             if destination.is_dir() {

@@ -81,11 +81,6 @@ pub(super) fn list_bg() -> Hsla {
 pub(super) fn accent() -> Hsla {
     rmac_ui::mac::accent()
 }
-pub(super) fn folder_blue() -> Hsla {
-    // Folder artwork has a stable semantic identity rather than following the
-    // user's control accent; the value is a measured `rmac-design` token.
-    rmac_ui::mac::folder_blue()
-}
 pub(super) fn sep() -> Hsla {
     rmac_ui::mac::separator()
 }
@@ -109,6 +104,90 @@ pub(super) fn icon(path: &'static str, size: f32, color: Hsla) -> Svg {
         .h(px(size))
         .text_color(color)
         .flex_none()
+}
+
+/// The raster of the full-colour folder or document artwork to draw at
+/// `size` points. GPUI rasterises an SVG image once, at twice its intrinsic
+/// size, so each use picks the file whose raster is closest above it.
+pub(super) fn item_artwork_path(is_dir: bool, size: f32) -> &'static str {
+    match (is_dir, size) {
+        (true, size) if size <= 24.0 => "icons/folder-artwork-16.svg",
+        (true, size) if size <= 128.0 => "icons/folder-artwork-96.svg",
+        (true, _) => "icons/folder-artwork-320.svg",
+        (false, size) if size <= 24.0 => "icons/document-artwork-16.svg",
+        (false, size) if size <= 128.0 => "icons/document-artwork-96.svg",
+        (false, _) => "icons/document-artwork-320.svg",
+    }
+}
+
+/// Short uppercase label a generic document carries, as Finder prints
+/// "GZ" on an archive: the last extension, when it is 1–4 alphanumerics.
+pub(super) fn document_badge(name: &str) -> Option<String> {
+    let (stem, extension) = name.rsplit_once('.')?;
+    (!stem.is_empty()
+        && (1..=4).contains(&extension.len())
+        && extension.chars().all(|c| c.is_ascii_alphanumeric()))
+    .then(|| extension.to_ascii_uppercase())
+}
+
+/// Folder or document artwork in full colour (design-lab/finder.html: the
+/// Tahoe light-blue folder and white page). Documents 32 pt and larger
+/// carry their extension near the foot of the page.
+pub(super) fn item_artwork(is_dir: bool, name: &str, size: f32) -> gpui::AnyElement {
+    let artwork = img(item_artwork_path(is_dir, size))
+        .w(px(size))
+        .h(px(size))
+        .flex_none();
+    match (!is_dir && size >= 32.0)
+        .then(|| document_badge(name))
+        .flatten()
+    {
+        Some(badge) => div()
+            .relative()
+            .w(px(size))
+            .h(px(size))
+            .flex_none()
+            .child(artwork)
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom(px(size * 0.12))
+                    .flex()
+                    .justify_center()
+                    .text_size(px(size * 0.15))
+                    .line_height(px(size * 0.18))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(gpui::rgb(0x9a9a9a))
+                    .child(badge),
+            )
+            .into_any_element(),
+        None => artwork.into_any_element(),
+    }
+}
+
+/// One "Information" row shared by the gallery inspector and the column
+/// preview: the label on the left, the value right-aligned in semibold.
+pub(super) fn inspector_row(rule: bool, name: &'static str, value: SharedString) -> Div {
+    div()
+        .h(px(GALLERY_INSPECTOR_ROW_HEIGHT))
+        .flex()
+        .items_center()
+        .gap_2()
+        .when(rule, |row| row.border_t_1().border_color(header_divider()))
+        .text_size(rmac_ui::text_px(12.0))
+        .child(div().flex_none().text_color(secondary_text()).child(name))
+        .child(
+            div()
+                .min_w(px(0.0))
+                .flex_1()
+                .truncate()
+                .text_right()
+                .font_weight(rmac_ui::mac::SEMIBOLD)
+                .text_color(label())
+                .child(value),
+        )
 }
 
 // design-lab/finder.html: Date Modified 181, Size 97, Kind 115.

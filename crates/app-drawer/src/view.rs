@@ -67,6 +67,12 @@ pub(crate) struct AppDrawer {
     loading: bool,
     was_active: bool,
     _catalog_watcher: Option<rmac_apps::CatalogWatcher>,
+    /// Set while a tile drag has crossed below Apps' own window (heading
+    /// toward the Dock) and cleared on release or once it moves back up.
+    /// See `drag_endpoint` for why this window-relative heuristic, rather
+    /// than the dragged application's real screen position, is what drives
+    /// the Dock's "keep on drop" endpoint.
+    dock_drag: Option<String>,
 }
 
 impl AppDrawer {

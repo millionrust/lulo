@@ -2,6 +2,39 @@
 
 use super::*;
 
+/// Drag payload for keeping an application in the Dock (§ drag from Apps).
+/// GPUI's Linux backend cannot start a real cross-process Wayland drag
+/// (`drag_endpoint` documents why), so this only ever drives an in-window
+/// drag ghost and the window-relative hint `AppDrawer`'s root listens for
+/// with `on_drag_move`.
+#[derive(Clone)]
+pub(super) struct DraggedApp {
+    pub(super) app_id: String,
+    pub(super) name: SharedString,
+}
+
+/// The drag ghost macOS shows under the pointer while dragging a Launchpad
+/// icon: just the name, no destination-specific chrome.
+pub(super) struct DragGhost {
+    name: SharedString,
+}
+
+impl gpui::Render for DragGhost {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_1()
+            .rounded(px(mac::radius_menu_item()))
+            .bg(mac::material_popover())
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_lg()
+            .text_size(rmac_ui::text_px(12.0))
+            .text_color(mac::text())
+            .child(self.name.clone())
+    }
+}
+
 const ICON_INSET: f32 = 4.0;
 // design-lab/tokens.css --icon-radius, expressed as a fraction of the plate.
 const ICON_PLATE_RADIUS_RATIO: f32 = 0.225;
@@ -121,6 +154,17 @@ impl AppDrawer {
                     ));
                     cx.notify();
                 }),
+            )
+            .on_drag(
+                DraggedApp {
+                    app_id: app.id.clone(),
+                    name: app.name.clone(),
+                },
+                |drag, _point, _window, cx| {
+                    cx.new(|_| DragGhost {
+                        name: drag.name.clone(),
+                    })
+                },
             )
     }
 

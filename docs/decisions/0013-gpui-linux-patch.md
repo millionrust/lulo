@@ -81,6 +81,71 @@ honour, and keeps the same public API over `accesskit` 0.24, so the vendored
 manifest now requires 0.22.1. `scripts/test_accesskit_activation.py` fails if
 either lockfile falls back to an older release.
 
+### Cross-process drag source (amended 2026-09-24)
+
+macOS lets a Launchpad drag land on the Dock to pin the application. Building
+the rmac equivalent (drag an app from Apps, `crates/app-drawer`, onto the
+Dock) meant first checking whether `gpui_linux`'s Wayland client can act as a
+drag *source* — offering data to another client — not just a drop *target*.
+
+It cannot. `shell/compat/gpui_linux/src/linux/wayland/client.rs` creates a
+`wl_data_source` in exactly two places (`write_to_clipboard`,
+`write_to_primary`), and both call `wl_data_device.set_selection` immediately
+— never `start_drag`. The `Dispatch<wl_data_source::WlDataSource, ()>` impl
+handles only `Event::Send` (serving clipboard bytes) and `Event::Cancelled`;
+none of the drag-specific events (`DndDropPerformed`, `DndFinished`,
+`Action`) are handled anywhere. `PlatformInput::FileDrop` (`client.rs`,
+`Event::Enter`/`Motion`/`Leave`/`Drop` on `wl_data_device`) is the *only*
+drag-and-drop code path, and it is inbound only, feeding `gpui::ExternalPaths`
+into GPUI's `on_drop`. GPUI's own `Div::on_drag`/`on_drag_move` API
+(`crates/gpui/src/elements/div.rs`) confirms the same boundary at the
+framework level: the dragged payload lives in `AnyDrag` as an `Arc<dyn Any>`
+matched by Rust `TypeId`, with no serialization or platform hand-off — it
+cannot leave the process it started in, by construction. `crates/finder`'s
+`DraggedPaths` drag (list/gallery views) is therefore in-process reordering
+and self-drop only, never a real cross-application Wayland drag, matching
+what `crates/app-drawer/SPEC.md` already documents about "Show in Folder" as
+the honest bridge for the same underlying gap.
+
+Implementing `wl_data_source`/`start_drag` (the option this ADR would
+otherwise prefer, since Files and every other rmac surface would gain a real
+drag-out for free) is a real Wayland-protocol addition to the vendored
+backend — new source/offer state, `Action` negotiation, and interaction with
+niri's own drag handling — that needs an interactive test on the reference
+laptop to land safely, not something to attempt without hands-on Wayland
+verification. It stays open as future work.
+
+For now the Dock keeps an application dragged out of Apps through a command
+endpoint instead: a second bounded local `UnixDatagram` socket,
+`dock-drag.sock` (`shell/bins/rmac-dock/src/drag_endpoint.rs`, alongside the
+existing `dock.sock` `⌃F3` transport, `shell/bins/rmac-dock/src/ipc.rs`).
+Apps reports its own window-relative pointer position while a tile drag is
+held, and the Dock resolves `Drop` against its catalog exactly like a
+`.desktop` file drop (`PinCommand::Pin` then `PinCommand::MoveTo`). This
+rests on an **unverified** assumption: that niri keeps delivering pointer
+motion to Apps' surface (an implicit button-held grab) even once the pointer
+visually crosses into the Dock's on-screen rectangle, the same convention
+most Wayland compositors extend to support ordinary same-window click-drag
+interactions. Nothing in this repository confirms niri does this across
+*different* surfaces; it needs an interactive check on the reference laptop
+before the live gap-preview and drop placement can be trusted. If it does not
+hold, the fallback is the wl_data_source work above.
+
+### Downloads stack special icon lives in rmac-dock, not gpui_linux
+
+Unrelated to the Wayland backend itself, but recorded here since it touches
+the same "Downloads left the default Dock" history (15180aa5): folder/file
+stacks (§ folder/file stacks left of the Trash) are a new, separate
+`rmac_shell_settings::DockStackEntry`/`rmac_dock::StackPlace` model, not a
+reuse of `SpecialItemKind`. `SpecialItemKind` is `Copy` and matched
+exhaustively across menu, presentation, accessibility, and dispatch code with
+no payload; giving it a `Path(PathBuf)` variant for arbitrary stack folders
+would have broken that `Copy` bound and every exhaustive match for a feature
+that only needed the *icon* reused. The Downloads stack instead reuses
+`BuiltinIcon::Downloads` (`crates/rmac-dock/src/presentation.rs`) by kind, and
+a new `BuiltinIcon::Folder` (original artwork,
+`crates/rmac-dock/assets/icons/folder.svg`) covers every other stack.
+
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_linux` and re-applying the

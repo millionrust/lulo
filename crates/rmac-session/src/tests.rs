@@ -663,6 +663,30 @@ fn desktop_overlays_are_linux_layer_surfaces_without_window_chrome() {
 }
 
 #[test]
+fn the_login_holds_the_power_button_inhibitor_from_before_niri_to_the_end() {
+    // ADR 0020 item 7: while the lock coordinator is starting, restarting or
+    // crash-looping, a press must be ignored, never become logind's
+    // HandlePowerKey=poweroff. The wrapper owns a session-long holder.
+    let wrapper = include_str!("../../../packaging/rmac-session/rmac-wayland-session");
+    let holder = wrapper
+        .find("\"${supervisor}\" hold-power-key &")
+        .expect("the wrapper starts the power-button holder");
+    let niri = wrapper
+        .find("/usr/bin/niri-session &")
+        .expect("the wrapper starts niri");
+    assert!(holder < niri, "the holder must start before niri");
+    let stop = wrapper
+        .split_once("stop_rmac()")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .map(|(body, _)| body)
+        .expect("stop_rmac body");
+    assert!(stop.contains("kill \"${power_key_pid}\""));
+    let usage = include_str!("main.rs");
+    assert!(usage.contains("[command] if command == \"hold-power-key\" => power_key::hold()?"));
+    assert!(usage.contains("PR_SET_PDEATHSIG"));
+}
+
+#[test]
 fn compositor_shortcuts_preserve_standard_command_keys() {
     let shell = include_str!("../../../packaging/rmac-session/shell.kdl");
     let fallback = include_str!("../../../packaging/rmac-session/shortcuts-fallback.kdl");

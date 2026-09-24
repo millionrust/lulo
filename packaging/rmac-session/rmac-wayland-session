@@ -2,6 +2,7 @@
 set -u
 
 session_pid=
+power_key_pid=
 rmac_started=false
 rmac_config_imported=false
 safe_mode=false
@@ -23,6 +24,10 @@ stop_rmac()
     fi
     /usr/bin/systemctl --user unset-environment RMAC_COLOR_SCHEME \
         >/dev/null 2>&1 || :
+    if [ -n "${power_key_pid}" ]; then
+        kill "${power_key_pid}" 2>/dev/null || :
+        power_key_pid=
+    fi
 }
 
 terminate_session()
@@ -243,6 +248,17 @@ if [ -n "${NIRI_CONFIG-}" ]; then
         exit 1
     fi
     rmac_config_imported=true
+fi
+
+# The power button (ADR 0020, item 7). rmac's niri config leaves the key to
+# the lock coordinator, which is not running yet and may restart. Hold
+# logind's handle-power-key block inhibitor for the whole login, from before
+# niri starts, so a press while the coordinator is down is ignored instead of
+# becoming Ubuntu's HandlePowerKey=poweroff. The holder dies with this
+# wrapper (parent-death signal) and is stopped explicitly in stop_rmac.
+if [ -x "${supervisor}" ]; then
+    "${supervisor}" hold-power-key &
+    power_key_pid=$!
 fi
 
 /usr/bin/niri-session &

@@ -5,6 +5,7 @@ members = ["crates/*", "bins/*", "probes/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.95.0"
 publish = false
 license = "MIT"
 

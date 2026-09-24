@@ -54,3 +54,10 @@ unused = "deny"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+    "https://github.com/zed-industries/zed.git",
+    "https://github.com/zed-industries/font-kit",
+    "https://github.com/zed-industries/scap",
+    "https://github.com/zed-industries/reqwest.git",
+    "https://github.com/longbridge/gpui-component.git",
+]

@@ -71,6 +71,8 @@ impl TerminalView {
         let active_tab = self.active;
         let mut track = div()
             .id("terminal-tabs")
+            .role(Role::TabList)
+            .aria_label("Terminal tabs")
             .flex_1()
             .min_w_0()
             .h(px(TAB_TRACK_HEIGHT))
@@ -90,6 +92,9 @@ impl TerminalView {
             track = track.child(
                 div()
                     .id(("tab", index))
+                    .role(Role::Tab)
+                    .aria_label(title.clone())
+                    .aria_selected(is_active)
                     .group(group.clone())
                     .flex_1()
                     .min_w_0()
@@ -129,6 +134,8 @@ impl TerminalView {
                         // Terminal reveals a tab's close button on hover.
                         div()
                             .id(("tabclose", index))
+                            .role(Role::Button)
+                            .aria_label(format!("Close tab {title}"))
                             .absolute()
                             .left(px(6.0))
                             .top_0()
@@ -170,6 +177,8 @@ impl TerminalView {
                     .child(
                         div()
                             .id("newtab")
+                            .role(Role::Button)
+                            .aria_label("New Tab")
                             .flex_none()
                             .size(px(TAB_TRACK_HEIGHT))
                             .flex()
@@ -190,6 +199,9 @@ impl TerminalView {
     pub(super) fn render_picker(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let active_index = self.profile;
         div()
+            .id("terminal-profile-picker")
+            .role(Role::Menu)
+            .aria_label("Profile")
             .absolute()
             .top(px(TITLE_BAR_HEIGHT + 2.0))
             .right_2()
@@ -205,6 +217,9 @@ impl TerminalView {
                 let is_active = index == active_index;
                 div()
                     .id(("profrow", index))
+                    .role(Role::MenuItem)
+                    .aria_label(profile.name)
+                    .aria_selected(is_active)
                     .flex()
                     .items_center()
                     .gap_2()

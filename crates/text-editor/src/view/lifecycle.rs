@@ -109,6 +109,10 @@ impl EditorView {
                 this.recovery_error = recovery.warning.then(recovery_failure_message);
                 this.alert = recovery.prompt.map(ActiveAlert::Recover);
                 if this.alert.is_none() {
+                    // TextEdit opens with the insertion point live in the
+                    // text: focus the (now enabled) body so the caret shows
+                    // and typing lands without a click.
+                    this.input.update(cx, |state, cx| state.focus(window, cx));
                     if let Some(path) = this.pending_startup_path.take() {
                         this.load_document_path(path, "The file could not be opened.", window, cx);
                     }

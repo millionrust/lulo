@@ -1,6 +1,17 @@
 //! Text Editor Find/Replace, typography, encoding, and line-ending commands.
 
+use gpui::EntityInputHandler as _;
+
 use super::*;
+
+/// Largest document whose text is copied into the accessibility tree. The
+/// copy runs on every frame, so a bigger document keeps its role and name
+/// but exposes no value rather than stalling typing.
+const MAX_ACCESSIBLE_VALUE_BYTES: usize = 1024 * 1024;
+
+fn accessible_value_fits(len_bytes: usize) -> bool {
+    len_bytes <= MAX_ACCESSIBLE_VALUE_BYTES
+}
 
 impl EditorView {
     pub(super) fn toggle_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -179,5 +190,60 @@ impl EditorView {
             self.text_format.save_line_ending = line_ending;
             self.refresh_dirty_state(cx);
         }
+    }
+
+    /// The document text for the accessibility tree, when it is small
+    /// enough to copy each frame (see [`MAX_ACCESSIBLE_VALUE_BYTES`]).
+    pub(super) fn accessible_document_value(&self, cx: &App) -> Option<SharedString> {
+        let text = self.input.read(cx).text();
+        accessible_value_fits(text.len_bytes()).then(|| SharedString::from(text.to_string()))
+    }
+
+    /// A listener that applies an assistive technology's text edit to the
+    /// buffer through the same undoable path typing uses, so dirty state,
+    /// Find matches and autosave follow it.
+    pub(super) fn assistive_edit_listener(
+        &self,
+        edit: AssistiveEdit,
+        cx: &Context<Self>,
+    ) -> impl FnMut(Option<&gpui::accesskit::ActionData>, &mut Window, &mut App) + 'static {
+        let view = cx.entity();
+        move |data, window, cx| {
+            let Some(gpui::accesskit::ActionData::Value(text)) = data else {
+                return;
+            };
+            let text = text.to_string();
+            view.update(cx, |this, cx| {
+                this.apply_assistive_edit(edit, text, window, cx);
+            });
+        }
+    }
+
+    fn apply_assistive_edit(
+        &mut self,
+        edit: AssistiveEdit,
+        text: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.recovery_loading || self.print_busy || self.rtf_runs.is_some() {
+            return;
+        }
+        self.input.update(cx, |state, cx| match edit {
+            AssistiveEdit::SetValue => state.replace_all(text, window, cx),
+            AssistiveEdit::ReplaceSelection => state.replace_text_in_range(None, &text, window, cx),
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accessible_value_stops_at_the_per_frame_copy_limit() {
+        assert!(accessible_value_fits(0));
+        assert!(accessible_value_fits(MAX_ACCESSIBLE_VALUE_BYTES));
+        assert!(!accessible_value_fits(MAX_ACCESSIBLE_VALUE_BYTES + 1));
     }
 }

@@ -2,9 +2,10 @@
 
 use super::*;
 
-/// A new TextEdit document window on macOS 26.2 (measured).
-const WINDOW_WIDTH: f32 = 586.0;
-const WINDOW_HEIGHT: f32 = 488.0;
+/// TextEdit's plain-text window: 90 Menlo 11 columns by 30 lines plus the
+/// 32 pt title bar, 656 × 422 (measured, design-lab/apps.html).
+const WINDOW_WIDTH: f32 = 656.0;
+const WINDOW_HEIGHT: f32 = 422.0;
 const MAX_STARTUP_DOCUMENTS: usize = 32;
 
 #[derive(Debug, Eq, PartialEq)]

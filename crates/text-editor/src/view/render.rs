@@ -5,9 +5,9 @@ mod rtf;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, font, px, Context, InteractiveElement as _, IntoElement, ParentElement, Render,
-    SharedString, StatefulInteractiveElement as _, Styled, StyledText, TextRun, UnderlineStyle,
-    Window,
+    div, font, px, AccessibleAction, Context, InteractiveElement as _, IntoElement, ParentElement,
+    Render, Role, SharedString, StatefulInteractiveElement as _, Styled, StyledText, TextRun,
+    UnderlineStyle, Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_ui::{mac, Button, SearchField, TextField};
@@ -20,7 +20,8 @@ use crate::{
 };
 
 use super::{
-    responsive_layout::EditorLayout, ActiveAlert, EditorView, ExternalChange, Pending, CTX,
+    responsive_layout::EditorLayout, ActiveAlert, AssistiveEdit, EditorView, ExternalChange,
+    Pending, CTX,
 };
 
 /// Text origin from the window's left edge (the Mac's caret sits at x 9).
@@ -255,8 +256,16 @@ impl Render for EditorView {
             } else {
                 // TextEdit's plain-text view: #1E1E1E edge to edge, the text
                 // origin 10 from the left and flush with the top, Menlo 11 on
-                // a 13 pt pitch (JetBrains Mono stands in for Menlo).
+                // a 13 pt pitch (JetBrains Mono stands in for Menlo). The
+                // wrapper names the document for assistive technologies and
+                // accepts their SetValue / ReplaceSelectedText edits.
+                let editable = !(recovery_loading || self.print_busy);
+                let accessible_value = self.accessible_document_value(cx);
                 div()
+                    .id("document-body")
+                    .role(Role::MultilineTextInput)
+                    .aria_label(filename.clone())
+                    .when_some(accessible_value, |body, value| body.aria_value(value))
                     .flex_1()
                     .min_h(px(0.0))
                     .bg(text_background())
@@ -264,7 +273,7 @@ impl Render for EditorView {
                         TextField::new(&self.input)
                             .h_full()
                             .appearance(false)
-                            .disabled(recovery_loading || self.print_busy)
+                            .disabled(!editable)
                             .font_family(font_family)
                             .text_size(px(size))
                             .line_height(px(line_height))
@@ -273,6 +282,16 @@ impl Render for EditorView {
                             .pt(px(0.0))
                             .pb(px(0.0)),
                     )
+                    .when(editable, |body| {
+                        body.on_a11y_action(
+                            AccessibleAction::SetValue,
+                            self.assistive_edit_listener(AssistiveEdit::SetValue, cx),
+                        )
+                        .on_a11y_action(
+                            AccessibleAction::ReplaceSelectedText,
+                            self.assistive_edit_listener(AssistiveEdit::ReplaceSelection, cx),
+                        )
+                    })
                     .into_any_element()
             })
             .when_some(self.alert.clone(), |d, alert| {

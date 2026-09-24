@@ -58,6 +58,15 @@ enum Pending {
     Close,
 }
 
+/// An edit an assistive technology asks of the document body.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AssistiveEdit {
+    /// Replace the whole document (AccessKit `SetValue`).
+    SetValue,
+    /// Replace the selection, or insert at the caret (`ReplaceSelectedText`).
+    ReplaceSelection,
+}
+
 /// A modal alert awaiting the user, shown via the shared `rmac_ui::alert`.
 #[derive(Clone)]
 enum ActiveAlert {

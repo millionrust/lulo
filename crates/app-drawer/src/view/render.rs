@@ -36,6 +36,17 @@ impl Render for AppDrawer {
             (menu, state)
         });
 
+        // APPS-01: the Mac's Apps window opens with a row of 7 recent apps
+        // above a divider, then A–Z. Lulo shows it under the same
+        // conditions the Mac shows it in — the unfiltered, unsearched grid.
+        let recents = (!self.loading
+            && self.view == ViewMode::Grid
+            && self.filter.is_none()
+            && self.query.read(cx).value().trim().is_empty())
+        .then(|| self.recent_indices())
+        .filter(|indices| !indices.is_empty())
+        .map(|indices| self.recents_row(&indices, cx));
+
         let body: gpui::AnyElement = if self.loading {
             div()
                 .min_h(px(320.0))
@@ -137,7 +148,9 @@ impl Render for AppDrawer {
                 this.open_selected(cx);
             }))
             .on_action(cx.listener(|this, action: &LaunchDesktopAction, _, cx| {
-                this.launch_application(action.launch.clone(), cx);
+                // A declared desktop action (e.g. "New Window") is not "open
+                // the app" for recents purposes, so no id is recorded.
+                this.launch_application(None, action.launch.clone(), cx);
             }))
             .on_action(cx.listener(|this, _: &RevealInFinder, _, cx| {
                 this.reveal_selected(cx);
@@ -282,6 +295,7 @@ impl Render for AppDrawer {
                     .overflow_y_scroll()
                     .px_5()
                     .pb_5()
+                    .children(recents)
                     .child(body),
             )
             .when_some(context_menu, |element: Div, (menu, state)| {

@@ -73,7 +73,14 @@ pub(crate) struct AppDrawer {
     /// than the dragged application's real screen position, is what drives
     /// the Dock's "keep on drop" endpoint.
     dock_drag: Option<String>,
+    /// Recent app ids (most recent first), read once when the drawer opens
+    /// from `rmac_app_launch::recent_app_ids` — this surface is opened fresh
+    /// each time (crates/app-drawer/src/service.rs), so there is nothing to
+    /// poll: reopening is what picks up new launches.
+    recent_ids: Vec<String>,
 }
+
+pub(crate) const RECENTS_ROW_COUNT: usize = 7;
 
 impl AppDrawer {
     /// Indices into `self.apps` that pass the current category + search filter.
@@ -100,6 +107,17 @@ impl AppDrawer {
             .collect();
         ranked.sort_by_key(|(_, score)| std::cmp::Reverse(*score));
         ranked.into_iter().map(|(index, _)| index).collect()
+    }
+
+    /// Indices into `self.apps`, most-recently-launched first, for the
+    /// recents row shown above the A–Z grid (APPS-01). An id whose app was
+    /// uninstalled since it was launched is silently skipped.
+    fn recent_indices(&self) -> Vec<usize> {
+        self.recent_ids
+            .iter()
+            .filter_map(|id| self.apps.iter().position(|app| &app.id == id))
+            .take(RECENTS_ROW_COUNT)
+            .collect()
     }
 
     /// The set of categories actually present after the *search* filter — used
@@ -184,8 +202,9 @@ impl AppDrawer {
         }
         let vis = self.visible_indices(cx);
         if let Some(&idx) = vis.get(self.selected.min(vis.len().saturating_sub(1))) {
+            let id = self.apps[idx].id.clone();
             let launch = self.apps[idx].launch.clone();
-            self.launch_application(launch, cx);
+            self.launch_application(Some(id), launch, cx);
         }
     }
 
@@ -206,7 +225,16 @@ impl AppDrawer {
         })
     }
 
-    fn launch_application(&mut self, launch: rmac_apps::LaunchSpec, cx: &mut Context<Self>) {
+    /// `id` is the app's stable catalog id, recorded to the shared recent-
+    /// launches store (crates/rmac-app-launch/src/recent.rs) on success so
+    /// the Apps window's recents row can read it back. `None` for launches
+    /// that are not "opening the app" itself (a declared desktop action).
+    fn launch_application(
+        &mut self,
+        id: Option<String>,
+        launch: rmac_apps::LaunchSpec,
+        cx: &mut Context<Self>,
+    ) {
         if self.launching {
             return;
         }
@@ -215,6 +243,13 @@ impl AppDrawer {
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = rmac_app_launch::launch(launch).await;
+            if result.is_ok() {
+                if let Some(id) = id.as_deref() {
+                    if let Err(error) = rmac_app_launch::record_recent_launch(id) {
+                        eprintln!("Could not record recent app launch for {id}: {error}");
+                    }
+                }
+            }
             let _ = this.update(cx, |this, cx| {
                 this.launching = false;
                 this.action_error = result
@@ -246,7 +281,7 @@ impl AppDrawer {
 
     fn open_selected(&mut self, cx: &mut Context<Self>) {
         if let Some(application) = self.selected_app(cx) {
-            self.launch_application(application.launch, cx);
+            self.launch_application(Some(application.id.clone()), application.launch, cx);
         }
     }
 

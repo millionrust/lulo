@@ -122,6 +122,10 @@ impl AppDrawer {
             was_active: false,
             _catalog_watcher: catalog_watcher,
             dock_drag: None,
+            // A small, bounded local read (crates/rmac-app-launch/src/recent.rs
+            // caps the store at 64 KiB / 32 entries), cheap enough to do
+            // inline like the rest of this constructor.
+            recent_ids: rmac_app_launch::recent_app_ids(RECENTS_ROW_COUNT),
         }
     }
 

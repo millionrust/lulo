@@ -108,6 +108,7 @@ impl AppDrawer {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let launch = app.launch.clone();
+        let id = app.id.clone();
         div()
             .id(SharedString::from(format!("app-{}", app.path.display())))
             .w(px(TILE_W))
@@ -140,7 +141,7 @@ impl AppDrawer {
             )
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.selected = position;
-                this.launch_application(launch.clone(), cx);
+                this.launch_application(Some(id.clone()), launch.clone(), cx);
             }))
             .on_mouse_down(
                 MouseButton::Right,
@@ -168,6 +169,99 @@ impl AppDrawer {
             )
     }
 
+    /// A recents-row tile (APPS-01): the Mac's Apps window opens with a row
+    /// of 7 recent/suggested apps above a divider, then A–Z. `position` is
+    /// this app's index in the *visible* projection, which is identical to
+    /// its `self.apps` index whenever the recents row can show at all (no
+    /// search, no category filter — see `Self::recent_indices`), so right-
+    /// click keeps the same selection semantics as the grid below it.
+    pub(super) fn recent_tile(
+        &self,
+        app: &App,
+        position: usize,
+        cx: &Context<Self>,
+    ) -> impl IntoElement {
+        let launch = app.launch.clone();
+        let id = app.id.clone();
+        div()
+            .id(SharedString::from(format!("recent-{}", app.path.display())))
+            .w(px(TILE_W))
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap_2()
+            .px_1()
+            .py_1p5()
+            .rounded(px(mac::radius_menu()))
+            .border_1()
+            .border_color(gpui::transparent_black())
+            .hover(|hover| hover.bg(mac::hover()))
+            .child(self.icon_element(app, ICON))
+            .child(
+                div()
+                    .w(px(TILE_W - 8.0))
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(mac::text())
+                    .text_center()
+                    .truncate()
+                    .child(app.name.clone()),
+            )
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.selected = position;
+                this.launch_application(Some(id.clone()), launch.clone(), cx);
+            }))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                    this.selected = position;
+                    this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                        event.position,
+                        &this.focus,
+                        window,
+                        cx,
+                    ));
+                    cx.notify();
+                }),
+            )
+            .on_drag(
+                DraggedApp {
+                    app_id: app.id.clone(),
+                    name: app.name.clone(),
+                },
+                |drag, _point, _window, cx| {
+                    cx.new(|_| DragGhost {
+                        name: drag.name.clone(),
+                    })
+                },
+            )
+    }
+
+    /// The recents row itself (APPS-01): the tiles, then a divider. Spacing
+    /// values are structural, not measured from the Mac (S) — the row reuses
+    /// the same tile metrics and gap as the A–Z grid below it.
+    pub(super) fn recents_row(&self, indices: &[usize], cx: &Context<Self>) -> gpui::AnyElement {
+        let tiles = indices
+            .iter()
+            .map(|&index| self.recent_tile(&self.apps[index], index, cx))
+            .collect::<Vec<_>>();
+        div()
+            .v_flex()
+            .gap_3()
+            .pb_3()
+            .mb_3()
+            .border_b_1()
+            .border_color(mac::separator())
+            .child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .justify_center()
+                    .children(tiles),
+            )
+            .into_any_element()
+    }
+
     pub(super) fn row(
         &self,
         app: &App,
@@ -176,6 +270,7 @@ impl AppDrawer {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let launch = app.launch.clone();
+        let id = app.id.clone();
         div()
             .id(SharedString::from(format!("row-{}", app.path.display())))
             .flex()
@@ -208,7 +303,7 @@ impl AppDrawer {
             )
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.selected = position;
-                this.launch_application(launch.clone(), cx);
+                this.launch_application(Some(id.clone()), launch.clone(), cx);
             }))
             .on_mouse_down(
                 MouseButton::Right,

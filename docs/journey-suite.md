@@ -317,9 +317,10 @@ losing content") as `scripts/linux/run-journey-textfile.py`. It creates a
 disposable fixture under `~/Documents/lulo-journey-5-<random>/`, drives Text
 Editor's exported File menu (`crates/rmac-app-menu`, rendered by
 `rmac-top-bar` as real AT-SPI `menu`/`menu item` nodes) to open and save
-through the portal Open/Save panel (`crates/rmac-file-chooser`, ADR 0012),
-edits the file's external-change and content-integrity behaviour, and always
-removes the fixture folder afterward.
+through whichever `org.freedesktop.portal.FileChooser` backend answers
+(`crates/rmac-file-chooser`, ADR 0012, or a GTK/GNOME fallback -- the chooser
+is driven generically, by name match, so the script doesn't care which one
+opened), and always removes the fixture folder afterward.
 
 Two systemic gaps limit what is exercisable on the reference laptop today,
 found by directly probing the live AT-SPI tree (not inferred):
@@ -331,39 +332,56 @@ found by directly probing the live AT-SPI tree (not inferred):
   or File > Save As... over AT-SPI genuinely activates the menu item (the
   click succeeds), but no dialog window opens at all -- not even a GTK
   fallback -- and Text Editor shows no error either. The script waits a
-  bounded time for the panel's window, records the gap precisely when it
-  doesn't appear, and falls back to opening the fixture with a direct launch
-  (`fallback_spawn`, the same pattern as journey 1's Dock/Spotlight
-  fallback) so the rest of the journey can still be measured; Save As has no
-  such fallback; ADR 0012's backend exists in the repository but is simply
-  not installed on this host yet.
+  bounded time for a new AT-SPI application to appear, records the gap
+  precisely when none does, and falls back to opening the fixture with a
+  direct launch (`fallback_spawn`, the same pattern as journey 1's
+  Dock/Spotlight fallback) so the rest of the journey can still be measured;
+  ADR 0012's backend exists in the repository but is simply not installed on
+  this host yet.
 * **No AT-SPI Text or EditableText anywhere.** `queryText()` and
   `queryEditableText()` both raise on every `InputState`-backed entry this
   script has probed, including Text Editor's own document body -- not just
   Spotlight's query field (run-journey-launch.py documented that gap for
-  Spotlight alone; this script confirms it is systemic). With no keyboard or
-  pointer injector installed on the reference laptop either, the buffer can
-  never be dirtied by assistive technology, so File > Save is a guaranteed
-  no-op (`crates/text-editor/src/view/saving.rs:37-42`) and the
-  SIGKILL-during-save race cannot be exercised as a real write on this
-  build.
+  Spotlight alone; this script confirms it is systemic). The
+  encoding/line-ending picker button does expose a `click` action, but
+  invoking it never opens its dropdown menu over AT-SPI either. With no
+  keyboard or pointer injector installed on the reference laptop, there is
+  no accessible way to dirty the document buffer at all, so a plain File >
+  Save (a no-op on a clean buffer, `crates/text-editor/src/view/saving.rs:
+  37-42`) can only be checked as "did nothing," never as a real write.
 
-What the script *can* and does verify for real, without typing anything: the
-on-disk content is unchanged by merely opening or by a no-op Save (SHA-256
-compared at every step); and external-change detection, which needs no
-typing at all -- Text Editor watches its open document's directory
-(`crates/text-editor/src/view/lifecycle.rs:17-26`) and shows an always-
-visible "This document changed outside Text Editor..." banner with a real,
-clickable "Review..." control the moment the file changes underneath it
-(`crates/text-editor/src/view/render.rs:191-224`). The script edits the file
-directly on disk while it's open, waits for that banner, opens the Conflict
-dialog via Review..., dismisses it with Cancel, and confirms the file on
-disk still holds exactly the externally-written bytes.
+What the script *can* and does verify for real, without typing anything:
 
-`scripts/test_journey_textfile.py` unit-tests the pure JSON-parsing,
-environment-discovery, hashing, and report-building logic with
-`python3 -m pytest scripts/test_journey_textfile.py` (no live session
-required).
+* on-disk content is unchanged by merely opening, or by a no-op Save
+  (SHA-256 compared at every step);
+* Save As -- which always writes regardless of the dirty flag
+  (`crates/text-editor/src/view/saving.rs:75-140`) -- is driven through the
+  portal to a sibling folder and the resulting copy is verified
+  byte-identical to the original;
+* external-change detection needs no typing at all: Text Editor watches its
+  open document's directory (`crates/text-editor/src/view/lifecycle.rs:
+  17-26`) and shows an always-visible "This document changed outside Text
+  Editor..." banner with a real, clickable "Review..." control the moment
+  the file changes underneath it (`crates/text-editor/src/view/render.rs:
+  191-207`). The script edits the file directly on disk while it's open,
+  waits for that banner, opens the Conflict dialog via Review..., dismisses
+  it with Cancel, and confirms the file on disk still holds exactly the
+  externally-written bytes;
+* the SIGKILL-during-save race is exercised for real by targeting Save As
+  (not Save, which the buffer can never dirty): the script re-saves a 24 MiB
+  fixture over itself through the same Save-As UI path, polls for
+  `rmac_storage::atomic_write`'s sibling `.{name}.tmp-<pid>-<seq>` file to
+  appear as proof the write is in flight, and SIGKILLs the editor at that
+  instant, then asserts the destination is either the complete original
+  bytes or entirely absent -- never truncated. This is best-effort ("if
+  feasible" per the brief): on a laptop where the portal doesn't open at
+  all, the write is never triggered either, so the step reports "not
+  conclusively exercised" rather than a false pass.
+
+`scripts/test_journey_textfile.py` unit-tests the pure fixture-naming,
+hashing, atomic-write-temp-file-pattern, JSON-parsing, and report-building
+logic with `python3 -m pytest scripts/test_journey_textfile.py` (no live
+session required).
 
 ### Journey 6 -- inspect and stop a process, with confirmation
 
@@ -398,10 +416,18 @@ Because selecting a row is a hard prerequisite for the confirmation dialog
 and for Quit/Force Quit, there is no separate accessible path left to fall
 back to (unlike journey 1's Dock/Spotlight fallback, there is nothing
 downstream of "select a process" that a different mechanism could still
-reach). The script still opens System Monitor's exported Process menu and
-clicks Quit Process... over AT-SPI to observe real behaviour -- confirming
-that, with nothing selected, it has no effect -- and always kills its own
-marker process directly in a `finally` block so no stray `sleep` survives a
+reach). The script deliberately does **not** click Quit/Force Quit, or the
+top bar's "Process" menu, when it cannot first confirm its own disposable
+process is selected: Quit/Force Quit act on whatever `selected_pid` a mouse
+click or keyboard table-navigation last set
+(`crates/activity-monitor/src/process_table.rs:343-365`,
+`crates/activity-monitor/src/view.rs:165-176`), which this script cannot
+observe or control over AT-SPI -- and the reference laptop's session is
+shared with other automated agents, so a row could already be selected by
+someone else. Invoking Quit blind could therefore signal an unrelated
+process, which this journey must never do. It reports the blocked steps
+precisely instead, and always kills its own marker process directly (never
+through the app's UI) in a `finally` block, so no stray `sleep` survives a
 run regardless of how the journey went.
 
 `scripts/test_journey_monitor.py` unit-tests the pure JSON-parsing,

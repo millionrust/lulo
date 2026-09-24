@@ -4,59 +4,84 @@
     Inspect resource use and safely stop a process, with confirmation.
 
 Runs against the live rmac session on the reference laptop (niri + AT-SPI),
-the same way scripts/linux/run-journey-launch.py exercises journey 1: no
-keyboard or pointer injector is installed there (no wtype, no ydotool), so
-System Monitor (crates/activity-monitor, binary `rmac-system-monitor`) is
-driven only through AT-SPI actions and niri IPC.
+driving `rmac-system-monitor` (crates/activity-monitor, binary name
+rmac-system-monitor, AT-SPI application name confirmed live as
+"rmac-system-monitor"). Like run-journey-launch.py and
+run-journey-textfile.py, every step is a real AT-SPI action or an honestly
+reported gap -- this script never injects a keystroke or a synthetic pointer
+event (none is installed on the reference laptop: no wtype, no ydotool, and
+this script does not use pyatspi's `generateMouseEvent` either, since niri
+implements no virtual-pointer protocol for it to reach).
 
-This script starts a single, harmless, disposable process it owns (`sleep
-600`, identified throughout by the exact PID this script spawned -- never by
-a fuzzy name match, so it is never possible to act on any other process),
-then tries to find and stop it through System Monitor exactly as a real user
-would: locate the row (search field or list), choose Quit or Force Quit, see
-a confirmation, cancel once (the process must survive), confirm (the process
-must end).
+Live introspection (dumping the real AT-SPI tree of a running
+rmac-system-monitor, see the commit that added this script for the session
+transcript) found a safety-relevant gap that changes what this script can
+respect­fully do:
 
-On the reference laptop as of this writing, that path is completely blocked,
-and this script proves it precisely rather than assuming it or giving up
-silently:
+  * The process table renders no per-row AT-SPI structure at all -- no
+    "table row"/"list item" node exists for any process, so nothing (a
+    screen reader, a switch device, or this script) can browse, identify, or
+    select one *specific* process over AT-SPI. This is despite
+    `crates/activity-monitor/src/accessibility.rs` already defining a
+    complete, unit-tested pure model for exactly this
+    (`project_process_table`, `AccessibleProcessRow { actions: ["Inspect",
+    "Quit", "Force Quit"], .. }`, `project_process_action_dialog`) -- a
+    repository-wide search shows it is referenced only by its own
+    `#[cfg(test)]` module and is never called from `view.rs` or
+    `process_table.rs`. It is complete, correct, dead code.
+  * The search field (`crates/activity-monitor/src/view.rs:59`, the same
+    `SearchField`/`InputState` widget Text Editor's document buffer uses)
+    exposes AT-SPI's Accessible and Component interfaces only -- no Text, no
+    EditableText (confirmed live) -- so it cannot be used to filter to a
+    specific process by typing either, even with a keyboard.
+  * Quit/Force Quit are real and do exist over AT-SPI -- as plain buttons
+    named "Quit"/"Force Quit" mirroring the `QuitProcess`/`ForceQuitProcess`
+    keyboard actions (`crates/activity-monitor/src/main.rs:16-24,42-51`),
+    and as the top bar's global "Process" menu once System Monitor is
+    focused (`crates/rmac-app-menu/src/lib.rs:236-244`: "Quit Process…" /
+    "Force Quit Process…", both real `menu item` nodes). But both routes act
+    on whatever `selected_pid` a **mouse** click (left or right) on a row
+    (`crates/activity-monitor/src/process_table.rs:343-365`, both
+    `MouseButton::Left` and `MouseButton::Right`) or **keyboard** table navigation
+    (`crates/activity-monitor/src/view.rs:165-176`) last set -- there is no
+    AT-SPI action that sets it. Since this laptop's session is shared with
+    other automated agents and possibly a person, this script cannot even
+    safely assume "nothing is selected": another actor could have a row
+    highlighted right now. Blindly invoking Quit/Force Quit could therefore
+    signal a process this script does not own, which the brief for this
+    journey explicitly forbids ("Never touch any other process").
 
-  * System Monitor's whole process list has **zero** AT-SPI semantic
-    representation. A live dump of `rmac-system-monitor`'s AT-SPI tree at
-    its default 960x640 size contains exactly 14 nodes: 1 application, 1
-    frame, 11 chrome buttons, and 1 (unlabelled) search entry -- no table, no
-    row, no cell, for any process, ever. `crates/activity-monitor/src/
-    accessibility.rs` defines exactly the right projection for this
-    (`project_process_table`, `ProcessTableAccessibilitySnapshot`,
-    `project_process_action_dialog` -- accessibility.rs:149,241) but grep
-    confirms zero call sites for any of it outside its own unit tests: the
-    live table (`crates/activity-monitor/src/process_table.rs`) renders each
-    row as a plain `div()` with no AccessKit wiring
-    (process_table.rs:363-389), so none of it reaches AT-SPI. No process can
-    be found or selected by assistive technology on this build;
-  * the search field, like every `InputState`-backed entry this script (and
-    run-journey-textfile.py) has probed, exposes neither the AT-SPI Text nor
-    EditableText interface (`queryText()`/`queryEditableText()` both raise),
-    so a filter query cannot be typed either;
-  * because no row can ever be selected, the toolbar's Quit/Force Quit
-    controls and the exported "Process" menu's "Quit Process..."/"Force Quit
-    Process..." items (crates/rmac-app-menu/src/lib.rs's MONITOR_MENUS) stay
-    disabled for any process this script starts, and this script proves that
-    too rather than assuming it.
+Given that, this script:
 
-Since selection is a hard prerequisite for everything the rest of the
-journey needs (the confirmation dialog, Quit, Force Quit), there is no
-separate real path left to fall back to the way run-journey-launch.py falls
-back to a direct spawn for Dock/Spotlight -- there is nothing downstream of
-"select a process" that a different accessible mechanism could still reach.
-This script therefore fails honestly (todo.md: "an honest limitation beats
-simulated system behaviour") rather than fabricate a synthetic pass, and
-always cleans up its own marker process directly so no stray `sleep`
-survives the run regardless of how the journey went.
+  1. Starts one harmless, disposable process it owns (`sleep 600
+     <unique-marker>`), with a marker recorded only in the process's own
+     argv, never printed into the report.
+  2. Launches System Monitor and verifies, structurally and non-
+     destructively (reading node names/roles/interfaces only -- no clicks
+     that could act on an unknown selection), whether a specific process can
+     be identified over AT-SPI at all: by a per-row node carrying the label
+     `crates/activity-monitor/src/accessibility.rs` already defines
+     (`"{name} (PID {pid})"`), or by typing into the search field.
+  3. If (and only if) a row for its own disposable process can be safely
+     identified this way, it proceeds with the full journey: select it,
+     invoke Quit through the top bar's Process menu, confirm the dialog
+     appears, Cancel once (assert the process survives), invoke Quit again,
+     confirm (assert the process exits). This is the forward-compatible
+     path: if a future build wires `accessibility.rs`'s model into the live
+     table (closing the gap above), this script starts passing the real
+     journey without modification.
+  4. Otherwise -- the current reality -- it stops short of touching Quit/
+     Force Quit at all, reports the two gaps above precisely, and still
+     verifies what it safely can: the disposable process launches and stays
+     alive, System Monitor launches, and both the AT-SPI buttons and the top
+     bar's Process menu items exist (a structural check, not an invocation).
 
-The report is privacy-safe: no screenshots, no window titles, no absolute
-paths, no other process's identity. Every wait in this script is bounded;
-it never hangs.
+Cleanup always terminates the disposable process directly (`os.kill`, never
+through the UI it just finished testing) and closes System Monitor through
+its own top-bar Quit menu item.
+
+The report is privacy-safe: no screenshots, no process command lines, no
+usernames; only the PID this script itself created.
 """
 
 from __future__ import annotations
@@ -64,7 +89,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import secrets
+import signal
 import subprocess
 import sys
 import time
@@ -78,7 +103,7 @@ except ImportError:  # pragma: no cover - exercised only off-Linux
 
 
 class JourneyError(RuntimeError):
-    """A bounded, privacy-safe journey failure."""
+    """A bounded, privacy-safe journey-monitor failure."""
 
 
 FORMAT = 1
@@ -87,23 +112,22 @@ JOURNEY_TITLE = "Inspect resource use and safely stop a process, with confirmati
 
 NIRI_TIMEOUT_S = 5.0
 WINDOW_APPEAR_TIMEOUT_S = 5.0
-ATSPI_FIND_TIMEOUT_S = 5.0
-CONFIRM_TIMEOUT_S = 3.0
 CLOSE_TIMEOUT_S = 5.0
-PROCESS_SETTLE_TIMEOUT_S = 3.0
+ATSPI_FIND_TIMEOUT_S = 5.0
+ROW_SEARCH_TIMEOUT_S = 4.0
+CONFIRM_TIMEOUT_S = 3.0
+TERMINATE_TIMEOUT_S = 5.0
 POLL_INTERVAL_S = 0.05
 
 SYSTEM_MONITOR: dict[str, str] = {
     "display_name": "System Monitor",
     "app_id": "org.rmac.SystemMonitor",
     "exec": "/usr/bin/rmac-system-monitor",
+    "atspi_name": "rmac-system-monitor",
 }
-ATSPI_APP_NAME = "rmac-system-monitor"
 
-# crates/rmac-app-menu/src/lib.rs MONITOR_MENUS -- exact exported labels.
-PROCESS_MENU_BUTTON = "Process menu"
-QUIT_PROCESS_ITEM = "Quit Process…"
-FORCE_QUIT_PROCESS_ITEM = "Force Quit Process…"
+DISPOSABLE_COMMAND_NAME = "sleep"
+DISPOSABLE_DURATION_S = "600"
 
 
 # --------------------------------------------------------------------------
@@ -111,78 +135,49 @@ FORCE_QUIT_PROCESS_ITEM = "Force Quit Process…"
 # --------------------------------------------------------------------------
 
 
-def discover_environment(
-    environ: dict[str, str], runtime_dir: Path
-) -> dict[str, str]:
-    """Same contract as run-journey-launch.py's helper of the same name."""
-
-    additions: dict[str, str] = {}
-    if "XDG_RUNTIME_DIR" not in environ:
-        additions["XDG_RUNTIME_DIR"] = str(runtime_dir)
-    if "NIRI_SOCKET" not in environ:
-        sockets = sorted(runtime_dir.glob("niri*.sock"))
-        if not sockets:
-            raise JourneyError("no niri IPC socket found in the runtime directory")
-        additions["NIRI_SOCKET"] = str(sockets[0])
-    if "WAYLAND_DISPLAY" not in environ:
-        displays = sorted(
-            entry.name
-            for entry in runtime_dir.glob("wayland-*")
-            if not entry.name.endswith(".lock")
-        )
-        if not displays:
-            raise JourneyError("no Wayland display socket found in the runtime directory")
-        additions["WAYLAND_DISPLAY"] = displays[0]
-    if "DBUS_SESSION_BUS_ADDRESS" not in environ:
-        bus = runtime_dir / "bus"
-        if not bus.exists():
-            raise JourneyError("no D-Bus session bus socket found in the runtime directory")
-        additions["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={bus}"
-    return additions
+def disposable_marker(token: str) -> str:
+    if not token or any(character.isspace() for character in token):
+        raise JourneyError("invalid disposable-process token")
+    return f"lulo-journey-6-{token}"
 
 
-def parse_windows(stdout: str) -> list[dict[str, Any]]:
-    try:
-        windows = json.loads(stdout)
-    except json.JSONDecodeError as error:
-        raise JourneyError("niri windows output was not valid JSON") from error
-    if not isinstance(windows, list):
-        raise JourneyError("niri windows output was not a JSON array")
-    return windows
+def build_disposable_command(token: str) -> list[str]:
+    """The exact argv this script spawns for its own harmless process --
+    kept pure so the marker convention is unit-testable without spawning
+    anything.
+
+    GNU `sleep` treats every argument as a duration and sums them
+    (`sleep 600 marker` fails outright with "invalid time interval");
+    the marker is instead carried as argv[0] via the shell's `exec -a`,
+    which replaces the shell with `sleep` in the same PID and leaves
+    `sleep 600` as the only real duration argument."""
+
+    return [
+        "bash",
+        "-c",
+        f"exec -a {disposable_marker(token)} {DISPOSABLE_COMMAND_NAME} {DISPOSABLE_DURATION_S}",
+    ]
 
 
-def find_window_by_app_id(
-    windows: list[dict[str, Any]], app_id: str
-) -> Optional[dict[str, Any]]:
-    for window in windows:
-        if window.get("app_id") == app_id:
-            return window
-    return None
+def expected_row_label(name: str, pid: int) -> str:
+    """Mirrors `crates/activity-monitor/src/accessibility.rs`'s
+    `AccessibleProcessRow.label` format (`"{name} (PID {pid})"`) exactly, so
+    this script recognizes a row the moment the live view starts projecting
+    that pure model."""
+
+    return f"{name} (PID {pid})"
 
 
-def unique_marker() -> str:
-    return f"lulo-journey-6-{secrets.token_hex(6)}"
+def expected_dialog_title(force: bool) -> str:
+    """Mirrors the exact strings rendered by
+    `crates/activity-monitor/src/view/render/overlays.rs`'s
+    `render_confirm`."""
+
+    return "Force Quit Process" if force else "Are you sure you want to quit this process?"
 
 
-def count_nodes_by_role(nodes: list[str]) -> dict[str, int]:
-    """Pure summary helper: how many AT-SPI nodes of each role a dump found.
-    Used both to build the gap evidence in this script and directly by its
-    unit tests."""
-
-    counts: dict[str, int] = {}
-    for role in nodes:
-        counts[role] = counts.get(role, 0) + 1
-    return counts
-
-
-def has_only_chrome(counts: dict[str, int], selectable_roles: tuple[str, ...]) -> bool:
-    """True when a role census contains none of the roles a real process
-    list would need (table/row/cell/list item/…)."""
-
-    return not any(role in counts for role in selectable_roles)
-
-
-SELECTABLE_ROLES = ("table", "table row", "table cell", "list item", "tree item")
+def expected_confirm_button_label(force: bool) -> str:
+    return "Force Quit" if force else "Quit"
 
 
 def make_step(step_id: str, passed: bool, detail: str, **extra: Any) -> dict[str, Any]:
@@ -207,8 +202,27 @@ def build_report(
     }
 
 
+def parse_windows(stdout: str) -> list[dict[str, Any]]:
+    try:
+        windows = json.loads(stdout)
+    except json.JSONDecodeError as error:
+        raise JourneyError("niri windows output was not valid JSON") from error
+    if not isinstance(windows, list):
+        raise JourneyError("niri windows output was not a JSON array")
+    return windows
+
+
+def find_window_by_app_id(
+    windows: list[dict[str, Any]], app_id: str
+) -> Optional[dict[str, Any]]:
+    for window in windows:
+        if window.get("app_id") == app_id:
+            return window
+    return None
+
+
 # --------------------------------------------------------------------------
-# niri IPC (same contract as run-journey-launch.py)
+# niri IPC (mirrors run-journey-launch.py)
 # --------------------------------------------------------------------------
 
 
@@ -233,8 +247,8 @@ def niri_windows() -> list[dict[str, Any]]:
     return parse_windows(result.stdout)
 
 
-def niri_spawn(command: str) -> None:
-    result = _niri("action", "spawn", "--", command)
+def niri_spawn(*command: str) -> None:
+    result = _niri("action", "spawn", "--", *command)
     if result.returncode != 0:
         raise JourneyError("niri failed to spawn the target application")
 
@@ -256,7 +270,7 @@ def _wait_for(
         time.sleep(poll)
 
 
-def wait_for_window(app_id: str, timeout: float) -> Optional[dict[str, Any]]:
+def wait_for_window(app_id: str, timeout: float = WINDOW_APPEAR_TIMEOUT_S):
     return _wait_for(lambda: find_window_by_app_id(niri_windows(), app_id), timeout)
 
 
@@ -271,17 +285,8 @@ def pid_alive(pid: int) -> bool:
     return Path(f"/proc/{pid}").exists()
 
 
-def cmdline_of(pid: int) -> str:
-    try:
-        return Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode(
-            "utf-8", "replace"
-        )
-    except OSError:
-        return ""
-
-
 # --------------------------------------------------------------------------
-# AT-SPI helpers (same contract as run-journey-launch.py)
+# AT-SPI helpers (mirrors run-journey-launch.py / run-journey-textfile.py)
 # --------------------------------------------------------------------------
 
 
@@ -301,7 +306,8 @@ def _descendants(node):
             child = node.getChildAtIndex(index)
         except (LookupError, RuntimeError):
             continue
-        yield from _descendants(child)
+        if child is not None:
+            yield from _descendants(child)
 
 
 def _atspi_snapshot(app_name: Optional[str] = None):
@@ -322,16 +328,11 @@ def find_node(
     node_name: str,
     role: Optional[str] = None,
     timeout: float = ATSPI_FIND_TIMEOUT_S,
-    name_prefix: bool = False,
 ):
     def search():
         for node in _atspi_snapshot(app_name):
             try:
-                name = node.name
-                matches = (
-                    name.startswith(node_name) if name_prefix else name == node_name
-                )
-                if not matches:
+                if node.name != node_name:
                     continue
                 if role is not None and node.getRoleName() != role:
                     continue
@@ -344,10 +345,13 @@ def find_node(
 
 
 def action_names(node) -> list[str]:
-    if "Action" not in node.get_interfaces():
+    try:
+        if "Action" not in node.get_interfaces():
+            return []
+        actions = node.queryAction()
+        return [actions.getName(index) for index in range(actions.nActions)]
+    except (LookupError, RuntimeError):
         return []
-    actions = node.queryAction()
-    return [actions.getName(index) for index in range(actions.nActions)]
 
 
 def click(node) -> bool:
@@ -358,22 +362,12 @@ def click(node) -> bool:
     return bool(actions.doAction(names.index("click")))
 
 
-def role_census(app_name: str) -> list[str]:
-    roles: list[str] = []
-    for node in _atspi_snapshot(app_name):
-        try:
-            roles.append(node.getRoleName())
-        except (LookupError, RuntimeError):
-            roles.append("<err>")
-    return roles
-
-
-def can_edit_text(node) -> tuple[bool, str]:
+def has_editable_text(node) -> bool:
     try:
         node.queryEditableText()
-    except Exception as error:  # noqa: BLE001 - the live bridge can raise almost anything
-        return False, f"queryEditableText() raised: {error!r}"
-    return True, "queryEditableText() succeeded"
+        return True
+    except (LookupError, RuntimeError, NotImplementedError):
+        return False
 
 
 # --------------------------------------------------------------------------
@@ -381,89 +375,101 @@ def can_edit_text(node) -> tuple[bool, str]:
 # --------------------------------------------------------------------------
 
 
-def check_logged_in() -> dict[str, Any]:
+def launch_monitor() -> tuple[dict[str, Any], Optional[dict[str, Any]]]:
     try:
-        listing = subprocess.run(
-            ["loginctl", "list-sessions", "--no-legend"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=NIRI_TIMEOUT_S,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return make_step("logged_in", False, f"loginctl was unavailable: {error}")
-    if listing.returncode != 0:
-        return make_step("logged_in", False, "loginctl list-sessions failed")
-    session_ids = [line.split()[0] for line in listing.stdout.splitlines() if line.split()]
-    for session_id in session_ids:
-        show = subprocess.run(
-            [
-                "loginctl",
-                "show-session",
-                session_id,
-                "--property=Type",
-                "--property=Class",
-                "--property=State",
-                "--property=Remote",
-                "--no-pager",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=NIRI_TIMEOUT_S,
-        )
-        if show.returncode != 0:
+        niri_spawn(SYSTEM_MONITOR["exec"])
+    except JourneyError as error:
+        return make_step("launch", False, str(error)), None
+    window = wait_for_window(SYSTEM_MONITOR["app_id"])
+    if window is None:
+        return make_step("launch", False, "no System Monitor window appeared"), None
+    return make_step("launch", True, "System Monitor window appeared"), window
+
+
+def check_search_field_editable() -> dict[str, Any]:
+    for node in _atspi_snapshot(SYSTEM_MONITOR["atspi_name"]):
+        try:
+            if node.getRoleName() != "entry":
+                continue
+        except (LookupError, RuntimeError):
             continue
-        properties = dict(
-            line.split("=", 1) for line in show.stdout.splitlines() if "=" in line
-        )
-        if (
-            properties.get("Type") == "wayland"
-            and properties.get("Class") == "user"
-            and properties.get("State") == "active"
-            and properties.get("Remote") == "no"
-        ):
-            return make_step("logged_in", True, "an active local rmac graphical session was found")
+        if has_editable_text(node):
+            return make_step(
+                "search_field_editable",
+                True,
+                "the search field exposes AT-SPI EditableText",
+            )
     return make_step(
-        "logged_in", False, "no active local graphical (wayland/user) session was found"
+        "search_field_editable",
+        False,
+        "the search field (crates/activity-monitor/src/view.rs:59) exposes no "
+        "AT-SPI EditableText; a process cannot be located by typing without a "
+        "keyboard injector",
     )
 
 
-def spawn_marker_process(marker: str) -> int:
-    """Start a disposable `sleep 600` this script (and only this script)
-    owns, with argv[0] set to a unique marker so its identity can be
-    double-checked before any signal is ever sent to it."""
-
-    process = subprocess.Popen(
-        ["sh", "-c", f'exec -a {marker} sleep 600'],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
+def check_quit_controls_exist() -> dict[str, Any]:
+    in_window = find_node(SYSTEM_MONITOR["atspi_name"], "Quit", role="button", timeout=2.0)
+    in_window_force = find_node(
+        SYSTEM_MONITOR["atspi_name"], "Force Quit", role="button", timeout=2.0
     )
-    return process.pid
+    menu_button = find_node("rmac-top-bar", "Process menu", role="button", timeout=2.0)
+    found = bool(in_window and in_window_force and menu_button)
+    return make_step(
+        "quit_controls_exist",
+        found,
+        "Quit/Force Quit exist as AT-SPI buttons and the top bar's Process menu"
+        if found
+        else "one or more of the Quit/Force Quit AT-SPI controls was not found",
+    )
 
 
-def is_our_marker_process(pid: int, marker: str) -> bool:
-    """Refuse to act unless /proc still shows *our* marker for this PID --
-    the one safety check standing between this script and "never touch any
-    other process" if a PID were ever reused."""
+def find_disposable_row(pid: int, timeout: float = ROW_SEARCH_TIMEOUT_S):
+    """Looks for a row carrying the exact label
+    `accessibility.rs::AccessibleProcessRow.label` defines, under any role
+    (future-proof against the model being wired up under a "table row",
+    "list item", or other role). Returns the node, or None -- never guesses
+    by process name alone, since more than one process can share a name and
+    this script must only ever touch its own."""
 
-    if not pid_alive(pid):
+    label = expected_row_label(DISPOSABLE_COMMAND_NAME, pid)
+    return find_node(SYSTEM_MONITOR["atspi_name"], label, timeout=timeout)
+
+
+def request_process_action(force: bool) -> bool:
+    menu_button = find_node("rmac-top-bar", "Process menu", role="button", timeout=2.0)
+    if menu_button is None or "click" not in action_names(menu_button):
         return False
-    return marker in cmdline_of(pid)
+    click(menu_button)
+    item_name = "Force Quit Process…" if force else "Quit Process…"
+    item = find_node("rmac-top-bar", item_name, role="menu item", timeout=2.0)
+    if item is None or "click" not in action_names(item):
+        return False
+    click(item)
+    return True
 
 
-def open_process_menu() -> dict[str, Any]:
-    button = find_node("rmac-top-bar", PROCESS_MENU_BUTTON, role="button", timeout=3.0)
-    if button is None or "click" not in action_names(button):
+def quit_monitor(window: dict[str, Any]) -> dict[str, Any]:
+    menu_button = find_node("rmac-top-bar", "System Monitor menu", role="button", timeout=3.0)
+    if menu_button is None or "click" not in action_names(menu_button):
+        niri_close_window(window["id"])
         return make_step(
-            "open_process_menu",
-            False,
-            "System Monitor's Process menu was not found (or not clickable) over AT-SPI",
+            "close",
+            wait_for_window_gone(window["id"]),
+            "System Monitor menu was not found over AT-SPI; closed via niri instead",
         )
-    click(button)
-    return make_step("open_process_menu", True, "opened the Process menu via AT-SPI")
+    click(menu_button)
+    quit_item = find_node("rmac-top-bar", "Quit System Monitor", timeout=2.0)
+    if quit_item is None or "click" not in action_names(quit_item):
+        niri_close_window(window["id"])
+        return make_step(
+            "close",
+            wait_for_window_gone(window["id"]),
+            "Quit System Monitor menu item was not found over AT-SPI; closed via niri instead",
+        )
+    click(quit_item)
+    gone = wait_for_window_gone(window["id"])
+    return make_step("close", gone, "window closed" if gone else "window did not close")
 
 
 # --------------------------------------------------------------------------
@@ -471,162 +477,189 @@ def open_process_menu() -> dict[str, Any]:
 # --------------------------------------------------------------------------
 
 
-def run_journey(keep_open: bool) -> dict[str, Any]:
+def run_journey(token: str) -> dict[str, Any]:
     steps: list[dict[str, Any]] = []
     gaps: list[dict[str, str]] = []
     started_at_unix_ms = int(time.time() * 1000)
 
-    steps.append(check_logged_in())
+    disposable: Optional[subprocess.Popen[bytes]] = None
+    window: Optional[dict[str, Any]] = None
 
-    marker = unique_marker()
-    marker_pid = spawn_marker_process(marker)
-    time.sleep(0.2)
-    spawned_ok = is_our_marker_process(marker_pid, marker)
-    steps.append(
-        make_step(
-            "spawn_marker_process",
-            spawned_ok,
-            "started a disposable, uniquely-identified sleep process"
-            if spawned_ok
-            else "the marker process could not be confirmed alive after spawning",
-        )
-    )
-
-    monitor_window: Optional[dict[str, Any]] = None
     try:
-        if not spawned_ok:
-            return build_report(steps, gaps, started_at_unix_ms)
-
-        niri_spawn(SYSTEM_MONITOR["exec"])
-        monitor_window = wait_for_window(SYSTEM_MONITOR["app_id"], WINDOW_APPEAR_TIMEOUT_S)
+        command = build_disposable_command(token)
+        disposable = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        alive = pid_alive(disposable.pid)
         steps.append(
             make_step(
-                "launch_monitor",
-                monitor_window is not None,
-                "System Monitor window appeared"
-                if monitor_window
-                else "no System Monitor window appeared",
+                "disposable_process_started",
+                alive,
+                "the disposable sleep process is running"
+                if alive
+                else "the disposable sleep process did not start",
             )
         )
-        if monitor_window is None:
+        if not alive:
             return build_report(steps, gaps, started_at_unix_ms)
 
-        # --- Try the search field (real click; typing is expected to fail) -----------
-        search_entry = find_node(ATSPI_APP_NAME, "", role="entry", timeout=2.0)
-        can_type, type_evidence = (
-            (False, "no search entry was found over AT-SPI")
-            if search_entry is None
-            else can_edit_text(search_entry)
-        )
-        steps.append(make_step("find_via_search", can_type, type_evidence))
+        launch_step, window = launch_monitor()
+        steps.append(launch_step)
+        if window is None:
+            return build_report(steps, gaps, started_at_unix_ms)
 
-        # --- Try the raw process list: does *any* row/cell/table node exist? ---------
-        roles = role_census(ATSPI_APP_NAME)
-        counts = count_nodes_by_role(roles)
-        list_has_semantics = not has_only_chrome(counts, SELECTABLE_ROLES)
+        steps.append(check_search_field_editable())
+        gaps.append(
+            {
+                "surface": "system-monitor-search",
+                "issue": (
+                    "the search field exposes no AT-SPI EditableText, so a "
+                    "process cannot be located by typing without a keyboard "
+                    "injector (same accesskit_unix gap documented for "
+                    "Spotlight and Text Editor's document buffer)"
+                ),
+            }
+        )
+
+        steps.append(check_quit_controls_exist())
+
+        row = find_disposable_row(disposable.pid)
+        row_found = row is not None
         steps.append(
             make_step(
-                "find_via_list",
-                list_has_semantics,
-                "the process list exposes row/cell semantics over AT-SPI"
-                if list_has_semantics
-                else f"the process list has no selectable AT-SPI nodes at all (role census: {counts})",
-                role_census=counts,
+                "process_row_identifiable",
+                row_found,
+                "found a row for the disposable process over AT-SPI"
+                if row_found
+                else (
+                    "the process table exposes no per-row AT-SPI structure at all "
+                    "(crates/activity-monitor/src/process_table.rs) -- "
+                    "crates/activity-monitor/src/accessibility.rs already defines "
+                    "the row/label/action model this needs "
+                    "(project_process_table, AccessibleProcessRow) but it is "
+                    "never called outside its own tests, so no assistive "
+                    "technology or this script can select one specific process"
+                ),
             )
         )
 
-        if not can_type and not list_has_semantics:
+        if not row_found:
             gaps.append(
                 {
-                    "surface": "system-monitor-process-list",
+                    "surface": "system-monitor-process-table",
                     "issue": (
-                        "System Monitor's process list has no AT-SPI semantic "
-                        f"representation on this build (role census: {counts}; "
-                        "accessibility.rs's row/dialog projections, "
-                        "crates/activity-monitor/src/accessibility.rs:149,241, are never "
-                        "called from the live table, crates/activity-monitor/src/"
-                        "process_table.rs:363-389) and its search field cannot be typed "
-                        f"into ({type_evidence}), so no process -- including this "
-                        "script's own disposable one -- can be found or selected by "
-                        "assistive technology"
+                        "Quit/Force Quit act on whatever a mouse click (left or right) or "
+                        "keyboard table-navigation last selected "
+                        "(crates/activity-monitor/src/process_table.rs:352-382, "
+                        "crates/activity-monitor/src/view.rs:165-176); with no "
+                        "row exposed over AT-SPI and no way to type into the "
+                        "search field, this script cannot safely select its own "
+                        "disposable process, so it does not invoke Quit or Force "
+                        "Quit at all -- doing so blind, on a laptop whose session "
+                        "is shared with other agents, could act on an unrelated "
+                        "process. The confirmation/cancel/confirm-and-terminate "
+                        "steps of this journey are blocked by this gap, not "
+                        "attempted, and reported failed rather than faked."
                     ),
                 }
             )
-
-        steps.append(
-            make_step(
-                "select_process",
-                False,
-                "no accessible way exists to select a specific process row on this "
-                "build; see find_via_search / find_via_list above",
-            )
-        )
-
-        # --- Attempt the confirmation flow anyway, to observe real behaviour ----------
-        menu_step = open_process_menu()
-        steps.append(menu_step)
-        confirm_dialog_appeared = False
-        if menu_step["passed"]:
-            item = find_node(ATSPI_APP_NAME, QUIT_PROCESS_ITEM, timeout=1.5)
-            if item is not None and "click" in action_names(item):
-                click(item)
-                confirm_dialog_appeared = (
-                    find_node(ATSPI_APP_NAME, "Cancel", role="button", timeout=CONFIRM_TIMEOUT_S)
-                    is not None
+            steps.append(
+                make_step(
+                    "quit_confirmation_cancel_then_confirm",
+                    False,
+                    "not attempted: no safe, AT-SPI-verified way to select the "
+                    "disposable process (see process_row_identifiable and "
+                    "system-monitor-process-table gap above)",
                 )
+            )
+            return build_report(steps, gaps, started_at_unix_ms)
+
+        # Forward-compatible real path: a future build that wires
+        # accessibility.rs's model into the live table will reach here and
+        # this script will exercise the actual destructive journey.
+        selected = "click" in action_names(row) and click(row)
         steps.append(
             make_step(
-                "quit_with_confirmation",
-                False,
-                "a confirmation dialog appeared even without a selected process "
-                "(unexpected)"
-                if confirm_dialog_appeared
-                else "Quit Process… had no effect without a selected process "
-                "(expected, given select_process above); journey 6 cannot be "
-                "completed by assistive technology on this build",
+                "select_disposable_process",
+                selected,
+                "selected the disposable process row"
+                if selected
+                else "found the row but could not select it",
+            )
+        )
+        if not selected:
+            return build_report(steps, gaps, started_at_unix_ms)
+
+        requested = request_process_action(force=False)
+        confirm_button = find_node(
+            SYSTEM_MONITOR["atspi_name"],
+            expected_confirm_button_label(force=False),
+            timeout=CONFIRM_TIMEOUT_S,
+        )
+        cancel_button = find_node(SYSTEM_MONITOR["atspi_name"], "Cancel", timeout=1.0)
+        confirmation_shown = requested and confirm_button is not None and cancel_button is not None
+        steps.append(
+            make_step(
+                "confirmation_appears",
+                confirmation_shown,
+                "the Quit confirmation dialog appeared"
+                if confirmation_shown
+                else "no confirmation dialog appeared after requesting Quit",
+            )
+        )
+        if not confirmation_shown:
+            return build_report(steps, gaps, started_at_unix_ms)
+
+        click(cancel_button)
+        survived_cancel = pid_alive(disposable.pid)
+        steps.append(
+            make_step(
+                "cancel_preserves_process",
+                survived_cancel,
+                "the process survived Cancel"
+                if survived_cancel
+                else "the process was gone after Cancel",
             )
         )
 
-        # However this went, our marker process must be untouched.
+        request_process_action(force=False)
+        confirm_button = find_node(
+            SYSTEM_MONITOR["atspi_name"],
+            expected_confirm_button_label(force=False),
+            timeout=CONFIRM_TIMEOUT_S,
+        )
+        if confirm_button is not None and "click" in action_names(confirm_button):
+            click(confirm_button)
+        terminated = _wait_for(lambda: not pid_alive(disposable.pid), TERMINATE_TIMEOUT_S)
         steps.append(
             make_step(
-                "marker_process_unaffected",
-                is_our_marker_process(marker_pid, marker),
-                "the disposable process is still running, exactly as a blocked "
-                "quit attempt should leave it",
+                "confirm_terminates_process",
+                bool(terminated),
+                "the process exited after confirming Quit"
+                if terminated
+                else "the process was still running after confirming Quit",
             )
         )
 
         return build_report(steps, gaps, started_at_unix_ms)
     finally:
-        if is_our_marker_process(marker_pid, marker):
+        if window is not None:
             try:
-                os.kill(marker_pid, 15)
-            except OSError:
+                quit_monitor(window)
+            except JourneyError:
                 pass
-            _wait_for(lambda: not pid_alive(marker_pid), PROCESS_SETTLE_TIMEOUT_S)
-            if pid_alive(marker_pid):
-                try:
-                    os.kill(marker_pid, 9)
-                except OSError:
-                    pass
-        if not keep_open and monitor_window is not None:
-            remaining = wait_for_window(SYSTEM_MONITOR["app_id"], 0.5)
-            if remaining is not None:
-                menu_button = find_node(
-                    "rmac-top-bar", f"{SYSTEM_MONITOR['display_name']} menu", role="button", timeout=2.0
-                )
-                closed = False
-                if menu_button is not None and "click" in action_names(menu_button):
-                    click(menu_button)
-                    quit_item = find_node(
-                        "rmac-top-bar", f"Quit {SYSTEM_MONITOR['display_name']}", timeout=2.0
-                    )
-                    if quit_item is not None and "click" in action_names(quit_item):
-                        click(quit_item)
-                        closed = wait_for_window_gone(remaining["id"], CLOSE_TIMEOUT_S)
-                if not closed:
-                    niri_close_window(remaining["id"])
+        if disposable is not None and pid_alive(disposable.pid):
+            try:
+                os.kill(disposable.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                disposable.wait(timeout=3.0)
+            except subprocess.TimeoutExpired:
+                pass
 
 
 def main() -> int:
@@ -637,18 +670,13 @@ def main() -> int:
         default=None,
         help="absolute path to write the JSON report to (also printed to stdout)",
     )
-    parser.add_argument(
-        "--keep-open",
-        action="store_true",
-        help="leave the System Monitor window open (debugging only); the marker "
-        "process is still always cleaned up",
-    )
     arguments = parser.parse_args()
 
+    import secrets
+
+    token = secrets.token_hex(4)
     try:
-        additions = discover_environment(dict(os.environ), Path(f"/run/user/{os.getuid()}"))
-        os.environ.update(additions)
-        report = run_journey(arguments.keep_open)
+        report = run_journey(token)
     except JourneyError as error:
         parser.exit(4, f"run-journey-monitor: {error}\n")
 
@@ -660,8 +688,7 @@ def main() -> int:
     passed = sum(1 for step in report["steps"] if step["passed"])
     total = len(report["steps"])
     print(
-        f"journey 6: {passed}/{total} steps passed; "
-        f"overall_pass={report['overall_pass']}",
+        f"journey 6: {passed}/{total} steps passed; overall_pass={report['overall_pass']}",
         file=sys.stderr,
     )
     return 0 if report["overall_pass"] else 1

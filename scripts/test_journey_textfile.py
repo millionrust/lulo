@@ -2,14 +2,13 @@
 
 These run with plain `python3 -m pytest scripts/test_journey_textfile.py` on
 macOS (no pyatspi, no niri, no live session required): they cover the
-JSON-parsing, environment-discovery, hashing, and report-building logic
-only. The live AT-SPI/niri/portal orchestration in the script itself can
-only be exercised on the reference Linux laptop; see docs/journey-suite.md.
+fixture-naming, JSON-parsing, and report-building logic only. The live
+AT-SPI/niri orchestration in the script itself can only be exercised on the
+reference Linux laptop; see docs/journey-suite.md.
 """
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import json
 import sys
@@ -27,46 +26,69 @@ SPEC.loader.exec_module(journey)
 
 class ModuleImportTests(unittest.TestCase):
     def test_imports_without_pyatspi(self):
+        # macOS has no pyatspi; the module must still load.
         self.assertTrue(hasattr(journey, "pyatspi"))
 
 
-class DiscoverEnvironmentTests(unittest.TestCase):
-    def test_fills_in_missing_variables_from_the_runtime_directory(self):
-        import tempfile
+class FixtureNamingTests(unittest.TestCase):
+    def test_fixture_dirname_embeds_the_token(self):
+        name = journey.fixture_dirname("ab12cd34")
+        self.assertEqual(name, "lulo-journey-5-ab12cd34")
 
-        with tempfile.TemporaryDirectory() as raw:
-            runtime_dir = Path(raw)
-            (runtime_dir / "niri.wayland-1.1234.sock").touch()
-            (runtime_dir / "wayland-1").touch()
-            (runtime_dir / "wayland-1.lock").touch()
-            (runtime_dir / "bus").touch()
+    def test_fixture_dirname_rejects_path_separators(self):
+        for bad_token in ("../escape", "a/b", "a\\b", "a b", "a\tb", "a\nb", ""):
+            with self.assertRaises(journey.JourneyError):
+                journey.fixture_dirname(bad_token)
 
-            additions = journey.discover_environment({}, runtime_dir)
 
-        self.assertEqual(additions["XDG_RUNTIME_DIR"], str(runtime_dir))
-        self.assertTrue(additions["NIRI_SOCKET"].endswith("niri.wayland-1.1234.sock"))
-        self.assertEqual(additions["WAYLAND_DISPLAY"], "wayland-1")
-        self.assertTrue(additions["DBUS_SESSION_BUS_ADDRESS"].startswith("unix:path="))
+class FixtureContentTests(unittest.TestCase):
+    def test_sample_content_is_deterministic_and_carries_the_token(self):
+        first = journey.make_sample_content("tok123")
+        second = journey.make_sample_content("tok123")
+        self.assertEqual(first, second)
+        self.assertIn(b"tok123", first)
 
-    def test_leaves_already_set_variables_alone(self):
-        import tempfile
+    def test_sample_content_differs_for_different_tokens(self):
+        self.assertNotEqual(
+            journey.make_sample_content("tok-a"), journey.make_sample_content("tok-b")
+        )
 
-        with tempfile.TemporaryDirectory() as raw:
-            environ = {
-                "XDG_RUNTIME_DIR": "/already/set",
-                "NIRI_SOCKET": "/already/set.sock",
-                "WAYLAND_DISPLAY": "wayland-9",
-                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/already/set/bus",
-            }
-            additions = journey.discover_environment(environ, Path(raw))
-        self.assertEqual(additions, {})
+    def test_large_content_is_exactly_the_requested_size(self):
+        content = journey.make_large_content("tok", 10_000)
+        self.assertEqual(len(content), 10_000)
+        self.assertTrue(content.startswith(b"rmac journey 5 large fixture tok\n"))
 
-    def test_missing_socket_raises(self):
-        import tempfile
+    def test_large_content_is_deterministic(self):
+        self.assertEqual(
+            journey.make_large_content("tok", 5_000),
+            journey.make_large_content("tok", 5_000),
+        )
 
-        with tempfile.TemporaryDirectory() as raw:
-            with self.assertRaisesRegex(journey.JourneyError, "niri IPC socket"):
-                journey.discover_environment({}, Path(raw))
+    def test_large_content_handles_sizes_smaller_than_the_header(self):
+        # Must not crash or produce a negative-length body.
+        content = journey.make_large_content("a-fairly-long-token-value", 4)
+        self.assertEqual(len(content), 4)
+
+
+class AtomicWriteTempFileTests(unittest.TestCase):
+    def test_temp_write_pattern_matches_rmac_storage(self):
+        # crates/rmac-storage/src/write.rs's atomic_write names its sibling
+        # temp file `.{name}.tmp-<pid>-<sequence>`.
+        self.assertEqual(journey.temp_write_pattern("big.txt"), ".big.txt.tmp-")
+
+    def test_find_orphaned_temp_files_matches_only_the_right_prefix(self):
+        entries = [
+            "big.txt",
+            ".big.txt.tmp-4821-3",
+            ".other.txt.tmp-4821-3",
+            ".big.txt.tmp-9999-1",
+            "big.txt.bak",
+        ]
+        found = journey.find_orphaned_temp_files(entries, "big.txt")
+        self.assertEqual(sorted(found), [".big.txt.tmp-4821-3", ".big.txt.tmp-9999-1"])
+
+    def test_find_orphaned_temp_files_empty_when_none_match(self):
+        self.assertEqual(journey.find_orphaned_temp_files(["a", "b"], "big.txt"), [])
 
 
 class NiriJsonParsingTests(unittest.TestCase):
@@ -84,38 +106,23 @@ class NiriJsonParsingTests(unittest.TestCase):
 
     def test_find_window_by_app_id(self):
         windows = [
-            {"id": 1, "app_id": "org.rmac.FileChooser"},
+            {"id": 1, "app_id": "org.rmac.Notes"},
             {"id": 2, "app_id": "org.rmac.TextEditor"},
         ]
         found = journey.find_window_by_app_id(windows, "org.rmac.TextEditor")
         self.assertEqual(found["id"], 2)
         self.assertIsNone(journey.find_window_by_app_id(windows, "org.rmac.Missing"))
 
-    def test_windows_by_app_id_returns_all_matches(self):
-        windows = [
-            {"id": 1, "app_id": "org.rmac.FileChooser"},
-            {"id": 2, "app_id": "org.rmac.FileChooser"},
-            {"id": 3, "app_id": "org.rmac.TextEditor"},
-        ]
-        matches = journey.windows_by_app_id(windows, "org.rmac.FileChooser")
-        self.assertEqual([window["id"] for window in matches], [1, 2])
 
-
-class HashingTests(unittest.TestCase):
-    def test_sha256_hex_matches_hashlib(self):
-        data = b"rmac journey 5 fixture"
-        self.assertEqual(journey.sha256_hex(data), hashlib.sha256(data).hexdigest())
-
-    def test_sha256_hex_distinguishes_content(self):
-        self.assertNotEqual(journey.sha256_hex(b"a"), journey.sha256_hex(b"b"))
-
-
-class RandomFolderNameTests(unittest.TestCase):
-    def test_folder_name_has_expected_prefix_and_is_unique(self):
-        first = journey.random_folder_name()
-        second = journey.random_folder_name()
-        self.assertTrue(first.startswith("lulo-journey-5-"))
-        self.assertNotEqual(first, second)
+class HashTests(unittest.TestCase):
+    def test_sha256_hex_is_stable_and_distinguishes_content(self):
+        self.assertEqual(journey.sha256_hex(b"abc"), journey.sha256_hex(b"abc"))
+        self.assertNotEqual(journey.sha256_hex(b"abc"), journey.sha256_hex(b"abd"))
+        # Known SHA-256 of the empty byte string.
+        self.assertEqual(
+            journey.sha256_hex(b""),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        )
 
 
 class ReportShapeTests(unittest.TestCase):
@@ -149,31 +156,17 @@ class ReportShapeTests(unittest.TestCase):
         self.assertEqual(report["journey"], 5)
 
     def test_report_is_json_serializable_and_privacy_safe(self):
-        steps = [journey.make_step("open", True, "ok")]
+        steps = [journey.make_step("save", True, "ok")]
         report = journey.build_report(steps, [], 0)
         text = json.dumps(report)
         for forbidden in ("/home/", "screencapture", ".png", ".jpg"):
             self.assertNotIn(forbidden, text)
 
 
-class ConstantTests(unittest.TestCase):
-    def test_text_editor_identity(self):
+class TextEditorConstantTests(unittest.TestCase):
+    def test_text_editor_identity_is_well_formed(self):
         self.assertEqual(journey.TEXT_EDITOR["app_id"], "org.rmac.TextEditor")
         self.assertTrue(journey.TEXT_EDITOR["exec"].startswith("/usr/bin/"))
-
-    def test_file_chooser_app_ids_are_distinct(self):
-        self.assertNotEqual(journey.FILE_CHOOSER_OPEN_APP_ID, journey.FILE_CHOOSER_SAVE_APP_ID)
-
-    def test_menu_labels_use_the_real_ellipsis_character(self):
-        # crates/rmac-app-menu/src/lib.rs's TEXT_EDITOR_MENUS uses "…",
-        # not three ASCII dots -- a mismatch here would silently never match
-        # any live AT-SPI node.
-        self.assertIn("…", journey.OPEN_ITEM)
-        self.assertIn("…", journey.SAVE_AS_ITEM)
-        self.assertNotIn("...", journey.OPEN_ITEM)
-
-    def test_initial_and_external_content_are_distinct(self):
-        self.assertNotEqual(journey.INITIAL_CONTENT, journey.EXTERNAL_CONTENT)
 
 
 if __name__ == "__main__":

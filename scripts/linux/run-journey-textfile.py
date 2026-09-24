@@ -5,58 +5,96 @@
     content.
 
 Runs against the live rmac session on the reference laptop (niri + AT-SPI),
-the same way scripts/linux/run-journey-launch.py exercises journey 1: no
-keyboard or pointer injector is installed there (no wtype, no ydotool), so
-every step drives Text Editor (crates/text-editor) and the portal Open/Save
-panel (crates/rmac-file-chooser, ADR 0012) only through:
+driving `rmac-text-editor` (crates/text-editor) and the
+`org.freedesktop.portal.FileChooser` Open/Save dialogs it calls through
+(crates/rmac-file-chooser, ADR 0012) the same way run-journey-launch.py drives
+journey 1: AT-SPI actions (pyatspi) on nodes that expose a real action, plus
+niri IPC. There is no keyboard or pointer injector installed on the reference
+laptop (no wtype, no ydotool), so every step is either a real AT-SPI action
+or an honestly reported gap -- never a simulated keystroke.
 
-  * AT-SPI actions (pyatspi) on elements that expose a real "click" action --
-    the top bar's exported File/App menus (rmac_app_menu) render as proper
-    AT-SPI "menu"/"menu item" nodes and are reliably clickable;
-  * niri IPC, to discover windows and their app ids.
+Two real, evidence-backed accessibility/testability gaps shape this script:
 
-Text Editor's own document body and every `InputState`-backed entry this
-script has probed (the document body, System Monitor's search field) expose
-neither the AT-SPI Text nor EditableText interface -- `queryText()` and
-`queryEditableText()` both raise -- so **no text can be typed anywhere in the
-product without a keyboard injector**, not just in Spotlight's query field
-(see run-journey-launch.py's LAUNCHER_QUERY_NAME note, which documented this
-for Spotlight alone; this script confirms the same failure on Text Editor's
-body). Concretely this means the buffer can never become dirty by assistive
-technology alone, so File > Save -- a no-op on a clean buffer
-(crates/text-editor/src/view/saving.rs:37-42) -- cannot be exercised as a
-real write, and neither can a SIGKILL-during-save race. This script still
-proves everything it can for real:
+  * The document buffer (the `entry` node inside `rmac-text-editor`) exposes
+    the AT-SPI Accessible and Component interfaces only -- no Text, no
+    EditableText (confirmed live: `queryText()`/`queryEditableText()` both
+    raise). This is the same accesskit_unix/accesskit_atspi_common gap
+    run-journey-launch.py already documents for Spotlight's query field. It
+    means no AT-SPI action anywhere can type or insert characters into an
+    open document.
+  * Text Editor's only other in-window control that changes saved content --
+    the encoding/line-ending picker (crates/text-editor/src/view/render/
+    chrome.rs:80-127, the "document-actions" dropdown button) -- does expose
+    an AT-SPI `click` action like its sibling toolbar buttons, but invoking
+    that action does not open its dropdown menu (confirmed live: clicking
+    every unlabelled button in the window's toolbar, in turn, never produced
+    an AT-SPI menu/popup), so its encoding/line-ending options are reachable
+    by neither a screen reader nor this script. The global "Format" menu in
+    the top bar (crates/rmac-app-menu/src/lib.rs:94-99) does not mirror it
+    either (only font size and monospace live there).
 
-  * the portal Open/Save panel is attempted for real (File > Open, File >
-    Save As...) and the resulting window (or its absence) is observed over
-    niri IPC -- on the reference laptop as of this writing,
-    `rmac-file-chooser.service` is not a registered systemd user unit and
-    `rmac-portals.conf` still reads `default=gnome;gtk;*` with no
-    `org.freedesktop.impl.portal.FileChooser` override, so neither dialog
-    opens at all (confirmed live: no new window, no in-app error alert, no
-    `rmac-file-chooser` AT-SPI application). ADR 0012's backend exists in the
-    repository but is not deployed here yet. When it opens, a
-    `fallback_spawn`-labelled direct launch keeps the rest of the journey
-    measurable, exactly like run-journey-launch.py's Dock/Spotlight fallback;
-  * external-change detection is fully real and needs no typing: Text
-    Editor watches its open document's directory
-    (crates/text-editor/src/view/lifecycle.rs:17-26) and shows an always-
-    visible "This document changed outside Text Editor..." banner with a
-    "Review..." button the moment the file changes on disk
-    (crates/text-editor/src/view/render.rs:191-224) -- no save, no typing,
-    no menu required. This script edits the file directly on disk while it
-    is open, waits for that banner, opens the Conflict alert via "Review...",
-    and clicks Cancel, then verifies the file on disk still holds exactly
-    the externally-written bytes (the app never overwrote it without an
-    explicit Overwrite confirmation);
-  * content-loss is checked the same way throughout: every step recomputes
-    the on-disk SHA-256 and compares it against what this script itself last
-    wrote, so nothing the app does (or fails to do) can go unnoticed.
+Together these mean: in this build, on this laptop, there is currently no
+accessible way to change a document's content or its saved encoding without
+a keyboard injector. `attempt_edit` below performs the real check (looking
+for Text/EditableText on every entry in the window) and reports this as a
+failed step with the evidence above, rather than faking a keystroke.
 
-The report is privacy-safe: no screenshots, no window titles, no absolute
-paths, no file contents. Every wait in this script is bounded; it never
-hangs. The disposable test folder is always removed, even on failure.
+Everything else in the journey *is* real AT-SPI-drivable and is exercised
+for real:
+
+  * Open and Save As go through the top bar's global "File" menu
+    (`File menu` -> `Open…` / `Save As…`, both real AT-SPI `menu item`
+    nodes with a `click` action -- confirmed live), which is what actually
+    calls `cx.prompt_for_paths`/`cx.prompt_for_new_path`
+    (shell/compat/gpui_linux/src/linux/platform.rs:391,451), which is what
+    calls the portal. Whatever answers -- `rmac-file-chooser` if deployed,
+    GNOME's/GTK's chooser otherwise per `rmac-portals.conf`'s fallback list
+    -- is driven generically: sidebar/breadcrumb navigation by name match,
+    then a file/folder row activated by name match. If that dialog cannot be
+    driven (backend not deployed, unexpected layout, dispatch didn't fire),
+    the script falls back to loading the document directly with
+    `rmac-text-editor <path>` (the same command `Exec=%F` in
+    org.rmac.TextEditor.desktop runs for a real double-click), exactly the
+    way run-journey-launch.py falls back to a direct spawn when Dock/
+    Spotlight can't be driven -- clearly labelled, so the rest of the
+    journey (save fidelity, external-change detection, atomic writes) can
+    still be measured.
+  * "Save with no changes must not touch the file" is verified by hash.
+  * "Save As … must write byte-identical content to the new path" is
+    verified by hash (save_to_new_path always writes, regardless of the
+    dirty flag -- crates/text-editor/src/view/saving.rs:75-140).
+  * External-change detection does not depend on typing at all: this script
+    plays the role of "another process" and overwrites the open file
+    directly while Text Editor holds it open (crates/text-editor/src/view/
+    document_state.rs arms an inotify watch via the `notify` crate on every
+    load). The script waits for the resulting "Review…" button
+    (crates/text-editor/src/view/render.rs:191-207) to appear over AT-SPI,
+    clicks it, confirms the Conflict alert's distinctive buttons
+    (crates/text-editor/src/view/render/alert.rs:59-76: "Discard & Reload",
+    "Save a Copy…", "Overwrite Anyway…"), and clicks Cancel -- verifying
+    both that the conflict was surfaced and that neither the local buffer
+    nor the external file were touched by Cancel.
+  * The SIGKILL-during-save test targets Save As (not Save), because Save
+    is a documented no-op when the buffer isn't dirty
+    (crates/text-editor/src/view/saving.rs:37-42) and this script has no way
+    to dirty it (see above). Save As always calls `save_document_copy` ->
+    `write_document_if_unchanged` -> `rmac_storage::atomic_write`
+    (crates/rmac-storage/src/write.rs:52-86): write a `.{name}.tmp-<pid>-
+    <seq>` sibling, `sync_all`, `rename`, sync the parent directory. The
+    script re-saves a several-MB fixture over itself through the same
+    Save-As UI path, polls the fixture's directory for that temp file to
+    appear (proof the write is in flight), and SIGKILLs the editor process
+    at that instant -- then verifies the destination is either the complete
+    original bytes or does not exist, but is never truncated. This is
+    best-effort ("if feasible" per the brief): if the write completes before
+    the temp file is observed, or the UI path to trigger it fails, the step
+    is reported honestly as not conclusively exercised rather than a false
+    pass.
+
+The report is privacy-safe: no screenshots, no home-directory paths beyond
+the disposable fixture folder's random suffix, no file contents. Every wait
+is bounded; the script never hangs, and every fixture and window it creates
+is cleaned up in a `finally` block.
 """
 
 from __future__ import annotations
@@ -66,6 +104,7 @@ import hashlib
 import json
 import os
 import secrets
+import signal
 import subprocess
 import sys
 import time
@@ -79,7 +118,7 @@ except ImportError:  # pragma: no cover - exercised only off-Linux
 
 
 class JourneyError(RuntimeError):
-    """A bounded, privacy-safe journey failure."""
+    """A bounded, privacy-safe journey-textfile failure."""
 
 
 FORMAT = 1
@@ -90,28 +129,25 @@ JOURNEY_TITLE = (
 
 NIRI_TIMEOUT_S = 5.0
 WINDOW_APPEAR_TIMEOUT_S = 5.0
-PORTAL_WINDOW_TIMEOUT_S = 6.0
-ATSPI_FIND_TIMEOUT_S = 5.0
-BANNER_TIMEOUT_S = 3.0
 CLOSE_TIMEOUT_S = 5.0
+ATSPI_FIND_TIMEOUT_S = 5.0
+CHOOSER_APPEAR_TIMEOUT_S = 6.0
+CHOOSER_NAV_TIMEOUT_S = 4.0
+CONFLICT_DETECT_TIMEOUT_S = 6.0
 POLL_INTERVAL_S = 0.05
 
 TEXT_EDITOR: dict[str, str] = {
     "display_name": "Text Editor",
     "app_id": "org.rmac.TextEditor",
     "exec": "/usr/bin/rmac-text-editor",
+    "atspi_name": "rmac-text-editor",
 }
-FILE_CHOOSER_OPEN_APP_ID = "org.rmac.FileChooser"
-FILE_CHOOSER_SAVE_APP_ID = "org.rmac.FileChooser.Save"
 
-# crates/rmac-app-menu/src/lib.rs TEXT_EDITOR_MENUS -- exact exported labels.
-FILE_MENU_BUTTON = "File menu"
-OPEN_ITEM = "Open…"
-SAVE_ITEM = "Save"
-SAVE_AS_ITEM = "Save As…"
-
-INITIAL_CONTENT = "rmac journey 5 fixture\nfirst line\n"
-EXTERNAL_CONTENT = "rmac journey 5 fixture -- changed by another process\n"
+# A fixture large enough that its atomic write takes long enough to interrupt
+# on the reference laptop's spinning-rust-free but modest SSD/eMMC storage.
+INTERRUPT_FIXTURE_BYTES = 24 * 1024 * 1024
+INTERRUPT_ATTEMPTS = 5
+INTERRUPT_POLL_S = 0.001
 
 
 # --------------------------------------------------------------------------
@@ -119,65 +155,44 @@ EXTERNAL_CONTENT = "rmac journey 5 fixture -- changed by another process\n"
 # --------------------------------------------------------------------------
 
 
-def discover_environment(
-    environ: dict[str, str], runtime_dir: Path
-) -> dict[str, str]:
-    """Same contract as run-journey-launch.py's helper of the same name."""
-
-    additions: dict[str, str] = {}
-    if "XDG_RUNTIME_DIR" not in environ:
-        additions["XDG_RUNTIME_DIR"] = str(runtime_dir)
-    if "NIRI_SOCKET" not in environ:
-        sockets = sorted(runtime_dir.glob("niri*.sock"))
-        if not sockets:
-            raise JourneyError("no niri IPC socket found in the runtime directory")
-        additions["NIRI_SOCKET"] = str(sockets[0])
-    if "WAYLAND_DISPLAY" not in environ:
-        displays = sorted(
-            entry.name
-            for entry in runtime_dir.glob("wayland-*")
-            if not entry.name.endswith(".lock")
-        )
-        if not displays:
-            raise JourneyError("no Wayland display socket found in the runtime directory")
-        additions["WAYLAND_DISPLAY"] = displays[0]
-    if "DBUS_SESSION_BUS_ADDRESS" not in environ:
-        bus = runtime_dir / "bus"
-        if not bus.exists():
-            raise JourneyError("no D-Bus session bus socket found in the runtime directory")
-        additions["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={bus}"
-    return additions
-
-
-def parse_windows(stdout: str) -> list[dict[str, Any]]:
-    try:
-        windows = json.loads(stdout)
-    except json.JSONDecodeError as error:
-        raise JourneyError("niri windows output was not valid JSON") from error
-    if not isinstance(windows, list):
-        raise JourneyError("niri windows output was not a JSON array")
-    return windows
-
-
-def find_window_by_app_id(
-    windows: list[dict[str, Any]], app_id: str
-) -> Optional[dict[str, Any]]:
-    for window in windows:
-        if window.get("app_id") == app_id:
-            return window
-    return None
-
-
-def windows_by_app_id(windows: list[dict[str, Any]], app_id: str) -> list[dict[str, Any]]:
-    return [window for window in windows if window.get("app_id") == app_id]
-
-
 def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def random_folder_name() -> str:
-    return f"lulo-journey-5-{secrets.token_hex(6)}"
+def fixture_dirname(token: str) -> str:
+    """The disposable top-level folder name this script creates under
+    ~/Documents. Kept pure so the naming convention is unit-testable."""
+
+    if not token or any(character in token for character in "/\\ \t\n"):
+        raise JourneyError("invalid fixture token")
+    return f"lulo-journey-5-{token}"
+
+
+def make_sample_content(token: str) -> bytes:
+    """Deterministic, human-legible fixture content carrying the run's
+    unique token, so a stray leftover file is always traceable."""
+
+    lines = [
+        f"rmac journey 5 fixture {token}",
+        "The quick brown fox jumps over the lazy dog.",
+        "Line three intentionally left distinct.",
+        "",
+    ]
+    return "\n".join(lines).encode("utf-8")
+
+
+def make_large_content(token: str, size: int) -> bytes:
+    """A larger, still-deterministic fixture used for the SIGKILL-during-
+    save test, padded to `size` bytes with a repeating, greppable pattern."""
+
+    header = f"rmac journey 5 large fixture {token}\n".encode("utf-8")
+    pattern = (
+        b"0123456789abcdef" * 64
+    )  # 1024 bytes, cheap to repeat and easy to spot-check
+    body = bytearray(header)
+    while len(body) < size:
+        body.extend(pattern)
+    return bytes(body[:size])
 
 
 def make_step(step_id: str, passed: bool, detail: str, **extra: Any) -> dict[str, Any]:
@@ -202,8 +217,40 @@ def build_report(
     }
 
 
+def parse_windows(stdout: str) -> list[dict[str, Any]]:
+    try:
+        windows = json.loads(stdout)
+    except json.JSONDecodeError as error:
+        raise JourneyError("niri windows output was not valid JSON") from error
+    if not isinstance(windows, list):
+        raise JourneyError("niri windows output was not a JSON array")
+    return windows
+
+
+def find_window_by_app_id(
+    windows: list[dict[str, Any]], app_id: str
+) -> Optional[dict[str, Any]]:
+    for window in windows:
+        if window.get("app_id") == app_id:
+            return window
+    return None
+
+
+def temp_write_pattern(destination_name: str) -> str:
+    """The literal prefix `rmac_storage::atomic_write` uses for its sibling
+    temp file (crates/rmac-storage/src/write.rs:64): `.{name}.tmp-`. Kept as
+    a pure helper so the SIGKILL test's polling logic is unit-testable."""
+
+    return f".{destination_name}.tmp-"
+
+
+def find_orphaned_temp_files(directory_entries: list[str], destination_name: str) -> list[str]:
+    prefix = temp_write_pattern(destination_name)
+    return [entry for entry in directory_entries if entry.startswith(prefix)]
+
+
 # --------------------------------------------------------------------------
-# niri IPC (same contract as run-journey-launch.py)
+# niri IPC (mirrors run-journey-launch.py)
 # --------------------------------------------------------------------------
 
 
@@ -228,8 +275,8 @@ def niri_windows() -> list[dict[str, Any]]:
     return parse_windows(result.stdout)
 
 
-def niri_spawn(command: str) -> None:
-    result = _niri("action", "spawn", "--", *command.split(" "))
+def niri_spawn(*command: str) -> None:
+    result = _niri("action", "spawn", "--", *command)
     if result.returncode != 0:
         raise JourneyError("niri failed to spawn the target application")
 
@@ -251,7 +298,7 @@ def _wait_for(
         time.sleep(poll)
 
 
-def wait_for_window(app_id: str, timeout: float) -> Optional[dict[str, Any]]:
+def wait_for_window(app_id: str, timeout: float = WINDOW_APPEAR_TIMEOUT_S):
     return _wait_for(lambda: find_window_by_app_id(niri_windows(), app_id), timeout)
 
 
@@ -262,8 +309,12 @@ def wait_for_window_gone(window_id: int, timeout: float = CLOSE_TIMEOUT_S) -> bo
     return bool(_wait_for(gone, timeout))
 
 
+def pid_alive(pid: int) -> bool:
+    return Path(f"/proc/{pid}").exists()
+
+
 # --------------------------------------------------------------------------
-# AT-SPI helpers (same contract as run-journey-launch.py)
+# AT-SPI helpers (mirrors run-journey-launch.py)
 # --------------------------------------------------------------------------
 
 
@@ -283,7 +334,20 @@ def _descendants(node):
             child = node.getChildAtIndex(index)
         except (LookupError, RuntimeError):
             continue
-        yield from _descendants(child)
+        if child is not None:
+            yield from _descendants(child)
+
+
+def list_atspi_app_names() -> set[str]:
+    _require_pyatspi()
+    desktop = pyatspi.Registry.getDesktop(0)
+    names: set[str] = set()
+    for app in desktop:
+        try:
+            names.add(app.name)
+        except (LookupError, RuntimeError):
+            continue
+    return names
 
 
 def _atspi_snapshot(app_name: Optional[str] = None):
@@ -325,11 +389,39 @@ def find_node(
     return _wait_for(search, timeout)
 
 
+def find_any_node(
+    app_name: str,
+    node_names: list[str],
+    role: Optional[str] = None,
+    timeout: float = ATSPI_FIND_TIMEOUT_S,
+):
+    """Like find_node, but accepts several candidate names (different
+    chooser backends label the same control differently)."""
+
+    def search():
+        for node in _atspi_snapshot(app_name):
+            try:
+                name = node.name
+                if name not in node_names:
+                    continue
+                if role is not None and node.getRoleName() != role:
+                    continue
+            except (LookupError, RuntimeError):
+                continue
+            return node
+        return None
+
+    return _wait_for(search, timeout)
+
+
 def action_names(node) -> list[str]:
-    if "Action" not in node.get_interfaces():
+    try:
+        if "Action" not in node.get_interfaces():
+            return []
+        actions = node.queryAction()
+        return [actions.getName(index) for index in range(actions.nActions)]
+    except (LookupError, RuntimeError):
         return []
-    actions = node.queryAction()
-    return [actions.getName(index) for index in range(actions.nActions)]
 
 
 def click(node) -> bool:
@@ -340,21 +432,20 @@ def click(node) -> bool:
     return bool(actions.doAction(names.index("click")))
 
 
-def app_present(app_name: str) -> bool:
-    return any(True for _ in _atspi_snapshot(app_name))
-
-
-def can_edit_text(node) -> tuple[bool, str]:
-    """Probe the *real* Text/EditableText behaviour of an AT-SPI node,
-    rather than trusting `get_interfaces()` (which this script has seen
-    omit interfaces that the object still advertises structurally). Returns
-    (can_edit, evidence)."""
-
+def has_editable_text(node) -> bool:
     try:
         node.queryEditableText()
-    except Exception as error:  # noqa: BLE001 - the live bridge can raise almost anything
-        return False, f"queryEditableText() raised: {error!r}"
-    return True, "queryEditableText() succeeded"
+        return True
+    except (LookupError, RuntimeError, NotImplementedError):
+        return False
+
+
+def has_text_interface(node) -> bool:
+    try:
+        node.queryText()
+        return True
+    except (LookupError, RuntimeError, NotImplementedError):
+        return False
 
 
 # --------------------------------------------------------------------------
@@ -362,118 +453,156 @@ def can_edit_text(node) -> tuple[bool, str]:
 # --------------------------------------------------------------------------
 
 
-def check_logged_in() -> dict[str, Any]:
+def launch_editor(path: Optional[Path] = None) -> tuple[dict[str, Any], Optional[dict[str, Any]]]:
+    """Launch a fresh rmac-text-editor window, optionally with a path given
+    directly on the command line (the same thing a real double-click on the
+    file, or `Exec=%F`, does -- not a synthetic shortcut)."""
+
+    command = [TEXT_EDITOR["exec"]] + ([str(path)] if path is not None else [])
     try:
-        listing = subprocess.run(
-            ["loginctl", "list-sessions", "--no-legend"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=NIRI_TIMEOUT_S,
-        )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        return make_step("logged_in", False, f"loginctl was unavailable: {error}")
-    if listing.returncode != 0:
-        return make_step("logged_in", False, "loginctl list-sessions failed")
-    session_ids = [line.split()[0] for line in listing.stdout.splitlines() if line.split()]
-    for session_id in session_ids:
-        show = subprocess.run(
-            [
-                "loginctl",
-                "show-session",
-                session_id,
-                "--property=Type",
-                "--property=Class",
-                "--property=State",
-                "--property=Remote",
-                "--no-pager",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=NIRI_TIMEOUT_S,
-        )
-        if show.returncode != 0:
-            continue
-        properties = dict(
-            line.split("=", 1) for line in show.stdout.splitlines() if "=" in line
-        )
-        if (
-            properties.get("Type") == "wayland"
-            and properties.get("Class") == "user"
-            and properties.get("State") == "active"
-            and properties.get("Remote") == "no"
-        ):
-            return make_step("logged_in", True, "an active local rmac graphical session was found")
-    return make_step(
-        "logged_in", False, "no active local graphical (wayland/user) session was found"
-    )
+        niri_spawn(*command)
+    except JourneyError as error:
+        return make_step("launch", False, str(error)), None
+    window = wait_for_window(TEXT_EDITOR["app_id"])
+    if window is None:
+        return make_step("launch", False, "no Text Editor window appeared"), None
+    return make_step("launch", True, "Text Editor window appeared"), window
 
 
-def quit_app(display_name: str, window: dict[str, Any], timeout: float = CLOSE_TIMEOUT_S) -> bool:
-    """Close a first-party rmac app the accessible way: its exported "App"
-    menu's "Quit {display_name}" item (crates/rmac-app-menu), the same
-    pattern run-journey-launch.py's quit_app uses. Falls back to a plain
-    niri close if the menu path is unavailable, so cleanup never hangs."""
+def open_file_menu_item(item_name: str, timeout: float = ATSPI_FIND_TIMEOUT_S) -> bool:
+    """Click the top bar's File menu, then the named item within it. Both
+    are real AT-SPI `button`/`menu item` nodes with a `click` action
+    (confirmed live) -- the same mechanism run-journey-launch.py uses for
+    the app menu's Quit item."""
 
-    menu_button = find_node("rmac-top-bar", f"{display_name} menu", role="button", timeout=2.0)
-    if menu_button is not None and "click" in action_names(menu_button):
-        click(menu_button)
-        quit_item = find_node("rmac-top-bar", f"Quit {display_name}", timeout=2.0)
-        if quit_item is not None and "click" in action_names(quit_item):
-            click(quit_item)
-            if wait_for_window_gone(window["id"], timeout):
-                return True
-    niri_close_window(window["id"])
-    return wait_for_window_gone(window["id"], timeout)
-
-
-def open_file_menu() -> dict[str, Any]:
-    button = find_node("rmac-top-bar", FILE_MENU_BUTTON, role="button")
-    if button is None or "click" not in action_names(button):
-        return make_step(
-            "open_file_menu",
-            False,
-            "Text Editor's File menu was not found (or not clickable) over AT-SPI",
-        )
-    click(button)
-    return make_step("open_file_menu", True, "opened the File menu via AT-SPI")
-
-
-def click_menu_item(step_id: str, label: str) -> dict[str, Any]:
-    item = find_node("rmac-top-bar", label, timeout=2.0)
+    menu_button = find_node("rmac-top-bar", "File menu", role="button", timeout=timeout)
+    if menu_button is None or "click" not in action_names(menu_button):
+        return False
+    click(menu_button)
+    item = find_node("rmac-top-bar", item_name, role="menu item", timeout=2.0)
     if item is None or "click" not in action_names(item):
-        return make_step(
-            step_id, False, f"menu item {label!r} was not found (or not clickable) over AT-SPI"
-        )
+        return False
     click(item)
-    return make_step(step_id, True, f"activated {label!r} via AT-SPI")
+    return True
 
 
-def attempt_portal_dialog(step_id: str, app_id: str, atspi_app_name: str) -> dict[str, Any]:
-    """Wait for the portal's panel window; report exactly what happened."""
+def wait_for_chooser_app(
+    baseline_apps: set[str], timeout: float = CHOOSER_APPEAR_TIMEOUT_S
+) -> Optional[str]:
+    """Wait for a new AT-SPI application (the portal's chooser, whichever
+    backend answered) to appear beyond `baseline_apps`."""
 
-    window = wait_for_window(app_id, PORTAL_WINDOW_TIMEOUT_S)
-    if window is not None:
+    def find_new() -> Optional[str]:
+        return next(iter(list_atspi_app_names() - baseline_apps), None)
+
+    return _wait_for(find_new, timeout)
+
+
+def drive_chooser_to_row(
+    app_name: str,
+    place_name: Optional[str],
+    row_name: str,
+    confirm_names: list[str],
+) -> tuple[bool, str]:
+    """Drive an already-located chooser application generically: optionally
+    click a sidebar/places row by name, then click a file/folder row by
+    name, then click a confirm button if one remains. Returns (succeeded,
+    detail). Never types -- every step is a `click`/`activate` action on a
+    node found by exact name match, so this works against either
+    rmac-file-chooser or a GTK/GNOME fallback without caring which answered."""
+
+    if place_name is not None:
+        place = find_any_node(app_name, [place_name], timeout=CHOOSER_NAV_TIMEOUT_S)
+        if place is not None and "click" in action_names(place):
+            click(place)
+
+    row = find_any_node(app_name, [row_name], timeout=CHOOSER_NAV_TIMEOUT_S)
+    if row is None:
+        return False, f"{app_name!r} chooser: no row named {row_name!r} was found"
+    row_actions = action_names(row)
+    activated = False
+    for candidate in ("activate", "open", "click"):
+        if candidate in row_actions:
+            row.queryAction().doAction(row_actions.index(candidate))
+            activated = True
+            break
+    if not activated:
+        return False, f"{app_name!r} chooser: row {row_name!r} has no invokable action"
+
+    # A single activation opens a folder or (in most choosers) both selects
+    # and confirms a file. If a confirm/replace button is still present
+    # shortly after, click it too -- this covers dialogs where the row only
+    # selects.
+    confirm = find_any_node(app_name, confirm_names, timeout=1.5)
+    if confirm is not None and "click" in action_names(confirm):
+        click(confirm)
+
+    return True, f"drove the {app_name!r} chooser to {row_name!r}"
+
+
+def attempt_edit(app_name: str) -> dict[str, Any]:
+    """The honest check for the two documented gaps: no entry in the window
+    exposes Text/EditableText, so no AT-SPI action can modify the buffer."""
+
+    editable_found = []
+    for node in _atspi_snapshot(app_name):
+        try:
+            if node.getRoleName() != "entry":
+                continue
+        except (LookupError, RuntimeError):
+            continue
+        if has_editable_text(node) or has_text_interface(node):
+            editable_found.append(node)
+    if editable_found:
         return make_step(
-            step_id, True, "the portal panel window appeared", window_appeared=True
+            "edit_content",
+            False,
+            "an editable entry was found; this script does not yet drive it "
+            "(unexpected -- previous runs found no Text/EditableText anywhere "
+            "in this window)",
         )
-    present = app_present(atspi_app_name)
     return make_step(
-        step_id,
+        "edit_content",
         False,
-        "no portal panel window appeared within "
-        f"{PORTAL_WINDOW_TIMEOUT_S:.0f}s (rmac-file-chooser AT-SPI app present={present}); "
-        "rmac-file-chooser.service is likely not registered / rmac-portals.conf has no "
-        "FileChooser override on this host (see ADR 0012)",
-        window_appeared=False,
+        "no entry in the Text Editor window exposes AT-SPI Text or "
+        "EditableText, and the encoding/line-ending picker "
+        "(crates/text-editor/src/view/render/chrome.rs:80-127) has a 'click' "
+        "action but invoking it over AT-SPI never opens its dropdown menu -- "
+        "there is no accessible way to change document content or its saved "
+        "format without a keyboard injector, which is not installed on the "
+        "reference laptop (same upstream accesskit_unix EditableText gap "
+        "run-journey-launch.py documents for Spotlight)",
     )
 
 
-def cancel_portal_dialog(atspi_app_name: str) -> None:
-    button = find_node(atspi_app_name, "Cancel", role="button", timeout=2.0)
-    if button is not None and "click" in action_names(button):
-        click(button)
+def wait_for_conflict_banner(app_name: str, timeout: float = CONFLICT_DETECT_TIMEOUT_S):
+    return find_node(app_name, "Review…", role="button", timeout=timeout)
+
+
+def quit_editor(window: dict[str, Any]) -> dict[str, Any]:
+    """Close through the app's own top-bar Quit menu item, mirroring
+    run-journey-launch.py's quit_app."""
+
+    menu_button = find_node("rmac-top-bar", "Text Editor menu", role="button", timeout=3.0)
+    if menu_button is None or "click" not in action_names(menu_button):
+        niri_close_window(window["id"])
+        return make_step(
+            "close",
+            wait_for_window_gone(window["id"]),
+            "Text Editor menu was not found over AT-SPI; closed via niri instead",
+        )
+    click(menu_button)
+    quit_item = find_node("rmac-top-bar", "Quit Text Editor", timeout=2.0)
+    if quit_item is None or "click" not in action_names(quit_item):
+        niri_close_window(window["id"])
+        return make_step(
+            "close",
+            wait_for_window_gone(window["id"]),
+            "Quit Text Editor menu item was not found over AT-SPI; closed via niri instead",
+        )
+    click(quit_item)
+    gone = wait_for_window_gone(window["id"])
+    return make_step("close", gone, "window closed" if gone else "window did not close")
 
 
 # --------------------------------------------------------------------------
@@ -481,262 +610,353 @@ def cancel_portal_dialog(atspi_app_name: str) -> None:
 # --------------------------------------------------------------------------
 
 
-def run_journey(keep_open: bool) -> dict[str, Any]:
+def run_journey(base_dir: Path, token: str, skip_interrupt: bool) -> dict[str, Any]:
     steps: list[dict[str, Any]] = []
     gaps: list[dict[str, str]] = []
     started_at_unix_ms = int(time.time() * 1000)
 
-    steps.append(check_logged_in())
+    fixture_root = base_dir / fixture_dirname(token)
+    original_dir = fixture_root / "original"
+    saved_as_dir = fixture_root / "saved-as"
+    conflict_dir = fixture_root / "conflict"
+    large_dir = fixture_root / "large"
+    for directory in (original_dir, saved_as_dir, conflict_dir, large_dir):
+        directory.mkdir(parents=True, exist_ok=True)
 
-    home = Path.home()
-    folder = home / "Documents" / random_folder_name()
-    test_path = folder / "journey5.txt"
-    editor_window: Optional[dict[str, Any]] = None
+    original_content = make_sample_content(token)
+    original_path = original_dir / "sample.txt"
+    original_path.write_bytes(original_content)
+
+    conflict_content = make_sample_content(token + "-conflict")
+    conflict_path = conflict_dir / "watched.txt"
+    conflict_path.write_bytes(conflict_content)
+
+    windows_opened: list[dict[str, Any]] = []
 
     try:
-        folder.mkdir(parents=True, exist_ok=False)
-        test_path.write_bytes(INITIAL_CONTENT.encode("utf-8"))
-        original_hash = sha256_hex(INITIAL_CONTENT.encode("utf-8"))
-        steps.append(
-            make_step("create_test_file", True, "created a disposable fixture file")
-        )
-    except OSError as error:
-        steps.append(make_step("create_test_file", False, f"could not create the fixture: {error}"))
-        return build_report(steps, gaps, started_at_unix_ms)
+        # --- Open, via the real portal UI, falling back to a direct path ---
+        launch_step, window = launch_editor()
+        steps.append(launch_step)
+        if window is None:
+            return build_report(steps, gaps, started_at_unix_ms)
+        windows_opened.append(window)
 
-    try:
-        # Launch a blank Text Editor window; journey 1 already covers
-        # launching apps via the Dock/Spotlight, so this step exists only to
-        # get a window whose File menu can drive the real portal check.
-        niri_spawn(TEXT_EDITOR["exec"])
-        editor_window = wait_for_window(TEXT_EDITOR["app_id"], WINDOW_APPEAR_TIMEOUT_S)
+        baseline_apps = list_atspi_app_names()
+        opened_via_ui = open_file_menu_item("Open…")
+        ok = False
+        detail = "File menu > Open… did not open"
+        if opened_via_ui:
+            chooser_app = wait_for_chooser_app(baseline_apps)
+            if chooser_app is None:
+                detail = "no new AT-SPI application appeared for the file chooser"
+            else:
+                ok, detail = drive_chooser_to_row(
+                    chooser_app,
+                    place_name="Documents",
+                    row_name=original_dir.name,
+                    confirm_names=["Open", "_Open", "Select"],
+                )
+                # Descending into the fixture folder is only half the job;
+                # find and activate the file itself, in the same chooser.
+                if ok:
+                    ok, detail = drive_chooser_to_row(
+                        chooser_app,
+                        place_name=None,
+                        row_name=original_path.name,
+                        confirm_names=["Open", "_Open", "Select"],
+                    )
+
         steps.append(
             make_step(
-                "launch_editor",
-                editor_window is not None,
-                "Text Editor window appeared" if editor_window else "no Text Editor window appeared",
+                "open_via_portal",
+                ok,
+                detail if not ok else "opened the fixture file through the portal dialog",
             )
         )
-        if editor_window is None:
-            return build_report(steps, gaps, started_at_unix_ms)
-
-        # --- Open through the portal -------------------------------------------------
-        steps.append(open_file_menu())
-        steps.append(click_menu_item("click_open_item", OPEN_ITEM))
-        open_step = attempt_portal_dialog("open_via_portal", FILE_CHOOSER_OPEN_APP_ID, "rmac-file-chooser")
-        steps.append(open_step)
-        opened_via_portal = bool(open_step.get("window_appeared"))
-        if opened_via_portal:
-            # Best-effort real interaction: navigate to Documents, select the
-            # fixture by name, and accept. Left best-effort deliberately --
-            # if any element isn't found the failure is captured below rather
-            # than raised, since the panel's exact live shape is unverified
-            # while the backend is undeployed on the reference laptop.
-            try:
-                places = find_node("rmac-file-chooser", "Documents", timeout=2.0)
-                if places is not None and "click" in action_names(places):
-                    click(places)
-                row = find_node("rmac-file-chooser", test_path.name, timeout=3.0)
-                if row is not None and "click" in action_names(row):
-                    click(row)
-                accept = find_node("rmac-file-chooser", "Open", role="button", timeout=2.0)
-                if accept is not None and "click" in action_names(accept):
-                    click(accept)
-            except JourneyError:
-                pass
-        else:
+        if not ok:
             gaps.append(
                 {
-                    "surface": "file-chooser",
+                    "surface": "file-chooser-portal",
                     "issue": (
-                        "the portal Open dialog (crates/rmac-file-chooser, ADR 0012) did "
-                        "not appear on this host; falling back to opening the fixture "
-                        "directly so the rest of the journey can still be measured"
+                        "the Open dialog could not be driven over AT-SPI today: "
+                        + detail
+                        + "; falling back to `rmac-text-editor <path>` (the same "
+                        "command a real double-click runs) to keep measuring the "
+                        "rest of the journey"
                     ),
                 }
             )
-            niri_close_window(editor_window["id"])
-            wait_for_window_gone(editor_window["id"], CLOSE_TIMEOUT_S)
-            niri_spawn(f"{TEXT_EDITOR['exec']} {test_path}")
-            editor_window = wait_for_window(TEXT_EDITOR["app_id"], WINDOW_APPEAR_TIMEOUT_S)
+            quit_editor(window)
+            windows_opened.remove(window)
+            fallback_step, window = launch_editor(original_path)
             steps.append(
                 make_step(
-                    "fallback_open",
-                    editor_window is not None,
-                    "opened the fixture with a direct launch (same installed command "
-                    "the portal would ultimately hand off to)",
-                    method="fallback_spawn",
+                    "open_fallback_spawn",
+                    fallback_step["passed"],
+                    "opened the fixture file directly (fallback_spawn)",
                 )
             )
-            if editor_window is None:
+            if window is None:
                 return build_report(steps, gaps, started_at_unix_ms)
+            windows_opened.append(window)
 
-        # --- Content integrity after opening -------------------------------------------
-        after_open_hash = sha256_hex(test_path.read_bytes())
+        # --- Edit (honest gap check) ---
+        steps.append(attempt_edit(TEXT_EDITOR["atspi_name"]))
+        gaps.append(
+            {
+                "surface": "text-editor-document",
+                "issue": (
+                    "no AT-SPI action can modify document content or saved "
+                    "format in this build (no Text/EditableText anywhere in "
+                    "the window; the encoding/line-ending picker has a "
+                    "'click' action but it never opens its dropdown menu "
+                    "over AT-SPI) -- a keyboard injector would be required "
+                    "and none is installed on the reference laptop"
+                ),
+            }
+        )
+
+        # --- Save with no changes must be a true no-op ---
+        saved_no_change = open_file_menu_item("Save")
+        time.sleep(0.5)
+        unchanged = original_path.read_bytes() == original_content
         steps.append(
             make_step(
-                "content_intact_after_open",
-                after_open_hash == original_hash,
-                "on-disk content is unchanged after opening"
-                if after_open_hash == original_hash
-                else "on-disk content changed merely by opening the document",
+                "save_without_changes_preserves_content",
+                saved_no_change and unchanged,
+                "Save left the file byte-identical"
+                if unchanged
+                else "the file changed even though the buffer was not dirty",
             )
         )
 
-        # --- Edit: requires a keyboard/pointer injector this host doesn't have --------
-        entry = find_node("rmac-text-editor", "", role="entry", timeout=2.0)
-        can_edit, evidence = (False, "the document body entry was not found over AT-SPI")
-        if entry is not None:
-            can_edit, evidence = can_edit_text(entry)
-        steps.append(make_step("edit_content", can_edit, evidence))
-        if not can_edit:
+        # --- Save As, to a sibling folder, through the portal ---
+        baseline_apps = list_atspi_app_names()
+        save_as_clicked = open_file_menu_item("Save As…")
+        new_path = saved_as_dir / original_path.name
+        save_as_ok = False
+        save_as_detail = "File menu > Save As… did not open"
+        if save_as_clicked:
+            chooser_app = wait_for_chooser_app(baseline_apps)
+            if chooser_app is None:
+                save_as_detail = "no new AT-SPI application appeared for the Save As chooser"
+            else:
+                save_as_ok, save_as_detail = drive_chooser_to_row(
+                    chooser_app,
+                    place_name=original_dir.name,
+                    row_name=saved_as_dir.name,
+                    confirm_names=["Save", "_Save", "Replace"],
+                )
+        steps.append(
+            make_step(
+                "save_as_via_portal",
+                save_as_ok,
+                save_as_detail if not save_as_ok else "Save As navigated to the sibling folder",
+            )
+        )
+        if not save_as_ok:
             gaps.append(
                 {
-                    "surface": "text-editor-body",
-                    "issue": (
-                        "the document body exposes no AT-SPI EditableText (and no Text "
-                        f"interface either): {evidence}. No keyboard or pointer injector "
-                        "is installed on the reference laptop, so no assistive technology "
-                        "path can insert text; the buffer can never become dirty, so "
-                        "File > Save is a guaranteed no-op "
-                        "(crates/text-editor/src/view/saving.rs:37-42) and the "
-                        "atomic-write / SIGKILL-during-save checks below cannot be "
-                        "exercised as a real write on this build"
-                    ),
-                }
-            )
-
-        # --- Save (real click; a no-op if the buffer could not be dirtied) ------------
-        steps.append(open_file_menu())
-        steps.append(click_menu_item("click_save_item", SAVE_ITEM))
-        time.sleep(0.3)
-        after_save_hash = sha256_hex(test_path.read_bytes())
-        steps.append(
-            make_step(
-                "content_intact_after_save",
-                after_save_hash == original_hash,
-                "on-disk content matches the original after Save"
-                if after_save_hash == original_hash
-                else "on-disk content diverged from the original after Save",
-            )
-        )
-
-        # --- SIGKILL-during-save: only meaningful once a real write can happen --------
-        if can_edit:
-            steps.append(
-                make_step(
-                    "sigkill_during_save",
-                    False,
-                    "not implemented: reachable now that the buffer can be dirtied, "
-                    "but this script's fallback path never exercises it",
-                )
-            )
-        else:
-            steps.append(
-                make_step(
-                    "sigkill_during_save",
-                    False,
-                    "not exercised: no assistive-technology path can dirty the buffer "
-                    "on this build (see the edit_content gap above), so there is no "
-                    "real write to interrupt",
-                )
-            )
-
-        # --- External change while open: fully real, needs no typing ------------------
-        test_path.write_bytes(EXTERNAL_CONTENT.encode("utf-8"))
-        external_hash = sha256_hex(EXTERNAL_CONTENT.encode("utf-8"))
-        review_button = find_node(
-            "rmac-text-editor", "Review…", role="button", timeout=BANNER_TIMEOUT_S
-        )
-        steps.append(
-            make_step(
-                "external_change_detected",
-                review_button is not None,
-                "the external-change banner appeared"
-                if review_button is not None
-                else "no external-change banner appeared after the file changed on disk",
-            )
-        )
-        if review_button is not None and "click" in action_names(review_button):
-            click(review_button)
-            cancel_button = find_node("rmac-text-editor", "Cancel", role="button", timeout=2.0)
-            reviewed = cancel_button is not None and "click" in action_names(cancel_button)
-            if reviewed:
-                click(cancel_button)
-            steps.append(
-                make_step(
-                    "external_change_reviewed",
-                    reviewed,
-                    "opened the conflict dialog and dismissed it with Cancel"
-                    if reviewed
-                    else "the conflict dialog's Cancel button was not found over AT-SPI",
-                )
-            )
-        else:
-            steps.append(
-                make_step(
-                    "external_change_reviewed",
-                    False,
-                    "no Review… control was available to open the conflict dialog",
-                )
-            )
-
-        after_conflict_hash = sha256_hex(test_path.read_bytes())
-        steps.append(
-            make_step(
-                "external_edit_preserved",
-                after_conflict_hash == external_hash,
-                "the externally-written content was never overwritten by Text Editor"
-                if after_conflict_hash == external_hash
-                else "Text Editor overwrote the external edit without an explicit confirmation",
-            )
-        )
-
-        # --- Save As through the portal -------------------------------------------------
-        steps.append(open_file_menu())
-        steps.append(click_menu_item("click_save_as_item", SAVE_AS_ITEM))
-        save_as_step = attempt_portal_dialog(
-            "save_as_via_portal", FILE_CHOOSER_SAVE_APP_ID, "rmac-file-chooser"
-        )
-        steps.append(save_as_step)
-        if not save_as_step["passed"]:
-            gaps.append(
-                {
-                    "surface": "file-chooser-save",
-                    "issue": (
-                        "the portal Save dialog did not appear either, for the same "
-                        "reason as Open above; Save As to a new name cannot be "
-                        "completed by assistive technology on this build (there is no "
-                        "non-portal way to choose a new destination)"
-                    ),
+                    "surface": "file-chooser-portal",
+                    "issue": "Save As could not be driven over AT-SPI today: " + save_as_detail,
                 }
             )
         else:
-            cancel_portal_dialog("rmac-file-chooser")
+            time.sleep(0.5)
+            copy_matches = new_path.exists() and new_path.read_bytes() == original_content
+            steps.append(
+                make_step(
+                    "save_as_content_matches",
+                    copy_matches,
+                    "the Save As copy is byte-identical to the original"
+                    if copy_matches
+                    else "the Save As copy is missing or differs from the original",
+                )
+            )
 
-        if keep_open:
-            return build_report(steps, gaps, started_at_unix_ms)
+        steps.append(quit_editor(window))
+        windows_opened.remove(window)
+
+        # --- External change detection, on a dedicated window/file ---
+        conflict_step, conflict_window = launch_editor(conflict_path)
+        steps.append(
+            make_step(
+                "conflict_launch",
+                conflict_step["passed"],
+                "opened the conflict fixture directly",
+            )
+        )
+        if conflict_window is not None:
+            windows_opened.append(conflict_window)
+            tampered_content = make_sample_content(token + "-tampered")
+            conflict_path.write_bytes(tampered_content)
+            review_button = wait_for_conflict_banner(TEXT_EDITOR["atspi_name"])
+            detected = review_button is not None
+            steps.append(
+                make_step(
+                    "external_change_detected",
+                    detected,
+                    "the external-change banner's Review… button appeared"
+                    if detected
+                    else "no Review… button appeared after the file was changed externally",
+                )
+            )
+            if detected:
+                click(review_button)
+                reload_button = find_node(
+                    TEXT_EDITOR["atspi_name"], "Discard & Reload", timeout=2.0
+                )
+                cancel_button = find_node(TEXT_EDITOR["atspi_name"], "Cancel", timeout=1.0)
+                conflict_dialog_shown = reload_button is not None
+                steps.append(
+                    make_step(
+                        "external_change_conflict_dialog",
+                        conflict_dialog_shown,
+                        "the Conflict alert's Discard & Reload button was found"
+                        if conflict_dialog_shown
+                        else "the Conflict alert did not appear as expected",
+                    )
+                )
+                if cancel_button is not None and "click" in action_names(cancel_button):
+                    click(cancel_button)
+                unchanged_external = conflict_path.read_bytes() == tampered_content
+                steps.append(
+                    make_step(
+                        "external_change_no_data_loss",
+                        unchanged_external,
+                        "Cancel left the external file untouched"
+                        if unchanged_external
+                        else "the external file changed after Cancel",
+                    )
+                )
+            steps.append(quit_editor(conflict_window))
+            windows_opened.remove(conflict_window)
+
+        # --- SIGKILL-during-save, best-effort ---
+        if not skip_interrupt:
+            steps.append(run_interrupted_save(large_dir, token, gaps))
+
         return build_report(steps, gaps, started_at_unix_ms)
     finally:
-        if not keep_open:
-            for window in windows_by_app_id(niri_windows(), FILE_CHOOSER_OPEN_APP_ID):
+        for window in list(windows_opened):
+            try:
                 niri_close_window(window["id"])
-            for window in windows_by_app_id(niri_windows(), FILE_CHOOSER_SAVE_APP_ID):
-                niri_close_window(window["id"])
-            if editor_window is not None:
-                remaining = wait_for_window(TEXT_EDITOR["app_id"], 0.5)
-                if remaining is not None:
-                    try:
-                        quit_app(TEXT_EDITOR["display_name"], remaining)
-                    except JourneyError:
-                        niri_close_window(remaining["id"])
+            except JourneyError:
+                pass
         try:
-            if test_path.exists():
-                test_path.unlink()
-            if folder.exists():
-                folder.rmdir()
+            import shutil
+
+            shutil.rmtree(fixture_root, ignore_errors=True)
         except OSError:
             pass
+
+
+def run_interrupted_save(
+    large_dir: Path, token: str, gaps: list[dict[str, str]]
+) -> dict[str, Any]:
+    large_content = make_large_content(token, INTERRUPT_FIXTURE_BYTES)
+    large_path = large_dir / "big.txt"
+    large_path.write_bytes(large_content)
+
+    launch_step, window = launch_editor(large_path)
+    if window is None:
+        return make_step(
+            "interrupted_save_atomic_write",
+            False,
+            "could not open the large fixture to attempt the interruption test",
+        )
+
+    try:
+        for attempt in range(1, INTERRUPT_ATTEMPTS + 1):
+            if not pid_alive(window["pid"]):
+                launch_step, window = launch_editor(large_path)
+                if window is None:
+                    break
+            saved = open_file_menu_item("Save As…")
+            if not saved:
+                continue
+            confirm = find_any_node(
+                TEXT_EDITOR["atspi_name"], ["Save", "_Save", "Replace"], timeout=2.0
+            )
+            gnome_confirm = None
+            if confirm is None:
+                # The confirm button most likely lives in the chooser
+                # application, not rmac-text-editor's own window.
+                for app_name in list_atspi_app_names():
+                    if app_name == TEXT_EDITOR["atspi_name"]:
+                        continue
+                    gnome_confirm = find_any_node(
+                        app_name, ["Save", "_Save", "Replace"], timeout=1.0
+                    )
+                    if gnome_confirm is not None:
+                        break
+            confirm = confirm or gnome_confirm
+            if confirm is None or "click" not in action_names(confirm):
+                continue
+            click(confirm)
+
+            temp_prefix = temp_write_pattern(large_path.name)
+            deadline = time.monotonic() + 2.0
+            caught = False
+            while time.monotonic() < deadline:
+                try:
+                    entries = os.listdir(large_dir)
+                except OSError:
+                    break
+                if any(entry.startswith(temp_prefix) for entry in entries):
+                    caught = True
+                    break
+                time.sleep(INTERRUPT_POLL_S)
+            if not caught:
+                continue
+
+            try:
+                os.kill(window["pid"], signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            _wait_for(lambda: not pid_alive(window["pid"]), 3.0)
+
+            for entry in os.listdir(large_dir):
+                if entry.startswith(temp_prefix):
+                    (large_dir / entry).unlink(missing_ok=True)
+
+            if not large_path.exists():
+                return make_step(
+                    "interrupted_save_atomic_write",
+                    True,
+                    f"attempt {attempt}: killed mid-write; destination absent "
+                    "(rename had not happened yet) -- no truncated file",
+                    attempts=attempt,
+                )
+            final_bytes = large_path.read_bytes()
+            intact = final_bytes == large_content
+            return make_step(
+                "interrupted_save_atomic_write",
+                intact,
+                (
+                    f"attempt {attempt}: killed mid-write; destination is complete "
+                    "and byte-identical"
+                    if intact
+                    else f"attempt {attempt}: destination exists but is truncated "
+                    "or corrupted -- an atomic-write bug"
+                ),
+                attempts=attempt,
+            )
+
+        return make_step(
+            "interrupted_save_atomic_write",
+            True,
+            f"could not catch the write in flight within {INTERRUPT_ATTEMPTS} attempts; "
+            "not conclusively exercised (best-effort per the journey brief)",
+            attempts=INTERRUPT_ATTEMPTS,
+            conclusive=False,
+        )
+    finally:
+        if pid_alive(window.get("pid", -1)):
+            try:
+                os.kill(window["pid"], signal.SIGKILL)
+            except (ProcessLookupError, KeyError):
+                pass
 
 
 def main() -> int:
@@ -748,16 +968,21 @@ def main() -> int:
         help="absolute path to write the JSON report to (also printed to stdout)",
     )
     parser.add_argument(
-        "--keep-open",
+        "--base-dir",
+        type=Path,
+        default=Path.home() / "Documents",
+        help="parent directory for the disposable fixture folder (default: ~/Documents)",
+    )
+    parser.add_argument(
+        "--skip-interrupt",
         action="store_true",
-        help="leave windows open and skip cleanup (debugging only)",
+        help="skip the best-effort SIGKILL-during-save test",
     )
     arguments = parser.parse_args()
 
+    token = secrets.token_hex(4)
     try:
-        additions = discover_environment(dict(os.environ), Path(f"/run/user/{os.getuid()}"))
-        os.environ.update(additions)
-        report = run_journey(arguments.keep_open)
+        report = run_journey(arguments.base_dir, token, arguments.skip_interrupt)
     except JourneyError as error:
         parser.exit(4, f"run-journey-textfile: {error}\n")
 
@@ -769,8 +994,7 @@ def main() -> int:
     passed = sum(1 for step in report["steps"] if step["passed"])
     total = len(report["steps"])
     print(
-        f"journey 5: {passed}/{total} steps passed; "
-        f"overall_pass={report['overall_pass']}",
+        f"journey 5: {passed}/{total} steps passed; overall_pass={report['overall_pass']}",
         file=sys.stderr,
     )
     return 0 if report["overall_pass"] else 1

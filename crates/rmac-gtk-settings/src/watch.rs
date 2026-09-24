@@ -1,10 +1,7 @@
 use std::io::Read as _;
 use std::process::{Command, Stdio};
 
-use crate::api::{
-    command_error, Error, WatchEvent, MAX_ERROR_BYTES, PROCESS_POLL_INTERVAL, SCHEMA,
-    TEXT_SCALE_KEY,
-};
+use crate::api::{command_error, Error, WatchEvent, MAX_ERROR_BYTES, SCHEMA, TEXT_SCALE_KEY};
 
 pub(crate) fn monitor_once(sender: &async_channel::Sender<WatchEvent>) -> Result<(), Error> {
     let mut child = Command::new("gsettings")
@@ -20,57 +17,33 @@ pub(crate) fn monitor_once(sender: &async_channel::Sender<WatchEvent>) -> Result
         )
     })?;
     let _ = sender.try_send(WatchEvent::Available);
-    let event_sender = sender.clone();
-    let (reader_done_tx, reader_done_rx) = std::sync::mpsc::sync_channel(1);
-    let reader = std::thread::spawn(move || {
-        let mut buffer = [0_u8; 1024];
-        loop {
-            match stdout.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(_) => {
-                    let _ = event_sender.try_send(WatchEvent::Changed);
-                }
-                Err(_) => break,
-            }
-        }
-        let _ = reader_done_tx.send(());
-    });
+    // Block on the monitor's output: each line is a change. Nothing polls,
+    // so an idle monitor costs no wake-ups. A closed receiver is noticed on
+    // the next change (or when the monitor ends) and stops the monitor.
+    let mut buffer = [0_u8; 1024];
     loop {
-        if sender.is_closed() {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = reader.join();
-            return Ok(());
-        }
-        if reader_done_rx.try_recv().is_ok() {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = reader.join();
-            return Err(Error::new(
-                "watch GTK text scaling",
-                "the gsettings monitor stream ended",
-            ));
-        }
-        match child.try_wait() {
-            Ok(Some(_)) => {
-                let _ = reader.join();
-                return Err(Error::new(
-                    "watch GTK text scaling",
-                    "the gsettings monitor process ended",
-                ));
-            }
-            Ok(None) => std::thread::sleep(PROCESS_POLL_INTERVAL),
-            Err(_) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = reader.join();
-                return Err(Error::new(
-                    "watch GTK text scaling",
-                    "the gsettings monitor could not be inspected",
-                ));
+        match stdout.read(&mut buffer) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {
+                if let Err(async_channel::TrySendError::Closed(_)) =
+                    sender.try_send(WatchEvent::Changed)
+                {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Ok(());
+                }
             }
         }
     }
+    let _ = child.kill();
+    let _ = child.wait();
+    if sender.is_closed() {
+        return Ok(());
+    }
+    Err(Error::new(
+        "watch GTK text scaling",
+        "the gsettings monitor stream ended",
+    ))
 }
 
 pub(crate) fn bounded_text(value: &str) -> String {

@@ -26,7 +26,7 @@ them something that is not true.
 
 | # | Gap | Status | Effort | Files to change |
 |---|---|---|---|---|
-| B1 | **⌘C, ⌘V, ⌘Q and the other ⌘ shortcuts don't work in Firefox or GTK apps out of the box.** Translating them (ADR 0017, `keyd`) is opt-in, needs `pkexec`, and only takes effect after logging in again. It is buried in Settings › Keyboard. Copy and paste in the browser is the first thing a Mac user tries. | Partial | S to offer it in Setup Assistant; changing the default is a product decision | `crates/setup-assistant/src/flow.rs` (add a step or a row on the Keyboard step), `crates/setup-assistant/src/services.rs`, `crates/system-settings/src/controller/input/mac_keyboard.rs` (reuse its enable path), `docs/decisions/0017-mac-keyboard.md` |
+| B1 | **⌘C, ⌘V, ⌘Q and the other ⌘ shortcuts don't work in Firefox or GTK apps out of the box.** Translating them (ADR 0017, `keyd`) is opt-in and needs `pkexec`; it was buried in Settings › Keyboard. Copy and paste in the browser is the first thing a Mac user tries. | **Fixed** `56855caa` — Setup Assistant now offers it, on by default, right after Keyboard; a cancelled password or missing keyd only turns it off and explains why | — | `crates/setup-assistant/src/{flow,mac_shortcuts,view}.rs`, reusing `rmac_keyboard::apply` (same path as `crates/system-settings/src/controller/input/mac_keyboard.rs`), `docs/decisions/0017-mac-keyboard.md` |
 | B2 | Log Out, Restart and Shut Down ended the session straight away (`niri msg action quit --skip-confirmation`, `systemctl reboot`), so apps were never asked to quit. | **Fixed** `0253d0c2` | — | `shell/bins/rmac-menubar/src/main.rs` (`quit_all_then`), `menu_model.rs` (`quit_all_progress`) |
 | B3 | Text Editor lost unsaved edits when the Dock, the menu bar, ⌘Tab's Q or log out closed its window. Only ⌘W and the red button went through the Save prompt; a close request from the compositor skipped it. | **Fixed** `1bdefcc9` | — | `crates/text-editor/src/view/lifecycle.rs` |
 | B4 | Terminal quits (from the Dock, the menu bar, ⌘Q, or log out) without asking, even while a command is running. Mac Terminal asks "Do you want to terminate running processes in this window?" | Missing | S | `crates/terminal/src/controller/lifecycle.rs`: add `window.on_window_should_close` with a running-process check (Terminal owner) |
@@ -77,8 +77,8 @@ branch.
 
 | Step | Status | Evidence |
 |---|---|---|
-| Setup Assistant on first login | Works | `crates/rmac-session/units/rmac-setup-assistant.service` (runs until `%E/rmac/setup-assistant-complete` exists); steps: Welcome, Language & Region, Keyboard, Wi-Fi, Account, Appearance, Tips, Privacy, Done (`crates/setup-assistant/src/flow.rs:7-42`) |
-| Setup Assistant offers Mac shortcuts for PC apps | Missing | See B1 |
+| Setup Assistant on first login | Works | `crates/rmac-session/units/rmac-setup-assistant.service` (runs until `%E/rmac/setup-assistant-complete` exists); steps: Welcome, Language & Region, Keyboard, Mac Shortcuts, Wi-Fi, Account, Appearance, Tips, Privacy, Done (`crates/setup-assistant/src/flow.rs`) |
+| Setup Assistant offers Mac shortcuts for PC apps | **Fixed** | See B1 |
 | Setup Assistant creates the account | Partial | Only `SetRealName`/`SetIconFile` on the existing user (`services.rs:94-110`) |
 
 ### Menu bar: the Apple-menu equivalent

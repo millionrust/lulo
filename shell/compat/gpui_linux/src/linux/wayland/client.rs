@@ -570,10 +570,27 @@ fn wl_output_version(version: u32) -> u32 {
     version.clamp(WL_OUTPUT_MIN_VERSION, WL_OUTPUT_MAX_VERSION)
 }
 
+// rmac: sysexits.h's EX_UNAVAILABLE. Distinct from a normal panic's exit
+// code (101) and from the clean-shutdown exit (0) that ends this process
+// when its last window closes, so the systemd unit's Restart=on-success does
+// not treat "no compositor to connect to" as the same case it exists to
+// re-arm for, and OnFailure handling can tell the two apart.
+const RMAC_NO_COMPOSITOR_EXIT_CODE: i32 = 69;
+
 impl WaylandClient {
     pub(crate) fn new() -> Self {
         let startup_activation_token = take_startup_activation_token_from_environment();
-        let conn = Connection::connect_to_env().unwrap();
+        // rmac: connecting can fail for a completely ordinary reason -- this
+        // process respawning in the brief window after the compositor exits
+        // during logout or a session switch, before the session's units are
+        // torn down (systemd Restart=on-success re-arms the process when its
+        // last window closes, which niri exiting also looks like). That is
+        // an expected shutdown race, not a bug worth a panic and a
+        // backtrace: report it in one line and exit distinctly instead.
+        let conn = Connection::connect_to_env().unwrap_or_else(|error| {
+            eprintln!("gpui: no Wayland compositor to connect to: {error}");
+            std::process::exit(RMAC_NO_COMPOSITOR_EXIT_CODE);
+        });
 
         let (globals, event_queue) = registry_queue_init::<WaylandClientStatePtr>(&conn).unwrap();
         let qh = event_queue.handle();

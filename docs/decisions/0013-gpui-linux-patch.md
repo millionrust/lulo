@@ -16,6 +16,17 @@ in GPUI's Wayland backend (`gpui_linux`):
 2. **Kinetic scrolling.** `wl_pointer::AxisStop` is ignored and every scroll
    is reported as `TouchPhase::Moved`, so a touchpad scroll stops dead when
    the fingers lift. macOS continues with momentum.
+3. **Panicking when no compositor is reachable.** `WaylandClient::new()`
+   unwraps `Connection::connect_to_env()`. During logout or a niri session
+   switch, a shell surface's `Restart=on-success` unit can respawn the
+   process in the brief window after niri exits but before the session's
+   units are stopped; the new instance's connect then fails with
+   `ConnectError::NoCompositor` and panics with a backtrace, which is what
+   showed up as a crash for `rmac-quick-settings`, `rmac-launcher`,
+   `rmac-app-drawer`, and `rmac-notification-center-panel`. The panic itself
+   is a symptom worth silencing even though the real fix is closing the
+   restart race in the session's units (`rmac-session.target` now binds
+   directly to `niri.service`, see `crates/rmac-session/units`).
 
 ## Decision
 

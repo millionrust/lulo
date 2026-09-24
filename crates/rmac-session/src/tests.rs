@@ -585,6 +585,24 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     assert!(default_policy.contains("\"suspend_after_seconds\": null"));
 }
 
+/// Regression coverage for a real incident: rmac-quick-settings,
+/// rmac-launcher, rmac-app-drawer, and rmac-notification-center-panel all
+/// panicked with `NoCompositor` after being respawned (their units'
+/// `Restart=on-success`) in the brief window between niri exiting during
+/// logout/session-switch and the session's own `stop_rmac` shell-script
+/// cleanup catching up. `PartOf=rmac-session.target` on those component
+/// units only stops them once something actually stops
+/// `rmac-session.target` -- it does not itself react to niri exiting.
+/// Binding the session target directly to `niri.service` closes that race:
+/// systemd stops the whole `PartOf=` tree the moment niri's own unit
+/// deactivates, without waiting on the wrapper script's `wait` loop.
+#[test]
+fn the_session_target_stops_the_instant_niri_does_not_only_when_told_to() {
+    let normal_target = include_str!("../units/rmac-session.target");
+    assert!(normal_target.contains("BindsTo=graphical-session.target niri.service"));
+    assert!(normal_target.contains("After=graphical-session-pre.target niri.service"));
+}
+
 #[test]
 fn apps_and_spotlight_have_exactly_one_activation_owner_each() {
     let launcher = include_str!("../../launcher-app/src/service.rs");

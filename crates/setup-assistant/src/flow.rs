@@ -8,6 +8,7 @@ pub enum Step {
     Welcome,
     LanguageRegion,
     Keyboard,
+    MacShortcuts,
     WiFi,
     Account,
     Appearance,
@@ -17,10 +18,11 @@ pub enum Step {
 }
 
 impl Step {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Welcome,
         Self::LanguageRegion,
         Self::Keyboard,
+        Self::MacShortcuts,
         Self::WiFi,
         Self::Account,
         Self::Appearance,
@@ -34,6 +36,7 @@ impl Step {
             Self::Welcome => "Welcome",
             Self::LanguageRegion => "Language & Region",
             Self::Keyboard => "Keyboard",
+            Self::MacShortcuts => "Mac Shortcuts",
             Self::WiFi => "Choose a Wi-Fi Network",
             Self::Account => "Your Account",
             Self::Appearance => "Choose Your Look",
@@ -48,7 +51,12 @@ impl Step {
     pub fn can_set_up_later(self) -> bool {
         matches!(
             self,
-            Self::LanguageRegion | Self::Keyboard | Self::WiFi | Self::Account | Self::Appearance
+            Self::LanguageRegion
+                | Self::Keyboard
+                | Self::MacShortcuts
+                | Self::WiFi
+                | Self::Account
+                | Self::Appearance
         )
     }
 }

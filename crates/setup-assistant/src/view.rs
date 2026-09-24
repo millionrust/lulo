@@ -13,7 +13,7 @@ use gpui::{
 use rmac_setup_assistant::flow::{Availability, Completion, Event, Flow, Outcome, Step};
 use rmac_setup_assistant::names::{self, LocaleChoice};
 use rmac_setup_assistant::services::{self, Account};
-use rmac_setup_assistant::{greeting, marker};
+use rmac_setup_assistant::{greeting, mac_shortcuts, marker};
 use rmac_ui::{mac, text_px, Button, InputState, List, ListRow, StyledExt as _, TextField, Toggle};
 
 /// Page metrics (design-lab/setup-assistant.html header; all S).
@@ -61,6 +61,15 @@ pub struct SetupView {
     region: Option<String>,
 
     keyboard: Option<rmac_keyboard::Status>,
+    /// The Mac Shortcuts page's toggle: defaults on, the user can untick it.
+    /// Applying the choice happens on Continue, through the same
+    /// `rmac_keyboard::apply` System Settings › Keyboard calls.
+    mac_shortcuts_enabled: bool,
+    /// Set after Continue could not turn Mac shortcuts on (the admin
+    /// password was cancelled or denied, or the helper otherwise failed).
+    /// Setup keeps going regardless; this only explains why the switch is
+    /// off.
+    mac_shortcuts_note: Option<SharedString>,
 
     wifi: Option<rmac_network::WifiSnapshot>,
     wifi_selected: Option<rmac_network::WifiNetworkId>,
@@ -117,6 +126,8 @@ impl SetupView {
             language: None,
             region: None,
             keyboard: None,
+            mac_shortcuts_enabled: true,
+            mac_shortcuts_note: None,
             wifi,
             wifi_selected: None,
             wifi_password,
@@ -265,6 +276,7 @@ impl SetupView {
                     services::apply_locale(&snapshot, &language, &region).map(|_| ())
                 });
             }
+            Step::MacShortcuts => self.apply_mac_shortcuts_choice(cx),
             Step::WiFi => self.join_selected_wifi(cx),
             Step::Account => {
                 let name = self.real_name.read(cx).value().trim().to_owned();
@@ -374,6 +386,49 @@ impl SetupView {
                     Err(error) => view.error = Some(error.to_string().into()),
                 }
                 cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Continue on the Mac Shortcuts page: apply the toggle's choice through
+    /// the same `rmac_keyboard::apply` System Settings › Keyboard calls
+    /// (`docs/decisions/0017-mac-keyboard.md`), then move on regardless of
+    /// the result. A cancelled or denied password, or keyd being
+    /// unavailable, never blocks setup — it only turns the choice off and
+    /// says so.
+    fn apply_mac_shortcuts_choice(&mut self, cx: &mut Context<Self>) {
+        let Some(status) = self.keyboard.clone() else {
+            return self.handle(Event::Continue, cx);
+        };
+        let Some(target) = mac_shortcuts::target(&status, self.mac_shortcuts_enabled) else {
+            return self.handle(Event::Continue, cx);
+        };
+        self.busy = true;
+        self.mac_shortcuts_note = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_keyboard::apply(&target) })
+                .await;
+            let _ = this.update(cx, |view, cx| {
+                view.busy = false;
+                match result {
+                    Ok(status) => {
+                        view.keyboard = Some(status);
+                        view.handle(Event::Continue, cx);
+                    }
+                    Err(error) => {
+                        // Don't block setup over an optional convenience:
+                        // turn the choice off, explain why, and let the next
+                        // Continue move on (it will find nothing left to
+                        // change).
+                        view.mac_shortcuts_enabled = false;
+                        view.mac_shortcuts_note = Some(mac_shortcuts::declined_note(&error).into());
+                        cx.notify();
+                    }
+                }
             });
         })
         .detach();
@@ -586,45 +641,19 @@ impl SetupView {
                         .child(keycap(alt_role.0, alt_role.1, "Alt", swap))
                         .child(keycap("", "", "", false).w(px(190.0))),
                 );
-                let can_use_keyd = status.keyd_installed
-                    && status.helper_installed
-                    && status.foreign_keyd_configs.is_empty();
-                let shortcuts = status.state.shortcuts_in_all_apps;
-                body = body.child(
-                    well()
-                        .child(value_row("Input source", source))
-                        .child(switch_row(
-                            "setup-swap",
-                            "⌘ Command next to the space bar",
-                            "Alt works as ⌘ Command and the Windows key as ⌥ Option",
-                            swap,
-                            !self.busy,
-                            cx.listener(|view, on: &bool, _, cx| {
-                                let on = *on;
-                                view.set_keyboard(|t| t.layout.swap_command_option = on, cx);
-                            }),
-                        ))
-                        .child(switch_row(
-                            "setup-shortcuts",
-                            "Use Mac shortcuts in all apps",
-                            "⌘C, ⌘V and the other ⌘ shortcuts work in apps made for PC keyboards",
-                            shortcuts,
-                            !self.busy && (can_use_keyd || shortcuts),
-                            cx.listener(|view, on: &bool, _, cx| {
-                                let on = *on;
-                                view.set_keyboard(|t| t.shortcuts_in_all_apps = on, cx);
-                            }),
-                        )),
-                );
-                if shortcuts && !status.relay_available {
-                    body = body.child(note(
-                        "Mac shortcuts in all apps aren't running. Turn them off and on again in System Settings › Keyboard.",
-                    ));
-                } else if !status.keyd_installed && !shortcuts {
-                    body = body.child(note(
-                        "Mac shortcuts in all apps need the keyd package; you can turn them on later in System Settings › Keyboard.",
-                    ));
-                }
+                body = body.child(well().child(value_row("Input source", source)).child(
+                    switch_row(
+                        "setup-swap",
+                        "⌘ Command next to the space bar",
+                        "Alt works as ⌘ Command and the Windows key as ⌥ Option",
+                        swap,
+                        !self.busy,
+                        cx.listener(|view, on: &bool, _, cx| {
+                            let on = *on;
+                            view.set_keyboard(|t| t.layout.swap_command_option = on, cx);
+                        }),
+                    ),
+                ));
             }
             None => {
                 body = body.child(well().child(value_row("Input source", source)));
@@ -633,7 +662,51 @@ impl SetupView {
         self.page(
             "setup/keyboard.svg",
             rgb(GREY_TILE).into(),
-            "Lulo OS works like a Mac. On a PC keyboard it can put ⌘ Command next to the space bar and make ⌘C and ⌘V work in every app.",
+            "Lulo OS works like a Mac. On a PC keyboard it can put ⌘ Command next to the space bar.",
+        )
+        .child(body)
+    }
+
+    fn render_mac_shortcuts(&self, cx: &mut Context<Self>) -> Div {
+        let mut body = self.content().child(
+            div()
+                .flex()
+                .justify_center()
+                .gap(px(28.0))
+                .mb(px(20.0))
+                .child(key_mapping("Ctrl", "⌃", "Control"))
+                .child(key_mapping("Alt", "⌥", "Option"))
+                .child(key_mapping("Win", "⌘", "Command")),
+        );
+        match &self.keyboard {
+            Some(status) => {
+                let reason = mac_shortcuts::unavailable_reason(status);
+                let can_toggle = reason.is_none();
+                body = body.child(well().child(switch_row(
+                    "setup-mac-shortcuts",
+                    "Use Mac shortcuts in all apps",
+                    "⌘C, ⌘V and the other ⌘ shortcuts work in apps made for PC keyboards. \
+                     Terminals keep ⌃C for interrupting.",
+                    self.mac_shortcuts_enabled && can_toggle,
+                    !self.busy && can_toggle,
+                    cx.listener(|view, on: &bool, _, cx| {
+                        view.mac_shortcuts_enabled = *on;
+                        view.mac_shortcuts_note = None;
+                        cx.notify();
+                    }),
+                )));
+                if let Some(reason) = reason {
+                    body = body.child(hint(reason));
+                } else if let Some(note) = &self.mac_shortcuts_note {
+                    body = body.child(hint(note.clone()));
+                }
+            }
+            None => body = body.child(note("Loading keyboard settings…")),
+        }
+        self.page(
+            "setup/keyboard.svg",
+            rgb(GREY_TILE).into(),
+            "On a PC keyboard, the key next to the space bar works as ⌘ — in every app, not just Lulo OS apps.",
         )
         .child(body)
     }
@@ -1013,6 +1086,7 @@ impl Render for SetupView {
             Step::Welcome => self.render_welcome(cx),
             Step::LanguageRegion => self.render_language(cx),
             Step::Keyboard => self.render_keyboard(cx),
+            Step::MacShortcuts => self.render_mac_shortcuts(cx),
             Step::WiFi => self.render_wifi(window, cx),
             Step::Account => self.render_account(cx),
             Step::Appearance => self.render_appearance(cx),
@@ -1084,12 +1158,18 @@ fn section_label(title: &'static str) -> Div {
 }
 
 fn note(text: &'static str) -> Div {
+    hint(text)
+}
+
+/// Like [`note`], but for text built at run time (an error's own words, a
+/// footnote that names a package).
+fn hint(text: impl Into<SharedString>) -> Div {
     div()
         .mt(px(12.0))
         .text_center()
         .text_size(text_px(12.0))
         .text_color(mac::text_secondary())
-        .child(text)
+        .child(text.into())
 }
 
 fn value_row(title: &'static str, value: String) -> Div {
@@ -1164,6 +1244,35 @@ fn keycap(glyph: &'static str, role: &'static str, pc: &'static str, command: bo
         } else {
             format!("{role} · {pc}")
         })
+}
+
+/// One PC key → Mac key pair in the Mac Shortcuts illustration (original
+/// drawing; design-lab/setup-assistant.html, Mac Shortcuts).
+fn key_mapping(pc: &'static str, mac_glyph: &'static str, mac_name: &'static str) -> Div {
+    div()
+        .v_flex()
+        .items_center()
+        .gap(px(6.0))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.0))
+                .child(keycap(pc, "", "", false))
+                .child(
+                    div()
+                        .text_size(text_px(14.0))
+                        .text_color(mac::text_secondary())
+                        .child("→"),
+                )
+                .child(keycap(mac_glyph, "", "", false)),
+        )
+        .child(
+            div()
+                .text_size(text_px(11.0))
+                .text_color(mac::text_secondary())
+                .child(mac_name),
+        )
 }
 
 fn field_label(text: &'static str) -> Div {

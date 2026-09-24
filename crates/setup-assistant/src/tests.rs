@@ -1,8 +1,10 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+use rmac_keyboard::{MacKeyboard, Status};
+
 use crate::flow::{Availability, Completion, Event, Flow, Outcome, Step};
-use crate::{greeting, marker, names};
+use crate::{greeting, mac_shortcuts, marker, names};
 
 fn everything() -> Availability {
     Availability {
@@ -72,17 +74,24 @@ fn set_up_later_moves_on_only_from_pages_that_change_settings() {
         flow.handle(Event::SetUpLater),
         Outcome::Moved(Step::Keyboard)
     );
+    assert_eq!(
+        flow.handle(Event::SetUpLater),
+        Outcome::Moved(Step::MacShortcuts)
+    );
     assert_eq!(flow.handle(Event::SetUpLater), Outcome::Moved(Step::WiFi));
-    assert_eq!(flow.postponed(), [Step::LanguageRegion, Step::Keyboard]);
+    assert_eq!(
+        flow.postponed(),
+        [Step::LanguageRegion, Step::Keyboard, Step::MacShortcuts]
+    );
     // Coming back and continuing clears the postponement.
     flow.handle(Event::Back);
     assert_eq!(flow.handle(Event::Continue), Outcome::Moved(Step::WiFi));
-    assert_eq!(flow.postponed(), [Step::LanguageRegion]);
+    assert_eq!(flow.postponed(), [Step::LanguageRegion, Step::Keyboard]);
     // Postponing twice records the page once.
     flow.handle(Event::Back);
     flow.handle(Event::Back);
     flow.handle(Event::SetUpLater);
-    assert_eq!(flow.postponed(), [Step::LanguageRegion]);
+    assert_eq!(flow.postponed(), [Step::LanguageRegion, Step::Keyboard]);
     // Tips and Privacy change nothing, so they have no Set Up Later.
     while flow.step() != Step::Tips {
         flow.handle(Event::Continue);
@@ -129,6 +138,7 @@ fn every_page_has_a_title_and_only_setting_pages_can_wait() {
     assert!(!Step::Welcome.can_set_up_later());
     assert!(!Step::Done.can_set_up_later());
     assert!(Step::WiFi.can_set_up_later());
+    assert!(Step::MacShortcuts.can_set_up_later());
 }
 
 #[test]
@@ -223,4 +233,79 @@ fn monograms_use_first_and_last_names() {
     assert_eq!(names::monogram("Cher", "cher"), "C");
     assert_eq!(names::monogram("", "jake"), "J");
     assert_eq!(names::monogram("  ", ""), "");
+}
+
+/// A `Status` as `rmac_keyboard::status()` would report it, with Mac
+/// shortcuts off and keyd fully available.
+fn keyboard_status() -> Status {
+    Status {
+        state: MacKeyboard::default(),
+        keyboard: Default::default(),
+        keyd_installed: true,
+        helper_installed: true,
+        relay_available: false,
+        foreign_keyd_configs: Vec::new(),
+        option_characters_available: false,
+    }
+}
+
+#[test]
+fn mac_shortcuts_are_available_only_when_keyd_is_clear_to_use() {
+    let status = keyboard_status();
+    assert!(mac_shortcuts::available(&status));
+    assert!(mac_shortcuts::unavailable_reason(&status).is_none());
+
+    let mut missing = status.clone();
+    missing.keyd_installed = false;
+    assert!(!mac_shortcuts::available(&missing));
+    assert!(mac_shortcuts::unavailable_reason(&missing)
+        .unwrap()
+        .contains("keyd package"));
+
+    let mut foreign = status.clone();
+    foreign.foreign_keyd_configs = vec!["other.conf".into()];
+    assert!(!mac_shortcuts::available(&foreign));
+    assert!(mac_shortcuts::unavailable_reason(&foreign)
+        .unwrap()
+        .contains("another configuration"));
+
+    let mut unpackaged = status;
+    unpackaged.helper_installed = false;
+    assert!(!mac_shortcuts::available(&unpackaged));
+    assert!(mac_shortcuts::unavailable_reason(&unpackaged)
+        .unwrap()
+        .contains("installed from its package"));
+}
+
+#[test]
+fn mac_shortcuts_target_is_none_when_nothing_needs_to_change() {
+    let status = keyboard_status();
+    // Turning an already-off toggle off again applies nothing.
+    assert_eq!(mac_shortcuts::target(&status, false), None);
+    // Turning it on computes a target with the flag set.
+    let target = mac_shortcuts::target(&status, true).expect("a change to apply");
+    assert!(target.shortcuts_in_all_apps);
+    assert_eq!(target.layout, status.state.layout);
+
+    let mut already_on = status.clone();
+    already_on.state.shortcuts_in_all_apps = true;
+    assert_eq!(mac_shortcuts::target(&already_on, true), None);
+    assert!(mac_shortcuts::target(&already_on, false).is_some());
+}
+
+#[test]
+fn mac_shortcuts_target_never_asks_to_turn_on_when_unavailable() {
+    let mut status = keyboard_status();
+    status.keyd_installed = false;
+    // The toggle default is on, but keyd cannot be used, so wanting it on
+    // must not produce a target that would fail (and would have prompted
+    // for a password for nothing).
+    assert_eq!(mac_shortcuts::target(&status, true), None);
+}
+
+#[test]
+fn mac_shortcuts_declined_note_explains_without_blocking_setup() {
+    let note = mac_shortcuts::declined_note(&"authentication was cancelled");
+    assert!(note.contains("authentication was cancelled"));
+    assert!(note.contains("System Settings"));
 }

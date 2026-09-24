@@ -6,6 +6,7 @@
 
 pub mod flow;
 pub mod greeting;
+pub mod mac_shortcuts;
 pub mod marker;
 pub mod names;
 pub mod services;

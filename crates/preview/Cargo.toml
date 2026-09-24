@@ -18,6 +18,9 @@ gpui.workspace = true
 gpui-component.workspace = true
 gpui-component-assets.workspace = true
 image = { workspace = true, features = ["bmp", "gif", "jpeg", "png", "tiff", "webp"] }
+raw-window-handle.workspace = true
 rmac-portal.workspace = true
+rmac-print-linux.workspace = true
+rmac-recent-documents.workspace = true
 rmac-ui.workspace = true
 rust-embed.workspace = true

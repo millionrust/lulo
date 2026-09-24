@@ -133,6 +133,10 @@ impl NotesView {
     }
 
     pub(super) fn schedule_current_edit(&mut self, cx: &mut Context<Self>) {
+        // An edit while the print dialog is open makes its copy stale, and
+        // the portal adapter then prints nothing and says why.
+        self.print_generation
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         if self.applying_snapshot || !self.is_interactive_ready() {
             return;
         }

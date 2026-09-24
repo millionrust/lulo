@@ -6008,11 +6008,13 @@ dependencies = [
  "gpui",
  "gpui-component",
  "image",
+ "raw-window-handle",
  "rmac-editor",
  "rmac-notes-runtime",
  "rmac-notes-storage",
  "rmac-notes-store",
  "rmac-portal",
+ "rmac-print-linux",
  "rmac-ui",
 ]
 

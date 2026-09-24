@@ -137,6 +137,8 @@ const TERMINAL_MENUS: &[MenuSpec] = &[
         label: "View",
         items: &[
             item!("Find…", "terminal::Find", "⌘F"),
+            item!("Find Next", "terminal::FindNext", "⌘G"),
+            item!("Find Previous", "terminal::FindPrevious", "⇧⌘G"),
             item!("Clear", "terminal::Clear", "⌘K"),
             item!("Bigger", "terminal::ZoomIn", "⌘+", separator),
             item!("Smaller", "terminal::ZoomOut", "⌘−"),
@@ -152,6 +154,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("New Note", "notes::ComposeNote", "⌘N"),
             item!("New Folder", "notes::CreateFolder", "⇧⌘N"),
             item!("Export Notes…", "notes::ExportNotes", "⇧⌘E", separator),
+            item!("Print…", "notes::PrintNote", "⌘P", separator),
         ],
     },
     MenuSpec {
@@ -1027,6 +1030,8 @@ mod tests {
                 "terminal::Paste",
                 "terminal::SelectAll",
                 "terminal::Find",
+                "terminal::FindNext",
+                "terminal::FindPrevious",
             ],
         )
         .unwrap();
@@ -1043,6 +1048,16 @@ mod tests {
         assert_eq!(terminal_hints["terminal::Paste"], "⌘V");
         assert_eq!(terminal_hints["terminal::SelectAll"], "⌘A");
         assert_eq!(terminal_hints["terminal::Find"], "⌘F");
+        assert_eq!(terminal_hints["terminal::FindNext"], "⌘G");
+        assert_eq!(terminal_hints["terminal::FindPrevious"], "⇧⌘G");
+
+        let notes = definition(rmac_apps::identity::NOTES, &["notes::PrintNote"]).unwrap();
+        let notes_hints = notes
+            .iter()
+            .flat_map(|menu| menu.items.iter())
+            .map(|item| (item.action.as_str(), item.shortcut.as_str()))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(notes_hints["notes::PrintNote"], "⌘P");
 
         let editor = definition(
             rmac_apps::identity::TEXT_EDITOR,

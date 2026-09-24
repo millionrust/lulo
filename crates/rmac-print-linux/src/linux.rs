@@ -92,8 +92,8 @@ impl fmt::Display for Error {
             ErrorKind::StaleDocument => {
                 "the document changed while the print dialog was open; nothing was printed"
             }
-            ErrorKind::Render => "Text Editor could not render this document as a safe PDF",
-            ErrorKind::Descriptor => "Text Editor could not create the private printable document",
+            ErrorKind::Render => "this document could not be rendered as a safe PDF",
+            ErrorKind::Descriptor => "the private printable document could not be created",
         })
     }
 }
@@ -108,7 +108,7 @@ enum PortalResponse {
 /// Run the complete PreparePrint → PDF render → Print transaction.
 ///
 /// The caller must keep the GPUI window alive while this future is pending.
-/// Text Editor enforces that by treating printing as a close-blocking modal
+/// Text Editor and Notes enforce that by treating printing as a close-blocking
 /// operation. The exported identifier remains alive through both portal calls.
 pub async fn print_document(request: PrintDocument) -> Result<Outcome, Error> {
     let parent = ashpd::WindowIdentifier::from_raw_handle(&request.window, Some(&request.display))

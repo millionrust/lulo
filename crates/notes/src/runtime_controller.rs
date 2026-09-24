@@ -81,6 +81,11 @@ impl NotesView {
     }
 
     pub(super) fn continue_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.print_busy {
+            self.message = Some("Finish or cancel the print dialog before closing Notes".into());
+            cx.notify();
+            return;
+        }
         if self.attachment_chooser_open {
             self.message = Some("Finish or cancel the image chooser before closing Notes".into());
             cx.notify();

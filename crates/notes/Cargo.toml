@@ -21,3 +21,7 @@ rmac-notes-storage.workspace = true
 rmac-notes-store.workspace = true
 rmac-portal.workspace = true
 chrono.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+raw-window-handle.workspace = true
+rmac-print-linux.workspace = true

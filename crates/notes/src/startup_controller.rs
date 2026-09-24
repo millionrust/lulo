@@ -17,6 +17,11 @@ impl NotesView {
             KeyBinding::new("cmd-backspace", TrashOrRestore, Some("Notes")),
             KeyBinding::new("cmd-f", FocusSearch, Some("Notes")),
             KeyBinding::new("cmd-shift-e", ExportNotes, Some("Notes")),
+            KeyBinding::new(
+                rmac_ui::shortcuts::PRINT.keystroke,
+                PrintNote,
+                Some("Notes"),
+            ),
             KeyBinding::new("cmd-shift-l", InsertChecklist, Some("Notes")),
             // ⌘W closes the window through the same review as the red
             // button (pending changes, open choosers, running imports).

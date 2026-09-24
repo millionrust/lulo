@@ -15,6 +15,7 @@ mod note_navigation;
 mod notes_style;
 mod presentation;
 mod preview_controller;
+mod print_controller;
 mod recovery_presentation;
 mod root_presentation;
 mod runtime_controller;
@@ -100,7 +101,8 @@ actions!(
         ToggleMarkdownPreview,
         ImportNote,
         ImportNotesBundle,
-        AddPhoto
+        AddPhoto,
+        PrintNote
     ]
 );
 
@@ -154,6 +156,11 @@ struct NotesView {
     preview_shutdown_requested: bool,
     markdown_preview_shutdown_requested: bool,
     closing: bool,
+    /// The print dialog is open; the window stays until the portal answers.
+    print_busy: bool,
+    /// Bumped on every edit, so a print whose note changed while its dialog
+    /// was open prints nothing.
+    print_generation: Arc<std::sync::atomic::AtomicU64>,
     /// A press on a toolbar's empty area, turned into a window move by the
     /// next pointer motion (as in Files).
     dragging: bool,
@@ -212,6 +219,8 @@ impl NotesView {
             preview_shutdown_requested: false,
             markdown_preview_shutdown_requested: false,
             closing: false,
+            print_busy: false,
+            print_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             dragging: false,
         };
 

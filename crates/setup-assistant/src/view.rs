@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use gpui::{
     div, img, prelude::FluentBuilder as _, px, rgb, svg, AnyElement, App, AppContext as _,
     ClickEvent, Context, Div, Entity, FocusHandle, FontWeight, Hsla, InteractiveElement as _,
-    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Window,
+    IntoElement, KeyDownEvent, ParentElement as _, Render, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window,
 };
 use rmac_setup_assistant::flow::{Availability, Completion, Event, Flow, Outcome, Step};
 use rmac_setup_assistant::names::{self, LocaleChoice};
@@ -493,9 +493,14 @@ impl SetupView {
         div().mt(px(24.0)).w(px(metrics::CONTENT_WIDTH)).v_flex()
     }
 
-    fn render_welcome(&self, cx: &mut Context<Self>) -> Div {
+    fn render_welcome(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let elapsed = self.greeting_started.elapsed().as_millis() as u64;
         let frame = greeting::frame(elapsed, rmac_ui::theme::current().motion.spatial_motion);
+        let get_started_focus = window
+            .use_keyed_state("get-started", cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let get_started_focused = get_started_focus.is_focused(window);
         div()
             .size_full()
             .v_flex()
@@ -515,6 +520,8 @@ impl SetupView {
             .child(
                 div()
                     .id("get-started")
+                    .role(Role::Button)
+                    .aria_label("Get Started")
                     .size(px(metrics::GO))
                     .rounded_full()
                     .bg(mac::accent())
@@ -522,12 +529,19 @@ impl SetupView {
                     .items_center()
                     .justify_center()
                     .cursor_pointer()
+                    .track_focus(&get_started_focus.tab_stop(true).tab_index(0))
+                    .when(get_started_focused, |el| {
+                        el.shadow(mac::focus_ring_shadow())
+                    })
                     .child(
                         svg()
                             .path("icons/arrow-right.svg")
                             .size(px(20.0))
                             .text_color(mac::on_accent()),
                     )
+                    // GPUI maps Space/Return to a click on any focused element
+                    // with an `on_click` handler, so this alone makes the
+                    // circle keyboard-operable once it's a tab stop above.
                     .on_click(
                         cx.listener(|view, _: &ClickEvent, _, cx| view.handle(Event::Continue, cx)),
                     ),
@@ -817,7 +831,7 @@ impl SetupView {
         .child(body)
     }
 
-    fn render_account(&self, cx: &mut Context<Self>) -> Div {
+    fn render_account(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         let account = self.account.clone().unwrap_or_default();
         let typed = self.real_name.read(cx).value().to_string();
         let monogram = names::monogram(&typed, &account.user_name);
@@ -832,12 +846,18 @@ impl SetupView {
             None => monogram_face(&monogram).into_any_element(),
         };
         pictures = pictures.child(
-            face_frame("face-current", current_selected, current).on_click(cx.listener(
-                |view, _, _, cx| {
-                    view.picture = None;
-                    cx.notify();
-                },
-            )),
+            face_frame(
+                "face-current",
+                "Current picture",
+                current_selected,
+                current,
+                window,
+                cx,
+            )
+            .on_click(cx.listener(|view, _, _, cx| {
+                view.picture = None;
+                cx.notify();
+            })),
         );
         for (index, face) in self.faces.iter().enumerate() {
             let path = face.clone();
@@ -845,11 +865,14 @@ impl SetupView {
             pictures = pictures.child(
                 face_frame(
                     SharedString::from(format!("face-{index}")),
+                    SharedString::from(format!("Picture {}", index + 1)),
                     selected,
                     img(face.clone())
                         .size(px(metrics::FACE))
                         .rounded_full()
                         .into_any_element(),
+                    window,
+                    cx,
                 )
                 .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
                     view.picture = Some(path.clone());
@@ -889,53 +912,85 @@ impl SetupView {
         .child(body)
     }
 
-    fn render_appearance(&self, cx: &mut Context<Self>) -> Div {
+    fn render_appearance(&self, window: &mut Window, cx: &mut Context<Self>) -> Div {
         use rmac_theme::SchemePreference as Scheme;
-        let look = |id: &'static str, name: &'static str, scheme: Scheme, picture: Div| {
-            let selected = self.scheme == Some(scheme);
-            div()
-                .id(id)
-                .v_flex()
-                .items_center()
-                .gap(px(8.0))
-                .cursor_pointer()
-                .child(
-                    picture
-                        .w(px(metrics::LOOK_WIDTH))
-                        .h(px(metrics::LOOK_HEIGHT))
-                        .rounded(px(9.0))
-                        .border_1()
-                        .border_color(rgb(WELL_RULE))
-                        .when(selected, |picture| {
-                            picture.border_2().border_color(mac::accent())
-                        }),
-                )
-                .child(
-                    div()
-                        .text_size(text_px(metrics::BODY))
-                        .text_color(mac::text())
-                        .child(name),
-                )
-                .on_click(
-                    cx.listener(move |view, _: &ClickEvent, _, cx| view.set_scheme(scheme, cx)),
-                )
-        };
-        let light = div().bg(rgb(0xF2F2F7));
-        let dark = div().bg(rgb(0x2C2A31));
-        let auto = div()
+
+        let current_index = APPEARANCE_OPTIONS
+            .iter()
+            .position(|(_, _, scheme)| Some(*scheme) == self.scheme)
+            .unwrap_or(0);
+
+        let mut row = div()
             .flex()
-            .overflow_hidden()
-            .child(div().flex_1().h_full().bg(rgb(0xF2F2F7)))
-            .child(div().flex_1().h_full().bg(rgb(0x2C2A31)));
-        let body = self.content().mt(px(50.0)).child(
-            div()
-                .flex()
-                .justify_center()
-                .gap(px(28.0))
-                .child(look("look-light", "Light", Scheme::Light, light))
-                .child(look("look-dark", "Dark", Scheme::Dark, dark))
-                .child(look("look-auto", "Auto", Scheme::Automatic, auto)),
-        );
+            .justify_center()
+            .gap(px(28.0))
+            .on_key_down(cx.listener(move |view, event: &KeyDownEvent, window, cx| {
+                let Some(next) =
+                    appearance_roving_target(current_index, event.keystroke.key.as_str())
+                else {
+                    return;
+                };
+                window.prevent_default();
+                cx.stop_propagation();
+                let (id, _, scheme) = APPEARANCE_OPTIONS[next];
+                let handle = window
+                    .use_keyed_state(id, cx, |_, cx| cx.focus_handle())
+                    .read(cx)
+                    .clone();
+                handle.focus(window, cx);
+                view.set_scheme(scheme, cx);
+            }));
+        for (index, (id, name, scheme)) in APPEARANCE_OPTIONS.into_iter().enumerate() {
+            let picture = match scheme {
+                Scheme::Light => div().bg(rgb(0xF2F2F7)),
+                Scheme::Dark => div().bg(rgb(0x2C2A31)),
+                Scheme::Automatic => div()
+                    .flex()
+                    .overflow_hidden()
+                    .child(div().flex_1().h_full().bg(rgb(0xF2F2F7)))
+                    .child(div().flex_1().h_full().bg(rgb(0x2C2A31))),
+            };
+            let selected = self.scheme == Some(scheme);
+            let focus = window
+                .use_keyed_state(id, cx, |_, cx| cx.focus_handle())
+                .read(cx)
+                .clone();
+            let focused = focus.is_focused(window);
+            row = row.child(
+                div()
+                    .id(id)
+                    .role(Role::RadioButton)
+                    .aria_selected(selected)
+                    .aria_label(name)
+                    .v_flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .cursor_pointer()
+                    .track_focus(&focus.tab_stop(true).tab_index(index as isize))
+                    .when(focused, |el| el.shadow(mac::focus_ring_shadow()))
+                    .child(
+                        picture
+                            .w(px(metrics::LOOK_WIDTH))
+                            .h(px(metrics::LOOK_HEIGHT))
+                            .rounded(px(9.0))
+                            .border_1()
+                            .border_color(rgb(WELL_RULE))
+                            .when(selected, |picture| {
+                                picture.border_2().border_color(mac::accent())
+                            }),
+                    )
+                    .child(
+                        div()
+                            .text_size(text_px(metrics::BODY))
+                            .text_color(mac::text())
+                            .child(name),
+                    )
+                    .on_click(
+                        cx.listener(move |view, _: &ClickEvent, _, cx| view.set_scheme(scheme, cx)),
+                    ),
+            );
+        }
+        let body = self.content().mt(px(50.0)).child(row);
         self.page(
             "setup/palette.svg",
             rgb(0x1C1C1E).into(),
@@ -1083,13 +1138,13 @@ impl SetupView {
 impl Render for SetupView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let page = match self.flow.step() {
-            Step::Welcome => self.render_welcome(cx),
+            Step::Welcome => self.render_welcome(window, cx),
             Step::LanguageRegion => self.render_language(cx),
             Step::Keyboard => self.render_keyboard(cx),
             Step::MacShortcuts => self.render_mac_shortcuts(cx),
             Step::WiFi => self.render_wifi(window, cx),
-            Step::Account => self.render_account(cx),
-            Step::Appearance => self.render_appearance(cx),
+            Step::Account => self.render_account(window, cx),
+            Step::Appearance => self.render_appearance(window, cx),
             Step::Tips => self.render_tips(),
             Step::Privacy => self.render_privacy(),
             Step::Done => self.render_done(),
@@ -1317,6 +1372,27 @@ fn strength_bars(strength: u8, selected: bool) -> Div {
     bars
 }
 
+/// The Appearance page's three choices, in on-screen (and tab/arrow) order.
+const APPEARANCE_OPTIONS: [(&str, &str, rmac_theme::SchemePreference); 3] = [
+    ("look-light", "Light", rmac_theme::SchemePreference::Light),
+    ("look-dark", "Dark", rmac_theme::SchemePreference::Dark),
+    ("look-auto", "Auto", rmac_theme::SchemePreference::Automatic),
+];
+
+/// Index into [`APPEARANCE_OPTIONS`] that Left/Up, Right/Down, Home or End
+/// move to from `current`, matching the ARIA `radiogroup` convention
+/// `rmac_ui::RadioGroup` also uses. `None` for any other key.
+fn appearance_roving_target(current: usize, key: &str) -> Option<usize> {
+    let len = APPEARANCE_OPTIONS.len();
+    match key {
+        "left" | "up" => Some((current + len - 1) % len),
+        "right" | "down" => Some((current + 1) % len),
+        "home" => Some(0),
+        "end" => Some(len - 1),
+        _ => None,
+    }
+}
+
 fn monogram_face(monogram: &str) -> Div {
     div()
         .size(px(metrics::FACE))
@@ -1333,11 +1409,23 @@ fn monogram_face(monogram: &str) -> Div {
 
 fn face_frame(
     id: impl Into<gpui::ElementId>,
+    name: impl Into<SharedString>,
     selected: bool,
     picture: AnyElement,
+    window: &mut Window,
+    cx: &mut App,
 ) -> gpui::Stateful<Div> {
+    let id: gpui::ElementId = id.into();
+    let focus = window
+        .use_keyed_state(id.clone(), cx, |_, cx| cx.focus_handle())
+        .read(cx)
+        .clone();
+    let focused = focus.is_focused(window);
     div()
         .id(id)
+        .role(Role::RadioButton)
+        .aria_selected(selected)
+        .aria_label(name)
         .p(px(3.0))
         .rounded_full()
         .border_2()
@@ -1347,6 +1435,8 @@ fn face_frame(
             gpui::transparent_black()
         })
         .cursor_pointer()
+        .track_focus(&focus.tab_stop(true).tab_index(0))
+        .when(focused, |el| el.shadow(mac::focus_ring_shadow()))
         .child(picture)
 }
 
@@ -1388,3 +1478,47 @@ fn tip(icon: &'static str, tint: Hsla, title: &'static str, text: &'static str) 
 }
 
 pub const WINDOW_SIZE: (f32, f32) = (metrics::WIDTH, metrics::HEIGHT);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn appearance_roving_wraps_at_both_ends() {
+        assert_eq!(appearance_roving_target(0, "left"), Some(2));
+        assert_eq!(appearance_roving_target(0, "up"), Some(2));
+        assert_eq!(appearance_roving_target(2, "right"), Some(0));
+        assert_eq!(appearance_roving_target(2, "down"), Some(0));
+    }
+
+    #[test]
+    fn appearance_roving_steps_by_one_in_the_middle() {
+        assert_eq!(appearance_roving_target(0, "right"), Some(1));
+        assert_eq!(appearance_roving_target(1, "left"), Some(0));
+        assert_eq!(appearance_roving_target(1, "right"), Some(2));
+    }
+
+    #[test]
+    fn appearance_roving_home_and_end_jump_to_the_edges() {
+        assert_eq!(appearance_roving_target(1, "home"), Some(0));
+        assert_eq!(appearance_roving_target(1, "end"), Some(2));
+    }
+
+    #[test]
+    fn appearance_roving_ignores_unrelated_keys() {
+        assert_eq!(appearance_roving_target(1, "tab"), None);
+        assert_eq!(appearance_roving_target(1, "escape"), None);
+        assert_eq!(appearance_roving_target(1, "enter"), None);
+    }
+
+    #[test]
+    fn appearance_options_cover_every_scheme_preference() {
+        assert_eq!(APPEARANCE_OPTIONS.len(), 3);
+        assert_eq!(APPEARANCE_OPTIONS[0].2, rmac_theme::SchemePreference::Light);
+        assert_eq!(APPEARANCE_OPTIONS[1].2, rmac_theme::SchemePreference::Dark);
+        assert_eq!(
+            APPEARANCE_OPTIONS[2].2,
+            rmac_theme::SchemePreference::Automatic
+        );
+    }
+}

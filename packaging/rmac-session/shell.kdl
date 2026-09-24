@@ -7,8 +7,9 @@ input {
         // resting palms are ignored while typing.
         click-method "clickfinger"
         dwt
-        // The owner's Mac has natural scrolling off (FEEL_SPEC.md §C), so the
-        // touchpad must not reverse the scroll direction.
+        // macOS's default: content follows the fingers (swipe up to scroll
+        // down). The owner confirmed this is how their Mac scrolls.
+        natural-scroll
         // macOS-like tracking speed and adaptive acceleration (FEEL_SPEC.md §D.4).
         accel-profile "adaptive"
         accel-speed 0.3

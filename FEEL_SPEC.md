@@ -107,7 +107,7 @@ default profile", **change `ShellSettings::default()` to match this**, and recor
 | Dock position | unset = bottom | bottom |
 | Dock contents (in order) | **Apps, Notes, GitHub Desktop, Zed, Mail, System Settings, Terminal, Tapo, ChatGPT Classic** (Finder is implicit and always first; no browser pinned) | Files (implicit first), **Apps**, Notes, Text Editor, Terminal, System Settings — i.e. keep Files+Apps leading like the owner, drop Firefox from the default pins (the owner does not pin a browser) |
 | Hot corners | bottom-right = `14` (**Quick Note**) | bottom-right = "New Note" (Notes); others unset |
-| Scroll direction | `com.apple.swipescrolldirection = 0` → **natural scrolling OFF** | **off** — and `shell.kdl` currently sets `natural-scroll` for the touchpad: **remove it** |
+| Scroll direction | `com.apple.swipescrolldirection` unset (macOS default) → **natural scrolling ON**, re-read 2026-09-24 (it was 0 in an earlier capture) | **on** — `shell.kdl` sets `natural-scroll` for the touchpad |
 | Language / region | `en-GB`, locale `en_GB@rg=inzzzz` (English UK, **India** region) | `en_GB` + India region: dd/mm/yyyy, 12-hour clock with am/pm, ₹, week starts Sunday-or-Monday per ICU, metric |
 | Finder default view | `FXPreferredViewStyle = Nlsv` (**List view**) | Files opens in **List view** |
 | Finder status bar | `ShowStatusBar = 1`, path bar unset (off) | status bar **on**, path bar off |
@@ -273,7 +273,7 @@ opacity fade with no movement.
 - **Rubber-band overscroll:** past the edge, offset = `limit × (1 − 1/(1 + |overscroll|/limit))` with
   `limit = 0.25 × viewport`; release springs back (stiffness 200, damping 26, ~350 ms). This single
   behavior contributes more "Mac feel" per line of code than any visual polish.
-- **Scroll direction:** the owner's Mac has natural scrolling **off** (§C) — remove `natural-scroll`
+- **Scroll direction:** the owner's Mac uses macOS's default, natural scrolling **on** (§C, re-read 2026-09-24) — keep `natural-scroll` on the touchpad
   from `shell.kdl` and expose it in Trackpad settings.
 - **Pointer acceleration:** libinput's default profile feels wrong to Mac users. Set
   `accel-profile "adaptive"` with `accel-speed 0.3` for touchpads and expose the Tracking speed
@@ -556,7 +556,7 @@ Add these as numbered tasks; the phase order stays the same.
 
 1. Fonts actually installed and tuned (§D.5) — everything is made of text.
 2. Cursor theme (§D.2).
-3. Owner-profile defaults (§C) — dark, 78 px Dock, list view, no natural scrolling.
+3. Owner-profile defaults (§C) — dark, 78 px Dock, list view, natural scrolling on.
 4. Scrolling momentum + rubber-band (§D.4).
 5. Login choreography and window open/close/minimize animations (§D.3).
 6. The sound set (§D.1).

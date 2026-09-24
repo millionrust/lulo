@@ -31,8 +31,8 @@ never fake Siri or Apple Intelligence.
 **Owner profile → rmac shipping defaults (`FEEL_SPEC.md` §C):** Dark appearance;
 Dock pins **Files, Apps, Notes, Text Editor, Terminal, System Settings** (no
 browser, no Downloads); Dock tile **64** rendered (slider range 32–128),
-magnification off, autohide off, bottom; **natural scrolling off** (the
-`natural-scroll` niri input rule is removed); Files opens in **List view** with
+magnification off, autohide off, bottom; **natural scrolling on** (macOS's default; the
+`natural-scroll` niri touchpad rule is set); Files opens in **List view** with
 the **status bar on** and the path bar off; locale **en_GB with India region**
 (dd/mm/yyyy, 12-hour clock, ₹, metric); spelling autocorrect on; keyboard repeat
 225 ms initial / 90 ms; hot corner bottom-right = **New Note**; the only desktop

@@ -58,9 +58,11 @@
   Info (i)      17 circle outline, 12 from the row's right edge
   Push button   24 tall, radius 6, fill rgb(55,56,67), label 13
   Help (?)      24 circle rgb(55,56,67), right-aligned 10 below the last group;
-                not drawn in rmac, which has no help book for it to open. The
-                pane's own buttons (Refresh, Revert, Choose Image…) take that
-                right-aligned footer row instead.
+                not drawn in rmac, which has no help book for it to open.
+  No Refresh / Revert  the Mac has neither: changes save as they are made
+                and panes follow their services' change streams. rmac draws
+                a right-aligned "Try Again" only while a service is
+                unavailable or reported an error (2026-09-24).
   Segmented     24 tall, full row width, selected #397CF7, rest rgb(55,56,67)
 
   Second wave (same window, AX frames + Retina pixels, 2026-09-23): Network,
@@ -109,6 +111,41 @@
                 ordinary switch/pop-up rows in Keyboard's grammar; Caps Lock
                 choices copy the Mac's Modifier Keys sheet minus Globe.
                 docs/decisions/0017-mac-keyboard.md
+  Third pass (2026-09-24, AX frames + Retina pixels, window 723 × 832 at
+  700,33): Wallpaper, About, Appearance, Desktop & Dock, General; sidebar
+  rows re-checked (x 18, 32 tall, icon at row + 6, label at row + 31, left
+  aligned, 13 gaps between sections — unchanged).
+
+  Wallpaper     only the gallery scrolls. Top strip inset 16 on every side:
+                preview 160 × 100 at (239, 68), radius 4; group 10 after it
+                (298 × 75 at 409, 68: two rows, name + variant pop-up 109 ×
+                24, "Show on all Spaces" switch); push buttons 24 tall 10
+                under the group, right-aligned 8 apart. Rule 1 pt at y 193
+                across the detail column, rgb(54,56,65) (white .10).
+                Gallery from y 194: content inset 20; section title 13 bold
+                at +20 (x 243), "Show All (n)" 11 secondary right-aligned;
+                tiles 9 under the title: 108 wide on a 117.5 pitch (rmac:
+                117, so four fit the 460 column), picture
+                108 × 72 radius 2, name 10 medium centred under it, tile
+                100 tall; 20 from a tile row to the next title. Selected
+                tile: a 2 pt ring on the tile edge, picture inset 3.
+                "Your Photos" › Add Photo…: a 107 × 71 well rgb(42,44,54)
+                radius 4, picture glyph over an 11 pt secondary label.
+                rmac: sections Lulo (artwork), Your Photos (the chosen file,
+                then Add Photo…, which opens the portal file chooser),
+                Gradients (procedural); rows wrap instead of scrolling
+                sideways, so there is no Show All. A built-in whose large
+                artwork is missing previews as its thumbnail over its
+                swatch — never a warning. Screen Saver… / Clock Appearance…
+                have no rmac backend and are not drawn.
+  Appearance    the tint switch sits in its own "Windows" section (the Mac
+                pairs it with Sidebar icon size), no subtitle.
+  About         hero group 153 × 177 centred at y 62: device art 128, name
+                26 bold, model 11 secondary; then the fact group at y 259
+                (rows 37 on the 37 pitch).
+  Desktop & Dock  "Dock" head 3 below the toolbar; rows as the form grammar
+                (pop-ups 24 tall, switches 36 × 16, 10 from the right).
+
   Omitted here and in rmac because rmac has no backend for them: every
   Mac-only row (Firewall, Notification Centre previews, Alert Style, Focus
   sharing and status, display sleep and login-window options, Dictation,
@@ -259,6 +296,22 @@
   .dim{position:absolute;inset:0;background:rgba(0,0,0,.35);z-index:4}
   .cap-label{position:absolute;left:0;top:-22px;color:#9a9aa2;font:12px var(--font)}
   .frame{position:relative;margin-top:22px}
+  /* Wallpaper (third pass): fixed top strip, rule, scrolling gallery */
+  .wp{margin:0 -20px;display:flex;flex-direction:column;height:100%}
+  .wp-top{display:flex;align-items:flex-start;gap:10px;padding:16px}
+  .wp-top .g{margin-bottom:0}
+  .wp-prev{width:160px;height:100px;border-radius:4px;flex:none;display:block}
+  .wp-rule{height:1px;background:rgba(255,255,255,.10);flex:none}
+  .wp-gal{padding:20px;overflow:hidden}
+  .wp-sec{margin-bottom:20px}
+  .wp-sec > b{display:block;font:700 13px/16px var(--font);color:var(--head);margin-bottom:9px}
+  .wp-tiles{display:flex;flex-wrap:wrap;column-gap:9px;row-gap:9px}
+  .wp-tile{width:108px;height:100px;display:flex;flex-direction:column;align-items:center;gap:4px;font:500 10px/14px var(--font);color:var(--label)}
+  .wp-tile > i{width:108px;height:72px;border-radius:2px;display:block;box-sizing:border-box;overflow:hidden}
+  .wp-tile > i > i{display:block;width:100%;height:100%;border-radius:2px}
+  .wp-tile.sel > i{border:2px solid var(--accent);padding:1px;border-radius:5px}
+  .wp-add{width:108px;height:72px;border-radius:4px;background:rgb(42,44,54);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--sec);font:500 10px/14px var(--font)}
+  .wp-add svg{width:24px;height:24px}
 </style>
 </head>
 <body>
@@ -308,20 +361,21 @@ const PANES={
   'Appearance':['Appearance',
     g(`<div class="r top" style="min-height:84px">${t('Appearance')}<div style="display:flex;gap:8px">${['Automatic','Light','Dark'].map((n,i)=>`<div style="display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;color:${i==2?'var(--label)':'var(--sec)'};font-weight:${i==2?700:400}"><i style="width:74px;height:46px;border-radius:6px;display:block;background:${['linear-gradient(90deg,#e8e8ed 50%,#2c2c2e 50%)','#e8e8ed','#2c2c2e'][i]};box-shadow:${i==2?'0 0 0 3px var(--accent)':'inset 0 0 0 1px rgba(255,255,255,.1)'}"></i>${n}</div>`).join('')}</div></div>`),
     h('Theme'),
-    g(`<div class="r top" style="min-height:62px">${t('Accent colour')}<div style="display:flex;gap:10px">${['conic-gradient(red,yellow,lime,cyan,blue,magenta,red)','#0a84ff','#bf5af2','#ff375f','#ff453a','#ff9f0a','#ffd60a','#32d74b','#98989d'].map((c,i)=>`<i style="width:18px;height:18px;border-radius:50%;background:${c};${i==0?'box-shadow:0 0 0 2px var(--group),0 0 0 4px var(--accent)':''}"></i>`).join('')}</div></div>`,
-      sw('Allow wallpaper tinting in windows',true,'Subtly mixes the desktop colour into opaque app surfaces.')),
-    g(pop('Contrast','Automatic'),pop('Motion','Automatic'))],
+    g(`<div class="r top" style="min-height:62px">${t('Colour')}<div style="display:flex;gap:10px">${['conic-gradient(red,yellow,lime,cyan,blue,magenta,red)','#0a84ff','#bf5af2','#ff375f','#ff453a','#ff9f0a','#ffd60a','#32d74b','#98989d'].map((c,i)=>`<i style="width:18px;height:18px;border-radius:50%;background:${c};${i==0?'box-shadow:0 0 0 2px var(--group),0 0 0 4px var(--accent)':''}"></i>`).join('')}</div></div>`),
+    h('Windows'), g(sw('Tint window background with wallpaper colour',true)),
+    h('Accessibility'), g(pop('Contrast','Automatic'),pop('Motion','Automatic'))],
   'Desktop & Dock':['Desktop & Dock', h('Dock'),
     g(pop('Position on screen','Bottom'),sw('Automatically hide and show the Dock',false),sw('Reserve screen space',true,'Keep tiled windows outside the visible Dock area.')),
     g(sw('Magnification',false),pop('Maximum size','1.5×')),
     g(pop('Click a focused app again','Cycle Windows')),
     h('Displays'), g(pop('Show the Dock on','All Displays')),
-    h('Desktop'), g(pop('Click wallpaper to show desktop','Always','Click wallpaper to move windows out of the way, revealing your desktop items and widgets.')),
-    btns('Revert','Refresh')],
+    h('Desktop'), g(pop('Click wallpaper to show desktop','Always','Click wallpaper to move windows out of the way, revealing your desktop items and widgets.'))],
   'Wallpaper':['Wallpaper',
-    `<div style="display:flex;gap:10px;margin:16px 0 10px"><i style="width:160px;height:100px;border-radius:8px;background:linear-gradient(135deg,#10162f,#3949ab,#22a6a1,#d96c9d);flex:none"></i><div style="flex:1;min-width:0">${g(pop('Aurora','Fill'),pop('Show on','All Displays','Default for every display'))}</div></div>`,
-    btns('Choose Image…','Revert','Refresh'),
-    h('Wallpapers'),`<div class="thumbs" style="padding:0;flex-wrap:wrap;gap:9px">${[['#10162f','#d96c9d','Aurora'],['#06283d','#e8f9fa','Tide'],['#1b1b1f','#c98a4b','Basalt'],['#0b1c1e','#b8c4b0','Monsoon'],['#f5efe6','#8a7a5c','Paper']].map(([a,b,n],i)=>`<div><i style="width:108px;height:68px;background:linear-gradient(135deg,${a},${b});${i==0?'box-shadow:0 0 0 2px var(--accent)':''}"></i>${n}</div>`).join('')}</div>`],
+    `<div class="wp"><div class="wp-top"><i class="wp-prev" style="background:linear-gradient(135deg,#0a1712,#2f7d4a,#86c846,#f08a24)"></i><div style="flex:1;min-width:0">${g(pop('Lulo','Fill'),pop('Show on','All Displays','Default for every display'))}</div></div><div class="wp-rule"></div><div class="wp-gal">${
+      [['Lulo',[['#0a1712','#f08a24','Lulo',1],['#07110d','#3e9150','Grove'],['#120907','#f08a24','Ember'],['#061016','#f08a24','Dusk'],['#232528','#131416','Mist'],['#07080a','#2e6b3a','Nocturne']]],
+       ['Your Photos',null],
+       ['Gradients',[['#10162f','#d96c9d','Aurora'],['#06283d','#e8f9fa','Tide'],['#1b1b1f','#c98a4b','Basalt'],['#0b1c1e','#b8c4b0','Monsoon'],['#f5efe6','#8a7a5c','Paper']]]]
+      .map(([title,tiles])=>`<div class="wp-sec"><b>${title}</b><div class="wp-tiles">${tiles?tiles.map(([a,b,n,sel])=>`<div class="wp-tile${sel?' sel':''}"><i><i style="background:linear-gradient(135deg,${a},${b})"></i></i><span>${n}</span></div>`).join(''):`<div class="wp-add">${I('image')}<span>Add Photo…</span></div>`}</div></div>`).join('')}</div></div>`],
   'Displays':['Displays',
     `<div style="margin:0 -20px 20px;height:160px;background:rgb(28,28,36);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px"><i style="width:120px;height:74px;border-radius:6px;background:linear-gradient(135deg,#3b5ea6,#1f6b74)"></i><b style="font:700 13px var(--font)">Built-in Display</b></div>`,
     g(pop('Resolution','1920 × 1080'),pop('Scale','100%'),pop('Rotation','Standard')),

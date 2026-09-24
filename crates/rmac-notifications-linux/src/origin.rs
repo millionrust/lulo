@@ -3,11 +3,18 @@
 //!
 //! Legacy `Notify` callers are identified by their unique bus name, which
 //! means nothing to a person. Notification Center shows the sending app's
-//! real name and icon the way macOS does, so the service records the
-//! kernel-reported origin of the sending process: its systemd XDG app scope
-//! (the desktop-entry ID a launcher put it in) and its executable. The
-//! unauthenticated `app_name` argument is never used. None of this feeds
-//! policy, replacement or authorization; it only labels and stacks cards.
+//! real name, icon and a relative time the way macOS does. The service
+//! records:
+//! - the kernel-reported origin of the sending process: its systemd XDG app
+//!   scope (the desktop-entry ID a launcher put it in) and its executable;
+//! - what the sender says about itself: the `desktop-entry` hint, `app_name`,
+//!   and its icon (the `image-path` hint, else `app_icon`), as the
+//!   freedesktop specification intends them to be used.
+//!
+//! None of this feeds policy, replacement or authorization; it only labels,
+//! times and stacks cards. Once a record enters history its origin is kept
+//! in the history file (`rmac_notifications_store::Label`), so a restart
+//! keeps each card's time, name and icon.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -15,35 +22,90 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rmac_notifications::NotificationId;
 
-/// `(id, posted_unix_ms, desktop_id, executable)`; `0` and `""` mean unknown.
-pub type WireOrigin = (u32, u64, String, String);
+/// `(id, posted_unix_ms, desktop_id, executable, hinted_desktop_id,
+/// app_name, icon)`; `0` and `""` mean unknown.
+pub type WireOrigin = (u32, u64, String, String, String, String, String);
+
+/// A record's origin is the history store's display label.
+pub type Origin = rmac_notifications_store::Label;
 
 pub const MAX_WIRE_ORIGINS: usize = 500;
 const MAX_ORIGINS: usize = 1_024;
-const MAX_DESKTOP_ID_BYTES: usize = 255;
-const MAX_EXECUTABLE_BYTES: usize = 4_096;
 /// A sender annotation may briefly precede the history upsert it belongs to.
 const UNCLAIMED_GRACE_MS: u64 = 60_000;
 
+/// What a legacy `Notify` call says about its sender, beside the
+/// kernel-reported process origin.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Origin {
-    pub posted_unix_ms: Option<u64>,
-    pub desktop_id: Option<String>,
-    pub executable: Option<String>,
+pub struct SenderHints {
+    pub desktop_entry: Option<String>,
+    pub app_name: Option<String>,
+    /// `image-path` when given, else `app_icon`.
+    pub icon: Option<String>,
 }
 
-impl Origin {
-    pub fn from_wire(posted_unix_ms: u64, desktop_id: String, executable: String) -> Self {
-        Self {
-            posted_unix_ms: (posted_unix_ms != 0).then_some(posted_unix_ms),
-            desktop_id: Some(desktop_id).filter(|id| valid_desktop_id(id)),
-            executable: Some(executable).filter(|path| valid_executable(path)),
-        }
+/// Icons are looked up at twice the 32 pt card icon, sharp on a 2× screen.
+const SENDER_ICON_PIXELS: u32 = 64;
+
+/// Turns a sender's icon (a theme name, an absolute path or a `file://`
+/// URI) into a file path the Center and banners can draw, or `None` when it
+/// names nothing that exists. Blocking: it reads the icon theme, so call it
+/// off the UI thread.
+pub fn resolve_icon_hint(icon: &str) -> Option<String> {
+    static THEMES: std::sync::OnceLock<Mutex<rmac_apps::ThemedIconResolver>> =
+        std::sync::OnceLock::new();
+    let path = if icon.starts_with('/') {
+        std::path::PathBuf::from(icon)
+    } else if icon.starts_with("file://") {
+        url::Url::parse(icon).ok()?.to_file_path().ok()?
+    } else {
+        THEMES
+            .get_or_init(|| Mutex::new(rmac_apps::ThemedIconResolver::current()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .resolve(icon, SENDER_ICON_PIXELS)?
+    };
+    path.is_file()
+        .then(|| path.to_str().map(str::to_owned))
+        .flatten()
+}
+
+/// Decodes one wire origin. Unknown (`0`, `""`) and invalid fields are
+/// dropped.
+pub fn from_wire(
+    posted_unix_ms: u64,
+    desktop_id: String,
+    executable: String,
+    hinted_desktop_id: String,
+    app_name: String,
+    icon: String,
+) -> Origin {
+    let known = |value: String| Some(value).filter(|value| !value.is_empty());
+    Origin {
+        posted_unix_ms: Some(posted_unix_ms),
+        desktop_id: known(desktop_id),
+        executable: known(executable),
+        hinted_desktop_id: known(hinted_desktop_id),
+        app_name: known(app_name),
+        icon: known(icon),
     }
+    .sanitized()
 }
 
-/// In-memory origins for the current service run. Records restored from
-/// disk after a restart have no origin and show no time or process identity.
+pub fn to_wire(id: NotificationId, origin: &Origin) -> WireOrigin {
+    (
+        id.get(),
+        origin.posted_unix_ms.unwrap_or_default(),
+        origin.desktop_id.clone().unwrap_or_default(),
+        origin.executable.clone().unwrap_or_default(),
+        origin.hinted_desktop_id.clone().unwrap_or_default(),
+        origin.app_name.clone().unwrap_or_default(),
+        origin.icon.clone().unwrap_or_default(),
+    )
+}
+
+/// In-memory origins of notifications not yet (or never) in history, such
+/// as a banner whose app keeps no history. History keeps its own copy.
 #[derive(Clone, Default)]
 pub struct Origins {
     inner: Arc<Mutex<BTreeMap<NotificationId, Origin>>>,
@@ -62,12 +124,14 @@ impl Origins {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    /// Records the sending process of a legacy `Notify` call.
+    /// Records the sending process of a legacy `Notify` call and what it
+    /// said about itself.
     pub fn sender(
         &self,
         id: NotificationId,
         desktop_id: Option<String>,
         executable: Option<String>,
+        hints: SenderHints,
         now_ms: u64,
     ) {
         let mut origins = self.lock();
@@ -78,20 +142,29 @@ impl Origins {
             id,
             Origin {
                 posted_unix_ms: Some(now_ms),
-                desktop_id: desktop_id.filter(|id| valid_desktop_id(id)),
-                executable: executable.filter(|path| valid_executable(path)),
-            },
+                desktop_id,
+                executable,
+                hinted_desktop_id: hints.desktop_entry,
+                app_name: hints.app_name,
+                icon: hints.icon,
+            }
+            .sanitized(),
         );
     }
 
     /// Stamps the arrival time of any record entering history, keeping a
-    /// sender annotation that is already present.
-    pub fn posted(&self, id: NotificationId, now_ms: u64) {
+    /// sender annotation that is already present, and returns the origin.
+    pub fn posted(&self, id: NotificationId, now_ms: u64) -> Origin {
         let mut origins = self.lock();
         if origins.len() >= MAX_ORIGINS && !origins.contains_key(&id) {
-            return;
+            return Origin {
+                posted_unix_ms: Some(now_ms),
+                ..Origin::default()
+            };
         }
-        origins.entry(id).or_default().posted_unix_ms = Some(now_ms);
+        let origin = origins.entry(id).or_default();
+        origin.posted_unix_ms = Some(now_ms);
+        origin.clone()
     }
 
     /// Drops origins whose record left history, except fresh annotations
@@ -109,22 +182,6 @@ impl Origins {
     pub fn get(&self, id: NotificationId) -> Option<Origin> {
         self.lock().get(&id).cloned()
     }
-
-    pub fn wire(&self, live: &[NotificationId]) -> Vec<WireOrigin> {
-        let origins = self.lock();
-        live.iter()
-            .filter_map(|id| {
-                let origin = origins.get(id)?;
-                Some((
-                    id.get(),
-                    origin.posted_unix_ms.unwrap_or_default(),
-                    origin.desktop_id.clone().unwrap_or_default(),
-                    origin.executable.clone().unwrap_or_default(),
-                ))
-            })
-            .take(MAX_WIRE_ORIGINS)
-            .collect()
-    }
 }
 
 pub fn unix_ms_now() -> u64 {
@@ -134,20 +191,7 @@ pub fn unix_ms_now() -> u64 {
         .unwrap_or_default()
 }
 
-fn valid_desktop_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= MAX_DESKTOP_ID_BYTES
-        && !id.starts_with('.')
-        && id
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character))
-}
-
-fn valid_executable(path: &str) -> bool {
-    path.starts_with('/')
-        && path.len() <= MAX_EXECUTABLE_BYTES
-        && !path.chars().any(char::is_control)
-}
+use rmac_notifications_store::{valid_desktop_id, valid_executable};
 
 /// The desktop-entry ID in a systemd XDG application unit, as launchers
 /// name them: `app[-<launcher>]-<id>-<random>.scope` or
@@ -283,34 +327,104 @@ mod tests {
     #[test]
     fn origins_follow_history_and_keep_fresh_annotations() {
         let origins = Origins::default();
-        origins.sender(id(1), Some("org.example.Chat".into()), None, 1_000);
-        origins.posted(id(1), 1_500);
-        origins.posted(id(2), 2_000);
-        assert_eq!(
-            origins.wire(&[id(1), id(2)]),
-            vec![
-                (1, 1_500, "org.example.Chat".into(), String::new()),
-                (2, 2_000, String::new(), String::new()),
-            ]
+        origins.sender(
+            id(1),
+            Some("org.example.Chat".into()),
+            None,
+            SenderHints::default(),
+            1_000,
         );
+        assert_eq!(
+            origins.posted(id(1), 1_500).desktop_id.as_deref(),
+            Some("org.example.Chat")
+        );
+        assert_eq!(origins.posted(id(2), 2_000).posted_unix_ms, Some(2_000));
+        assert_eq!(origins.get(id(1)).unwrap().posted_unix_ms, Some(1_500));
 
-        origins.sender(id(3), None, Some("/usr/bin/tool".into()), 2_000);
+        origins.sender(
+            id(3),
+            None,
+            Some("/usr/bin/tool".into()),
+            SenderHints::default(),
+            2_000,
+        );
         origins.retain(&[id(1)], 10_000);
-        assert_eq!(origins.wire(&[id(2), id(3)]).len(), 2);
+        assert!(origins.get(id(2)).is_some());
+        assert!(origins.get(id(3)).is_some());
         origins.retain(&[id(1)], 2_000 + UNCLAIMED_GRACE_MS);
-        assert_eq!(origins.wire(&[id(2), id(3)]), Vec::new());
-        assert_eq!(origins.wire(&[id(1)]).len(), 1);
+        assert!(origins.get(id(2)).is_none());
+        assert!(origins.get(id(3)).is_none());
+        assert!(origins.get(id(1)).is_some());
     }
 
     #[test]
-    fn wire_origins_decode_unknowns_and_reject_invalid_text() {
+    fn a_sender_names_its_app_and_icon_but_invalid_claims_are_dropped() {
+        let origins = Origins::default();
+        origins.sender(
+            id(1),
+            None,
+            None,
+            SenderHints {
+                desktop_entry: Some("org.rmac.TextEditor.desktop".into()),
+                app_name: Some("Text Editor".into()),
+                icon: Some("org.rmac.TextEditor".into()),
+            },
+            1_000,
+        );
+        let origin = origins.get(id(1)).unwrap();
         assert_eq!(
-            Origin::from_wire(0, String::new(), String::new()),
+            origin.hinted_desktop_id.as_deref(),
+            Some("org.rmac.TextEditor")
+        );
+        assert_eq!(origin.app_name.as_deref(), Some("Text Editor"));
+        assert_eq!(origin.icon.as_deref(), Some("org.rmac.TextEditor"));
+
+        origins.sender(
+            id(2),
+            None,
+            None,
+            SenderHints {
+                desktop_entry: Some("../evil".into()),
+                app_name: Some("line\nbreak".into()),
+                icon: Some("relative/icon.png".into()),
+            },
+            1_000,
+        );
+        let origin = origins.get(id(2)).unwrap();
+        assert_eq!(origin.hinted_desktop_id, None);
+        assert_eq!(origin.app_name, None);
+        assert_eq!(origin.icon, None);
+    }
+
+    #[test]
+    fn wire_origins_round_trip_and_decode_unknowns() {
+        assert_eq!(
+            from_wire(
+                0,
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
+                String::new()
+            ),
             Origin::default()
         );
-        let origin = Origin::from_wire(5, "bad id".into(), "relative".into());
+        let origin = from_wire(
+            5,
+            "bad id".into(),
+            "relative".into(),
+            "org.example.Chat".into(),
+            "Chat".into(),
+            "file:///usr/share/icons/chat.png".into(),
+        );
         assert_eq!(origin.posted_unix_ms, Some(5));
         assert_eq!(origin.desktop_id, None);
         assert_eq!(origin.executable, None);
+        let wire = to_wire(id(7), &origin);
+        let (_, posted, desktop_id, executable, hinted, name, icon) = wire;
+        assert_eq!(
+            from_wire(posted, desktop_id, executable, hinted, name, icon),
+            origin
+        );
     }
 }

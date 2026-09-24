@@ -100,6 +100,8 @@ pub struct LoadSnapshot {
 pub struct Center {
     pub(super) history: Vec<Notification>,
     pub(super) policies: BTreeMap<AppId, AppPolicy>,
+    /// Display-only labels of records still in `history`.
+    pub(super) labels: BTreeMap<NotificationId, Label>,
 }
 
 impl fmt::Debug for Center {
@@ -121,6 +123,32 @@ impl fmt::Debug for Center {
 impl Center {
     pub fn history(&self) -> &[Notification] {
         &self.history
+    }
+
+    /// The display-only label of a record in history.
+    pub fn label(&self, id: NotificationId) -> Option<&Label> {
+        self.labels.get(&id)
+    }
+
+    /// Labels a record in history, replacing its previous label. A label
+    /// for a record that is not in history is ignored. Returns whether
+    /// anything changed.
+    pub fn set_label(&mut self, id: NotificationId, label: Label) -> bool {
+        let label = label.sanitized();
+        if !self.history.iter().any(|record| record.id == id) {
+            return false;
+        }
+        if label.is_empty() {
+            return self.labels.remove(&id).is_some();
+        }
+        self.labels.insert(id, label.clone()) != Some(label)
+    }
+
+    /// Drops labels whose record has left history.
+    pub(super) fn prune_labels(&mut self) {
+        let history = &self.history;
+        self.labels
+            .retain(|id, _| history.iter().any(|record| record.id == *id));
     }
 
     pub fn policy(&self, app_id: &AppId) -> AppPolicy {
@@ -200,6 +228,7 @@ impl Center {
             .retain(|record| record.id != notification.id || record.source != notification.source);
         self.history.push(notification);
         self.enforce_bounds(&app_id);
+        self.prune_labels();
     }
 
     pub fn clear(&mut self, app_id: Option<&AppId>) -> bool {
@@ -210,12 +239,14 @@ impl Center {
                 .retain(|record| record.source.app_id() != app_id),
             None => self.history.clear(),
         }
+        self.prune_labels();
         self.history.len() != before
     }
 
     pub fn remove(&mut self, id: NotificationId) -> bool {
         let before = self.history.len();
         self.history.retain(|record| record.id != id);
+        self.prune_labels();
         self.history.len() != before
     }
 

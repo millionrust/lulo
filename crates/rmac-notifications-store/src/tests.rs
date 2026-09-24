@@ -305,3 +305,77 @@ fn malformed_and_oversized_files_recover_to_empty_without_content_errors() {
     assert!(loaded.center.history().is_empty());
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
+
+#[test]
+fn record_labels_persist_with_their_records_and_leave_with_them() {
+    let path = temp_path("labels");
+    let store = Store::at(path.clone());
+    let mut center = Center::default();
+    center.upsert(notification("org.example.Chat", "one", 10, false));
+    center.upsert(notification("org.example.Chat", "two", 11, false));
+    let first = NotificationId::from_protocol(10).unwrap();
+    let second = NotificationId::from_protocol(11).unwrap();
+    let label = Label {
+        posted_unix_ms: Some(1_790_166_600_000),
+        desktop_id: Some("org.example.Chat".into()),
+        executable: Some("/usr/bin/chat".into()),
+        hinted_desktop_id: Some("org.example.Chat.desktop".into()),
+        app_name: Some(" Chat ".into()),
+        icon: Some("org.example.Chat".into()),
+    };
+    assert!(center.set_label(first, label.clone()));
+    assert!(!center.set_label(first, label));
+    // A label for a record that is not in history is ignored.
+    assert!(!center.set_label(NotificationId::from_protocol(99).unwrap(), Label::default()));
+    assert!(center.set_label(
+        second,
+        Label {
+            posted_unix_ms: Some(5),
+            // Invalid fields are dropped, not stored.
+            executable: Some("relative/tool".into()),
+            icon: Some("/usr/share/../../etc/passwd".into()),
+            ..Label::default()
+        },
+    ));
+    store.save(&center).unwrap();
+
+    let mut loaded = store.load().unwrap().center;
+    let restored = loaded.label(first).unwrap();
+    assert_eq!(restored.posted_unix_ms, Some(1_790_166_600_000));
+    assert_eq!(
+        restored.hinted_desktop_id.as_deref(),
+        Some("org.example.Chat")
+    );
+    assert_eq!(restored.app_name.as_deref(), Some("Chat"));
+    assert_eq!(restored.icon.as_deref(), Some("org.example.Chat"));
+    let partial = loaded.label(second).unwrap();
+    assert_eq!(partial.posted_unix_ms, Some(5));
+    assert_eq!(partial.executable, None);
+    assert_eq!(partial.icon, None);
+
+    assert!(loaded.remove(first));
+    assert!(loaded.label(first).is_none());
+    assert!(loaded.clear(None));
+    assert!(loaded.label(second).is_none());
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}
+
+#[test]
+fn a_history_file_from_before_labels_still_loads() {
+    let path = temp_path("unlabelled");
+    let store = Store::at(path.clone());
+    let mut center = Center::default();
+    center.upsert(notification("org.example.Chat", "one", 10, false));
+    store.save(&center).unwrap();
+    // Without labels there is no `labels` key: the file older builds wrote.
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(!saved.contains("\"labels\""));
+    let loaded = store.load().unwrap();
+    assert_eq!(loaded.recovery, Recovery::None);
+    assert_eq!(loaded.center.history().len(), 1);
+    assert!(loaded
+        .center
+        .label(NotificationId::from_protocol(10).unwrap())
+        .is_none());
+    std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+}

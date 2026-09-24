@@ -207,12 +207,19 @@ pub fn snapshot() -> Result<Snapshot, Error> {
 /// and duplicates are ignored rather than failing the snapshot.
 pub fn attach_origins(snapshot: &mut Snapshot, origins: Vec<crate::origin::WireOrigin>) {
     let mut by_id = std::collections::BTreeMap::new();
-    for (id, posted, desktop_id, executable) in
+    for (id, posted, desktop_id, executable, hinted_desktop_id, app_name, icon) in
         origins.into_iter().take(crate::origin::MAX_WIRE_ORIGINS)
     {
-        by_id
-            .entry(id)
-            .or_insert_with(|| crate::origin::Origin::from_wire(posted, desktop_id, executable));
+        by_id.entry(id).or_insert_with(|| {
+            crate::origin::from_wire(
+                posted,
+                desktop_id,
+                executable,
+                hinted_desktop_id,
+                app_name,
+                icon,
+            )
+        });
     }
     for record in &mut snapshot.records {
         if let Some(origin) = by_id.remove(&record.id.get()) {
@@ -694,15 +701,41 @@ mod tests {
         attach_origins(
             &mut snapshot,
             vec![
-                (99, 1, "org.example.Unknown".into(), String::new()),
-                (7, 1_700, "org.example.Chat".into(), "/usr/bin/chat".into()),
-                (7, 9_999, String::new(), String::new()),
+                (
+                    99,
+                    1,
+                    "org.example.Unknown".into(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                ),
+                (
+                    7,
+                    1_700,
+                    "org.example.Chat".into(),
+                    "/usr/bin/chat".into(),
+                    "org.example.Chat".into(),
+                    "Chat".into(),
+                    "/usr/share/icons/chat.png".into(),
+                ),
+                (
+                    7,
+                    9_999,
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                ),
             ],
         );
         let origin = &snapshot.records[0].origin;
         assert_eq!(origin.posted_unix_ms, Some(1_700));
         assert_eq!(origin.desktop_id.as_deref(), Some("org.example.Chat"));
         assert_eq!(origin.executable.as_deref(), Some("/usr/bin/chat"));
+        assert_eq!(origin.app_name.as_deref(), Some("Chat"));
+        assert_eq!(origin.icon.as_deref(), Some("/usr/share/icons/chat.png"));
         assert!(!format!("{:?}", snapshot.records[0]).contains("chat"));
 
         assert!(decode_history(vec![(

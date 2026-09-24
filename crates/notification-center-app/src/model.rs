@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, NaiveDateTime};
 use gpui::SharedString;
+use rmac_locale::HourCycle;
 use rmac_notifications::NotificationId;
 use rmac_notifications_linux::center::{ActionSelection, HistoryRecord};
 use rmac_notifications_linux::origin::Origin;
@@ -139,15 +140,26 @@ impl ApplicationCatalog {
 
     /// The group key and visible identity of the application that sent a
     /// notification with this service application ID and display origin.
+    ///
+    /// An installed application is found, in order, by the sender's
+    /// `desktop-entry` hint, the kernel-reported app scope, the service
+    /// application ID (a portal's authenticated app ID), a unique
+    /// executable, and finally an exact installed name given as `app_name`.
+    /// Its icon is the desktop entry's `Icon=`; the sender's own icon
+    /// (`image-path` or `app_icon`) stands in when the entry has none or no
+    /// installed application matches. An unmatched sender is named, and
+    /// stacked, by the `app_name` it gave.
     pub(crate) fn resolve_origin(
         &self,
         app_id: &str,
         origin: &Origin,
     ) -> (String, ApplicationIdentity) {
+        let sender_icon = origin.icon.as_deref().and_then(icon_file);
         let known = origin
-            .desktop_id
+            .hinted_desktop_id
             .as_deref()
             .and_then(|id| self.by_id(id))
+            .or_else(|| origin.desktop_id.as_deref().and_then(|id| self.by_id(id)))
             .or_else(|| self.by_id(app_id))
             .or_else(|| {
                 origin
@@ -155,16 +167,39 @@ impl ApplicationCatalog {
                     .as_deref()
                     .and_then(|path| self.by_executable.get(Path::new(path)))
             })
+            .or_else(|| {
+                origin
+                    .app_name
+                    .as_deref()
+                    .and_then(|name| self.by_name.get(name))
+            })
             .or_else(|| self.by_name.get(app_id));
         if let Some((id, identity)) = known {
-            return (id.clone(), identity.clone());
+            let mut identity = identity.clone();
+            if identity.icon.is_none() {
+                identity.icon = sender_icon;
+            }
+            return (id.clone(), identity);
         }
-        if let Some(id) = &origin.desktop_id {
+        if let Some(name) = &origin.app_name {
+            return (
+                format!("name:{name}"),
+                ApplicationIdentity {
+                    name: name.clone().into(),
+                    icon: sender_icon,
+                },
+            );
+        }
+        if let Some(id) = origin
+            .hinted_desktop_id
+            .as_ref()
+            .or(origin.desktop_id.as_ref())
+        {
             return (
                 id.clone(),
                 ApplicationIdentity {
                     name: id.clone().into(),
-                    icon: None,
+                    icon: sender_icon,
                 },
             );
         }
@@ -178,7 +213,7 @@ impl ApplicationCatalog {
                 format!("exe:{path}"),
                 ApplicationIdentity {
                     name: name.into(),
-                    icon: None,
+                    icon: sender_icon,
                 },
             );
         }
@@ -186,7 +221,7 @@ impl ApplicationCatalog {
             format!("app:{app_id}"),
             ApplicationIdentity {
                 name: fallback_app_name(app_id).into(),
-                icon: None,
+                icon: sender_icon,
             },
         )
     }
@@ -199,6 +234,12 @@ impl ApplicationCatalog {
                 icon: None,
             })
     }
+}
+
+/// The file a sender's icon names. The service has already turned theme
+/// names and `file://` URIs into absolute paths; anything else is ignored.
+fn icon_file(icon: &str) -> Option<PathBuf> {
+    icon.starts_with('/').then(|| PathBuf::from(icon))
 }
 
 /// Resolves an `Exec=` program to its canonical executable, searching
@@ -324,9 +365,47 @@ fn local_time(unix_ms: u64, offset_seconds: i32) -> Option<NaiveDateTime> {
     utc.checked_add_signed(Duration::seconds(i64::from(offset_seconds)))
 }
 
+/// The session's 12- or 24-hour clock, read once from the system locale
+/// (`LC_TIME`) off the UI thread. Until it is known, and when it cannot be
+/// read, times use the 24-hour clock, as the menu bar does.
+static HOUR_CYCLE: std::sync::OnceLock<HourCycle> = std::sync::OnceLock::new();
+
+/// Reads the locale's hour cycle. Blocking (one D-Bus call to localed).
+pub(crate) fn load_hour_cycle() {
+    match rmac_locale_linux::hour_cycle() {
+        Ok(cycle) => {
+            let _ = HOUR_CYCLE.set(cycle);
+        }
+        Err(error) => eprintln!(
+            "notification times use the 24-hour clock: the locale's clock is unknown ({error})"
+        ),
+    }
+}
+
+pub(crate) fn hour_cycle() -> HourCycle {
+    HOUR_CYCLE
+        .get()
+        .copied()
+        .unwrap_or(HourCycle::TwentyFourHour)
+}
+
+fn clock_time(time: NaiveDateTime, cycle: HourCycle) -> String {
+    match cycle {
+        HourCycle::TwelveHour => time.format("%-I:%M %p").to_string(),
+        HourCycle::TwentyFourHour => time.format("%H:%M").to_string(),
+    }
+}
+
 /// The macOS relative timestamp on a notification card: "now", "5m ago",
-/// "2h ago", "Yesterday", a weekday within the week, then a short date.
-pub(crate) fn relative_time(posted_unix_ms: u64, now_unix_ms: u64, offset_seconds: i32) -> String {
+/// "2h ago", then "Yesterday, 1:45 PM", a weekday with its time within the
+/// week, then a short date. The clock follows the locale's hour cycle.
+/// S: the weekday and date forms were not captured on the Mac.
+pub(crate) fn relative_time(
+    posted_unix_ms: u64,
+    now_unix_ms: u64,
+    offset_seconds: i32,
+    cycle: HourCycle,
+) -> String {
     const MINUTE: u64 = 60_000;
     const HOUR: u64 = 60 * MINUTE;
     const DAY: u64 = 24 * HOUR;
@@ -348,9 +427,9 @@ pub(crate) fn relative_time(posted_unix_ms: u64, now_unix_ms: u64, offset_second
     };
     let days = (now.date() - posted.date()).num_days();
     if days <= 1 {
-        "Yesterday".into()
+        format!("Yesterday, {}", clock_time(posted, cycle))
     } else if days < 7 {
-        posted.format("%A").to_string()
+        format!("{}, {}", posted.format("%A"), clock_time(posted, cycle))
     } else if posted.format("%Y").to_string() == now.format("%Y").to_string() {
         posted.format("%-d %b").to_string()
     } else {
@@ -381,6 +460,15 @@ mod tests {
             posted_unix_ms: posted,
             desktop_id: desktop_id.map(Into::into),
             executable: executable.map(Into::into),
+            ..Origin::default()
+        }
+    }
+
+    fn named(name: &str, icon: Option<&str>) -> Origin {
+        Origin {
+            app_name: Some(name.into()),
+            icon: icon.map(Into::into),
+            ..Origin::default()
         }
     }
 
@@ -506,6 +594,76 @@ mod tests {
     }
 
     #[test]
+    fn a_desktop_entry_hint_names_the_app_and_its_icon() {
+        let catalog = ApplicationCatalog::new(vec![
+            entry("org.rmac.TextEditor.desktop", "Text Editor", None),
+            entry("org.rmac.Terminal.desktop", "Terminal", None),
+        ]);
+        // `notify-send -a "Text Editor" -i org.rmac.TextEditor
+        //  -h string:desktop-entry:org.rmac.TextEditor`, run from Terminal.
+        let (key, identity) = catalog.resolve_origin(
+            ":1.80",
+            &Origin {
+                desktop_id: Some("org.rmac.Terminal".into()),
+                executable: Some("/usr/bin/notify-send".into()),
+                hinted_desktop_id: Some("org.rmac.TextEditor".into()),
+                app_name: Some("Text Editor".into()),
+                icon: Some("/usr/share/icons/hicolor/64x64/apps/org.rmac.TextEditor.png".into()),
+                ..Origin::default()
+            },
+        );
+        assert_eq!(key, "org.rmac.TextEditor.desktop");
+        assert_eq!(identity.name.as_ref(), "Text Editor");
+        // The desktop entry's Icon= wins over the sender's own image.
+        assert_eq!(
+            identity.icon.as_deref(),
+            Some(Path::new("/icons/org.rmac.TextEditor.desktop.svg"))
+        );
+
+        // Without the hint, an exact installed name still finds the app.
+        let (key, _) = catalog.resolve_origin(":1.81", &named("Text Editor", None));
+        assert_eq!(key, "org.rmac.TextEditor.desktop");
+    }
+
+    #[test]
+    fn an_unknown_sender_shows_its_own_name_and_icon_and_stacks_by_name() {
+        let catalog = catalog();
+        let (key, identity) = catalog.resolve_origin(
+            ":1.90",
+            &named("Build Bot", Some("/usr/share/icons/build.png")),
+        );
+        assert_eq!(key, "name:Build Bot");
+        assert_eq!(identity.name.as_ref(), "Build Bot");
+        assert_eq!(
+            identity.icon.as_deref(),
+            Some(Path::new("/usr/share/icons/build.png"))
+        );
+        // A theme name the service could not resolve draws the plate.
+        let (_, identity) =
+            catalog.resolve_origin(":1.91", &named("Build Bot", Some("build-icon")));
+        assert!(identity.icon.is_none());
+
+        // Four notify-send processes, one app name: one stack.
+        let records = (1..=4)
+            .map(|id| {
+                record(
+                    id,
+                    &format!(":1.{}", 100 + id),
+                    Origin {
+                        posted_unix_ms: Some(u64::from(id) * 1_000),
+                        ..named("Build Bot", None)
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        let groups = group_records(&records, &catalog);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].records.len(), 4);
+        assert_eq!(groups[0].app_ids.len(), 4);
+        assert_eq!(groups[0].records[0].id.get(), 4);
+    }
+
+    #[test]
     fn the_surface_hugs_its_cards_between_the_dim_and_the_cap() {
         assert_eq!(panel_height(0.0), DIM_HEIGHT);
         assert_eq!(panel_height(64.0), DIM_HEIGHT);
@@ -523,16 +681,43 @@ mod tests {
         let minute = 60_000;
         let hour = 60 * minute;
         let day = 24 * hour;
-        assert_eq!(relative_time(now, now, 0), "now");
-        assert_eq!(relative_time(now - 59_000, now, 0), "now");
-        assert_eq!(relative_time(now + 5_000, now, 0), "now");
-        assert_eq!(relative_time(now - 5 * minute, now, 0), "5m ago");
-        assert_eq!(relative_time(now - 2 * hour - minute, now, 0), "2h ago");
-        assert_eq!(relative_time(now - day - hour, now, 0), "Yesterday");
-        assert_eq!(relative_time(now - 3 * day, now, 0), "Sunday");
-        assert_eq!(relative_time(now - 10 * day, now, 0), "13 Sep");
-        assert_eq!(relative_time(now - 400 * day, now, 0), "19 Aug 2025");
-        // 13:00 local two days ago still reads as a weekday.
-        assert_eq!(relative_time(now - 2 * day, now, 5 * 3_600), "Monday");
+        let twelve = HourCycle::TwelveHour;
+        let twenty_four = HourCycle::TwentyFourHour;
+        assert_eq!(relative_time(now, now, 0, twelve), "now");
+        assert_eq!(relative_time(now - 59_000, now, 0, twelve), "now");
+        assert_eq!(relative_time(now + 5_000, now, 0, twelve), "now");
+        assert_eq!(relative_time(now - 5 * minute, now, 0, twelve), "5m ago");
+        assert_eq!(
+            relative_time(now - 2 * hour - minute, now, 0, twelve),
+            "2h ago"
+        );
+        // Yesterday 11:30 UTC.
+        assert_eq!(
+            relative_time(now - day - hour, now, 0, twelve),
+            "Yesterday, 11:30 AM"
+        );
+        assert_eq!(
+            relative_time(now - day - hour, now, 0, twenty_four),
+            "Yesterday, 11:30"
+        );
+        // The same moment reads in local time: 17:00 at +5:30.
+        assert_eq!(
+            relative_time(now - day - hour, now, 5 * 3_600 + 1_800, twelve),
+            "Yesterday, 5:00 PM"
+        );
+        assert_eq!(
+            relative_time(now - 3 * day, now, 0, twelve),
+            "Sunday, 12:30 PM"
+        );
+        assert_eq!(relative_time(now - 10 * day, now, 0, twelve), "13 Sep");
+        assert_eq!(
+            relative_time(now - 400 * day, now, 0, twelve),
+            "19 Aug 2025"
+        );
+        // 17:30 local two days ago still reads as a weekday.
+        assert_eq!(
+            relative_time(now - 2 * day, now, 5 * 3_600, twenty_four),
+            "Monday, 17:30"
+        );
     }
 }

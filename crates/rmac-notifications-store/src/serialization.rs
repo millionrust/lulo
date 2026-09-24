@@ -7,6 +7,10 @@ pub(super) struct StoredFile {
     version: u32,
     history: Vec<StoredNotification>,
     policies: BTreeMap<String, AppPolicy>,
+    /// Added within version 1: an older file has none, and an older build
+    /// ignores them, so no version change is needed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    labels: Vec<StoredLabel>,
 }
 
 impl StoredFile {
@@ -23,6 +27,11 @@ impl StoredFile {
                 .iter()
                 .map(|(app_id, policy)| (app_id.as_str().to_owned(), *policy))
                 .collect(),
+            labels: center
+                .labels
+                .iter()
+                .map(|(id, label)| StoredLabel::from_label(*id, label))
+                .collect(),
         })
     }
 
@@ -33,7 +42,10 @@ impl StoredFile {
                 ErrorKind::UnsupportedVersion,
             ));
         }
-        if self.history.len() > MAX_HISTORY || self.policies.len() > MAX_POLICIES {
+        if self.history.len() > MAX_HISTORY
+            || self.policies.len() > MAX_POLICIES
+            || self.labels.len() > MAX_HISTORY
+        {
             return Err(Error::new(Operation::Validate, ErrorKind::Limit));
         }
         let history = self
@@ -47,7 +59,15 @@ impl StoredFile {
             .map(|(app_id, policy)| AppId::parse(app_id).map(|app_id| (app_id, policy)))
             .collect::<Result<BTreeMap<_, _>, _>>()
             .map_err(|_| Error::new(Operation::Validate, ErrorKind::Invalid))?;
-        let mut center = Center { history, policies };
+        let mut center = Center {
+            history,
+            policies,
+            labels: self
+                .labels
+                .into_iter()
+                .filter_map(StoredLabel::into_label)
+                .collect(),
+        };
         let app_ids: Vec<_> = center
             .history
             .iter()
@@ -56,6 +76,7 @@ impl StoredFile {
         for app_id in app_ids {
             center.enforce_bounds(&app_id);
         }
+        center.prune_labels();
         Ok(center)
     }
 }

@@ -12,12 +12,15 @@ use rmac_notifications::{
 };
 use serde::{Deserialize, Serialize};
 
+mod label;
 mod model;
 mod serialization;
 mod store;
 #[cfg(test)]
 mod tests;
 
+use label::StoredLabel;
+pub use label::*;
 pub use model::*;
 use serialization::*;
 pub use store::*;

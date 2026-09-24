@@ -1962,7 +1962,9 @@ struct TrivialActivationHandler {
 
 impl accesskit::ActivationHandler for TrivialActivationHandler {
     fn request_initial_tree(&mut self) -> Option<accesskit::TreeUpdate> {
-        (self.callback)()
+        let mut tree_update = (self.callback)()?;
+        crate::linux::a11y::label_toolkit(&mut tree_update);
+        Some(tree_update)
     }
 }
 

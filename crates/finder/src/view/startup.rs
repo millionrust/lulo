@@ -157,6 +157,11 @@ impl FinderView {
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         cx.observe_window_activation(window, |this, window, cx| {
+            // Another app may have copied files while this window was in
+            // the background.
+            if window.is_window_active() {
+                this.refresh_pasteboard_state(cx);
+            }
             if !window.is_window_active()
                 && rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window, cx)
             {
@@ -199,6 +204,7 @@ impl FinderView {
             anchor: None,
             clipboard: Vec::new(),
             clip_cut: false,
+            pasteboard_has_files: false,
             renaming: None,
             show_hidden: false,
             view: presentation.view,
@@ -283,6 +289,7 @@ impl FinderView {
         };
         view.persist_finder_state();
         view.reload(cx);
+        view.refresh_pasteboard_state(cx);
 
         spawn_recovery_loaders(cx);
 

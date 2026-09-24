@@ -67,17 +67,64 @@ impl FinderView {
         }
     }
 
+    /// Publish `self.clipboard` on the system clipboard (Copy, Cut, and
+    /// the unfinished half of a move). A failure is shown; the items stay
+    /// in this window's own clipboard, so Paste here still works.
     pub(super) fn write_clip_text(&self, cx: &mut Context<Self>) {
-        pasteboard::write_file_urls(&self.clipboard);
-        let text = self
-            .clipboard
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !text.is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(text));
+        let pending = pasteboard::write_file_list(self.clipboard.clone(), self.clip_cut);
+        // macOS also offers the paths as text for text fields; on Linux
+        // wl-copy already offers the URI list as text, and a second writer
+        // would replace the file list.
+        #[cfg(not(target_os = "linux"))]
+        {
+            let text = self
+                .clipboard
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            if !text.is_empty() {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+            }
         }
+        let has_files = !self.clipboard.is_empty();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = pending.wait().await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                match result {
+                    Ok(()) => this.pasteboard_has_files = has_files,
+                    Err(error) => {
+                        this.operation_error = Some(
+                            format!("The items were not put on the clipboard: {error}").into(),
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Ask whether the system clipboard holds files, so Paste is offered
+    /// in a window that did not copy them. Runs when the window becomes
+    /// active, never on a timer.
+    pub(super) fn refresh_pasteboard_state(&self, cx: &mut Context<Self>) {
+        let pending = pasteboard::has_file_list();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            // A failure here is reported by Paste itself, which reads again.
+            let has_files = pending.wait().await.unwrap_or(false);
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                if this.pasteboard_has_files != has_files {
+                    this.pasteboard_has_files = has_files;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    pub(super) fn can_paste(&self) -> bool {
+        !self.clipboard.is_empty() || self.pasteboard_has_files
     }
 
     pub(super) fn copy(&mut self, cx: &mut Context<Self>) {
@@ -91,7 +138,11 @@ impl FinderView {
             cx.notify();
             return;
         }
-        self.clipboard = self.selected_paths();
+        let paths = self.selected_paths();
+        if paths.is_empty() {
+            return;
+        }
+        self.clipboard = paths;
         self.clip_cut = false;
         self.write_clip_text(cx);
     }
@@ -107,31 +158,84 @@ impl FinderView {
             cx.notify();
             return;
         }
-        self.clipboard = self.selected_paths();
+        let paths = self.selected_paths();
+        if paths.is_empty() {
+            return;
+        }
+        self.clipboard = paths;
         self.clip_cut = true;
         self.write_clip_text(cx);
     }
 
+    /// Paste reads the system clipboard first, so files copied in another
+    /// window or another file manager are pasted, then runs the ordinary
+    /// transfer (conflict sheet, cancellation, undo journal).
     pub(super) fn paste(&mut self, cx: &mut Context<Self>) {
         if self.block_mutation_during_transfer(cx) {
             return;
         }
-        if self.clipboard.is_empty() {
-            let mut paths = pasteboard::read_file_urls();
-            paths.retain(|path| path.exists());
-            if paths.is_empty() {
-                if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-                    paths = text
-                        .lines()
-                        .map(PathBuf::from)
-                        .filter(|path| path.exists())
-                        .collect();
+        let pending = pasteboard::read_file_list();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let read = pending.wait().await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| this.paste_from(read, cx));
+        })
+        .detach();
+    }
+
+    fn paste_from(
+        &mut self,
+        read: std::result::Result<Option<pasteboard::FileList>, pasteboard::PasteboardError>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.block_mutation_during_transfer(cx) {
+            return;
+        }
+        match read {
+            Ok(Some(list)) => {
+                self.pasteboard_has_files = true;
+                // The Mac pasteboard cannot say "cut"; this window can,
+                // when these are the items it cut.
+                let cut = list.cut
+                    || (self.clip_cut && pasteboard::same_files(&list.paths, &self.clipboard));
+                self.clipboard = list.paths;
+                self.clip_cut = cut;
+            }
+            Ok(None) => {
+                self.pasteboard_has_files = false;
+                // Something other than files was copied since: the system
+                // clipboard is the authority, so the old items are not
+                // pasted. (macOS keeps this window's own list; its text
+                // copy replaces the file URLs.)
+                #[cfg(target_os = "linux")]
+                {
+                    self.clipboard.clear();
+                    self.clip_cut = false;
                 }
             }
-            if !paths.is_empty() {
-                self.clipboard = paths;
+            Err(error) => {
+                if self.clipboard.is_empty() {
+                    self.operation_error = Some(format!("Nothing was pasted: {error}").into());
+                    cx.notify();
+                    return;
+                }
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        if self.clipboard.is_empty() {
+            if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+                self.clipboard = text.lines().map(PathBuf::from).collect();
                 self.clip_cut = false;
             }
+        }
+        // Items that vanished since they were copied are skipped; a
+        // symbolic link counts as itself, whether or not its target exists.
+        self.clipboard
+            .retain(|path| path.is_absolute() && path.symlink_metadata().is_ok());
+        if self.clipboard.is_empty() {
+            self.clip_cut = false;
+            self.operation_notice = Some("There are no files on the clipboard to paste".into());
+            cx.notify();
+            return;
         }
         let kind = if self.clip_cut {
             file_ops::TransferKind::Move
@@ -143,10 +247,9 @@ impl FinderView {
             if self.clip_cut && source.parent() == Some(self.cwd.as_path()) {
                 continue;
             }
-            let name = source
-                .file_name()
-                .map(|name| name.to_owned())
-                .unwrap_or_default();
+            let Some(name) = source.file_name().map(|name| name.to_owned()) else {
+                continue;
+            };
             tasks.push(file_ops::TransferTask {
                 kind: kind.clone(),
                 source,
@@ -155,9 +258,9 @@ impl FinderView {
         }
         if tasks.is_empty() {
             if self.clip_cut {
-                self.clipboard.clear();
+                let pasted = std::mem::take(&mut self.clipboard);
                 self.clip_cut = false;
-                pasteboard::clear_file_urls();
+                self.clear_pasteboard_after_move(pasted, cx);
                 self.operation_notice =
                     Some("The items are already in this folder; nothing was moved".into());
                 cx.notify();
@@ -171,6 +274,30 @@ impl FinderView {
             false,
             cx,
         );
+    }
+
+    /// After a cut is pasted the clipboard is emptied, as in Nautilus,
+    /// unless something else was copied in the meantime.
+    pub(super) fn clear_pasteboard_after_move(&self, moved: Vec<PathBuf>, cx: &mut Context<Self>) {
+        if moved.is_empty() {
+            return;
+        }
+        let pending = pasteboard::clear_file_list_if(moved);
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = pending.wait().await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                match result {
+                    Ok(()) => this.pasteboard_has_files = false,
+                    Err(error) => {
+                        this.operation_error = Some(
+                            format!("The moved items are still on the clipboard: {error}").into(),
+                        );
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub(super) fn select_all(&mut self, cx: &mut Context<Self>) {

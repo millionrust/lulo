@@ -178,10 +178,13 @@ impl FinderView {
                                 unfinished.extend(report.unfinished_moves);
                                 unfinished.sort();
                                 unfinished.dedup();
-                                this.clipboard = unfinished;
+                                let pasted = std::mem::replace(&mut this.clipboard, unfinished);
                                 this.clip_cut = !this.clipboard.is_empty();
                                 if this.clip_cut {
                                     this.write_clip_text(cx);
+                                } else {
+                                    // Everything moved: the cut is used up.
+                                    this.clear_pasteboard_after_move(pasted, cx);
                                 }
                             }
                             match recovery_reviews {

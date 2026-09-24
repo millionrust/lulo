@@ -23,7 +23,7 @@ impl Render for FinderView {
             && !self.applications_view
             && self.selection_count() == 1
             && self.selected_entry().is_some_and(|entry| !entry.is_dir);
-        let can_paste = !self.clipboard.is_empty();
+        let can_paste = self.can_paste();
         let undo_label = self
             .undo_available
             .as_ref()

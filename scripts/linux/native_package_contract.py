@@ -130,6 +130,8 @@ PACKAGE_SPECS = (
             "power-profiles-daemon",
             "upower",
             "wireplumber",
+            # Files: Copy, Cut and Paste of files on the Wayland clipboard.
+            "wl-clipboard",
             "xdg-desktop-portal",
             "xdg-utils",
         ),

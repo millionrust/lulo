@@ -82,6 +82,7 @@ class NativePackageContractTests(unittest.TestCase):
         apps = contract.PACKAGE_SPECS[0]
         self.assertIn("packagekit", apps.static_dependencies)
         self.assertNotIn("packagekit-tools", apps.static_dependencies)
+        self.assertIn("wl-clipboard", apps.static_dependencies)
         session = contract.PACKAGE_SPECS[1]
         self.assertIn("rmac-apps (= {version})", session.static_dependencies)
         self.assertIn("niri", session.static_dependencies)

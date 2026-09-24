@@ -143,7 +143,7 @@ impl FinderView {
                 )
                 .disabled(!has_selection),
                 dialog_action("gallery-paste", "Paste Item", DialogActionKind::Normal)
-                    .disabled(self.clipboard.is_empty()),
+                    .disabled(!self.can_paste()),
                 dialog_action("gallery-new-folder", "New Folder", DialogActionKind::Normal),
             ]
         };

@@ -54,10 +54,10 @@ use std::time::{Duration, SystemTime};
 
 use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, AssetSource,
-    ClickEvent, ClipboardItem, Context, Div, Entity, ExternalPaths, FocusHandle, Focusable as _,
-    Hsla, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render, Result, SharedString,
-    Stateful, StatefulInteractiveElement as _, Styled, Svg, Window,
+    ClickEvent, Context, Div, Entity, ExternalPaths, FocusHandle, Focusable as _, Hsla,
+    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, ParentElement, Pixels, Point, Render, Result, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled, Svg, Window,
 };
 use gpui_component::{Icon, IconName, StyledExt as _};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -248,6 +248,9 @@ struct FinderView {
     anchor: Option<usize>,
     clipboard: Vec<PathBuf>,
     clip_cut: bool,
+    /// The system clipboard offered files when last asked (window
+    /// activation, Copy, Paste), so Paste is offered here too.
+    pasteboard_has_files: bool,
     /// Where the right-click context menu is open (window-relative), if any.
     menu_at: Option<rmac_ui::ContextMenuState>,
     menu_purpose: MenuPurpose,

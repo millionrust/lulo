@@ -1,3 +1,4 @@
+mod accessibility;
 mod chrome;
 mod dialogs;
 mod grid;

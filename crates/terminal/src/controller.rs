@@ -48,14 +48,15 @@ use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::term::Term;
 use alacritty_terminal::term::TermMode;
 use gpui::{
-    canvas, div, prelude::FluentBuilder as _, px, AppContext as _, ClipboardItem, Context, Div,
-    ElementInputHandler, Entity, FocusHandle, Focusable as _, FontWeight, Hsla,
-    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, KeyUpEvent, Modifiers,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, NavigationDirection, ParentElement,
-    Pixels, Point, Render, ScrollDelta, ScrollWheelEvent, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled, Window,
+    accesskit, canvas, div, prelude::FluentBuilder as _, px, A11ySubtreeBuilder, AppContext as _,
+    ClipboardItem, Context, Div, ElementInputHandler, Entity, FocusHandle, Focusable as _,
+    FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, KeyUpEvent,
+    Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, NavigationDirection,
+    ParentElement, Pixels, Point, Render, Role, ScrollDelta, ScrollWheelEvent, SharedString,
+    Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::StyledExt as _;
+use rmac_terminal::accessibility::TerminalAccessibilitySnapshot;
 use rmac_ui::{Button, InputState, SearchField};
 #[cfg(test)]
 use vte::ansi::Processor;
@@ -155,6 +156,17 @@ enum PendingClose {
     Window { foreground_sessions: usize },
 }
 
+/// Debounces the visible-grid accessibility projection so a fast-scrolling
+/// command can't turn every redraw into a full re-walk of the grid: idle
+/// windows never hit this path (nothing calls `cx.notify()`), but an active
+/// one (e.g. `yes`, a build log) can call it far more often than a screen
+/// reader needs a fresh text snapshot.
+struct TerminalAccessibilityCache {
+    tab_id: u64,
+    computed_at: std::time::Instant,
+    snapshot: TerminalAccessibilitySnapshot,
+}
+
 pub(super) struct TerminalView {
     tabs: Vec<Session>,
     redraw: RedrawSender,
@@ -192,4 +204,6 @@ pub(super) struct TerminalView {
     pending_paste: Option<PendingPaste>,
     /// Where the right-click context menu is open (window-relative), if any.
     menu_at: Option<rmac_ui::ContextMenuState>,
+    /// Last published AT-SPI text projection of the visible grid, and when.
+    a11y_cache: Option<TerminalAccessibilityCache>,
 }

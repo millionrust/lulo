@@ -4,7 +4,7 @@ use super::*;
 
 impl TerminalView {
     pub(super) fn render_terminal_body(
-        &self,
+        &mut self,
         rows: Vec<gpui::AnyElement>,
         ime_preedit: Option<Div>,
         cx: &mut Context<Self>,
@@ -25,6 +25,10 @@ impl TerminalView {
         .inset_0();
 
         div()
+            .id("terminal-grid")
+            .role(Role::Terminal)
+            .aria_label("Terminal")
+            .a11y_synthetic_children(self.render_terminal_accessibility())
             .track_focus(&self.focus)
             .key_context("Terminal")
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {

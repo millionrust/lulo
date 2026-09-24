@@ -149,6 +149,7 @@ impl TerminalView {
             pending_close: None,
             pending_paste: None,
             menu_at: None,
+            a11y_cache: None,
         }
     }
 

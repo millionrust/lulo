@@ -35,6 +35,29 @@ impl NotesView {
         }
     }
 
+    /// AT-SPI's `SetValue`/`ReplaceSelectedText` for the search field, wired
+    /// the same way `crates/launcher-app` wires Spotlight's search field:
+    /// both actions replace the whole query, then run the same
+    /// search-dispatch path a keystroke takes (`set_value` itself emits no
+    /// change event).
+    pub(super) fn assistive_search_listener(
+        &self,
+        cx: &Context<Self>,
+    ) -> impl FnMut(Option<&accesskit::ActionData>, &mut Window, &mut gpui::App) + 'static {
+        let view = cx.entity();
+        move |data, window, cx| {
+            let Some(accesskit::ActionData::Value(text)) = data else {
+                return;
+            };
+            let text = text.to_string();
+            view.update(cx, |this, cx| {
+                this.search_query
+                    .update(cx, |state, cx| state.set_value(text, window, cx));
+                this.dispatch_search(cx);
+            });
+        }
+    }
+
     pub(super) fn dispatch_search(&mut self, cx: &mut Context<Self>) {
         let query = self.search_query.read(cx).value().to_string();
         if query.trim().is_empty() {

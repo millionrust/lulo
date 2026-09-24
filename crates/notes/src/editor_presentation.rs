@@ -142,10 +142,20 @@ impl NotesView {
         let words = self.body.read(cx).value().split_whitespace().count();
         let characters = self.body.read(cx).value().chars().count();
         let attachments = self.render_attachments(note, cx);
+        let body_value = self.body.read(cx).value().to_string();
         let body = if self.markdown_preview_visible {
             self.render_markdown_preview(cx)
         } else {
             div()
+                .id("notes-body")
+                .role(Role::TextInput)
+                .aria_label("Body")
+                .aria_value(body_value)
+                .on_a11y_action(AccessibleAction::SetValue, self.assistive_body_listener(cx))
+                .on_a11y_action(
+                    AccessibleAction::ReplaceSelectedText,
+                    self.assistive_body_listener(cx),
+                )
                 .flex_1()
                 .min_h(px(0.0))
                 .px(px(44.0))
@@ -222,6 +232,18 @@ impl NotesView {
             )
             .child(
                 div()
+                    .id("notes-title")
+                    .role(Role::TextInput)
+                    .aria_label("Title")
+                    .aria_value(self.title.read(cx).value().to_string())
+                    .on_a11y_action(
+                        AccessibleAction::SetValue,
+                        self.assistive_title_listener(cx),
+                    )
+                    .on_a11y_action(
+                        AccessibleAction::ReplaceSelectedText,
+                        self.assistive_title_listener(cx),
+                    )
                     .px(px(44.0))
                     .pt_1()
                     .text_size(px(24.0))
@@ -236,6 +258,15 @@ impl NotesView {
             )
             .child(
                 div()
+                    .id("notes-tags")
+                    .role(Role::TextInput)
+                    .aria_label("Tags")
+                    .aria_value(self.tags.read(cx).value().to_string())
+                    .on_a11y_action(AccessibleAction::SetValue, self.assistive_tags_listener(cx))
+                    .on_a11y_action(
+                        AccessibleAction::ReplaceSelectedText,
+                        self.assistive_tags_listener(cx),
+                    )
                     .mx(px(44.0))
                     .mt_1()
                     .mb_2()

@@ -112,6 +112,18 @@ impl NotesView {
                     .pr_4()
                     .child(
                         div()
+                            .id("notes-search")
+                            .role(Role::SearchInput)
+                            .aria_label("Search")
+                            .aria_value(self.search_query.read(cx).value().to_string())
+                            .on_a11y_action(
+                                AccessibleAction::SetValue,
+                                self.assistive_search_listener(cx),
+                            )
+                            .on_a11y_action(
+                                AccessibleAction::ReplaceSelectedText,
+                                self.assistive_search_listener(cx),
+                            )
                             .w(px(220.0))
                             .h(px(28.0))
                             .flex()

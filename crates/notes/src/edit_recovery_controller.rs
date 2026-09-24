@@ -47,6 +47,91 @@ impl NotesView {
         cx.notify();
     }
 
+    /// Whether title/tags/body accept edits right now — mirrors
+    /// `render_editor`'s own `editable` computation, so a `SetValue` action
+    /// sent to a read-only editor (Recently Deleted, Markdown preview, no
+    /// worker) is a no-op rather than silently changing on-screen text that
+    /// then never saves.
+    fn assistive_fields_editable(&self) -> bool {
+        self.is_interactive_ready()
+            && !self.markdown_preview_visible
+            && self
+                .session
+                .selected_note()
+                .is_some_and(|note| !note.deleted)
+    }
+
+    /// AT-SPI's `SetValue`/`ReplaceSelectedText` for the title field, wired
+    /// the same way `crates/launcher-app` wires Spotlight's search field:
+    /// both actions replace the whole value, then run the same
+    /// edit-scheduling path a keystroke takes.
+    pub(super) fn assistive_title_listener(
+        &self,
+        cx: &Context<Self>,
+    ) -> impl FnMut(Option<&accesskit::ActionData>, &mut Window, &mut gpui::App) + 'static {
+        let view = cx.entity();
+        move |data, window, cx| {
+            let Some(accesskit::ActionData::Value(text)) = data else {
+                return;
+            };
+            let text = text.to_string();
+            view.update(cx, |this, cx| {
+                if !this.assistive_fields_editable() {
+                    return;
+                }
+                this.title
+                    .update(cx, |state, cx| state.set_value(text, window, cx));
+                this.schedule_current_edit(cx);
+            });
+        }
+    }
+
+    /// AT-SPI's `SetValue`/`ReplaceSelectedText` for the tags field. See
+    /// [`Self::assistive_title_listener`].
+    pub(super) fn assistive_tags_listener(
+        &self,
+        cx: &Context<Self>,
+    ) -> impl FnMut(Option<&accesskit::ActionData>, &mut Window, &mut gpui::App) + 'static {
+        let view = cx.entity();
+        move |data, window, cx| {
+            let Some(accesskit::ActionData::Value(text)) = data else {
+                return;
+            };
+            let text = text.to_string();
+            view.update(cx, |this, cx| {
+                if !this.assistive_fields_editable() {
+                    return;
+                }
+                this.tags
+                    .update(cx, |state, cx| state.set_value(text, window, cx));
+                this.schedule_current_edit(cx);
+            });
+        }
+    }
+
+    /// AT-SPI's `SetValue`/`ReplaceSelectedText` for the body field. See
+    /// [`Self::assistive_title_listener`].
+    pub(super) fn assistive_body_listener(
+        &self,
+        cx: &Context<Self>,
+    ) -> impl FnMut(Option<&accesskit::ActionData>, &mut Window, &mut gpui::App) + 'static {
+        let view = cx.entity();
+        move |data, window, cx| {
+            let Some(accesskit::ActionData::Value(text)) = data else {
+                return;
+            };
+            let text = text.to_string();
+            view.update(cx, |this, cx| {
+                if !this.assistive_fields_editable() {
+                    return;
+                }
+                this.body
+                    .update(cx, |state, cx| state.set_value(text, window, cx));
+                this.schedule_current_edit(cx);
+            });
+        }
+    }
+
     pub(super) fn schedule_current_edit(&mut self, cx: &mut Context<Self>) {
         if self.applying_snapshot || !self.is_interactive_ready() {
             return;

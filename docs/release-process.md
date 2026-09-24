@@ -214,30 +214,98 @@ get-tar-commit-id`). niri's repository moved from `YaLTeR/niri` to
 ### Package names and versions (the choice, and why)
 
 The packages keep the upstream names, `niri` and `xwayland-satellite`, with
-the Debian revision `0luloN`: `niri 26.04-0lulo1`, `xwayland-satellite
-0.8.2-0lulo1`. `rmac-session` depends on `niri (>= 26.04)` and
-`xwayland-satellite (>= 0.8.2)`. Under dpkg's ordering:
+a `+luloN` upstream-version suffix: `niri 26.04+lulo1`, `xwayland-satellite
+0.8.2+lulo1` (the Debian `+dfsg`/`+repack` pattern for a locally-built
+variant of an upstream release, not a `-revision` after a hyphen).
 
-- `26.04 < 26.04-0lulo1`, so our build satisfies `rmac-session`;
-- `26.04-0lulo1 < 26.04ppa3`, so on a machine that already has the PPA,
-  apt keeps the PPA build (no forced downgrade; it satisfies
-  `rmac-session` too). `install.sh` detects this, keeps it, and prints the
-  `apt-get install --allow-downgrades` command for anyone who wants to
-  switch;
-- `26.04-0lulo1 < 26.04-1`, `< 26.04-0ubuntu1`, and `< 26.04-0.1`, so a
-  future official Debian or Ubuntu package upgrades over ours cleanly, with
-  no `Conflicts`/`Replaces` dance and no leftover `lulo-*` package;
-- the next Lulo build of a newer upstream (`26.08-0lulo1`) sorts above
-  `26.04ppa3`, so PPA users move onto it by an ordinary upgrade (unless the
-  PPA has meanwhile published its own, higher `26.08ppaN`).
+An earlier design used a `-0luloN` Debian revision (`niri 26.04-0lulo1`)
+instead, reasoning that it needed to sort *below* the danklinux PPA's
+`26.04ppa3` so apt would never force a downgrade on a machine that already
+had the PPA build. That was a bug, not a feature: dpkg's version comparison
+splits a hyphenated version at the *last* hyphen and compares the
+upstream-version part first; `26.04-0lulo1`'s upstream-version part is the
+bare `26.04`, and a bare `26.04` always sorts below `26.04ppa3` no matter
+what comes after the hyphen. So our own archive's niri could never be
+`apt upgrade`d to on a machine that already had the PPA's build -- which,
+in practice, is most of them, including the owner's laptop -- and pinning
+our version above the floor `rmac-session` required would have been a
+downgrade from the PPA's perspective.
+
+`+luloN` fixes this by putting the marker *inside* the upstream-version part
+that dpkg compares first, so our build outranks the PPA unconditionally:
+
+- **Letters sort below everything except themselves and `~`.** Comparing
+  `26.04` against `26.04ppa3`, dpkg matches the common `26.04` and then
+  compares what follows: nothing (end of string) against `ppa3`. End of
+  string sorts below a letter, so plain `26.04` already loses to
+  `26.04ppa3` -- confirming the bug above. Comparing `26.04+lulo1` against
+  `26.04ppa3` the same way: `+lulo1` (starts with `+`, a non-letter) against
+  `ppa3` (starts with `p`, a letter). Letters sort *below* non-letters other
+  than `~`, so `ppa3` < `+lulo1` and `26.04ppa3` < `26.04+lulo1` --
+  regardless of the PPA's own build number, since the comparison is decided
+  by `p` vs `+` before either string's digits are ever reached. The same
+  argument beats a bare Debian/Ubuntu revision (`26.04-1`, `26.04ubuntu1`):
+  a hyphenated `26.04-1`'s upstream-version part is bare `26.04`, which
+  loses to `26.04+lulo1` the same way plain `26.04` did above; `ubuntu1`
+  starts with a letter, so it loses to `+lulo1` the same way `ppa3` did.
+- **A future upstream release still wins.** `26.04+lulo1` vs `26.05`: dpkg
+  compares the digit runs first (`26` = `26`, then `04` vs `05`), and `04 <
+  05` decides it before the `+lulo1` suffix is ever compared. Any higher
+  upstream version -- ours or anyone else's -- sorts above every `26.04*`
+  build.
+- **A rebuild of the same upstream bumps the counter**, exactly as the old
+  `0luloN` scheme did (`26.04+lulo1 < 26.04+lulo2`, ordinary digit
+  comparison once the shared `+lulo` prefix matches).
+
+Verified directly with `dpkg --compare-versions` on the reference laptop
+(`ssh jacob@192.168.18.52`):
+
+```
+$ dpkg --compare-versions 26.04+lulo1 gt 26.04ppa3 && echo yes
+yes
+$ dpkg --compare-versions 26.04+lulo1 gt 26.04-1 && echo yes
+yes
+$ dpkg --compare-versions 26.04+lulo1 gt 26.04ubuntu1 && echo yes
+yes
+$ dpkg --compare-versions 26.04+lulo1 lt 26.05 && echo yes
+yes
+```
+
+Two alternatives were rejected:
+
+- **`26.04ppa3+lulo1`** (embedding the exact PPA version being beaten) is
+  fragile: it only outranks `26.04ppa3` specifically. `dpkg --compare-versions
+  26.04ppa3+lulo1 lt 26.04ppa4` is true -- the digit comparison of `ppa3`
+  against `ppa4` decides the ordering before `+lulo1` is ever reached, so
+  the very next PPA point release would sort above ours again. `+luloN`
+  alone never has this problem, because the letters-vs-`+` comparison that
+  decides it happens before either side's trailing digits.
+- **An epoch** (`1:26.04`) would also sort above the PPA unconditionally and
+  is the standard fallback when nothing in the version string itself can be
+  made to compare correctly. It was avoided here because it is permanent
+  and highly visible (`apt policy niri`, `dpkg -l`, every future changelog
+  entry needs it too) for a problem a plain upstream-version suffix already
+  solves without one, and because bumping an epoch later, if some other
+  future ordering problem ever needs it, is easy -- removing one, once
+  users have it recorded in `dpkg`'s status file, is not.
 
 A renamed package (`lulo-niri` with `Provides`/`Conflicts: niri`) was
-rejected: both install `/usr/bin/niri`, so it must conflict with the PPA
+rejected too: both install `/usr/bin/niri`, so it must conflict with the PPA
 package and with any future official one, and apt would never replace it
-with the official package on its own. A `~lulo1` suffix was rejected too:
-`26.04-0~lulo1` sorts *below* `26.04`, so it would need a `(>= 26.04~)`
-relation, and GitHub rewrites `~` in Release asset names.
+with the official package on its own. A `~lulo1` suffix was rejected for a
+different reason: `26.04~lulo1` sorts *below* `26.04` (`~` sorts below
+everything, even end of string), the opposite of what is needed here, and
+GitHub also rewrites `~` in Release asset names.
 `scripts/test_third_party_packages.py` asserts every ordering above.
+
+`rmac-session`'s `Depends` on niri and xwayland-satellite name the exact
+pinned `+luloN` version, not just the bare upstream version (see "What the
+packages install" and `native_package_contract.py`): installing or
+upgrading `rmac-session` therefore requires a niri that is at least Lulo
+OS's own build, which the PPA's `26.04ppaN` never satisfies. Combined with
+`packaging/apt/rmac.pref` pinning our niri at the same priority (500) any
+other archive gets by default, this is what actually gets a user's machine
+onto our build rather than merely allowing it.
 
 ### What the packages install
 
@@ -315,10 +383,12 @@ thin LTO; 2 jobs keep the 6.7 GB machine out of swap). Then:
 - inspect without installing: `dpkg-deb -I` and `dpkg-deb -c` on each
   `.deb` (check `Depends`, the file list above, and that nothing lands
   outside `/usr`), `lintian` if available;
-- to try one, it is `sudo apt-get install --allow-downgrades
-  ./niri_26.04-0lulo1_amd64.deb ./xwayland-satellite_0.8.2-0lulo1_amd64.deb`
-  (the PPA build is newer), and `sudo apt-get install niri=26.04ppa3
-  xwayland-satellite=0.8.2ppa1` goes back. Both need the owner's sudo.
+- to try one, it is `sudo apt-get install
+  ./niri_26.04+lulo1_amd64.deb ./xwayland-satellite_0.8.2+lulo1_amd64.deb`
+  (Lulo OS's build sorts above the PPA's, so this is an ordinary install,
+  not a downgrade), and `sudo apt-get install --allow-downgrades
+  niri=26.04ppa3 xwayland-satellite=0.8.2ppa1` goes back. Both need the
+  owner's sudo.
 
 To combine them with a native rmac package set for `install.sh --from-dir`,
 copy both directories' `.deb` files into one directory and run `sha256sum
@@ -328,11 +398,12 @@ copy both directories' `.deb` files into one directory and run `sha256sum
 
 Change the tag, commit, tarball URL/SHA-256, directory, and
 `upstream_version` in `upstreams.json`; set `vendor_sha256` to `null`; add a
-`debian/changelog` entry (`<version>-0lulo1`); update
-`UPSTREAM_SHORT_COMMIT` in niri's `debian/rules` and the file list if
-upstream's packaging changed; raise the floors in
-`native_package_contract.py`; run the laptop build, record the vendor hash,
-and re-run the tests. A rebuild of the same upstream bumps `0luloN`.
+`debian/changelog` entry (`<version>+lulo1`); update `UPSTREAM_SHORT_COMMIT`
+in niri's `debian/rules` and the file list if upstream's packaging changed;
+run the laptop build, record the vendor hash, and re-run the tests.
+`rmac-session`'s `Depends` floors (`native_package_contract.py`) are read
+straight from `upstreams.json`'s pins, so they never need a separate manual
+bump. A rebuild of the same upstream bumps `+luloN`.
 
 ### Known gaps
 
@@ -345,7 +416,7 @@ and re-run the tests. A rebuild of the same upstream bumps `0luloN`.
   pinned to priority 500 by `rmac.pref`. A rebuilt `niri` with an unchanged
   version is never republished: the published bytes are carried forward
   (the pool is immutable), so a new niri build only reaches clients with a
-  new `0luloN` revision or upstream version.
+  new `+luloN` revision or upstream version.
 - **arm64** needs the same self-hosted runner as rmac's arm64 packages.
 
 ## Runner decisions

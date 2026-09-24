@@ -119,9 +119,15 @@ python3 "$repo_root/scripts/linux/archive-development-install.py" --check
 shopt -s nullglob
 apps_packages=("$package_directory"/rmac-apps_*_"$architecture".deb)
 session_packages=("$package_directory"/rmac-session_*_"$architecture".deb)
+niri_packages=("$package_directory"/niri_*_"$architecture".deb)
+satellite_packages=("$package_directory"/xwayland-satellite_*_"$architecture".deb)
 shopt -u nullglob
 [[ ${#apps_packages[@]} -eq 1 && ${#session_packages[@]} -eq 1 ]] \
   || fail "the verified directory did not contain one package of each type"
+[[ ${#niri_packages[@]} -eq ${#satellite_packages[@]} ]] \
+  || fail "the verified directory has niri without xwayland-satellite, or the reverse"
+[[ ${#niri_packages[@]} -le 1 ]] \
+  || fail "the verified directory has more than one niri package"
 apps_package=${apps_packages[0]}
 session_package=${session_packages[0]}
 apps_version="$(dpkg-deb --field "$apps_package" Version)"
@@ -129,12 +135,31 @@ session_version="$(dpkg-deb --field "$session_package" Version)"
 [[ -n "$apps_version" && "$apps_version" == "$session_version" ]] \
   || fail "candidate package versions do not match"
 
+# verify-native-packages.py already proved the directory's inventory is
+# exactly the rmac pair, or that pair plus the exact Lulo niri/xwayland-
+# satellite pair pinned in packaging/third-party/upstreams.json (matching
+# SHA256SUMS entries and dpkg control fields). Installing them alongside
+# rmac-apps/rmac-session is what actually gets Lulo OS's own niri build
+# onto this machine, rather than leaving whatever niri (PPA or otherwise)
+# was already installed.
+install_packages=("$apps_package" "$session_package")
+third_party_label="none"
+if [[ ${#niri_packages[@]} -eq 1 ]]; then
+  niri_package=${niri_packages[0]}
+  satellite_package=${satellite_packages[0]}
+  niri_version="$(dpkg-deb --field "$niri_package" Version)"
+  satellite_version="$(dpkg-deb --field "$satellite_package" Version)"
+  install_packages+=("$niri_package" "$satellite_package")
+  third_party_label="niri $niri_version, xwayland-satellite $satellite_version"
+fi
+
 cat <<EOF
 Verified native candidate install plan
   Ubuntu: 26.04
   Architecture: $architecture
   Version: $apps_version
   Packages: rmac-apps, rmac-session
+  Third-party packages: $third_party_label
   Package removals: forbidden
   Existing GNOME recovery session: verified
   Legacy source-install artifacts: archived if present
@@ -159,7 +184,7 @@ apt_options=(install --yes --no-remove)
 if [[ "$reinstall" == true ]]; then
   apt_options+=(--reinstall)
 fi
-sudo apt-get "${apt_options[@]}" "$apps_package" "$session_package"
+sudo apt-get "${apt_options[@]}" "${install_packages[@]}"
 require_space "$minimum_kib" "completed candidate installation"
 
 tab=$'\t'
@@ -168,6 +193,15 @@ for package in rmac-apps rmac-session; do
   [[ "$installed" == "install ok installed${tab}${apps_version}" ]] \
     || fail "$package is not installed at the exact candidate version"
 done
+if [[ ${#niri_packages[@]} -eq 1 ]]; then
+  for spec in "niri $niri_version" "xwayland-satellite $satellite_version"; do
+    package=${spec% *}
+    version=${spec#* }
+    installed="$(dpkg-query --show --showformat='${Status}\t${Version}' "$package")"
+    [[ "$installed" == "install ok installed${tab}${version}" ]] \
+      || fail "$package is not installed at the exact candidate version"
+  done
+fi
 python3 "$repo_root/scripts/linux/verify-session-package.py" \
   --root / --installed-host
 systemctl --user daemon-reload

@@ -128,8 +128,8 @@ def build_inputs(
     root: Path,
     *,
     rmac: str = "1.0.0-38",
-    niri: str = "26.04-0lulo1",
-    xwayland: str = "0.8.2-0lulo1",
+    niri: str = "26.04+lulo1",
+    xwayland: str = "0.8.2+lulo1",
     keyring: str = "1.0.0-1",
     architectures: Tuple[str, ...] = ("amd64",),
     salt: str = "",
@@ -141,7 +141,7 @@ def build_inputs(
         packages = []
         for package, depends in (
             ("rmac-apps", "libc6 (>= 2.39), wl-clipboard"),
-            ("rmac-session", f"niri (>= 26.04), rmac-apps (= {rmac}), xwayland-satellite (>= 0.8.2)"),
+            ("rmac-session", f"niri (>= {niri}), rmac-apps (= {rmac}), xwayland-satellite (>= {xwayland})"),
         ):
             filename = f"{package}_{rmac}_{architecture}.deb"
             make_deb(

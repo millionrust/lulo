@@ -393,10 +393,10 @@ class LocalPackageSelectionTests(unittest.TestCase):
         "rmac-apps_0.9.0.beta.1-38_amd64.deb",
         "rmac-session_0.9.0.beta.1-38_amd64.deb",
         "rmac-apps_0.9.0.beta.1-38_arm64.deb",
-        "niri_26.04-0lulo1_amd64.deb",
-        "xwayland-satellite_0.8.2-0lulo1_amd64.deb",
-        "niri_26.04-0lulo1.dsc",
-        "niri_26.04.orig.tar.gz",
+        "niri_26.04+lulo1_amd64.deb",
+        "xwayland-satellite_0.8.2+lulo1_amd64.deb",
+        "niri_26.04+lulo1.dsc",
+        "niri_26.04+lulo1.orig.tar.gz",
     )
 
     def _run(self, files, installed=None, corrupt=None):
@@ -465,20 +465,32 @@ class LocalPackageSelectionTests(unittest.TestCase):
             sorted([
                 "rmac-apps_0.9.0.beta.1-38_amd64.deb",
                 "rmac-session_0.9.0.beta.1-38_amd64.deb",
-                "niri_26.04-0lulo1_amd64.deb",
-                "xwayland-satellite_0.8.2-0lulo1_amd64.deb",
+                "niri_26.04+lulo1_amd64.deb",
+                "xwayland-satellite_0.8.2+lulo1_amd64.deb",
             ]),
         )
 
-    def test_keeps_a_newer_ppa_niri_instead_of_downgrading(self):
-        completed, names, _ = self._run(
+    def test_installs_over_an_older_ppa_niri_without_allow_downgrades(self):
+        # "26.04+lulo1" sorts above the danklinux PPA's "26.04ppaN" for any
+        # N, so a machine that already has the PPA build gets ours as an
+        # ordinary upgrade -- no --allow-downgrades needed.
+        completed, names, args = self._run(
             self.FILES, installed={"niri": "26.04ppa3", "xwayland-satellite": "0.8.1-1"}
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
-        self.assertNotIn("niri_26.04-0lulo1_amd64.deb", names)
-        self.assertIn("xwayland-satellite_0.8.2-0lulo1_amd64.deb", names)
-        self.assertIn("keeping the installed niri 26.04ppa3", completed.stderr)
-        self.assertIn("--allow-downgrades ./niri_26.04-0lulo1_amd64.deb", completed.stderr)
+        self.assertIn("niri_26.04+lulo1_amd64.deb", names)
+        self.assertIn("xwayland-satellite_0.8.2+lulo1_amd64.deb", names)
+        self.assertNotIn("--allow-downgrades", " ".join(args))
+
+    def test_keeps_a_newer_niri_instead_of_downgrading(self):
+        completed, names, _ = self._run(
+            self.FILES, installed={"niri": "26.05-1", "xwayland-satellite": "0.8.1-1"}
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("niri_26.04+lulo1_amd64.deb", names)
+        self.assertIn("xwayland-satellite_0.8.2+lulo1_amd64.deb", names)
+        self.assertIn("keeping the installed niri 26.05-1", completed.stderr)
+        self.assertIn("--allow-downgrades ./niri_26.04+lulo1_amd64.deb", completed.stderr)
 
     def test_a_package_set_without_niri_still_installs_rmac(self):
         completed, names, _ = self._run(self.FILES[:3])
@@ -487,7 +499,7 @@ class LocalPackageSelectionTests(unittest.TestCase):
         self.assertIn("has no niri for amd64", completed.stderr)
 
     def test_a_tampered_niri_package_stops_the_install(self):
-        completed, names, _ = self._run(self.FILES, corrupt="niri_26.04-0lulo1_amd64.deb")
+        completed, names, _ = self._run(self.FILES, corrupt="niri_26.04+lulo1_amd64.deb")
         self.assertNotEqual(completed.returncode, 0)
         self.assertEqual(names, [])
         self.assertIn("did not match SHA256SUMS", completed.stderr)

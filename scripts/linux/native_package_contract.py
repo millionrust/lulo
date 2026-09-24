@@ -10,6 +10,8 @@ import re
 import stat
 import struct
 
+import third_party_packages
+
 
 FORMAT_VERSION = 1
 DEBIAN_REVISION = 38
@@ -22,6 +24,21 @@ ARCHITECTURES = {
 MAINTAINER = "Jacob Samas <samasjacob@icloud.com>"
 MAINTAINER_SCRIPT_NAMES = ("postinst", "prerm", "postrm")
 MAX_MAINTAINER_SCRIPT_BYTES = 64 * 1024
+
+# rmac-session's floor on each of Lulo OS's own third-party builds (niri,
+# xwayland-satellite): read straight from packaging/third-party/upstreams.json
+# so it can never drift from what build-niri-packages.sh actually produces.
+# It names the exact pinned "+luloN" version, not just the bare upstream
+# version, on purpose -- see docs/release-process.md "Package names and
+# versions": the danklinux PPA's "<version>ppaN" never satisfies a "(>=
+# <version>+luloN)" relation, so installing or upgrading rmac-session
+# requires a niri/xwayland-satellite at least as new as Lulo OS's own build,
+# not merely a niri/xwayland-satellite new enough to run it.
+_THIRD_PARTY_PINS = third_party_packages.load_pins()
+
+
+def _third_party_floor(name: str) -> str:
+    return f"{name} (>= {_THIRD_PARTY_PINS[name].debian_version})"
 
 
 class ContractError(RuntimeError):
@@ -158,10 +175,12 @@ PACKAGE_SPECS = (
         #
         # niri and xwayland-satellite are not in the Ubuntu archive; Lulo OS
         # ships its own builds of the tested releases under the upstream
-        # package names with a "-0luloN" revision (scripts/linux/
+        # package names with a "+luloN" version suffix (scripts/linux/
         # build-niri-packages.sh, packaging/third-party/upstreams.json). The
-        # plain versioned relation accepts those builds, the danklinux PPA's
-        # "26.04ppaN", and any future official package alike.
+        # floor names that exact pinned build (_third_party_floor above), so
+        # the danklinux PPA's "26.04ppaN" alone never satisfies it -- only
+        # Lulo OS's own build or a higher one (a future official package)
+        # does.
         static_dependencies=(
             "coreutils",
             "dbus-user-session",
@@ -170,7 +189,7 @@ PACKAGE_SPECS = (
             "gawk | mawk",
             "gir1.2-packagekitglib-1.0",
             "grim",
-            "niri (>= 26.04)",
+            _third_party_floor("niri"),
             "packagekit",
             "pipewire-bin",
             "python3-gi",
@@ -182,7 +201,7 @@ PACKAGE_SPECS = (
             "xdg-desktop-portal",
             "xdg-desktop-portal-gnome",
             "xdg-desktop-portal-gtk",
-            "xwayland-satellite (>= 0.8.2)",
+            _third_party_floor("xwayland-satellite"),
         ),
         # keyd and pkexec serve the opt-in "Use Mac shortcuts in all apps"
         # (docs/decisions/0017-mac-keyboard.md); the Qt platform theme gives Qt

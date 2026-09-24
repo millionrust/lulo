@@ -741,6 +741,57 @@ pub fn quit_all_interrupted_copy(action: &str, apps: &[String]) -> (String, Stri
     )
 }
 
+// ---- Low battery ----
+
+/// Battery levels, in percent, that post a warning while running on
+/// battery: one at 10 % and a stronger one at 5 %. Not measured on the Mac.
+pub const LOW_BATTERY_WARNINGS: [u8; 2] = [10, 5];
+
+/// Remembers which low-battery warning has been shown for the current
+/// discharge, so each level is announced once. Connecting power resets it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LowBatteryWatch {
+    warned_at: Option<u8>,
+}
+
+impl LowBatteryWatch {
+    /// Feed each battery reading. Returns the warning level to announce now,
+    /// if the reading reached one that has not been announced yet.
+    pub fn observe(&mut self, percentage: u8, on_battery: bool) -> Option<u8> {
+        if !on_battery {
+            self.warned_at = None;
+            return None;
+        }
+        let level = LOW_BATTERY_WARNINGS
+            .iter()
+            .copied()
+            .filter(|threshold| percentage <= *threshold)
+            .min()?;
+        if self.warned_at.is_some_and(|warned| warned <= level) {
+            return None;
+        }
+        self.warned_at = Some(level);
+        Some(level)
+    }
+}
+
+/// Title and body of a low-battery warning. Wording is rmac's.
+pub fn low_battery_copy(level: u8, percentage: u8) -> (String, String) {
+    if level <= LOW_BATTERY_WARNINGS[1] {
+        (
+            "Battery Very Low".to_owned(),
+            format!(
+                "{percentage}% of battery remains. Connect to power now to avoid losing unsaved work."
+            ),
+        )
+    } else {
+        (
+            "Low Battery".to_owned(),
+            format!("{percentage}% of battery remains. Connect to power soon."),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1414,5 +1465,40 @@ mod tests {
         assert_eq!(title, "Shut Down Cancelled");
         assert!(body.starts_with("A, B and 2 more didn't quit."));
         assert!(body.ends_with("then shut down again."));
+    }
+
+    #[test]
+    fn low_battery_warns_once_per_level_and_resets_on_power() {
+        let mut watch = LowBatteryWatch::default();
+        assert_eq!(watch.observe(40, true), None);
+        assert_eq!(watch.observe(11, true), None);
+        assert_eq!(watch.observe(10, true), Some(10));
+        assert_eq!(watch.observe(9, true), None);
+        assert_eq!(watch.observe(5, true), Some(5));
+        assert_eq!(watch.observe(3, true), None);
+        // Plugged in: the next discharge warns again.
+        assert_eq!(watch.observe(3, false), None);
+        assert_eq!(watch.observe(4, true), Some(5));
+        // Starting below both levels announces only the stronger warning.
+        let mut late = LowBatteryWatch::default();
+        assert_eq!(late.observe(2, true), Some(5));
+        assert_eq!(late.observe(1, true), None);
+        // Charging while low never warns.
+        assert_eq!(LowBatteryWatch::default().observe(2, false), None);
+    }
+
+    #[test]
+    fn low_battery_copy_names_the_percentage() {
+        assert_eq!(
+            low_battery_copy(10, 9),
+            (
+                "Low Battery".to_owned(),
+                "9% of battery remains. Connect to power soon.".to_owned()
+            )
+        );
+        assert_eq!(low_battery_copy(5, 4).0, "Battery Very Low");
+        assert!(low_battery_copy(5, 4)
+            .1
+            .starts_with("4% of battery remains."));
     }
 }

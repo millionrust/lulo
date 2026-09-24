@@ -37,8 +37,8 @@ mod linux_wayland {
         self, app_menu_height, app_menu_item_top, app_menu_width, battery_menu_rows,
         menu_item_icon, next_status_selection, quit_all_interrupted_copy, quit_all_progress,
         split_shortcut, status_menu_height, status_menu_left, wifi_menu_rows, BadgeGlyph,
-        IconColumn, QuitAllProgress, StatusAction, StatusMenuKind, StatusRow, WifiMenuInput,
-        QUIT_ALL_CHECK,
+        IconColumn, LowBatteryWatch, QuitAllProgress, StatusAction, StatusMenuKind, StatusRow,
+        WifiMenuInput, QUIT_ALL_CHECK,
     };
 
     // Measured from the reference Mac 2026-09-18 (FEEL_SPEC.md §C.2): the bar
@@ -217,6 +217,7 @@ mod linux_wayland {
         menu_app_id: Option<String>,
         menus: Vec<rmac_app_menu::Menu>,
         menu_generation: u64,
+        low_battery: LowBatteryWatch,
     }
 
     impl ShellStatus {
@@ -258,6 +259,18 @@ mod linux_wayland {
                                 }
                             }
                             this.update = update;
+                            // One process serves every display, so each
+                            // low-battery level is announced exactly once.
+                            if let Some(battery) = this.update.snapshot.status.battery {
+                                if let Some(level) = this
+                                    .low_battery
+                                    .observe(battery.percentage, battery.on_battery)
+                                {
+                                    let (summary, body) =
+                                        menu_model::low_battery_copy(level, battery.percentage);
+                                    post_system_notice(summary, body, cx);
+                                }
+                            }
                             if visible {
                                 cx.notify();
                             }
@@ -279,6 +292,7 @@ mod linux_wayland {
                 menu_app_id: None,
                 menus: Vec::new(),
                 menu_generation: 0,
+                low_battery: LowBatteryWatch::default(),
             }
         }
     }

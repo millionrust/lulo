@@ -2842,7 +2842,7 @@ mod linux_wayland {
     fn dispatch_system_menu(action: String, cx: &mut App) {
         match action.as_str() {
             "system::about" => {
-                spawn_command("/usr/bin/rmac-system-settings", &["--pane", "general"], cx)
+                spawn_command("/usr/bin/rmac-system-settings", &["--pane", "about"], cx)
             }
             "system::settings" => spawn_command("/usr/bin/rmac-system-settings", &[], cx),
             "system::software-center" => {

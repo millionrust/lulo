@@ -78,7 +78,8 @@ use crate::input::{
 };
 use crate::navigation::{
     categories, category_has_dedicated_renderer, category_name_for_pane_id, category_parent,
-    category_position, pane_id_for_category_name, Category, SubPage, GENERAL_DESTINATIONS,
+    category_position, pane_id_for_category_name, subpage_route, Category, SubPage,
+    GENERAL_DESTINATIONS,
 };
 use crate::notifications::{policy_with as notification_policy_with, NotificationPolicyChange};
 use crate::power::{

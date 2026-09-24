@@ -36,7 +36,7 @@ impl Settings {
 
         Self::start_watchers(cx, catalog_event_rx);
 
-        let (sections, selected, navigation_persistence) = Self::initial_navigation(cx);
+        let (sections, selected, nav, navigation_persistence) = Self::initial_navigation(cx);
 
         Self {
             system_data_loading: true,
@@ -131,7 +131,7 @@ impl Settings {
             sections,
             selected,
             navigation_persistence,
-            nav: Vec::new(),
+            nav,
             forward: Vec::new(),
             sidebar_focused: false,
             search,

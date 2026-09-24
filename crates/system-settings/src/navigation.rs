@@ -265,6 +265,16 @@ pub(super) fn category_parent(name: &str) -> Option<&'static str> {
     .then_some("General")
 }
 
+/// A route that opens a subpage inside its pane. The system menu's "About
+/// This Lulo OS" launches `--pane about`, which lands on General › About,
+/// the summary macOS 26's About This Mac shows, rather than the General list.
+pub(super) fn subpage_route(pane_id: &str) -> Option<(&'static str, SubPage)> {
+    match pane_id {
+        "about" => Some(("General", SubPage::About)),
+        _ => None,
+    }
+}
+
 pub(super) fn category_name_for_pane_id(pane_id: &str) -> Option<&'static str> {
     PANE_ROUTES
         .iter()
@@ -364,6 +374,17 @@ mod tests {
         }
         assert!(category_name_for_pane_id("assistant").is_none());
         assert!(category_name_for_pane_id("screen-time").is_none());
+    }
+
+    #[test]
+    fn the_about_route_opens_general_about() {
+        let (category, page) = subpage_route("about").expect("about route");
+        assert_eq!(category, "General");
+        assert!(matches!(page, SubPage::About));
+        assert!(category_position(&categories(), category).is_some());
+        // It is a subpage route, not a sidebar category of its own.
+        assert!(category_name_for_pane_id("about").is_none());
+        assert!(subpage_route("general").is_none());
     }
 
     #[test]

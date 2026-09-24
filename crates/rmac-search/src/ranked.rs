@@ -113,7 +113,7 @@ pub(super) fn filesystem_ranked_search(
     }
 
     for bucket in [&mut exact, &mut prefixes, &mut substrings, &mut contents] {
-        bucket.sort_by(|left, right| match_path_key(&left.path).cmp(&match_path_key(&right.path)));
+        bucket.sort_by_cached_key(|candidate| match_path_key(&candidate.path));
     }
     let candidate_count = exact
         .len()

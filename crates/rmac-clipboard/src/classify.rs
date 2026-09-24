@@ -47,10 +47,10 @@ pub fn candidates(types: &[String]) -> Vec<(Kind, String)> {
     if let Some(mime) = offered(URI_LIST) {
         out.push((Kind::Files, mime));
     }
-    if let Some(mime) = IMAGE_TYPES.iter().find_map(|wanted| offered(*wanted)) {
+    if let Some(mime) = IMAGE_TYPES.iter().find_map(|wanted| offered(wanted)) {
         out.push((Kind::Image, mime));
     }
-    if let Some(mime) = TEXT_TYPES.iter().find_map(|wanted| offered(*wanted)) {
+    if let Some(mime) = TEXT_TYPES.iter().find_map(|wanted| offered(wanted)) {
         out.push((Kind::Text, mime));
     }
     out

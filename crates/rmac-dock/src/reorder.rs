@@ -74,13 +74,14 @@ impl TileDrag {
         tile: f32,
         removable: bool,
     ) -> Option<Self> {
-        if source >= centers.len()
-            || !press_axis.is_finite()
-            || !press_lift.is_finite()
-            || !(tile.is_finite() && tile > 0.0)
-            || centers.iter().any(|center| !center.is_finite())
-            || centers.windows(2).any(|pair| pair[0] >= pair[1])
-        {
+        let usable = source < centers.len()
+            && press_axis.is_finite()
+            && press_lift.is_finite()
+            && tile.is_finite()
+            && tile > 0.0
+            && centers.iter().all(|center| center.is_finite())
+            && centers.windows(2).all(|pair| pair[0] < pair[1]);
+        if !usable {
             return None;
         }
         Some(Self {
@@ -175,7 +176,7 @@ pub fn destination_for(centers: &[f32], source: usize, axis: f32) -> usize {
 /// The tile whose slot contains `axis`, given resting centres and the slot
 /// pitch (tile plus gap). Used for drop targets and hover.
 pub fn slot_at(centers: &[f32], pitch: f32, axis: f32) -> Option<usize> {
-    if !axis.is_finite() || !(pitch.is_finite() && pitch > 0.0) {
+    if !(axis.is_finite() && pitch.is_finite() && pitch > 0.0) {
         return None;
     }
     centers

@@ -194,11 +194,9 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                 );
                 state.bindings.insert(name, seat);
             }
-            wl_registry::Event::GlobalRemove { name } => {
-                if state.bindings.remove(&name).is_some() {
-                    let update = state.registry.remove(name);
-                    state.record(update);
-                }
+            wl_registry::Event::GlobalRemove { name } if state.bindings.remove(&name).is_some() => {
+                let update = state.registry.remove(name);
+                state.record(update);
             }
             _ => {}
         }

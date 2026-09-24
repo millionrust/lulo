@@ -213,7 +213,7 @@ fn normalize(value: &str, maximum_bytes: usize) -> String {
 
 fn is_generic_password_prompt(value: &str) -> bool {
     value
-        .trim_end_matches(|character: char| matches!(character, ':' | '：' | ' '))
+        .trim_end_matches([':', '：', ' '])
         .eq_ignore_ascii_case("password")
 }
 

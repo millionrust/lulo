@@ -322,7 +322,7 @@ fn word_start_before(text: &str, from: usize) -> usize {
         .into_iter()
         .filter(|(range, word)| *word && range.start < from)
         .map(|(range, _)| range.start)
-        .last()
+        .next_back()
         .unwrap_or(0)
 }
 

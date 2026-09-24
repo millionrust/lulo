@@ -421,9 +421,12 @@ fn translated_command_keys() -> Vec<&'static str> {
     keys
 }
 
+/// `(key, chord)` remaps for one modifier in a keyd profile.
+type Remaps = &'static [(&'static str, &'static str)];
+
 /// The arguments after `keyd bind` that switch to `profile`.
 pub fn bind_arguments(profile: Profile) -> Vec<String> {
-    let (command, option): (&[(&str, &str)], &[(&str, &str)]) = match profile {
+    let (command, option): (Remaps, Remaps) = match profile {
         Profile::Native => (&[], &[]),
         Profile::PcApp => (&PC_APP_COMMAND, &PC_APP_OPTION),
         Profile::Terminal => (&TERMINAL_COMMAND, &TERMINAL_OPTION),

@@ -343,10 +343,7 @@ fn run_import_command(
     fn drain_bounded(mut reader: impl std::io::Read) -> Vec<u8> {
         let mut retained = Vec::new();
         let mut chunk = [0_u8; 4096];
-        loop {
-            let Ok(read) = reader.read(&mut chunk) else {
-                break;
-            };
+        while let Ok(read) = reader.read(&mut chunk) {
             if read == 0 {
                 break;
             }

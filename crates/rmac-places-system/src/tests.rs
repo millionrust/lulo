@@ -320,7 +320,7 @@ fn watch_targets_cover_config_place_parents_and_every_known_trash_bin() {
         mounts.clone(),
     ] {
         assert!(
-            interests.wants_any(&[relevant.clone()]),
+            interests.wants_any(std::slice::from_ref(&relevant)),
             "ignored {relevant:?}"
         );
     }
@@ -332,7 +332,7 @@ fn watch_targets_cover_config_place_parents_and_every_known_trash_bin() {
         downloads_parent.join("Downloads/movie.mkv"),
     ] {
         assert!(
-            !interests.wants_any(&[unrelated.clone()]),
+            !interests.wants_any(std::slice::from_ref(&unrelated)),
             "rescanned for {unrelated:?}"
         );
     }

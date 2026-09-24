@@ -1,0 +1,448 @@
+{
+  "contract_sha256": "6ff60a856add0fecfd97f7c8784d09076dc070f50560642ea0ff1e34b3145e89",
+  "environment": {
+    "desktop": "rmac-niri",
+    "ubuntu": "26.04"
+  },
+  "format": 1,
+  "hardware_manifest_sha256": "ab5a80a837594775e442c9a7d966ae0abf27e2e14ae4f2807303a30669f20b40",
+  "journey_manifest_sha256": "6c3867951d1bdaf5742eb53c4a89e9409dc56510227bdf5acee2d57eb6acf264",
+  "open_findings": [
+    "SR-10 high lock-boundary: development install never installs the lock provider or its PAM service",
+    "SR-11 medium notifications: live notification map has no count bound (sandboxed-app memory exhaustion)",
+    "SR-12 medium updates: CI mirror of the live APT repository is always empty (monotonic, retention and immutability checks bypassed)",
+    "SR-13 medium dbus-polkit: keyd group membership gives every same-user process keyd's IPC (verify keyd 2.5.0 input/command scope)",
+    "SR-14 low updates: rmac.pref does not lower other packages from the rmac origin",
+    "SR-15 low packages: build-host paths embedded in shipped binaries",
+    "SR-16 low packages: ci.yml actions pinned by tag, not commit",
+    "SR-17 low packages: install.sh --from-release authenticity rests on HTTPS when gh is absent",
+    "SR-18 low packages: release hardening (unpinned rustup/container/cargo-install inputs; publisher keyring source; manifest mode check)",
+    "SR-19 low file-operations: Preview runs poppler tools without timeout or output cap",
+    "SR-20 low desktop-entry-execution: relative desktop-entry Path= accepted",
+    "SR-21 low file-operations: copy opens the source without O_NOFOLLOW after an lstat check",
+    "SR-22 low dbus-polkit: NetworkManager secret agent and BlueZ pairing agent do not check the caller",
+    "SR-23 low dbus-polkit: safe-mode notice accepts ActionInvoked from any sender",
+    "SR-24 low dbus-polkit: MPRIS OpenUri unbounded and unvalidated",
+    "SR-25 low dbus-polkit: no method-call timeouts on outgoing D-Bus calls",
+    "SR-26 low dbus-polkit: keyboard helper reports polkit denial as cancellation",
+    "SR-27 low lock-boundary: recovery runbook describes the old swaylock unit"
+  ],
+  "results": [
+    {
+      "check": "exact-field-code-expansion",
+      "domain": "desktop-entry-execution",
+      "status": "pass"
+    },
+    {
+      "check": "executable-boundary-preserved",
+      "domain": "desktop-entry-execution",
+      "status": "pass"
+    },
+    {
+      "check": "hidden-tryexec-precedence",
+      "domain": "desktop-entry-execution",
+      "status": "pass"
+    },
+    {
+      "check": "launch-diagnostics-redacted",
+      "domain": "desktop-entry-execution",
+      "status": "pass"
+    },
+    {
+      "check": "no-shell-interpolation",
+      "domain": "desktop-entry-execution",
+      "status": "pass"
+    },
+    {
+      "check": "terminal-wrapper-argument-boundary",
+      "domain": "desktop-entry-execution",
+      "status": "pending"
+    },
+    {
+      "check": "working-directory-validated",
+      "domain": "desktop-entry-execution",
+      "status": "pending"
+    },
+    {
+      "check": "broadcasts-contain-no-secrets",
+      "domain": "dbus-polkit",
+      "status": "pass"
+    },
+    {
+      "check": "bounded-call-time-and-output",
+      "domain": "dbus-polkit",
+      "status": "pending"
+    },
+    {
+      "check": "denial-and-cancel-distinct",
+      "domain": "dbus-polkit",
+      "status": "pending"
+    },
+    {
+      "check": "interactive-authorization-only-from-user-action",
+      "domain": "dbus-polkit",
+      "status": "pending"
+    },
+    {
+      "check": "mutation-requires-authoritative-readback",
+      "domain": "dbus-polkit",
+      "status": "pending"
+    },
+    {
+      "check": "no-credential-collection",
+      "domain": "dbus-polkit",
+      "status": "pass"
+    },
+    {
+      "check": "system-bus-callers-treated-untrusted",
+      "domain": "dbus-polkit",
+      "status": "pending"
+    },
+    {
+      "check": "unique-owner-revalidated",
+      "domain": "dbus-polkit",
+      "status": "pending"
+    },
+    {
+      "check": "backend-routing-verified",
+      "domain": "portals",
+      "status": "pass"
+    },
+    {
+      "check": "document-access-remains-scoped",
+      "domain": "portals",
+      "status": "pass"
+    },
+    {
+      "check": "permissionstore-does-not-overclaim",
+      "domain": "portals",
+      "status": "pass"
+    },
+    {
+      "check": "portal-mediates-user-consent",
+      "domain": "portals",
+      "status": "pass"
+    },
+    {
+      "check": "request-cancel-and-close-bounded",
+      "domain": "portals",
+      "status": "pass"
+    },
+    {
+      "check": "response-handle-correlated",
+      "domain": "portals",
+      "status": "pass"
+    },
+    {
+      "check": "selected-uri-revalidated",
+      "domain": "portals",
+      "status": "pass"
+    },
+    {
+      "check": "atomic-save-and-authoritative-readback",
+      "domain": "file-operations",
+      "status": "pass"
+    },
+    {
+      "check": "cancellation-preserves-recoverable-destination",
+      "domain": "file-operations",
+      "status": "pass"
+    },
+    {
+      "check": "conflict-refuses-stale-overwrite",
+      "domain": "file-operations",
+      "status": "pass"
+    },
+    {
+      "check": "mount-disappearance-recovers",
+      "domain": "file-operations",
+      "status": "pending"
+    },
+    {
+      "check": "private-path-diagnostics-redacted",
+      "domain": "file-operations",
+      "status": "pass"
+    },
+    {
+      "check": "symlink-and-root-boundaries-enforced",
+      "domain": "file-operations",
+      "status": "pending"
+    },
+    {
+      "check": "trash-and-destructive-actions-confirmed",
+      "domain": "file-operations",
+      "status": "pass"
+    },
+    {
+      "check": "untrusted-content-never-executed",
+      "domain": "file-operations",
+      "status": "pending"
+    },
+    {
+      "check": "compositor-exclusive-lock-proven",
+      "domain": "lock-boundary",
+      "status": "pending"
+    },
+    {
+      "check": "mfa-conversation-bounded",
+      "domain": "lock-boundary",
+      "status": "pass"
+    },
+    {
+      "check": "no-password-or-keycode-logging",
+      "domain": "lock-boundary",
+      "status": "pass"
+    },
+    {
+      "check": "pam-is-sole-unlock-authority",
+      "domain": "lock-boundary",
+      "status": "pass"
+    },
+    {
+      "check": "provider-crash-fails-closed",
+      "domain": "lock-boundary",
+      "status": "pending"
+    },
+    {
+      "check": "secret-lifetime-and-zeroization-reviewed",
+      "domain": "lock-boundary",
+      "status": "pass"
+    },
+    {
+      "check": "suspend-waits-for-lock-readiness",
+      "domain": "lock-boundary",
+      "status": "pending"
+    },
+    {
+      "check": "tty-recovery-proven",
+      "domain": "lock-boundary",
+      "status": "pending"
+    },
+    {
+      "check": "wrong-password-and-cancel-remain-locked",
+      "domain": "lock-boundary",
+      "status": "pass"
+    },
+    {
+      "check": "action-target-bound-to-notification",
+      "domain": "notifications",
+      "status": "pass"
+    },
+    {
+      "check": "diagnostics-redacted",
+      "domain": "notifications",
+      "status": "pending"
+    },
+    {
+      "check": "focus-suppression-authoritative",
+      "domain": "notifications",
+      "status": "pending"
+    },
+    {
+      "check": "history-and-payload-bounded",
+      "domain": "notifications",
+      "status": "pending"
+    },
+    {
+      "check": "lock-screen-content-redacted",
+      "domain": "notifications",
+      "status": "pending"
+    },
+    {
+      "check": "markup-treated-as-untrusted",
+      "domain": "notifications",
+      "status": "pass"
+    },
+    {
+      "check": "sender-attribution-not-invented",
+      "domain": "notifications",
+      "status": "pass"
+    },
+    {
+      "check": "allowed-roots-only",
+      "domain": "search-indexing",
+      "status": "pass"
+    },
+    {
+      "check": "cancellation-rejects-stale-results",
+      "domain": "search-indexing",
+      "status": "pass"
+    },
+    {
+      "check": "excluded-roots-never-indexed",
+      "domain": "search-indexing",
+      "status": "pass"
+    },
+    {
+      "check": "private-path-diagnostics-redacted",
+      "domain": "search-indexing",
+      "status": "pass"
+    },
+    {
+      "check": "query-and-content-bounded",
+      "domain": "search-indexing",
+      "status": "pass"
+    },
+    {
+      "check": "result-count-bounded",
+      "domain": "search-indexing",
+      "status": "pass"
+    },
+    {
+      "check": "stored-index-does-not-expand-authority",
+      "domain": "search-indexing",
+      "status": "pass"
+    },
+    {
+      "check": "architecture-and-file-inventory-exact",
+      "domain": "packages",
+      "status": "pass"
+    },
+    {
+      "check": "artifact-contains-no-build-host-data",
+      "domain": "packages",
+      "status": "pending"
+    },
+    {
+      "check": "dependency-and-advisory-policy-passes",
+      "domain": "packages",
+      "status": "pending"
+    },
+    {
+      "check": "license-inventory-complete",
+      "domain": "packages",
+      "status": "pending"
+    },
+    {
+      "check": "native-and-sandbox-boundaries-explicit",
+      "domain": "packages",
+      "status": "pass"
+    },
+    {
+      "check": "rollback-and-uninstall-tested",
+      "domain": "packages",
+      "status": "pending"
+    },
+    {
+      "check": "signature-and-origin-claims-bounded",
+      "domain": "packages",
+      "status": "pending"
+    },
+    {
+      "check": "unpackaged-executables-rejected",
+      "domain": "packages",
+      "status": "pass"
+    },
+    {
+      "check": "apt-key-scope-isolated",
+      "domain": "updates",
+      "status": "pass"
+    },
+    {
+      "check": "atomic-inrelease-last-and-monotonic",
+      "domain": "updates",
+      "status": "pending"
+    },
+    {
+      "check": "backend-failure-recovers-authoritatively",
+      "domain": "updates",
+      "status": "pass"
+    },
+    {
+      "check": "cancellation-and-restart-readback",
+      "domain": "updates",
+      "status": "pass"
+    },
+    {
+      "check": "immutable-pool-and-by-hash",
+      "domain": "updates",
+      "status": "pending"
+    },
+    {
+      "check": "keyring-public-only-and-package-scoped",
+      "domain": "updates",
+      "status": "pass"
+    },
+    {
+      "check": "packagekit-invoked-without-shell",
+      "domain": "updates",
+      "status": "pass"
+    },
+    {
+      "check": "polkit-interaction-is-user-initiated",
+      "domain": "updates",
+      "status": "pass"
+    },
+    {
+      "check": "signature-failure-fails-closed",
+      "domain": "updates",
+      "status": "pass"
+    },
+    {
+      "check": "trusted-only-install-enforced",
+      "domain": "updates",
+      "status": "pass"
+    },
+    {
+      "check": "update-error-states-privacy-safe",
+      "domain": "updates",
+      "status": "pass"
+    },
+    {
+      "check": "bus-peers-and-session-identities-redacted",
+      "domain": "logs-diagnostics",
+      "status": "pending"
+    },
+    {
+      "check": "control-characters-normalized",
+      "domain": "logs-diagnostics",
+      "status": "pending"
+    },
+    {
+      "check": "debug-implementations-redact-private-fields",
+      "domain": "logs-diagnostics",
+      "status": "pending"
+    },
+    {
+      "check": "evidence-uses-synthetic-data",
+      "domain": "logs-diagnostics",
+      "status": "pending"
+    },
+    {
+      "check": "failure-text-and-output-bounded",
+      "domain": "logs-diagnostics",
+      "status": "pending"
+    },
+    {
+      "check": "log-growth-and-retention-bounded",
+      "domain": "logs-diagnostics",
+      "status": "pending"
+    },
+    {
+      "check": "no-private-paths-or-content",
+      "domain": "logs-diagnostics",
+      "status": "pending"
+    },
+    {
+      "check": "no-secrets-credentials-or-tokens",
+      "domain": "logs-diagnostics",
+      "status": "pending"
+    }
+  ],
+  "revision": "67929505bf3ae88d23cbb927c2c9a3dc18750822",
+  "stations": [
+    {
+      "id": "amd64-intel-laptop",
+      "status": "pending"
+    },
+    {
+      "id": "amd64-amd-desktop",
+      "status": "pending"
+    },
+    {
+      "id": "amd64-nvidia-desktop",
+      "status": "pending"
+    }
+  ],
+  "tier": "beta"
+}

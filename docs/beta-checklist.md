@@ -212,8 +212,18 @@ In order of severity:
    `.deb` on real CI infrastructure.
 3. **No real performance measurement.** The only recorded numbers are an
    explicitly-invalid smoke run taken during a concurrent build.
-4. **No security review evidence.** `scripts/security-review.json`'s 80
-   checks have no completed evidence file in this repository.
+4. **Security review: Fail (source review done, gate not met).**
+   [docs/security-review-0.9.0-beta.1.md](security-review-0.9.0-beta.1.md)
+   and its canonical summary `docs/security-review-0.9.0-beta.1.json` cover
+   all 80 checks of `scripts/security-review.json`. Nine findings were fixed:
+   three High (the install.sh keyring bootstrap, a lock request that
+   reported success with nothing locked, and zip links planted outside the
+   folder), two Medium and four Low. 46 checks pass on source review. The
+   other 34 need native station evidence or have an open finding. 18
+   findings are still open: one High (development installs never install the
+   lock provider, which matters on the reference laptop), three Medium and 14
+   Low. None of the Beta stations has been run, so
+   `verify-security-review.py` fails closed, as it should.
 5. **Journeys 5, 6, and 8/9 have no acceptance test at all**, live or
    automated; journey 7 has only a source-code trace.
 6. **`docs/install.md`/`README.md` still say the product isn't ready to

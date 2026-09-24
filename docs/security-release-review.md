@@ -31,6 +31,10 @@ The external authority boundaries are:
   A well-known name is never accepted as permanent proof of the same owner
   across a service restart.
 
+The current review for 0.9.0-beta.1 (a source review; the station runs are
+still pending) is
+[security-review-0.9.0-beta.1.md](security-review-0.9.0-beta.1.md).
+
 Validate the committed threat inventory without a Rust build:
 
 ```sh

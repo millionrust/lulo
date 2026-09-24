@@ -11,9 +11,16 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ubuntu-26.04 hosted runners went GA 2026-09-17 (todo.md "Move the Linux
+  # jobs from ubuntu-24.04 to Ubuntu 26.04"). These two jobs have no apt-get
+  # step (release-contracts is pure Python; dependency-policy's cargo-deny
+  # runs inside its own Docker image regardless of host OS), so moving them
+  # is effectively zero-risk. The GPUI jobs below stay on ubuntu-24.04 until
+  # the non-blocking `linux-2604` job (see below) has run clean for a while;
+  # see docs/ci.md.
   release-contracts:
     name: Release contracts
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
 
     steps:
@@ -25,7 +32,7 @@ jobs:
 
   dependency-policy:
     name: Dependency policy
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
 
     steps:
@@ -108,6 +115,68 @@ jobs:
             scripts/linux/run-reference-gates.sh
           bash scripts/linux/collect-reference-evidence.sh /tmp/rmac-linux-evidence
           test -s /tmp/rmac-linux-evidence/environment.txt
+
+      - name: Run Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --locked --workspace --all-features
+
+      - name: Run Python tests
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
+
+  linux-2604:
+    name: Linux checks (Ubuntu 26.04, non-blocking)
+    # Migration path for todo.md's "Move the Linux jobs from ubuntu-24.04 to
+    # Ubuntu 26.04": mirrors the `linux` job above on the now-GA
+    # ubuntu-26.04 hosted runner (2026-09-17). Kept non-blocking until it has
+    # run clean for a while (apt package names/versions differ across LTS
+    # releases and are unverified here); see docs/ci.md.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    continue-on-error: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install GPUI system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            clang \
+            libfontconfig1-dev \
+            libfreetype-dev \
+            libssl-dev \
+            libvulkan-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Cache Cargo data
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-2604-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
       - name: Run Clippy
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings

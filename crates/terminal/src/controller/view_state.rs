@@ -129,7 +129,11 @@ impl TerminalView {
     /// Recompute the grid from the window size and propagate to the terminal + PTY.
     pub(super) fn resize_to(&mut self, window: &Window) {
         self.cell_w = measure_cell_w(window, self.font_size);
-        let viewport = window.viewport_size();
+        // The grid fills the window the user sees, not GPUI's bounds, which
+        // also hold the client frame's shadow margin on Linux.
+        let viewport = rmac_ui::window_content_size(window);
+        let insets = rmac_ui::window_content_insets(window);
+        self.content_origin = (f32::from(insets.left), f32::from(insets.top));
         let width = f32::from(viewport.width) - 2.0 * PAD_X;
         let height = f32::from(viewport.height) - self.terminal_content_top() - PAD_BOTTOM;
         let size = grid_dimensions(width, height, self.cell_w, self.line_h);

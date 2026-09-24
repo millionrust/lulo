@@ -176,6 +176,9 @@ pub(super) struct TerminalView {
     font_size: f32,
     line_h: f32,
     cell_w: f32,
+    /// Where the visible window starts inside GPUI's window bounds (the
+    /// client frame on Linux); pointer positions are window-space.
+    content_origin: (f32, f32),
     focus: FocusHandle,
     native_window_title: String,
     /// Last operating-system activation state observed for this window.

@@ -36,7 +36,10 @@ impl TerminalView {
         let grid = term.grid();
         let offset = grid.display_offset() as i32;
         let cursor = grid.cursor.point;
-        let show_cursor = offset == 0 && self.tabs[self.active].accepts_input();
+        // Full-screen programs hide the cursor (DECTCEM) while they draw.
+        let show_cursor = offset == 0
+            && self.tabs[self.active].accepts_input()
+            && term.mode().contains(TermMode::SHOW_CURSOR);
         let cursor_line = cursor.line.0;
         let cursor_column = cursor.column.0;
 
@@ -91,7 +94,11 @@ impl TerminalView {
                     foreground.a *= 0.65;
                 }
                 if show_cursor && line_index == cursor_line && column == cursor_column {
-                    std::mem::swap(&mut foreground, &mut background);
+                    // Terminal fills the block cursor with the profile's
+                    // cursor colour (Basic dark: #9C9D9D, measured) and
+                    // draws the character under it in the background colour.
+                    background = hsla(active().cursor);
+                    foreground = hsla(active().bg);
                 }
                 if let Some(selection) = &self.tabs[self.active].ui.selection {
                     if !selection.is_empty() && selection.contains(line_index, column) {

@@ -130,6 +130,7 @@ impl TerminalView {
             font_size: FONT_SIZE,
             line_h: LINE_H,
             cell_w: measure_cell_w(window, FONT_SIZE),
+            content_origin: (0.0, 0.0),
             focus,
             native_window_title: "Terminal".into(),
             window_active,

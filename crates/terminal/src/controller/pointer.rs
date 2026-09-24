@@ -36,8 +36,8 @@ impl TerminalView {
     }
 
     fn pos_to_viewport_cell(&self, position: Point<Pixels>) -> (usize, usize) {
-        let x = f32::from(position.x);
-        let y = f32::from(position.y);
+        let x = f32::from(position.x) - self.content_origin.0;
+        let y = f32::from(position.y) - self.content_origin.1;
         let column =
             (((x - PAD_X) / self.cell_w).floor() as i32).clamp(0, self.cols as i32 - 1) as usize;
         let row = (((y - self.terminal_content_top()) / self.line_h).floor() as i32)

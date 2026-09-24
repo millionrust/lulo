@@ -309,10 +309,12 @@ impl EntityInputHandler for TerminalView {
             .as_ref()
             .filter(|composition| composition.session_id == self.tabs[self.active].id)?;
         let (cursor_row, cursor_column) = self.active_cursor_viewport_cell()?;
-        let row = (((f32::from(point.y) - self.terminal_content_top()) / self.line_h).floor()
-            as i32)
+        let row = (((f32::from(point.y) - self.content_origin.1 - self.terminal_content_top())
+            / self.line_h)
+            .floor() as i32)
             .clamp(0, self.rows.saturating_sub(1) as i32) as usize;
-        let column = (((f32::from(point.x) - PAD_X) / self.cell_w).floor() as i32)
+        let column = (((f32::from(point.x) - self.content_origin.0 - PAD_X) / self.cell_w).floor()
+            as i32)
             .clamp(0, self.cols.saturating_sub(1) as i32) as usize;
         let cursor_linear = cursor_row
             .saturating_mul(self.cols)

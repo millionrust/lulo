@@ -11,7 +11,9 @@ impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         profiles::set_active(self.profile);
         self.resize_to(window);
-        let layout = responsive_layout::terminal_layout(f32::from(window.bounds().size.width));
+        let layout = responsive_layout::terminal_layout(f32::from(
+            rmac_ui::window_content_size(window).width,
+        ));
         let raw_query = self.search.read(cx).value().to_string();
         let bounded_query = bounded_search_query(&raw_query);
         if bounded_query != raw_query {

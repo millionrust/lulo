@@ -105,3 +105,26 @@ pub fn parse_group_members(source: &str, group: &str) -> Vec<String> {
         })
         .unwrap_or_default()
 }
+
+/// How failures of `pkexec … rmac-mac-keyboard` are named to the user.
+pub const HELPER_LABEL: &str = "the keyboard helper";
+
+/// A short, user-facing description of a failed command. For the helper,
+/// pkexec's own exit codes are told apart: 126 means the authentication
+/// dialog was dismissed, 127 means authorisation was refused.
+pub fn command_failure(program: &str, stderr: &[u8], code: Option<i32>) -> String {
+    let detail = String::from_utf8_lossy(stderr);
+    let detail = detail.trim();
+    match (code, detail.is_empty()) {
+        (Some(126), _) if program == HELPER_LABEL => "authentication was cancelled".into(),
+        (Some(127), _) if program == HELPER_LABEL => {
+            "you are not authorised to change the keyboard for all apps".into()
+        }
+        (_, false) => format!(
+            "{program} failed: {}",
+            detail.lines().last().unwrap_or(detail)
+        ),
+        (Some(code), true) => format!("{program} exited with status {code}"),
+        (None, true) => format!("{program} was stopped by a signal"),
+    }
+}

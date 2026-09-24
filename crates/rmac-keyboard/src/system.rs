@@ -21,9 +21,9 @@ use std::time::Duration;
 use rmac_locale::X11Keyboard;
 
 use crate::{
-    bind_arguments, detect, helper_arguments, keyd_config, parse_group_members, parse_keyd_header,
-    parse_relay_request, profile_for_app, supports_option_characters, xkb_for, Error, MacKeyboard,
-    PhysicalLayout, Profile, Status, RELAY_REQUEST_MAX,
+    bind_arguments, command_failure, detect, helper_arguments, keyd_config, parse_group_members,
+    parse_keyd_header, parse_relay_request, profile_for_app, supports_option_characters, xkb_for,
+    Error, MacKeyboard, PhysicalLayout, Profile, Status, HELPER_LABEL, RELAY_REQUEST_MAX,
 };
 
 pub const KEYD_DIRECTORY: &str = "/etc/keyd";
@@ -75,7 +75,7 @@ pub fn apply(target: &MacKeyboard) -> Result<Status, Error> {
             .map_err(|error| Error::new(format!("could not start pkexec: {error}")))?;
         if !output.status.success() {
             return Err(Error::new(command_failure(
-                "the keyboard helper",
+                HELPER_LABEL,
                 &output.stderr,
                 output.status.code(),
             )));
@@ -262,23 +262,6 @@ fn run(program: &str, arguments: &[&str]) -> Result<(), Error> {
             &output.stderr,
             output.status.code(),
         )))
-    }
-}
-
-fn command_failure(program: &str, stderr: &[u8], code: Option<i32>) -> String {
-    let detail = String::from_utf8_lossy(stderr);
-    let detail = detail.trim();
-    match (code, detail.is_empty()) {
-        // pkexec: 126 = dismissed, 127 = not authorised.
-        (Some(126), _) | (Some(127), _) if program == "the keyboard helper" => {
-            "authentication was cancelled".into()
-        }
-        (_, false) => format!(
-            "{program} failed: {}",
-            detail.lines().last().unwrap_or(detail)
-        ),
-        (Some(code), true) => format!("{program} exited with status {code}"),
-        (None, true) => format!("{program} was stopped by a signal"),
     }
 }
 

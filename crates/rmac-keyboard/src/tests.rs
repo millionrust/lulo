@@ -464,3 +464,22 @@ fn no_profile_binding_can_run_a_command() {
         }
     }
 }
+
+#[test]
+fn pkexec_denial_is_not_reported_as_cancellation() {
+    assert_eq!(
+        command_failure(HELPER_LABEL, b"", Some(126)),
+        "authentication was cancelled"
+    );
+    let denied = command_failure(HELPER_LABEL, b"Not authorized", Some(127));
+    assert!(denied.contains("not authorised"), "{denied}");
+    assert!(!denied.contains("cancelled"));
+    assert_eq!(
+        command_failure("keyd bind", b"boom\nlast line\n", Some(127)),
+        "keyd bind failed: last line"
+    );
+    assert_eq!(
+        command_failure("keyd bind", b"", Some(3)),
+        "keyd bind exited with status 3"
+    );
+}

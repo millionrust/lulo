@@ -3,7 +3,8 @@
   "packages": {
     "niri": {
       "upstream_version": "26.04",
-      "debian_revision": "lulo1",
+      "lulo_suffix": "lulo1",
+      "debian_revision": "1",
       "tag": "v26.04",
       "commit": "8ed0da44d974c32c6877d2f4630c314da0717ecb",
       "tarball_url": "https://github.com/niri-wm/niri/archive/refs/tags/v26.04.tar.gz",
@@ -16,7 +17,8 @@
     },
     "xwayland-satellite": {
       "upstream_version": "0.8.2",
-      "debian_revision": "lulo1",
+      "lulo_suffix": "lulo1",
+      "debian_revision": "1",
       "tag": "v0.8.2",
       "commit": "8d135d3b2854b30fd01ea6cd6c27e523dd50a839",
       "tarball_url": "https://github.com/Supreeeme/xwayland-satellite/archive/refs/tags/v0.8.2.tar.gz",

@@ -1,4 +1,4 @@
-niri (26.04+lulo1) resolute; urgency=medium
+niri (26.04+lulo1-1) resolute; urgency=medium
 
   * Lulo OS build of upstream niri v26.04
     (commit 8ed0da44d974c32c6877d2f4630c314da0717ecb), unmodified, with

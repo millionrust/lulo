@@ -93,7 +93,7 @@ class StageAptSnapshotTests(unittest.TestCase):
             session = packages(output, "amd64")["rmac-session"]
             self.assertEqual(
                 session["Depends"],
-                "niri (>= 26.04+lulo1), rmac-apps (= 1.0.0-38), xwayland-satellite (>= 0.8.2+lulo1)",
+                "niri (>= 26.04+lulo1-1), rmac-apps (= 1.0.0-38), xwayland-satellite (>= 0.8.2+lulo1-1)",
             )
             self.assertEqual(session["Installed-Size"], "42")
             self.assertEqual(
@@ -103,7 +103,7 @@ class StageAptSnapshotTests(unittest.TestCase):
             self.assertEqual(session["Filename"], "pool/main/r/rmac/rmac-session_1.0.0-38_amd64.deb")
             self.assertEqual(session["Phased-Update-Percentage"], "10")
             niri = packages(output, "amd64")["niri"]
-            self.assertEqual(niri["Filename"], "pool/main/n/niri/niri_26.04+lulo1_amd64.deb")
+            self.assertEqual(niri["Filename"], "pool/main/n/niri/niri_26.04+lulo1-1_amd64.deb")
             self.assertEqual(packages(output, "amd64")["rmac-archive-keyring"]["Phased-Update-Percentage"], "100")
 
     def test_pre_release_versions_keep_their_tilde_in_the_pool(self):
@@ -124,7 +124,7 @@ class StageAptSnapshotTests(unittest.TestCase):
             output = stage(root, inputs)
             verify_everything_but_the_signature(output)
             self.assertEqual(len(packages(output, "arm64")), 5)
-            self.assertTrue((output / "pool/main/n/niri/niri_26.04+lulo1_arm64.buildinfo").is_file())
+            self.assertTrue((output / "pool/main/n/niri/niri_26.04+lulo1-1_arm64.buildinfo").is_file())
 
     def test_two_signers_are_comma_separated_for_apt(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -177,10 +177,10 @@ class StageAptSnapshotTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             inputs = fixtures.build_inputs(root / "inputs")
-            other = fixtures.build_inputs(root / "other", niri="26.08+lulo1")
+            other = fixtures.build_inputs(root / "other", niri="26.08+lulo1-1")
             for path in (inputs / "third-party-amd64").glob("niri_*_amd64.deb"):
                 path.unlink()
-            shutil.copy(other / "third-party-amd64/niri_26.08+lulo1_amd64.deb", inputs / "third-party-amd64")
+            shutil.copy(other / "third-party-amd64/niri_26.08+lulo1-1_amd64.deb", inputs / "third-party-amd64")
             with self.assertRaisesRegex(stager.StagingError, "not built from"):
                 stage(root, inputs)
 

@@ -183,7 +183,7 @@ It does not perform upgrade, rollback, remove, purge, or user-data cleanup.
 
 `--directory` may also hold the exact, pinned `niri` and `xwayland-satellite`
 `.deb`s built by `scripts/linux/build-niri-packages.sh`
-(`niri_<upstream_version>+lulo<N>_<arch>.deb` and the matching
+(`niri_<upstream_version>+lulo<N>-<M>_<arch>.deb` and the matching
 `xwayland-satellite`, versions from `packaging/third-party/upstreams.json`):
 copy `build-niri-packages.sh`'s output `.deb`s in beside the `rmac-apps`/
 `rmac-session` pair and regenerate `SHA256SUMS` over all four (`sha256sum --

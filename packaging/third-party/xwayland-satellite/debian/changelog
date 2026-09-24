@@ -1,4 +1,4 @@
-xwayland-satellite (0.8.2+lulo1) resolute; urgency=medium
+xwayland-satellite (0.8.2+lulo1-1) resolute; urgency=medium
 
   * Lulo OS build of upstream xwayland-satellite v0.8.2
     (commit 8d135d3b2854b30fd01ea6cd6c27e523dd50a839), unmodified, with

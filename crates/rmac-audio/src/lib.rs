@@ -11,6 +11,8 @@ mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 mod model;
+#[cfg(any(not(target_os = "macos"), test))]
+mod monitor_filter;
 mod notification;
 #[cfg(test)]
 mod tests;

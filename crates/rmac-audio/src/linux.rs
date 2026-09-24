@@ -38,10 +38,10 @@ pub(super) async fn watch_once(
     use futures_lite::io::AsyncReadExt as _;
 
     // `pw-dump --monitor` is the machine-readable PipeWire graph monitor: it
-    // prints the full graph once, then a fresh JSON array of changed objects
-    // on every subsequent state change. This loop never parses those bytes —
-    // it only treats their arrival as a "something changed, re-read the
-    // authoritative state" trigger, so the JSON framing does not matter here.
+    // prints the full graph once, then a JSON array of the objects that
+    // changed on every later state change. Only changes to the objects a
+    // snapshot reads trigger a re-read; `pw-dump` clients (every snapshot
+    // is one) coming and going do not, or watchers would feed each other.
     let mut command = async_process::Command::new("pw-dump");
     command
         .arg("--monitor")
@@ -58,6 +58,23 @@ pub(super) async fn watch_once(
         .take()
         .ok_or_else(|| Error::new("start the PipeWire monitor", "stdout was not captured"))?;
     let mut buffer = [0_u8; 8192];
+    let mut pending = Vec::new();
+    let mut filter = crate::monitor_filter::MonitorFilter::default();
+    let mut absorb = |bytes: &[u8], pending: &mut Vec<u8>| -> Result<bool, Error> {
+        const PENDING_LIMIT: usize = 16 * 1024 * 1024;
+        pending.extend_from_slice(bytes);
+        if pending.len() > PENDING_LIMIT {
+            return Err(Error::new(
+                "read PipeWire changes",
+                "pw-dump --monitor sent an update larger than 16 MiB",
+            ));
+        }
+        let values = crate::monitor_filter::drain_json_values(pending)
+            .map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
+        Ok(values
+            .iter()
+            .fold(false, |changed, value| filter.absorb(value) | changed))
+    };
 
     loop {
         let next = futures_util::FutureExt::fuse(stdout.read(&mut buffer));
@@ -70,6 +87,9 @@ pub(super) async fn watch_once(
         .map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
         if read == 0 {
             return monitor_status_error(child).await;
+        }
+        if !absorb(&buffer[..read], &mut pending)? {
+            continue;
         }
 
         let flush_deadline = std::time::Instant::now() + WATCH_MAX_COALESCE;
@@ -89,6 +109,7 @@ pub(super) async fn watch_once(
                     if read == 0 {
                         return monitor_status_error(child).await;
                     }
+                    absorb(&buffer[..read], &mut pending)?;
                 },
                 _ = quiet => break,
                 _ = maximum => break,

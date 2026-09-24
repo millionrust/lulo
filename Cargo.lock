@@ -6200,7 +6200,10 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "image",
+ "raw-window-handle",
  "rmac-portal",
+ "rmac-print-linux",
+ "rmac-recent-documents",
  "rmac-ui",
  "rust-embed",
 ]

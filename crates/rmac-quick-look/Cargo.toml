@@ -13,6 +13,7 @@ publish = false
 chrono.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
+gpui-component-assets.workspace = true
 libc.workspace = true
 rmac-app-launch.workspace = true
 rmac-apps.workspace = true
@@ -21,3 +22,10 @@ rmac-preview.workspace = true
 rmac-thumbnails.workspace = true
 rmac-ui.workspace = true
 rust-embed.workspace = true
+
+# A standalone host for the same panel, spawned out-of-process by surfaces
+# that need Quick Look without linking this crate (and gpui-component) into
+# their own binary — see src/bin/standalone.rs.
+[[bin]]
+name = "rmac-quick-look"
+path = "src/bin/standalone.rs"

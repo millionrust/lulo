@@ -92,11 +92,6 @@ impl AssetSource for WallpaperAssets {
         if let Some(bytes) = rmac_desktop_widgets::asset(path) {
             return Ok(Some(Cow::Borrowed(bytes)));
         }
-        // Quick Look (DESK-01) opens its own window inside this process and
-        // draws through the host app's asset source, exactly like Files'.
-        if let Some(data) = rmac_quick_look::asset(path) {
-            return Ok(Some(data));
-        }
         let bytes: Option<&'static [u8]> = match path {
             FOLDER_ICON => Some(include_bytes!("../../../../../assets/icons/folder.svg")),
             DOCUMENT_ICON => Some(include_bytes!("../../../../../assets/icons/document.svg")),
@@ -111,11 +106,6 @@ impl AssetSource for WallpaperAssets {
             .chain([FOLDER_ICON, DOCUMENT_ICON].iter())
             .filter(|asset| asset.starts_with(path))
             .map(|asset| SharedString::from(*asset))
-            .chain(
-                rmac_quick_look::asset_paths(path)
-                    .into_iter()
-                    .map(SharedString::from),
-            )
             .collect())
     }
 }
@@ -398,6 +388,28 @@ pub(crate) fn spawn_settings(pane: &'static str, cx: &mut App) {
             .await;
             if result.is_err() {
                 eprintln!("System Settings could not be opened");
+            }
+        })
+        .detach();
+}
+
+/// Quick Look (DESK-01), spawned out-of-process from a standalone host
+/// binary (crates/rmac-quick-look/src/bin/standalone.rs). This process is
+/// resident on every session, including low-end PCs, so it never links
+/// rmac-quick-look directly — that would pull in gpui-component and
+/// everything that comes with it for one desktop-menu action.
+pub(crate) fn spawn_quick_look(paths: Vec<PathBuf>, cx: &mut App) {
+    cx.background_executor()
+        .spawn(async move {
+            let result = blocking::unblock(move || {
+                std::process::Command::new("/usr/bin/rmac-quick-look")
+                    .args(paths)
+                    .spawn()
+                    .map(|_| ())
+            })
+            .await;
+            if result.is_err() {
+                eprintln!("Quick Look could not be opened");
             }
         })
         .detach();

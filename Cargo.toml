@@ -71,6 +71,7 @@ rmac-notifications-linux = { version = "=0.9.0-beta.1", path = "crates/rmac-noti
 rmac-notifications-runtime = { version = "=0.9.0-beta.1", path = "crates/rmac-notifications-runtime" }
 rmac-notifications-store = { version = "=0.9.0-beta.1", path = "crates/rmac-notifications-store" }
 rmac-osd = { version = "=0.9.0-beta.1", path = "crates/rmac-osd" }
+rmac-pasteboard = { version = "=0.9.0-beta.1", path = "crates/rmac-pasteboard" }
 rmac-audio = { version = "=0.9.0-beta.1", path = "crates/rmac-audio" }
 rmac-display = { version = "=0.9.0-beta.1", path = "crates/rmac-display" }
 rmac-design = { version = "=0.9.0-beta.1", path = "crates/rmac-design" }

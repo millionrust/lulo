@@ -1035,22 +1035,14 @@ impl Wallpaper {
                 if selection.is_empty() {
                     return;
                 }
-                // Files' own panel (crates/rmac-quick-look), opened directly
-                // in this process — it is a shared library, not a separate
-                // service. The desktop menu does not wire "Uncompress"
-                // (that is Files' progress-sheet flow), so archives just
-                // preview as files here.
-                let options = rmac_quick_look::Options { uncompress: false };
-                if rmac_quick_look::open(selection, 0, options, cx).is_none() {
-                    self.action_error = Some("Quick Look could not open its window".into());
-                }
+                spawn_quick_look(selection, cx);
             }
             Command::Copy => {
                 if selection.is_empty() {
                     return;
                 }
                 cx.spawn(async move |this, cx| {
-                    let result = rmac_finder::pasteboard::write_file_list(selection, false)
+                    let result = rmac_pasteboard::write_file_list(selection, false)
                         .wait()
                         .await;
                     let _ = this.update(cx, |this, cx| {

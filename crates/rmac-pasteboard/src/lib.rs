@@ -1,8 +1,10 @@
-//! The system clipboard for files.
+//! The system clipboard for files, shared by every surface that puts
+//! filesystem items on it or reads them back — Files' own Copy/Cut/Paste,
+//! and the desktop's context menu Copy (DESK-01).
 //!
-//! Copy and Cut in Files put the selection on the real system clipboard, so
-//! another Files window — or another file manager — can paste it, and Paste
-//! reads files other apps put there.
+//! Copy and Cut put the selection on the real system clipboard, so another
+//! Files window — or another file manager — can paste it, and Paste reads
+//! files other apps put there.
 //!
 //! * **Linux**: Wayland selection through wl-clipboard (ADR 0011). Copy
 //!   offers `text/uri-list` (wl-copy adds the plain-text types, so a text
@@ -13,9 +15,15 @@
 //!   `application/x-kde-cutselection` marker.
 //! * **macOS**: `NSPasteboard` file URLs.
 //!
-//! Every call returns a [`Pending`] result and never blocks the UI thread:
-//! on Linux the work runs, in request order, on one worker thread, so a
-//! Paste issued after a Copy always sees that Copy.
+//! Every call returns a [`Pending`] result and never blocks the caller's
+//! thread: on Linux the work runs, in request order, on one worker thread,
+//! so a Paste issued after a Copy always sees that Copy.
+//!
+//! Deliberately depends only on std, `async-channel` and (on macOS) the
+//! system pasteboard bindings — no GUI toolkit — so a process that must
+//! stay lean (the resident wallpaper renderer) can use it directly instead
+//! of linking a whole GUI app's worth of dependencies for one clipboard
+//! call.
 
 mod file_list;
 

@@ -1,0 +1,19 @@
+[package]
+name = "rmac-pasteboard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# The system clipboard for files (wl-clipboard on Linux, NSPasteboard on
+# macOS). Deliberately minimal: no GUI toolkit, so any process — including
+# ones that must stay lean, like the resident wallpaper renderer — can
+# depend on it directly. See src/lib.rs.
+[dependencies]
+async-channel.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = ["NSArray", "NSString", "NSURL"] }
+objc2-app-kit = { workspace = true, features = ["NSPasteboard"] }

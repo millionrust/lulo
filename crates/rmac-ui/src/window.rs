@@ -958,25 +958,8 @@ pub fn boot_app_instance_with_assets<A, V, F>(
     if windows.is_empty() {
         windows.push(Vec::new());
     }
-    #[cfg(target_os = "linux")]
-    match async_io::block_on(rmac_app_menu::open_window_in_running_instance(
-        app_id,
-        &windows[0],
-    )) {
-        Ok(true) => {
-            for arguments in &windows[1..] {
-                if let Err(error) = async_io::block_on(
-                    rmac_app_menu::open_window_in_running_instance(app_id, arguments),
-                ) {
-                    eprintln!("{app_id} could not open another window: {error}");
-                }
-            }
-            return;
-        }
-        Ok(false) => {}
-        // A process owns the name but did not answer: start normally, as
-        // before single-instance hand-off existed, rather than show nothing.
-        Err(error) => eprintln!("{app_id} could not reach its running process: {error}"),
+    if hand_off_to_running_instance(app_id, &windows) {
+        return;
     }
     let fallback_title: SharedString = title.into();
     let title = rmac_apps::identity::window_title(app_id)

@@ -34,6 +34,7 @@ impl EditorView {
             self.text_format = document::TextFormat::default();
             self.reset_document_watch();
             self.dirty = true;
+            self.report_unsaved(cx);
             self.schedule_autosave(cx);
             cx.notify();
         }

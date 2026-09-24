@@ -70,6 +70,7 @@ impl EditorView {
             self.text_format,
             self.saved_format,
         );
+        self.report_unsaved(cx);
         if self.dirty {
             self.schedule_autosave(cx);
         } else {
@@ -78,36 +79,83 @@ impl EditorView {
         cx.notify();
     }
 
+    /// Tell the session whether this window holds unsaved work, so a
+    /// shutdown from outside the menu bar waits for its draft.
+    pub(super) fn report_unsaved(&self, cx: &mut Context<Self>) {
+        rmac_ui::session::set_unsaved(cx, self.dirty && !self.closing);
+    }
+
+    /// Write the recovery draft now, on this thread, because the session may
+    /// be about to end: the app is quitting (perhaps on SIGTERM) or the menu
+    /// bar asked before logind shuts down or sleeps.
+    pub(super) fn preserve_recovery_now(&mut self, cx: &mut Context<Self>) {
+        if !self.dirty || self.closing || self.recovery_loading {
+            return;
+        }
+        let content = self.input.read(cx).value().to_string();
+        let record =
+            recovery::RecoveryRecord::for_document(self.path.as_deref(), self.text_format, content);
+        let result = self
+            .recovery_writer
+            .save(
+                &storage::RealStorage,
+                &self.recovery_path,
+                &record,
+                self.document_generation,
+            )
+            .and_then(|_| {
+                storage::remove_recovery_paths(&storage::RealStorage, &self.recovery_cleanup_paths)
+            });
+        match result {
+            Ok(()) => {
+                self.recovery_cleanup_paths.clear();
+                self.recovery_error = None;
+            }
+            Err(failure) => {
+                eprintln!(
+                    "Text Editor could not keep a recovery draft ({}: {:?})",
+                    failure.operation, failure.error_kind
+                );
+                self.record_recovery_failure(failure, cx);
+            }
+        }
+    }
+
     /// Debounced autosave: each edit bumps a generation token and arms a timer;
     /// only the most recent timer actually writes the recovery file.
     pub(super) fn schedule_autosave(&mut self, cx: &mut Context<Self>) {
         let generation = self.recovery_clock.arm();
+        let writer = self.recovery_writer.clone();
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(Duration::from_secs(2)).await;
-            let Ok(Some((path, record, cleanup_paths))) = this.update(cx, |this, cx| {
-                this.recovery_clock
-                    .should_write(generation, this.dirty)
-                    .then(|| {
-                        let content = this.input.read(cx).value().to_string();
-                        (
-                            this.recovery_path.clone(),
-                            recovery::RecoveryRecord::for_document(
-                                this.path.as_deref(),
-                                this.text_format,
-                                content,
-                            ),
-                            this.recovery_cleanup_paths.clone(),
-                        )
-                    })
-            }) else {
+            let Ok(Some((path, record, cleanup_paths, content_generation))) =
+                this.update(cx, |this, cx| {
+                    this.recovery_clock
+                        .should_write(generation, this.dirty)
+                        .then(|| {
+                            let content = this.input.read(cx).value().to_string();
+                            (
+                                this.recovery_path.clone(),
+                                recovery::RecoveryRecord::for_document(
+                                    this.path.as_deref(),
+                                    this.text_format,
+                                    content,
+                                ),
+                                this.recovery_cleanup_paths.clone(),
+                                this.document_generation,
+                            )
+                        })
+                })
+            else {
                 return;
             };
             let result = cx
                 .background_executor()
                 .spawn({
                     let path = path.clone();
+                    let writer = writer.clone();
                     async move {
-                        recovery::save(&storage::RealStorage, &path, &record)?;
+                        writer.save(&storage::RealStorage, &path, &record, content_generation)?;
                         storage::remove_recovery_paths(&storage::RealStorage, &cleanup_paths)
                     }
                 })
@@ -130,10 +178,20 @@ impl EditorView {
                 })
                 .unwrap_or(false);
             if stale {
-                let _ = cx
+                // Only this write's own draft goes: a newer one written since
+                // (by a session-end flush) stays.
+                let removed = cx
                     .background_executor()
-                    .spawn(async move { storage::remove_recovery(&storage::RealStorage, &path) })
+                    .spawn(async move {
+                        writer.remove_if_newest(&storage::RealStorage, &path, content_generation)
+                    })
                     .await;
+                if let Err(failure) = removed {
+                    eprintln!(
+                        "Text Editor could not remove an outdated recovery draft ({}: {:?})",
+                        failure.operation, failure.error_kind
+                    );
+                }
             }
         })
         .detach();
@@ -166,6 +224,7 @@ impl EditorView {
         self.saved_value = value;
         self.saved_format = self.text_format;
         self.dirty = false;
+        self.report_unsaved(cx);
         self.clear_recovery(cx)
     }
 

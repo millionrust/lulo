@@ -109,6 +109,12 @@ impl EditorView {
             .is_err()
         });
 
+        // However the session ends — a shutdown from Terminal, the power
+        // button, logind, SIGTERM — write the newest text to this window's
+        // recovery draft first, so the next launch offers it back instead of
+        // losing up to the two seconds the autosave waits.
+        rmac_ui::session::preserve_on_session_end(cx, |this, cx| this.preserve_recovery_now(cx));
+
         // Recovery discovery can inspect bounded records totaling up to 128
         // MiB. Present the first frame immediately and keep the document gated
         // until the background result establishes this window's recovery
@@ -240,7 +246,9 @@ impl EditorView {
             recovery_path,
             recovery_cleanup_paths: Vec::new(),
             recovery_clock: RecoveryClock::default(),
+            recovery_writer: recovery::RecoveryWriter::default(),
             recovery_loading: true,
+            closing: false,
             recovery_error: None,
             status_notice: None,
             window_generation: NEXT_WINDOW_GENERATION

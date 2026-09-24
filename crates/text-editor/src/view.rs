@@ -138,7 +138,12 @@ struct EditorView {
     recovery_path: PathBuf,
     recovery_cleanup_paths: Vec<PathBuf>,
     recovery_clock: RecoveryClock,
+    /// Orders the debounced autosave against a session-end flush.
+    recovery_writer: recovery::RecoveryWriter,
     recovery_loading: bool,
+    /// The window is going away (saved, or the user chose Don't Save), so
+    /// its text is no longer unsaved work to keep.
+    closing: bool,
     recovery_error: Option<SharedString>,
     status_notice: Option<SharedString>,
     window_generation: u64,

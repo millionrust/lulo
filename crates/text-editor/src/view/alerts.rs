@@ -102,10 +102,14 @@ impl EditorView {
         &mut self,
         pending: Pending,
         window: &mut Window,
-        _cx: &mut Context<Self>,
+        cx: &mut Context<Self>,
     ) {
         match pending {
-            Pending::Close => window.remove_window(),
+            Pending::Close => {
+                self.closing = true;
+                self.report_unsaved(cx);
+                window.remove_window();
+            }
         }
     }
 }

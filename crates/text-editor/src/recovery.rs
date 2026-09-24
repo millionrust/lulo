@@ -195,10 +195,90 @@ fn process_is_alive(process_id: u32) -> bool {
     }
     // SAFETY: signal 0 never delivers a signal; it only asks the kernel to
     // validate that the process exists and that the caller may signal it.
-    if unsafe { libc::kill(process_id, 0) } == 0 {
-        return true;
+    let exists = unsafe { libc::kill(process_id, 0) } == 0
+        || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
+    exists && process_runs_this_program(process_id)
+}
+
+/// Process IDs start again from 1 after every boot, so the Text Editor that
+/// owned a draft before a restart can share its number with an unrelated
+/// process now. Only a process running this same program still owns it.
+#[cfg(target_os = "linux")]
+fn process_runs_this_program(process_id: i32) -> bool {
+    let own = std::fs::read("/proc/self/comm").ok();
+    let owner = std::fs::read(format!("/proc/{process_id}/comm")).ok();
+    owner_runs_same_program(own.as_deref(), owner.as_deref())
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+fn process_runs_this_program(_process_id: i32) -> bool {
+    true
+}
+
+/// Whether a live owner process named `owner` is this program, named `own`.
+/// When our own name cannot be read the owner is assumed live, so a record is
+/// never taken from under a running editor; an owner whose name cannot be
+/// read has already exited.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn owner_runs_same_program(own: Option<&[u8]>, owner: Option<&[u8]>) -> bool {
+    match (own, owner) {
+        (Some(own), Some(owner)) => own == owner,
+        (None, Some(_)) => true,
+        (_, None) => false,
     }
-    std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+/// Orders one window's recovery writes. The debounced autosave writes on a
+/// background thread while a session-end flush writes on the main thread;
+/// each carries the document generation its text was read at, and a write
+/// older than the newest one already on disk is skipped, so a slow autosave
+/// can never replace a newer flushed draft, nor remove it afterwards.
+#[derive(Clone, Default)]
+pub(crate) struct RecoveryWriter {
+    newest: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
+}
+
+impl RecoveryWriter {
+    /// Write `record` unless a newer generation is already on disk. Returns
+    /// whether it wrote.
+    pub(crate) fn save(
+        &self,
+        storage: &impl Storage,
+        path: &Path,
+        record: &RecoveryRecord,
+        generation: u64,
+    ) -> Result<bool, Failure> {
+        let mut newest = self
+            .newest
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if newest.is_some_and(|newest| newest > generation) {
+            return Ok(false);
+        }
+        save(storage, path, record)?;
+        *newest = Some(generation);
+        Ok(true)
+    }
+
+    /// Remove the draft at `path` if `generation` is still the newest write,
+    /// as a stale autosave does when the document has changed or become
+    /// clean since. Returns whether it removed.
+    pub(crate) fn remove_if_newest(
+        &self,
+        storage: &impl Storage,
+        path: &Path,
+        generation: u64,
+    ) -> Result<bool, Failure> {
+        let newest = self
+            .newest
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if *newest != Some(generation) {
+            return Ok(false);
+        }
+        storage::remove_recovery(storage, path)?;
+        Ok(true)
+    }
 }
 
 #[cfg(not(unix))]
@@ -535,6 +615,76 @@ mod tests {
         assert!(claim(&directory, candidate).is_err());
         assert!(discover(&directory).candidates.is_empty());
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn scratch_directory(label: &str) -> PathBuf {
+        let directory = std::env::temp_dir().join(format!(
+            "rmac-editor-{label}-{}-{}",
+            std::process::id(),
+            RECORD_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        directory
+    }
+
+    #[test]
+    fn an_older_autosave_never_replaces_or_removes_a_newer_flush() {
+        let directory = scratch_directory("recovery-writer");
+        let path = fresh_record_path(&directory);
+        let writer = RecoveryWriter::default();
+        let storage = rmac_storage::FileSystem;
+
+        // The session-end flush writes generation 7 first...
+        assert!(writer.save(&storage, &path, &record("newest"), 7).unwrap());
+        // ...then the autosave that read generation 5 finishes late.
+        assert!(!writer.save(&storage, &path, &record("older"), 5).unwrap());
+        assert!(!writer.remove_if_newest(&storage, &path, 5).unwrap());
+        let decoded = decode(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(decoded.content, "newest");
+
+        // The newest writer can still remove its own draft.
+        assert!(writer.remove_if_newest(&storage, &path, 7).unwrap());
+        assert!(!path.exists());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_draft_flushed_before_a_forced_exit_is_offered_on_the_next_launch() {
+        let directory = scratch_directory("recovery-forced-exit");
+        // What the flush leaves behind: a record named for its owner, which
+        // has since gone. Process 0 is never a live owner.
+        let flushed = directory.join(format!(
+            "{RECORD_PREFIX}1-0{ACTIVE_OWNER_MARKER}0{RECORD_SUFFIX}"
+        ));
+        let writer = RecoveryWriter::default();
+        let mut draft = RecoveryRecord::for_document(
+            Some(Path::new("/home/user/Letter.txt")),
+            TextFormat::default(),
+            "typed just before the power went".into(),
+        );
+        draft.created_unix_ms = 99;
+        writer
+            .save(&rmac_storage::FileSystem, &flushed, &draft, 3)
+            .unwrap();
+
+        let discovery = discover(&directory);
+        assert_eq!(discovery.candidates.len(), 1);
+        let claimed = claim(&directory, discovery.candidates[0].clone()).unwrap();
+        assert_eq!(claimed.record, draft);
+        assert_eq!(claimed.record.document_label, "Letter.txt");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_reused_process_id_does_not_hide_a_draft() {
+        let editor: &[u8] = b"rmac-text-edito\n";
+        assert!(owner_runs_same_program(Some(editor), Some(editor)));
+        // After a reboot the number may belong to anything else.
+        assert!(!owner_runs_same_program(Some(editor), Some(b"systemd\n")));
+        // The owner exited between the two checks.
+        assert!(!owner_runs_same_program(Some(editor), None));
+        // Without our own name, stay on the safe side of a live editor.
+        assert!(owner_runs_same_program(None, Some(b"anything\n")));
     }
 
     #[test]

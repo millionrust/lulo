@@ -84,6 +84,32 @@ class ApplicationPackageTests(unittest.TestCase):
             self.assertNotIn("DBusActivatable", desktop)
             self.assertNotIn("StartupNotify", desktop)
 
+    def test_rmac_defaults_open_images_pdfs_and_text_in_rmac_apps(self):
+        import configparser
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.stage(Path(temporary))
+            parser = configparser.ConfigParser(interpolation=None, strict=True)
+            parser.optionxform = str
+            parser.read_string(
+                (root / verify_package.MIMEAPPS).read_text(encoding="utf-8")
+            )
+            defaults = dict(parser["Default Applications"])
+            for mime in ("image/png", "image/jpeg", "application/pdf"):
+                self.assertEqual(defaults[mime], "org.rmac.Preview.desktop")
+            for mime in ("text/plain", "text/markdown"):
+                self.assertEqual(defaults[mime], "org.rmac.TextEditor.desktop")
+            # Every type an rmac app claims in its desktop entry has an rmac
+            # default, so no claimed type silently falls to a host viewer.
+            for identity in verify_package.APPLICATIONS:
+                entry = (
+                    root / f"usr/share/applications/{identity}.desktop"
+                ).read_text(encoding="utf-8")
+                for line in entry.splitlines():
+                    if line.startswith("MimeType="):
+                        for mime in filter(None, line[9:].split(";")):
+                            self.assertEqual(defaults.get(mime), f"{identity}.desktop")
+
     def test_refuses_live_root_relative_and_nonempty_destinations(self):
         with self.assertRaises(stage_package.PackageError):
             stage_package.stage(Path("/"))

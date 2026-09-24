@@ -561,7 +561,9 @@ def _verify_mimeapps(root: Path) -> None:
         parser.read_string(raw.decode("utf-8"))
     except (UnicodeDecodeError, configparser.Error) as error:
         raise VerificationError("rmac MIME defaults are invalid") from error
-    expected = {mime: "org.rmac.ArchiveUtility.desktop" for mime in ARCHIVE_MIME_TYPES}
+    expected = {mime: "org.rmac.Preview.desktop" for mime in PREVIEW_MIME_TYPES}
+    expected.update({mime: "org.rmac.TextEditor.desktop" for mime in TEXT_MIME_TYPES})
+    expected.update({mime: "org.rmac.ArchiveUtility.desktop" for mime in ARCHIVE_MIME_TYPES})
     expected.update({mime: "org.rmac.Player.desktop" for mime in PLAYER_MIME_TYPES})
     expected.update({mime: "org.rmac.Preview.desktop" for mime in PREVIEW_MIME_TYPES})
     expected.update({mime: "org.rmac.TextEditor.desktop" for mime in TEXT_MIME_TYPES})

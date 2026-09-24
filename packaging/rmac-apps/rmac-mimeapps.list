@@ -8,6 +8,18 @@
 # TextEdit. Without these lines a double-click picked whichever installed
 # app happened to claim the type first.
 [Default Applications]
+application/pdf=org.rmac.Preview.desktop
+image/png=org.rmac.Preview.desktop
+image/jpeg=org.rmac.Preview.desktop
+image/gif=org.rmac.Preview.desktop
+image/webp=org.rmac.Preview.desktop
+image/bmp=org.rmac.Preview.desktop
+image/tiff=org.rmac.Preview.desktop
+text/plain=org.rmac.TextEditor.desktop
+text/markdown=org.rmac.TextEditor.desktop
+text/x-markdown=org.rmac.TextEditor.desktop
+text/rtf=org.rmac.TextEditor.desktop
+application/rtf=org.rmac.TextEditor.desktop
 application/zip=org.rmac.ArchiveUtility.desktop
 application/x-tar=org.rmac.ArchiveUtility.desktop
 application/x-compressed-tar=org.rmac.ArchiveUtility.desktop
@@ -37,15 +49,3 @@ video/webm=org.rmac.Player.desktop
 video/x-msvideo=org.rmac.Player.desktop
 video/mpeg=org.rmac.Player.desktop
 video/ogg=org.rmac.Player.desktop
-application/pdf=org.rmac.Preview.desktop
-image/png=org.rmac.Preview.desktop
-image/jpeg=org.rmac.Preview.desktop
-image/gif=org.rmac.Preview.desktop
-image/webp=org.rmac.Preview.desktop
-image/bmp=org.rmac.Preview.desktop
-image/tiff=org.rmac.Preview.desktop
-text/plain=org.rmac.TextEditor.desktop
-text/markdown=org.rmac.TextEditor.desktop
-text/x-markdown=org.rmac.TextEditor.desktop
-text/rtf=org.rmac.TextEditor.desktop
-application/rtf=org.rmac.TextEditor.desktop

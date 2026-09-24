@@ -78,16 +78,22 @@ impl AppDrawer {
             .collect()
     }
 
-    /// Catalog-order matches for the private query. The query never crosses
-    /// the accessibility boundary; only these controller-owned indices do.
+    /// Ranked matches for the private query: exact and prefix matches sort
+    /// before a plain substring or a scattered subsequence, and ties keep
+    /// catalog order. The query never crosses the accessibility boundary;
+    /// only these controller-owned indices do.
     fn search_matching_indices(&self, cx: &gpui::App) -> Vec<usize> {
-        let query = self.query.read(cx).value().trim().to_lowercase();
-        self.apps
+        let query = self.query.read(cx).value();
+        let mut ranked: Vec<(usize, u32)> = self
+            .apps
             .iter()
             .enumerate()
-            .filter(|(_, app)| query.is_empty() || app.search_text.contains(&query))
-            .map(|(index, _)| index)
-            .collect()
+            .filter_map(|(index, app)| {
+                crate::search::match_score(&query, &app.search_text).map(|score| (index, score))
+            })
+            .collect();
+        ranked.sort_by(|left, right| right.1.cmp(&left.1));
+        ranked.into_iter().map(|(index, _)| index).collect()
     }
 
     /// The set of categories actually present after the *search* filter — used

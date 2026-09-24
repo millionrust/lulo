@@ -1,6 +1,7 @@
 //! rmac Apps — a searchable grid of installed applications.
 
 mod catalog;
+mod search;
 mod service;
 mod view;
 

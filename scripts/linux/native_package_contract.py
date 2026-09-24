@@ -191,8 +191,15 @@ ALL_BINARIES = tuple(
 )
 
 
+_SEMVER_PATTERN = r"[0-9]+(?:\.[0-9]+){2}(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?"
+
+
 def workspace_version(repo_root: Path) -> str:
-    """Read the single workspace package version without a TOML dependency."""
+    """Read the single workspace package version without a TOML dependency.
+
+    Accepts plain ``X.Y.Z`` and Cargo/semver pre-release versions such as
+    ``X.Y.Z-beta.1`` (used for Alpha/Beta tags -- see docs/beta-checklist.md).
+    """
     path = repo_root / "Cargo.toml"
     try:
         raw = path.read_bytes()
@@ -208,13 +215,27 @@ def workspace_version(repo_root: Path) -> str:
         r"(?ms)^\[workspace\.package\]\s*$.*?^version\s*=\s*\"([^\"]+)\"\s*$",
         text,
     )
-    if match is None or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2}", match.group(1)):
+    if match is None or not re.fullmatch(_SEMVER_PATTERN, match.group(1)):
         raise ContractError("workspace package version is not canonical")
     return match.group(1)
 
 
+def debian_upstream_version(version: str) -> str:
+    """Map a Cargo/semver version to a Debian-ordering-safe upstream version.
+
+    Debian compares versions component-by-component and a bare hyphenated
+    pre-release (``0.9.0-beta.1``) would sort *after* ``0.9.0``, the opposite
+    of what a pre-release needs. Replacing the first ``-`` with ``~`` (Debian
+    Policy's own convention) makes ``0.9.0~beta.1`` sort before ``0.9.0``
+    while a final release (no hyphen at all) is left unchanged.
+    """
+    if not re.fullmatch(_SEMVER_PATTERN, version):
+        raise ContractError("version is not canonical")
+    return version.replace("-", "~", 1)
+
+
 def native_version(repo_root: Path) -> str:
-    return f"{workspace_version(repo_root)}-{DEBIAN_REVISION}"
+    return f"{debian_upstream_version(workspace_version(repo_root))}-{DEBIAN_REVISION}"
 
 
 def source_date_epoch(value: object) -> int:
@@ -379,7 +400,10 @@ def control_bytes(
     """Render one canonical binary-package control stanza."""
     if architecture not in ARCHITECTURES:
         raise ContractError("unsupported Debian architecture")
-    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2}-[1-9][0-9]*", version):
+    if not re.fullmatch(
+        r"[0-9]+(?:\.[0-9]+){2}(?:~[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?-[1-9][0-9]*",
+        version,
+    ):
         raise ContractError("native package version is invalid")
     canonical = dependency_entries(", ".join(dependencies))
     if canonical != dependencies:

@@ -65,7 +65,7 @@ class NativePackageContractTests(unittest.TestCase):
         )
         for _, runtime_crates in contract.SHIPPING_SHELL_SOURCES.values():
             for crate in runtime_crates:
-                self.assertIn(f'{crate} = {{ version = "=0.1.0",', manifest)
+                self.assertIn(f'{crate} = {{ version = "=0.9.0-beta.1",', manifest)
 
     def test_inventory_covers_apps_and_supervised_session_exactly(self):
         self.assertEqual(len(contract.APPLICATION_BINARIES), 13)
@@ -188,7 +188,9 @@ class NativePackageContractTests(unittest.TestCase):
             with self.subTest(value=invalid):
                 with self.assertRaises(contract.ContractError):
                     contract.source_date_epoch(invalid)
-        self.assertEqual(contract.native_version(builder.REPO_ROOT), "0.1.0-38")
+        self.assertEqual(contract.native_version(builder.REPO_ROOT), "0.9.0~beta.1-38")
+        self.assertEqual(contract.debian_upstream_version("0.9.0-beta.1"), "0.9.0~beta.1")
+        self.assertEqual(contract.debian_upstream_version("0.9.0"), "0.9.0")
 
     def test_shlibdeps_is_argument_separated_and_uses_clean_native_context(self):
         with tempfile.TemporaryDirectory() as temporary:

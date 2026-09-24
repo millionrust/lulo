@@ -220,7 +220,10 @@ def _package_set(directory: Path) -> tuple[str, str, dict[str, object]]:
     packages = document.get("packages")
     if (
         not isinstance(version, str)
-        or not re.fullmatch(r"[0-9]+(?:\.[0-9]+){2}-[1-9][0-9]*", version)
+        or not re.fullmatch(
+            r"[0-9]+(?:\.[0-9]+){2}(?:~[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?-[1-9][0-9]*",
+            version,
+        )
         or architecture not in {"amd64", "arm64"}
         or not isinstance(packages, list)
         or [entry.get("package") for entry in packages if isinstance(entry, dict)]

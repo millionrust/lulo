@@ -17,6 +17,6 @@
   <provides><binary>rmac-clock</binary></provides>
   <url type="homepage">https://github.com/snehacodex/rmac</url>
   <developer id="org.rmac"><name>Lulo OS contributors</name></developer>
-  <releases><release version="0.1.0" date="2026-07-25"/></releases>
+  <releases><release version="0.9.0-beta.1" date="2026-09-24"/></releases>
   <content_rating type="oars-1.1"/>
 </component>

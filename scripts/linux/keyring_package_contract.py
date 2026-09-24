@@ -24,7 +24,9 @@ TRUST_PATH = REPO_ROOT / "packaging/apt/update-trust.json"
 PACKAGE = "rmac-archive-keyring"
 MAINTAINER = "Jacob Samas <samasjacob@icloud.com>"
 FINGERPRINT_RE = re.compile(r"(?:[0-9A-F]{40}|[0-9A-F]{64})")
-VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+-[1-9][0-9]*")
+VERSION_RE = re.compile(
+    r"[0-9]+\.[0-9]+\.[0-9]+(?:~[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?-[1-9][0-9]*"
+)
 MAX_TOOL_OUTPUT = 1024 * 1024
 MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
 
@@ -108,7 +110,8 @@ def workspace_version() -> str:
     except UnicodeDecodeError as error:
         raise KeyringPackageError("workspace manifest is not UTF-8") from error
     match = re.search(
-        r'(?ms)^\[workspace\.package\]\s*$.*?^version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"\s*$',
+        r'(?ms)^\[workspace\.package\]\s*$.*?'
+        r'^version\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?)"\s*$',
         text,
     )
     if match is None:
@@ -116,9 +119,19 @@ def workspace_version() -> str:
     return match.group(1)
 
 
+def debian_upstream_version(version: str) -> str:
+    """Same Debian tilde convention as native_package_contract.py.
+
+    A Cargo/semver pre-release hyphen (``0.9.0-beta.1``) sorts *after*
+    ``0.9.0`` under Debian's comparison rules; replacing the first ``-``
+    with ``~`` makes it sort before the final release instead.
+    """
+    return version.replace("-", "~", 1)
+
+
 def package_version(contract: dict[str, object] | None = None) -> str:
     contract = load_contract() if contract is None else contract
-    return f"{workspace_version()}-{contract['debian_revision']}"
+    return f"{debian_upstream_version(workspace_version())}-{contract['debian_revision']}"
 
 
 def source_date_epoch(value: object) -> int:

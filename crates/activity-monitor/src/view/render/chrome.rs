@@ -127,6 +127,9 @@ impl MonitorView {
     pub(super) fn render_filter_menu(&self, cx: &Context<Self>) -> impl IntoElement {
         let current = self.view_filter(cx);
         div()
+            .id("filter-menu")
+            .role(Role::Menu)
+            .aria_label("View filter")
             .absolute()
             .top(px(mac::toolbar_height() + 4.0))
             .left(px(TITLE_X - TOOLBAR_CONTENT_INSET))
@@ -144,6 +147,9 @@ impl MonitorView {
                         let on = filter == current;
                         div()
                             .id(SharedString::from(filter.label()))
+                            .role(Role::MenuItem)
+                            .aria_label(filter.label())
+                            .aria_selected(on)
                             .h_flex()
                             .items_center()
                             .gap_2()

@@ -101,7 +101,7 @@ impl TerminalView {
             .on_action(cx.listener(|this, _: &SelectCommandOutput, _, cx| {
                 this.select_shell_range(CommandRangeKind::Output, cx)
             }))
-            .on_action(cx.listener(|this, _: &NewWindow, _, cx| {
+            .on_action(cx.listener(|_, _: &NewWindow, _, cx| {
                 rmac_ui::open_another_window(Vec::new(), cx);
             }))
             .on_action(cx.listener(|this, _: &ResetTerminal, _, cx| this.reset(cx)))

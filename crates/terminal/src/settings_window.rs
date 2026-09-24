@@ -9,10 +9,10 @@
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, App, AppContext as _, Context, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString, Styled as _,
-    Window, WindowHandle,
+    InteractiveElement as _, IntoElement, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, WindowHandle,
 };
-use rmac_ui::Root;
+use rmac_ui::{Root, StyledExt as _};
 
 use crate::controller::FONT_SIZE;
 use crate::profiles::{self, PROFILES};
@@ -115,6 +115,7 @@ impl Render for SettingsView {
             ))
             .child(
                 div()
+                    .id("settings-scroll")
                     .flex_1()
                     .overflow_y_scroll()
                     .child(section_label("Profile"))

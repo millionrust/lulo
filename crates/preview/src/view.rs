@@ -420,6 +420,7 @@ impl PreviewView {
                 .spawn(async move { render::load(&path) })
                 .await;
             let _ = this.update(cx, |view, cx| {
+                let slots_len = view.slots.len();
                 let Some(slot) = view.slots.iter_mut().find(|slot| slot.id == id) else {
                     return;
                 };
@@ -431,11 +432,12 @@ impl PreviewView {
                 // A PDF with several pages opens with its thumbnails, like
                 // Preview; a single image or one-page PDF does not.
                 let pages = slot.loaded().map(Loaded::page_count).unwrap_or(0);
-                if view.slots.len() == 1 && pages > 1 {
+                let opened_path = opened.then(|| slot.path.clone());
+                if slots_len == 1 && pages > 1 {
                     view.sidebar = true;
                 }
-                if opened {
-                    record_recent_document(slot.path.clone(), cx);
+                if let Some(path) = opened_path {
+                    record_recent_document(path, cx);
                 }
                 view.ensure_text(cx);
                 cx.notify();

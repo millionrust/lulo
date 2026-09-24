@@ -957,5 +957,64 @@ class DevelopmentInstallLockTests(unittest.TestCase):
             self.assertFalse((home / ".local").exists())
 
 
+class MacKeyboardRelayTests(unittest.TestCase):
+    """SR-13: keyd's group is root-equivalent (keyd 2.5 runs `command()`
+    bindings sent over its socket as root), so sessions reach keyd only
+    through a relay that accepts rmac's profile names."""
+
+    root = Path(__file__).resolve().parents[1]
+
+    def unit(self, name: str) -> dict[str, str]:
+        values: dict[str, str] = {}
+        path = self.root / "packaging/rmac-session/systemd" / name
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "=" in line and not line.startswith("#"):
+                key, value = line.split("=", 1)
+                values[key] = value
+        return values
+
+    def test_relay_is_a_hardened_dynamic_user_with_only_the_keyd_group(self):
+        socket = self.unit("rmac-mac-keyboard-relay.socket")
+        self.assertEqual(socket["ListenStream"], "/run/rmac-mac-keyboard.socket")
+        self.assertEqual(socket["Accept"], "yes")
+        self.assertEqual(socket["ConditionPathExists"], "/etc/keyd/rmac.conf")
+        service = self.unit("rmac-mac-keyboard-relay@.service")
+        self.assertEqual(
+            service["ExecStart"], "/usr/libexec/rmac/rmac-mac-keyboard relay"
+        )
+        self.assertEqual(service["StandardInput"], "socket")
+        self.assertEqual(service["DynamicUser"], "yes")
+        self.assertEqual(service["SupplementaryGroups"], "keyd")
+        self.assertEqual(service["NoNewPrivileges"], "yes")
+        self.assertEqual(service["CapabilityBoundingSet"], "")
+        self.assertEqual(service["RestrictAddressFamilies"], "AF_UNIX")
+        self.assertNotIn("User", service)
+
+    def test_relay_units_are_packaged_as_system_units(self):
+        files = stage_package.package_files()
+        for name in (
+            "rmac-mac-keyboard-relay.socket",
+            "rmac-mac-keyboard-relay@.service",
+        ):
+            self.assertIn(f"usr/lib/systemd/system/{name}", files)
+            self.assertIn(
+                Path(f"usr/lib/systemd/system/{name}"), verify_package.EXPECTED_PATHS
+            )
+
+    def test_no_session_is_added_to_the_keyd_group(self):
+        system = (self.root / "crates/rmac-keyboard/src/system.rs").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotIn('"-a"', system)
+        self.assertIn('run(GPASSWD, &["-d", &user, KEYD_GROUP])', system)
+        self.assertIn("RELAY_SOCKET", system)
+        follow = system[system.index("pub fn follow()") :]
+        self.assertNotIn("keyd_binary()", follow)
+        postrm = (self.root / "packaging/rmac-session/debian/postrm").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("disable --now rmac-mac-keyboard-relay.socket", postrm)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -172,9 +172,9 @@ impl Settings {
         if let Some(error) = &self.mac_keyboard_error {
             cards.push(note_card(error.clone()));
         }
-        if state.shortcuts_in_all_apps && !status.session_can_bind {
+        if state.shortcuts_in_all_apps && !status.relay_available {
             cards.push(footnote(
-                "Log out and log back in to finish turning on Mac shortcuts in all apps.",
+                "Mac shortcuts in all apps aren't running. Turn them off and on again to restart them.",
             ));
         } else if !status.keyd_installed && !state.shortcuts_in_all_apps {
             cards.push(footnote(

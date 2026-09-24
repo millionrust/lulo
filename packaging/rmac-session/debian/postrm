@@ -8,6 +8,9 @@ config=/etc/keyd/rmac.conf
 
 case "$1" in
 remove|purge)
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl disable --now rmac-mac-keyboard-relay.socket >/dev/null 2>&1 || true
+    fi
     if [ -f "$config" ] && head -n 1 "$config" | grep -q '^# rmac-mac-keyboard '; then
         rm -f "$config"
         if command -v systemctl >/dev/null 2>&1; then

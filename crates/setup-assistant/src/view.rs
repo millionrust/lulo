@@ -616,9 +616,9 @@ impl SetupView {
                             }),
                         )),
                 );
-                if shortcuts && !status.session_can_bind {
+                if shortcuts && !status.relay_available {
                     body = body.child(note(
-                        "Mac shortcuts in all apps start working after you next log in.",
+                        "Mac shortcuts in all apps aren't running. Turn them off and on again in System Settings › Keyboard.",
                     ));
                 } else if !status.keyd_installed && !shortcuts {
                     body = body.child(note(

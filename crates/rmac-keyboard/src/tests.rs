@@ -423,3 +423,44 @@ fn group_ids_are_read_from_etc_group() {
     assert_eq!(parse_group_id(source, "keyd"), Some(996));
     assert_eq!(parse_group_id(source, "input"), None);
 }
+
+#[test]
+fn group_members_are_read_from_etc_group() {
+    let source = "root:x:0:\nkeydx:x:5:eve\nkeyd:x:996:jake,ana\ninput:x:104:\n";
+    assert_eq!(parse_group_members(source, "keyd"), vec!["jake", "ana"]);
+    assert!(parse_group_members(source, "input").is_empty());
+    assert!(parse_group_members(source, "missing").is_empty());
+}
+
+#[test]
+fn the_relay_accepts_only_an_exact_profile_name() {
+    for profile in [Profile::Native, Profile::PcApp, Profile::Terminal] {
+        let request = format!("{}\n", profile.id());
+        assert_eq!(parse_relay_request(request.as_bytes()), Some(profile));
+    }
+    for request in [
+        &b""[..],
+        b"native",
+        b"native\n\n",
+        b" native\n",
+        b"Native\n",
+        b"reset\n",
+        b"cmd.c = command(id)\n",
+        b"pc-app\nterminal\n",
+        b"\xff\n",
+    ] {
+        assert_eq!(parse_relay_request(request), None, "{request:?}");
+    }
+    let long = format!("{}\n", "a".repeat(RELAY_REQUEST_MAX));
+    assert_eq!(parse_relay_request(long.as_bytes()), None);
+}
+
+#[test]
+fn no_profile_binding_can_run_a_command() {
+    // keyd runs `command()` bindings as root; the relay must never send one.
+    for profile in [Profile::Native, Profile::PcApp, Profile::Terminal] {
+        for argument in bind_arguments(profile) {
+            assert!(!argument.contains("command("), "{argument}");
+        }
+    }
+}

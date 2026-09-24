@@ -197,6 +197,14 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             _read_regular(notifications / "rmac-portals.conf"),
             0o644,
         ),
+        "usr/lib/systemd/system/rmac-mac-keyboard-relay.socket": (
+            _read_regular(package / "systemd" / "rmac-mac-keyboard-relay.socket"),
+            0o644,
+        ),
+        "usr/lib/systemd/system/rmac-mac-keyboard-relay@.service": (
+            _read_regular(package / "systemd" / "rmac-mac-keyboard-relay@.service"),
+            0o644,
+        ),
         "usr/share/polkit-1/actions/org.rmac.mac-keyboard.policy": (
             _read_regular(package / "polkit" / "org.rmac.mac-keyboard.policy"),
             0o644,

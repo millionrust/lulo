@@ -5,13 +5,15 @@
 //! * `regenerate` (root, from the rmac-session postinst)
 //! * `follow` (the user's session unit: niri focus → keyd bindings)
 //! * `reset` (drop dynamic keyd bindings; the unit's stop hook)
+//! * `relay` (the system relay, one accepted connection on stdin/stdout:
+//!   reads a profile name and applies that profile's keyd bindings)
 //! * `print-config --swap on|off --caps ID --option-characters on|off`
 
 use std::process::ExitCode;
 
 const USAGE: &str = "usage: rmac-mac-keyboard apply --shortcuts on|off --swap on|off --caps ID --option-characters on|off
        rmac-mac-keyboard print-config --swap on|off --caps ID --option-characters on|off
-       rmac-mac-keyboard regenerate | follow | reset";
+       rmac-mac-keyboard regenerate | follow | reset | relay";
 
 fn main() -> ExitCode {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
@@ -59,6 +61,7 @@ fn platform(command: &str, rest: &[String]) -> Result<(), String> {
             .map_err(|error| error.to_string()),
         ("follow", []) => system::follow().map_err(|error| error.to_string()),
         ("reset", []) => system::reset().map_err(|error| error.to_string()),
+        ("relay", []) => system::relay().map_err(|error| error.to_string()),
         _ => Err(USAGE.into()),
     }
 }

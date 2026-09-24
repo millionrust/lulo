@@ -98,9 +98,10 @@ pub struct Status {
     pub keyd_installed: bool,
     /// The rmac privileged helper is installed (packaged sessions only).
     pub helper_installed: bool,
-    /// This login session may use keyd's socket. False right after the
-    /// feature is turned on, until the user logs in again.
-    pub session_can_bind: bool,
+    /// The root-owned profile relay is listening, so the session follower
+    /// can switch keyd between the three rmac profiles. Sessions never talk
+    /// to keyd's own socket (docs/decisions/0017-mac-keyboard.md).
+    pub relay_available: bool,
     /// Other keyd configurations rmac will not override.
     pub foreign_keyd_configs: Vec<String>,
     /// The primary layout has a Mac variant for ⌥ characters.

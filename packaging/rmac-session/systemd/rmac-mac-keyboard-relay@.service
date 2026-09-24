@@ -1,0 +1,31 @@
+[Unit]
+Description=rmac Mac shortcuts profile relay (one request)
+After=keyd.service
+
+[Service]
+# keyd's socket runs `command()` bindings as root, so its group is
+# root-equivalent. Only this relay holds it: a throwaway user that reads one
+# profile name and applies rmac's generated bindings for that profile.
+ExecStart=/usr/libexec/rmac/rmac-mac-keyboard relay
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+DynamicUser=yes
+SupplementaryGroups=keyd
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+RuntimeMaxSec=10s

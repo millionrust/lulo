@@ -3,25 +3,37 @@
 //! Privilege split: System Settings runs as the user and only reads. Every
 //! change to `/etc/keyd` or to the keyd service goes through
 //! `pkexec /usr/libexec/rmac/rmac-mac-keyboard apply …`, whose arguments are
-//! enumerated values only. The follower runs as the user and talks to keyd's
-//! socket, which the keyd package restricts to the `keyd` group.
+//! enumerated values only. The follower runs as the user and never talks to
+//! keyd: membership of the `keyd` group is root-equivalent, because keyd 2.5
+//! accepts `bind` expressions with `command()` over its socket and runs them
+//! as root. The follower instead names one of rmac's three profiles on the
+//! relay socket; the relay (`rmac-mac-keyboard-relay@.service`, a dynamic
+//! user with only the `keyd` group) applies that profile's generated
+//! bindings and nothing else.
 
 use std::ffi::CStr;
+use std::io::{Read as _, Write as _};
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::time::Duration;
 
 use rmac_locale::X11Keyboard;
 
 use crate::{
-    bind_arguments, detect, helper_arguments, keyd_config, parse_group_id, parse_keyd_header,
-    profile_for_app, supports_option_characters, xkb_for, Error, MacKeyboard, PhysicalLayout,
-    Profile, Status,
+    bind_arguments, detect, helper_arguments, keyd_config, parse_group_members, parse_keyd_header,
+    parse_relay_request, profile_for_app, supports_option_characters, xkb_for, Error, MacKeyboard,
+    PhysicalLayout, Profile, Status, RELAY_REQUEST_MAX,
 };
 
 pub const KEYD_DIRECTORY: &str = "/etc/keyd";
 pub const KEYD_CONFIG: &str = "/etc/keyd/rmac.conf";
 pub const HELPER: &str = "/usr/libexec/rmac/rmac-mac-keyboard";
 pub const FOLLOWER_UNIT: &str = "rmac-mac-keyboard.service";
+/// The profile relay's socket (`rmac-mac-keyboard-relay.socket`).
+pub const RELAY_SOCKET: &str = "/run/rmac-mac-keyboard.socket";
+const RELAY_UNIT: &str = "rmac-mac-keyboard-relay.socket";
+const RELAY_TIMEOUT: Duration = Duration::from_secs(3);
 const KEYD_GROUP: &str = "keyd";
 const KEYD_SERVICE: &str = "keyd.service";
 /// Debian renames upstream's `keyd` to `keyd.rvaiya` (Debian bug #1098982).
@@ -44,7 +56,7 @@ pub fn status() -> Result<Status, Error> {
         keyboard,
         keyd_installed: keyd_binary().is_some(),
         helper_installed: Path::new(HELPER).is_file(),
-        session_can_bind: session_in_group(KEYD_GROUP),
+        relay_available: Path::new(RELAY_SOCKET).exists(),
         foreign_keyd_configs: foreign_keyd_configs(),
     })
 }
@@ -110,11 +122,10 @@ pub fn apply_as_root(target: &MacKeyboard) -> Result<(), Error> {
             )));
         }
         write_keyd_config(&target.layout)?;
-        if let Some(user) = pkexec_user()? {
-            run(GPASSWD, &["-a", &user, KEYD_GROUP])?;
-        }
+        leave_keyd_group()?;
         run(SYSTEMCTL, &["enable", KEYD_SERVICE])?;
         run(SYSTEMCTL, &["restart", KEYD_SERVICE])?;
+        run(SYSTEMCTL, &["enable", "--now", RELAY_UNIT])?;
         set_keyboard(&snapshot.x11_keyboard(), &keyboard)
     } else {
         match std::fs::remove_file(KEYD_CONFIG) {
@@ -126,6 +137,8 @@ pub fn apply_as_root(target: &MacKeyboard) -> Result<(), Error> {
                 )))
             }
         }
+        run(SYSTEMCTL, &["disable", "--now", RELAY_UNIT])?;
+        leave_keyd_group()?;
         if foreign_keyd_configs().is_empty() {
             run(SYSTEMCTL, &["disable", "--now", KEYD_SERVICE])?;
         } else {
@@ -180,6 +193,21 @@ fn require_root() -> Result<(), Error> {
     } else {
         Err(Error::new("this command must run as root through pkexec"))
     }
+}
+
+/// Development builds before the relay added the requesting user to `keyd`,
+/// which hands every process of that user root through keyd's `command()`.
+/// rmac never needs the membership, so the helper takes it away.
+fn leave_keyd_group() -> Result<(), Error> {
+    let Some(user) = pkexec_user()? else {
+        return Ok(());
+    };
+    let source = std::fs::read_to_string("/etc/group")
+        .map_err(|error| Error::new(format!("could not read /etc/group: {error}")))?;
+    if parse_group_members(&source, KEYD_GROUP).contains(&user) {
+        run(GPASSWD, &["-d", &user, KEYD_GROUP])?;
+    }
+    Ok(())
 }
 
 /// The user who asked pkexec to run the helper.
@@ -275,37 +303,8 @@ pub fn foreign_keyd_configs() -> Vec<String> {
     names
 }
 
-/// Whether this process (and so this login session) carries `group`.
-fn session_in_group(group: &str) -> bool {
-    let Some(gid) = group_id(group) else {
-        return false;
-    };
-    // SAFETY: a zero-length query returns the count; the second call fills a
-    // buffer of exactly that many entries.
-    let groups = unsafe {
-        let count = libc::getgroups(0, std::ptr::null_mut());
-        if count < 0 {
-            return false;
-        }
-        let mut groups = vec![0 as libc::gid_t; count as usize];
-        let filled = libc::getgroups(count, groups.as_mut_ptr());
-        if filled < 0 {
-            return false;
-        }
-        groups.truncate(filled as usize);
-        groups
-    };
-    // SAFETY: getegid has no preconditions.
-    groups.contains(&gid) || unsafe { libc::getegid() } == gid
-}
-
-fn group_id(group: &str) -> Option<u32> {
-    let source = std::fs::read_to_string("/etc/group").ok()?;
-    parse_group_id(&source, group)
-}
-
-/// Switch keyd to `profile`.
-pub fn bind(keyd: &Path, profile: Profile) -> Result<(), Error> {
+/// Switch keyd to `profile` through keyd's own socket (the relay only).
+fn bind(keyd: &Path, profile: Profile) -> Result<(), Error> {
     let output = Command::new(keyd)
         .arg("bind")
         .args(bind_arguments(profile))
@@ -323,11 +322,62 @@ pub fn bind(keyd: &Path, profile: Profile) -> Result<(), Error> {
     }
 }
 
+/// Ask the relay to switch keyd to `profile` (the session side).
+pub fn request_profile(profile: Profile) -> Result<(), Error> {
+    let mut stream = UnixStream::connect(RELAY_SOCKET).map_err(|error| {
+        Error::new(format!(
+            "the Mac shortcuts relay is not running ({error}); turn Mac shortcuts off and on again"
+        ))
+    })?;
+    stream
+        .set_read_timeout(Some(RELAY_TIMEOUT))
+        .and_then(|()| stream.set_write_timeout(Some(RELAY_TIMEOUT)))
+        .map_err(|error| Error::new(format!("could not configure the relay socket: {error}")))?;
+    stream
+        .write_all(format!("{}\n", profile.id()).as_bytes())
+        .and_then(|()| stream.shutdown(std::net::Shutdown::Write))
+        .map_err(|error| Error::new(format!("could not reach the Mac shortcuts relay: {error}")))?;
+    let mut reply = Vec::new();
+    stream
+        .take(64)
+        .read_to_end(&mut reply)
+        .map_err(|error| Error::new(format!("the Mac shortcuts relay did not answer: {error}")))?;
+    if reply == b"ok\n" {
+        Ok(())
+    } else {
+        Err(Error::new(
+            "the Mac shortcuts relay could not switch keyd's bindings",
+        ))
+    }
+}
+
+/// The relay: one connection, one profile name on stdin, "ok" or "error" on
+/// stdout. systemd hands it the accepted socket (`Accept=yes`).
+pub fn relay() -> Result<(), Error> {
+    let mut request = Vec::with_capacity(RELAY_REQUEST_MAX + 1);
+    std::io::stdin()
+        .take(RELAY_REQUEST_MAX as u64 + 1)
+        .read_to_end(&mut request)
+        .map_err(|error| Error::new(format!("could not read the request: {error}")))?;
+    let result = match parse_relay_request(&request) {
+        Some(profile) => keyd_binary()
+            .ok_or_else(|| Error::new("keyd is not installed"))
+            .and_then(|keyd| bind(&keyd, profile)),
+        None => Err(Error::new("the request is not an rmac profile name")),
+    };
+    let reply: &[u8] = if result.is_ok() { b"ok\n" } else { b"error\n" };
+    let mut stdout = std::io::stdout();
+    stdout
+        .write_all(reply)
+        .and_then(|()| stdout.flush())
+        .map_err(|error| Error::new(format!("could not answer: {error}")))?;
+    result
+}
+
 /// The session follower: watch niri's focus and keep keyd's `cmd`/`opt`
 /// layers matched to the focused app. Returns when niri's stream ends for
 /// good; systemd restarts it with the session.
 pub fn follow() -> Result<(), Error> {
-    let keyd = keyd_binary().ok_or_else(|| Error::new("keyd is not installed"))?;
     let installed = std::fs::read_to_string(KEYD_CONFIG)
         .ok()
         .and_then(|source| parse_keyd_header(&source));
@@ -354,7 +404,7 @@ pub fn follow() -> Result<(), Error> {
         if applied == Some(profile) {
             continue;
         }
-        match bind(&keyd, profile) {
+        match request_profile(profile) {
             Ok(()) => {
                 applied = Some(profile);
                 reported = false;
@@ -366,14 +416,12 @@ pub fn follow() -> Result<(), Error> {
             Err(_) => {}
         }
     }
-    let _ = bind(&keyd, Profile::Native);
-    Ok(())
+    request_profile(Profile::Native)
 }
 
 /// Drop every dynamic binding (the unit's stop hook).
 pub fn reset() -> Result<(), Error> {
-    let keyd = keyd_binary().ok_or_else(|| Error::new("keyd is not installed"))?;
-    bind(&keyd, Profile::Native)
+    request_profile(Profile::Native)
 }
 
 fn focused_profile(state: &rmac_compositor::State) -> Profile {

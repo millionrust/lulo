@@ -1,0 +1,16 @@
+[Unit]
+Description=rmac Mac shortcuts profile relay
+# Enabled by rmac-mac-keyboard apply only while System Settings > Keyboard >
+# "Use Mac shortcuts in all apps" is on (docs/decisions/0017-mac-keyboard.md).
+ConditionPathExists=/etc/keyd/rmac.conf
+
+[Socket]
+ListenStream=/run/rmac-mac-keyboard.socket
+# Any local session may pick one of rmac's three generated profiles; that is
+# all the relay accepts. Sessions never reach keyd's own socket.
+SocketMode=0666
+Accept=yes
+MaxConnections=8
+
+[Install]
+WantedBy=sockets.target

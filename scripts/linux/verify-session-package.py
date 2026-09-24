@@ -134,6 +134,8 @@ EXPECTED_PATHS = {
     Path("usr/share/xdg-desktop-portal/rmac-portals.conf"),
     Path("usr/share/doc/rmac-session/copyright"),
     Path("usr/share/polkit-1/actions/org.rmac.mac-keyboard.policy"),
+    Path("usr/lib/systemd/system/rmac-mac-keyboard-relay.socket"),
+    Path("usr/lib/systemd/system/rmac-mac-keyboard-relay@.service"),
     Path(
         "usr/share/dbus-1/services/"
         "org.freedesktop.impl.portal.desktop.rmac.service"

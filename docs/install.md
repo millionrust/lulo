@@ -150,10 +150,13 @@ sh install.sh --from-release vX.Y.Z
 
 This downloads `rmac-apps_*_<arch>.deb`, `rmac-session_*_<arch>.deb`,
 `niri_*_<arch>.deb`, `xwayland-satellite_*_<arch>.deb`, and `SHA256SUMS`
-from that release tag, verifies the package files against `SHA256SUMS`,
-verifies `gh attestation verify`'s build-provenance check for each (skipped
-with a note if `gh` is not installed -- this is a defense in depth on top of
-the checksum check, not a replacement for it), then runs `sudo apt-get
+from that release tag and verifies the package files against `SHA256SUMS`.
+`SHA256SUMS` comes from the same release, so it only proves the download is
+intact. Who built the packages is checked by `gh attestation verify`: when
+`gh` is installed that check is mandatory and the attestation must be signed
+by this repository's release workflow (run `gh auth login` first). Without
+`gh` the script says the check was skipped, and authenticity then rests on
+HTTPS and the GitHub account. It then runs `sudo apt-get
 install` on the local files so their remaining `Depends` still resolve from
 the machine's ordinary Ubuntu archive. If a newer `niri` or
 `xwayland-satellite` is already installed (for example the danklinux PPA's

@@ -252,6 +252,74 @@ class InstallKeyringVerificationTests(unittest.TestCase):
         self.assertIn("apt-get install --yes rmac-archive-keyring rmac-session", text)
 
 
+class InstallReleaseAttestationTests(unittest.TestCase):
+    """SR-17: with gh present, a release's provenance must verify and name
+    this repository's release workflow as its signer."""
+
+    def _download(self, gh_exit: int | None):
+        import hashlib
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            release = root / "release"
+            release.mkdir()
+            names = (
+                "rmac-apps_0.9.0.beta.1-1_amd64.deb",
+                "rmac-session_0.9.0.beta.1-1_amd64.deb",
+            )
+            lines = []
+            for name in names:
+                (release / name).write_bytes(name.encode())
+                lines.append(f"{hashlib.sha256(name.encode()).hexdigest()}  {name}")
+            (release / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            curl = bin_dir / "curl"
+            curl.write_text(
+                "#!/bin/sh\n"
+                'while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2;; *) url="$1"; shift;; esac; done\n'
+                f'cp "{release}/$(basename "$url")" "$out"\n',
+                encoding="utf-8",
+            )
+            curl.chmod(0o755)
+            log = root / "gh.log"
+            if gh_exit is not None:
+                gh = bin_dir / "gh"
+                gh.write_text(
+                    f'#!/bin/sh\necho "$@" >> "{log}"\nexit {gh_exit}\n', encoding="utf-8"
+                )
+                gh.chmod(0o755)
+            path = f"{bin_dir}:/usr/bin:/bin:/usr/sbin:/sbin"
+            result = _run_install_function(
+                f'PATH="{path}"\narchitecture=amd64\n'
+                'download_release_packages v0.9.0-beta.1\necho downloaded'
+            )
+            calls = log.read_text(encoding="utf-8") if log.exists() else ""
+            return result, calls
+
+    def test_a_failed_attestation_stops_the_install(self):
+        result, calls = self._download(gh_exit=1)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("attestation did not verify", result.stderr)
+        self.assertNotIn("downloaded", result.stdout)
+        self.assertIn("attestation verify", calls)
+
+    def test_attestation_must_come_from_the_release_workflow(self):
+        result, calls = self._download(gh_exit=0)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("downloaded", result.stdout)
+        self.assertEqual(calls.count("attestation verify"), 2)
+        self.assertIn("--signer-workflow millionrust/lulo/.github/workflows/release.yml", calls)
+
+    def test_without_gh_the_install_says_what_was_not_checked(self):
+        result, calls = self._download(gh_exit=None)
+        if Path("/usr/bin/gh").exists() or Path("/bin/gh").exists():
+            self.skipTest("this host has gh on the system path")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("attestation was not checked", result.stderr)
+        self.assertIn("rests on HTTPS", result.stderr)
+
+
 class InstallReleaseAssetNameTests(unittest.TestCase):
     def _asset(self, listing: str, package: str) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as temporary:

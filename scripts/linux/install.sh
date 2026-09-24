@@ -241,13 +241,13 @@ select_release_assets() {
 }
 
 # Download rmac-apps, rmac-session, niri, and xwayland-satellite for this
-# architecture from a tagged GitHub Release, verify them against that
-# release's SHA256SUMS, and -- when `gh` is installed -- verify
-# actions/attest-build-provenance attestations too (see
-# .github/workflows/release.yml "attach-release"). HTTPS transport is never
-# treated as authentication on its own; the checksum (and, when available,
-# the attestation) is what is actually trusted, matching the APT-repository
-# path's stance in docs/update-trust.md.
+# architecture from a tagged GitHub Release and verify them against that
+# release's SHA256SUMS. SHA256SUMS comes from the same release, so it proves
+# only that the download is intact, not who built it. When `gh` is installed
+# the build-provenance attestation is mandatory and must have been signed by
+# this repository's release workflow (.github/workflows/release.yml
+# "attach-release"); that is the authenticity check. Without `gh`,
+# authenticity rests on HTTPS and the GitHub account, and install.sh says so.
 #
 # Sets $downloaded_package_dir rather than returning the path on stdout: a
 # caller capturing this function's output with "$(...)" would run it in a
@@ -281,10 +281,12 @@ download_release_packages() {
     if command -v gh >/dev/null 2>&1; then
         for name in $selected_names; do
             gh attestation verify "$work_dir/$name" --repo "$RMAC_GITHUB_REPOSITORY" \
-                || fail "build provenance attestation did not verify for $name"
+                --signer-workflow "$RMAC_GITHUB_REPOSITORY/.github/workflows/release.yml" \
+                || fail "build provenance attestation did not verify for $name (is 'gh auth login' done?)"
         done
     else
-        echo "install.sh: 'gh' is not installed; skipping the optional build-provenance attestation check (SHA256SUMS was still verified)" >&2
+        echo "install.sh: 'gh' is not installed, so the build-provenance attestation was not checked." >&2
+        echo "install.sh: SHA256SUMS only proves the download is intact; who built it rests on HTTPS and the GitHub account. Install gh and run 'gh auth login' to check it." >&2
     fi
 
     downloaded_package_dir="$work_dir"

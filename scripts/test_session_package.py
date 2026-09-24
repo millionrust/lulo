@@ -897,5 +897,65 @@ class SessionPackageTests(unittest.TestCase):
             self.assertNotIn("start rmac-session.target", log.read_text(encoding="utf-8"))
 
 
+class DevelopmentInstallLockTests(unittest.TestCase):
+    """SR-10: a development install must be able to lock, or must refuse."""
+
+    installer = Path(__file__).parent / "linux" / "install-session-units.sh"
+
+    def test_installer_builds_and_keeps_the_lock_provider_and_fallback(self):
+        text = self.installer.read_text(encoding="utf-8")
+        self.assertIn(
+            "-p rmac-lock-provider-linux --features rmac-lock-provider-linux/provider"
+            " --bin rmac-lock-provider",
+            text,
+        )
+        self.assertIn('"${libexec_dir}/rmac-lock-provider"', text)
+        self.assertNotIn('rm -f "${unit_dir}', text)
+        self.assertNotIn('rm -f "${libexec_dir}', text)
+        self.assertNotIn("development-provider", text)
+        for required in ("rmac-lock.service rmac-lock-fallback.service",
+                         "rmac-lock-provider rmac-locker"):
+            self.assertIn(required, text)
+        # The PAM check comes before any build or install step.
+        self.assertLess(text.index("/etc/pam.d/rmac-lock"), text.index("cargo build"))
+        self.assertLess(text.index("/etc/pam.d/rmac-lock"), text.index("install -d"))
+
+    @unittest.skipIf(
+        Path("/etc/pam.d/rmac-lock").exists(),
+        "this host has the rmac-lock PAM service installed",
+    )
+    def test_installer_refuses_before_building_without_the_pam_service(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            marker = root / "cargo-ran"
+            cargo = bin_dir / "cargo"
+            cargo.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 0\n", encoding="utf-8")
+            cargo.chmod(0o755)
+            home = root / "home"
+            home.mkdir()
+            env = {
+                "PATH": f"{bin_dir}:/usr/bin:/bin",
+                "HOME": str(home),
+                "XDG_CONFIG_HOME": str(home / ".config"),
+                "XDG_DATA_HOME": str(home / ".local/share"),
+            }
+            result = subprocess.run(
+                ["/bin/sh", str(self.installer)],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("/etc/pam.d/rmac-lock", result.stderr)
+            self.assertIn("could not lock", result.stderr)
+            self.assertIn("sudo install -m 0644 ", result.stderr)
+            self.assertFalse(marker.exists())
+            self.assertFalse((home / ".config").exists())
+            self.assertFalse((home / ".local").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

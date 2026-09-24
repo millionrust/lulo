@@ -22,6 +22,20 @@ case ${cargo_jobs} in
         exit 1
         ;;
 esac
+pam_service=/etc/pam.d/rmac-lock
+pam_source="${repo_root}/crates/rmac-lock-provider-linux/pam/rmac-lock"
+# rmac-lock.service asserts this PAM service. Without it every lock request,
+# including the lock that holds suspend, fails, and the session resumes
+# unlocked. Refuse to install a session that cannot lock.
+if [ ! -f "${pam_service}" ] || [ ! -r "${pam_service}" ]; then
+    echo "The lock screen's PAM service ${pam_service} is missing, so this session could not lock." >&2
+    echo "Nothing was built or installed. Review the policy, install it as root, then run this script again:" >&2
+    echo "    sudo install -m 0644 ${pam_source} ${pam_service}" >&2
+    exit 1
+fi
+if ! cmp -s "${pam_source}" "${pam_service}"; then
+    echo "Note: ${pam_service} differs from ${pam_source}; keeping the installed policy." >&2
+fi
 if [ ! -x /usr/bin/swaylock ]; then
     echo "swaylock is required at /usr/bin/swaylock for secure session locking." >&2
     exit 1
@@ -55,6 +69,7 @@ esac
     -p rmac-clipboard-linux --bin rmac-clipboard-service \
     -p rmac-file-chooser --bin rmac-file-chooser \
     -p rmac-shortcuts --bin rmac-shortcut-broker --bin rmac-shortcut-dispatch --bin rmac-locker --bin rmac-lock-coordinator --bin rmac-idle-locker \
+    -p rmac-lock-provider-linux --features rmac-lock-provider-linux/provider --bin rmac-lock-provider \
     -p rmac-keyboard --bin rmac-mac-keyboard \
     -p rmac-setup-assistant --bin rmac-setup-assistant)
 
@@ -76,6 +91,7 @@ install -m 0755 "${target_dir}/release/rmac-shortcut-dispatch" "${libexec_dir}/r
 install -m 0755 "${target_dir}/release/rmac-locker" "${libexec_dir}/rmac-locker"
 install -m 0755 "${target_dir}/release/rmac-lock-coordinator" "${libexec_dir}/rmac-lock-coordinator"
 install -m 0755 "${target_dir}/release/rmac-idle-locker" "${libexec_dir}/rmac-idle-locker"
+install -m 0755 "${target_dir}/release/rmac-lock-provider" "${libexec_dir}/rmac-lock-provider"
 install -m 0755 "${target_dir}/release/rmac-mac-keyboard" "${libexec_dir}/rmac-mac-keyboard"
 install -m 0755 "${target_dir}/release/rmac-setup-assistant" "${libexec_dir}/rmac-setup-assistant"
 install -m 0755 "${script_dir}/start-rmac-session.sh" "${bin_dir}/rmac-session-start"
@@ -89,7 +105,18 @@ fi
 for unit in "${source_dir}"/*; do
     install -m 0644 "${unit}" "${unit_dir}/$(basename -- "${unit}")"
 done
-rm -f "${unit_dir}/rmac-lock-fallback.service" "${libexec_dir}/rmac-lock-provider"
+for required in rmac-lock-provider rmac-locker; do
+    if [ ! -x "${libexec_dir}/${required}" ]; then
+        echo "${libexec_dir}/${required} is not installed, so this session could not lock." >&2
+        exit 1
+    fi
+done
+for required in rmac-lock.service rmac-lock-fallback.service; do
+    if [ ! -f "${unit_dir}/${required}" ]; then
+        echo "${unit_dir}/${required} is not installed, so this session could not lock." >&2
+        exit 1
+    fi
+done
 
 portal_dir="${data_home}/xdg-desktop-portal/portals"
 portal_config_dir="${data_home}/xdg-desktop-portal"
@@ -145,7 +172,7 @@ echo "Installed the supervisor in ${libexec_dir}."
 echo "Installed the supervised Apps, notification service, on-demand Center and Quick Settings panels, and rmac notification portal backend."
 echo "Installed the Focus policy authority."
 echo "Installed the rmac Open/Save panel as the portal FileChooser backend (restart xdg-desktop-portal to select it)."
-echo "Installed the rmac lock screen with fail-closed swaylock recovery, logind coordination, idle locking, and default lock policy."
+echo "Installed the rmac lock screen (rmac-lock-provider, PAM service ${pam_service}) with fail-closed swaylock recovery, logind coordination, idle locking, and default lock policy."
 echo "The four upstream shell surfaces remain an explicit framework-gated development candidate."
 echo "Check them with: bash ${script_dir}/install-upstream-shell-candidate.sh --check"
 echo "Start the session from niri with ${bin_dir}/rmac-session-start."

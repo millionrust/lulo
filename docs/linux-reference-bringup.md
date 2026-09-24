@@ -144,9 +144,12 @@ Passing preflight proves only those session authorities; it does not replace
 the interaction lab or four-hour soak.
 
 Install the development supervisor and user units, then add the installed
-start command to niri's session startup configuration:
+start command to niri's session startup configuration. The lock screen needs
+its PAM service, which only root can install; the installer refuses to build
+or install anything until it exists, because a session without it cannot lock:
 
 ```sh
+sudo install -m 0644 crates/rmac-lock-provider-linux/pam/rmac-lock /etc/pam.d/rmac-lock
 bash scripts/linux/install-session-units.sh
 bash scripts/linux/install-upstream-shell-candidate.sh --check
 bash scripts/linux/install-upstream-shell-candidate.sh --execute

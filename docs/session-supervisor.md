@@ -13,7 +13,13 @@ builds the release supervisor, launcher, supervised Apps, on-demand Quick
 Settings and Notification Center panel services, and launcher-routed System
 Settings, installs them under
 `~/.local/libexec/rmac/`, installs the unit files under the XDG systemd user
-directory, and installs `~/.local/bin/rmac-session-start`.
+directory, and installs `~/.local/bin/rmac-session-start`. It also builds and
+installs the lock screen (`rmac-lock-provider`) and keeps the swaylock
+fallback unit. It refuses to build or install anything while
+`/etc/pam.d/rmac-lock` is missing, and prints the root command that installs
+it from `crates/rmac-lock-provider-linux/pam/rmac-lock`: without that PAM
+service every lock request fails, so the session would resume from suspend
+unlocked.
 The launcher, Apps, Quick Settings, and Notification Center panel
 services bind their separate action-scoped runtime sockets before the shortcut
 broker starts, so

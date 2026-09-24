@@ -425,7 +425,9 @@ def build(
                 ],
                 cwd=workspace,
                 environment=environment,
-                timeout=300,
+                # Single-threaded xz -9 of the apps package takes several
+                # minutes on the 2-core reference laptop.
+                timeout=1800,
                 label=f"{spec.name} archive build",
             )
             try:

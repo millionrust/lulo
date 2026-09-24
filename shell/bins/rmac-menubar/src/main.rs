@@ -13,7 +13,7 @@ mod linux_wayland {
     use std::process::Command;
     use std::rc::Rc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     use chrono::Local;
     use futures_util::FutureExt as _;
@@ -35,9 +35,10 @@ mod linux_wayland {
 
     use crate::menu_model::{
         self, app_menu_height, app_menu_item_top, app_menu_width, battery_menu_rows,
-        menu_item_icon, next_status_selection, split_shortcut, status_menu_height,
-        status_menu_left, wifi_menu_rows, BadgeGlyph, IconColumn, StatusAction, StatusMenuKind,
-        StatusRow, WifiMenuInput,
+        menu_item_icon, next_status_selection, quit_all_interrupted_copy, quit_all_progress,
+        split_shortcut, status_menu_height, status_menu_left, wifi_menu_rows, BadgeGlyph,
+        IconColumn, QuitAllProgress, StatusAction, StatusMenuKind, StatusRow, WifiMenuInput,
+        QUIT_ALL_CHECK,
     };
 
     // Measured from the reference Mac 2026-09-18 (FEEL_SPEC.md §C.2): the bar
@@ -2620,17 +2621,17 @@ mod linux_wayland {
         match action {
             "system::restart" => (
                 "Restart this computer?",
-                "Open documents may contain unsaved changes.",
+                "Each app is asked to quit first, so you can save your work.",
                 "Restart",
             ),
             "system::shutdown" => (
                 "Shut down this computer?",
-                "Open documents may contain unsaved changes.",
+                "Each app is asked to quit first, so you can save your work.",
                 "Shut Down",
             ),
             "system::logout" => (
                 "Log out now?",
-                "Open documents may contain unsaved changes.",
+                "Each app is asked to quit first, so you can save your work.",
                 "Log Out",
             ),
             _ => ("Continue?", "Confirm this system action.", "Continue"),
@@ -2850,16 +2851,110 @@ mod linux_wayland {
             }
             "system::force-quit" => spawn_command("/usr/bin/rmac-system-monitor", &[], cx),
             "system::sleep" => spawn_command("systemctl", &["suspend"], cx),
-            "system::restart" => spawn_command("systemctl", &["reboot"], cx),
-            "system::shutdown" => spawn_command("systemctl", &["poweroff"], cx),
+            "system::restart" | "system::shutdown" | "system::logout" => quit_all_then(action, cx),
             "system::lock" => dispatch_shortcut("lock", cx),
-            "system::logout" => spawn_command(
-                "niri",
-                &["msg", "action", "quit", "--skip-confirmation"],
-                cx,
-            ),
             _ => eprintln!("unknown rmac system menu action: {action}"),
         }
+    }
+
+    /// Log Out, Restart and Shut Down first ask every window to close, as
+    /// macOS asks every app to quit, so an edited document gets its Save /
+    /// Don't Save / Cancel alert instead of being lost. The session ends
+    /// only once every window has gone; an app still open after
+    /// `QUIT_ALL_GRACE` cancels the request and a notice names it.
+    fn quit_all_then(action: String, cx: &mut App) {
+        cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+            let started = Instant::now();
+            let mut asked = false;
+            loop {
+                let snapshot = match rmac_compositor_niri::snapshot().await {
+                    Ok(snapshot) => snapshot,
+                    Err(error) if !asked => {
+                        // No window list to work from: the compositor itself
+                        // is failing, and ending the session is the way out.
+                        eprintln!("could not read windows before {action}: {error:?}");
+                        break;
+                    }
+                    Err(error) => {
+                        eprintln!("could not re-read windows during {action}: {error:?}");
+                        cx.background_executor().timer(QUIT_ALL_CHECK).await;
+                        continue;
+                    }
+                };
+                if !asked {
+                    asked = true;
+                    for window in &snapshot.windows {
+                        let close = rmac_compositor::Action::CloseWindow { window: window.id };
+                        if let Err(error) = rmac_compositor_niri::execute_action(&close).await {
+                            eprintln!("could not ask a window to close: {error:?}");
+                        }
+                    }
+                    cx.background_executor().timer(QUIT_ALL_CHECK).await;
+                    continue;
+                }
+                let remaining = snapshot
+                    .windows
+                    .iter()
+                    .map(|window| window.app_id.as_deref().map(app_display_name))
+                    .collect::<Vec<_>>();
+                match quit_all_progress(&remaining, started.elapsed()) {
+                    QuitAllProgress::Proceed => break,
+                    QuitAllProgress::Wait => {
+                        cx.background_executor().timer(QUIT_ALL_CHECK).await;
+                    }
+                    QuitAllProgress::Interrupted(apps) => {
+                        let (summary, body) = quit_all_interrupted_copy(&action, &apps);
+                        cx.update(|cx| post_system_notice(summary, body, cx));
+                        return;
+                    }
+                }
+            }
+            cx.update(|cx| match action.as_str() {
+                "system::restart" => spawn_command("systemctl", &["reboot"], cx),
+                "system::shutdown" => spawn_command("systemctl", &["poweroff"], cx),
+                _ => spawn_command(
+                    "niri",
+                    &["msg", "action", "quit", "--skip-confirmation"],
+                    cx,
+                ),
+            });
+        })
+        .detach();
+    }
+
+    /// A transient notice through the session's notification server.
+    fn post_system_notice(summary: String, body: String, cx: &mut App) {
+        cx.background_executor()
+            .spawn(async move {
+                let shown = summary.clone();
+                let result = blocking::unblock(move || -> zbus::Result<()> {
+                    let connection = zbus::blocking::Connection::session()?;
+                    let hints: std::collections::HashMap<&str, zbus::zvariant::Value<'_>> =
+                        std::collections::HashMap::new();
+                    connection.call_method(
+                        Some("org.freedesktop.Notifications"),
+                        "/org/freedesktop/Notifications",
+                        Some("org.freedesktop.Notifications"),
+                        "Notify",
+                        &(
+                            "Lulo OS",
+                            0_u32,
+                            "dialog-warning",
+                            summary.as_str(),
+                            body.as_str(),
+                            Vec::<&str>::new(),
+                            hints,
+                            -1_i32,
+                        ),
+                    )?;
+                    Ok(())
+                })
+                .await;
+                if let Err(error) = result {
+                    eprintln!("could not show \"{shown}\": {error}");
+                }
+            })
+            .detach();
     }
 
     fn dispatch_recent_item(path: PathBuf, cx: &mut App) {

@@ -2,6 +2,8 @@
 //! (design-lab/menus.html has the numbers and where each came from). Kept
 //! free of GPUI so it is unit tested on every host.
 
+use std::time::Duration;
+
 use rmac_app_menu::Item;
 use rmac_network::{NetworkDevice, WifiNetwork, WifiNetworkId, WifiSecurity, WifiSnapshot};
 
@@ -670,6 +672,75 @@ pub fn battery_menu_rows(
     rows
 }
 
+// ---- Log Out, Restart and Shut Down ----
+
+/// How long a confirmed Log Out, Restart or Shut Down waits for every
+/// application to close its windows. As on macOS, the request first asks
+/// each app to quit, so an edited document gets its Save / Don't Save /
+/// Cancel alert; an app still open when this runs out cancels the whole
+/// request instead of losing work. Not measured on the Mac.
+pub const QUIT_ALL_GRACE: Duration = Duration::from_secs(30);
+/// How often the window list is re-read while a confirmed request waits.
+/// This runs only during that request, never while idle.
+pub const QUIT_ALL_CHECK: Duration = Duration::from_millis(250);
+
+/// Where a confirmed Log Out, Restart or Shut Down stands after it asked
+/// every window to close.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum QuitAllProgress {
+    /// Every window closed: end the session or power off now.
+    Proceed,
+    /// Windows remain and the grace period has not run out.
+    Wait,
+    /// These applications still had windows open when the grace period ran
+    /// out (usually an unsaved-changes alert). The request is cancelled.
+    Interrupted(Vec<String>),
+}
+
+/// `remaining` names the application of each window still open, already
+/// resolved to a display name (`None` when the window has no app ID).
+pub fn quit_all_progress(remaining: &[Option<String>], elapsed: Duration) -> QuitAllProgress {
+    if remaining.is_empty() {
+        return QuitAllProgress::Proceed;
+    }
+    if elapsed < QUIT_ALL_GRACE {
+        return QuitAllProgress::Wait;
+    }
+    let mut names = Vec::<String>::new();
+    for name in remaining {
+        let name = name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .unwrap_or("An application");
+        if !names.iter().any(|known| known == name) {
+            names.push(name.to_owned());
+        }
+    }
+    QuitAllProgress::Interrupted(names)
+}
+
+/// Title and body of the notice shown when an application stops a Log Out,
+/// Restart or Shut Down. Wording is rmac's; the Mac's alert was not captured.
+pub fn quit_all_interrupted_copy(action: &str, apps: &[String]) -> (String, String) {
+    let (title, retry) = match action {
+        "system::restart" => ("Restart Cancelled", "restart"),
+        "system::shutdown" => ("Shut Down Cancelled", "shut down"),
+        _ => ("Log Out Cancelled", "log out"),
+    };
+    let subject = match apps {
+        [] => "An application".to_owned(),
+        [only] => only.clone(),
+        [first, second] => format!("{first} and {second}"),
+        [first, second, rest @ ..] => format!("{first}, {second} and {} more", rest.len()),
+    };
+    let pronoun = if apps.len() > 1 { "their" } else { "its" };
+    (
+        title.to_owned(),
+        format!("{subject} didn't quit. Save or close {pronoun} windows, then {retry} again."),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1280,5 +1351,68 @@ mod tests {
         assert!(matches!(rows[4], StatusRow::Badge { on: true, .. }));
         // Measured Battery menu without the per-app energy section.
         assert_eq!(status_menu_height(&rows), 159.5);
+    }
+
+    #[test]
+    fn quit_all_proceeds_once_every_window_has_closed() {
+        assert_eq!(
+            quit_all_progress(&[], Duration::ZERO),
+            QuitAllProgress::Proceed
+        );
+        assert_eq!(
+            quit_all_progress(&[], QUIT_ALL_GRACE * 2),
+            QuitAllProgress::Proceed
+        );
+    }
+
+    #[test]
+    fn quit_all_waits_for_open_windows_then_is_interrupted_never_forced() {
+        let remaining = vec![
+            Some("Text Editor".to_owned()),
+            Some("Text Editor".to_owned()),
+            None,
+            Some("  ".to_owned()),
+            Some("Firefox".to_owned()),
+        ];
+        assert_eq!(
+            quit_all_progress(&remaining, QUIT_ALL_GRACE - QUIT_ALL_CHECK),
+            QuitAllProgress::Wait
+        );
+        assert_eq!(
+            quit_all_progress(&remaining, QUIT_ALL_GRACE),
+            QuitAllProgress::Interrupted(vec![
+                "Text Editor".to_owned(),
+                "An application".to_owned(),
+                "Firefox".to_owned(),
+            ])
+        );
+    }
+
+    #[test]
+    fn interrupted_notice_names_the_apps_and_the_request() {
+        let one = ["Text Editor".to_owned()];
+        assert_eq!(
+            quit_all_interrupted_copy("system::logout", &one),
+            (
+                "Log Out Cancelled".to_owned(),
+                "Text Editor didn't quit. Save or close its windows, then log out again."
+                    .to_owned()
+            )
+        );
+        let two = ["Text Editor".to_owned(), "Firefox".to_owned()];
+        assert_eq!(
+            quit_all_interrupted_copy("system::restart", &two).1,
+            "Text Editor and Firefox didn't quit. Save or close their windows, then restart again."
+        );
+        let four = [
+            "A".to_owned(),
+            "B".to_owned(),
+            "C".to_owned(),
+            "D".to_owned(),
+        ];
+        let (title, body) = quit_all_interrupted_copy("system::shutdown", &four);
+        assert_eq!(title, "Shut Down Cancelled");
+        assert!(body.starts_with("A, B and 2 more didn't quit."));
+        assert!(body.ends_with("then shut down again."));
     }
 }

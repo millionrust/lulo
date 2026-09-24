@@ -5161,6 +5161,7 @@ dependencies = [
  "rmac-wallpaper-runtime",
  "trash",
  "uuid",
+ "zbus",
 ]
 
 [[package]]

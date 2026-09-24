@@ -48,3 +48,4 @@ rmac-wallpaper-image.workspace = true
 rmac-wallpaper-runtime.workspace = true
 trash.workspace = true
 uuid.workspace = true
+zbus.workspace = true

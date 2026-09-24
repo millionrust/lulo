@@ -1147,7 +1147,10 @@ mod tests {
     }
 
     #[test]
-    fn special_activation_resolves_the_current_private_path_at_prepare_time() {
+    fn downloads_is_not_a_dock_place_until_folder_stacks_are_configured() {
+        // The Dock's only permanent place is the Trash (see
+        // `rmac_dock::project_special_items`); a stale Downloads activation
+        // becomes feedback and never opens the private folder.
         let current = model_with_places("/home/alex/Current Downloads", true, 3);
         let Preparation::Ready(prepared) = prepare(
             &current,
@@ -1156,9 +1159,9 @@ mod tests {
             )),
         )
         .unwrap() else {
-            panic!("Downloads is ready");
+            panic!("Downloads produces feedback");
         };
-        assert_eq!(prepared.operation(), Operation::OpenPlace);
+        assert_eq!(prepared.operation(), Operation::Resolve);
         assert_eq!(
             prepared.target(),
             &ActionTarget::Special(rmac_dock::SpecialItemKind::Downloads)
@@ -1174,17 +1177,15 @@ mod tests {
                 .run(rmac_compositor::ActivationId(1), &backend),
         );
         let (result, transition) = completion.apply(&mut state);
-        assert_eq!(
+        assert!(matches!(
             result,
-            Ok(Outcome::PlaceOpened {
-                kind: rmac_dock::SpecialItemKind::Downloads,
+            Err(Error {
+                kind: FailureKind::Unavailable,
+                ..
             })
-        );
+        ));
         assert!(transition.snapshot.busy.is_empty());
-        assert_eq!(
-            backend.calls.into_inner().unwrap(),
-            ["directory /home/alex/Current Downloads"]
-        );
+        assert!(backend.calls.into_inner().unwrap().is_empty());
     }
 
     #[test]

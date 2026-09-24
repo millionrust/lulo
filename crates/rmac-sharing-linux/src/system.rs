@@ -328,7 +328,10 @@ pub(crate) fn parse_ufw_conf_enabled(text: &str) -> Option<bool> {
         if line.is_empty() || line.starts_with('#') {
             return None;
         }
-        let value = line.strip_prefix("ENABLED=")?;
+        let (key, value) = line.split_once('=')?;
+        if key.trim() != "ENABLED" {
+            return None;
+        }
         let value = value.trim().trim_matches(['"', '\'']).trim();
         match value.to_ascii_lowercase().as_str() {
             "yes" => Some(true),

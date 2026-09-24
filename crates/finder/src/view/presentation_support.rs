@@ -90,9 +90,6 @@ pub(super) fn label() -> Hsla {
 pub(super) fn secondary() -> Hsla {
     rmac_ui::mac::text_secondary()
 }
-pub(super) fn tertiary() -> Hsla {
-    rmac_ui::mac::text_tertiary()
-}
 pub(super) fn drive_gray() -> Hsla {
     rmac_ui::mac::text_secondary()
 }

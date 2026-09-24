@@ -196,7 +196,7 @@ impl EditorView {
     /// enough to copy each frame (see [`MAX_ACCESSIBLE_VALUE_BYTES`]).
     pub(super) fn accessible_document_value(&self, cx: &App) -> Option<SharedString> {
         let text = self.input.read(cx).text();
-        accessible_value_fits(text.len_bytes()).then(|| SharedString::from(text.to_string()))
+        accessible_value_fits(text.len()).then(|| SharedString::from(text.to_string()))
     }
 
     /// A listener that applies an assistive technology's text edit to the

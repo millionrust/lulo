@@ -45,8 +45,20 @@ impl Backend for FakeBackend {
         )
     }
 
+    fn join_wifi(&self, _network: &rmac_network::WifiNetworkId) -> Result<(), String> {
+        self.mutation("join wifi".into())
+    }
+
     fn set_bluetooth_powered(&self, powered: bool) -> Result<(), String> {
         self.mutation(format!("set bluetooth {powered}"))
+    }
+
+    fn set_bluetooth_device_connected(&self, device: &str, connected: bool) -> Result<(), String> {
+        self.mutation(format!("connect {device} {connected}"))
+    }
+
+    fn set_default_output(&self, device: &str) -> Result<(), String> {
+        self.mutation(format!("default output {device}"))
     }
 
     fn bluetooth(&self) -> Result<rmac_bluetooth::Snapshot, String> {

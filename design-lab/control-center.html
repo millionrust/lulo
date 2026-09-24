@@ -63,6 +63,38 @@
                       14 − 12 = 2.
     Now Playing with a track: title baseline 81, artist 11 pt baseline 95.
     error banner      40 tall, radius 12, one line.
+
+  Detail views (measured 2026-09-24, macOS 26.2 dark, AX frames and a Retina
+  screenshot of the Wi-Fi and Sound "show details" views; Bluetooth could not
+  be opened by script, so it copies the Wi-Fi view — S). The detail replaces
+  the grid in the same panel. Coordinates are from the panel's top-left:
+    panel             308 wide (Wi-Fi 324 tall, Sound 192), fill ≈ #383A3F
+    title             "Wi-Fi" / "Sound", 13 pt bold, x 14, top 12, 16 tall
+    switch            54 × 24 at the right (inset 14), top 8; blue when on
+    notice row        "Weak Security…" 22 tall at top 36 (open networks only)
+    separators        1 pt, white ≈ 8 % over the panel (#48494D), x 14–294
+    headings          11 pt semibold, white ≈ 80 %, 15 tall: "Known Networks",
+                      "Output"; 4 above the first row
+    rows              32 tall, 280 wide at x 14 (Sound rows highlight 298 wide
+                      at x 5); a 26 circle at the left, centred; name 13 pt at
+                      x + 34, white ≈ 92 %; a lock glyph at the right edge for
+                      protected networks. On (connected / current output):
+                      white circle, blue glyph. Off: white 24.5 % circle.
+    spacing           header band to the first separator: 63 (Wi-Fi with the
+                      notice row, Sound with its slider); rows end → 6 → sep
+                      → 8 → heading, or → 5 → a 22 pt row ("Other…"
+                      disclosure, then "Wi-Fi Settings…"); 6 below the last
+                      row
+    Sound slider      top 38, 14 tall; speaker glyph at x 16, track x 34–264,
+                      loud glyph at x 270
+    footer            "Wi-Fi Settings…" / "Bluetooth Settings…" /
+                      "Sound Settings…", 13 pt, opens Settings
+  S (not measured): Wi-Fi without the notice row puts the first separator at
+  41; rmac keeps its 316-wide surface (the 308 panel sits 4 in) and its 44
+  radius; long lists are cut to fit the tallest surface instead of scrolling.
+  Keyboard: ↑↓ move between modules and rows, ← → adjust a focused slider,
+  Return or Space activates (Wi-Fi, Bluetooth and Sound open their detail),
+  Esc goes back from a detail and then closes Control Centre.
 -->
 <style>
   :root {
@@ -134,6 +166,25 @@
   .glyph { position: absolute; transform: translate(-50%, -50%); top: 42px; }
   .acc { position: absolute; left: 252px; top: 29px; width: 26px; height: 26px; border-radius: 13px;
          background: var(--circle-off); display: flex; align-items: center; justify-content: center; }
+
+  /* Detail views: the grid is replaced by a list in the same surface. */
+  .detail { position: absolute; top: calc(var(--bar-h) + 28px); width: 316px; box-sizing: border-box;
+            border-radius: 44px; background: var(--backdrop); backdrop-filter: blur(40px) saturate(150%);
+            box-shadow: 0 10px 30px rgba(0,0,0,.33); }
+  .detail .in { position: relative; margin-left: 4px; width: 308px; }
+  .detail .dt { position: absolute; left: 14px; top: 12px; font: 700 13px/16px var(--font); }
+  .detail .sw { position: absolute; right: 14px; top: 8px; width: 54px; height: 24px; border-radius: 12px;
+                background: #3478F6; }
+  .detail .sw i { position: absolute; right: 2px; top: 2px; width: 32px; height: 20px; border-radius: 10px; background: #fff; }
+  .detail .sep { position: absolute; left: 14px; width: 280px; height: 1px; background: rgba(255,255,255,.08); }
+  .detail .hd { position: absolute; left: 14px; height: 15px; font: 600 11px/15px var(--font); color: rgba(255,255,255,.8); }
+  .detail .row { position: absolute; left: 14px; width: 280px; height: 32px; }
+  .detail .row .c { position: absolute; left: 0; top: 3px; width: 26px; height: 26px; border-radius: 13px;
+                    background: var(--circle-off); color: #fff; display: flex; align-items: center; justify-content: center; }
+  .detail .row.on .c { background: #fff; color: var(--glyph-on); }
+  .detail .row .n { position: absolute; left: 34px; top: 0; font: 400 13px/32px var(--font); color: rgba(255,255,255,.92); }
+  .detail .row .lock { position: absolute; right: 2px; top: 10px; width: 9px; height: 12px; }
+  .detail .item { position: absolute; left: 14px; height: 22px; font: 400 13px/22px var(--font); }
 </style>
 </head>
 <body>
@@ -190,6 +241,38 @@
       <span class="glyph" style="left:230.5px"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/speaker-wave.svg);width:20px;height:14.5px"></span></span>
       <span class="acc"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/airplay-audio.svg);width:12.5px;height:12.5px"></span></span>
     </div>
+  </div>
+</div>
+
+<!-- Wi-Fi detail with the notice row and two known networks, left of the grid. -->
+<div class="detail" style="right: 700px; height: 227px">
+  <div class="in">
+    <span class="dt">Wi-Fi</span><span class="sw"><i></i></span>
+    <span class="item" style="top:36px">Weak Security…</span>
+    <span class="sep" style="top:63px"></span>
+    <span class="hd" style="top:72px">Known Networks</span>
+    <div class="row" style="top:91px"><span class="c"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/wifi.svg);width:14px;height:10px"></span></span><span class="n">Studio</span><img class="lock" src="../crates/quick-settings-app/assets/cc/lock.svg" alt=""></div>
+    <div class="row on" style="top:123px"><span class="c"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/wifi.svg);width:14px;height:10px"></span></span><span class="n">Home</span><img class="lock" src="../crates/quick-settings-app/assets/cc/lock.svg" alt=""></div>
+    <span class="sep" style="top:161px"></span>
+    <span class="item" style="top:166px">Other Networks ›</span>
+    <span class="sep" style="top:193px"></span>
+    <span class="item" style="top:199px">Wi-Fi Settings…</span>
+  </div>
+</div>
+
+<!-- Sound detail with the output picker. -->
+<div class="detail" style="right: 360px; height: 195px">
+  <div class="in">
+    <span class="dt">Sound</span>
+    <span class="glyph" style="left:20px;top:45px"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/speaker.svg);width:8.5px;height:12.5px"></span></span>
+    <span class="track" style="left:34px;top:43px;width:230px"><i style="width:67%"></i></span>
+    <span class="glyph" style="left:280px;top:45px"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/speaker-wave.svg);width:20px;height:14.5px"></span></span>
+    <span class="sep" style="top:63px"></span>
+    <span class="hd" style="top:72px">Output</span>
+    <div class="row on" style="top:91px"><span class="c"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/speaker.svg);width:7px;height:10px"></span></span><span class="n">Built-in Audio</span></div>
+    <div class="row" style="top:123px"><span class="c"><span class="ic" style="--src:url(../crates/quick-settings-app/assets/cc/speaker.svg);width:7px;height:10px"></span></span><span class="n">HDMI Output</span></div>
+    <span class="sep" style="top:161px"></span>
+    <span class="item" style="top:167px">Sound Settings…</span>
   </div>
 </div>
 </body>

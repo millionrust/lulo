@@ -1,12 +1,15 @@
 pub trait Backend {
     fn set_wifi_enabled(&self, enabled: bool) -> Result<(), String>;
+    fn join_wifi(&self, network: &rmac_network::WifiNetworkId) -> Result<(), String>;
     fn wifi(&self) -> Result<rmac_network::WifiSnapshot, String>;
 
     fn set_bluetooth_powered(&self, powered: bool) -> Result<(), String>;
+    fn set_bluetooth_device_connected(&self, device: &str, connected: bool) -> Result<(), String>;
     fn bluetooth(&self) -> Result<rmac_bluetooth::Snapshot, String>;
 
     fn set_output_volume(&self, volume: u8) -> Result<(), String>;
     fn set_output_muted(&self, muted: bool) -> Result<(), String>;
+    fn set_default_output(&self, device: &str) -> Result<(), String>;
     fn audio(&self) -> Result<rmac_audio::Snapshot, String>;
 
     fn set_power_profile(&self, profile: rmac_power::PowerProfile) -> Result<(), String>;
@@ -28,12 +31,22 @@ impl Backend for SystemBackend {
         rmac_network::snapshot().map_err(|error| error.to_string())
     }
 
+    fn join_wifi(&self, network: &rmac_network::WifiNetworkId) -> Result<(), String> {
+        rmac_network::connect(network)
+            .map(drop)
+            .map_err(|error| error.to_string())
+    }
+
     fn set_bluetooth_powered(&self, powered: bool) -> Result<(), String> {
         rmac_bluetooth::set_powered(powered).map_err(|error| error.to_string())
     }
 
     fn bluetooth(&self) -> Result<rmac_bluetooth::Snapshot, String> {
         rmac_bluetooth::snapshot().map_err(|error| error.to_string())
+    }
+
+    fn set_bluetooth_device_connected(&self, device: &str, connected: bool) -> Result<(), String> {
+        rmac_bluetooth::set_connected(device, connected).map_err(|error| error.to_string())
     }
 
     fn set_output_volume(&self, volume: u8) -> Result<(), String> {
@@ -48,6 +61,20 @@ impl Backend for SystemBackend {
 
     fn audio(&self) -> Result<rmac_audio::Snapshot, String> {
         rmac_audio::snapshot().map_err(|error| error.to_string())
+    }
+
+    fn set_default_output(&self, device: &str) -> Result<(), String> {
+        // Device ids name nodes in one sample of the audio graph, so the
+        // switch uses a fresh sample's entry for the same node.
+        let snapshot = rmac_audio::snapshot().map_err(|error| error.to_string())?;
+        let output = snapshot
+            .outputs
+            .iter()
+            .find(|output| output.id == device)
+            .ok_or_else(|| "the output is no longer connected".to_owned())?;
+        rmac_audio::set_default_device(rmac_audio::DeviceKind::Output, output)
+            .map(drop)
+            .map_err(|error| error.to_string())
     }
 
     fn set_power_profile(&self, profile: rmac_power::PowerProfile) -> Result<(), String> {

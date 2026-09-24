@@ -149,6 +149,55 @@ impl State {
                     detail: format!("{} is not supported by this computer", profile.label()),
                 })
             }
+            Command::JoinWifi(id) => {
+                let wifi = &self.inputs.wifi;
+                let network = wifi.networks.iter().find(|network| network.id == *id);
+                match network {
+                    _ if !wifi.enabled => Err(StartError::Unavailable(Control::Wifi)),
+                    Some(network) if crate::detail::joins_directly(network) => Ok(()),
+                    Some(_) => Err(StartError::Unsupported {
+                        control: Control::Wifi,
+                        detail: "this network needs a password; join it in Wi-Fi Settings".into(),
+                    }),
+                    None => Err(StartError::Invalid {
+                        control: Control::Wifi,
+                        detail: "the network is no longer in range".into(),
+                    }),
+                }
+            }
+            Command::SetBluetoothDeviceConnected { device, .. } => {
+                let bluetooth = &self.inputs.bluetooth;
+                let paired = bluetooth
+                    .devices
+                    .iter()
+                    .any(|candidate| candidate.id == *device && candidate.paired);
+                if !bluetooth.powered {
+                    Err(StartError::Unavailable(Control::Bluetooth))
+                } else if paired {
+                    Ok(())
+                } else {
+                    Err(StartError::Invalid {
+                        control: Control::Bluetooth,
+                        detail: "the device is not paired with this computer".into(),
+                    })
+                }
+            }
+            Command::SetDefaultOutput(device) => {
+                let audio = &self.inputs.audio;
+                if !audio.can_set_default {
+                    Err(StartError::Unsupported {
+                        control: Control::Sound,
+                        detail: "the sound server cannot change the output".into(),
+                    })
+                } else if audio.outputs.iter().any(|output| output.id == *device) {
+                    Ok(())
+                } else {
+                    Err(StartError::Invalid {
+                        control: Control::Sound,
+                        detail: "the output is no longer connected".into(),
+                    })
+                }
+            }
             _ => Ok(()),
         }
     }

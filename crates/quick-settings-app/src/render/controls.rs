@@ -1,6 +1,7 @@
 //! Control Center Display and Sound slider modules and error banners.
 
 use gpui::{ClickEvent, MouseDownEvent};
+use rmac_quick_settings::detail::{Detail, Module};
 use rmac_quick_settings::{Control, SoundValue, Tile};
 
 use super::*;
@@ -33,8 +34,14 @@ impl QuickSettingsView {
         let filled = width * f32::from(value.min(100)) / 100.0;
         let id = match kind {
             SliderKind::Brightness => "display-slider",
-            SliderKind::Volume => "sound-slider",
+            SliderKind::Volume | SliderKind::DetailVolume => "sound-slider",
         };
+        let module_kind = if kind == SliderKind::Brightness {
+            Module::Display
+        } else {
+            Module::Sound
+        };
+        let ring = self.ring(module_kind);
         let hit = div()
             .id(id)
             .absolute()
@@ -73,7 +80,12 @@ impl QuickSettingsView {
             .rounded_full()
             .bg(circle_off())
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                this.open_settings(Some(pane), window, cx)
+                // Sound's output button lists the outputs, as on the Mac.
+                if kind == SliderKind::Brightness {
+                    this.open_settings(Some(pane), window, cx)
+                } else {
+                    this.open_detail(Detail::Sound, cx)
+                }
             }))
             .child(glyph_at(
                 accessory_path,
@@ -87,6 +99,7 @@ impl QuickSettingsView {
             glyph_at(path, centre, TRACK_CENTRE, width, height, mac::white())
         };
         module(0.0, y, GRID_WIDTH, CELL, layout::MODULE_RADIUS as f32)
+            .when(ring, |module| module.shadow(mac::focus_ring_shadow()))
             .when(!enabled, |module| module.opacity(0.5))
             .child(text_at(16.5, 23.0, 13.0, mac::BOLD, title_text(), title))
             .child(glyph(start))

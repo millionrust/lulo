@@ -1,6 +1,7 @@
 //! Framework-neutral transaction model for the shell quick-settings surface.
 
 pub mod accessibility;
+pub mod detail;
 pub mod layout;
 mod model;
 mod popover;

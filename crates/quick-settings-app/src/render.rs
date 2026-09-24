@@ -6,6 +6,7 @@
 
 mod cards;
 mod controls;
+mod detail;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -139,7 +140,17 @@ fn layer() -> Div {
 impl Render for QuickSettingsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let modules = self.modules();
-        let height = modules.surface_height() as f32;
+        let panel = self.panel();
+        // A detail view replaces the grid; any banners stay above it.
+        let banner_block = if modules.banners_shown() > 0 {
+            PADDING + modules.banners_shown() as f32 * (layout::BANNER_HEIGHT + layout::GAP) as f32
+        } else {
+            0.0
+        };
+        let height = match &panel {
+            Some(panel) => banner_block + panel.layout().1,
+            None => modules.surface_height() as f32,
+        };
         if (height - self.surface_height).abs() > 0.5 {
             self.surface_height = height;
             window.resize(size(px(layout::SURFACE_WIDTH as f32), px(height)));
@@ -156,31 +167,41 @@ impl Render for QuickSettingsView {
             let top = index as f32 * (layout::BANNER_HEIGHT + layout::GAP) as f32;
             children.push(self.banner(index, top, control, message, cx));
         }
+        let detail = panel
+            .as_ref()
+            .map(|panel| self.detail_view(panel, banner_block, cx));
 
         let row_top = |row: usize| modules.row_top(row) as f32;
         let mut row = 0;
-        children.push(self.pill_wifi(0.0, row_top(row), &view.wifi, cx));
-        if self.player.is_some() {
-            children.push(self.now_playing(PITCH * 2.0, row_top(row), cx));
-            children.push(self.pill_bluetooth(0.0, row_top(row + 1), &view.bluetooth, cx));
-            row += 2;
+        if detail.is_none() {
+            children.push(self.pill_wifi(0.0, row_top(row), &view.wifi, cx));
+            if self.player.is_some() {
+                children.push(self.now_playing(PITCH * 2.0, row_top(row), cx));
+                children.push(self.pill_bluetooth(0.0, row_top(row + 1), &view.bluetooth, cx));
+                row += 2;
+            } else {
+                children.push(self.pill_bluetooth(PITCH * 2.0, row_top(row), &view.bluetooth, cx));
+                row += 1;
+            }
+            let mut column = 0.0;
+            if layout::low_power_available(&view.power.value) && view.power.available {
+                children.push(self.low_power_circle(column, row_top(row), &view.power, cx));
+                column += PITCH;
+            }
+            children.push(self.screenshot_circle(column, row_top(row), cx));
+            children.push(self.pill_focus(PITCH * 2.0, row_top(row), &view.focus, cx));
+            row += 1;
+            if let Some(level) = self.brightness {
+                children.push(self.display_module(row_top(row), level, cx));
+                row += 1;
+            }
+            children.push(self.sound_module(row_top(row), &view.sound, cx));
+        }
+        let content_height = if detail.is_some() {
+            (banner_block - PADDING).max(0.0)
         } else {
-            children.push(self.pill_bluetooth(PITCH * 2.0, row_top(row), &view.bluetooth, cx));
-            row += 1;
-        }
-        let mut column = 0.0;
-        if layout::low_power_available(&view.power.value) && view.power.available {
-            children.push(self.low_power_circle(column, row_top(row), &view.power, cx));
-            column += PITCH;
-        }
-        children.push(self.screenshot_circle(column, row_top(row), cx));
-        children.push(self.pill_focus(PITCH * 2.0, row_top(row), &view.focus, cx));
-        row += 1;
-        if let Some(level) = self.brightness {
-            children.push(self.display_module(row_top(row), level, cx));
-            row += 1;
-        }
-        children.push(self.sound_module(row_top(row), &view.sound, cx));
+            modules.content_height() as f32
+        };
 
         div()
             .id("control-center")
@@ -188,9 +209,8 @@ impl Render for QuickSettingsView {
             .relative()
             .track_focus(&self.focus)
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                if event.keystroke.key == "escape" {
+                if this.key_down(event, window, cx) {
                     cx.stop_propagation();
-                    this.dismiss(window, cx);
                 }
             }))
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
@@ -223,24 +243,32 @@ impl Render for QuickSettingsView {
                     .left(px(PADDING))
                     .top(px(PADDING))
                     .w(px(GRID_WIDTH))
-                    .h(px(modules.content_height() as f32))
+                    .h(px(content_height))
                     .children(children),
             )
+            .children(detail)
     }
 }
 
 /// Track geometry inside a slider module: (left, width), measured.
 pub(super) fn track(kind: SliderKind) -> (f32, f32) {
+    use rmac_quick_settings::detail::geometry;
     match kind {
         SliderKind::Brightness => (36.5, 183.0),
         SliderKind::Volume => (34.0, 179.5),
+        SliderKind::DetailVolume => (geometry::SLIDER_LEFT, geometry::SLIDER_WIDTH),
     }
 }
 
 /// Percentage under a window-relative x on a slider's track. The modules
-/// span the full grid width, so the track's window x is fixed.
+/// span the full grid width and the detail panel sits at a fixed inset, so
+/// the track's window x is fixed.
 fn slider_value(kind: SliderKind, window_x: f32) -> u8 {
     let (left, width) = track(kind);
-    let fraction = (window_x - PADDING - left) / width;
+    let origin = match kind {
+        SliderKind::DetailVolume => rmac_quick_settings::detail::geometry::PANEL_LEFT,
+        SliderKind::Brightness | SliderKind::Volume => PADDING,
+    };
+    let fraction = (window_x - origin - left) / width;
     (fraction.clamp(0.0, 1.0) * 100.0).round() as u8
 }

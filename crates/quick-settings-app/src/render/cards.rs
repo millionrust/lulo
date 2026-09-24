@@ -2,6 +2,7 @@
 
 use gpui::ClickEvent;
 use rmac_quick_settings::accessibility::CHANGING_LABEL;
+use rmac_quick_settings::detail::{Detail, Module};
 use rmac_quick_settings::{Command, FocusValue, PowerValue, Tile};
 
 use super::*;
@@ -30,8 +31,11 @@ struct Pill {
     title: &'static str,
     /// `None` renders the single-line style Focus uses.
     subtitle: Option<String>,
-    /// System Settings pane the label opens.
+    /// System Settings pane the label opens, unless it opens a list.
     pane: &'static str,
+    /// The list the label opens in place of the grid (Wi-Fi, Bluetooth).
+    detail: Option<Detail>,
+    module: Module,
 }
 
 impl QuickSettingsView {
@@ -56,6 +60,8 @@ impl QuickSettingsView {
         let (path, width, height) = pill.glyph;
         let centre = BADGE_INSET + BADGE / 2.0;
         let pane = pill.pane;
+        let detail = pill.detail;
+        let ring = self.ring(pill.module);
         let badge = div()
             .id(SharedString::from(format!("{}-toggle", pill.id)))
             .absolute()
@@ -82,9 +88,12 @@ impl QuickSettingsView {
             .top_0()
             .w(px(PILL_WIDTH - centre - BADGE / 2.0))
             .h(px(CELL))
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
-                this.open_settings(Some(pane), window, cx)
-            }));
+            .on_click(
+                cx.listener(move |this, _: &ClickEvent, window, cx| match detail {
+                    Some(detail) => this.open_detail(detail, cx),
+                    None => this.open_settings(Some(pane), window, cx),
+                }),
+            );
         let text = match pill.subtitle {
             Some(subtitle) => layer()
                 .child(text_at(
@@ -114,6 +123,7 @@ impl QuickSettingsView {
         };
         module(x, y, PILL_WIDTH, CELL, CELL / 2.0)
             .overflow_hidden()
+            .when(ring, |module| module.shadow(mac::focus_ring_shadow()))
             .when(!pill.enabled && self.received_snapshot, |module| {
                 module.opacity(0.5)
             })
@@ -143,6 +153,8 @@ impl QuickSettingsView {
                 title: "Wi-Fi",
                 subtitle: Some(self.subtitle(tile)),
                 pane: "wifi",
+                detail: Some(Detail::Wifi),
+                module: Module::Wifi,
             },
             move |this, cx| this.execute(Command::SetWifiEnabled(next), cx),
             cx,
@@ -169,6 +181,8 @@ impl QuickSettingsView {
                 title: "Bluetooth",
                 subtitle: Some(self.subtitle(tile)),
                 pane: "bluetooth",
+                detail: Some(Detail::Bluetooth),
+                module: Module::Bluetooth,
             },
             move |this, cx| this.execute(Command::SetBluetoothPowered(next), cx),
             cx,
@@ -195,6 +209,8 @@ impl QuickSettingsView {
                 title: "Focus",
                 subtitle: None,
                 pane: "focus",
+                detail: None,
+                module: Module::Focus,
             },
             move |this, cx| this.execute(Command::SetFocusEnabled(next), cx),
             cx,
@@ -203,9 +219,11 @@ impl QuickSettingsView {
 
     /// A 64 pt circle module with one glyph. `on` fills it white, the way
     /// macOS draws an active circle control.
+    #[allow(clippy::too_many_arguments)]
     fn circle(
         &self,
         id: &'static str,
+        module_kind: Module,
         x: f32,
         y: f32,
         glyph: Glyph,
@@ -214,7 +232,9 @@ impl QuickSettingsView {
         cx: &Context<Self>,
     ) -> AnyElement {
         let (path, width, height) = glyph;
+        let ring = self.ring(module_kind);
         module(x, y, CELL, CELL, CELL / 2.0)
+            .when(ring, |circle| circle.shadow(mac::focus_ring_shadow()))
             .when(on, |circle| circle.bg(mac::white()))
             .child(
                 layer()
@@ -247,6 +267,7 @@ impl QuickSettingsView {
     ) -> AnyElement {
         self.circle(
             "low-power",
+            Module::LowPower,
             x,
             y,
             LOW_POWER,
@@ -259,6 +280,7 @@ impl QuickSettingsView {
     pub(super) fn screenshot_circle(&self, x: f32, y: f32, cx: &Context<Self>) -> AnyElement {
         self.circle(
             "screenshot",
+            Module::Screenshot,
             x,
             y,
             SCREENSHOT,

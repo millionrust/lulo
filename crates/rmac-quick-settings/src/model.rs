@@ -41,14 +41,27 @@ pub enum Command {
     SetOutputMuted(bool),
     SetPowerProfile(rmac_power::PowerProfile),
     SetFocusEnabled(bool),
+    /// Join a saved or open network from the Wi-Fi detail list.
+    JoinWifi(rmac_network::WifiNetworkId),
+    /// Connect or disconnect a paired device from the Bluetooth detail list.
+    SetBluetoothDeviceConnected {
+        device: String,
+        connected: bool,
+    },
+    /// Make this output (a `rmac_audio::Device` id) the default.
+    SetDefaultOutput(String),
 }
 
 impl Command {
     pub fn control(&self) -> Control {
         match self {
-            Self::SetWifiEnabled(_) => Control::Wifi,
-            Self::SetBluetoothPowered(_) => Control::Bluetooth,
-            Self::SetOutputVolume(_) | Self::SetOutputMuted(_) => Control::Sound,
+            Self::SetWifiEnabled(_) | Self::JoinWifi(_) => Control::Wifi,
+            Self::SetBluetoothPowered(_) | Self::SetBluetoothDeviceConnected { .. } => {
+                Control::Bluetooth
+            }
+            Self::SetOutputVolume(_) | Self::SetOutputMuted(_) | Self::SetDefaultOutput(_) => {
+                Control::Sound
+            }
             Self::SetPowerProfile(_) => Control::Power,
             Self::SetFocusEnabled(_) => Control::Focus,
         }

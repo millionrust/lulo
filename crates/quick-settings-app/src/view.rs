@@ -1,7 +1,8 @@
 use std::process::Command as ProcessCommand;
 use std::time::Duration;
 
-use gpui::{BorrowAppContext as _, Context, FocusHandle, SharedString, Window};
+use gpui::{BorrowAppContext as _, Context, FocusHandle, KeyDownEvent, SharedString, Window};
+use rmac_quick_settings::detail::{self, Detail, Module, Panel, RowAction, Target};
 use rmac_quick_settings::layout::Modules;
 use rmac_quick_settings::{Command, Control, Operation, State};
 
@@ -17,6 +18,8 @@ const SLIDER_SETTLE: Duration = Duration::from_millis(120);
 pub(crate) enum SliderKind {
     Brightness,
     Volume,
+    /// The volume slider at the top of the Sound detail view.
+    DetailVolume,
 }
 
 pub(crate) struct QuickSettingsView {
@@ -34,6 +37,15 @@ pub(crate) struct QuickSettingsView {
     pub(crate) dragging: Option<SliderKind>,
     /// Logical height the layer surface was last sized to.
     pub(crate) surface_height: f32,
+    /// The Wi-Fi, Bluetooth or Sound list shown in place of the grid.
+    pub(crate) detail: Option<Detail>,
+    /// Wi-Fi's "Other Networks" disclosure is open.
+    pub(crate) others_expanded: bool,
+    /// Keyboard focus in the grid and in a detail view. Rings show only
+    /// after a key was pressed, as on the Mac.
+    pub(crate) module_focus: Option<Module>,
+    pub(crate) detail_focus: Option<Target>,
+    pub(crate) keyboard: bool,
     volume_generation: u64,
     brightness_generation: u64,
     was_active: bool,
@@ -149,10 +161,234 @@ impl QuickSettingsView {
             volume_preview: None,
             dragging: None,
             surface_height: rmac_quick_settings::surface::LOGICAL_HEIGHT as f32,
+            detail: None,
+            others_expanded: false,
+            module_focus: None,
+            detail_focus: None,
+            keyboard: false,
             volume_generation: 0,
             brightness_generation: 0,
             was_active: false,
         }
+    }
+
+    /// The open detail view, cut to fit the tallest surface.
+    pub(crate) fn panel(&self) -> Option<Panel> {
+        let detail = self.detail?;
+        let mut panel = detail::panel(detail, self.state.inputs(), self.others_expanded);
+        panel.fit(rmac_quick_settings::layout::MAX_SURFACE_HEIGHT as f32);
+        Some(panel)
+    }
+
+    /// Replace the grid with a module's list. Opening Wi-Fi asks for a fresh
+    /// scan; the results arrive through the live Wi-Fi watch.
+    pub(crate) fn open_detail(&mut self, detail: Detail, cx: &mut Context<Self>) {
+        self.detail = Some(detail);
+        self.others_expanded = false;
+        self.detail_focus = None;
+        if detail == Detail::Wifi && self.state.view().wifi.value {
+            cx.background_executor()
+                .spawn(async {
+                    if let Err(error) =
+                        blocking::unblock(rmac_quick_settings_system::request_wifi_scan).await
+                    {
+                        eprintln!("Control Centre could not scan for Wi-Fi networks: {error}");
+                    }
+                })
+                .detach();
+        }
+        cx.notify();
+    }
+
+    /// Back to the grid, keeping keyboard focus on the module.
+    pub(crate) fn close_detail(&mut self, cx: &mut Context<Self>) {
+        if let Some(detail) = self.detail.take() {
+            self.module_focus = Some(match detail {
+                Detail::Wifi => Module::Wifi,
+                Detail::Bluetooth => Module::Bluetooth,
+                Detail::Sound => Module::Sound,
+            });
+            self.detail_focus = None;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn toggle_others(&mut self, cx: &mut Context<Self>) {
+        self.others_expanded = !self.others_expanded;
+        cx.notify();
+    }
+
+    /// The title switch of the Wi-Fi or Bluetooth list.
+    pub(crate) fn toggle_detail_switch(&mut self, cx: &mut Context<Self>) {
+        let view = self.state.view();
+        match self.detail {
+            Some(Detail::Wifi) if view.wifi.available && !view.wifi.busy => {
+                self.execute(Command::SetWifiEnabled(!view.wifi.value), cx)
+            }
+            Some(Detail::Bluetooth) if view.bluetooth.available && !view.bluetooth.busy => {
+                self.execute(Command::SetBluetoothPowered(!view.bluetooth.value), cx)
+            }
+            _ => {}
+        }
+    }
+
+    pub(crate) fn run_row(
+        &mut self,
+        action: RowAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match action {
+            // execute() refuses, visibly, while the control is changing.
+            RowAction::Run(command) => self.execute(command, cx),
+            RowAction::OpenSettings(pane) => self.open_settings(Some(pane), window, cx),
+        }
+    }
+
+    /// Whether `module` shows the keyboard focus ring.
+    pub(crate) fn ring(&self, module: Module) -> bool {
+        self.keyboard && self.detail.is_none() && self.module_focus == Some(module)
+    }
+
+    /// The grid's keyboard order, as the modules are laid out.
+    pub(crate) fn module_order(&self) -> Vec<Module> {
+        let view = self.state.view();
+        let mut order = vec![Module::Wifi, Module::Bluetooth];
+        if rmac_quick_settings::layout::low_power_available(&view.power.value)
+            && view.power.available
+        {
+            order.push(Module::LowPower);
+        }
+        order.extend([Module::Screenshot, Module::Focus]);
+        if self.brightness.is_some() {
+            order.push(Module::Display);
+        }
+        order.push(Module::Sound);
+        order
+    }
+
+    fn activate_module(&mut self, module: Module, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(detail) = module.detail() {
+            self.open_detail(detail, cx);
+            return;
+        }
+        match module {
+            Module::LowPower => self.toggle_low_power(cx),
+            Module::Screenshot => self.screenshot(window, cx),
+            Module::Focus => {
+                let focus = self.state.view().focus;
+                if focus.available && !focus.busy {
+                    self.execute(Command::SetFocusEnabled(!focus.value.enabled), cx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn nudge_slider(&mut self, kind: SliderKind, up: bool, cx: &mut Context<Self>) {
+        let current = match kind {
+            SliderKind::Brightness => match self.brightness {
+                Some(level) => level,
+                None => return,
+            },
+            SliderKind::Volume | SliderKind::DetailVolume => self
+                .volume_preview
+                .unwrap_or(self.state.view().sound.value.volume),
+        };
+        self.slide(kind, detail::nudge(current, up), cx);
+    }
+
+    pub(crate) fn activate_detail_target(
+        &mut self,
+        target: Target,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(panel) = self.panel() else {
+            return;
+        };
+        match target {
+            Target::Switch => self.toggle_detail_switch(cx),
+            Target::Notice => self.open_settings(Some("wifi"), window, cx),
+            Target::Slider => {}
+            Target::Row { .. } | Target::Other(_) => {
+                if let Some(action) = panel.row(target).and_then(|row| row.action.clone()) {
+                    self.run_row(action, window, cx);
+                }
+            }
+            Target::Disclosure => self.toggle_others(cx),
+            Target::Settings => {
+                let (_, pane) = panel.detail.settings();
+                self.open_settings(Some(pane), window, cx);
+            }
+        }
+    }
+
+    /// Arrow keys, Tab, Return, Space and Esc inside Control Centre.
+    pub(crate) fn key_down(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let key = event.keystroke.key.as_str();
+        let shift = event.keystroke.modifiers.shift;
+        if key == "escape" {
+            if self.detail.is_some() {
+                self.close_detail(cx);
+            } else {
+                self.dismiss(window, cx);
+            }
+            return true;
+        }
+        if !matches!(
+            key,
+            "up" | "down" | "left" | "right" | "tab" | "enter" | "space"
+        ) {
+            return false;
+        }
+        self.keyboard = true;
+        if let Some(panel) = self.panel() {
+            let targets = panel.targets();
+            let current = self.detail_focus.filter(|target| targets.contains(target));
+            match (key, current) {
+                ("left" | "right", Some(Target::Slider)) => {
+                    self.nudge_slider(SliderKind::DetailVolume, key == "right", cx)
+                }
+                ("up", _) => self.detail_focus = detail::step(&targets, current, false),
+                ("tab", _) if shift => self.detail_focus = detail::step(&targets, current, false),
+                ("down" | "tab", _) => {
+                    self.detail_focus = detail::step(&targets, current, true);
+                }
+                ("left", _) => self.close_detail(cx),
+                ("enter" | "space", Some(target)) => {
+                    self.activate_detail_target(target, window, cx)
+                }
+                _ => {}
+            }
+        } else {
+            let order = self.module_order();
+            let current = self.module_focus.filter(|module| order.contains(module));
+            match (key, current) {
+                ("left" | "right", Some(module)) if module.is_slider() => {
+                    let kind = if module == Module::Display {
+                        SliderKind::Brightness
+                    } else {
+                        SliderKind::Volume
+                    };
+                    self.nudge_slider(kind, key == "right", cx);
+                }
+                ("up" | "left", _) => self.module_focus = detail::step(&order, current, false),
+                ("tab", _) if shift => self.module_focus = detail::step(&order, current, false),
+                ("down" | "right" | "tab", _) => {
+                    self.module_focus = detail::step(&order, current, true)
+                }
+                ("enter" | "space", Some(module)) => self.activate_module(module, window, cx),
+                _ => {}
+            }
+        }
+        cx.notify();
+        true
     }
 
     /// Error banners shown above the modules, newest concerns first.
@@ -236,7 +472,12 @@ impl QuickSettingsView {
                 self.state.fail(&operation, error.to_string());
             }
         }
-        if control == Control::Sound && self.dragging != Some(SliderKind::Volume) {
+        if control == Control::Sound
+            && !matches!(
+                self.dragging,
+                Some(SliderKind::Volume | SliderKind::DetailVolume)
+            )
+        {
             self.volume_preview = None;
         }
         cx.notify();
@@ -245,7 +486,7 @@ impl QuickSettingsView {
     /// Move a slider to `value` percent while it is dragged or clicked.
     pub(crate) fn slide(&mut self, kind: SliderKind, value: u8, cx: &mut Context<Self>) {
         match kind {
-            SliderKind::Volume => self.schedule_volume(value, cx),
+            SliderKind::Volume | SliderKind::DetailVolume => self.schedule_volume(value, cx),
             SliderKind::Brightness => self.schedule_brightness(value, cx),
         }
     }

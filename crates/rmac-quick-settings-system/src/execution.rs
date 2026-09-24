@@ -23,6 +23,11 @@ fn mutate(command: &Command, backend: &impl Backend) -> Result<(), String> {
         Command::SetOutputMuted(muted) => backend.set_output_muted(*muted),
         Command::SetPowerProfile(profile) => backend.set_power_profile(*profile),
         Command::SetFocusEnabled(enabled) => backend.set_focus_enabled(*enabled),
+        Command::JoinWifi(network) => backend.join_wifi(network),
+        Command::SetBluetoothDeviceConnected { device, connected } => {
+            backend.set_bluetooth_device_connected(device, *connected)
+        }
+        Command::SetDefaultOutput(device) => backend.set_default_output(device),
     }
 }
 

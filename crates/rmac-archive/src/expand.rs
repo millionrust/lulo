@@ -112,12 +112,37 @@ fn expand_zip(file: Counted<'_, File>, staging: &Path) -> Result<(), Error> {
             .open(&target)?;
         io::copy(&mut entry, &mut output).map_err(data_error)?;
     }
-    // Links last, so no later entry can be written through one.
+    // Links last, so no file entry can be written through one. A link can
+    // still sit under an earlier link (`x -> ../../.config/autostart`, then
+    // `x/evil.desktop`), so every folder above a link must be a real folder
+    // inside the staging folder, never followed through a link.
     for (target, link) in links {
-        if let Some(parent) = target.parent() {
-            fs::create_dir_all(parent)?;
-        }
+        real_parent_folders(staging, &target)?;
         symlink(link, target)?;
+    }
+    Ok(())
+}
+
+/// Create the folders between `staging` and `target`'s parent one component
+/// at a time, refusing any component that already exists as anything but a
+/// real folder (in particular a symbolic link from an earlier entry).
+fn real_parent_folders(staging: &Path, target: &Path) -> Result<(), Error> {
+    let relative = target.strip_prefix(staging).map_err(|_| Error::Damaged)?;
+    let mut folder = staging.to_path_buf();
+    let Some(parent) = relative.parent() else {
+        return Ok(());
+    };
+    for component in parent.components() {
+        let Component::Normal(name) = component else {
+            return Err(Error::Damaged);
+        };
+        folder.push(name);
+        match fs::symlink_metadata(&folder) {
+            Ok(metadata) if metadata.file_type().is_dir() => {}
+            Ok(_) => return Err(Error::Damaged),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => fs::create_dir(&folder)?,
+            Err(error) => return Err(error.into()),
+        }
     }
     Ok(())
 }
@@ -411,6 +436,60 @@ mod tests {
         let placed = run(&archive).unwrap();
         assert!(!root.join("escaped.txt").exists());
         assert_eq!(placed, inner.join("safe.txt"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_link_is_never_created_through_an_earlier_link() {
+        let root = scratch("link-through-link");
+        let outside = root.join("outside");
+        let inner = root.join("inner");
+        fs::create_dir_all(&outside).unwrap();
+        fs::create_dir_all(&inner).unwrap();
+        let archive = inner.join("Evil.zip");
+        {
+            let mut writer = zip::ZipWriter::new(File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            writer.start_file("payload.txt", options).unwrap();
+            writer.write_all(b"x").unwrap();
+            // Staging is inner/.Evil…, so `../../outside` is root/outside.
+            writer.add_symlink("x", "../../outside", options).unwrap();
+            writer
+                .add_symlink("x/planted", "../inner/payload.txt", options)
+                .unwrap();
+            writer.finish().unwrap();
+        }
+        assert!(matches!(run(&archive), Err(Error::Damaged)));
+        assert!(fs::symlink_metadata(outside.join("planted")).is_err());
+        assert_eq!(fs::read_dir(&outside).unwrap().count(), 0);
+        let leftovers = fs::read_dir(&inner)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with('.'))
+            .count();
+        assert_eq!(leftovers, 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn links_inside_real_folders_still_expand() {
+        let root = scratch("nested-link");
+        let archive = root.join("Bundle.zip");
+        {
+            let mut writer = zip::ZipWriter::new(File::create(&archive).unwrap());
+            let options = zip::write::SimpleFileOptions::default();
+            writer.start_file("docs/readme.txt", options).unwrap();
+            writer.write_all(b"hi").unwrap();
+            writer
+                .add_symlink("links/deep/readme", "../../docs/readme.txt", options)
+                .unwrap();
+            writer.finish().unwrap();
+        }
+        let placed = run(&archive).unwrap();
+        assert_eq!(
+            fs::read_to_string(placed.join("links/deep/readme")).unwrap(),
+            "hi"
+        );
         fs::remove_dir_all(root).unwrap();
     }
 

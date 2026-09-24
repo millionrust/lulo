@@ -351,15 +351,16 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
 const TERMINAL_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: APPLICATION_MENU,
-        // Terminal ▸ Settings… opens the profiles; here that is the
-        // profile picker, which ⌘, already opens.
-        items: &[item!("Settings…", "terminal::ShowProfiles", "⌘,")],
+        items: &[item!("Settings…", "terminal::ShowSettings", "⌘,")],
     },
     MenuSpec {
         label: "Shell",
         items: &[
+            item!("New Window", "terminal::NewWindow", "⌘N"),
             item!("New Tab", "terminal::NewTab", "⌘T"),
             item!("Close Tab", "terminal::CloseTab", "⌘W", separator),
+            item!("Reset", "terminal::ResetTerminal", "⌥⌘R", separator),
+            item!("Hard Reset", "terminal::HardResetTerminal", "⌃⌥⌘R"),
         ],
     },
     MenuSpec {
@@ -644,6 +645,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Open…", "preview::OpenFile", "⌘O"),
             item!("Close Window", "preview::CloseWindow", "⌘W", separator),
+            item!("Print…", "preview::PrintDocument", "⌘P", separator),
         ],
     },
     MenuSpec {
@@ -652,9 +654,11 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
             item!("Undo", "input::Undo", "⌘Z"),
             item!("Redo", "input::Redo", "⇧⌘Z"),
             item!("Cut", "input::Cut", "⌘X", separator),
+            // Copy and Select All work on a PDF's text as well as on
+            // an image.
             item!("Copy", "preview::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
-            item!("Select All", "input::SelectAll", "⌘A"),
+            item!("Select All", "preview::SelectAll", "⌘A"),
             submenu!(
                 "Find",
                 "preview::FindMenu",
@@ -683,6 +687,7 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Previous Item", "preview::PreviousItem", "⌥↑"),
             item!("Next Item", "preview::NextItem", "⌥↓"),
+            item!("Go to Page…", "preview::GoToPage", "⌥⌘G", separator),
         ],
     },
     MenuSpec {
@@ -1718,7 +1723,7 @@ mod tests {
     fn rmac_apps_get_an_about_row_first_in_the_app_menu() {
         let mut menus = definition(
             rmac_apps::identity::TERMINAL,
-            &[ABOUT_ACTION, "terminal::ShowProfiles", "terminal::Copy"],
+            &[ABOUT_ACTION, "terminal::ShowSettings", "terminal::Copy"],
         )
         .unwrap();
         let items = take_application_items(&mut menus);
@@ -2156,6 +2161,27 @@ mod tests {
         assert_eq!(labels, ["Get Info", "Rename", "Compress"]);
         assert_eq!(menus[0].items[1].action, "finder::RenameItem");
     }
+
+    #[test]
+    fn terminal_and_preview_list_their_new_commands() {
+        let terminal = hints(&definition(TERMINAL_ID, &spec_actions(TERMINAL_MENUS)).unwrap());
+        assert_eq!(terminal["terminal::NewWindow"], "⌘N");
+        assert_eq!(terminal["terminal::ResetTerminal"], "⌥⌘R");
+        assert_eq!(terminal["terminal::HardResetTerminal"], "⌃⌥⌘R");
+        assert_eq!(terminal["terminal::ShowSettings"], "⌘,");
+        let preview = hints(
+            &definition(
+                rmac_apps::identity::PREVIEW,
+                &spec_actions(PREVIEW_MENUS),
+            )
+            .unwrap(),
+        );
+        assert_eq!(preview["preview::GoToPage"], "⌥⌘G");
+        assert_eq!(preview["preview::PrintDocument"], "⌘P");
+        assert_eq!(preview["preview::SelectAll"], "⌘A");
+    }
+
+    const TERMINAL_ID: &str = rmac_apps::identity::TERMINAL;
 
     #[test]
     fn files_menus_carry_finders_keyboard_commands() {

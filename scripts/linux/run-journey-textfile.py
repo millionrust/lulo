@@ -686,8 +686,8 @@ def run_journey(base_dir: Path, token: str, skip_interrupt: bool) -> dict[str, A
                     ),
                 }
             )
-            quit_editor(window)
-            windows_opened.remove(window)
+            if quit_editor(window)["passed"]:
+                windows_opened.remove(window)
             fallback_step, window = launch_editor(original_path)
             steps.append(
                 make_step(
@@ -774,8 +774,10 @@ def run_journey(base_dir: Path, token: str, skip_interrupt: bool) -> dict[str, A
                 )
             )
 
-        steps.append(quit_editor(window))
-        windows_opened.remove(window)
+        close_step = quit_editor(window)
+        steps.append(close_step)
+        if close_step["passed"]:
+            windows_opened.remove(window)
 
         # --- External change detection, on a dedicated window/file ---
         conflict_step, conflict_window = launch_editor(conflict_path)
@@ -829,8 +831,10 @@ def run_journey(base_dir: Path, token: str, skip_interrupt: bool) -> dict[str, A
                         else "the external file changed after Cancel",
                     )
                 )
-            steps.append(quit_editor(conflict_window))
-            windows_opened.remove(conflict_window)
+            conflict_close_step = quit_editor(conflict_window)
+            steps.append(conflict_close_step)
+            if conflict_close_step["passed"]:
+                windows_opened.remove(conflict_window)
 
         # --- SIGKILL-during-save, best-effort ---
         if not skip_interrupt:
@@ -952,7 +956,7 @@ def run_interrupted_save(
             conclusive=False,
         )
     finally:
-        if pid_alive(window.get("pid", -1)):
+        if window is not None and pid_alive(window.get("pid", -1)):
             try:
                 os.kill(window["pid"], signal.SIGKILL)
             except (ProcessLookupError, KeyError):

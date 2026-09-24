@@ -1,0 +1,45 @@
+Source: niri
+Section: x11
+Priority: optional
+Maintainer: Jacob Samas <samasjacob@icloud.com>
+Rules-Requires-Root: no
+Build-Depends: clang,
+               dpkg-dev (>= 1.22),
+               libcairo2-dev,
+               libclang-dev,
+               libdbus-1-dev,
+               libdisplay-info-dev,
+               libgbm-dev,
+               libinput-dev (>= 1.30),
+               libpango1.0-dev,
+               libpipewire-0.3-dev,
+               libseat-dev,
+               libsystemd-dev,
+               libudev-dev,
+               libwayland-dev,
+               libxkbcommon-dev,
+               pkgconf,
+               python3,
+               xz-utils
+Standards-Version: 4.7.0
+Homepage: https://github.com/niri-wm/niri
+
+Package: niri
+Architecture: amd64 arm64
+Depends: ${shlibs:Depends},
+         libegl1,
+         libegl-mesa0,
+         libwayland-server0,
+         xwayland-satellite (>= 0.8.2)
+Recommends: gnome-keyring,
+            xdg-desktop-portal-gnome,
+            xdg-desktop-portal-gtk
+Description: scrollable-tiling Wayland compositor (Lulo OS build)
+ Windows are arranged in columns on an infinite strip going to the right.
+ Opening a new window never causes existing windows to resize.
+ .
+ This is Lulo OS's build of the unmodified upstream niri release, made
+ because niri is not in the Ubuntu archive. It installs the same files as
+ upstream's own packaging: the compositor, niri-session, the niri.service
+ and niri-shutdown.target user units, the session entry, the portal
+ preferences, and shell completions.

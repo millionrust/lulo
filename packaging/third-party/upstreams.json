@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "packages": {
+    "niri": {
+      "upstream_version": "26.04",
+      "debian_revision": "0lulo1",
+      "tag": "v26.04",
+      "commit": "8ed0da44d974c32c6877d2f4630c314da0717ecb",
+      "tarball_url": "https://github.com/niri-wm/niri/archive/refs/tags/v26.04.tar.gz",
+      "tarball_sha256": "134c602d8e0d53413a52d6cd58f9ce7e79a07d03288ee0a51ba1abd5db1b1ad9",
+      "tarball_top_directory": "niri-26.04",
+      "vendor_sha256": null,
+      "license": "GPL-3.0-or-later",
+      "homepage": "https://github.com/niri-wm/niri",
+      "cargo_package": "niri"
+    },
+    "xwayland-satellite": {
+      "upstream_version": "0.8.2",
+      "debian_revision": "0lulo1",
+      "tag": "v0.8.2",
+      "commit": "8d135d3b2854b30fd01ea6cd6c27e523dd50a839",
+      "tarball_url": "https://github.com/Supreeeme/xwayland-satellite/archive/refs/tags/v0.8.2.tar.gz",
+      "tarball_sha256": "cb50bb6948582d5ec3aa511d2d66ad622989bb14bef94e3bb81bae8b64c120b1",
+      "tarball_top_directory": "xwayland-satellite-0.8.2",
+      "vendor_sha256": null,
+      "license": "MPL-2.0",
+      "homepage": "https://github.com/Supreeeme/xwayland-satellite",
+      "cargo_package": "xwayland-satellite"
+    }
+  }
+}

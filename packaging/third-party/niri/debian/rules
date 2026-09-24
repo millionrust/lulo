@@ -1,0 +1,83 @@
+#!/usr/bin/make -f
+# Lulo OS build of upstream niri. Hand-written so it needs only dpkg-dev
+# (no debhelper) and the pinned Rust toolchain; see
+# scripts/linux/build-niri-packages.sh, which stages this directory, the
+# upstream tarball, and the `cargo vendor` tarball into a 3.0 (quilt) source
+# package before running dpkg-buildpackage.
+#
+# Recipes start with ">" instead of a tab (.RECIPEPREFIX, GNU make >= 3.82).
+
+.RECIPEPREFIX = >
+SHELL := /bin/sh
+
+PACKAGE := niri
+UPSTREAM_SHORT_COMMIT := 8ed0da4
+DESTDIR := $(CURDIR)/debian/$(PACKAGE)
+SOURCE_DATE_EPOCH ?= $(shell dpkg-parsechangelog -STimestamp)
+export SOURCE_DATE_EPOCH
+
+# The build script points this at one reused target directory
+# (~/rmac-niri-build/target on the laptop); a plain dpkg-buildpackage uses
+# ./target.
+LULO_CARGO_TARGET_DIR ?= $(CURDIR)/target
+LULO_CARGO_JOBS ?=
+RELEASE_DIR := $(LULO_CARGO_TARGET_DIR)/release
+
+CARGO_ENV = \
+  CARGO_HOME="$(CURDIR)/debian/cargo-home" \
+  CARGO_TARGET_DIR="$(LULO_CARGO_TARGET_DIR)" \
+  CARGO_INCREMENTAL=0 \
+  GIT_CEILING_DIRECTORIES="$(abspath $(CURDIR)/..)" \
+  NIRI_BUILD_COMMIT="$(UPSTREAM_SHORT_COMMIT)" \
+  RUSTFLAGS="--remap-path-prefix=$(CURDIR)=/usr/src/niri --remap-path-prefix=$(LULO_CARGO_TARGET_DIR)=/usr/src/niri/target --remap-path-prefix=$(CURDIR)/debian/cargo-home=/usr/src/cargo-home -Clink-arg=-Wl,-z,relro -Clink-arg=-Wl,-z,now"
+
+.PHONY: build build-arch build-indep binary binary-arch binary-indep clean
+
+build: build-arch build-indep
+
+build-indep:
+
+build-arch: debian/stamp-build
+
+debian/stamp-build:
+> test -f vendor/.lulo-cargo-config.toml
+> mkdir -p debian/cargo-home debian/completions
+> sed -e 's|^directory = "vendor"$$|directory = "$(CURDIR)/vendor"|' \
+>   vendor/.lulo-cargo-config.toml > debian/cargo-home/config.toml
+> $(CARGO_ENV) cargo build --release --frozen --package niri \
+>   $(if $(LULO_CARGO_JOBS),--jobs $(LULO_CARGO_JOBS))
+> "$(RELEASE_DIR)/niri" completions bash > debian/completions/niri
+> "$(RELEASE_DIR)/niri" completions fish > debian/completions/niri.fish
+> "$(RELEASE_DIR)/niri" completions zsh > debian/completions/_niri
+> touch $@
+
+binary: binary-arch binary-indep
+
+binary-indep:
+
+binary-arch: build-arch
+> rm -rf "$(DESTDIR)"
+> install -D -m 0755 "$(RELEASE_DIR)/niri" "$(DESTDIR)/usr/bin/niri"
+> install -D -m 0755 resources/niri-session "$(DESTDIR)/usr/bin/niri-session"
+> install -D -m 0644 resources/niri.service "$(DESTDIR)/usr/lib/systemd/user/niri.service"
+> install -D -m 0644 resources/niri-shutdown.target "$(DESTDIR)/usr/lib/systemd/user/niri-shutdown.target"
+> install -D -m 0644 resources/niri.desktop "$(DESTDIR)/usr/share/wayland-sessions/niri.desktop"
+> install -D -m 0644 resources/niri-portals.conf "$(DESTDIR)/usr/share/xdg-desktop-portal/niri-portals.conf"
+> install -D -m 0644 debian/completions/niri "$(DESTDIR)/usr/share/bash-completion/completions/niri"
+> install -D -m 0644 debian/completions/niri.fish "$(DESTDIR)/usr/share/fish/vendor_completions.d/niri.fish"
+> install -D -m 0644 debian/completions/_niri "$(DESTDIR)/usr/share/zsh/site-functions/_niri"
+> install -D -m 0644 debian/copyright "$(DESTDIR)/usr/share/doc/niri/copyright"
+> install -D -m 0644 debian/dependency-licenses.txt "$(DESTDIR)/usr/share/doc/niri/LICENSE.dependencies"
+> gzip -9n -c debian/changelog > "$(DESTDIR)/usr/share/doc/niri/changelog.Debian.gz"
+> find "$(DESTDIR)" -type d -exec chmod 0755 {} +
+> find "$(DESTDIR)/usr/share" "$(DESTDIR)/usr/lib" -type f -exec chmod 0644 {} +
+> dpkg-shlibdeps -Tdebian/$(PACKAGE).substvars -e"$(DESTDIR)/usr/bin/niri"
+> mkdir -p "$(DESTDIR)/DEBIAN"
+> dpkg-gencontrol -p$(PACKAGE) -Tdebian/$(PACKAGE).substvars -P"$(DESTDIR)"
+> cd "$(DESTDIR)" && find usr -type f -print0 | LC_ALL=C sort -z | xargs -0 md5sum > DEBIAN/md5sums
+> chmod 0644 "$(DESTDIR)/DEBIAN/md5sums"
+> dpkg-deb --root-owner-group -Zxz --build "$(DESTDIR)" ..
+
+clean:
+> rm -rf target debian/cargo-home debian/completions "$(DESTDIR)"
+> rm -f debian/stamp-build debian/files debian/*.substvars

@@ -1,0 +1,27 @@
+Source: xwayland-satellite
+Section: x11
+Priority: optional
+Maintainer: Jacob Samas <samasjacob@icloud.com>
+Rules-Requires-Root: no
+Build-Depends: clang,
+               dpkg-dev (>= 1.22),
+               libclang-dev,
+               libxcb-cursor-dev,
+               libxcb1-dev,
+               pkgconf,
+               python3,
+               xz-utils
+Standards-Version: 4.7.0
+Homepage: https://github.com/Supreeeme/xwayland-satellite
+
+Package: xwayland-satellite
+Architecture: amd64 arm64
+Depends: ${shlibs:Depends},
+         xwayland (>= 2:23.1)
+Description: rootless Xwayland for Wayland compositors (Lulo OS build)
+ xwayland-satellite grants rootless Xwayland integration to any Wayland
+ compositor implementing xdg_wm_base and viewporter. niri starts it on
+ demand so X11 applications work in its sessions.
+ .
+ This is Lulo OS's build of the unmodified upstream release, made because
+ xwayland-satellite is not in the Ubuntu archive.

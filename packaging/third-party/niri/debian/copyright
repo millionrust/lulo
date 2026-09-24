@@ -1,0 +1,50 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: niri
+Upstream-Contact: Ivan Molodetskikh <yalterz@gmail.com>
+Source: https://github.com/niri-wm/niri/archive/refs/tags/v26.04.tar.gz
+Comment:
+ Built by Lulo OS from upstream tag v26.04, commit
+ 8ed0da44d974c32c6877d2f4630c314da0717ecb, without modification. The
+ complete corresponding source is the niri_26.04-0lulo1 source package
+ (niri_26.04-0lulo1.dsc and the tarballs it names) attached to the same
+ GitHub Release as this binary package.
+ .
+ The niri binary statically links the Rust crates in vendor/. Every
+ vendored crate's declared licence and its licence and notice files are
+ reproduced in /usr/share/doc/niri/LICENSE.dependencies. Those licences are
+ permissive (MIT, Apache-2.0, BSD, ISC, Zlib, Unicode-3.0, Unlicense, 0BSD)
+ or weak copyleft (MPL-2.0; crates offered as "MIT OR Apache-2.0 OR
+ LGPL-2.1-or-later" are used under MIT or Apache-2.0), all compatible with
+ GPL-3.0-or-later for the combined binary.
+
+Files: *
+Copyright: 2023-2026 Ivan Molodetskikh and the niri contributors
+License: GPL-3.0-or-later
+
+Files: vendor/*
+Copyright: the authors of each vendored crate; see LICENSE.dependencies
+License: various
+ See /usr/share/doc/niri/LICENSE.dependencies for each crate's licence
+ expression and full licence texts.
+
+Files: debian/*
+Copyright: 2026 Jacob Samas
+License: GPL-3.0-or-later
+
+License: GPL-3.0-or-later
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ .
+ On Debian and Ubuntu systems, the complete text of the GNU General
+ Public License version 3 can be found in
+ "/usr/share/common-licenses/GPL-3".

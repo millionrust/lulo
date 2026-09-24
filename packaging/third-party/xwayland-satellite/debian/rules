@@ -1,0 +1,76 @@
+#!/usr/bin/make -f
+# Lulo OS build of upstream xwayland-satellite. Hand-written so it needs only
+# dpkg-dev (no debhelper) and the pinned Rust toolchain; see
+# scripts/linux/build-niri-packages.sh, which stages this directory, the
+# upstream tarball, and the `cargo vendor` tarball into a 3.0 (quilt) source
+# package before running dpkg-buildpackage.
+#
+# Recipes start with ">" instead of a tab (.RECIPEPREFIX, GNU make >= 3.82).
+# Built with upstream's default features, like the danklinux PPA build: the
+# window-decoration font (Open Sans, OFL-1.1) is embedded and there is no
+# sd-notify service support, because niri starts xwayland-satellite itself.
+
+.RECIPEPREFIX = >
+SHELL := /bin/sh
+
+PACKAGE := xwayland-satellite
+DESTDIR := $(CURDIR)/debian/$(PACKAGE)
+SOURCE_DATE_EPOCH ?= $(shell dpkg-parsechangelog -STimestamp)
+export SOURCE_DATE_EPOCH
+
+LULO_CARGO_TARGET_DIR ?= $(CURDIR)/target
+LULO_CARGO_JOBS ?=
+RELEASE_DIR := $(LULO_CARGO_TARGET_DIR)/release
+
+# VERGEN_IDEMPOTENT makes the build script report "no git" deterministically,
+# so `xwayland-satellite --version` prints the Cargo version (0.8.2) instead
+# of describing whatever repository the build directory happens to sit in.
+CARGO_ENV = \
+  CARGO_HOME="$(CURDIR)/debian/cargo-home" \
+  CARGO_TARGET_DIR="$(LULO_CARGO_TARGET_DIR)" \
+  CARGO_INCREMENTAL=0 \
+  GIT_CEILING_DIRECTORIES="$(abspath $(CURDIR)/..)" \
+  VERGEN_IDEMPOTENT=1 \
+  RUSTFLAGS="--remap-path-prefix=$(CURDIR)=/usr/src/xwayland-satellite --remap-path-prefix=$(LULO_CARGO_TARGET_DIR)=/usr/src/xwayland-satellite/target --remap-path-prefix=$(CURDIR)/debian/cargo-home=/usr/src/cargo-home -Clink-arg=-Wl,-z,relro -Clink-arg=-Wl,-z,now"
+
+.PHONY: build build-arch build-indep binary binary-arch binary-indep clean
+
+build: build-arch build-indep
+
+build-indep:
+
+build-arch: debian/stamp-build
+
+debian/stamp-build:
+> test -f vendor/.lulo-cargo-config.toml
+> mkdir -p debian/cargo-home
+> sed -e 's|^directory = "vendor"$$|directory = "$(CURDIR)/vendor"|' \
+>   vendor/.lulo-cargo-config.toml > debian/cargo-home/config.toml
+> $(CARGO_ENV) cargo build --release --frozen --package xwayland-satellite \
+>   $(if $(LULO_CARGO_JOBS),--jobs $(LULO_CARGO_JOBS))
+> touch $@
+
+binary: binary-arch binary-indep
+
+binary-indep:
+
+binary-arch: build-arch
+> rm -rf "$(DESTDIR)"
+> install -D -m 0755 "$(RELEASE_DIR)/xwayland-satellite" "$(DESTDIR)/usr/bin/xwayland-satellite"
+> install -d "$(DESTDIR)/usr/share/man/man1"
+> gzip -9n -c xwayland-satellite.man > "$(DESTDIR)/usr/share/man/man1/xwayland-satellite.1.gz"
+> install -D -m 0644 debian/copyright "$(DESTDIR)/usr/share/doc/xwayland-satellite/copyright"
+> install -D -m 0644 debian/dependency-licenses.txt "$(DESTDIR)/usr/share/doc/xwayland-satellite/LICENSE.dependencies"
+> gzip -9n -c debian/changelog > "$(DESTDIR)/usr/share/doc/xwayland-satellite/changelog.Debian.gz"
+> find "$(DESTDIR)" -type d -exec chmod 0755 {} +
+> find "$(DESTDIR)/usr/share" -type f -exec chmod 0644 {} +
+> dpkg-shlibdeps -Tdebian/$(PACKAGE).substvars -e"$(DESTDIR)/usr/bin/xwayland-satellite"
+> mkdir -p "$(DESTDIR)/DEBIAN"
+> dpkg-gencontrol -p$(PACKAGE) -Tdebian/$(PACKAGE).substvars -P"$(DESTDIR)"
+> cd "$(DESTDIR)" && find usr -type f -print0 | LC_ALL=C sort -z | xargs -0 md5sum > DEBIAN/md5sums
+> chmod 0644 "$(DESTDIR)/DEBIAN/md5sums"
+> dpkg-deb --root-owner-group -Zxz --build "$(DESTDIR)" ..
+
+clean:
+> rm -rf target debian/cargo-home "$(DESTDIR)"
+> rm -f debian/stamp-build debian/files debian/*.substvars

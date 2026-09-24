@@ -68,6 +68,8 @@ pub fn action_capabilities() -> domain::ActionCapabilities {
             domain::ActionKind::RestoreWindow,
             domain::ActionKind::NameWorkspace,
             domain::ActionKind::UnnameWorkspace,
+            domain::ActionKind::MoveWindowBy,
+            domain::ActionKind::CrossfadeScreen,
         ],
     }
 }
@@ -173,6 +175,14 @@ pub(super) fn convert_action(action: &domain::Action) -> wire::Action {
         },
         domain::Action::UnnameWorkspace { workspace } => wire::Action::UnsetWorkspaceName {
             reference: Some(wire::WorkspaceReference::Id(workspace.0)),
+        },
+        domain::Action::MoveWindowBy { window, dx, dy } => wire::Action::MoveFloatingWindow {
+            id: Some(window.0),
+            x: wire::PositionChange::AdjustFixed(dx.0),
+            y: wire::PositionChange::AdjustFixed(dy.0),
+        },
+        domain::Action::CrossfadeScreen { delay_ms } => wire::Action::DoScreenTransition {
+            delay_ms: Some(*delay_ms),
         },
     }
 }

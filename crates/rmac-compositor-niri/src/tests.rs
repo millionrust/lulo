@@ -218,6 +218,29 @@ fn fill_and_tiling_set_the_whole_floating_frame_by_id() {
 }
 
 #[test]
+fn reveal_desktop_moves_windows_by_a_distance_and_crossfades() {
+    let moved = convert_action_sequence(&domain::Action::MoveWindowBy {
+        window: domain::WindowId(7),
+        dx: domain::Distance(-612.5),
+        dy: domain::Distance(40.0),
+    })
+    .unwrap();
+    assert_eq!(
+        serde_json::to_string(&moved).unwrap(),
+        r#"[{"MoveFloatingWindow":{"id":7,"x":{"AdjustFixed":-612.5},"y":{"AdjustFixed":40.0}}}]"#
+    );
+    let faded =
+        convert_action_sequence(&domain::Action::CrossfadeScreen { delay_ms: 300 }).unwrap();
+    assert_eq!(
+        serde_json::to_string(&faded).unwrap(),
+        r#"[{"DoScreenTransition":{"delay_ms":300}}]"#
+    );
+    let supported = action_capabilities();
+    assert!(supported.supports(domain::ActionKind::MoveWindowBy));
+    assert!(supported.supports(domain::ActionKind::CrossfadeScreen));
+}
+
+#[test]
 fn action_results_distinguish_handled_rejected_and_transport_failures() {
     let socket = PathBuf::from(format!("/tmp/rmac-action-{}.sock", std::process::id()));
     let _ = fs::remove_file(&socket);

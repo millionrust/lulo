@@ -8,6 +8,7 @@ mod actions;
 mod events;
 mod model;
 mod parking;
+pub mod reveal;
 mod state;
 
 pub use actions::*;

@@ -23,6 +23,8 @@ pub enum ActionKind {
     RestoreWindow,
     NameWorkspace,
     UnnameWorkspace,
+    MoveWindowBy,
+    CrossfadeScreen,
 }
 
 /// Target region for [`Action::TileWindow`]: the halves offered by the green
@@ -57,6 +59,21 @@ impl TileRegion {
         }
     }
 }
+
+/// A distance in logical pixels. Compared bit for bit so [`Action`] stays
+/// `Eq`; JSON cannot carry NaN or infinity, and producers only build finite
+/// values.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct Distance(pub f64);
+
+impl PartialEq for Distance {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_bits() == other.0.to_bits()
+    }
+}
+
+impl Eq for Distance {}
 
 /// The hidden workspace that holds minimized windows.
 pub const PARKING_WORKSPACE: &str = "rmac-parking";
@@ -230,6 +247,19 @@ pub enum Action {
     UnnameWorkspace {
         workspace: WorkspaceId,
     },
+    /// Move floating `window` by (`dx`, `dy`) logical pixels with the
+    /// compositor's window-movement animation. The compositor may stop short
+    /// to keep part of the window on screen (niri keeps 75 px visible).
+    MoveWindowBy {
+        window: WindowId,
+        dx: Distance,
+        dy: Distance,
+    },
+    /// Freeze the screen for `delay_ms`, then crossfade to whatever it shows
+    /// by then. Reduce Motion uses it to hide window movement.
+    CrossfadeScreen {
+        delay_ms: u16,
+    },
 }
 
 impl Action {
@@ -251,6 +281,8 @@ impl Action {
             Self::RestoreWindow { .. } => ActionKind::RestoreWindow,
             Self::NameWorkspace { .. } => ActionKind::NameWorkspace,
             Self::UnnameWorkspace { .. } => ActionKind::UnnameWorkspace,
+            Self::MoveWindowBy { .. } => ActionKind::MoveWindowBy,
+            Self::CrossfadeScreen { .. } => ActionKind::CrossfadeScreen,
         }
     }
 }

@@ -33,3 +33,8 @@ use transport::*;
 
 pub const SOCKET_PATH_ENV: &str = "NIRI_SOCKET";
 const MAX_INITIAL_EVENTS: usize = 4096;
+
+/// niri 26.04 keeps at least this much of a floating window inside the
+/// working area, in logical pixels, however far it is moved (measured on
+/// the reference laptop: 75.2 at scale 1.25, snapped to physical pixels).
+pub const FLOATING_MIN_VISIBLE: f64 = 75.0;

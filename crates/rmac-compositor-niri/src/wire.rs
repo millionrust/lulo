@@ -61,6 +61,9 @@ pub enum Action {
     UnsetWorkspaceName {
         reference: Option<WorkspaceReference>,
     },
+    DoScreenTransition {
+        delay_ms: Option<u16>,
+    },
 }
 
 /// niri-ipc `SizeChange`; proportions are percentages of the working area
@@ -70,11 +73,12 @@ pub enum SizeChange {
     SetProportion(f64),
 }
 
-/// niri-ipc `PositionChange` for floating windows, in percentages of the
-/// working area.
+/// niri-ipc `PositionChange` for floating windows: a percentage of the
+/// working area, or a relative move in logical pixels.
 #[derive(Debug, Serialize)]
 pub enum PositionChange {
     SetProportion(f64),
+    AdjustFixed(f64),
 }
 
 #[derive(Debug, Serialize)]

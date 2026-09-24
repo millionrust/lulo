@@ -56,6 +56,33 @@
                 chevron ends 11 from the divider
   Gallery view  inspector 250 on the right; stage preview centred; filmstrip
                 48 thumbnails, pitch 59, 8 from the left, 56 from the bottom
+  Artwork       (re-measured 2026-09-24, 920 × 464 window on a scratch folder)
+                folders are Tahoe light blue, not the accent: back rgb(100,173,
+                220) → rgb(90,164,214), front rgb(155,213,246) → rgb(104,176,
+                222); in a 64 box the folder spans x 3–61, tab top 8.5, back
+                top 13, front top 17.5, bottom 56. Documents are white pages
+                (x 11–54, y 4–60) with a folded corner; generic ones carry the
+                extension ("GZ") near the foot. Images show their thumbnail in
+                every view, 16 pt ones included. Files draws both as original
+                SVGs (crates/finder/assets/icons/*-artwork-{16,96,320}.svg).
+  Gallery       opens with the first item selected; the stage shows only the
+                preview (about 70 % of the stage height). Inspector text 9 in
+                (11 from the right), name 15 semibold centred 26 below the
+                toolbar, "kind – size" 13 secondary, "Information" 13 bold 24
+                lower, then 23 pt rows: label 12 secondary, value 12 semibold
+                right-aligned, hairlines between rows
+  Column prev.  a file's column: preview on top, then name 15 semibold,
+                "kind – size" 13 secondary, "Information" and its rows, all
+                10 in from the column edge
+  Get Info      Finder's info window is 265 wide (731 tall for a PNG); close
+                button centred 16 in; header icon 32, name 13 bold with the
+                size bold on the right, "Modified: …" below; sections have a
+                chevron and a 12 pt title; rows 12 pt on a 14 pt pitch with
+                labels right-aligned to 67 and values 5.5 after
+  Go to Folder  S (not measured this pass): 460 panel under the toolbar,
+                path field, 24 pt folder suggestions
+  Trash bar     S (the owner's Trash was not opened): 36 tall, the Trash's
+                name 13 semibold 16 in, Empty button on the right
   Path bar      optional (View ▸ Show Path Bar, ⌥⌘P; off by default on the
                 Mac); 28 tall above the status bar, 0.5 top hairline
                 rgba(255,255,255,.15); crumbs from x 14: icon 13, gap 5,
@@ -128,7 +155,8 @@
   .cr .ico.f{position:absolute;left:7px}
   .cr .n{position:absolute;left:26px}
   .cr .chev{position:absolute;right:2px;color:var(--sec)}
-  .folder{--m:url(../crates/finder/assets/icons/folder-artwork.svg);color:rgb(110,190,240)}
+  /* Full-colour artwork, as Files draws it (not a tinted mask). */
+  .folder{-webkit-mask:none!important;mask:none!important;background:url(../crates/finder/assets/icons/folder-artwork-96.svg) center/contain no-repeat!important}
   .cap-label{font:600 12px var(--font);color:#999;margin:0 0 6px}
 </style>
 </head>

@@ -2,7 +2,7 @@ use std::{
     cell::{Cell, Ref, RefCell, RefMut},
     ffi::c_void,
     ptr::NonNull,
-    rc::Rc,
+    rc::{Rc, Weak},
     sync::Arc,
     time::Duration,
 };
@@ -502,6 +502,25 @@ pub struct WaylandWindowStatePtr {
     callbacks: Rc<RefCell<Callbacks>>,
 }
 
+/// A window reference that does not keep the window alive. rmac: the idle
+/// frame checks below hold this, not a [`WaylandWindowStatePtr`]; a strong
+/// reference let every closed window re-arm its own check forever, so its
+/// state -- including its AccessKit adapter, which keeps publishing the dead
+/// window's controls over AT-SPI -- was never freed (docs/decisions/0013).
+struct WeakWaylandWindowStatePtr {
+    state: Weak<RefCell<WaylandWindowState>>,
+    callbacks: Weak<RefCell<Callbacks>>,
+}
+
+impl WeakWaylandWindowStatePtr {
+    fn upgrade(&self) -> Option<WaylandWindowStatePtr> {
+        Some(WaylandWindowStatePtr {
+            state: self.state.upgrade()?,
+            callbacks: self.callbacks.upgrade()?,
+        })
+    }
+}
+
 impl WaylandWindowState {
     pub(crate) fn new(
         handle: AnyWindowHandle,
@@ -803,6 +822,13 @@ impl WaylandWindowStatePtr {
         Rc::ptr_eq(&self.state, &other.state)
     }
 
+    fn downgrade(&self) -> WeakWaylandWindowStatePtr {
+        WeakWaylandWindowStatePtr {
+            state: Rc::downgrade(&self.state),
+            callbacks: Rc::downgrade(&self.callbacks),
+        }
+    }
+
     pub fn add_child(&self, child: ObjectId, blocking: bool) {
         let mut state = self.state.borrow_mut();
         state.children.insert(child, blocking);
@@ -862,11 +888,14 @@ impl WaylandWindowStatePtr {
         let generation = state.idle_generation;
         let client = state.client.get_client();
         drop(state);
-        let window = self.clone();
+        let window = self.downgrade();
         let loop_handle = client.borrow().loop_handle.clone();
         let _ = loop_handle.insert_source(Timer::from_duration(delay), move |_, _, _| {
-            if window.state.borrow().idle_generation == generation {
-                window.frame();
+            if let Some(window) = window.upgrade() {
+                let current = window.state.borrow().idle_generation == generation;
+                if current {
+                    window.frame();
+                }
             }
             TimeoutAction::Drop
         });
@@ -884,11 +913,14 @@ impl WaylandWindowStatePtr {
         let generation = state.idle_generation;
         let client = state.client.get_client();
         drop(state);
-        let window = self.clone();
+        let window = self.downgrade();
         let loop_handle = client.borrow().loop_handle.clone();
         let _ = loop_handle.insert_idle(move |_| {
-            if window.state.borrow().idle_generation == generation {
-                window.frame();
+            if let Some(window) = window.upgrade() {
+                let current = window.state.borrow().idle_generation == generation;
+                if current {
+                    window.frame();
+                }
             }
         });
     }

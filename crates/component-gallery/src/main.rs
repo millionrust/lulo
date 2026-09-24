@@ -21,7 +21,7 @@ mod tests {
             .iter()
             .map(|spec| spec.states.len())
             .sum::<usize>();
-        assert_eq!(count, 80);
+        assert_eq!(count, 98);
     }
 
     #[test]

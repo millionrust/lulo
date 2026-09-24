@@ -32,6 +32,7 @@ rmac-desktop.workspace = true
 rmac-dock.workspace = true
 rmac-dock-runtime.workspace = true
 rmac-dock-system.workspace = true
+rmac-locale.workspace = true
 rmac-network.workspace = true
 rmac-osd.workspace = true
 rmac-places.workspace = true

@@ -36,6 +36,7 @@ rmac-desktop-widgets = { version = "=0.9.0-beta.1", path = "../crates/rmac-deskt
 rmac-dock = { version = "=0.9.0-beta.1", path = "../crates/rmac-dock" }
 rmac-dock-runtime = { version = "=0.9.0-beta.1", path = "../crates/rmac-dock-runtime" }
 rmac-dock-system = { version = "=0.9.0-beta.1", path = "../crates/rmac-dock-system" }
+rmac-locale = { version = "=0.9.0-beta.1", path = "../crates/rmac-locale" }
 rmac-network = { version = "=0.9.0-beta.1", path = "../crates/rmac-network" }
 rmac-pasteboard = { version = "=0.9.0-beta.1", path = "../crates/rmac-pasteboard" }
 rmac-places = { version = "=0.9.0-beta.1", path = "../crates/rmac-places" }

@@ -218,6 +218,9 @@ mod linux_wayland {
         update: rmac_shell_runtime::Update,
         menu_app_id: Option<String>,
         menus: Vec<rmac_app_menu::Menu>,
+        /// The menus came from the running app, not from the static
+        /// desktop fallback shown while Files is not running.
+        menus_live: bool,
         menu_generation: u64,
         low_battery: LowBatteryWatch,
     }
@@ -255,10 +258,13 @@ mod linux_wayland {
                             {
                                 this.menu_app_id = Some(app_id.clone());
                                 this.menus.clear();
+                                this.menus_live = false;
                                 this.menu_generation = this.menu_generation.saturating_add(1);
                                 if rmac_app_menu::bus_name(&app_id).is_some() {
                                     request_app_menus(app_id, this.menu_generation, cx);
                                 }
+                            } else if this.menu_app_id.is_none() {
+                                this.show_desktop_menus(cx);
                             }
                             this.update = update;
                             // One process serves every display, so each
@@ -289,12 +295,42 @@ mod linux_wayland {
             })
             .detach();
             watch_menu_owners(cx);
-            Self {
+            watch_menu_changes(cx);
+            let mut status = Self {
                 update: rmac_shell_runtime::Update::default(),
                 menu_app_id: None,
                 menus: Vec::new(),
+                menus_live: false,
                 menu_generation: 0,
                 low_battery: LowBatteryWatch::default(),
+            };
+            status.show_desktop_menus(cx);
+            status
+        }
+
+        /// With no app's window focused the desktop is active, and Files
+        /// owns the desktop's menus as Finder does. They show from Files'
+        /// own table until Files runs and publishes them itself; choosing
+        /// one then starts Files (see `start_files_then`).
+        fn show_desktop_menus(&mut self, cx: &mut Context<Self>) {
+            let files = rmac_apps::identity::FILES;
+            self.menu_app_id = Some(files.to_owned());
+            self.menus = rmac_app_menu::static_definition(files).unwrap_or_default();
+            self.menus_live = false;
+            self.menu_generation = self.menu_generation.saturating_add(1);
+            request_app_menus(files.to_owned(), self.menu_generation, cx);
+        }
+
+        /// Read the active app's menus again: its state (and so which items
+        /// are greyed out or ticked) may have changed. The app validates
+        /// them as it answers, as AppKit does when a menu opens.
+        fn refresh_menus(&mut self, cx: &mut Context<Self>) {
+            if let Some(app_id) = self
+                .menu_app_id
+                .clone()
+                .filter(|app_id| rmac_app_menu::bus_name(app_id).is_some())
+            {
+                request_app_menus(app_id, self.menu_generation, cx);
             }
         }
     }
@@ -305,11 +341,11 @@ mod linux_wayland {
                 .background_executor()
                 .spawn({
                     let app_id = app_id.clone();
-                    async move { rmac_app_menu::fetch(&app_id).await }
+                    async move { rmac_app_menu::fetch_layout(&app_id).await }
                 })
                 .await;
             let menus = match result {
-                Ok(menus) => menus,
+                Ok(layout) => layout.menus,
                 // Not running yet, or still starting up: the menu owner
                 // watcher fetches again once the app publishes its menu.
                 Err(rmac_app_menu::Error::NotPublished) => return,
@@ -321,11 +357,35 @@ mod linux_wayland {
             let _ = this.update(cx, |this, cx| {
                 if this.menu_generation == generation
                     && this.menu_app_id.as_deref() == Some(app_id.as_str())
+                    && (this.menus != menus || !this.menus_live)
                 {
                     this.menus = menus;
+                    this.menus_live = true;
                     cx.notify();
                 }
             });
+        })
+        .detach();
+    }
+
+    /// Re-read the active app's menus whenever an app announces that its
+    /// state changed them (`LayoutChanged`), so a ticked sort order or a
+    /// greyed-out Undo is current even while its menu is open.
+    fn watch_menu_changes(cx: &mut Context<ShellStatus>) {
+        cx.spawn(async move |this, cx| {
+            let mut changes = match rmac_app_menu::watch_layout_changes().await {
+                Ok(changes) => changes,
+                Err(error) => {
+                    eprintln!("could not follow application menu changes: {error}");
+                    return;
+                }
+            };
+            while changes.next().await {
+                if this.update(cx, |this, cx| this.refresh_menus(cx)).is_err() {
+                    return;
+                }
+            }
+            eprintln!("stopped following application menu changes: the session bus closed");
         })
         .detach();
     }
@@ -349,17 +409,21 @@ mod linux_wayland {
                         return;
                     }
                     if published {
-                        if this.menus.is_empty() {
+                        if this.menus.is_empty() || !this.menus_live {
                             request_app_menus(app_id.to_owned(), this.menu_generation, cx);
                         }
                         return;
                     }
                     this.menus.clear();
+                    this.menus_live = false;
                     this.menu_generation = this.menu_generation.saturating_add(1);
                     // With no window focused, the app that just quit no
-                    // longer names the bar either.
+                    // longer names the bar either: the desktop does.
                     if this.update.snapshot.status.focused.app_id.is_none() {
                         this.menu_app_id = None;
+                        this.show_desktop_menus(cx);
+                    } else if app_id == rmac_apps::identity::FILES {
+                        this.menus = rmac_app_menu::static_definition(app_id).unwrap_or_default();
                     }
                     cx.notify();
                 });
@@ -370,6 +434,24 @@ mod linux_wayland {
             eprintln!("stopped following application menus: the session bus closed");
         })
         .detach();
+    }
+
+    /// The bar's menus and the app they belong to (see `TopBar::bar_menus`).
+    struct BarMenus {
+        menus: Vec<rmac_app_menu::Menu>,
+        active_app: String,
+        active_app_id: Option<String>,
+    }
+
+    /// An open submenu's panel.
+    struct SubmenuPanel {
+        /// 1 for a submenu of the menu under its title.
+        depth: usize,
+        items: Vec<rmac_app_menu::Item>,
+        left: f32,
+        top: f32,
+        width: f32,
+        height: f32,
     }
 
     #[derive(Clone, Debug, PartialEq)]
@@ -410,6 +492,9 @@ mod linux_wayland {
         selected_shortcut: u32,
         app_tint: u32,
         status_tint: u32,
+        /// The Help menu's search capsule and its placeholder.
+        search_fill: u32,
+        search_placeholder: u32,
     }
 
     fn menu_palette() -> MenuPalette {
@@ -439,6 +524,8 @@ mod linux_wayland {
                 app_tint,
                 // The status menus measure ≈ 20% darker than app menus.
                 status_tint: darken(app_tint, 0.8),
+                search_fill: 0x2E2E2EFF,
+                search_placeholder: 0xFFFFFF8C,
             }
         } else {
             MenuPalette {
@@ -461,6 +548,9 @@ mod linux_wayland {
                 selected_shortcut: 0xFFFFFFB3,
                 app_tint,
                 status_tint: app_tint,
+                // S: the light Help search field is not measured.
+                search_fill: 0x0000000F,
+                search_placeholder: tokens::secondary_text(),
             }
         }
     }
@@ -501,6 +591,21 @@ mod linux_wayland {
         status: Entity<ShellStatus>,
         open_menu: Option<usize>,
         selected_item: usize,
+        /// Open submenus, outermost first: the row highlighted in each
+        /// (`NO_ITEM` for none). Submenu `k` opened from the row highlighted
+        /// one level up (`selected_item` for the first).
+        submenu_rows: Vec<usize>,
+        /// Bumped on every hover, so a delayed submenu open or close only
+        /// happens if the pointer is still where it was.
+        hover_generation: u64,
+        /// The focused app's windows, read from the compositor when a menu
+        /// opens, for the Window menu.
+        menu_windows: Vec<menu_model::MenuWindow>,
+        /// The window the menus act on: the app's focused window when the
+        /// menu opened (the bar holds the keyboard while a menu is open).
+        menu_window: Option<rmac_compositor::WindowId>,
+        /// What is typed in the Help menu's search field.
+        help_query: String,
         open_app_id: Option<String>,
         recent_items: Vec<PathBuf>,
         recent_items_loading: bool,
@@ -569,6 +674,11 @@ mod linux_wayland {
                 status,
                 open_menu: None,
                 selected_item: NO_ITEM,
+                submenu_rows: Vec::new(),
+                hover_generation: 0,
+                menu_windows: Vec::new(),
+                menu_window: None,
+                help_query: String::new(),
                 open_app_id: None,
                 recent_items: Vec::new(),
                 recent_items_loading: false,
@@ -620,6 +730,10 @@ mod linux_wayland {
                 self.recent_selected_item = 0;
                 self.pending_system_action = None;
                 self.selected_item = NO_ITEM;
+                self.submenu_rows.clear();
+                self.hover_generation = self.hover_generation.saturating_add(1);
+                self.menu_window = None;
+                self.help_query.clear();
                 window.refresh();
                 cx.notify();
             }
@@ -655,23 +769,495 @@ mod linux_wayland {
             window: &mut Window,
             cx: &mut Context<Self>,
         ) {
+            let first_open = self.open_menu.is_none();
             self.status_menu = None;
             self.status_selected = None;
             self.open_menu = Some(index);
             self.hide_generation = self.hide_generation.saturating_add(1);
             self.revealed = true;
             self.selected_item = NO_ITEM;
-            self.open_app_id = Some(app_id);
+            self.submenu_rows.clear();
+            self.hover_generation = self.hover_generation.saturating_add(1);
+            self.help_query.clear();
             self.parking = rmac_compositor::ParkingStore::load_default();
             self.recent_submenu_open = false;
             self.recent_selected_item = 0;
             self.pending_system_action = None;
             if index == 0 {
                 self.load_recent_items(cx);
+            } else {
+                // Validate the app's items as the menu opens, as AppKit does.
+                self.status
+                    .update(cx, |status, cx| status.refresh_menus(cx));
             }
+            if first_open {
+                // The bar is about to take the keyboard, and the focused
+                // window with it: remember the window the menus act on.
+                self.menu_window = self
+                    .status
+                    .read(cx)
+                    .update
+                    .snapshot
+                    .status
+                    .focused
+                    .window_id;
+            }
+            self.load_menu_windows(app_id.clone(), cx);
+            self.open_app_id = Some(app_id);
             window.focus(&self.focus, cx);
             window.refresh();
             cx.notify();
+        }
+
+        /// Read the app's windows for the Window menu. The compositor also
+        /// says which one is focused, which settles `menu_window` when the
+        /// status projection had already lost it.
+        fn load_menu_windows(&mut self, app_id: String, cx: &mut Context<Self>) {
+            if app_id == SYSTEM_MENU_ID {
+                return;
+            }
+            cx.spawn(async move |this, cx| {
+                let snapshot = match rmac_compositor_niri::snapshot().await {
+                    Ok(snapshot) => snapshot,
+                    Err(error) => {
+                        eprintln!("could not list {app_id} windows for the Window menu: {error:?}");
+                        return;
+                    }
+                };
+                let mut windows = snapshot
+                    .windows
+                    .iter()
+                    .filter(|window| window.app_id.as_deref() == Some(app_id.as_str()))
+                    .collect::<Vec<_>>();
+                windows.sort_by_key(|window| window.id);
+                // The bar may hold keyboard focus already; then the app's
+                // most recently focused window is the one it means.
+                let focused = windows
+                    .iter()
+                    .find(|window| window.focused || snapshot.focus.window == Some(window.id))
+                    .or_else(|| {
+                        windows
+                            .iter()
+                            .filter(|window| !rmac_compositor::window_is_parked(&snapshot, window))
+                            .max_by_key(|window| {
+                                window
+                                    .focus_timestamp
+                                    .as_ref()
+                                    .map(|stamp| (stamp.seconds, stamp.nanoseconds))
+                            })
+                    })
+                    .map(|window| window.id);
+                let listed = windows
+                    .iter()
+                    .map(|window| menu_model::MenuWindow {
+                        id: window.id,
+                        title: window.title.clone().unwrap_or_default(),
+                        parked: rmac_compositor::window_is_parked(&snapshot, window),
+                    })
+                    .collect::<Vec<_>>();
+                let _ = this.update(cx, |this, cx| {
+                    if this.open_menu.is_none() {
+                        return;
+                    }
+                    this.menu_windows = listed;
+                    if this.menu_window.is_none() {
+                        this.menu_window = focused;
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+
+        /// Every menu in the bar, in order: the rmac menu, the bold app
+        /// menu, the app's own menus, then the standard Window and Help
+        /// menus. Rendering and the keyboard both read this list.
+        fn bar_menus(&self, cx: &App) -> BarMenus {
+            let status = self.status.read(cx);
+            let snapshot = &status.update.snapshot.status;
+            // Opening a popup moves keyboard focus to this layer surface, so
+            // the live focused window drops to None. Use the last app the
+            // status runtime reported (kept across those blips) for the app
+            // menu, and name it rather than letting the desktop identity take
+            // over. The same holds while the bar still shows the menus of an
+            // app that has no focused window: name that app, not the desktop,
+            // so the name, its app menu and the menus beside it agree.
+            let keep_menu_app = self.open_menu.is_some()
+                || (snapshot.focused.app_id.is_none() && !status.menus.is_empty());
+            let active_app_id = if keep_menu_app {
+                status
+                    .menu_app_id
+                    .clone()
+                    .or_else(|| snapshot.focused.app_id.clone())
+            } else {
+                snapshot.focused.app_id.clone()
+            };
+            let active_app = if keep_menu_app {
+                active_app_id
+                    .as_deref()
+                    .map(app_display_name)
+                    .unwrap_or_else(|| top_bar_active_app_name(snapshot))
+            } else {
+                top_bar_active_app_name(snapshot)
+            };
+            let mut exported = status.menus.clone();
+            let application_items = rmac_app_menu::take_application_items(&mut exported);
+            let window_items = rmac_app_menu::take_window_items(&mut exported);
+            let help_items = rmac_app_menu::take_help_items(&mut exported);
+            let mut menus = vec![
+                system_menu(),
+                // The bold app name is the app menu (§3.3): it is
+                // synthesized, not exported, so every app gets
+                // About/Hide/Hide Others/Show All/Quit. An app's own entries
+                // (Settings…, Files' Empty Trash…) follow About.
+                app_menu(
+                    &active_app,
+                    active_app_id.as_deref(),
+                    !self.parking.is_empty(),
+                    application_items,
+                ),
+            ];
+            let help = menu_model::help_menu(&self.help_query, &exported, help_items);
+            menus.extend(exported);
+            // Every app has the Mac's Window and Help menus, exported or not.
+            menus.push(menu_model::window_menu(
+                &self.menu_windows,
+                self.menu_window,
+                window_items,
+                rmac_locale::FileVocabulary::from_environment(),
+            ));
+            menus.push(help);
+            BarMenus {
+                menus,
+                active_app,
+                active_app_id,
+            }
+        }
+
+        /// The items of the deepest open level at or above `depth`
+        /// (0 = the open menu itself), with the row highlighted in it.
+        fn level_items(
+            &self,
+            menu: &rmac_app_menu::Menu,
+            depth: usize,
+        ) -> Option<(Vec<rmac_app_menu::Item>, usize)> {
+            let mut items = menu.items.clone();
+            let mut row = self.selected_item;
+            for level in 0..depth {
+                let parent = items.get(row)?;
+                if !parent.is_submenu() {
+                    return None;
+                }
+                items = parent.children.clone();
+                row = *self.submenu_rows.get(level)?;
+            }
+            Some((items, row))
+        }
+
+        fn set_row(&mut self, depth: usize, row: usize) {
+            if depth == 0 {
+                self.selected_item = row;
+            } else if let Some(slot) = self.submenu_rows.get_mut(depth - 1) {
+                *slot = row;
+            }
+        }
+
+        /// The pointer is on `row` at `depth`: highlight it at once, and
+        /// after a moment open its submenu or close the one another row
+        /// opened.
+        fn hover_row(&mut self, depth: usize, row: usize, opens: bool, cx: &mut Context<Self>) {
+            let highlight_changed = if depth == 0 {
+                self.selected_item != row
+            } else {
+                self.submenu_rows.get(depth - 1) != Some(&row)
+            };
+            if highlight_changed {
+                self.set_row(depth, row);
+                cx.notify();
+            }
+            let open_here = self.submenu_rows.len() > depth;
+            let wants_change = if opens {
+                !open_here || highlight_changed
+            } else {
+                open_here
+            };
+            if !wants_change {
+                // Back on the row whose submenu is open: keep it.
+                self.hover_generation = self.hover_generation.saturating_add(1);
+                return;
+            }
+            self.hover_generation = self.hover_generation.saturating_add(1);
+            let generation = self.hover_generation;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(menu_model::SUBMENU_HOVER_DELAY)
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    if this.hover_generation != generation || this.open_menu.is_none() {
+                        return;
+                    }
+                    let lit = if depth == 0 {
+                        Some(this.selected_item)
+                    } else {
+                        this.submenu_rows.get(depth - 1).copied()
+                    };
+                    if opens && lit != Some(row) {
+                        // The pointer left the row before its submenu opened.
+                        return;
+                    }
+                    this.submenu_rows.truncate(depth);
+                    if opens {
+                        this.submenu_rows.push(NO_ITEM);
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+
+        /// Open the submenu of the highlighted row at `depth` now (a click,
+        /// or → on the keyboard), highlighting its first row if `select`.
+        fn open_submenu_now(
+            &mut self,
+            depth: usize,
+            select: Option<usize>,
+            cx: &mut Context<Self>,
+        ) {
+            self.hover_generation = self.hover_generation.saturating_add(1);
+            self.submenu_rows.truncate(depth);
+            self.submenu_rows.push(select.unwrap_or(NO_ITEM));
+            cx.notify();
+        }
+
+        /// The rows of one menu panel at `depth` (0 = the menu under its
+        /// title), with their checkmarks, icons, shortcuts and chevrons.
+        #[allow(clippy::too_many_arguments)]
+        fn menu_rows(
+            &self,
+            mut panel: gpui::Stateful<gpui::Div>,
+            items: &[rmac_app_menu::Item],
+            depth: usize,
+            menu_index: usize,
+            app_id: &str,
+            focused_window_id: Option<rmac_compositor::WindowId>,
+            palette: &MenuPalette,
+            cx: &Context<Self>,
+        ) -> gpui::Stateful<gpui::Div> {
+            let (icons, column) = items_icon_column(items);
+            let checks = if menu_model::has_checks(items) {
+                menu_model::CHECK_COLUMN
+            } else {
+                0.0
+            };
+            let selected = if depth == 0 {
+                self.selected_item
+            } else {
+                self.submenu_rows.get(depth - 1).copied().unwrap_or(NO_ITEM)
+            };
+            for (item_index, item) in items.iter().cloned().enumerate() {
+                if item.separator_before {
+                    panel = panel.child(
+                        div()
+                            .h(px(1.0))
+                            .mx(px(menu_model::APP_SEPARATOR_INSET - EDGE))
+                            .my(px((menu_model::APP_SEPARATOR_HEIGHT - 1.0) / 2.0))
+                            .bg(rgba(palette.separator)),
+                    );
+                }
+                if item.action == menu_model::HELP_SEARCH_ACTION {
+                    panel = panel.child(self.help_search_row(palette));
+                    continue;
+                }
+                let action = item.action.clone();
+                let item_app_id = app_id.to_owned();
+                let enabled = item.enabled;
+                let system = depth == 0 && item_app_id == SYSTEM_MENU_ID;
+                let opens_recents = system && action == "system::recents";
+                let opens_submenu = item.is_submenu();
+                let highlighted = enabled && selected == item_index;
+                let foreground = if !enabled {
+                    palette.disabled
+                } else if highlighted {
+                    palette.selected_text
+                } else {
+                    palette.text
+                };
+                let shortcut_color = if highlighted {
+                    palette.selected_shortcut
+                } else {
+                    palette.disabled
+                };
+                let icon_top = (menu_model::APP_ROW_HEIGHT - menu_model::MENU_ICON_BOX) / 2.0;
+                let mut row = div()
+                    .id(format!(
+                        "app-menu-item-{}-{menu_index}-{depth}-{item_index}",
+                        self.display_id
+                    ))
+                    .role(Role::MenuItem)
+                    .aria_label(item.label.clone())
+                    .relative()
+                    .h(px(menu_model::APP_ROW_HEIGHT))
+                    .mx(px(menu_model::ROW_INSET - EDGE))
+                    .pl(px(column.text_x() + checks - menu_model::ROW_INSET))
+                    .pr(px(menu_model::KEY_RIGHT - menu_model::ROW_INSET))
+                    .flex()
+                    .items_center()
+                    .rounded(px(tokens::menu_item_radius()))
+                    .text_color(rgba(foreground))
+                    .when(highlighted, |style| style.bg(rgba(tokens::accent())))
+                    .when(item.checked == rmac_app_menu::CheckState::On, |row| {
+                        row.child(
+                            svg()
+                                .absolute()
+                                .left(px(menu_model::CHECK_CENTRE
+                                    - menu_model::MENU_ICON_BOX / 2.0
+                                    - menu_model::ROW_INSET))
+                                .top(px(icon_top))
+                                .w(px(menu_model::MENU_ICON_BOX))
+                                .h(px(menu_model::MENU_ICON_BOX))
+                                .path(menu_icon_path("checkmark"))
+                                .text_color(rgba(foreground)),
+                        )
+                    })
+                    .when(item.checked == rmac_app_menu::CheckState::Mixed, |row| {
+                        row.child(
+                            div()
+                                .absolute()
+                                .left(px(menu_model::CHECK_CENTRE
+                                    - menu_model::CHECK_WIDTH / 2.0
+                                    - menu_model::ROW_INSET))
+                                .top(px(menu_model::APP_ROW_HEIGHT / 2.0 - 0.75))
+                                .w(px(menu_model::CHECK_WIDTH))
+                                .h(px(1.5))
+                                .rounded(px(0.75))
+                                .bg(rgba(foreground)),
+                        )
+                    })
+                    .children(icons[item_index].map(|icon| {
+                        svg()
+                            .absolute()
+                            .left(px(column.icon_x() + checks - menu_model::ROW_INSET))
+                            .top(px(icon_top))
+                            .w(px(menu_model::MENU_ICON_BOX))
+                            .h(px(menu_model::MENU_ICON_BOX))
+                            .path(menu_icon_path(icon))
+                            .text_color(rgba(foreground))
+                    }))
+                    .child(div().flex_1().whitespace_nowrap().child(item.label.clone()));
+                if menu_model::opens_submenu(&item) {
+                    row = row.child(
+                        svg()
+                            .flex_none()
+                            .ml(px(menu_model::SHORTCUT_GAP))
+                            .mr(px(menu_model::CHEVRON_RIGHT
+                                - menu_model::KEY_RIGHT
+                                - (menu_model::MENU_ICON_BOX - CHEVRON_GLYPH_RIGHT)))
+                            .w(px(menu_model::MENU_ICON_BOX))
+                            .h(px(menu_model::MENU_ICON_BOX))
+                            .path(menu_icon_path("chevron-right"))
+                            .text_color(rgba(foreground)),
+                    );
+                } else if !item.shortcut.is_empty() {
+                    row = row.child(shortcut_keys(&item.shortcut, shortcut_color));
+                }
+                if enabled {
+                    row = row
+                        .cursor_pointer()
+                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                            if *hovered {
+                                if depth == 0 && this.recent_submenu_open != opens_recents {
+                                    this.recent_submenu_open = opens_recents;
+                                    this.recent_selected_item = 0;
+                                    cx.notify();
+                                }
+                                this.hover_row(depth, item_index, opens_submenu, cx);
+                            } else if this.submenu_rows.len() == depth && !this.recent_submenu_open
+                            {
+                                // Leaving the deepest menu clears its
+                                // highlight; a row with its submenu open
+                                // stays lit.
+                                let lit = if depth == 0 {
+                                    this.selected_item
+                                } else {
+                                    this.submenu_rows[depth - 1]
+                                };
+                                if lit == item_index {
+                                    this.set_row(depth, NO_ITEM);
+                                    cx.notify();
+                                }
+                            }
+                        }))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            if opens_submenu {
+                                this.set_row(depth, item_index);
+                                this.open_submenu_now(depth, None, cx);
+                            } else if opens_recents {
+                                this.recent_submenu_open = true;
+                                this.recent_selected_item = 0;
+                                cx.notify();
+                            } else if system && system_action_needs_confirmation(&action) {
+                                this.pending_system_action = Some(action.clone());
+                                cx.notify();
+                            } else {
+                                this.close_menu(window, cx);
+                                dispatch_menu_action(
+                                    item_app_id.clone(),
+                                    action.clone(),
+                                    focused_window_id,
+                                    cx,
+                                );
+                            }
+                        }));
+                }
+                panel = panel.child(row);
+            }
+            panel
+        }
+
+        /// The Help menu's search field (design-lab/menus.html): typing
+        /// while the Help menu is open fills it.
+        fn help_search_row(&self, palette: &MenuPalette) -> impl IntoElement {
+            let typed = !self.help_query.is_empty();
+            div()
+                .h(px(menu_model::HELP_SEARCH_ROW_HEIGHT))
+                .px(px(menu_model::HELP_SEARCH_INSET - EDGE))
+                .flex()
+                .items_center()
+                .child(
+                    div()
+                        .relative()
+                        .w_full()
+                        .h(px(menu_model::HELP_SEARCH_CAPSULE_HEIGHT))
+                        .rounded(px(menu_model::HELP_SEARCH_CAPSULE_HEIGHT / 2.0))
+                        .bg(rgba(palette.search_fill))
+                        .flex()
+                        .items_center()
+                        .child(
+                            svg()
+                                .absolute()
+                                .left(px(22.0 - menu_model::HELP_SEARCH_INSET - 6.0))
+                                .size(px(12.0))
+                                .path(menu_icon_path("search"))
+                                .text_color(rgba(palette.search_placeholder)),
+                        )
+                        .child(
+                            div()
+                                .absolute()
+                                .left(px(44.0 - menu_model::HELP_SEARCH_INSET))
+                                .whitespace_nowrap()
+                                .text_color(rgba(if typed {
+                                    palette.text
+                                } else {
+                                    palette.search_placeholder
+                                }))
+                                .child(if typed {
+                                    self.help_query.clone()
+                                } else {
+                                    "Search".to_owned()
+                                }),
+                        ),
+                )
         }
 
         fn load_recent_items(&mut self, cx: &mut Context<Self>) {
@@ -1289,14 +1875,8 @@ mod linux_wayland {
                 self.handle_status_key(kind, event, window, cx);
                 return;
             }
-            let (mut menus, window_id) = {
-                let status = self.status.read(cx);
-                (
-                    status.menus.clone(),
-                    status.update.snapshot.status.focused.window_id,
-                )
-            };
-            menus.insert(0, system_menu());
+            let menus = self.bar_menus(cx).menus;
+            let window_id = self.menu_window;
             let Some(menu_index) = self.open_menu else {
                 return;
             };
@@ -1355,34 +1935,78 @@ mod linux_wayland {
                 self.close_menu(window, cx);
                 return;
             };
+            let is_help = menu_index + 1 == menus.len();
+            // The Help menu's search field takes typing, as on the Mac.
+            if is_help && self.submenu_rows.is_empty() {
+                let key = event.keystroke.key.as_str();
+                let typed = event.keystroke.key_char.as_deref().filter(|text| {
+                    !event.keystroke.modifiers.platform
+                        && !event.keystroke.modifiers.control
+                        && !text.chars().any(char::is_control)
+                });
+                if key == "backspace" {
+                    if self.help_query.pop().is_some() {
+                        self.selected_item = NO_ITEM;
+                        cx.notify();
+                    }
+                    return;
+                }
+                if let Some(text) = typed {
+                    if self.help_query.chars().count() < 40 {
+                        self.help_query.push_str(text);
+                        self.selected_item = NO_ITEM;
+                        cx.notify();
+                    }
+                    return;
+                }
+            }
+            // The deepest open level takes the arrow keys.
+            let depth = self.submenu_rows.len();
+            let Some((items, row)) = self.level_items(&menu, depth) else {
+                self.submenu_rows.clear();
+                cx.notify();
+                return;
+            };
+            let highlighted = items.get(row).cloned();
             match event.keystroke.key.as_str() {
-                "escape" => self.close_menu(window, cx),
-                "down" => {
-                    self.selected_item = if self.selected_item == NO_ITEM {
-                        0
-                    } else {
-                        (self.selected_item + 1) % menu.items.len()
-                    };
-                    self.recent_submenu_open = false;
+                "escape" if depth > 0 => {
+                    self.submenu_rows.pop();
                     cx.notify();
                 }
-                "up" => {
-                    self.selected_item = match self.selected_item {
-                        NO_ITEM | 0 => menu.items.len() - 1,
-                        index => index - 1,
-                    };
+                "escape" => self.close_menu(window, cx),
+                "down" | "up" => {
+                    let from = (row != NO_ITEM).then_some(row);
+                    if let Some(next) =
+                        menu_model::next_enabled_row(&items, from, event.keystroke.key == "down")
+                    {
+                        self.set_row(depth, next);
+                    }
                     self.recent_submenu_open = false;
+                    self.hover_generation = self.hover_generation.saturating_add(1);
                     cx.notify();
                 }
                 "right"
                     if menu_index == 0
-                        && menu
-                            .items
-                            .get(self.selected_item)
+                        && highlighted
+                            .as_ref()
                             .is_some_and(|item| item.action == "system::recents") =>
                 {
                     self.recent_submenu_open = true;
                     self.recent_selected_item = 0;
+                    cx.notify();
+                }
+                "right"
+                    if highlighted
+                        .as_ref()
+                        .is_some_and(|item| item.is_submenu() && item.enabled) =>
+                {
+                    let first = highlighted
+                        .as_ref()
+                        .and_then(|item| menu_model::next_enabled_row(&item.children, None, true));
+                    self.open_submenu_now(depth, first, cx);
+                }
+                "left" if depth > 0 => {
+                    self.submenu_rows.pop();
                     cx.notify();
                 }
                 "right" | "left" => {
@@ -1393,27 +2017,48 @@ mod linux_wayland {
                     };
                     self.open_menu = Some(next);
                     self.selected_item = NO_ITEM;
+                    self.submenu_rows.clear();
+                    self.help_query.clear();
                     self.recent_submenu_open = false;
+                    if next > 0 {
+                        // Coming from the rmac menu, the menus belong to the
+                        // app again.
+                        self.open_app_id = self.status.read(cx).menu_app_id.clone();
+                        self.status
+                            .update(cx, |status, cx| status.refresh_menus(cx));
+                        if let Some(app_id) = self.open_app_id.clone() {
+                            self.load_menu_windows(app_id, cx);
+                        }
+                    }
                     cx.notify();
                 }
                 "enter" | "space" => {
-                    if let (Some(app_id), Some(item)) = (
-                        self.open_app_id.clone(),
-                        menu.items.get(self.selected_item).cloned(),
-                    ) {
-                        if app_id == SYSTEM_MENU_ID && item.action == "system::recents" {
-                            self.recent_submenu_open = true;
-                            self.recent_selected_item = 0;
-                            cx.notify();
-                        } else if app_id == SYSTEM_MENU_ID
-                            && system_action_needs_confirmation(&item.action)
-                        {
-                            self.pending_system_action = Some(item.action);
-                            cx.notify();
+                    let Some(item) = highlighted.filter(|item| item.enabled) else {
+                        return;
+                    };
+                    let Some(app_id) = self.open_app_id.clone() else {
+                        return;
+                    };
+                    if item.is_submenu() {
+                        let first = menu_model::next_enabled_row(&item.children, None, true);
+                        self.open_submenu_now(depth, first, cx);
+                    } else if app_id == SYSTEM_MENU_ID && item.action == "system::recents" {
+                        self.recent_submenu_open = true;
+                        self.recent_selected_item = 0;
+                        cx.notify();
+                    } else if app_id == SYSTEM_MENU_ID
+                        && system_action_needs_confirmation(&item.action)
+                    {
+                        self.pending_system_action = Some(item.action);
+                        cx.notify();
+                    } else if item.action != menu_model::HELP_SEARCH_ACTION {
+                        let app_id = if menu_index == 0 {
+                            SYSTEM_MENU_ID.to_owned()
                         } else {
-                            self.close_menu(window, cx);
-                            dispatch_menu_action(app_id, item.action, window_id, cx);
-                        }
+                            app_id
+                        };
+                        self.close_menu(window, cx);
+                        dispatch_menu_action(app_id, item.action, window_id, cx);
                     }
                 }
                 _ => {}
@@ -1436,6 +2081,34 @@ mod linux_wayland {
                 self.open_status_menu(kind, option, window, cx);
             }
             record_render_count(window, self.display_id, self.render_count);
+            // Close a menu whose app is gone first, so this frame already
+            // names the app that owns the bar now. The system and app menus
+            // always sit before the exported ones.
+            let app_changed = {
+                let status = self.status.read(cx);
+                self.open_menu.is_some_and(|index| index != 0)
+                    && status
+                        .menu_app_id
+                        .as_deref()
+                        .is_some_and(|id| self.open_app_id.as_deref() != Some(id))
+            };
+            if app_changed {
+                self.open_menu = None;
+                self.open_app_id = None;
+                self.selected_item = NO_ITEM;
+                self.submenu_rows.clear();
+            }
+            let BarMenus {
+                menus,
+                active_app,
+                active_app_id,
+            } = self.bar_menus(cx);
+            if self.open_menu.is_some_and(|index| index >= menus.len()) {
+                self.open_menu = None;
+                self.open_app_id = None;
+                self.selected_item = NO_ITEM;
+                self.submenu_rows.clear();
+            }
             let now = Local::now();
             let status = self.status.read(cx);
             let snapshot = &status.update.snapshot.status;
@@ -1447,64 +2120,10 @@ mod linux_wayland {
                 Some(date) => format!("{date} {clock}"),
                 None => clock.clone(),
             };
-            // Opening a popup moves keyboard focus to this layer surface, so the
-            // live focused window drops to None. Use the last app the status
-            // runtime reported (kept across those blips) for the app menu, and
-            // name it rather than letting the desktop identity take over.
-            // The same holds while the bar still shows the menus of an app
-            // that has no focused window: name that app, not the desktop, so
-            // the name, its app menu and the menus beside it agree.
-            // Close a menu whose app is gone first, so this frame already
-            // names the app that owns the bar now. The system and app menus
-            // always sit before the exported ones.
-            if self.open_menu.is_some()
-                && (self.open_menu >= Some(status.menus.len() + 2)
-                    || (self.open_menu != Some(0)
-                        && status
-                            .menu_app_id
-                            .as_deref()
-                            .is_some_and(|id| self.open_app_id.as_deref() != Some(id))))
-            {
-                self.open_menu = None;
-                self.open_app_id = None;
-                self.selected_item = NO_ITEM;
-            }
-            let keep_menu_app = self.open_menu.is_some()
-                || (snapshot.focused.app_id.is_none() && !status.menus.is_empty());
-            let active_app_id = if keep_menu_app {
-                status
-                    .menu_app_id
-                    .clone()
-                    .or_else(|| snapshot.focused.app_id.clone())
-            } else {
-                snapshot.focused.app_id.clone()
-            };
-            let active_app = if keep_menu_app {
-                active_app_id
-                    .as_deref()
-                    .map(app_display_name)
-                    .unwrap_or_else(|| top_bar_active_app_name(snapshot))
-            } else {
-                top_bar_active_app_name(snapshot)
-            };
             let workspace = top_bar_workspace_label(snapshot);
             let indicators = top_bar_indicator_labels(snapshot);
-            let focused_window_id = snapshot.focused.window_id;
-            let mut menus = status.menus.clone();
-            let application_items = rmac_app_menu::take_application_items(&mut menus);
-            menus.insert(0, system_menu());
-            // The bold app name is the app menu (§3.3): it is synthesized, not
-            // exported, so every app gets About/Hide/Hide Others/Show All/Quit.
-            // An app's own entries (Files' Empty Trash…) follow About.
-            menus.insert(
-                1,
-                app_menu(
-                    &active_app,
-                    active_app_id.as_deref(),
-                    !self.parking.is_empty(),
-                    application_items,
-                ),
-            );
+            // The window the menus act on: remembered as the menu opened.
+            let focused_window_id = self.menu_window.or(snapshot.focused.window_id);
 
             let visible = !self.fullscreen
                 || self.revealed
@@ -1554,6 +2173,55 @@ mod linux_wayland {
                 self.recent_items_loading,
                 self.recent_items_unavailable,
             );
+            // Open submenus, each beside the row that opened it.
+            let submenu_panels = match (
+                self.open_menu.and_then(|index| menus.get(index)),
+                menu_left,
+                menu_width,
+            ) {
+                (Some(menu), Some(left), Some(width)) if self.pending_system_action.is_none() => {
+                    let mut panels = Vec::new();
+                    let mut parent_items = menu.items.clone();
+                    let (mut parent_left, mut parent_width, mut parent_top) =
+                        (left, width, menu_top);
+                    let mut parent_row = self.selected_item;
+                    for (level, &selected) in self.submenu_rows.iter().enumerate() {
+                        let Some(parent) = parent_items
+                            .get(parent_row)
+                            .filter(|item| item.is_submenu())
+                        else {
+                            break;
+                        };
+                        let items = parent.children.clone();
+                        let sub_width = items_panel_width(&items, window);
+                        let sub_height = app_menu_height(&items);
+                        let row_top = parent_top + app_menu_item_top(&parent_items, parent_row);
+                        let (sub_left, sub_top) = menu_model::submenu_origin(
+                            parent_left,
+                            parent_width,
+                            row_top,
+                            (sub_width, sub_height),
+                            screen_width,
+                            MENU_SURFACE_HEIGHT - 8.0,
+                        );
+                        panels.push(SubmenuPanel {
+                            depth: level + 1,
+                            items: items.clone(),
+                            left: sub_left,
+                            top: sub_top,
+                            width: sub_width,
+                            height: sub_height,
+                        });
+                        parent_items = items;
+                        parent_left = sub_left;
+                        parent_width = sub_width;
+                        parent_top = sub_top;
+                        parent_row = selected;
+                    }
+                    panels
+                }
+                _ => Vec::new(),
+            };
             // The Wi-Fi or Battery menu opens under its own status item.
             let status_panel = self.status_menu.map(|kind| {
                 let rows = self.status_rows(kind);
@@ -1588,6 +2256,16 @@ mod linux_wayland {
                             top,
                             width: RECENT_MENU_WIDTH,
                             height: recent_height,
+                            radius: menu_model::APP_MENU_RADIUS,
+                            tint: palette.app_tint,
+                        });
+                    }
+                    for submenu in &submenu_panels {
+                        panels.push(MenuBackdropPanel {
+                            left: submenu.left,
+                            top: submenu.top,
+                            width: submenu.width,
+                            height: submenu.height,
                             radius: menu_model::APP_MENU_RADIUS,
                             tint: palette.app_tint,
                         });
@@ -1637,6 +2315,12 @@ mod linux_wayland {
                         input_regions.push(Bounds {
                             origin: point(px(left + width - 4.0), px(top)),
                             size: Size::new(px(RECENT_MENU_WIDTH), px(recent_height)),
+                        });
+                    }
+                    for submenu in &submenu_panels {
+                        input_regions.push(Bounds {
+                            origin: point(px(submenu.left), px(submenu.top)),
+                            size: Size::new(px(submenu.width), px(submenu.height)),
                         });
                     }
                 }
@@ -1695,7 +2379,6 @@ mod linux_wayland {
                 };
                 let left = menu_left?;
                 let width = menu_width?;
-                let selected = self.selected_item;
                 let mut panel = div()
                     .id(format!("app-menu-panel-{}-{menu_index}", self.display_id))
                     .role(Role::Menu)
@@ -1775,131 +2458,51 @@ mod linux_wayland {
                     );
                     return Some(panel);
                 }
-                let (icons, column) = menu_icon_column(&menu);
-                for (item_index, item) in menu.items.into_iter().enumerate() {
-                    if item.separator_before {
-                        panel = panel.child(
-                            div()
-                                .h(px(1.0))
-                                .mx(px(menu_model::APP_SEPARATOR_INSET - EDGE))
-                                .my(px((menu_model::APP_SEPARATOR_HEIGHT - 1.0) / 2.0))
-                                .bg(rgba(palette.separator)),
-                        );
-                    }
-                    let action = item.action.clone();
-                    let item_app_id = app_id.clone();
-                    let enabled = item.enabled;
-                    let opens_recents =
-                        item_app_id == SYSTEM_MENU_ID && action == "system::recents";
-                    let highlighted = enabled && selected == item_index;
-                    let foreground = if !enabled {
-                        palette.disabled
-                    } else if highlighted {
-                        palette.selected_text
-                    } else {
-                        palette.text
-                    };
-                    let shortcut_color = if highlighted {
-                        palette.selected_shortcut
-                    } else {
-                        palette.disabled
-                    };
-                    let mut row = div()
-                        .id(format!(
-                            "app-menu-item-{}-{menu_index}-{item_index}",
-                            self.display_id
-                        ))
-                        .role(Role::MenuItem)
-                        .aria_label(item.label.clone())
-                        .relative()
-                        .h(px(menu_model::APP_ROW_HEIGHT))
-                        .mx(px(menu_model::ROW_INSET - EDGE))
-                        .pl(px(column.text_x() - menu_model::ROW_INSET))
-                        .pr(px(menu_model::KEY_RIGHT - menu_model::ROW_INSET))
-                        .flex()
-                        .items_center()
-                        .rounded(px(tokens::menu_item_radius()))
-                        .text_color(rgba(foreground))
-                        .when(highlighted, |style| style.bg(rgba(tokens::accent())))
-                        .children(icons[item_index].map(|icon| {
-                            svg()
-                                .absolute()
-                                .left(px(column.icon_x() - menu_model::ROW_INSET))
-                                .top(px(
-                                    (menu_model::APP_ROW_HEIGHT - menu_model::MENU_ICON_BOX) / 2.0
-                                ))
-                                .w(px(menu_model::MENU_ICON_BOX))
-                                .h(px(menu_model::MENU_ICON_BOX))
-                                .path(menu_icon_path(icon))
-                                .text_color(rgba(foreground))
-                        }))
-                        .child(div().flex_1().whitespace_nowrap().child(item.label));
-                    if item.shortcut == menu_model::SUBMENU_MARK {
-                        row = row.child(
-                            svg()
-                                .flex_none()
-                                .ml(px(menu_model::SHORTCUT_GAP))
-                                .mr(px(menu_model::CHEVRON_RIGHT
-                                    - menu_model::KEY_RIGHT
-                                    - (menu_model::MENU_ICON_BOX - CHEVRON_GLYPH_RIGHT)))
-                                .w(px(menu_model::MENU_ICON_BOX))
-                                .h(px(menu_model::MENU_ICON_BOX))
-                                .path(menu_icon_path("chevron-right"))
-                                .text_color(rgba(foreground)),
-                        );
-                    } else if !item.shortcut.is_empty() {
-                        row = row.child(shortcut_keys(&item.shortcut, shortcut_color));
-                    }
-                    if enabled {
-                        row = row
-                            .cursor_pointer()
-                            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                                if *hovered {
-                                    let mut changed = this.selected_item != item_index;
-                                    this.selected_item = item_index;
-                                    if this.recent_submenu_open != opens_recents {
-                                        this.recent_submenu_open = opens_recents;
-                                        this.recent_selected_item = 0;
-                                        changed = true;
-                                    }
-                                    if changed {
-                                        cx.notify();
-                                    }
-                                } else if this.selected_item == item_index
-                                    && !this.recent_submenu_open
-                                {
-                                    // Leaving the menu clears the highlight.
-                                    this.selected_item = NO_ITEM;
-                                    cx.notify();
-                                }
-                            }))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                cx.stop_propagation();
-                                if item_app_id == SYSTEM_MENU_ID && action == "system::recents" {
-                                    this.recent_submenu_open = true;
-                                    this.recent_selected_item = 0;
-                                    cx.notify();
-                                } else if item_app_id == SYSTEM_MENU_ID
-                                    && system_action_needs_confirmation(&action)
-                                {
-                                    this.pending_system_action = Some(action.clone());
-                                    cx.notify();
-                                } else {
-                                    this.close_menu(window, cx);
-                                    dispatch_menu_action(
-                                        item_app_id.clone(),
-                                        action.clone(),
-                                        focused_window_id,
-                                        cx,
-                                    );
-                                }
-                            }));
-                    }
-                    panel = panel.child(row);
-                }
+                let panel = self.menu_rows(
+                    panel,
+                    &menu.items,
+                    0,
+                    menu_index,
+                    &app_id,
+                    focused_window_id,
+                    &palette,
+                    cx,
+                );
                 let mut surfaces = div()
                     .id(format!("menu-surfaces-{}-{menu_index}", self.display_id))
                     .child(panel);
+                for submenu in &submenu_panels {
+                    let panel = div()
+                        .id(format!(
+                            "app-submenu-panel-{}-{menu_index}-{}",
+                            self.display_id, submenu.depth
+                        ))
+                        .role(Role::Menu)
+                        .absolute()
+                        .top(px(submenu.top))
+                        .left(px(submenu.left))
+                        .w(px(submenu.width))
+                        .pt(px(menu_model::APP_MENU_PADDING - EDGE))
+                        .pb(px(menu_model::APP_MENU_PADDING - EDGE))
+                        .rounded(px(menu_model::APP_MENU_RADIUS))
+                        .bg(rgba(tokens::transparent()))
+                        .text_size(px(MENU_TEXT_SIZE))
+                        .text_color(rgba(palette.text))
+                        .border(px(EDGE))
+                        .border_color(rgba(palette.edge))
+                        .shadow(menu_shadows(palette.hairline))
+                        .occlude();
+                    surfaces = surfaces.child(self.menu_rows(
+                        panel,
+                        &submenu.items,
+                        submenu.depth,
+                        menu_index,
+                        &app_id,
+                        focused_window_id,
+                        &palette,
+                        cx,
+                    ));
+                }
                 if self.recent_submenu_open && menu_index == 0 {
                     let submenu_top = recent_submenu_top?;
                     let selected = self.recent_selected_item;
@@ -2343,13 +2946,25 @@ mod linux_wayland {
     /// The widest item's title and shortcut plus the measured columns,
     /// never narrower than the macOS minimum menu width.
     fn menu_panel_width(menu: &rmac_app_menu::Menu, window: &Window) -> f32 {
-        let (_, column) = menu_icon_column(menu);
-        app_menu_width(
-            &menu.items,
-            column,
-            tokens::current().metrics.menu_min_width,
-            |label| rmac_shell_ui::text_width(window, label, FontWeight::NORMAL),
-        )
+        items_panel_width(&menu.items, window)
+    }
+
+    /// Finder's Help menu, with its search field, is 360 wide.
+    const HELP_MENU_WIDTH: f32 = 360.0;
+
+    fn items_panel_width(items: &[rmac_app_menu::Item], window: &Window) -> f32 {
+        let (_, column) = items_icon_column(items);
+        let min_width = if items
+            .first()
+            .is_some_and(|item| item.action == menu_model::HELP_SEARCH_ACTION)
+        {
+            HELP_MENU_WIDTH
+        } else {
+            tokens::current().metrics.menu_min_width
+        };
+        app_menu_width(items, column, min_width, |label| {
+            rmac_shell_ui::text_width(window, label, FontWeight::NORMAL)
+        })
     }
 
     /// Left edge of a menu, from the same slot geometry the bar is laid out
@@ -2384,9 +2999,8 @@ mod linux_wayland {
     }
 
     /// The glyph each item shows and the text column they set.
-    fn menu_icon_column(menu: &rmac_app_menu::Menu) -> (Vec<Option<&'static str>>, IconColumn) {
-        let icons = menu
-            .items
+    fn items_icon_column(items: &[rmac_app_menu::Item]) -> (Vec<Option<&'static str>>, IconColumn) {
+        let icons = items
             .iter()
             .map(|item| menu_item_icon(&item.action, &item.label))
             .collect::<Vec<_>>();
@@ -2512,86 +3126,28 @@ mod linux_wayland {
         rmac_app_menu::Menu {
             label: "System".into(),
             items: vec![
-                Item {
-                    label: "About This Lulo OS".into(),
-                    action: "system::about".into(),
-                    shortcut: String::new(),
-                    enabled: true,
-                    separator_before: false,
-                },
-                Item {
-                    label: "System Settings…".into(),
-                    action: "system::settings".into(),
-                    shortcut: String::new(),
-                    enabled: true,
-                    separator_before: true,
-                },
-                Item {
-                    label: "Software Center".into(),
-                    action: "system::software-center".into(),
-                    shortcut: String::new(),
-                    enabled: true,
-                    separator_before: false,
-                },
-                Item {
-                    label: "Recent Items".into(),
-                    action: "system::recents".into(),
-                    shortcut: "›".into(),
-                    enabled: true,
-                    separator_before: true,
-                },
-                Item {
-                    label: "Force Quit…".into(),
-                    action: "system::force-quit".into(),
-                    shortcut: "⌥⌘⎋".into(),
-                    enabled: true,
-                    separator_before: true,
-                },
-                Item {
-                    label: "Sleep".into(),
-                    action: "system::sleep".into(),
-                    shortcut: String::new(),
-                    enabled: true,
-                    separator_before: true,
-                },
-                Item {
-                    label: "Restart…".into(),
-                    action: "system::restart".into(),
-                    shortcut: String::new(),
-                    enabled: true,
-                    separator_before: false,
-                },
-                Item {
-                    label: "Shut Down…".into(),
-                    action: "system::shutdown".into(),
-                    shortcut: String::new(),
-                    enabled: true,
-                    separator_before: false,
-                },
-                Item {
-                    label: "Lock Screen".into(),
-                    action: "system::lock".into(),
-                    shortcut: "⌃⌘Q".into(),
-                    enabled: true,
-                    separator_before: true,
-                },
-                Item {
-                    label: logout_label,
-                    action: "system::logout".into(),
-                    // The Mac shows ⇧⌘Q here. Nothing binds it yet: the
-                    // confirmation lives in this menu, which no key can
-                    // open (the ⌃F2 gap), so no hint is shown rather than
-                    // one that does nothing.
-                    shortcut: String::new(),
-                    enabled: true,
-                    separator_before: false,
-                },
+                Item::new("About This Lulo OS", "system::about", ""),
+                Item::new("System Settings…", "system::settings", "").separated(),
+                Item::new("Software Center", "system::software-center", ""),
+                Item::new("Recent Items", "system::recents", menu_model::SUBMENU_MARK).separated(),
+                Item::new("Force Quit…", "system::force-quit", "⌥⌘⎋").separated(),
+                Item::new("Sleep", "system::sleep", "").separated(),
+                Item::new("Restart…", "system::restart", ""),
+                Item::new("Shut Down…", "system::shutdown", ""),
+                Item::new("Lock Screen", "system::lock", "⌃⌘Q").separated(),
+                // The Mac shows ⇧⌘Q here. Nothing binds it yet: the
+                // confirmation lives in this menu, which no key can open
+                // (the ⌃F2 gap), so no hint is shown rather than one that
+                // does nothing.
+                Item::new(logout_label, "system::logout", ""),
             ],
         }
     }
 
     /// The bold-name app menu every application gets, exported or not (§3.3).
     /// Hide and Hide Others park the app's windows; Show All unparks them.
+    /// An rmac app's About opens its About panel; the app's own items
+    /// (Settings…, Files' Empty Trash…) follow it.
     fn app_menu(
         app_name: &str,
         app_id: Option<&str>,
@@ -2601,41 +3157,39 @@ mod linux_wayland {
         use rmac_app_menu::Item;
 
         let known = app_id.is_some();
-        let row =
-            |label: String, action: &str, shortcut: &str, enabled: bool, separator_before| Item {
-                label,
-                action: action.into(),
-                shortcut: shortcut.into(),
-                enabled,
-                separator_before,
-            };
-        let mut items = vec![
-            // No app ships About metadata yet, so the row is present but
-            // disabled rather than inventing facts (§FD-8).
-            row(format!("About {app_name}"), "app::about", "", false, false),
-        ];
+        let mut application_items = application_items;
+        let about = application_items
+            .iter()
+            .position(|item| item.action == rmac_app_menu::ABOUT_ACTION)
+            .map(|index| application_items.remove(index));
+        let mut items = vec![match about {
+            Some(_) => Item::new(format!("About {app_name}"), rmac_app_menu::ABOUT_ACTION, ""),
+            // An app that serves no About panel (a third-party app, or an
+            // rmac app from before About panels) keeps the row, greyed out,
+            // rather than inventing facts about it (§FD-8).
+            None => Item::new(format!("About {app_name}"), "app::about", "").enabled(false),
+        }];
+        if let Some(first) = application_items.first_mut() {
+            first.separator_before = true;
+        }
         items.extend(application_items);
         items.extend([
-            row("Services".into(), "app::services", "›", false, true),
-            row(format!("Hide {app_name}"), "app::hide", "⌘H", known, true),
-            row(
-                "Hide Others".into(),
-                "app::hide-others",
-                "⌥⌘H",
-                known,
-                false,
-            ),
-            row("Show All".into(), "app::show-all", "", any_parked, false),
+            Item::new("Services", "app::services", menu_model::SUBMENU_MARK)
+                .enabled(false)
+                .separated(),
+            Item::new(format!("Hide {app_name}"), "app::hide", "⌘H")
+                .enabled(known)
+                .separated(),
+            Item::new("Hide Others", "app::hide-others", "⌥⌘H").enabled(known),
+            Item::new("Show All", "app::show-all", "").enabled(any_parked),
         ]);
         // Files, like Finder, can never be quit (§2.9).
         if app_id != Some(rmac_apps::identity::FILES) {
-            items.push(row(
-                format!("Quit {app_name}"),
-                "app::quit",
-                "⌘Q",
-                known,
-                true,
-            ));
+            items.push(
+                Item::new(format!("Quit {app_name}"), "app::quit", "⌘Q")
+                    .enabled(known)
+                    .separated(),
+            );
         }
         rmac_app_menu::Menu {
             label: app_name.to_owned(),
@@ -2791,6 +3345,13 @@ mod linux_wayland {
             dispatch_app_menu_action(app_id, action, cx);
             return;
         }
+        if let Some(command) = menu_model::WindowCommand::parse(&action) {
+            dispatch_window_command(app_id, command, window_id, cx);
+            return;
+        }
+        if action.starts_with("help::") {
+            return;
+        }
         static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(1);
         cx.background_executor()
             .spawn(async move {
@@ -2804,11 +3365,135 @@ mod linux_wayland {
                         eprintln!("could not return focus to the application menu owner");
                     }
                 }
-                if let Err(error) = rmac_app_menu::activate(&app_id, &action).await {
-                    eprintln!("could not activate {app_id} menu command: {error}");
+                match rmac_app_menu::activate(&app_id, &action).await {
+                    Ok(()) => {}
+                    // The desktop's menus are Files' own, shown before Files
+                    // runs: start it, as choosing a Finder command would
+                    // find Finder running, then run the command.
+                    Err(rmac_app_menu::Error::NotPublished)
+                        if app_id == rmac_apps::identity::FILES =>
+                    {
+                        if let Err(error) = start_files_then(&action).await {
+                            eprintln!("could not start Files for {action}: {error}");
+                        }
+                    }
+                    Err(error) => eprintln!("could not activate {app_id} menu command: {error}"),
                 }
             })
             .detach();
+    }
+
+    /// How long a desktop menu command waits for Files to start.
+    const FILES_START_TIMEOUT: Duration = Duration::from_secs(10);
+
+    /// Start Files and, once its menu is on the bus, run `action` in it.
+    /// Its new window is what File ▸ New Finder Window asks for, so that
+    /// command stops there.
+    async fn start_files_then(action: &str) -> Result<(), String> {
+        use futures_util::future::{select, Either};
+
+        let mut owners = rmac_app_menu::watch_menu_owners()
+            .await
+            .map_err(|error| error.to_string())?;
+        let mut child = Command::new("/usr/bin/rmac-files")
+            .stdin(Stdio::null())
+            .spawn()
+            .map_err(|error| format!("could not run /usr/bin/rmac-files: {error}"))?;
+        // Reap Files whenever it exits, so it never lingers as a zombie.
+        std::thread::spawn(move || match child.wait() {
+            Ok(status) if !status.success() => eprintln!("Files exited: {status}"),
+            Ok(_) => {}
+            Err(error) => eprintln!("could not wait for Files: {error}"),
+        });
+        if action == "finder::NewWindow" {
+            return Ok(());
+        }
+        let published = async {
+            while let Some((app_id, published)) = owners.next().await {
+                if app_id == rmac_apps::identity::FILES && published {
+                    return true;
+                }
+            }
+            false
+        };
+        let timeout = async_io::Timer::after(FILES_START_TIMEOUT);
+        match select(std::pin::pin!(published), std::pin::pin!(timeout)).await {
+            Either::Left((true, _)) => rmac_app_menu::activate(rmac_apps::identity::FILES, action)
+                .await
+                .map_err(|error| error.to_string()),
+            Either::Left((false, _)) => Err("the session bus closed".into()),
+            Either::Right(_) => Err("Files did not publish its menu in time".into()),
+        }
+    }
+
+    /// The standard Window menu's commands, run through the compositor on
+    /// the window the menu was opened over, so they work for every app.
+    fn dispatch_window_command(
+        app_id: String,
+        command: menu_model::WindowCommand,
+        window_id: Option<rmac_compositor::WindowId>,
+        cx: &mut App,
+    ) {
+        use menu_model::WindowCommand;
+        use rmac_compositor::Action;
+
+        cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
+            let snapshot = match rmac_compositor_niri::snapshot().await {
+                Ok(snapshot) => snapshot,
+                Err(error) => {
+                    eprintln!("could not read windows for the Window menu: {error:?}");
+                    return;
+                }
+            };
+            let mut store = rmac_compositor::ParkingStore::load_default();
+            store.prune(&snapshot);
+            let mut store_changed = false;
+            let actions = match (command, window_id) {
+                (WindowCommand::Focus(window), _) => {
+                    if store.entries().iter().any(|entry| entry.window == window) {
+                        store_changed = true;
+                        store.restore_actions(&[window])
+                    } else {
+                        vec![Action::FocusWindow { window }]
+                    }
+                }
+                (WindowCommand::BringAllToFront, focused) => {
+                    // Raise every visible window of the app, the one the
+                    // menu was opened over last so it stays in front.
+                    let mut windows = rmac_compositor::application_windows(&snapshot, &app_id);
+                    windows.sort_by_key(|window| Some(*window) == focused);
+                    windows
+                        .into_iter()
+                        .map(|window| Action::FocusWindow { window })
+                        .collect()
+                }
+                (_, None) => {
+                    eprintln!("no {app_id} window to act on from the Window menu");
+                    Vec::new()
+                }
+                (WindowCommand::Minimise, Some(window)) => {
+                    store.record_from(&snapshot, &[window]);
+                    store_changed = true;
+                    vec![Action::MinimizeWindow { window }]
+                }
+                (WindowCommand::Zoom, Some(window)) => vec![Action::FillWindow { window }],
+                (WindowCommand::Centre, Some(window)) => vec![Action::CenterWindow { window }],
+                (WindowCommand::Tile(region), Some(window)) => {
+                    vec![Action::TileWindow { window, region }]
+                }
+            };
+            for action in &actions {
+                if let Err(error) = rmac_compositor_niri::execute_action(action).await {
+                    eprintln!("could not run the Window menu command: {error:?}");
+                }
+            }
+            if store_changed {
+                if let Err(error) = store.save_default() {
+                    eprintln!("could not save the parking set: {error}");
+                }
+            }
+        })
+        .detach();
     }
 
     /// Hide/Hide Others/Show All use the parking model (§2.2): niri has no

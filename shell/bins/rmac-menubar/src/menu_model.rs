@@ -49,9 +49,39 @@ pub const SHORTCUT_GAP: f32 = 24.0;
 pub const SUBMENU_MARK: &str = "›";
 const MODIFIERS: [char; 5] = ['⌃', '⌥', '⇧', '⌘', '🌐'];
 
+/// A checkmark column adds 7.5 to the text and icon columns; the 9 × 8.5
+/// checkmark is centred 14 from the panel edge (design-lab/menus.html).
+pub const CHECK_COLUMN: f32 = 7.5;
+pub const CHECK_CENTRE: f32 = 14.0;
+pub const CHECK_WIDTH: f32 = 9.0;
+/// The Help menu's search row: 40 tall, a 25 pt capsule 9.5 in from the
+/// top and sides (design-lab/menus.html).
+pub const HELP_SEARCH_ROW_HEIGHT: f32 = 40.0;
+pub const HELP_SEARCH_CAPSULE_HEIGHT: f32 = 25.0;
+pub const HELP_SEARCH_INSET: f32 = 9.5;
+/// The synthesized Help menu's search field row. It is never activated.
+pub const HELP_SEARCH_ACTION: &str = "help::search";
+/// A submenu overlaps its parent by this much (as Recent Items does).
+pub const SUBMENU_OVERLAP: f32 = 4.0;
+/// How long the pointer rests on a submenu row before the submenu opens,
+/// and on another row before an open one closes. S: not yet measured on
+/// the Mac (FEEL_SPEC.md lists the submenu capture as still to do); AppKit
+/// waits a moment so a pointer passing over rows does not flash menus.
+pub const SUBMENU_HOVER_DELAY: Duration = Duration::from_millis(100);
+
+fn row_height(item: &Item) -> f32 {
+    if item.action == HELP_SEARCH_ACTION {
+        HELP_SEARCH_ROW_HEIGHT
+    } else {
+        APP_ROW_HEIGHT
+    }
+}
+
 pub fn app_menu_height(items: &[Item]) -> f32 {
     let separators = items.iter().filter(|item| item.separator_before).count() as f32;
-    2.0 * APP_MENU_PADDING + APP_ROW_HEIGHT * items.len() as f32 + APP_SEPARATOR_HEIGHT * separators
+    2.0 * APP_MENU_PADDING
+        + items.iter().map(row_height).sum::<f32>()
+        + APP_SEPARATOR_HEIGHT * separators
 }
 
 /// Top of item `index` measured from the panel's top edge.
@@ -61,7 +91,279 @@ pub fn app_menu_item_top(items: &[Item], index: usize) -> f32 {
         .take(index + 1)
         .filter(|item| item.separator_before)
         .count() as f32;
-    APP_MENU_PADDING + APP_ROW_HEIGHT * index as f32 + APP_SEPARATOR_HEIGHT * separators
+    APP_MENU_PADDING
+        + items.iter().take(index).map(row_height).sum::<f32>()
+        + APP_SEPARATOR_HEIGHT * separators
+}
+
+/// Whether a menu needs the checkmark column.
+pub fn has_checks(items: &[Item]) -> bool {
+    items
+        .iter()
+        .any(|item| item.checked != rmac_app_menu::CheckState::Off)
+}
+
+/// Whether a row opens a submenu: exported submenus carry their items,
+/// the system menu's Recent Items is marked with [`SUBMENU_MARK`].
+pub fn opens_submenu(item: &Item) -> bool {
+    item.is_submenu() || item.shortcut == SUBMENU_MARK
+}
+
+/// Where a submenu opens: beside its parent row, its first row level with
+/// the parent row, on the right unless that runs off the screen, and moved
+/// up rather than past `max_bottom`.
+pub fn submenu_origin(
+    parent_left: f32,
+    parent_width: f32,
+    parent_row_top: f32,
+    size: (f32, f32),
+    screen_width: f32,
+    max_bottom: f32,
+) -> (f32, f32) {
+    let (width, height) = size;
+    let right = parent_left + parent_width - SUBMENU_OVERLAP;
+    let left = if right + width > screen_width - 4.0 {
+        (parent_left - width + SUBMENU_OVERLAP).max(4.0)
+    } else {
+        right
+    };
+    let top = (parent_row_top - APP_MENU_PADDING).min(max_bottom - height);
+    (left, top.max(0.0))
+}
+
+/// The next enabled row after (or before) `from`, wrapping around, skipping
+/// the Help menu's search field. `None` when no row is enabled.
+pub fn next_enabled_row(items: &[Item], from: Option<usize>, forward: bool) -> Option<usize> {
+    let count = items.len();
+    if count == 0 {
+        return None;
+    }
+    let selectable =
+        |index: usize| items[index].enabled && items[index].action != HELP_SEARCH_ACTION;
+    let start = match (from, forward) {
+        (None, true) => count - 1,
+        (None, false) => 0,
+        (Some(index), _) => index.min(count - 1),
+    };
+    (1..=count)
+        .map(|step| {
+            if forward {
+                (start + step) % count
+            } else {
+                (start + count - step % count) % count
+            }
+        })
+        .find(|&index| selectable(index))
+}
+
+// ---- The standard Window and Help menus ----
+
+/// One of the focused app's windows, for the Window menu's list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MenuWindow {
+    pub id: rmac_compositor::WindowId,
+    pub title: String,
+    /// Minimised: parked on the hidden workspace.
+    pub parked: bool,
+}
+
+/// What a Window-menu row does. The menu bar runs these itself through the
+/// compositor, so every app, first-party or not, has them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WindowCommand {
+    Minimise,
+    Zoom,
+    Centre,
+    Tile(rmac_compositor::TileRegion),
+    BringAllToFront,
+    Focus(rmac_compositor::WindowId),
+}
+
+const WINDOW_ACTION_PREFIX: &str = "window::";
+
+impl WindowCommand {
+    pub fn action(self) -> String {
+        use rmac_compositor::TileRegion;
+        let name = match self {
+            Self::Minimise => "minimise",
+            Self::Zoom => "zoom",
+            Self::Centre => "centre",
+            Self::BringAllToFront => "bring-all-to-front",
+            Self::Tile(region) => match region {
+                TileRegion::Left => "tile.left",
+                TileRegion::Right => "tile.right",
+                TileRegion::Top => "tile.top",
+                TileRegion::Bottom => "tile.bottom",
+                TileRegion::TopLeft => "tile.top-left",
+                TileRegion::TopRight => "tile.top-right",
+                TileRegion::BottomLeft => "tile.bottom-left",
+                TileRegion::BottomRight => "tile.bottom-right",
+            },
+            Self::Focus(window) => return format!("{WINDOW_ACTION_PREFIX}focus.{}", window.0),
+        };
+        format!("{WINDOW_ACTION_PREFIX}{name}")
+    }
+
+    pub fn parse(action: &str) -> Option<Self> {
+        use rmac_compositor::TileRegion;
+        let name = action.strip_prefix(WINDOW_ACTION_PREFIX)?;
+        if let Some(id) = name.strip_prefix("focus.") {
+            return id
+                .parse()
+                .ok()
+                .map(|id| Self::Focus(rmac_compositor::WindowId(id)));
+        }
+        Some(match name {
+            "minimise" => Self::Minimise,
+            "zoom" => Self::Zoom,
+            "centre" => Self::Centre,
+            "bring-all-to-front" => Self::BringAllToFront,
+            "tile.left" => Self::Tile(TileRegion::Left),
+            "tile.right" => Self::Tile(TileRegion::Right),
+            "tile.top" => Self::Tile(TileRegion::Top),
+            "tile.bottom" => Self::Tile(TileRegion::Bottom),
+            "tile.top-left" => Self::Tile(TileRegion::TopLeft),
+            "tile.top-right" => Self::Tile(TileRegion::TopRight),
+            "tile.bottom-left" => Self::Tile(TileRegion::BottomLeft),
+            "tile.bottom-right" => Self::Tile(TileRegion::BottomRight),
+            _ => return None,
+        })
+    }
+}
+
+/// The Window menu every app gets, as on the Mac: the window commands, Move
+/// & Resize, the app's own Window items (Files' tabs), Bring All to Front
+/// and the app's windows with a check on the current one.
+///
+/// There is no Zoom toggle back to the user's size (niri cannot restore
+/// it), so Zoom fills the working area as the Mac's Fill does and Fill is
+/// not listed twice. Full-Screen Tile and Arrange need several windows in
+/// a floating layout niri does not keep, and are left out.
+pub fn window_menu(
+    windows: &[MenuWindow],
+    focused: Option<rmac_compositor::WindowId>,
+    app_items: Vec<Item>,
+    words: rmac_locale::FileVocabulary,
+) -> rmac_app_menu::Menu {
+    use rmac_compositor::TileRegion;
+    let has_focus = focused.is_some();
+    let command = |label: &str, command: WindowCommand, shortcut: &str| {
+        Item::new(label, command.action(), shortcut).enabled(has_focus)
+    };
+    let tile = |label: &str, region| command(label, WindowCommand::Tile(region), "");
+    let mut items = vec![
+        command(words.minimise(), WindowCommand::Minimise, "⌘M"),
+        command("Zoom", WindowCommand::Zoom, ""),
+        command(words.centre(), WindowCommand::Centre, ""),
+        Item::submenu(
+            "Move & Resize",
+            "window::move-and-resize",
+            vec![
+                tile("Left", TileRegion::Left),
+                tile("Right", TileRegion::Right),
+                tile("Top", TileRegion::Top),
+                tile("Bottom", TileRegion::Bottom),
+                tile("Top Left", TileRegion::TopLeft).separated(),
+                tile("Top Right", TileRegion::TopRight),
+                tile("Bottom Left", TileRegion::BottomLeft),
+                tile("Bottom Right", TileRegion::BottomRight),
+            ],
+        )
+        .enabled(has_focus)
+        .separated(),
+    ];
+    let mut app_items = app_items.into_iter();
+    if let Some(first) = app_items.next() {
+        items.push(first.separated());
+        items.extend(app_items);
+    }
+    items.push(
+        Item::new(
+            "Bring All to Front",
+            WindowCommand::BringAllToFront.action(),
+            "",
+        )
+        .enabled(!windows.is_empty())
+        .separated(),
+    );
+    for (index, window) in windows.iter().enumerate() {
+        let title = if window.title.trim().is_empty() {
+            "Untitled".to_owned()
+        } else {
+            shorten(&window.title, 60)
+        };
+        let row = Item::new(title, WindowCommand::Focus(window.id).action(), "")
+            .checked(focused == Some(window.id));
+        items.push(if index == 0 { row.separated() } else { row });
+    }
+    rmac_app_menu::Menu {
+        label: rmac_app_menu::WINDOW_MENU.to_owned(),
+        items,
+    }
+}
+
+fn shorten(text: &str, limit: usize) -> String {
+    let mut characters = text.chars();
+    let shortened = characters.by_ref().take(limit).collect::<String>();
+    if characters.next().is_some() {
+        format!("{shortened}…")
+    } else {
+        shortened
+    }
+}
+
+/// The Help menu every app gets: a search field that finds the app's menu
+/// commands by name (as the Mac's Help search does), then the app's own
+/// help items. Results name the menu each command lives in.
+pub fn help_menu(
+    query: &str,
+    app_menus: &[rmac_app_menu::Menu],
+    help_items: Vec<Item>,
+) -> rmac_app_menu::Menu {
+    const MAX_RESULTS: usize = 10;
+    let mut items = vec![Item::new(
+        if query.is_empty() { "Search" } else { query },
+        HELP_SEARCH_ACTION,
+        "",
+    )];
+    let needle = query.trim().to_lowercase();
+    if !needle.is_empty() {
+        let results = app_menus
+            .iter()
+            .flat_map(|menu| {
+                menu.leaves()
+                    .into_iter()
+                    .map(move |(path, item)| (menu.label.as_str(), path, item))
+            })
+            .filter(|(_, _, item)| item.enabled && item.label.to_lowercase().contains(&needle))
+            .take(MAX_RESULTS)
+            .map(|(menu, path, item)| {
+                let trail = std::iter::once(menu)
+                    .chain(path)
+                    .chain(std::iter::once(item.label.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(" ▸ ");
+                Item {
+                    label: shorten(&trail, 60),
+                    ..item.clone()
+                }
+            })
+            .collect::<Vec<_>>();
+        if results.is_empty() {
+            items.push(Item::new("No Results", "help::no-results", "").enabled(false));
+        } else {
+            items.extend(results);
+        }
+    }
+    let mut help_items = help_items.into_iter();
+    if let Some(first) = help_items.next() {
+        items.push(first.separated());
+        items.extend(help_items);
+    }
+    rmac_app_menu::Menu {
+        label: "Help".to_owned(),
+        items,
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,17 +439,18 @@ pub fn app_menu_width(
     min_width: f32,
     label_width: impl Fn(&str) -> f32,
 ) -> f32 {
+    let checks = if has_checks(items) { CHECK_COLUMN } else { 0.0 };
     let content = items
         .iter()
         .map(|item| {
-            let trailing = if item.shortcut == SUBMENU_MARK {
+            let trailing = if opens_submenu(item) {
                 SHORTCUT_GAP + CHEVRON_WIDTH + CHEVRON_RIGHT
             } else if item.shortcut.is_empty() {
                 APP_TEXT_INSET
             } else {
                 SHORTCUT_GAP + shortcut_width(&item.shortcut) + KEY_RIGHT
             };
-            column.text_x() + label_width(&item.label) + trailing
+            column.text_x() + checks + label_width(&item.label) + trailing
         })
         .fold(0.0, f32::max);
     content.ceil().max(min_width)
@@ -167,15 +470,24 @@ pub fn menu_item_icon(action: &str, label: &str) -> Option<&'static str> {
         "system::shutdown" => Some("power"),
         "system::lock" => Some("lock"),
         "system::logout" => Some("person"),
-        "app::about" => Some("info"),
+        "app::about" | rmac_app_menu::ABOUT_ACTION => Some("info"),
         "app::services" => Some("services"),
         "app::hide" => Some("hide"),
         "app::hide-others" => Some("hide-others"),
         "app::show-all" => Some("show-all"),
         _ => None,
     };
-    if by_action.is_some() || action.starts_with("system::") || action.starts_with("app::") {
-        return by_action;
+    if by_action.is_some()
+        || action.starts_with("system::")
+        || action.starts_with("app::")
+        || action.starts_with("window::")
+        || action.starts_with("help::")
+    {
+        return match WindowCommand::parse(action) {
+            Some(WindowCommand::Minimise) => Some("minimize"),
+            Some(WindowCommand::Zoom) => Some("zoom"),
+            _ => by_action,
+        };
     }
     let title = label
         .split(" “")
@@ -946,12 +1258,177 @@ mod tests {
 
     fn item(label: &str, shortcut: &str, separator_before: bool) -> Item {
         Item {
-            label: label.into(),
-            action: format!("test::{label}"),
-            shortcut: shortcut.into(),
-            enabled: true,
             separator_before,
+            ..Item::new(label, format!("test::{label}"), shortcut)
         }
+    }
+
+    #[test]
+    fn a_checkmark_column_widens_the_menu_by_its_measured_step() {
+        let plain = vec![item("as List", "", false)];
+        let checked = vec![item("as List", "", false).checked(true)];
+        let width = |items: &[Item]| app_menu_width(items, IconColumn::None, 0.0, |_| 40.0);
+        assert_eq!(width(&plain), (2.0 * APP_TEXT_INSET + 40.0).ceil());
+        assert_eq!(
+            width(&checked),
+            (2.0 * APP_TEXT_INSET + 40.0 + CHECK_COLUMN).ceil()
+        );
+        assert!(has_checks(&checked) && !has_checks(&plain));
+    }
+
+    #[test]
+    fn submenu_rows_draw_a_chevron_instead_of_a_shortcut() {
+        let parent = Item::submenu("Find", "test::FindMenu", vec![item("Find…", "⌘F", false)]);
+        assert!(opens_submenu(&parent));
+        assert!(opens_submenu(&item("Recent Items", SUBMENU_MARK, false)));
+        let width = app_menu_width(&[parent], IconColumn::None, 0.0, |_| 30.0);
+        assert_eq!(
+            width,
+            (APP_TEXT_INSET + 30.0 + SHORTCUT_GAP + CHEVRON_WIDTH + CHEVRON_RIGHT).ceil()
+        );
+    }
+
+    #[test]
+    fn submenus_open_beside_their_row_and_flip_at_the_screen_edge() {
+        // Parent at x 100, 200 wide, row 60 down: the submenu's first row
+        // lines up with it.
+        assert_eq!(
+            submenu_origin(100.0, 200.0, 60.0, (180.0, 100.0), 1536.0, 680.0),
+            (296.0, 55.0)
+        );
+        // Too close to the right edge: open on the left instead.
+        assert_eq!(
+            submenu_origin(1300.0, 200.0, 60.0, (180.0, 100.0), 1536.0, 680.0),
+            (1124.0, 55.0)
+        );
+        // Never below the surface.
+        assert_eq!(
+            submenu_origin(100.0, 200.0, 640.0, (180.0, 100.0), 1536.0, 680.0).1,
+            580.0
+        );
+    }
+
+    #[test]
+    fn keyboard_selection_skips_disabled_rows_and_wraps() {
+        let items = vec![
+            item("A", "", false),
+            item("B", "", false).enabled(false),
+            item("C", "", false),
+        ];
+        assert_eq!(next_enabled_row(&items, None, true), Some(0));
+        assert_eq!(next_enabled_row(&items, Some(0), true), Some(2));
+        assert_eq!(next_enabled_row(&items, Some(2), true), Some(0));
+        assert_eq!(next_enabled_row(&items, None, false), Some(2));
+        assert_eq!(next_enabled_row(&items, Some(2), false), Some(0));
+        let none = vec![item("A", "", false).enabled(false)];
+        assert_eq!(next_enabled_row(&none, None, true), None);
+    }
+
+    fn window(id: u64, title: &str) -> MenuWindow {
+        MenuWindow {
+            id: rmac_compositor::WindowId(id),
+            title: title.into(),
+            parked: false,
+        }
+    }
+
+    #[test]
+    fn every_app_gets_a_window_menu_listing_its_windows() {
+        let words = rmac_locale::FileVocabulary::for_locale("en_GB.UTF-8");
+        let tabs = vec![Item::new("Show Next Tab", "finder::NextTab", "⌃⇥")];
+        let menu = window_menu(
+            &[window(7, "Documents"), window(9, "")],
+            Some(rmac_compositor::WindowId(9)),
+            tabs,
+            words,
+        );
+        let labels = menu
+            .items
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            labels,
+            [
+                "Minimise",
+                "Zoom",
+                "Centre",
+                "Move & Resize",
+                "Show Next Tab",
+                "Bring All to Front",
+                "Documents",
+                "Untitled",
+            ]
+        );
+        assert_eq!(menu.items[0].shortcut, "⌘M");
+        assert!(menu.items[3].is_submenu());
+        assert!(menu.items[4].separator_before);
+        assert_eq!(menu.items[7].checked, rmac_app_menu::CheckState::On);
+        assert_eq!(menu.items[6].checked, rmac_app_menu::CheckState::Off);
+        assert_eq!(
+            WindowCommand::parse(&menu.items[6].action),
+            Some(WindowCommand::Focus(rmac_compositor::WindowId(7)))
+        );
+        assert!(rmac_app_menu::validate_menus(std::slice::from_ref(&menu)).is_ok());
+
+        // With no window focused, the window commands are greyed out.
+        let idle = window_menu(&[], None, Vec::new(), words);
+        assert!(!idle.items[0].enabled);
+        assert!(!idle.items.last().unwrap().enabled);
+    }
+
+    #[test]
+    fn window_actions_round_trip() {
+        use rmac_compositor::TileRegion;
+        for command in [
+            WindowCommand::Minimise,
+            WindowCommand::Zoom,
+            WindowCommand::Centre,
+            WindowCommand::BringAllToFront,
+            WindowCommand::Tile(TileRegion::BottomRight),
+            WindowCommand::Focus(rmac_compositor::WindowId(42)),
+        ] {
+            assert_eq!(WindowCommand::parse(&command.action()), Some(command));
+        }
+        assert_eq!(WindowCommand::parse("window::focus.x"), None);
+        assert_eq!(WindowCommand::parse("finder::NextTab"), None);
+    }
+
+    #[test]
+    fn help_search_finds_commands_in_every_menu() {
+        let edit = rmac_app_menu::Menu {
+            label: "Edit".into(),
+            items: vec![
+                item("Copy", "⌘C", false),
+                Item::submenu(
+                    "Find",
+                    "test::FindMenu",
+                    vec![
+                        item("Find Next", "⌘G", false),
+                        item("Find Previous", "", false),
+                    ],
+                ),
+            ],
+        };
+        let help = help_menu("find n", &[edit.clone()], Vec::new());
+        assert_eq!(help.items[0].action, HELP_SEARCH_ACTION);
+        assert_eq!(help.items[0].label, "find n");
+        assert_eq!(help.items.len(), 2);
+        assert_eq!(help.items[1].label, "Edit ▸ Find ▸ Find Next");
+        assert_eq!(help.items[1].action, "test::Find Next");
+
+        let empty = help_menu("", &[edit.clone()], vec![item("Files Help", "", false)]);
+        assert_eq!(empty.items[0].label, "Search");
+        assert_eq!(empty.items[1].label, "Files Help");
+        assert!(empty.items[1].separator_before);
+
+        let none = help_menu("zzz", &[edit], Vec::new());
+        assert!(!none.items[1].enabled);
+        // The search row is taller.
+        assert_eq!(
+            app_menu_item_top(&none.items, 1),
+            APP_MENU_PADDING + HELP_SEARCH_ROW_HEIGHT
+        );
     }
 
     /// The Apple menu's shape: 10 rows, 5 separators — 295 × 305 on the Mac.

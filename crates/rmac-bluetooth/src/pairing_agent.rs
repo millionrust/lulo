@@ -9,6 +9,8 @@ use zeroize::Zeroize as _;
 #[cfg(not(target_os = "macos"))]
 use zbus::blocking::{connection::Builder, Connection, Proxy};
 #[cfg(not(target_os = "macos"))]
+use zbus::message::Header;
+#[cfg(not(target_os = "macos"))]
 use zbus::zvariant::OwnedObjectPath;
 
 #[cfg(not(target_os = "macos"))]
@@ -414,12 +416,35 @@ impl From<RequestFailure> for PairingAgentError {
 struct PairingAgent {
     device: OwnedObjectPath,
     session: PairingSession,
+    /// BlueZ's unique bus name when the agent registered; only it may call.
+    service_owner: String,
 }
 
 #[cfg(not(target_os = "macos"))]
 impl PairingAgent {
-    fn new(device: OwnedObjectPath, session: PairingSession) -> Self {
-        Self { device, session }
+    fn new(device: OwnedObjectPath, session: PairingSession, service_owner: String) -> Self {
+        Self {
+            device,
+            session,
+            service_owner,
+        }
+    }
+
+    fn from_service(&self, header: &Header<'_>) -> bool {
+        caller_is_service(
+            header.sender().map(|name| name.as_str()),
+            &self.service_owner,
+        )
+    }
+
+    fn check_caller(&self, header: &Header<'_>) -> Result<(), PairingAgentError> {
+        if self.from_service(header) {
+            Ok(())
+        } else {
+            Err(PairingAgentError::Rejected(
+                "pairing requests are accepted only from BlueZ".into(),
+            ))
+        }
     }
 
     fn check_device(&self, device: &OwnedObjectPath) -> Result<(), PairingAgentError> {
@@ -436,11 +461,18 @@ impl PairingAgent {
 #[cfg(not(target_os = "macos"))]
 #[zbus::interface(name = "org.bluez.Agent1")]
 impl PairingAgent {
-    fn release(&self) {
-        self.session.cancel();
+    fn release(&self, #[zbus(header)] header: Header<'_>) {
+        if self.from_service(&header) {
+            self.session.cancel();
+        }
     }
 
-    fn request_pin_code(&self, device: OwnedObjectPath) -> Result<String, PairingAgentError> {
+    fn request_pin_code(
+        &self,
+        device: OwnedObjectPath,
+        #[zbus(header)] header: Header<'_>,
+    ) -> Result<String, PairingAgentError> {
+        self.check_caller(&header)?;
         self.check_device(&device)?;
         match self
             .session
@@ -457,14 +489,21 @@ impl PairingAgent {
         &self,
         device: OwnedObjectPath,
         pin_code: String,
+        #[zbus(header)] header: Header<'_>,
     ) -> Result<(), PairingAgentError> {
+        self.check_caller(&header)?;
         self.check_device(&device)?;
         self.session
             .display(PairingEvent::DisplayPinCode { pin_code })?;
         Ok(())
     }
 
-    fn request_passkey(&self, device: OwnedObjectPath) -> Result<u32, PairingAgentError> {
+    fn request_passkey(
+        &self,
+        device: OwnedObjectPath,
+        #[zbus(header)] header: Header<'_>,
+    ) -> Result<u32, PairingAgentError> {
+        self.check_caller(&header)?;
         self.check_device(&device)?;
         match self
             .session
@@ -482,7 +521,9 @@ impl PairingAgent {
         device: OwnedObjectPath,
         passkey: u32,
         entered: u16,
+        #[zbus(header)] header: Header<'_>,
     ) -> Result<(), PairingAgentError> {
+        self.check_caller(&header)?;
         self.check_device(&device)?;
         self.session
             .display(PairingEvent::DisplayPasskey { passkey, entered })?;
@@ -493,7 +534,9 @@ impl PairingAgent {
         &self,
         device: OwnedObjectPath,
         passkey: u32,
+        #[zbus(header)] header: Header<'_>,
     ) -> Result<(), PairingAgentError> {
+        self.check_caller(&header)?;
         self.check_device(&device)?;
         self.session.request(
             ExpectedResponse::Confirmation,
@@ -502,7 +545,12 @@ impl PairingAgent {
         Ok(())
     }
 
-    fn request_authorization(&self, device: OwnedObjectPath) -> Result<(), PairingAgentError> {
+    fn request_authorization(
+        &self,
+        device: OwnedObjectPath,
+        #[zbus(header)] header: Header<'_>,
+    ) -> Result<(), PairingAgentError> {
+        self.check_caller(&header)?;
         self.check_device(&device)?;
         self.session.request(
             ExpectedResponse::Confirmation,
@@ -515,7 +563,9 @@ impl PairingAgent {
         &self,
         device: OwnedObjectPath,
         uuid: String,
+        #[zbus(header)] header: Header<'_>,
     ) -> Result<(), PairingAgentError> {
+        self.check_caller(&header)?;
         self.check_device(&device)?;
         self.session.request(
             ExpectedResponse::Confirmation,
@@ -524,8 +574,10 @@ impl PairingAgent {
         Ok(())
     }
 
-    fn cancel(&self) {
-        self.session.agent_request_canceled();
+    fn cancel(&self, #[zbus(header)] header: Header<'_>) {
+        if self.from_service(&header) {
+            self.session.agent_request_canceled();
+        }
     }
 }
 
@@ -537,9 +589,13 @@ pub(super) struct RegisteredPairingAgent {
 #[cfg(not(target_os = "macos"))]
 impl RegisteredPairingAgent {
     pub(super) fn register(device: OwnedObjectPath, session: PairingSession) -> zbus::Result<Self> {
-        let connection = Builder::system()?
-            .serve_at(AGENT_PATH, PairingAgent::new(device, session))?
-            .build()?;
+        let connection = Builder::system()?.build()?;
+        let owner = zbus::blocking::fdo::DBusProxy::new(&connection)?
+            .get_name_owner(SERVICE.try_into()?)?
+            .to_string();
+        connection
+            .object_server()
+            .at(AGENT_PATH, PairingAgent::new(device, session, owner))?;
         let agent_path = OwnedObjectPath::try_from(AGENT_PATH)?;
         agent_manager(&connection)?
             .call::<_, _, ()>("RegisterAgent", &(agent_path, "KeyboardDisplay"))?;
@@ -573,9 +629,24 @@ fn agent_manager(connection: &Connection) -> zbus::Result<Proxy<'_>> {
     )
 }
 
+/// Whether a call came from the service's unique name. Stock system-bus
+/// policy lets only root send these, but a permissive policy must not let
+/// another user show fake pairing prompts or answer them.
+fn caller_is_service(sender: Option<&str>, owner: &str) -> bool {
+    !owner.is_empty() && sender == Some(owner)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_bluez_s_unique_name_is_a_valid_caller() {
+        assert!(caller_is_service(Some(":1.3"), ":1.3"));
+        assert!(!caller_is_service(Some(":1.4"), ":1.3"));
+        assert!(!caller_is_service(None, ":1.3"));
+        assert!(!caller_is_service(Some(":1.3"), ""));
+    }
 
     #[test]
     fn pin_codes_are_bounded_ascii_and_redacted() {

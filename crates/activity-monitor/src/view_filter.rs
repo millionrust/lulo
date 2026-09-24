@@ -7,8 +7,6 @@
 //! crate has no access to yet, and an honest gap beats a filter that always
 //! shows nothing (or everything) under that label.
 
-use sysinfo::ProcessStatus;
-
 /// Ubuntu's `/etc/login.defs` `UID_MIN` default: uids at or below this are
 /// system/service accounts rather than a human login. A heuristic, not a
 /// measurement — there is no portable "is this a system account" API.
@@ -67,6 +65,7 @@ impl ViewFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sysinfo::ProcessStatus;
 
     #[test]
     fn all_matches_everything() {

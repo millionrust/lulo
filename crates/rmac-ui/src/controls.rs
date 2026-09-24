@@ -19,7 +19,7 @@ use gpui_component::{
     slider::Slider as ComponentSlider,
     table::DataTable as ComponentTable,
     tooltip::Tooltip as ComponentTooltip,
-    Disableable as _, Icon, Selectable as _, Sizable as _, Size, StyledExt as _,
+    Disableable as _, Icon, Selectable, Sizable as _, Size, StyledExt as _,
 };
 
 pub use gpui_component::input::{InputEvent, InputState, Position, RopeExt, SelectAll};
@@ -372,7 +372,7 @@ struct PopUpMenuCache {
 /// `div()` so it can carry `Role::ComboBox`, `aria_expanded`, and the
 /// selected value as `aria_value` — the wrapped `Button`/`DropdownButton`
 /// this used to render through hardcode `Role::Button` with no exposed hook
-/// for any of those. `gpui_component::popover::Popover::trigger` folds
+/// for any of those. The pinned component library's `Popover::trigger` folds
 /// whether the popover is open into this element's own `Selectable::selected`
 /// flag, which is how `open` below reflects it.
 #[derive(IntoElement)]
@@ -386,7 +386,7 @@ struct PopUpButtonTrigger {
     style: StyleRefinement,
 }
 
-impl gpui_component::Selectable for PopUpButtonTrigger {
+impl Selectable for PopUpButtonTrigger {
     fn selected(mut self, selected: bool) -> Self {
         self.open = selected;
         self

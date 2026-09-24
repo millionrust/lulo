@@ -11,6 +11,7 @@ impl Server {
             history_limit,
             active: BTreeMap::new(),
             history: VecDeque::new(),
+            evictions: Vec::new(),
         }
     }
 
@@ -26,6 +27,7 @@ impl Server {
         now: Time,
         policy: DeliveryPolicy,
     ) -> Result<PostOutcome, ServerError> {
+        self.evictions.clear();
         request.validate().map_err(ServerError::Invalid)?;
         let replacement = self.replacement_id(&request)?;
         let (id, kind, created_at) = if let Some(id) = replacement {
@@ -40,6 +42,14 @@ impl Server {
         } else {
             (self.allocate_id()?, PostKind::Added, now)
         };
+        let room = if policy.enabled {
+            self.plan_room(&request, replacement)?
+        } else {
+            Vec::new()
+        };
+        for evicted in room {
+            self.evict(evicted);
+        }
         let delivery = delivery_for(&request, policy);
         let expires_at = expiry_for(request.timeout, request.priority, now, self.timeout_policy);
         let announce_as_new = kind == PostKind::Added || request.display.show_as_new;
@@ -258,6 +268,103 @@ impl Server {
         Ok((invocation, closed))
     }
 
+    /// Live notifications the most recent [`Server::post`] closed to stay
+    /// within [`MAX_ACTIVE_PER_APP`], [`MAX_ACTIVE`] and their byte budgets,
+    /// or because history no longer holds them. The adapter must report
+    /// each one as closed.
+    pub fn take_evictions(&mut self) -> Vec<Eviction> {
+        std::mem::take(&mut self.evictions)
+    }
+
+    /// Chooses which live notifications to close so the request fits. Nothing
+    /// changes unless the whole plan succeeds. Urgent and persistent
+    /// notifications are never closed; notifications without a visible
+    /// banner go first, then the oldest.
+    fn plan_room(
+        &self,
+        request: &Request,
+        replacement: Option<NotificationId>,
+    ) -> Result<Vec<NotificationId>, ServerError> {
+        let app_id = request.source.app_id();
+        let weight = request_bytes(request);
+        let mut app_count = 0usize;
+        let mut app_bytes = 0usize;
+        let mut total_count = 0usize;
+        let mut total_bytes = 0usize;
+        let mut candidates = Vec::new();
+        for (id, notification) in &self.active {
+            if Some(*id) == replacement {
+                continue;
+            }
+            let bytes = notification_bytes(notification);
+            let same_app = notification.source.app_id() == app_id;
+            total_count += 1;
+            total_bytes = total_bytes.saturating_add(bytes);
+            if same_app {
+                app_count += 1;
+                app_bytes = app_bytes.saturating_add(bytes);
+            }
+            if notification.priority != Priority::Urgent && !notification.display.persistent {
+                candidates.push((
+                    notification.banner_visible,
+                    notification.updated_at,
+                    *id,
+                    same_app,
+                    bytes,
+                ));
+            }
+        }
+        candidates.sort_unstable_by_key(|(visible, updated, id, _, _)| (*visible, updated.0, *id));
+        let app_fits = |count: usize, bytes: usize| {
+            count < MAX_ACTIVE_PER_APP && bytes.saturating_add(weight) <= MAX_ACTIVE_BYTES_PER_APP
+        };
+        let total_fits = |count: usize, bytes: usize| {
+            count < MAX_ACTIVE && bytes.saturating_add(weight) <= MAX_ACTIVE_BYTES
+        };
+        let mut chosen = Vec::new();
+        for (_, _, id, same_app, bytes) in &candidates {
+            if app_fits(app_count, app_bytes) {
+                break;
+            }
+            if *same_app {
+                chosen.push(*id);
+                app_count -= 1;
+                app_bytes -= bytes;
+                total_count -= 1;
+                total_bytes -= bytes;
+            }
+        }
+        if !app_fits(app_count, app_bytes) {
+            return Err(ServerError::TooManyNotifications);
+        }
+        for (_, _, id, _, bytes) in &candidates {
+            if total_fits(total_count, total_bytes) {
+                break;
+            }
+            if !chosen.contains(id) {
+                chosen.push(*id);
+                total_count -= 1;
+                total_bytes -= bytes;
+            }
+        }
+        if !total_fits(total_count, total_bytes) {
+            return Err(ServerError::TooManyNotifications);
+        }
+        Ok(chosen)
+    }
+
+    fn evict(&mut self, id: NotificationId) {
+        if let Some(notification) = self.active.remove(&id) {
+            self.evictions.push(Eviction {
+                closed: Closed {
+                    id,
+                    reason: CloseReason::Expired,
+                },
+                source: notification.source,
+            });
+        }
+    }
+
     pub fn mark_all_read(&mut self) {
         for notification in &mut self.history {
             notification.unread = false;
@@ -335,13 +442,75 @@ impl Server {
         }
         self.history.push_back(notification);
         while self.history.len() > self.history_limit {
-            self.history.pop_front();
+            let Some(dropped) = self.history.pop_front() else {
+                break;
+            };
+            // A live entry whose banner is gone exists only for history; once
+            // history lets it go, nothing can show it, so it must not linger.
+            if self
+                .active
+                .get(&dropped.id)
+                .is_some_and(|live| !live.banner_visible)
+            {
+                self.evict(dropped.id);
+            }
         }
     }
 
     fn remove_history(&mut self, id: NotificationId) {
         self.history.retain(|notification| notification.id != id);
     }
+}
+
+fn action_bytes(action: &Action) -> usize {
+    action.id.len()
+        + action.label().len()
+        + action
+            .target
+            .as_ref()
+            .map_or(0, |target| target.signature().len() + target.bytes().len())
+        + action.purpose.as_ref().map_or(0, String::len)
+}
+
+fn payload_bytes<'a>(
+    source: &Source,
+    content: &Content,
+    actions: impl Iterator<Item = &'a Action>,
+    category: Option<&String>,
+) -> usize {
+    let source_bytes = match source {
+        Source::Portal {
+            app_id,
+            external_id,
+        } => app_id.as_str().len() + external_id.len(),
+        Source::Freedesktop { app_id } => app_id.as_str().len(),
+    };
+    source_bytes
+        + content.title().len()
+        + content.body().len()
+        + actions.map(action_bytes).sum::<usize>()
+        + category.map_or(0, String::len)
+}
+
+fn request_bytes(request: &Request) -> usize {
+    payload_bytes(
+        &request.source,
+        &request.content,
+        request.default_action.iter().chain(request.actions.iter()),
+        request.category.as_ref(),
+    )
+}
+
+pub(super) fn notification_bytes(notification: &Notification) -> usize {
+    payload_bytes(
+        &notification.source,
+        &notification.content,
+        notification
+            .default_action
+            .iter()
+            .chain(notification.actions.iter()),
+        notification.category.as_ref(),
+    )
 }
 
 pub(super) fn delivery_for(request: &Request, policy: DeliveryPolicy) -> Delivery {

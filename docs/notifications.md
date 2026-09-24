@@ -140,7 +140,13 @@ buttons to export the same action with distinct targets. Named activation is
 retained for the freedesktop protocol.
 
 History is bounded in memory and exposes an unread/urgent projection for the
-top bar. The E3 store and live Center surface consume only records whose
+top bar. Live notifications are bounded too: at most 100 and 4 MiB of payload
+per sender, and 1024 and 32 MiB overall. A post past a bound closes the
+sender's oldest non-urgent, non-persistent notification (hidden banners
+first) and reports it as an expiry, so history keeps it and a legacy sender
+receives `NotificationClosed` reason 1. When only urgent or persistent
+notifications could make room, the post is refused with `LimitsExceeded`. A
+live entry whose banner is gone is released when history drops it. The E3 store and live Center surface consume only records whose
 computed delivery permits history.
 Clearing, expiration, withdrawal, and action closure are distinct typed events
 so adapters can emit truthful protocol results and UI can animate without

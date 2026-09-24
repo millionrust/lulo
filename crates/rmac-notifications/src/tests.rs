@@ -390,3 +390,244 @@ fn bounded_history_and_indicator_are_deterministic() {
     server.mark_all_read();
     assert_eq!(server.indicator(), Indicator::default());
 }
+
+fn legacy_request(app: &str, title: &str) -> Request {
+    let mut request = portal_request(app, "unused", title);
+    request.source = Source::Freedesktop {
+        app_id: AppId::parse(app).unwrap(),
+    };
+    request
+}
+
+#[test]
+fn one_sender_cannot_grow_live_notifications_without_bound() {
+    let mut server = Server::new(500, TimeoutPolicy::default());
+    let mut ids = Vec::new();
+    for index in 0..MAX_ACTIVE_PER_APP {
+        let outcome = server
+            .post(
+                legacy_request(":1.42", &format!("n{index}")),
+                Time(index as u64),
+                DeliveryPolicy::default(),
+            )
+            .unwrap();
+        assert!(server.take_evictions().is_empty());
+        ids.push(outcome.id);
+    }
+    let outcome = server
+        .post(
+            legacy_request(":1.42", "one more"),
+            Time(10_000),
+            DeliveryPolicy::default(),
+        )
+        .unwrap();
+    let evictions = server.take_evictions();
+    assert_eq!(evictions.len(), 1);
+    assert_eq!(evictions[0].closed.id, ids[0]);
+    assert_eq!(evictions[0].closed.reason, CloseReason::Expired);
+    assert!(matches!(evictions[0].source, Source::Freedesktop { .. }));
+    assert!(!server.active.contains_key(&ids[0]));
+    assert!(server.active.contains_key(&outcome.id));
+    assert_eq!(server.active.len(), MAX_ACTIVE_PER_APP);
+
+    // Another sender is untouched by the first one's cap.
+    server
+        .post(
+            legacy_request(":1.43", "other"),
+            Time(10_001),
+            DeliveryPolicy::default(),
+        )
+        .unwrap();
+    assert!(server.take_evictions().is_empty());
+    assert_eq!(server.active.len(), MAX_ACTIVE_PER_APP + 1);
+}
+
+#[test]
+fn eviction_prefers_hidden_banners_and_never_closes_urgent_or_persistent() {
+    let mut server = Server::new(500, TimeoutPolicy::default());
+    let mut urgent = legacy_request(":1.7", "urgent");
+    urgent.priority = Priority::Urgent;
+    let urgent = server
+        .post(urgent, Time(0), DeliveryPolicy::default())
+        .unwrap()
+        .id;
+    let mut persistent = legacy_request(":1.7", "persistent");
+    persistent.display.persistent = true;
+    let persistent = server
+        .post(persistent, Time(1), DeliveryPolicy::default())
+        .unwrap()
+        .id;
+    let mut visible = Vec::new();
+    for index in 2..MAX_ACTIVE_PER_APP as u64 {
+        visible.push(
+            server
+                .post(
+                    legacy_request(":1.7", "visible"),
+                    Time(index),
+                    DeliveryPolicy::default(),
+                )
+                .unwrap()
+                .id,
+        );
+    }
+    // The newest banner has already left the screen.
+    let hidden = *visible.last().unwrap();
+    server.expire_one(hidden).unwrap();
+    assert!(server.active.contains_key(&hidden));
+
+    server
+        .post(
+            legacy_request(":1.7", "next"),
+            Time(1_000),
+            DeliveryPolicy::default(),
+        )
+        .unwrap();
+    let evictions = server.take_evictions();
+    assert_eq!(evictions.len(), 1);
+    assert_eq!(evictions[0].closed.id, hidden);
+
+    server
+        .post(
+            legacy_request(":1.7", "after"),
+            Time(1_001),
+            DeliveryPolicy::default(),
+        )
+        .unwrap();
+    let evictions = server.take_evictions();
+    assert_eq!(evictions.len(), 1);
+    assert_eq!(evictions[0].closed.id, visible[0]);
+    assert!(server.active.contains_key(&urgent));
+    assert!(server.active.contains_key(&persistent));
+}
+
+#[test]
+fn a_sender_full_of_urgent_notifications_is_refused_without_changes() {
+    let mut server = Server::new(500, TimeoutPolicy::default());
+    for index in 0..MAX_ACTIVE_PER_APP as u64 {
+        let mut urgent = legacy_request(":1.9", "urgent");
+        urgent.priority = Priority::Urgent;
+        server
+            .post(urgent, Time(index), DeliveryPolicy::default())
+            .unwrap();
+    }
+    let before = server.active.len();
+    assert_eq!(
+        server.post(
+            legacy_request(":1.9", "more"),
+            Time(1_000),
+            DeliveryPolicy::default()
+        ),
+        Err(ServerError::TooManyNotifications)
+    );
+    assert_eq!(server.active.len(), before);
+    assert!(server.take_evictions().is_empty());
+}
+
+#[test]
+fn replacing_at_the_cap_does_not_evict() {
+    let mut server = Server::new(500, TimeoutPolicy::default());
+    for index in 0..MAX_ACTIVE_PER_APP {
+        server
+            .post(
+                portal_request("org.example.Chat", &format!("m{index}"), "t"),
+                Time(index as u64),
+                DeliveryPolicy::default(),
+            )
+            .unwrap();
+    }
+    let outcome = server
+        .post(
+            portal_request("org.example.Chat", "m5", "updated"),
+            Time(1_000),
+            DeliveryPolicy::default(),
+        )
+        .unwrap();
+    assert_eq!(outcome.kind, PostKind::Replaced);
+    assert!(server.take_evictions().is_empty());
+    assert_eq!(server.active.len(), MAX_ACTIVE_PER_APP);
+}
+
+#[test]
+fn many_senders_cannot_exceed_the_global_live_bound() {
+    let mut server = Server::new(0, TimeoutPolicy::default());
+    for index in 0..MAX_ACTIVE {
+        server
+            .post(
+                legacy_request(&format!(":1.{index}"), "t"),
+                Time(index as u64),
+                DeliveryPolicy::default(),
+            )
+            .unwrap();
+    }
+    assert_eq!(server.active.len(), MAX_ACTIVE);
+    server
+        .post(
+            legacy_request(":2.1", "t"),
+            Time(5_000),
+            DeliveryPolicy::default(),
+        )
+        .unwrap();
+    let evictions = server.take_evictions();
+    assert_eq!(evictions.len(), 1);
+    assert_eq!(evictions[0].source.app_id().as_str(), ":1.0");
+    assert_eq!(server.active.len(), MAX_ACTIVE);
+}
+
+#[test]
+fn live_payload_bytes_are_bounded_per_sender() {
+    let mut server = Server::new(0, TimeoutPolicy::default());
+    let body = "x".repeat(MAX_BODY_BYTES);
+    let target = ActionTarget::new("v", vec![0; MAX_TARGET_BYTES]).unwrap();
+    let heavy = |title: &str| {
+        let mut request = legacy_request(":1.5", title);
+        request.content = Content::new(title, body.clone()).unwrap();
+        request.actions = (0..MAX_ACTIONS)
+            .map(|index| Action::new(format!("app.a{index}"), "A", Some(target.clone())).unwrap())
+            .collect();
+        request
+    };
+    let mut evicted = 0;
+    for index in 0..MAX_ACTIVE_PER_APP as u64 {
+        server
+            .post(heavy("t"), Time(index), DeliveryPolicy::default())
+            .unwrap();
+        evicted += server.take_evictions().len();
+    }
+    assert!(evicted > 0);
+    let live_bytes: usize = server.active.values().map(notification_bytes).sum();
+    assert!(live_bytes <= MAX_ACTIVE_BYTES_PER_APP);
+    assert!(server.active.len() < MAX_ACTIVE_PER_APP);
+}
+
+#[test]
+fn history_eviction_releases_live_entries_whose_banner_is_gone() {
+    let mut server = Server::new(2, TimeoutPolicy::default());
+    let first = server
+        .post(
+            legacy_request(":1.3", "a"),
+            Time(0),
+            DeliveryPolicy::default(),
+        )
+        .unwrap()
+        .id;
+    server.expire_one(first).unwrap();
+    assert!(server.active.contains_key(&first));
+    server
+        .post(
+            legacy_request(":1.3", "b"),
+            Time(1),
+            DeliveryPolicy::default(),
+        )
+        .unwrap();
+    server
+        .post(
+            legacy_request(":1.3", "c"),
+            Time(2),
+            DeliveryPolicy::default(),
+        )
+        .unwrap();
+    let evictions = server.take_evictions();
+    assert_eq!(evictions.len(), 1);
+    assert_eq!(evictions[0].closed.id, first);
+    assert!(!server.active.contains_key(&first));
+}

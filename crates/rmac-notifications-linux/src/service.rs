@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use async_channel::{Receiver, Sender};
 use rmac_notifications::{
-    Action, ActionInvocation, AppId, CloseReason, Closed, DeliveryPolicy, Notification,
+    Action, ActionInvocation, AppId, CloseReason, Closed, DeliveryPolicy, Eviction, Notification,
     NotificationId, PostOutcome, Server, ServerError, Source, Time, TimeoutPolicy,
 };
 use zbus::connection::Builder;
@@ -666,17 +666,18 @@ impl SharedCore {
         &self,
         request: rmac_notifications::Request,
         policy: DeliveryPolicy,
-    ) -> Result<(PostOutcome, Option<Box<Notification>>), ServerError> {
+    ) -> Result<(PostOutcome, Option<Box<Notification>>, Vec<Eviction>), ServerError> {
         let mut core = self.lock();
         let now = monotonic_time(core.started);
         let outcome = core.server.post(request, now, policy)?;
+        let evictions = core.server.take_evictions();
         let notification = core
             .server
             .active()
             .find(|notification| notification.id == outcome.id)
             .cloned()
             .map(Box::new);
-        Ok((outcome, notification))
+        Ok((outcome, notification, evictions))
     }
 
     pub fn withdraw(&self, app_id: &AppId, id: NotificationId) -> Result<Closed, ServerError> {
@@ -796,11 +797,12 @@ impl LegacyInterface {
         )
         .map_err(invalid_wire)?;
         let policy = self.history.policy(request.source.app_id()).await;
-        let (outcome, notification) = self
+        let (outcome, notification, evictions) = self
             .core
             .post_event(request, policy)
             .map_err(domain_error)?;
         self.history.annotate_sender(outcome.id, origin);
+        publish_evictions(&self.events, connection, evictions).await?;
         publish(
             &self.events,
             RuntimeEvent::Posted {
@@ -948,11 +950,12 @@ impl PortalInterface {
             .await
             .map_err(invalid_wire)?;
         let policy = self.history.policy(decoded.request.source.app_id()).await;
-        let (outcome, notification) = self
+        let (outcome, notification, evictions) = self
             .core
             .post_event(decoded.request, policy)
             .map_err(domain_error)?;
         decoded.media.retain_for(outcome.delivery);
+        publish_evictions(&self.events, connection, evictions).await?;
         publish(
             &self.events,
             RuntimeEvent::Posted {
@@ -1302,6 +1305,27 @@ async fn publish(events: &Sender<RuntimeEvent>, event: RuntimeEvent) -> fdo::Res
         .map_err(|_| fdo::Error::Failed("notification runtime is unavailable".into()))
 }
 
+/// Reports notifications the server closed to make room, as expiries: the
+/// banner goes, history keeps its record, and a legacy sender hears reason 1.
+async fn publish_evictions(
+    events: &Sender<RuntimeEvent>,
+    connection: &Connection,
+    evictions: Vec<Eviction>,
+) -> fdo::Result<()> {
+    for eviction in evictions {
+        let id = eviction.closed.id;
+        publish(events, RuntimeEvent::Closed(eviction.closed)).await?;
+        if matches!(eviction.source, Source::Freedesktop { .. }) {
+            SignalEmitter::new(connection, LEGACY_PATH)
+                .map_err(fdo::Error::ZBus)?
+                .notification_closed(id.get(), 1)
+                .await
+                .map_err(fdo::Error::ZBus)?;
+        }
+    }
+    Ok(())
+}
+
 async fn publish_action(
     events: &Sender<RuntimeEvent>,
     event: RuntimeEvent,
@@ -1317,9 +1341,10 @@ fn action_domain_error(error: ServerError) -> ActionError {
         ServerError::UnknownNotification => ActionError::UnknownNotification,
         ServerError::UnknownAction => ActionError::UnknownAction,
         ServerError::PersistentNotification => ActionError::PersistentNotification,
-        ServerError::Invalid(_) | ServerError::WrongOwner | ServerError::ExhaustedIds => {
-            ActionError::UnknownNotification
-        }
+        ServerError::Invalid(_)
+        | ServerError::WrongOwner
+        | ServerError::ExhaustedIds
+        | ServerError::TooManyNotifications => ActionError::UnknownNotification,
     }
 }
 
@@ -1460,6 +1485,9 @@ fn domain_error(error: ServerError) -> fdo::Error {
         }
         ServerError::PersistentNotification => {
             fdo::Error::AccessDenied("persistent notification cannot be dismissed".into())
+        }
+        ServerError::TooManyNotifications => {
+            fdo::Error::LimitsExceeded("too many live notifications from this sender".into())
         }
     }
 }
@@ -1618,7 +1646,8 @@ mod tests {
             ..PortalInput::default()
         })
         .unwrap();
-        let (outcome, notification) = core.post_event(request, DeliveryPolicy::default()).unwrap();
+        let (outcome, notification, _) =
+            core.post_event(request, DeliveryPolicy::default()).unwrap();
         let recorded = history
             .record(&RuntimeEvent::Posted {
                 outcome,
@@ -1644,7 +1673,8 @@ mod tests {
             ..PortalInput::default()
         })
         .unwrap();
-        let (outcome, notification) = core.post_event(request, DeliveryPolicy::default()).unwrap();
+        let (outcome, notification, _) =
+            core.post_event(request, DeliveryPolicy::default()).unwrap();
         history
             .record(&RuntimeEvent::Posted {
                 outcome,
@@ -1712,7 +1742,8 @@ mod tests {
             ..FreedesktopInput::default()
         })
         .unwrap();
-        let (outcome, notification) = core.post_event(request, DeliveryPolicy::default()).unwrap();
+        let (outcome, notification, _) =
+            core.post_event(request, DeliveryPolicy::default()).unwrap();
         history
             .record(&RuntimeEvent::Posted {
                 outcome,
@@ -1783,7 +1814,8 @@ mod tests {
             ..PortalInput::default()
         })
         .unwrap();
-        let (outcome, notification) = core.post_event(request, DeliveryPolicy::default()).unwrap();
+        let (outcome, notification, _) =
+            core.post_event(request, DeliveryPolicy::default()).unwrap();
         history
             .record(&RuntimeEvent::Posted {
                 outcome,

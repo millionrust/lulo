@@ -505,6 +505,14 @@ pub struct Closed {
     pub reason: CloseReason,
 }
 
+/// A live notification the server closed to stay within its bounds. The
+/// adapter reports it like an expiry: the banner goes, history is kept.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Eviction {
+    pub closed: Closed,
+    pub source: Source,
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct ActionInvocation {
     pub notification_id: NotificationId,
@@ -535,6 +543,8 @@ pub enum ServerError {
     UnknownAction,
     WrongOwner,
     PersistentNotification,
+    /// Every live notification that could make room is urgent or persistent.
+    TooManyNotifications,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -551,4 +561,5 @@ pub struct Server {
     pub(super) history_limit: usize,
     pub(super) active: BTreeMap<NotificationId, Notification>,
     pub(super) history: VecDeque<Notification>,
+    pub(super) evictions: Vec<Eviction>,
 }

@@ -310,6 +310,7 @@ fn firewall_state(service: FirewallService) -> (FirewallState, Option<String>) {
 }
 
 #[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FirewallService {
     Ssh,

@@ -6,10 +6,14 @@
 //! single event stream and drive the same service handle for dismiss, expiry
 //! and actions, so it lives here rather than in the on-demand Center panel.
 
+// Banners are layer-shell surfaces; off Linux `surface::open` is a stub, so
+// the drawing code and its host bookkeeping are compiled but never reached.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod host;
 #[allow(dead_code)]
 #[path = "../model.rs"]
 mod model;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code, unused_imports))]
 mod surface;
 
 fn main() {

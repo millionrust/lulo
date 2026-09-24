@@ -195,6 +195,8 @@ enum PlaceKind {
     Tag,
     /// Recently-used files from the platform search provider, not a folder.
     Recents,
+    // The sidebar lists the Trash only where it is backed by the freedesktop.org Trash.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Trash,
 }
 

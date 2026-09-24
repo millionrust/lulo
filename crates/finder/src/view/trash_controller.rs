@@ -151,7 +151,8 @@ impl FinderView {
                 })
                 .into_iter()
                 .collect();
-            self.finish_file_operations(failures, cx);
+            self.record_operation_failures(failures, cx);
+            self.reload(cx);
         }
     }
 

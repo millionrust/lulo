@@ -163,7 +163,7 @@ impl MonitorView {
             })
     }
 
-    fn request_kill(&mut self, force: bool, cx: &mut Context<Self>) {
+    fn request_kill(&mut self, force: bool, window: &mut Window, cx: &mut Context<Self>) {
         // Capture whatever row is highlighted right now (covers keyboard nav,
         // which moves the table's selected row without touching `selected_pid`).
         self.table.update(cx, |state, _| {
@@ -186,6 +186,12 @@ impl MonitorView {
             });
             self.process_action_feedback = None;
             self.cols_menu_open = false;
+            // The process table's own "DataTable" key context binds Escape
+            // to clear its row selection, which is a deeper context than
+            // this view's root and so wins the dispatch -- move focus off
+            // the table so Escape/Return resolve at the confirmation dialog
+            // instead (see docs/keyboard-audit.md).
+            window.focus(&self.focus, cx);
             cx.notify();
         }
     }

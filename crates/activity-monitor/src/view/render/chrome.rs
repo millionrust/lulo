@@ -47,7 +47,7 @@ fn accessible_icon_button(
     expanded: Option<bool>,
     button: impl IntoElement,
     view: Entity<MonitorView>,
-    activate: fn(&mut MonitorView, &mut Context<MonitorView>),
+    activate: fn(&mut MonitorView, &mut Window, &mut Context<MonitorView>),
 ) -> impl IntoElement {
     div()
         .id(SharedString::from(format!("{id}-a11y")))
@@ -56,8 +56,8 @@ fn accessible_icon_button(
         .when_some(expanded, |element, expanded| {
             element.aria_expanded(expanded)
         })
-        .on_a11y_action(AccessibleAction::Click, move |_data, _window, cx| {
-            view.update(cx, |this, cx| activate(this, cx));
+        .on_a11y_action(AccessibleAction::Click, move |_data, window, cx| {
+            view.update(cx, |this, cx| activate(this, window, cx));
         })
         .child(button)
 }
@@ -277,12 +277,12 @@ impl MonitorView {
                                     has_selection,
                                 )
                                 .on_click(cx.listener(
-                                    |this, _, _, cx| {
-                                        this.request_kill(false, cx);
+                                    |this, _, window, cx| {
+                                        this.request_kill(false, window, cx);
                                     },
                                 )),
                                 view.clone(),
-                                |this, cx| this.request_kill(false, cx),
+                                |this, window, cx| this.request_kill(false, window, cx),
                             ),
                         ),
                     )
@@ -304,7 +304,7 @@ impl MonitorView {
                                     },
                                 )),
                                 view.clone(),
-                                |this, cx| this.inspect_selected(cx),
+                                |this, _window, cx| this.inspect_selected(cx),
                             ),
                         ),
                     ),
@@ -329,7 +329,7 @@ impl MonitorView {
                                     this.toggle_columns_menu(cx);
                                 })),
                             view.clone(),
-                            |this, cx| this.toggle_columns_menu(cx),
+                            |this, _window, cx| this.toggle_columns_menu(cx),
                         )),
                 )),
             )

@@ -29,11 +29,11 @@ impl Render for MonitorView {
         div()
             .track_focus(&self.focus)
             .key_context("ActivityMonitor")
-            .on_action(cx.listener(|this, _: &QuitProcess, _, cx| {
-                this.request_kill(false, cx);
+            .on_action(cx.listener(|this, _: &QuitProcess, window, cx| {
+                this.request_kill(false, window, cx);
             }))
-            .on_action(cx.listener(|this, _: &ForceQuitProcess, _, cx| {
-                this.request_kill(true, cx);
+            .on_action(cx.listener(|this, _: &ForceQuitProcess, window, cx| {
+                this.request_kill(true, window, cx);
             }))
             .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
                 this.focus_search(window, cx);

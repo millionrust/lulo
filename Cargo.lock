@@ -6014,7 +6014,9 @@ dependencies = [
  "rmac-notes-storage",
  "rmac-notes-store",
  "rmac-portal",
+ "rmac-print",
  "rmac-print-linux",
+ "rmac-storage",
  "rmac-ui",
 ]
 

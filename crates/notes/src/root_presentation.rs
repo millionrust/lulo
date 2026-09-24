@@ -100,6 +100,9 @@ impl NotesView {
             )
             .on_action(cx.listener(|this, _: &ExportNotes, _, cx| this.begin_export(cx)))
             .on_action(cx.listener(|this, _: &PrintNote, window, cx| this.print_note(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &ExportNotePdf, window, cx| this.export_note_pdf(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &InsertChecklist, window, cx| {
                 this.insert_checklist(window, cx)
             }))

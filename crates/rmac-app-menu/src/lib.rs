@@ -154,6 +154,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("New Note", "notes::ComposeNote", "⌘N"),
             item!("New Folder", "notes::CreateFolder", "⇧⌘N"),
             item!("Export Notes…", "notes::ExportNotes", "⇧⌘E", separator),
+            item!("Export as PDF…", "notes::ExportNotePdf", ""),
             item!("Print…", "notes::PrintNote", "⌘P", separator),
         ],
     },

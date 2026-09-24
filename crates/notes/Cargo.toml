@@ -20,6 +20,8 @@ rmac-notes-runtime.workspace = true
 rmac-notes-storage.workspace = true
 rmac-notes-store.workspace = true
 rmac-portal.workspace = true
+rmac-print.workspace = true
+rmac-storage.workspace = true
 chrono.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]

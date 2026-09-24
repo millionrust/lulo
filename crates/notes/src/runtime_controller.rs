@@ -82,7 +82,9 @@ impl NotesView {
 
     pub(super) fn continue_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.print_busy {
-            self.message = Some("Finish or cancel the print dialog before closing Notes".into());
+            // `print_busy` also covers Export as PDF, the same print pipeline
+            // without a portal dialog of its own.
+            self.message = Some("Finish or cancel the print or export before closing Notes".into());
             cx.notify();
             return;
         }

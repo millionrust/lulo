@@ -102,7 +102,8 @@ actions!(
         ImportNote,
         ImportNotesBundle,
         AddPhoto,
-        PrintNote
+        PrintNote,
+        ExportNotePdf
     ]
 );
 

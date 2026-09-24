@@ -615,7 +615,18 @@ class RealKeySigningTests(unittest.TestCase):
             always = apt("apt-get", "-s", "-o", "APT::Get::Always-Include-Phased-Updates=true", "upgrade")
             self.assertEqual(always.returncode, 0, always.stderr)
             self.assertIn("Inst rmac-apps [0.9.0-1] (1.0.0~beta.1-38", always.stdout)
-            never = apt("apt-get", "-s", "-o", "APT::Get::Never-Include-Phased-Updates=true", "upgrade")
+            # Some CI images (e.g. GitHub's Ubuntu runners) ship
+            # /etc/apt/apt.conf.d/99-phased-updates forcing
+            # Always-Include-Phased-Updates on, and APT checks that flag
+            # before Never-Include-Phased-Updates -- so a host default of
+            # "always" silently wins over our "never" unless we also turn
+            # the host's "always" back off here.
+            never = apt(
+                "apt-get", "-s",
+                "-o", "APT::Get::Always-Include-Phased-Updates=false",
+                "-o", "APT::Get::Never-Include-Phased-Updates=true",
+                "upgrade",
+            )
             self.assertEqual(never.returncode, 0, never.stderr)
             self.assertNotIn("Inst rmac-apps", never.stdout)
 

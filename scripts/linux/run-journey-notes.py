@@ -316,6 +316,43 @@ def niri_windows() -> list[dict[str, Any]]:
     return parse_windows(result.stdout)
 
 
+def desktop_entry_dirs(env: dict[str, str], home: str) -> list[Path]:
+    """Application directories in XDG lookup order (user entries first)."""
+    data_home = env.get("XDG_DATA_HOME") or os.path.join(home, ".local/share")
+    data_dirs = env.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
+    return [Path(data_home) / "applications"] + [
+        Path(entry) / "applications" for entry in data_dirs.split(":") if entry
+    ]
+
+
+def exec_from_desktop_entry(text: str) -> str | None:
+    """The program path of a desktop entry's Exec= line, without field codes."""
+    in_entry = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_entry = stripped == "[Desktop Entry]"
+            continue
+        if in_entry and stripped.startswith("Exec="):
+            words = [w for w in stripped[len("Exec="):].split() if not w.startswith("%")]
+            return words[0] if words else None
+    return None
+
+
+def resolve_app_exec(app: dict[str, str], env: dict[str, str], home: str) -> str:
+    """Launch what the Dock launches: the first desktop entry for the app id wins,
+    so a stale /usr/bin copy never stands in for the user's current build."""
+    for directory in desktop_entry_dirs(env, home):
+        entry = directory / f"{app['app_id']}.desktop"
+        try:
+            program = exec_from_desktop_entry(entry.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        if program:
+            return program
+    return app["exec"]
+
+
 def niri_spawn(command: str) -> None:
     result = _niri("action", "spawn", "--", command)
     if result.returncode != 0:
@@ -598,7 +635,7 @@ def launch_notes() -> tuple[dict[str, Any], dict[str, Any]]:
             "app_launched", True, "launched via an accessible Dock action", method="accessible_ui"
         )
     try:
-        niri_spawn(APP["exec"])
+        niri_spawn(resolve_app_exec(APP, dict(os.environ), str(Path.home())))
     except JourneyError as error:
         return dock_step, make_step("app_launched", False, str(error), method="none")
     return dock_step, make_step(

@@ -272,6 +272,7 @@ mod linux_wayland {
                 }
             })
             .detach();
+            watch_menu_owners(cx);
             Self {
                 update: rmac_shell_runtime::Update::default(),
                 menu_app_id: None,
@@ -283,47 +284,73 @@ mod linux_wayland {
 
     fn request_app_menus(app_id: String, generation: u64, cx: &mut Context<ShellStatus>) {
         cx.spawn(async move |this, cx| {
-            // The focused app may still be registering its menu interface on
-            // D-Bus when focus first arrives, so retry a few times while it
-            // stays focused instead of leaving the bar permanently empty.
-            for attempt in 1..=6 {
-                let result = cx
-                    .background_executor()
-                    .spawn({
-                        let app_id = app_id.clone();
-                        async move { rmac_app_menu::fetch(&app_id).await }
-                    })
-                    .await;
-                let fetched = match result {
-                    Ok(menus) => Some(menus).filter(|menus| !menus.is_empty()),
-                    Err(error) => {
-                        if attempt == 6 {
-                            eprintln!("could not read {app_id} menus: {error}");
-                        }
-                        None
-                    }
-                };
-                let stop = this
-                    .update(cx, |this, cx| {
-                        if this.menu_generation != generation
-                            || this.menu_app_id.as_deref() != Some(app_id.as_str())
-                        {
-                            return true;
-                        }
-                        if let Some(menus) = fetched {
-                            this.menus = menus;
-                            cx.notify();
-                            true
-                        } else {
-                            false
-                        }
-                    })
-                    .unwrap_or(true);
-                if stop {
-                    break;
+            let result = cx
+                .background_executor()
+                .spawn({
+                    let app_id = app_id.clone();
+                    async move { rmac_app_menu::fetch(&app_id).await }
+                })
+                .await;
+            let menus = match result {
+                Ok(menus) => menus,
+                // Not running yet, or still starting up: the menu owner
+                // watcher fetches again once the app publishes its menu.
+                Err(rmac_app_menu::Error::NotPublished) => return,
+                Err(error) => {
+                    eprintln!("could not read {app_id} menus: {error}");
+                    return;
                 }
-                async_io::Timer::after(std::time::Duration::from_millis(300)).await;
+            };
+            let _ = this.update(cx, |this, cx| {
+                if this.menu_generation == generation
+                    && this.menu_app_id.as_deref() == Some(app_id.as_str())
+                {
+                    this.menus = menus;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Follow first-party menu endpoints on the bus: fetch the active app's
+    /// menus as soon as it publishes them, however long it takes to start,
+    /// and drop them when it exits so the bar never offers a dead app's
+    /// commands.
+    fn watch_menu_owners(cx: &mut Context<ShellStatus>) {
+        cx.spawn(async move |this, cx| {
+            let mut owners = match rmac_app_menu::watch_menu_owners().await {
+                Ok(owners) => owners,
+                Err(error) => {
+                    eprintln!("could not follow application menus: {error}");
+                    return;
+                }
+            };
+            while let Some((app_id, published)) = owners.next().await {
+                let alive = this.update(cx, |this, cx| {
+                    if this.menu_app_id.as_deref() != Some(app_id) {
+                        return;
+                    }
+                    if published {
+                        if this.menus.is_empty() {
+                            request_app_menus(app_id.to_owned(), this.menu_generation, cx);
+                        }
+                        return;
+                    }
+                    this.menus.clear();
+                    this.menu_generation = this.menu_generation.saturating_add(1);
+                    // With no window focused, the app that just quit no
+                    // longer names the bar either.
+                    if this.update.snapshot.status.focused.app_id.is_none() {
+                        this.menu_app_id = None;
+                    }
+                    cx.notify();
+                });
+                if alive.is_err() {
+                    return;
+                }
             }
+            eprintln!("stopped following application menus: the session bus closed");
         })
         .detach();
     }
@@ -1388,11 +1415,20 @@ mod linux_wayland {
             // live focused window drops to None. Use the last app the status
             // runtime reported (kept across those blips) for the app menu, and
             // name it rather than letting the desktop identity take over.
-            let active_app_id = status
-                .menu_app_id
-                .clone()
-                .or_else(|| snapshot.focused.app_id.clone());
-            let active_app = if self.open_menu.is_some() {
+            // The same holds while the bar still shows the menus of an app
+            // that has no focused window: name that app, not the desktop, so
+            // the name, its app menu and the menus beside it agree.
+            let keep_menu_app = self.open_menu.is_some()
+                || (snapshot.focused.app_id.is_none() && !status.menus.is_empty());
+            let active_app_id = if keep_menu_app {
+                status
+                    .menu_app_id
+                    .clone()
+                    .or_else(|| snapshot.focused.app_id.clone())
+            } else {
+                snapshot.focused.app_id.clone()
+            };
+            let active_app = if keep_menu_app {
                 active_app_id
                     .as_deref()
                     .map(app_display_name)

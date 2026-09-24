@@ -424,6 +424,30 @@ pub fn bus_name(app_id: &str) -> Option<&'static str> {
     }
 }
 
+/// Every first-party app that can publish a menu, for mapping a bus name back
+/// to its app.
+const MENU_APPS: &[&str] = &[
+    rmac_apps::identity::FILES,
+    rmac_apps::identity::TERMINAL,
+    rmac_apps::identity::NOTES,
+    rmac_apps::identity::TEXT_EDITOR,
+    rmac_apps::identity::SYSTEM_MONITOR,
+    rmac_apps::identity::SYSTEM_SETTINGS,
+    rmac_apps::identity::CALCULATOR,
+    rmac_apps::identity::PREVIEW,
+    rmac_apps::identity::CLOCK,
+    rmac_apps::identity::WEATHER,
+    rmac_apps::identity::PLAYER,
+];
+
+/// The app whose menu endpoint owns `name`, if it is one.
+pub fn app_for_bus_name(name: &str) -> Option<&'static str> {
+    MENU_APPS
+        .iter()
+        .copied()
+        .find(|app_id| bus_name(app_id) == Some(name))
+}
+
 /// Resolve only commands registered in this exact GPUI application binary.
 pub fn definition(app_id: &str, registered_actions: &[&str]) -> Option<Vec<Menu>> {
     definition_for_vocabulary(
@@ -656,7 +680,11 @@ fn forget_closed_session(error: &zbus::Error) {
 fn call_error(name: &'static str, method: &'static str) -> impl Fn(zbus::Error) -> Error {
     move |error| {
         forget_closed_session(&error);
-        Error::Bus(format!("{name} {method}: {error}"))
+        if is_unowned(&error) {
+            Error::NotPublished
+        } else {
+            Error::Bus(format!("{name} {method}: {error}"))
+        }
     }
 }
 
@@ -691,6 +719,77 @@ pub async fn activate(app_id: &str, action: &str) -> Result<(), Error> {
         .await
         .map_err(call_error(name, "Activate"))?;
     Ok(())
+}
+
+/// Menu endpoints appearing and disappearing on the session bus, so a menu bar
+/// can fetch an app's menus once the app has published them and drop them when
+/// the app exits, without polling.
+pub struct MenuOwners {
+    stream: zbus::MessageStream,
+}
+
+/// Subscribe to owner changes of the `org.rmac.*` names on the shared
+/// connection.
+pub async fn watch_menu_owners() -> Result<MenuOwners, Error> {
+    let rule_error =
+        |error: zbus::Error| Error::Bus(format!("could not build the menu owner match: {error}"));
+    let rule = zbus::MatchRule::builder()
+        .msg_type(zbus::message::Type::Signal)
+        .sender("org.freedesktop.DBus")
+        .map_err(rule_error)?
+        .interface("org.freedesktop.DBus")
+        .map_err(rule_error)?
+        .member("NameOwnerChanged")
+        .map_err(rule_error)?
+        .arg0ns("org.rmac")
+        .map_err(rule_error)?
+        .build();
+    let connection = session().await?;
+    let stream = zbus::MessageStream::for_match_rule(rule, &connection, Some(64))
+        .await
+        .map_err(bus_error("watch menu owners"))?;
+    Ok(MenuOwners { stream })
+}
+
+impl MenuOwners {
+    /// The next app whose menu endpoint appeared (`true`) or went away
+    /// (`false`); `None` once the bus connection closes.
+    pub async fn next(&mut self) -> Option<(&'static str, bool)> {
+        use futures_util::StreamExt;
+        loop {
+            let message = match self.stream.next().await? {
+                Ok(message) => message,
+                Err(error) => {
+                    forget_closed_session(&error);
+                    return None;
+                }
+            };
+            let body = message.body();
+            let Ok((name, _old, new)) = body.deserialize::<(&str, &str, &str)>() else {
+                continue;
+            };
+            if let Some(app_id) = app_for_bus_name(name) {
+                return Some((app_id, !new.is_empty()));
+            }
+        }
+    }
+}
+
+/// The bus has no owner for the app's menu name: the app is not running or
+/// has not published its menu yet.
+fn is_unowned(error: &zbus::Error) -> bool {
+    const UNOWNED: [&str; 2] = [
+        "org.freedesktop.DBus.Error.ServiceUnknown",
+        "org.freedesktop.DBus.Error.NameHasNoOwner",
+    ];
+    match error {
+        zbus::Error::MethodError(name, _, _) => UNOWNED.contains(&name.as_str()),
+        zbus::Error::FDO(error) => matches!(
+            **error,
+            fdo::Error::ServiceUnknown(_) | fdo::Error::NameHasNoOwner(_)
+        ),
+        _ => false,
+    }
 }
 
 fn bus_error(context: &'static str) -> impl Fn(zbus::Error) -> Error {
@@ -794,6 +893,9 @@ fn valid_action(value: &str) -> bool {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     Unsupported,
+    /// Nothing owns the app's menu name: it is not running or has not
+    /// published its menu yet.
+    NotPublished,
     /// A D-Bus failure, carrying zbus's description so logs say why.
     Bus(String),
     Protocol,
@@ -803,6 +905,9 @@ impl std::fmt::Display for Error {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unsupported => formatter.write_str("application menus are not supported"),
+            Self::NotPublished => {
+                formatter.write_str("the application is not running or has not published its menu")
+            }
             Self::Bus(detail) => write!(formatter, "application menu D-Bus call failed: {detail}"),
             Self::Protocol => formatter.write_str("application menu data is invalid"),
         }
@@ -828,6 +933,17 @@ pub fn window_request_channel() -> (
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn menu_bus_names_map_back_to_their_app() {
+        for app_id in MENU_APPS {
+            let name = bus_name(app_id).expect("every menu app has a bus name");
+            assert_eq!(app_for_bus_name(name), Some(*app_id));
+            assert!(specs(app_id).is_some());
+        }
+        assert_eq!(app_for_bus_name("org.rmac.Focus1"), None);
+        assert_eq!(app_for_bus_name("org.rmac.Files"), None);
+    }
 
     #[test]
     fn third_party_and_app_drawer_cannot_publish_global_menus() {

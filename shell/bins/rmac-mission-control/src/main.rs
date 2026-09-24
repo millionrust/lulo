@@ -31,7 +31,10 @@ mod linux_wayland {
     };
     use gpui_platform::application;
     use rmac_compositor::reveal::{self, Revealed};
-    use rmac_compositor::{Action, OutputId, Snapshot, WindowId, WorkspaceId};
+    use rmac_compositor::{
+        frame_to_percent, Action, Distance, OutputId, Snapshot, TileHistoryStore, TileRegion,
+        WindowId, WorkspaceId,
+    };
     use rmac_shell_settings::{ClickWallpaperToReveal, HotCornerSettings};
     use rmac_shell_ui::tokens;
     use uuid::Uuid;
@@ -48,6 +51,10 @@ mod linux_wayland {
     /// The height rmac's menu bar reserves (rmac-menubar BAR_HEIGHT). The
     /// Mac measures its wallpaper-click reveal from below the menu bar.
     const MENU_BAR_HEIGHT: f64 = 29.0;
+    /// The Dock's reservation (rmac-dock EXCLUSIVE_ZONE, WIN-02). Fill,
+    /// Centre and the halves (WIN-01) measure their working area between
+    /// this and the menu bar, above.
+    const DOCK_HEIGHT: f64 = 89.0;
     /// niri's window-movement animation (shell.kdl: 300 ms). Under Reduce
     /// Motion the screen holds this long while windows move, then
     /// crossfades; Mission Control waits this long for windows coming back.
@@ -91,7 +98,6 @@ mod linux_wayland {
         catalog: Rc<Vec<rmac_apps::Application>>,
         overlay: Option<WindowHandle<Overlay>>,
         opening: bool,
-        shown_desktop: Option<model::ShownDesktop>,
         /// The + button was pressed while standing on niri's spare workspace;
         /// name the next spare one as soon as niri creates it.
         pending_add: Option<OutputId>,
@@ -104,6 +110,14 @@ mod linux_wayland {
         corner_key: Vec<(Uuid, Corner)>,
         corner_windows: Vec<WindowHandle<CornerView>>,
         space_pictures: HashMap<WorkspaceId, SpacePicture>,
+        /// The last picture captured of each window, kept across captures so
+        /// an occluded window (MC-01) still shows a real picture rather than
+        /// only its icon.
+        window_pictures: HashMap<WindowId, Arc<RenderImage>>,
+        /// The frame Fill, Centre or a half (WIN-01) moved a window from,
+        /// so 🌐⌃R can put it back. Persisted so it survives this service
+        /// restarting (`ParkingStore`'s reasoning, crates/rmac-compositor).
+        tile_history: TileHistoryStore,
     }
 
     impl Service {
@@ -113,7 +127,6 @@ mod linux_wayland {
                 catalog: Rc::new(Vec::new()),
                 overlay: None,
                 opening: false,
-                shown_desktop: None,
                 pending_add: None,
                 corners: HotCornerSettings::default(),
                 click_to_reveal: ClickWallpaperToReveal::default(),
@@ -122,6 +135,8 @@ mod linux_wayland {
                 corner_key: Vec::new(),
                 corner_windows: Vec::new(),
                 space_pictures: HashMap::new(),
+                window_pictures: HashMap::new(),
+                tile_history: TileHistoryStore::load_default(),
             };
             service.refresh_catalog(cx);
             service
@@ -142,7 +157,41 @@ mod linux_wayland {
             let live: Vec<WorkspaceId> = self.compositor.workspaces.keys().copied().collect();
             self.space_pictures
                 .retain(|workspace, _| live.contains(workspace));
+            let live_windows: Vec<WindowId> = self.compositor.windows.keys().copied().collect();
+            self.window_pictures
+                .retain(|window, _| live_windows.contains(window));
+            self.tile_history.prune(&live_windows);
             (change.topology, action)
+        }
+
+        /// Record `window`'s current frame as where Fill, Centre or a half
+        /// (WIN-01) moved it from, unless one is already recorded: a second
+        /// tiling action keeps the frame from before the first, so 🌐⌃R
+        /// always lands back on the window's original size.
+        fn record_tile_history(&mut self, snapshot: &Snapshot, window: WindowId) {
+            let Some(percent) = tile_history_percent(snapshot, window) else {
+                return;
+            };
+            self.tile_history.record(window, percent);
+            if let Err(error) = self.tile_history.save_default() {
+                eprintln!("Mission Control could not save the tile history: {error}");
+            }
+        }
+
+        /// 🌐⌃R: the action that puts `window` back, or `None` when nothing
+        /// is recorded for it (an honest no-op, not a simulated size).
+        fn restore_window_size(&mut self, window: WindowId) -> Option<Action> {
+            let frame = self.tile_history.take(window)?;
+            if let Err(error) = self.tile_history.save_default() {
+                eprintln!("Mission Control could not save the tile history: {error}");
+            }
+            Some(Action::SetWindowFrame {
+                window,
+                x: Distance(frame.x),
+                y: Distance(frame.y),
+                width: Distance(frame.width),
+                height: Distance(frame.height),
+            })
         }
 
         /// A wallpaper click: bring pushed-aside windows back, or push every
@@ -154,6 +203,24 @@ mod linux_wayland {
             if self.click_to_reveal == ClickWallpaperToReveal::Never {
                 return Vec::new();
             }
+            self.push_to_edges()
+        }
+
+        /// F11: push every window aside like a wallpaper click, leaving Mac
+        /// slivers at the screen edges (crates/rmac-compositor/src/reveal.rs).
+        /// Unlike a wallpaper click this always runs, regardless of "click
+        /// wallpaper to reveal desktop". F11 again brings the windows back.
+        fn show_desktop(&mut self) -> Vec<Action> {
+            if self.revealed.is_some() {
+                self.bring_back()
+            } else {
+                self.push_to_edges()
+            }
+        }
+
+        /// Push every window on the showing Spaces to the screen edges.
+        /// Empty when there is nothing to push.
+        fn push_to_edges(&mut self) -> Vec<Action> {
             let snapshot = self.compositor.snapshot();
             let Some((revealed, actions)) =
                 reveal::reveal(&snapshot, MENU_BAR_HEIGHT, reveal_sliver())
@@ -267,6 +334,46 @@ mod linux_wayland {
     /// working area.
     fn reveal_sliver() -> f64 {
         reveal::MAC_SLIVER.max(rmac_compositor_niri::FLOATING_MIN_VISIBLE)
+    }
+
+    /// `window`'s current floating frame, as a percentage of its output's
+    /// working area (WIN-01/WIN-02's menu bar and Dock reservation), for
+    /// "Return to Previous Size" to restore later. `None` for a window rmac
+    /// cannot place this way: not floating (every rmac window is), its
+    /// output's logical size is not known yet, or it has no layout (a
+    /// hidden Space).
+    fn tile_history_percent(
+        snapshot: &Snapshot,
+        window: WindowId,
+    ) -> Option<rmac_compositor::FramePercent> {
+        let window = snapshot
+            .windows
+            .iter()
+            .find(|candidate| candidate.id == window)?;
+        if !window.floating {
+            return None;
+        }
+        let workspace = snapshot
+            .workspaces
+            .iter()
+            .find(|workspace| Some(workspace.id) == window.workspace)?;
+        let output = snapshot
+            .outputs
+            .iter()
+            .find(|output| Some(&output.id) == workspace.output.as_ref())?;
+        let logical = output.logical.as_ref()?;
+        let position = window.layout.tile_position_in_view?;
+        let size = window.layout.tile_size;
+        frame_to_percent(
+            logical.size.width,
+            logical.size.height,
+            MENU_BAR_HEIGHT,
+            DOCK_HEIGHT,
+            position.x,
+            position.y,
+            size.width,
+            size.height,
+        )
     }
 
     /// Under Reduce Motion, hold the screen while niri moves the windows and
@@ -1288,7 +1395,9 @@ mod linux_wayland {
 
     fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
         // Every other command starts from the windows where they belong.
-        if command != Command::WallpaperClick {
+        // Show Desktop is a toggle over the same pushed-aside state, so it
+        // is excluded like a wallpaper click.
+        if command != Command::WallpaperClick && command != Command::ShowDesktop {
             let back = service.update(cx, |service, _| service.bring_back());
             if !back.is_empty() {
                 run_actions(back, cx);
@@ -1332,7 +1441,60 @@ mod linux_wayland {
             Command::Cancel => {
                 close_overlay(service, cx);
             }
+            Command::Fill
+            | Command::Centre
+            | Command::TileLeft
+            | Command::TileRight
+            | Command::TileTop
+            | Command::TileBottom
+            | Command::RestoreSize => {
+                close_overlay(service, cx);
+                tile_focused_window(service, command, cx);
+            }
         }
+    }
+
+    /// Window ▸ Move & Resize, WIN-01: Fill, Centre, a half, or Return to
+    /// Previous Size, applied to whichever window niri reports focused.
+    /// rmac windows are always floating, so every command is a floating
+    /// frame (docs/decisions/0014-mission-control.md).
+    fn tile_focused_window(service: &Entity<Service>, command: Command, cx: &mut App) {
+        let snapshot = service.read(cx).compositor.snapshot();
+        let Some(window) = snapshot.focus.window else {
+            return;
+        };
+        if command == Command::RestoreSize {
+            let action = service.update(cx, |service, _| service.restore_window_size(window));
+            if let Some(action) = action {
+                run_actions(vec![action], cx);
+            }
+            return;
+        }
+        service.update(cx, |service, _| {
+            service.record_tile_history(&snapshot, window)
+        });
+        let action = match command {
+            Command::Fill => Action::FillWindow { window },
+            Command::Centre => Action::CenterWindow { window },
+            Command::TileLeft => Action::TileWindow {
+                window,
+                region: TileRegion::Left,
+            },
+            Command::TileRight => Action::TileWindow {
+                window,
+                region: TileRegion::Right,
+            },
+            Command::TileTop => Action::TileWindow {
+                window,
+                region: TileRegion::Top,
+            },
+            Command::TileBottom => Action::TileWindow {
+                window,
+                region: TileRegion::Bottom,
+            },
+            other => unreachable!("tile_focused_window called with {other:?}"),
+        };
+        run_actions(vec![action], cx);
     }
 
     fn toggle(service: &Entity<Service>, mode: Mode, cx: &mut App) {
@@ -1374,14 +1536,15 @@ mod linux_wayland {
             return;
         }
         let snapshot = service.read(cx).compositor.snapshot();
-        let pictures: HashMap<WindowId, Arc<RenderImage>> = captured
+        // Windows nothing covers right now: a fresh screenshot crop each.
+        let fresh: HashMap<WindowId, Arc<RenderImage>> = captured
             .windows
             .into_iter()
             .filter_map(|(id, pixels)| render_image(pixels).map(|image| (id, image)))
             .collect();
         let desktop = captured.desktop.and_then(render_image);
         let spaces = model::spaces(&snapshot, &scene.output);
-        let (space_pictures, items) = service.update(cx, |service, _| {
+        let (space_pictures, items, pictures) = service.update(cx, |service, _| {
             if let (Some(image), Some(space)) = (
                 desktop,
                 spaces
@@ -1413,7 +1576,24 @@ mod linux_wayland {
                     (app_id, item)
                 })
                 .collect();
-            (space_pictures, items)
+            // Cache every freshly captured picture, then look every window
+            // of the Space up in the cache. A window nothing covers right
+            // now still shows the last picture Mission Control has of it
+            // (MC-01): the Mac keeps a live layer for every window, and a
+            // screenshot-based capture cannot, but the picture it took the
+            // last time this window was on top beats the icon card.
+            service.window_pictures.extend(fresh);
+            let pictures: HashMap<WindowId, Arc<RenderImage>> = scene
+                .windows
+                .iter()
+                .filter_map(|window| {
+                    service
+                        .window_pictures
+                        .get(&window.id)
+                        .map(|image| (window.id, image.clone()))
+                })
+                .collect();
+            (space_pictures, items, pictures)
         });
 
         let displays = rmac_shell_layer::output_surfaces::newest_displays(cx);
@@ -1467,27 +1647,11 @@ mod linux_wayland {
         }
     }
 
-    /// F11: show the output's empty Space; F11 again goes back.
+    /// F11: push every window to the screen edges, Mac-style; F11 again
+    /// brings them back (`Service::show_desktop`).
     fn show_desktop(service: &Entity<Service>, cx: &mut App) {
-        let (snapshot, shown) = {
-            let state = service.read(cx);
-            (state.compositor.snapshot(), state.shown_desktop.clone())
-        };
-        if let Some(shown) = shown {
-            service.update(cx, |service, _| service.shown_desktop = None);
-            if let Some(action) = model::restore_desktop(&snapshot, &shown) {
-                run_actions(vec![action], cx);
-                return;
-            }
-        }
-        let Some(shown) = model::show_desktop(&snapshot) else {
-            return;
-        };
-        let action = Action::FocusWorkspace {
-            workspace: shown.empty,
-        };
-        service.update(cx, |service, _| service.shown_desktop = Some(shown));
-        run_actions(vec![action], cx);
+        let actions = service.update(cx, |service, _| service.show_desktop());
+        run_actions(actions, cx);
     }
 
     fn run_service() -> Result<(), String> {

@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=rmac
+Name=Lulo OS
 Comment=A calm Linux desktop built on niri
 Exec=/usr/libexec/rmac/rmac-wayland-session
 TryExec=/usr/bin/niri-session

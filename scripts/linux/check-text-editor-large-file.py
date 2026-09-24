@@ -23,7 +23,7 @@ Shapes:
                   repeating 1 KiB pattern with no newlines
 
 UI runs share the laptop's screen with other agents, so the check takes
-/tmp/lulo-journey.lock (flock, 900 s) itself unless --no-lock is given.
+/tmp/lulo-journey.lock (flock, --lock-timeout) itself unless --no-lock is given.
 """
 
 from __future__ import annotations
@@ -220,6 +220,8 @@ def main() -> int:
     parser.add_argument("--idle", type=float, default=5.0,
                         help="seconds of idle CPU sampling after load")
     parser.add_argument("--no-lock", action="store_true")
+    parser.add_argument("--lock-timeout", type=int, default=1800,
+                        help="seconds to wait for the journey screen lock")
     args = parser.parse_args()
 
     for variable in ("WAYLAND_DISPLAY", "NIRI_SOCKET"):
@@ -230,16 +232,21 @@ def main() -> int:
     lock = None
     if not args.no_lock:
         lock = open(JOURNEY_LOCK, "a")
-        deadline = time.monotonic() + 900
-        while True:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if time.monotonic() > deadline:
-                    print("timed out waiting for the journey screen lock", file=sys.stderr)
-                    return 2
-                time.sleep(1)
+        # Block in flock(2) like the shell `flock -w` other runs use, rather
+        # than polling, so this run is not starved by a busy screen.
+        # (Python retries an interrupted flock, so the handler must raise.)
+        def lock_timed_out(*_: Any) -> None:
+            raise TimeoutError
+
+        signal.signal(signal.SIGALRM, lock_timed_out)
+        signal.alarm(args.lock_timeout)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        except TimeoutError:
+            print("timed out waiting for the journey screen lock", file=sys.stderr)
+            return 2
+        finally:
+            signal.alarm(0)
 
     size = int(args.size_mib * 1024 * 1024)
     results = []

@@ -7,6 +7,7 @@ authors.workspace = true
 
 [dependencies]
 async-channel.workspace = true
+async-io.workspace = true
 futures-util.workspace = true
 rmac-apps.workspace = true
 rmac-locale.workspace = true

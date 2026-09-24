@@ -164,10 +164,26 @@ pub(crate) fn catalog(
             .unwrap_or_else(|| frontmost.app_id.clone());
         let app_icon = icon(applications, &frontmost.app_id);
         for menu in &frontmost.menus {
-            for entry in menu.items.iter().filter(|entry| entry.enabled) {
+            // The exported app-menu items sit under the app's own name.
+            let menu_label = if menu.label == rmac_app_menu::APPLICATION_MENU {
+                app_name.as_str()
+            } else {
+                menu.label.as_str()
+            };
+            for (path, entry) in menu.leaves().into_iter().filter(|(_, entry)| entry.enabled) {
+                let title = if entry.action == rmac_app_menu::ABOUT_ACTION {
+                    format!("About {app_name}")
+                } else {
+                    entry.label.trim_end_matches('…').to_owned()
+                };
+                let subtitle = std::iter::once(app_name.as_str())
+                    .chain(std::iter::once(menu_label))
+                    .chain(path)
+                    .collect::<Vec<_>>()
+                    .join(" > ");
                 items.push(ActionItem {
-                    title: entry.label.trim_end_matches('…').to_owned(),
-                    subtitle: format!("{app_name} > {}", menu.label),
+                    title,
+                    subtitle,
                     section: app_name.clone(),
                     icon: app_icon.clone(),
                     keywords: &[],
@@ -382,13 +398,11 @@ mod tests {
             app_id: rmac_apps::identity::TERMINAL.to_owned(),
             menus: vec![rmac_app_menu::Menu {
                 label: "Edit".into(),
-                items: vec![rmac_app_menu::Item {
-                    label: "Clear Scrollback".into(),
-                    action: "terminal::ClearScrollback".into(),
-                    shortcut: String::new(),
-                    enabled: true,
-                    separator_before: false,
-                }],
+                items: vec![rmac_app_menu::Item::new(
+                    "Clear Scrollback",
+                    "terminal::ClearScrollback",
+                    "",
+                )],
             }],
         };
         let items = catalog(

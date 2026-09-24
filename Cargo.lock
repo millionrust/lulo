@@ -5410,6 +5410,7 @@ name = "rmac-app-menu"
 version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
+ "async-io",
  "futures-util",
  "rmac-apps",
  "rmac-locale",

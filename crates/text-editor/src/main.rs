@@ -1,9 +1,12 @@
 //! rmac Text Editor — a fast, native TextEdit-style editor.
 
 mod document;
+mod long_lines;
 mod recovery;
 mod rtf;
 mod storage;
+#[cfg(test)]
+mod test_alloc;
 mod view;
 
 gpui::actions!(

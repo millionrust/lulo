@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 
 pub(crate) const MAX_DOCUMENT_BYTES: usize = 64 * 1024 * 1024;
@@ -93,9 +94,9 @@ impl TextFormat {
     }
 }
 
-pub(crate) fn has_unsaved_changes(
-    value: &str,
-    saved_value: &str,
+pub(crate) fn has_unsaved_changes<T: PartialEq + ?Sized>(
+    value: &T,
+    saved_value: &T,
     format: TextFormat,
     saved_format: TextFormat,
 ) -> bool {
@@ -107,6 +108,9 @@ pub(crate) struct DecodedDocument {
     pub(crate) text: String,
     pub(crate) format: TextFormat,
     pub(crate) original_bytes: Vec<u8>,
+    /// Byte length of the longest line of `text`, measured while decoding
+    /// so the caller can choose a view without scanning the text again.
+    pub(crate) longest_line: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,9 +164,11 @@ pub(crate) fn decode(bytes: Vec<u8>) -> Result<DecodedDocument, CodecError> {
                 .to_string(),
         )
     };
-    let normalized = normalize_line_endings(&decoded);
+    let normalized = normalize_owned_line_endings(decoded);
     let save_line_ending = preferred_line_ending(&normalized);
+    let longest_line = crate::long_lines::longest_line_bytes(&normalized.text);
     Ok(DecodedDocument {
+        longest_line,
         text: normalized.text,
         format: TextFormat {
             encoding,
@@ -174,7 +180,13 @@ pub(crate) fn decode(bytes: Vec<u8>) -> Result<DecodedDocument, CodecError> {
 }
 
 pub(crate) fn encode(text: &str, format: TextFormat) -> Result<Vec<u8>, CodecError> {
-    let normalized = normalize_line_endings(text).text;
+    // The editor keeps text normalized to LF, so the usual save borrows it
+    // and the only full copy is the encoded output.
+    let normalized = if text.contains('\r') {
+        Cow::Owned(normalize_line_endings(text).text)
+    } else {
+        Cow::Borrowed(text)
+    };
     let line_ending = match format.save_line_ending {
         LineEnding::CrLf => "\r\n",
         LineEnding::Cr => "\r",
@@ -183,10 +195,10 @@ pub(crate) fn encode(text: &str, format: TextFormat) -> Result<Vec<u8>, CodecErr
     let serialized = if line_ending == "\n" {
         normalized
     } else {
-        normalized.replace('\n', line_ending)
+        Cow::Owned(normalized.replace('\n', line_ending))
     };
     let output = match format.encoding {
-        TextEncoding::Utf8 => serialized.into_bytes(),
+        TextEncoding::Utf8 => serialized.into_owned().into_bytes(),
         TextEncoding::Utf8Bom => {
             let mut output = Vec::with_capacity(serialized.len().saturating_add(3));
             output.extend_from_slice(&[0xef, 0xbb, 0xbf]);
@@ -245,6 +257,28 @@ struct NormalizedText {
     crlf: usize,
     cr: usize,
     first: Option<LineEnding>,
+}
+
+/// [`normalize_line_endings`] for decoded text the caller no longer needs:
+/// text without a carriage return, the common case, is moved rather than
+/// copied.
+fn normalize_owned_line_endings(text: String) -> NormalizedText {
+    if text.as_bytes().contains(&b'\r') {
+        return normalize_line_endings(&text);
+    }
+    let lf = text.bytes().filter(|&byte| byte == b'\n').count();
+    NormalizedText {
+        text,
+        kind: if lf > 0 {
+            LineEnding::Lf
+        } else {
+            LineEnding::None
+        },
+        lf,
+        crlf: 0,
+        cr: 0,
+        first: (lf > 0).then_some(LineEnding::Lf),
+    }
 }
 
 fn normalize_line_endings(text: &str) -> NormalizedText {
@@ -429,6 +463,26 @@ mod tests {
             decode(vec![0xff, 0xfe, 0x00, 0x00]),
             Err(CodecError::UnsupportedUtf32)
         );
+    }
+
+    /// Journey 5's large fixture size: 24 MiB, no carriage returns. Loading
+    /// keeps the original bytes (the revision a save must match) plus one
+    /// decoded copy; line-ending normalization must not add another, and
+    /// saving must not copy the text before encoding it.
+    #[test]
+    fn a_large_document_decodes_and_encodes_with_one_copy() {
+        let size = 24 * 1024 * 1024;
+        let bytes = "0123456789abcdef\n".repeat(size / 17).into_bytes();
+        let length = bytes.len();
+        let (decoded, peak) = crate::test_alloc::peak_heap_during(|| decode(bytes).unwrap());
+        assert_eq!(decoded.text.len(), length);
+        assert_eq!(decoded.longest_line, 16);
+        assert!(peak <= length + length / 8, "decode held {peak} bytes");
+
+        let (encoded, peak) =
+            crate::test_alloc::peak_heap_during(|| encode(&decoded.text, decoded.format).unwrap());
+        assert_eq!(encoded, decoded.original_bytes);
+        assert!(peak <= length + length / 8, "encode held {peak} bytes");
     }
 
     #[test]

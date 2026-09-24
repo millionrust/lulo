@@ -173,6 +173,120 @@ class InstallScriptBehaviorTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
 
 
+def _run_install_function(snippet: str) -> subprocess.CompletedProcess[str]:
+    """Run install.sh's function definitions (without main) plus `snippet`."""
+    text = INSTALL.read_text(encoding="utf-8")
+    body, _, _ = text.rpartition('\nmain "$@"')
+    return subprocess.run(
+        ["/bin/sh", "-c", f"{body}\n{snippet}\n"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+
+PINNED = "0123456789ABCDEF0123456789ABCDEF01234567"
+OTHER = "FEDCBA9876543210FEDCBA9876543210FEDCBA98"
+
+
+def _listing(*records: str) -> str:
+    return "\n".join(records)
+
+
+class InstallKeyringVerificationTests(unittest.TestCase):
+    def _verify(self, listing: str) -> subprocess.CompletedProcess[str]:
+        return _run_install_function(
+            f"RMAC_ARCHIVE_KEYRING_FINGERPRINT={PINNED}\n"
+            f"verify_keyring_listing '{listing}' && echo verified"
+        )
+
+    def test_accepts_the_pinned_primary_key_with_a_subkey(self):
+        result = self._verify(
+            _listing(
+                "pub:-:255:22:0123456789ABCDEF:1700000000:::-:::scESC::::::23::0:",
+                f"fpr:::::::::{PINNED}:",
+                "uid:-::::1700000000::HASH::rmac archive::::::::::0:",
+                "sub:-:255:18:AAAAAAAAAAAAAAAA:1700000000::::::e::::::23:",
+                f"fpr:::::::::{OTHER}:",
+            )
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("verified", result.stdout)
+
+    def test_rejects_a_second_primary_key_beside_the_pinned_one(self):
+        # Previously any keyring that merely *contained* the pinned
+        # fingerprint passed, so an extra attacker key would have been
+        # trusted by Signed-By too.
+        result = self._verify(
+            _listing(
+                "pub:-:255:22:0123456789ABCDEF:1700000000:::-:::scESC::::::23::0:",
+                f"fpr:::::::::{PINNED}:",
+                "pub:-:255:22:FEDCBA9876543210:1700000000:::-:::scESC::::::23::0:",
+                f"fpr:::::::::{OTHER}:",
+            )
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("exactly one primary key", result.stderr)
+
+    def test_rejects_the_pinned_fingerprint_only_as_a_subkey(self):
+        result = self._verify(
+            _listing(
+                "pub:-:255:22:FEDCBA9876543210:1700000000:::-:::scESC::::::23::0:",
+                f"fpr:::::::::{OTHER}:",
+                "sub:-:255:18:0123456789ABCDEF:1700000000::::::e::::::23:",
+                f"fpr:::::::::{PINNED}:",
+            )
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("pinned rmac archive fingerprint", result.stderr)
+
+    def test_rejects_an_empty_keyring(self):
+        result = self._verify("")
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_installs_only_the_verified_keyring_file_never_the_unsigned_deb(self):
+        text = INSTALL.read_text(encoding="utf-8")
+        self.assertNotIn("sudo dpkg -i", text)
+        self.assertIn('install -o root -g root -m 0644 "$verified_keyring_file"', text)
+        self.assertIn("apt-get install --yes rmac-archive-keyring rmac-session", text)
+
+
+class InstallReleaseAssetNameTests(unittest.TestCase):
+    def _asset(self, listing: str, package: str) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as temporary:
+            sums = Path(temporary) / "SHA256SUMS"
+            sums.write_text(listing, encoding="utf-8")
+            return _run_install_function(
+                f"architecture=amd64\nrelease_asset_name '{sums}' {package}"
+            )
+
+    def test_finds_a_beta_package_with_a_debian_tilde_version(self):
+        listing = (
+            "aa  rmac-apps_0.9.0~beta.1-1_amd64.deb\n"
+            "bb  rmac-apps_0.9.0~beta.1-1_arm64.deb\n"
+            "cc  rmac-session_0.9.0~beta.1-1_amd64.deb\n"
+        )
+        result = self._asset(listing, "rmac-apps")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "rmac-apps_0.9.0~beta.1-1_amd64.deb")
+
+    def test_finds_a_final_release_package(self):
+        result = self._asset("aa  rmac-session_1.2.3-1_amd64.deb\n", "rmac-session")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "rmac-session_1.2.3-1_amd64.deb")
+
+    def test_rejects_path_like_or_ambiguous_names(self):
+        for listing in (
+            "aa  ../rmac-apps_1.2.3-1_amd64.deb\n",
+            "aa  rmac-apps_1.2.3-1_amd64.deb/x\n",
+            "aa  rmac-apps_1.2.3-1_amd64.deb\nbb  rmac-apps_1.2.4-1_amd64.deb\n",
+        ):
+            with self.subTest(listing=listing):
+                result = self._asset(listing, "rmac-apps")
+                self.assertNotEqual(result.returncode, 0)
+
+
 class UninstallScriptBehaviorTests(unittest.TestCase):
     def test_runs_cleanly_when_no_rmac_packages_are_known_to_dpkg(self):
         # On a machine where dpkg/systemctl are unavailable (this development

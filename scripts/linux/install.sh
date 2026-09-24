@@ -123,18 +123,37 @@ download_and_verify_keyring() {
 
     fingerprint_listing="$(gpg --batch --no-default-keyring --with-colons --show-keys "$keyring_file" 2>/dev/null)" \
         || fail "the downloaded keyring could not be parsed"
-    # A gpg --with-colons "fpr" record is exactly
-    # "fpr:::::::::<fingerprint>:" (nine empty fields, then the fingerprint).
-    match=$(printf '%s\n' "$fingerprint_listing" \
-        | grep -Fc "fpr:::::::::${RMAC_ARCHIVE_KEYRING_FINGERPRINT}:" || true)
-    [ "$match" -ge 1 ] || fail "the downloaded keyring does not contain the pinned rmac archive fingerprint"
+    verify_keyring_listing "$fingerprint_listing"
 
-    downloaded_keyring_deb="$keyring_deb"
+    verified_keyring_file="$keyring_file"
+}
+
+# The pinned fingerprint only authenticates anything when it is the ONLY
+# primary key APT will trust through Signed-By: a keyring that also carried
+# a second (attacker) primary key would let that key sign InRelease. So
+# require exactly one "pub" record, and require the fingerprint record right
+# after it (the primary key's own; later "fpr" records belong to subkeys)
+# to be the pinned one. A gpg --with-colons "fpr" record is exactly
+# "fpr:::::::::<fingerprint>:" (nine empty fields, then the fingerprint).
+verify_keyring_listing() {
+    primary_keys=$(printf '%s\n' "$1" | grep -c '^pub:' || true)
+    [ "$primary_keys" -eq 1 ] \
+        || fail "the downloaded keyring must contain exactly one primary key (found $primary_keys)"
+    primary_fingerprint=$(printf '%s\n' "$1" \
+        | awk -F: '$1 == "pub" { want = 1; next } want && $1 == "fpr" { print $10; exit }')
+    [ "$primary_fingerprint" = "$RMAC_ARCHIVE_KEYRING_FINGERPRINT" ] \
+        || fail "the downloaded keyring does not contain the pinned rmac archive fingerprint"
 }
 
 install_keyring_and_repository() {
-    sudo dpkg -i "$downloaded_keyring_deb" \
-        || fail "could not install the rmac archive keyring package"
+    # Install only the fingerprint-verified public keyring file, never the
+    # downloaded .deb itself: that package is signed by nothing, so
+    # `dpkg -i` would run its maintainer scripts and unpack any other files
+    # it carries as root on the strength of an HTTPS download alone. The
+    # rmac-archive-keyring package then comes from the signed repository
+    # (install_session) and takes this file over.
+    sudo install -o root -g root -m 0644 "$verified_keyring_file" "$RMAC_KEYRING_PATH" \
+        || fail "could not install the rmac archive keyring"
     [ -s "$RMAC_KEYRING_PATH" ] || fail "the rmac archive keyring did not install to $RMAC_KEYRING_PATH"
 
     sudo tee "$RMAC_SOURCES_PATH" >/dev/null <<EOF
@@ -157,7 +176,7 @@ EOF
 install_session() {
     sudo apt-get update \
         || fail "apt update failed; check the rmac repository configuration"
-    sudo apt-get install --yes rmac-session \
+    sudo apt-get install --yes rmac-archive-keyring rmac-session \
         || fail "installing rmac-session failed"
 }
 
@@ -167,7 +186,9 @@ install_session() {
 release_asset_name() {
     sums_file="$1"
     package="$2"
-    pattern="^${package}_[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]+_${architecture}\\.deb\$"
+    # A Debian upstream version carries a pre-release as "~" (0.9.0~beta.1),
+    # which native_package_contract.py produces for Beta builds.
+    pattern="^${package}_[0-9]+\\.[0-9]+\\.[0-9]+(~[0-9A-Za-z]+(\\.[0-9A-Za-z]+)*)?-[0-9]+_${architecture}\\.deb\$"
     matches="$(awk '{print $NF}' "$sums_file" | grep -E "$pattern" || true)"
     count="$(printf '%s\n' "$matches" | grep -c . || true)"
     [ "$count" -eq 1 ] \

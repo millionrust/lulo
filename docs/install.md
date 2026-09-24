@@ -51,17 +51,21 @@ following, and nothing else:
 1. Refuses to run as root; it calls `sudo` itself only for the steps that
    need it.
 2. Checks that the machine reports Ubuntu 26.04 on amd64 or arm64.
-3. Downloads `rmac-archive-keyring-latest.deb` over HTTPS and verifies with
-   `gpg` that it contains the exact archive fingerprint pinned in the
-   script -- HTTPS transport security is never treated as package
-   authentication (see [Update trust](update-trust.md)).
-4. Installs that keyring package (`/usr/share/keyrings/rmac-archive-keyring.gpg`)
+3. Downloads `rmac-archive-keyring-latest.deb` over HTTPS, unpacks it
+   without installing it, and verifies with `gpg` that its keyring holds
+   exactly one primary key, the archive fingerprint pinned in the script --
+   HTTPS transport security is never treated as package authentication
+   (see [Update trust](update-trust.md)).
+4. Copies only that verified keyring file to
+   `/usr/share/keyrings/rmac-archive-keyring.gpg` (the unsigned bootstrap
+   `.deb` is never given to `dpkg`, so none of its maintainer scripts run)
    and writes `/etc/apt/sources.list.d/rmac.sources` and
    `/etc/apt/preferences.d/rmac.pref` (the rendered
    `packaging/apt/rmac.sources.in` / `packaging/apt/rmac.pref`, pinned to
    `rmac-apps`, `rmac-session`, and the keyring package only).
-5. Runs `apt update && apt install rmac-session` (which pulls in
-   `rmac-apps` as a dependency).
+5. Runs `apt update && apt install rmac-archive-keyring rmac-session`: the
+   keyring package now comes from the signed repository and takes over the
+   keyring file, and `rmac-session` pulls in `rmac-apps`.
 
 It never touches the GNOME session: no session default changes, no GDM
 restart. The same steps written out by hand:
@@ -70,11 +74,13 @@ restart. The same steps written out by hand:
 # 1. Download and verify the keyring, then install it.
 curl -fsSL -o rmac-archive-keyring.deb \
   https://millionrust.github.io/lulo/rmac-archive-keyring-latest.deb
-gpg --show-keys --with-colons \
-  <(dpkg-deb --fsys-tarfile rmac-archive-keyring.deb \
-      | tar -xO ./usr/share/keyrings/rmac-archive-keyring.gpg) \
-  | grep fpr   # compare this fingerprint by hand against the README/Release notes
-sudo dpkg -i rmac-archive-keyring.deb
+dpkg-deb --fsys-tarfile rmac-archive-keyring.deb \
+  | tar -xO ./usr/share/keyrings/rmac-archive-keyring.gpg > rmac-archive-keyring.gpg
+gpg --show-keys --with-colons rmac-archive-keyring.gpg \
+  | grep -E '^(pub|fpr)'   # exactly one pub line; compare its fpr by hand
+                           # against the README/Release notes
+sudo install -o root -g root -m 0644 rmac-archive-keyring.gpg \
+  /usr/share/keyrings/rmac-archive-keyring.gpg
 
 # 2. Add the repository and its pin.
 sudo tee /etc/apt/sources.list.d/rmac.sources >/dev/null <<'EOF'
@@ -94,7 +100,7 @@ EOF
 
 # 3. Install.
 sudo apt update
-sudo apt install rmac-session
+sudo apt install rmac-archive-keyring rmac-session
 ```
 
 Log out and choose Lulo OS on the login screen. Keep Ubuntu/GNOME as the

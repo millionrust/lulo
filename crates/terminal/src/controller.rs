@@ -50,11 +50,11 @@ use alacritty_terminal::term::Term;
 use alacritty_terminal::term::TermMode;
 use gpui::{
     accesskit, canvas, div, prelude::FluentBuilder as _, px, A11ySubtreeBuilder, AppContext as _,
-    ClipboardItem, Context, Div, ElementInputHandler, Entity, FocusHandle, Focusable as _,
-    FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, KeyUpEvent,
-    Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, NavigationDirection,
-    ParentElement, Pixels, Point, Render, Role, ScrollDelta, ScrollWheelEvent, SharedString,
-    Stateful, StatefulInteractiveElement as _, Styled, Window,
+    ClipboardItem, Context, Div, ElementInputHandler, Entity, ExternalPaths, FocusHandle,
+    Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyBinding,
+    KeyDownEvent, KeyUpEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    NavigationDirection, ParentElement, Pixels, Point, Render, Role, ScrollDelta, ScrollWheelEvent,
+    SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::StyledExt as _;
 use rmac_terminal::accessibility::TerminalAccessibilitySnapshot;
@@ -69,7 +69,7 @@ const ROWS: usize = 24;
 pub(super) const MAX_TABS: usize = 16;
 /// The Basic profile's cells measure 7.0 × 14.0 pt on the Mac. JetBrains Mono
 /// advances 0.6 em, so 7.0 / 0.6 gives the same 7 pt column.
-const FONT_SIZE: f32 = 7.0 / 0.6;
+pub(crate) const FONT_SIZE: f32 = 7.0 / 0.6;
 const LINE_H: f32 = 14.0;
 /// Pre-measurement fallback for the monospace cell advance. The real advance
 /// is measured from `rmac_ui::MONO_FONT` through the window text system; this
@@ -120,7 +120,11 @@ gpui::actions!(
         NextTab,
         PrevTab,
         CycleProfile,
-        ShowProfiles
+        ShowProfiles,
+        NewWindow,
+        ResetTerminal,
+        HardResetTerminal,
+        ShowSettings,
     ]
 );
 /// Find-match highlight (macOS yellow).
@@ -204,6 +208,9 @@ pub(super) struct TerminalView {
     profile: usize,
     /// Whether the profile picker dropdown is open.
     picker_open: bool,
+    /// Whether ⌥ sends Meta (an Escape prefix) instead of typing the
+    /// platform's composed character. Off by default, as on the Mac.
+    option_as_meta: bool,
     persistence_error: Option<SharedString>,
     operation_error: Option<SharedString>,
     pending_close: Option<PendingClose>,

@@ -55,6 +55,64 @@ impl TerminalView {
         cx.notify();
     }
 
+    /// Shell ▸ Reset (⌥⌘R): the RIS soft reset a wedged program would answer
+    /// to — cursor, colors, and modes return to their defaults, but the
+    /// screen and scrollback are left alone, as on the Mac.
+    pub(super) fn reset(&mut self, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        if let Ok(mut terminal) = self.tabs[self.active].term.lock() {
+            terminal.reset_state();
+        }
+        self.tabs[self.active].ui.selection = None;
+        cx.notify();
+    }
+
+    /// Shell ▸ Hard Reset (⌃⌥⌘R): the same soft reset, plus the screen and
+    /// scrollback are cleared — the recovery for binary output that has left
+    /// the terminal unreadable.
+    pub(super) fn hard_reset(&mut self, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        if let Ok(mut terminal) = self.tabs[self.active].term.lock() {
+            terminal.reset_state();
+            terminal.clear_screen(ClearMode::All);
+            terminal.grid_mut().clear_history();
+            terminal.scroll_display(Scroll::Bottom);
+        }
+        self.tabs[self.active].clear_shell_marks();
+        self.tabs[self.active].ui.selection = None;
+        cx.notify();
+    }
+
+    /// Terminal ▸ Settings… (⌘,): the profile list and font size window.
+    pub(super) fn show_settings(&mut self, cx: &mut Context<Self>) {
+        crate::settings_window::show(cx);
+    }
+
+    /// Dropping a file onto the window inserts its shell-quoted path, as on
+    /// the Mac.
+    pub(super) fn drop_paths(&mut self, paths: &[std::path::PathBuf], cx: &mut Context<Self>) {
+        if self.modal_open() || paths.is_empty() {
+            return;
+        }
+        let text = paths
+            .iter()
+            .map(|path| crate::paste::shell_quote(&path.to_string_lossy()))
+            .collect::<Vec<_>>()
+            .join(" ");
+        match self.tabs[self.active].paste(&text, false) {
+            Ok(()) => {}
+            Err(PasteError::ReviewRequired) => {
+                self.pending_paste = Some(PendingPaste::new(self.tabs[self.active].id, text));
+            }
+            Err(_) => {}
+        }
+        cx.notify();
+    }
+
     pub(super) fn navigate_prompt(&mut self, direction: PromptDirection, cx: &mut Context<Self>) {
         if self.modal_open() {
             return;

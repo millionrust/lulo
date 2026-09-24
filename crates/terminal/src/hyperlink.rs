@@ -76,6 +76,40 @@ fn http_preview(scheme: &str, host: Host<&str>, port: Option<u16>) -> String {
     }
 }
 
+const URL_WRAPPERS: [char; 6] = ['(', '[', '{', '<', '"', '\''];
+const URL_TRAILERS: [char; 12] = ['.', ',', ';', ':', '!', '?', ')', ']', '}', '"', '\'', '>'];
+
+/// The `http`/`https` URL under `column` in a plain line of text, if any —
+/// for programs that print a link as bare text instead of an OSC 8
+/// hyperlink. A run of non-whitespace characters starting with `http://` or
+/// `https://` is a candidate; punctuation a sentence would wrap it in
+/// (`(…)`, `"…"`, a trailing `.` or `,`, …) is trimmed from both ends.
+pub(crate) fn find_url(line: &str, column: usize) -> Option<&str> {
+    let mut start = 0;
+    for word in line.split(' ') {
+        let word_start = start;
+        start += word.chars().count() + 1;
+        let leading = word
+            .chars()
+            .take_while(|c| URL_WRAPPERS.contains(c))
+            .count();
+        let candidate = &word[leading..];
+        if !(candidate.starts_with("http://") || candidate.starts_with("https://")) {
+            continue;
+        }
+        let trimmed = candidate.trim_end_matches(URL_TRAILERS.as_slice());
+        if trimmed.is_empty() {
+            continue;
+        }
+        let trimmed_start = word_start + leading;
+        let trimmed_end = trimmed_start + trimmed.chars().count();
+        if column >= trimmed_start && column < trimmed_end {
+            return Some(trimmed);
+        }
+    }
+    None
+}
+
 fn is_control_or_directional(character: char) -> bool {
     character.is_control()
         || matches!(
@@ -143,6 +177,21 @@ mod tests {
             )),
             Err(LinkRejection::TooLong)
         );
+    }
+
+    #[test]
+    fn finds_plain_urls_and_trims_sentence_punctuation() {
+        let line = "see https://example.test/docs, then continue.";
+        assert_eq!(find_url(line, 4), Some("https://example.test/docs"));
+        assert_eq!(find_url(line, 28), Some("https://example.test/docs"));
+        assert_eq!(find_url(line, 0), None);
+        assert_eq!(find_url(line, 40), None);
+        assert_eq!(
+            find_url("(http://a.test)", 1),
+            Some("http://a.test"),
+            "wrapping parentheses trim from both ends"
+        );
+        assert_eq!(find_url("no links here", 3), None);
     }
 
     #[test]

@@ -101,6 +101,12 @@ impl TerminalView {
             .on_action(cx.listener(|this, _: &SelectCommandOutput, _, cx| {
                 this.select_shell_range(CommandRangeKind::Output, cx)
             }))
+            .on_action(cx.listener(|_, _: &NewWindow, _, cx| {
+                rmac_ui::open_another_window(Vec::new(), cx);
+            }))
+            .on_action(cx.listener(|this, _: &ResetTerminal, _, cx| this.reset(cx)))
+            .on_action(cx.listener(|this, _: &HardResetTerminal, _, cx| this.hard_reset(cx)))
+            .on_action(cx.listener(|this, _: &ShowSettings, _, cx| this.show_settings(cx)))
             .on_action(cx.listener(|this, _: &NewTab, window, cx| {
                 this.new_tab(window, cx);
             }))
@@ -294,6 +300,10 @@ impl TerminalView {
                     this.scroll_lines(lines);
                     cx.notify();
                 }
+            }))
+            .drag_over::<ExternalPaths>(|style, _, _, _| style.opacity(0.85))
+            .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
+                this.drop_paths(paths.paths(), cx);
             }))
             .flex_1()
             .relative()

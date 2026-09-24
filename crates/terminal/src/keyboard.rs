@@ -81,15 +81,28 @@ fn is_supported_function_key(key: &str) -> bool {
 }
 
 /// Return true only when GPUI's platform input handler must deliver the text.
-pub(crate) fn uses_platform_text_input(keystroke: &Keystroke, mode: TermMode) -> bool {
+///
+/// `option_as_meta` is the Mac's "Use Option as Meta Key" setting (off by
+/// default): while it is off, ⌥-combinations reach here too, so the
+/// platform's composed character (e.g. "#" from ⌥3 on a UK layout) types
+/// instead of `encode_legacy_key`'s Escape-prefixed Meta sequence.
+pub(crate) fn uses_platform_text_input(
+    keystroke: &Keystroke,
+    mode: TermMode,
+    option_as_meta: bool,
+) -> bool {
     if mode.contains(TermMode::REPORT_ALL_KEYS_AS_ESC) {
         return false;
+    }
+    let mut allowed = Modifiers::shift();
+    if !option_as_meta {
+        allowed.alt = true;
     }
     keystroke
         .key_char
         .as_ref()
         .is_some_and(|text| !text.chars().any(char::is_control))
-        && keystroke.modifiers.is_subset_of(&Modifiers::shift())
+        && keystroke.modifiers.is_subset_of(&allowed)
 }
 
 fn control_byte(key: &str) -> Option<u8> {
@@ -547,43 +560,61 @@ mod tests {
 
         assert!(uses_platform_text_input(
             &keystroke("x", Some("λ"), Modifiers::default()),
-            TermMode::default()
+            TermMode::default(),
+            true
         ));
         assert!(uses_platform_text_input(
             &keystroke("a", Some("A"), shift),
-            TermMode::default()
+            TermMode::default(),
+            true
         ));
         assert!(!uses_platform_text_input(
             &keystroke("tab", Some("\t"), shift),
-            TermMode::default()
+            TermMode::default(),
+            true
         ));
         assert!(!uses_platform_text_input(
             &keystroke("enter", Some("\r"), Modifiers::default()),
-            TermMode::default()
+            TermMode::default(),
+            true
         ));
         assert!(!uses_platform_text_input(
             &keystroke("backspace", Some("\u{8}"), Modifiers::default()),
-            TermMode::default()
+            TermMode::default(),
+            true
         ));
         assert!(!uses_platform_text_input(
             &keystroke("c", Some("c"), control),
-            TermMode::default()
+            TermMode::default(),
+            true
         ));
+        // Use Option as Meta Key: on, ⌥ stays reserved for the legacy Meta
+        // path; off (the Mac's default), it reaches the platform's composed
+        // character instead.
         assert!(!uses_platform_text_input(
             &keystroke("x", Some("λ"), alt),
-            TermMode::default()
+            TermMode::default(),
+            true
+        ));
+        assert!(uses_platform_text_input(
+            &keystroke("x", Some("λ"), alt),
+            TermMode::default(),
+            false
         ));
         assert!(!uses_platform_text_input(
             &keystroke("x", Some("x"), platform),
-            TermMode::default()
+            TermMode::default(),
+            false
         ));
         assert!(!uses_platform_text_input(
             &keystroke("left", None, Modifiers::default()),
-            TermMode::default()
+            TermMode::default(),
+            false
         ));
         assert!(!uses_platform_text_input(
             &keystroke("x", Some("x"), Modifiers::default()),
-            TermMode::REPORT_ALL_KEYS_AS_ESC
+            TermMode::REPORT_ALL_KEYS_AS_ESC,
+            false
         ));
     }
 

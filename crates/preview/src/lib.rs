@@ -6,6 +6,7 @@ pub mod bounded;
 pub mod document;
 pub mod layout;
 pub mod metrics;
+pub mod pdfwriter;
 pub mod poppler;
 pub mod render;
 pub mod zoom;

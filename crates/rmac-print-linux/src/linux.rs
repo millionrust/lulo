@@ -210,6 +210,163 @@ pub async fn print_document(request: PrintDocument) -> Result<Outcome, Error> {
     }
 }
 
+#[derive(Clone)]
+pub struct PreparedPrintDocument {
+    pub window: RawWindowHandle,
+    pub display: RawDisplayHandle,
+    pub window_generation: u64,
+    pub document_generation: u64,
+    pub current_document_generation: Arc<AtomicU64>,
+    pub title: String,
+    /// An already-encoded PDF document — the original file's own bytes, or
+    /// one `rmac_preview::pdfwriter` built. Unlike [`print_document`], this
+    /// path never calls `rmac_print::render_pdf`: nothing here reformats
+    /// Preview's pages, so what the print dialog previews is exactly the
+    /// on-screen document.
+    pub pdf: Vec<u8>,
+}
+
+impl fmt::Debug for PreparedPrintDocument {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("PreparedPrintDocument")
+            .field("window", &"<private>")
+            .field("display", &"<private>")
+            .field("window_generation", &self.window_generation)
+            .field("document_generation", &self.document_generation)
+            .field("title", &"<private>")
+            .field("pdf", &"<private>")
+            .finish()
+    }
+}
+
+/// Like [`print_document`], but for a document that is already a PDF —
+/// Preview prints this way, since its pages are either the source PDF's own
+/// bytes or a JPEG wrapped in one page. There is no text to render, so this
+/// skips straight from the portal's page negotiation to submission.
+pub async fn print_prepared_document(request: PreparedPrintDocument) -> Result<Outcome, Error> {
+    let parent = ashpd::WindowIdentifier::from_raw_handle(&request.window, Some(&request.display))
+        .await
+        .ok_or_else(|| Error::new(ErrorKind::ParentWindow))?;
+    let parent_string = parent.to_string();
+    let identity = PrintIdentity::new(
+        parent_string.clone(),
+        request.window_generation,
+        request.document_generation,
+    )
+    .map_err(|_| Error::new(ErrorKind::ParentWindow))?;
+    require_current_prepared(&request, &identity, &parent_string)?;
+    let mut transaction = PortalPrintTransaction::new(identity.clone(), request.title.clone())
+        .map_err(|_| Error::new(ErrorKind::InvalidResponse))?;
+
+    let connection = zbus::Connection::session()
+        .await
+        .map_err(|_| Error::new(ErrorKind::PortalUnavailable))?;
+    let portal = zbus::Proxy::new(&connection, DESTINATION, PORTAL_PATH, PRINT_INTERFACE)
+        .await
+        .map_err(|_| Error::new(ErrorKind::PortalUnavailable))?;
+    let version = portal
+        .get_property::<u32>("version")
+        .await
+        .map_err(|_| Error::new(ErrorKind::PortalUnavailable))?;
+    if version < REQUIRED_PORTAL_VERSION {
+        return Err(Error::new(ErrorKind::PortalTooOld));
+    }
+
+    let prepared = prepare_print(
+        &connection,
+        &portal,
+        &parent_string,
+        transaction.title(),
+        transaction.supported_output_file_formats(),
+    )
+    .await?;
+    let values = match prepared {
+        PortalResponse::Accepted(values) => values,
+        PortalResponse::Cancelled => {
+            transaction
+                .cancel(&identity)
+                .map_err(|_| Error::new(ErrorKind::InvalidResponse))?;
+            return Ok(Outcome::Cancelled);
+        }
+    };
+    let current = current_identity_prepared(&request, &parent_string)?;
+    let (token, page, format) = decode_prepared(values)?;
+    let layout = transaction
+        .prepared(&current, token, page, format.as_deref())
+        .map_err(|error| {
+            if matches!(error, rmac_print::PortalPrintError::StaleIdentity) {
+                Error::new(ErrorKind::StaleDocument)
+            } else {
+                Error::new(ErrorKind::InvalidResponse)
+            }
+        })?;
+
+    // Nothing here reformats the already-final PDF bytes; `layout` is only
+    // relevant to `render_pdf`'s text path, but the transaction's state
+    // machine still requires it to record that rendering happened.
+    let current = current_identity_prepared(&request, &parent_string)?;
+    transaction
+        .rendered(&current, layout, OutputFormat::Pdf)
+        .map_err(|error| {
+            if matches!(error, rmac_print::PortalPrintError::StaleIdentity) {
+                Error::new(ErrorKind::StaleDocument)
+            } else {
+                Error::new(ErrorKind::InvalidResponse)
+            }
+        })?;
+    let pdf = request.pdf.clone();
+    let descriptor = blocking::unblock(move || printable_descriptor(&pdf))
+        .await
+        .map_err(|_| Error::new(ErrorKind::Descriptor))?;
+    let current = current_identity_prepared(&request, &parent_string)?;
+    let submission = transaction.submission(&current).map_err(|error| {
+        if matches!(error, rmac_print::PortalPrintError::StaleIdentity) {
+            Error::new(ErrorKind::StaleDocument)
+        } else {
+            Error::new(ErrorKind::InvalidResponse)
+        }
+    })?;
+
+    match submit_print(&connection, &portal, &submission, &descriptor).await? {
+        PortalResponse::Accepted(_) => {
+            transaction
+                .finish(&identity)
+                .map_err(|_| Error::new(ErrorKind::InvalidResponse))?;
+            Ok(Outcome::Printed)
+        }
+        PortalResponse::Cancelled => {
+            transaction
+                .cancel(&identity)
+                .map_err(|_| Error::new(ErrorKind::InvalidResponse))?;
+            Ok(Outcome::Cancelled)
+        }
+    }
+}
+
+fn require_current_prepared(
+    request: &PreparedPrintDocument,
+    expected: &PrintIdentity,
+    parent: &str,
+) -> Result<(), Error> {
+    let current = current_identity_prepared(request, parent)?;
+    (&current == expected)
+        .then_some(())
+        .ok_or_else(|| Error::new(ErrorKind::StaleDocument))
+}
+
+fn current_identity_prepared(
+    request: &PreparedPrintDocument,
+    parent: &str,
+) -> Result<PrintIdentity, Error> {
+    PrintIdentity::new(
+        parent,
+        request.window_generation,
+        request.current_document_generation.load(Ordering::Acquire),
+    )
+    .map_err(|_| Error::new(ErrorKind::ParentWindow))
+}
+
 fn require_current(
     request: &PrintDocument,
     expected: &PrintIdentity,

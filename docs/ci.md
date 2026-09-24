@@ -41,6 +41,22 @@ two of the `scripts/test_*.py` files use `tomllib` (3.11+) and
 reference macOS machines is an old Xcode 3.9 stub that lacks both — install
 a newer Python (`brew install python@3.12`, or `pyenv`) before running the
 suite locally, or aim `python3 -m unittest` at that interpreter directly.
+`scripts/test_build_cursors.py` also needs Pillow; the jobs install
+`Pillow==12.1.1` after setting up Python.
+
+Two of the source gates carry a checked-in exemption that may only shrink:
+
+- `scripts/check-design-tokens.sh` compares per-file counts of hard-coded
+  colors and radii against `scripts/design-token-baseline.txt`. A new file or
+  a growing count fails; after tokenizing values, run
+  `bash scripts/check-design-tokens.sh --update` and commit the smaller
+  baseline (`--report` lists every remaining value).
+- `scripts/check-gpui-component-imports.sh` does the same for
+  `gpui_component` uses against `scripts/gpui-component-baseline.txt`.
+
+`scripts/check-wording.py` skips a Rust line that ends in
+`// wording: internal` — use it only for literals the user never sees, such as
+a program name to match or a word used to screen error text.
 
 For `shell/`:
 

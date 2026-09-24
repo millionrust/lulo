@@ -360,9 +360,23 @@ layer-rule {
 // shadow take the card's own corner radius (popover 20, large surface 24).
 // Control Center's surface is sized to its modules and rounded concentric
 // with them (rmac_quick_settings::layout::SURFACE_RADIUS).
+//
+// CC-01 (2026-09-24 audit): the general rmac-(launcher|quick-settings|...)
+// catch-all rule above only turns off xray; it never asked niri for
+// `blur true`, so the modules composited their translucent tint straight
+// over the sharp, unblurred desktop and a folder label read clearly through
+// the Bluetooth module. The sibling OSD surface below renders these same
+// Control Center modules and already asks for blur explicitly, so match it
+// here instead of relying on the catch-all's defaults.
 layer-rule {
     match namespace=r#"^rmac-quick-settings$"#
     geometry-corner-radius 44
+    background-effect {
+        xray false
+        blur true
+        noise 0.025
+        saturation 1.35
+    }
     shadow {
         on
         softness 30

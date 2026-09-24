@@ -9,6 +9,8 @@ use zbus::fdo;
 use zbus::message::Header;
 use zbus::{interface, Connection};
 
+pub mod unsaved;
+
 pub const OBJECT_PATH: &str = "/org/rmac/AppMenu1";
 pub const INTERFACE_NAME: &str = "org.rmac.AppMenu1";
 /// Served beside the menu by apps that run as one process with many

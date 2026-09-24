@@ -13,6 +13,9 @@ rmac-storage.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus.workspace = true
+
 [[bin]]
 name = "rmac-session-supervisor"
 path = "src/main.rs"

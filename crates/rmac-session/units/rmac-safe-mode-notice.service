@@ -1,0 +1,12 @@
+[Unit]
+Description=Explain rmac safe mode and offer a normal restart
+Documentation=https://github.com/rmac/rmac
+PartOf=rmac-safe-mode.target
+After=rmac-session-supervisor.service
+
+[Service]
+Type=simple
+ExecStart=%h/.local/libexec/rmac/rmac-session-supervisor notify-safe-mode
+Restart=no
+NoNewPrivileges=yes
+PrivateTmp=yes

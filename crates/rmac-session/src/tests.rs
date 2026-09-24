@@ -34,6 +34,7 @@ fn diagnostics_omit_process_ids_paths_logs_and_settings_content() {
             trigger_unit: "rmac-dock.service".into(),
             observed_restarts: 3,
             reason: "/home/alice/private.txt token=secret".into(),
+            trigger_executable: None,
         }),
         components: vec![parse_component_health(HEALTHY, "rmac-dock.service").unwrap()],
     };
@@ -75,9 +76,285 @@ fn paths(label: &str) -> (PathBuf, StatePaths) {
     let root = std::env::temp_dir().join(format!("rmac-session-{label}-{}", std::process::id()));
     let paths = StatePaths {
         safe_mode: root.join("state/safe-mode.json"),
+        last_safe_mode: root.join("state/safe-mode.last.json"),
+        safe_login: root.join("runtime/safe-mode-login.json"),
         health: root.join("runtime/health.json"),
+        libexec: root.join("libexec"),
     };
     (root, paths)
+}
+
+fn exhausted_dock() -> String {
+    HEALTHY
+        .replace("Result=success", "Result=exit-code")
+        .replace("NRestarts=1", "NRestarts=3")
+}
+
+fn supervisor_with(paths: StatePaths, outputs: Vec<Output>) -> Supervisor<FakeRunner> {
+    Supervisor::new(
+        paths,
+        FakeRunner {
+            outputs: Mutex::new(outputs),
+        },
+    )
+}
+
+fn install_executable(paths: &StatePaths, name: &str, contents: &str) {
+    std::fs::create_dir_all(&paths.libexec).unwrap();
+    let path = paths.libexec.join(name);
+    // Replace, as package and development installs do, so the inode changes.
+    let _ = std::fs::remove_file(&path);
+    std::fs::write(path, contents).unwrap();
+}
+
+fn last_record(paths: &StatePaths) -> SafeModeRecord {
+    serde_json::from_slice(&std::fs::read(&paths.last_safe_mode).unwrap()).unwrap()
+}
+
+#[test]
+fn safe_mode_lasts_exactly_one_login() {
+    let (root, paths) = paths("one-shot");
+    install_executable(&paths, "rmac-dock", "build 1");
+    let supervisor = supervisor_with(paths.clone(), vec![output(&exhausted_dock())]);
+    assert!(supervisor.observe_failure("rmac-dock.service").unwrap());
+    let recorded = supervisor.load_safe_mode().unwrap().unwrap();
+    assert!(recorded.trigger_executable.is_some());
+
+    assert_eq!(supervisor.begin_login().unwrap(), LoginMode::Safe);
+    assert!(
+        !paths.safe_mode.exists(),
+        "the safe login consumes the marker"
+    );
+    let record = last_record(&paths);
+    assert_eq!(record.outcome, SafeModeOutcome::SafeLogin);
+    assert_eq!(record.state.as_ref(), Some(&recorded));
+    assert_eq!(supervisor.load_safe_login().unwrap(), Some(record));
+    assert_eq!(
+        supervisor.notice_context().unwrap(),
+        Some((Some("rmac-dock.service".into()), NoticeContext::ThisLogin))
+    );
+
+    assert_eq!(supervisor.begin_login().unwrap(), LoginMode::Normal);
+    assert_eq!(supervisor.load_safe_login().unwrap(), None);
+    assert_eq!(supervisor.notice_context().unwrap(), None);
+    assert_eq!(last_record(&paths).outcome, SafeModeOutcome::SafeLogin);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_rebuilt_component_skips_safe_mode_recorded_against_the_old_build() {
+    let (root, paths) = paths("rebuilt");
+    install_executable(&paths, "rmac-dock", "build 1");
+    let supervisor = supervisor_with(paths.clone(), vec![output(&exhausted_dock())]);
+    assert!(supervisor.observe_failure("rmac-dock.service").unwrap());
+
+    install_executable(&paths, "rmac-dock", "build 2, fixed");
+    assert_eq!(supervisor.begin_login().unwrap(), LoginMode::Normal);
+    assert!(!paths.safe_mode.exists());
+    assert!(!paths.safe_login.exists());
+    assert_eq!(
+        last_record(&paths).outcome,
+        SafeModeOutcome::SkippedChangedExecutable
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_failure_during_a_session_is_announced_as_pending_for_the_next_login() {
+    let (root, paths) = paths("during-session");
+    let supervisor = supervisor_with(paths, vec![output(&exhausted_dock())]);
+    assert!(supervisor.observe_failure("rmac-dock.service").unwrap());
+    assert_eq!(
+        supervisor.notice_context().unwrap(),
+        Some((
+            Some("rmac-dock.service".into()),
+            NoticeContext::DuringSession
+        ))
+    );
+    supervisor.clear_safe_mode().unwrap();
+    assert_eq!(supervisor.notice_context().unwrap(), None);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn an_unreadable_marker_cannot_hold_every_login_in_safe_mode() {
+    let (root, paths) = paths("invalid-marker");
+    std::fs::create_dir_all(paths.safe_mode.parent().unwrap()).unwrap();
+    std::fs::write(&paths.safe_mode, b"{not json").unwrap();
+    let supervisor = supervisor_with(paths.clone(), vec![]);
+    assert_eq!(supervisor.begin_login().unwrap(), LoginMode::Normal);
+    assert!(!paths.safe_mode.exists());
+    let record = last_record(&paths);
+    assert_eq!(record.outcome, SafeModeOutcome::DiscardedInvalidMarker);
+    assert_eq!(record.state, None);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn markers_from_before_build_identity_are_honoured_once() {
+    let (root, paths) = paths("legacy-marker");
+    std::fs::create_dir_all(paths.safe_mode.parent().unwrap()).unwrap();
+    std::fs::write(
+        &paths.safe_mode,
+        br#"{"version":1,"entered_at_unix_ms":1,"trigger_unit":"rmac-osd.service","observed_restarts":3,"reason":"start limit"}"#,
+    )
+    .unwrap();
+    let supervisor = supervisor_with(paths.clone(), vec![]);
+    assert_eq!(supervisor.begin_login().unwrap(), LoginMode::Safe);
+    assert_eq!(supervisor.begin_login().unwrap(), LoginMode::Normal);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn login_outcome_compares_the_recorded_and_installed_builds() {
+    let identity = ExecutableIdentity {
+        path: "/usr/libexec/rmac/rmac-dock".into(),
+        device: 1,
+        inode: 2,
+        size: 3,
+        modified_unix_s: 4,
+        modified_nsec: 5,
+    };
+    let mut state = SafeModeState {
+        version: SAFE_MODE_VERSION,
+        entered_at_unix_ms: 1,
+        trigger_unit: "rmac-dock.service".into(),
+        observed_restarts: 3,
+        reason: "budget".into(),
+        trigger_executable: None,
+    };
+    assert_eq!(login_outcome(&state, None), SafeModeOutcome::SafeLogin);
+    state.trigger_executable = Some(identity.clone());
+    assert_eq!(
+        login_outcome(&state, Some(&identity)),
+        SafeModeOutcome::SafeLogin
+    );
+    let reinstalled = ExecutableIdentity {
+        inode: 9,
+        ..identity.clone()
+    };
+    assert_eq!(
+        login_outcome(&state, Some(&reinstalled)),
+        SafeModeOutcome::SkippedChangedExecutable
+    );
+    assert_eq!(
+        login_outcome(&state, None),
+        SafeModeOutcome::SkippedChangedExecutable,
+        "an uninstalled component cannot fail again"
+    );
+}
+
+#[test]
+fn the_safe_mode_notice_names_the_component_and_what_happens_next() {
+    let login = safe_mode_notice(Some("rmac-osd.service"), NoticeContext::ThisLogin);
+    assert!(login
+        .body
+        .starts_with("The volume and brightness display quit"));
+    assert!(login.body.contains("next login will start normally"));
+    assert_eq!(login.action_label, "Restart Normally");
+
+    let live = safe_mode_notice(Some("rmac-dock.service"), NoticeContext::DuringSession);
+    assert!(live.body.starts_with("The Dock quit"));
+    assert!(live.body.contains("unless you restart normally now"));
+
+    let unknown = safe_mode_notice(None, NoticeContext::ThisLogin);
+    assert!(unknown.body.starts_with("An rmac component quit"));
+}
+
+#[test]
+fn component_executables_match_the_unit_files() {
+    let units = [
+        (
+            "rmac-top-bar.service",
+            include_str!("../units/rmac-top-bar.service"),
+        ),
+        (
+            "rmac-dock.service",
+            include_str!("../units/rmac-dock.service"),
+        ),
+        (
+            "rmac-launcher.service",
+            include_str!("../units/rmac-launcher.service"),
+        ),
+        (
+            "rmac-quick-settings.service",
+            include_str!("../units/rmac-quick-settings.service"),
+        ),
+        (
+            "rmac-notification-center.service",
+            include_str!("../units/rmac-notification-center.service"),
+        ),
+        (
+            "rmac-notification-center-panel.service",
+            include_str!("../units/rmac-notification-center-panel.service"),
+        ),
+        (
+            "rmac-focus.service",
+            include_str!("../units/rmac-focus.service"),
+        ),
+        (
+            "rmac-wallpaper.service",
+            include_str!("../units/rmac-wallpaper.service"),
+        ),
+        (
+            "rmac-osd.service",
+            include_str!("../units/rmac-osd.service"),
+        ),
+        (
+            "rmac-app-switcher.service",
+            include_str!("../units/rmac-app-switcher.service"),
+        ),
+        (
+            "rmac-screenshot.service",
+            include_str!("../units/rmac-screenshot.service"),
+        ),
+        (
+            "rmac-mission-control.service",
+            include_str!("../units/rmac-mission-control.service"),
+        ),
+        (
+            "rmac-clipboard.service",
+            include_str!("../units/rmac-clipboard.service"),
+        ),
+        (
+            "rmac-shortcut-broker.service",
+            include_str!("../units/rmac-shortcut-broker.service"),
+        ),
+    ];
+    assert_eq!(units.len(), COMPONENT_UNITS.len());
+    for (unit, text) in units {
+        assert!(COMPONENT_UNITS.contains(&unit));
+        let executable = component_executable(unit).unwrap();
+        let exec_start = format!("ExecStart=%h/.local/libexec/rmac/{executable}");
+        assert!(
+            text.lines()
+                .any(|line| line == exec_start || line.starts_with(&format!("{exec_start} "))),
+            "{unit} does not start {executable}"
+        );
+    }
+    assert_eq!(component_executable("rmac-lock.service"), None);
+}
+
+#[test]
+fn the_safe_mode_notice_unit_runs_only_in_safe_mode() {
+    let notice = include_str!("../units/rmac-safe-mode-notice.service");
+    assert!(notice
+        .contains("ExecStart=%h/.local/libexec/rmac/rmac-session-supervisor notify-safe-mode"));
+    assert!(notice.contains("PartOf=rmac-safe-mode.target"));
+    assert!(!notice.contains("OnFailure="));
+    assert!(!notice.contains("/bin/sh"));
+    let safe_target = include_str!("../units/rmac-safe-mode.target");
+    assert!(safe_target.contains("rmac-safe-mode-notice.service"));
+    let normal_target = include_str!("../units/rmac-session.target");
+    assert!(!normal_target.contains("rmac-safe-mode-notice.service"));
+}
+
+#[test]
+fn the_supervisor_waits_for_events_instead_of_polling() {
+    let main = include_str!("main.rs");
+    assert!(!main.contains("Duration::from_secs(5)"));
+    assert!(main.contains("recv_timeout(RECONCILE_INTERVAL)"));
+    assert!(main.contains("\"JobRemoved\""));
 }
 
 #[test]

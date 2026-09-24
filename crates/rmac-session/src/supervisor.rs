@@ -5,10 +5,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rmac_storage::{atomic_write, Failure};
 use serde::Serialize;
 
-use crate::model::SAFE_MODE_VERSION;
+use crate::model::{SAFE_MODE_RECORD_VERSION, SAFE_MODE_VERSION};
 use crate::{
-    CommandRunner, ComponentHealth, Error, Operation, ProcessRunner, SafeModeState, SessionHealth,
-    StatePaths, COMPONENT_UNITS, ESSENTIAL_UNITS,
+    component_executable, login_outcome, CommandRunner, ComponentHealth, Error, ExecutableIdentity,
+    LoginMode, NoticeContext, Operation, ProcessRunner, SafeModeOutcome, SafeModeRecord,
+    SafeModeState, SessionHealth, StatePaths, COMPONENT_UNITS, ESSENTIAL_UNITS,
 };
 
 pub struct Supervisor<R = ProcessRunner> {
@@ -32,9 +33,14 @@ impl<R: CommandRunner> Supervisor<R> {
         for unit in COMPONENT_UNITS {
             components.push(self.component_health(unit)?);
         }
+        // A pending marker, or the marker this safe login consumed.
+        let safe_mode = match self.load_safe_mode()? {
+            Some(state) => Some(state),
+            None => self.load_safe_login()?.and_then(|record| record.state),
+        };
         Ok(SessionHealth {
             observed_at_unix_ms: now_unix_ms(),
-            safe_mode: self.load_safe_mode()?,
+            safe_mode,
             components,
         })
     }
@@ -96,24 +102,125 @@ impl<R: CommandRunner> Supervisor<R> {
             } else {
                 "component exhausted the bounded restart budget".into()
             },
+            trigger_executable: self.executable_identity(unit),
         };
         write_json(&self.paths.safe_mode, &state, Operation::WriteSafeMode)?;
         Ok(true)
     }
 
-    pub fn load_safe_mode(&self) -> Result<Option<SafeModeState>, Error> {
-        let bytes = match std::fs::read(&self.paths.safe_mode) {
+    /// The installed build of a component's executable, if it exists.
+    pub fn executable_identity(&self, unit: &str) -> Option<ExecutableIdentity> {
+        use std::os::unix::fs::MetadataExt as _;
+
+        let path = self.paths.libexec.join(component_executable(unit)?);
+        let metadata = std::fs::metadata(&path).ok()?;
+        Some(ExecutableIdentity {
+            path: path.to_string_lossy().into_owned(),
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            size: metadata.size(),
+            modified_unix_s: metadata.mtime(),
+            modified_nsec: metadata.mtime_nsec(),
+        })
+    }
+
+    /// Run once per login, before the compositor starts. Consumes the
+    /// persistent marker so safe mode lasts exactly one login: the marker is
+    /// archived as `safe-mode.last.json` and, for a safe login, mirrored into
+    /// the runtime directory for diagnostics and the safe-mode notice.
+    pub fn begin_login(&self) -> Result<LoginMode, Error> {
+        remove_if_present(&self.paths.safe_login, Operation::ConsumeSafeMode)?;
+        let Some(bytes) = self.read_marker()? else {
+            return Ok(LoginMode::Normal);
+        };
+        let (outcome, state) = match self.parse_safe_mode(&bytes) {
+            Ok(state) => {
+                let current = self.executable_identity(&state.trigger_unit);
+                (login_outcome(&state, current.as_ref()), Some(state))
+            }
+            Err(_) => (SafeModeOutcome::DiscardedInvalidMarker, None),
+        };
+        let record = SafeModeRecord {
+            version: SAFE_MODE_RECORD_VERSION,
+            consumed_at_unix_ms: now_unix_ms(),
+            outcome,
+            state,
+        };
+        write_json(
+            &self.paths.last_safe_mode,
+            &record,
+            Operation::ConsumeSafeMode,
+        )?;
+        let mode = if outcome == SafeModeOutcome::SafeLogin {
+            write_json(&self.paths.safe_login, &record, Operation::ConsumeSafeMode)?;
+            LoginMode::Safe
+        } else {
+            LoginMode::Normal
+        };
+        remove_if_present(&self.paths.safe_mode, Operation::ConsumeSafeMode)?;
+        Ok(mode)
+    }
+
+    /// The runtime record of the current safe login, if this login is one.
+    pub fn load_safe_login(&self) -> Result<Option<SafeModeRecord>, Error> {
+        let bytes = match std::fs::read(&self.paths.safe_login) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => {
                 return Err(Failure::from_io(
                     Operation::ReadSafeMode,
-                    &self.paths.safe_mode,
+                    &self.paths.safe_login,
                     error,
                 ));
             }
         };
-        let state: SafeModeState = serde_json::from_slice(&bytes).map_err(|error| {
+        serde_json::from_slice(&bytes).map(Some).map_err(|error| {
+            Failure::message(
+                Operation::ReadSafeMode,
+                &self.paths.safe_login,
+                error.to_string(),
+            )
+        })
+    }
+
+    /// Why the session is in safe mode now, for the user-visible notice.
+    /// A pending marker means a component failed during this login.
+    pub fn notice_context(&self) -> Result<Option<(Option<String>, NoticeContext)>, Error> {
+        if let Some(state) = self.load_safe_mode()? {
+            return Ok(Some((
+                Some(state.trigger_unit),
+                NoticeContext::DuringSession,
+            )));
+        }
+        Ok(self.load_safe_login()?.map(|record| {
+            (
+                record.state.map(|state| state.trigger_unit),
+                NoticeContext::ThisLogin,
+            )
+        }))
+    }
+
+    pub fn load_safe_mode(&self) -> Result<Option<SafeModeState>, Error> {
+        match self.read_marker()? {
+            Some(bytes) => self.parse_safe_mode(&bytes).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    fn read_marker(&self) -> Result<Option<Vec<u8>>, Error> {
+        match std::fs::read(&self.paths.safe_mode) {
+            Ok(bytes) => Ok(Some(bytes)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(Failure::from_io(
+                Operation::ReadSafeMode,
+                &self.paths.safe_mode,
+                error,
+            )),
+        }
+    }
+
+    fn parse_safe_mode(&self, bytes: &[u8]) -> Result<SafeModeState, Error> {
+        let state: SafeModeState = serde_json::from_slice(bytes).map_err(|error| {
             Failure::message(
                 Operation::ReadSafeMode,
                 &self.paths.safe_mode,
@@ -128,19 +235,22 @@ impl<R: CommandRunner> Supervisor<R> {
             ));
         }
         validate_component_unit(&state.trigger_unit, &self.paths.safe_mode)?;
-        Ok(Some(state))
+        Ok(state)
     }
 
+    /// Leaves safe mode: removes the pending marker and this login's
+    /// safe-login record. `safe-mode.last.json` stays as history.
     pub fn clear_safe_mode(&self) -> Result<(), Error> {
-        match std::fs::remove_file(&self.paths.safe_mode) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(Failure::from_io(
-                Operation::ClearSafeMode,
-                &self.paths.safe_mode,
-                error,
-            )),
-        }
+        remove_if_present(&self.paths.safe_mode, Operation::ClearSafeMode)?;
+        remove_if_present(&self.paths.safe_login, Operation::ClearSafeMode)
+    }
+}
+
+fn remove_if_present(path: &Path, operation: Operation) -> Result<(), Error> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(Failure::from_io(operation, path, error)),
     }
 }
 

@@ -87,6 +87,7 @@ EXPECTED_SYSTEMD_UNITS = (
     "rmac-notification-center.service",
     "rmac-osd.service",
     "rmac-quick-settings.service",
+    "rmac-safe-mode-notice.service",
     "rmac-safe-mode.target",
     "rmac-screenshot.service",
     "rmac-session-supervisor.service",

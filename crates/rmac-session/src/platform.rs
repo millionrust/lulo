@@ -20,8 +20,16 @@ impl CommandRunner for ProcessRunner {
 
 #[derive(Clone, Debug)]
 pub struct StatePaths {
+    /// Persistent marker written when an essential component exhausts its
+    /// restart budget. The next login consumes it.
     pub safe_mode: PathBuf,
+    /// What the most recent login did with the marker, kept for diagnosis.
+    pub last_safe_mode: PathBuf,
+    /// Present only while the current login runs in safe mode.
+    pub safe_login: PathBuf,
     pub health: PathBuf,
+    /// Directory holding the supervisor and every component executable.
+    pub libexec: PathBuf,
 }
 
 impl StatePaths {
@@ -47,9 +55,18 @@ impl StatePaths {
                     "XDG_RUNTIME_DIR is not set to an absolute path",
                 )
             })?;
+        // Package units run /usr/libexec/rmac/*, development units
+        // ~/.local/libexec/rmac/*; the supervisor is installed beside them.
+        let libexec = std::env::current_exe()
+            .ok()
+            .and_then(|path| path.parent().map(Path::to_path_buf))
+            .unwrap_or_else(|| home.join(".local/libexec/rmac"));
         Ok(Self {
             safe_mode: state_root.join("rmac/session/safe-mode.json"),
+            last_safe_mode: state_root.join("rmac/session/safe-mode.last.json"),
+            safe_login: runtime_root.join("rmac/safe-mode-login.json"),
             health: runtime_root.join("rmac/session-health.json"),
+            libexec,
         })
     }
 }

@@ -30,7 +30,7 @@ To run what `linux`/`macos` run, from the repo root:
 
 ```sh
 cargo fmt --all -- --check
-cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+cargo clippy --locked --keep-going --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --workspace --all-features
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```

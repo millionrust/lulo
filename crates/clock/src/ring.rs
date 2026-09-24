@@ -32,6 +32,8 @@ enum Ringing {
     },
 }
 
+// Only the Linux notification path reports how a ringing alert was answered.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Outcome {
     Stop,

@@ -131,7 +131,7 @@ jobs:
           test -s /tmp/rmac-linux-evidence/environment.txt
 
       - name: Run Clippy
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --keep-going --workspace --all-targets --all-features -- -D warnings
 
       - name: Run tests
         run: cargo test --locked --workspace --all-features
@@ -198,7 +198,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run Clippy
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --keep-going --workspace --all-targets --all-features -- -D warnings
 
       - name: Run tests
         run: cargo test --locked --workspace --all-features
@@ -237,7 +237,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
 
       - name: Run Clippy
-        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --keep-going --workspace --all-targets --all-features -- -D warnings
 
       - name: Run tests
         run: cargo test --locked --workspace --all-features

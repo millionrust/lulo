@@ -98,7 +98,7 @@ impl TerminalView {
         cx.notify();
     }
 
-    /// The Find bar's "3 of 12" or "Not Found", for the query on screen only.
+    /// The Find bar's "3 of 12" or "Not found", for the query on screen only.
     pub(super) fn find_status_label(&self) -> Option<String> {
         let ui = &self.tabs[self.active].ui;
         ui.find_status

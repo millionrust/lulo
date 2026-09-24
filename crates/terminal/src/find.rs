@@ -24,7 +24,7 @@ pub(crate) struct FindMatch {
 }
 
 /// Where Find stands after the last ⌘G / ⇧⌘G: which match is current and how
-/// many there were. `current` is 1-based; a total of 0 means "Not Found".
+/// many there were. `current` is 1-based; a total of 0 means "Not found".
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct FindStatus {
     pub(crate) current: usize,
@@ -34,7 +34,7 @@ pub(crate) struct FindStatus {
 impl FindStatus {
     pub(crate) fn label(&self) -> String {
         if self.total == 0 {
-            "Not Found".to_string()
+            "Not found".to_string()
         } else {
             format!("{} of {}", self.current, self.total)
         }
@@ -263,6 +263,6 @@ mod tests {
             .label(),
             "3 of 12"
         );
-        assert_eq!(FindStatus::default().label(), "Not Found");
+        assert_eq!(FindStatus::default().label(), "Not found");
     }
 }

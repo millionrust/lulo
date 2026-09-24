@@ -7,6 +7,7 @@ mod icons;
 pub mod identity;
 mod model;
 mod platform;
+mod superseded;
 #[cfg(test)]
 mod tests;
 
@@ -14,6 +15,7 @@ pub use catalog::*;
 use icons::*;
 pub use model::*;
 use platform::*;
+pub use superseded::{discover_for_browsing, hide_superseded, superseded_desktop_ids};
 // Only the desktop-entry tokenizer is re-exported, for the desktop_entry
 // fuzz target; the rest of `platform` stays crate-private.
 pub use platform::desktop_group_named;

@@ -1,7 +1,7 @@
 mod content;
 
 use gpui::{
-    div, img, prelude::FluentBuilder as _, px, svg, Context, Div, DragMoveEvent,
+    div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, Context, Div, DragMoveEvent,
     InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
     ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
     StyledImage as _, Window,
@@ -184,7 +184,7 @@ impl Render for AppDrawer {
             // release inside it.
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|this, event: &MouseUpEvent, window, cx| {
+                cx.listener(|this, event: &MouseUpEvent, window, _cx| {
                     let Some(app_id) = this.dock_drag.take() else {
                         return;
                     };

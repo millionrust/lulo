@@ -10,11 +10,7 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     let (places_tx, places_rx) = async_channel::bounded(2);
     let (appearance_tx, appearance_rx) = async_channel::bounded(2);
 
-    let compositor = async {
-        rmac_compositor_niri::watch(compositor_tx)
-            .await
-            .map_err(|error| Error::new("watch niri for the Dock", error.to_string()))
-    };
+    let compositor = watch_compositor(compositor_tx);
     let settings = watch_settings(settings_tx);
     let catalog = watch_catalog(catalog_tx);
     let places = watch_places(places_tx);
@@ -30,6 +26,39 @@ pub async fn watch(sender: Sender<Update>) -> Result<(), Error> {
     let (_, _, _, _, _, _) =
         futures_util::try_join!(compositor, settings, catalog, places, appearance, consumer)?;
     Ok(())
+}
+
+/// Not every session runs inside niri (a nested-Wayland test harness, for
+/// one). A missing socket is reported as a disconnected compositor, the
+/// same as a connection that drops after it was once open, instead of
+/// aborting the whole Dock runtime: the other sources (settings, catalog,
+/// places, appearance) keep publishing, and the Dock falls back to showing
+/// a default shelf per display (see `DockWindows::reconcile` in
+/// `rmac-dock`'s binary).
+async fn watch_compositor(sender: Sender<rmac_compositor::Event>) -> Result<(), Error> {
+    loop {
+        match rmac_compositor_niri::watch(sender.clone()).await {
+            Ok(()) => return Ok(()),
+            Err(rmac_compositor_niri::Error::MissingSocketPath) => {
+                if sender
+                    .send(rmac_compositor::Event::ConnectionChanged {
+                        state: rmac_compositor::ConnectionState::Disconnected,
+                    })
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
+                wait_or_closed(&sender, Duration::from_secs(5)).await;
+                if sender.is_closed() {
+                    return Ok(());
+                }
+            }
+            Err(error) => {
+                return Err(Error::new("watch niri for the Dock", error.to_string()));
+            }
+        }
+    }
 }
 
 async fn watch_appearance(sender: Sender<Result<bool, String>>) -> Result<(), Error> {

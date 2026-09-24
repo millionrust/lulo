@@ -167,6 +167,22 @@ mod linux_wayland {
                     .collect()
             })
         }
+
+        /// The compositor has confirmed it has no outputs to place the Dock
+        /// on (no niri, for example) rather than merely starting up: the
+        /// Dock falls back to a default shelf on every display GPUI itself
+        /// knows about, the same way the wallpaper and top bar do.
+        fn needs_display_fallback(&self) -> bool {
+            self.snapshot().is_some_and(|snapshot| {
+                matches!(
+                    snapshot.health.compositor,
+                    rmac_dock_runtime::SourceHealth::Unavailable { .. }
+                ) && snapshot
+                    .surface_plan
+                    .as_ref()
+                    .is_ok_and(|surfaces| surfaces.is_empty())
+            })
+        }
     }
 
     fn dock_shelf_extent(snapshot: &rmac_dock_runtime::Snapshot) -> f32 {
@@ -3915,13 +3931,23 @@ mod linux_wayland {
                     loop {
                         let complete = cx.update(|cx| {
                             let surfaces = status.read(cx).surfaces();
-                            let Some(surfaces) = surfaces else {
-                                return false;
-                            };
-                            let expected = surfaces.len();
-                            let mut windows = windows.borrow_mut();
-                            windows.reconcile(Some(&surfaces), &status, cx);
-                            windows.len() == expected
+                            if let Some(surfaces) = surfaces {
+                                if !surfaces.is_empty() || !status.read(cx).needs_display_fallback()
+                                {
+                                    let expected = surfaces.len();
+                                    let mut windows = windows.borrow_mut();
+                                    windows.reconcile(Some(&surfaces), &status, cx);
+                                    return windows.len() == expected;
+                                }
+                            }
+                            if status.read(cx).needs_display_fallback() {
+                                let expected =
+                                    rmac_shell_layer::output_surfaces::newest_displays(cx).len();
+                                let mut windows = windows.borrow_mut();
+                                windows.reconcile(None, &status, cx);
+                                return windows.len() == expected;
+                            }
+                            false
                         });
                         if complete {
                             break;

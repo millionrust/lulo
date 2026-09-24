@@ -372,7 +372,11 @@ pub(crate) fn run(windows: Vec<Vec<String>>) {
             // folder that has since gone away opens the default window.
             let destination =
                 crate::StartupDestination::parse(arguments.iter().cloned()).unwrap_or_default();
-            let mut finder = FinderView::new(window, cx);
+            // Only the default destination (a plain launch, or the Dock)
+            // restores the last-closed window's tabs; ⌘N and every other
+            // explicit destination start this window with exactly one tab.
+            let restore_tabs = destination == crate::StartupDestination::Default;
+            let mut finder = FinderView::new(window, cx, restore_tabs);
             match destination {
                 crate::StartupDestination::Default => {}
                 crate::StartupDestination::Trash => finder.trash_click(cx),

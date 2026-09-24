@@ -42,6 +42,18 @@ impl FinderView {
         self.reload(cx);
     }
 
+    /// ⌘W: closes the current tab, or the window itself when it has only
+    /// one, as the Mac's Close Tab does. Before this, ⌘W with one tab did
+    /// nothing at all — only the traffic light could close the window.
+    pub(super) fn close_tab_or_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tabs.len() <= 1 {
+            self.close_finder_window(window, cx);
+            return;
+        }
+        let active = self.active;
+        self.close_tab(active, cx);
+    }
+
     pub(super) fn close_tab(&mut self, index: usize, cx: &mut Context<Self>) {
         if self.tabs.len() <= 1 || index >= self.tabs.len() {
             return;

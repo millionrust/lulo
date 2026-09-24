@@ -6,7 +6,13 @@ use runtime::*;
 use shortcuts::*;
 
 impl FinderView {
-    pub(super) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    /// `restore_tabs` is true only for a window opened at the default
+    /// destination (a plain launch or Dock click): it alone restores the
+    /// last-closed window's tabs. A window opened at an explicit
+    /// destination — ⌘N's fresh window, Trash, a revealed file, a search —
+    /// always starts from exactly one tab, never the last-closed window's,
+    /// as the Mac's own New Finder Window does.
+    pub(super) fn new(window: &mut Window, cx: &mut Context<Self>, restore_tabs: bool) -> Self {
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".to_string()));
         let file_words = rmac_locale::FileVocabulary::from_environment();
 
@@ -174,7 +180,11 @@ impl FinderView {
         .detach();
         let restored = FinderPersistence::restore();
         let presentation = restored.presentation;
-        let (restored_paths, active) = restored.restorable_session(&home);
+        let (restored_paths, active) = if restore_tabs {
+            restored.restorable_session(&home)
+        } else {
+            (vec![home.clone()], 0)
+        };
         let cwd = restored_paths[active].clone();
         let tabs = restored_paths
             .into_iter()
@@ -185,7 +195,15 @@ impl FinderView {
                 fwd: Vec::new(),
             })
             .collect();
-        let finder_persistence = FinderPersistence::start(cx);
+        // Unique for this window's life in this process: the entity id is a
+        // generational slot key, so even a reused id never collides with a
+        // still-live window's file.
+        let window_id = format!(
+            "{}-{}",
+            std::process::id(),
+            cx.entity_id().as_non_zero_u64()
+        );
+        let finder_persistence = FinderPersistence::start(window_id, cx);
 
         let mut view = Self {
             cwd: cwd.clone(),
@@ -297,6 +315,18 @@ impl FinderView {
         view.persist_finder_state();
         view.reload(cx);
         view.refresh_pasteboard_state(cx);
+
+        // A close request from outside the window (the compositor, an app
+        // quit, logging out) takes the same path as ⌘W and the traffic
+        // light: this window's state is saved as the one a fresh launch
+        // restores before the window actually goes away. The guard removes
+        // the window itself, so the request is always declined here.
+        let closing = cx.weak_entity();
+        window.on_window_should_close(cx, move |window, cx| {
+            closing
+                .update(cx, |this, cx| this.close_finder_window(window, cx))
+                .is_err()
+        });
 
         spawn_recovery_loaders(cx);
 

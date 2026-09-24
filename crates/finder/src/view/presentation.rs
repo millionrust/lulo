@@ -210,9 +210,9 @@ impl Render for FinderView {
                     cx.notify();
                 }
             }))
-            .on_action(
-                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
-            )
+            .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
+                this.close_finder_window(window, cx);
+            }))
             .when(layout.sidebar_visible, |root| {
                 root.child(self.render_sidebar(cx))
             })

@@ -1,5 +1,6 @@
 //! Private, versioned Finder presentation and safe tab-session continuity.
 
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::io;
 use std::os::unix::ffi::OsStrExt as _;
@@ -7,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use gpui::Context;
+use gpui::{Context, Window};
 use rmac_storage::{Backend as _, FileSystem};
 use serde::{Deserialize, Serialize};
 
@@ -117,19 +118,28 @@ impl FinderState {
     }
 }
 
+/// Every open window saves to its own file under `windows/`, so two windows
+/// changing folders never race to overwrite each other's tabs. The single
+/// shared `presentation.json` this module also keeps is not a live window's
+/// file at all: it only ever changes at the moment a window actually closes
+/// ([`FinderPersistence::close`]), so it always holds the *last-closed*
+/// window's state for the next launch to restore, as the Mac's window
+/// restoration does.
 pub(super) struct FinderPersistence {
+    window_id: String,
     pending: Arc<Mutex<Option<FinderState>>>,
     wake: async_channel::Sender<()>,
 }
 
 impl FinderPersistence {
-    pub(super) fn start<T: 'static>(cx: &Context<T>) -> Self {
+    pub(super) fn start<T: 'static>(window_id: String, cx: &Context<T>) -> Self {
         let pending: Arc<Mutex<Option<FinderState>>> = Arc::new(Mutex::new(None));
         let (wake, updates) = async_channel::bounded(1);
         let worker_pending = Arc::clone(&pending);
+        let worker_window_id = window_id.clone();
         cx.background_executor()
             .spawn(async move {
-                let Ok(store) = FinderStateStore::from_environment() else {
+                let Ok(store) = FinderStateStore::for_window(&worker_window_id) else {
                     return;
                 };
                 while updates.recv().await.is_ok() {
@@ -141,15 +151,21 @@ impl FinderPersistence {
                         .and_then(|mut pending| pending.take());
                     if let Some(state) = state {
                         if let Err(error) = store.save(&state) {
-                            eprintln!("could not save the Finder window state: {error}");
+                            eprintln!("could not save the Files window state: {error}");
                         }
                     }
                 }
             })
             .detach();
-        Self { pending, wake }
+        Self {
+            window_id,
+            pending,
+            wake,
+        }
     }
 
+    /// The last-closed window's state, for a launch that shows the default
+    /// window (not one opened at an explicit destination, as ⌘N's is).
     pub(super) fn restore() -> FinderState {
         FinderStateStore::from_environment()
             .and_then(|store| store.load())
@@ -165,6 +181,28 @@ impl FinderPersistence {
         if let Ok(mut pending) = self.pending.lock() {
             *pending = Some(state);
             let _ = self.wake.try_send(());
+        }
+    }
+
+    /// This window is closing: `state` becomes the state a fresh launch
+    /// restores, and this window's now-unneeded per-window file is removed.
+    /// Runs synchronously (there is no window left to keep spawning tasks
+    /// against by the time this returns).
+    pub(super) fn close(&self, state: Option<FinderState>) {
+        if let Some(state) = state.filter(|state| state.is_valid()) {
+            match FinderStateStore::from_environment() {
+                Ok(store) => {
+                    if let Err(error) = store.save(&state) {
+                        eprintln!("could not save the closed Files window's state: {error}");
+                    }
+                }
+                Err(error) => {
+                    eprintln!("could not save the closed Files window's state: {error}");
+                }
+            }
+        }
+        if let Ok(store) = FinderStateStore::for_window(&self.window_id) {
+            store.remove();
         }
     }
 }
@@ -211,11 +249,14 @@ impl FinderView {
     }
 
     pub(super) fn persist_finder_state(&self) {
-        let Some(presentation) =
-            PresentationState::checked(self.view, self.sidebar_visible, self.sidebar_width)
-        else {
-            return;
-        };
+        if let Some(state) = self.finder_state() {
+            self.finder_persistence.schedule(state);
+        }
+    }
+
+    fn finder_state(&self) -> Option<FinderState> {
+        let presentation =
+            PresentationState::checked(self.view, self.sidebar_visible, self.sidebar_width)?;
         let tabs = self
             .tabs
             .iter()
@@ -228,9 +269,18 @@ impl FinderView {
                 }
             })
             .collect();
-        if let Some(state) = FinderState::checked(presentation, tabs, self.active) {
-            self.finder_persistence.schedule(state);
-        }
+        FinderState::checked(presentation, tabs, self.active)
+    }
+
+    /// ⌘W with one tab, the traffic-light close button, and any close
+    /// request from outside the window (Quit, logging out) all end here:
+    /// this window's state becomes the one a fresh launch restores, and the
+    /// window itself closes. A window never gets a second chance to save
+    /// after this runs, so the save happens before `remove_window`, not
+    /// after.
+    pub(super) fn close_finder_window(&mut self, window: &mut Window, _cx: &mut Context<Self>) {
+        self.finder_persistence.close(self.finder_state());
+        window.remove_window();
     }
 }
 
@@ -287,8 +337,8 @@ struct FinderStateStore {
 }
 
 impl FinderStateStore {
-    fn from_environment() -> Result<Self, Error> {
-        let state_home = std::env::var_os("XDG_STATE_HOME")
+    fn state_home() -> Result<PathBuf, Error> {
+        std::env::var_os("XDG_STATE_HOME")
             .filter(|value| !value.is_empty())
             .map(PathBuf::from)
             .or_else(|| {
@@ -297,12 +347,42 @@ impl FinderStateStore {
                     .map(PathBuf::from)
                     .map(|home| home.join(".local/state"))
             })
-            .ok_or_else(|| Error::new(Operation::ResolvePath, ErrorKind::Invalid))?;
-        Ok(Self::at(state_home.join("rmac/files/presentation.json")))
+            .ok_or_else(|| Error::new(Operation::ResolvePath, ErrorKind::Invalid))
+    }
+
+    /// The single file a fresh launch restores: only ever written at the
+    /// moment a window closes, never while windows are live.
+    fn from_environment() -> Result<Self, Error> {
+        Ok(Self::at(
+            Self::state_home()?.join("rmac/files/presentation.json"),
+        ))
+    }
+
+    /// One live window's own file. `window_id` is generated in-process
+    /// (digits and dashes only), so it never escapes `windows/`.
+    fn for_window(window_id: &str) -> Result<Self, Error> {
+        Ok(Self::at(
+            Self::state_home()?
+                .join("rmac/files/windows")
+                .join(format!("{window_id}.json")),
+        ))
     }
 
     fn at(path: PathBuf) -> Self {
         Self { path }
+    }
+
+    /// Removes this store's file and its `.last-good` companion. Best
+    /// effort: a leftover per-window file from a crash is never read back,
+    /// so failing to remove it costs only disk space, not correctness.
+    fn remove(&self) {
+        for path in [self.path.clone(), self.last_good_path()] {
+            if let Err(error) = std::fs::remove_file(&path) {
+                if error.kind() != io::ErrorKind::NotFound {
+                    eprintln!("could not remove a closed Files window's state file: {error}");
+                }
+            }
+        }
     }
 
     fn load(&self) -> Result<Option<FinderState>, Error> {
@@ -384,8 +464,16 @@ impl FinderStateStore {
             .map_err(|error| Error::io(Operation::Save, error))
     }
 
+    /// Derived from this store's own file name, not a fixed one: every
+    /// per-window store under `windows/` needs its own `.last-good`
+    /// companion, not one they'd all collide on.
     fn last_good_path(&self) -> PathBuf {
-        self.path.with_file_name("presentation.json.last-good")
+        let mut name = self
+            .path
+            .file_name()
+            .map_or_else(OsString::new, OsStr::to_os_string);
+        name.push(".last-good");
+        self.path.with_file_name(name)
     }
 }
 
@@ -531,5 +619,47 @@ mod tests {
         let state = FinderState::checked(presentation, vec![home.clone(), missing], 1).unwrap();
 
         assert_eq!(state.restorable_session(&home), (vec![home], 0));
+    }
+
+    #[test]
+    fn removing_a_store_clears_its_state_file_and_last_good_backup() {
+        let path = test_path("remove");
+        let parent = path.parent().unwrap();
+        std::fs::create_dir_all(parent).unwrap();
+        let store = FinderStateStore::at(path.clone());
+        let state = FinderState::checked(
+            PresentationState::checked(ViewMode::List, true, 200.0).unwrap(),
+            vec![PathBuf::from("/tmp")],
+            0,
+        )
+        .unwrap();
+        store.save(&state).unwrap();
+        assert!(path.exists());
+        assert!(store.last_good_path().exists());
+
+        store.remove();
+
+        assert!(!path.exists());
+        assert!(!store.last_good_path().exists());
+        // A store with nothing left to remove is a silent no-op, as it is
+        // for a per-window file that never got as far as its first save.
+        store.remove();
+
+        std::fs::remove_dir_all(parent).unwrap();
+    }
+
+    #[test]
+    fn each_store_keeps_its_own_last_good_backup_name() {
+        // Two windows' stores share a directory but must never collide on
+        // one `.last-good` file, or the second window's save would corrupt
+        // the first window's recovery copy.
+        let a = FinderStateStore::at(PathBuf::from("/tmp/rmac-files-windows/111.json"));
+        let b = FinderStateStore::at(PathBuf::from("/tmp/rmac-files-windows/222.json"));
+
+        assert_ne!(a.last_good_path(), b.last_good_path());
+        assert_eq!(
+            a.last_good_path(),
+            PathBuf::from("/tmp/rmac-files-windows/111.json.last-good")
+        );
     }
 }

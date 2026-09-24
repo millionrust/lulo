@@ -1,7 +1,7 @@
 //! Pure decision logic for the Mac Shortcuts page.
 //!
 //! Setup Assistant offers "Use Mac shortcuts in all apps" on its own page
-//! right after Keyboard (owner decision, `docs/beta-gap-list.md` gap B1). The
+//! right after Keyboard (owner decision; see `docs/decisions/0017-mac-keyboard.md`). The
 //! toggle defaults on; the user can turn it off before Continue. Applying the
 //! choice goes through the very function System Settings › Keyboard calls,
 //! `rmac_keyboard::apply` (`docs/decisions/0017-mac-keyboard.md`), so

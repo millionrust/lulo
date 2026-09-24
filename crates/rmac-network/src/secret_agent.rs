@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 #[cfg(not(target_os = "macos"))]
 use zbus::blocking::{connection::Builder, Connection, Proxy};
+use zbus::message::Header;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Str, Value};
 
 use super::{
@@ -51,6 +52,9 @@ enum WifiSecret {
 
 struct OneShotSecretAgent {
     state: Mutex<AgentState>,
+    /// NetworkManager's unique bus name when the agent registered. Only it
+    /// may ask for, cancel, save or delete secrets; empty refuses everyone.
+    service_owner: String,
 }
 
 impl OneShotSecretAgent {
@@ -62,13 +66,31 @@ impl OneShotSecretAgent {
                 secret: Some(secret),
                 canceled: false,
             }),
+            service_owner: String::new(),
         }
     }
-}
 
-#[zbus::interface(name = "org.freedesktop.NetworkManager.SecretAgent")]
-impl OneShotSecretAgent {
-    fn get_secrets(
+    #[cfg(not(target_os = "macos"))]
+    fn with_service_owner(mut self, owner: String) -> Self {
+        self.service_owner = owner;
+        self
+    }
+
+    fn check_caller(&self, header: &Header<'_>) -> Result<(), SecretAgentError> {
+        if caller_is_service(
+            header.sender().map(|name| name.as_str()),
+            &self.service_owner,
+        ) {
+            Ok(())
+        } else {
+            Err(SecretAgentError::Failed(
+                "secret requests are accepted only from NetworkManager".into(),
+            ))
+        }
+    }
+
+    /// The one-shot answer to NetworkManager's `GetSecrets`.
+    fn secrets_for(
         &self,
         connection: SettingsMap,
         _connection_path: OwnedObjectPath,
@@ -143,11 +165,7 @@ impl OneShotSecretAgent {
         )]))
     }
 
-    fn cancel_get_secrets(
-        &self,
-        _connection_path: OwnedObjectPath,
-        _setting_name: String,
-    ) -> Result<(), SecretAgentError> {
+    fn cancel(&self) -> Result<(), SecretAgentError> {
         let mut state = self
             .state
             .lock()
@@ -156,12 +174,47 @@ impl OneShotSecretAgent {
         state.secret = None;
         Ok(())
     }
+}
+
+/// Whether a call came from the service's unique name. The system bus's
+/// stock policy already lets only root send these, but a permissive policy
+/// must not let another user claim a secret that was just typed.
+fn caller_is_service(sender: Option<&str>, owner: &str) -> bool {
+    !owner.is_empty() && sender == Some(owner)
+}
+
+#[zbus::interface(name = "org.freedesktop.NetworkManager.SecretAgent")]
+impl OneShotSecretAgent {
+    fn get_secrets(
+        &self,
+        connection: SettingsMap,
+        connection_path: OwnedObjectPath,
+        setting_name: String,
+        hints: Vec<String>,
+        flags: u32,
+        #[zbus(header)] header: Header<'_>,
+    ) -> Result<SettingsMap, SecretAgentError> {
+        self.check_caller(&header)?;
+        self.secrets_for(connection, connection_path, setting_name, hints, flags)
+    }
+
+    fn cancel_get_secrets(
+        &self,
+        _connection_path: OwnedObjectPath,
+        _setting_name: String,
+        #[zbus(header)] header: Header<'_>,
+    ) -> Result<(), SecretAgentError> {
+        self.check_caller(&header)?;
+        self.cancel()
+    }
 
     fn save_secrets(
         &self,
         _connection: SettingsMap,
         _connection_path: OwnedObjectPath,
+        #[zbus(header)] header: Header<'_>,
     ) -> Result<(), SecretAgentError> {
+        self.check_caller(&header)?;
         // rmac requests system-owned storage. NetworkManager, not this
         // ephemeral agent, persists that secret according to its policy.
         Ok(())
@@ -171,7 +224,9 @@ impl OneShotSecretAgent {
         &self,
         _connection: SettingsMap,
         _connection_path: OwnedObjectPath,
+        #[zbus(header)] header: Header<'_>,
     ) -> Result<(), SecretAgentError> {
+        self.check_caller(&header)?;
         Ok(())
     }
 }
@@ -188,12 +243,14 @@ impl RegisteredSecretAgent {
         profile_uuid: String,
         secret: WifiSecret,
     ) -> zbus::Result<Self> {
-        let connection = Builder::system()?
-            .serve_at(
-                AGENT_PATH,
-                OneShotSecretAgent::new(network, profile_uuid, secret),
-            )?
-            .build()?;
+        let connection = Builder::system()?.build()?;
+        let owner = zbus::blocking::fdo::DBusProxy::new(&connection)?
+            .get_name_owner(SERVICE.try_into()?)?
+            .to_string();
+        connection.object_server().at(
+            AGENT_PATH,
+            OneShotSecretAgent::new(network, profile_uuid, secret).with_service_owner(owner),
+        )?;
         agent_manager(&connection)?
             .call::<_, _, ()>("RegisterWithCapabilities", &(AGENT_IDENTIFIER, 0_u32))?;
         Ok(Self { connection })
@@ -380,7 +437,7 @@ mod tests {
         let path = OwnedObjectPath::try_from("/org/freedesktop/NetworkManager/Settings/1").unwrap();
 
         let secrets = agent
-            .get_secrets(
+            .secrets_for(
                 template.clone(),
                 path.clone(),
                 SECURITY_SETTING.to_string(),
@@ -391,7 +448,7 @@ mod tests {
         let psk = <&str>::try_from(&secrets[SECURITY_SETTING]["psk"]).unwrap();
         assert_eq!(psk, "correct-horse");
         assert!(matches!(
-            agent.get_secrets(template, path, SECURITY_SETTING.to_string(), Vec::new(), 0,),
+            agent.secrets_for(template, path, SECURITY_SETTING.to_string(), Vec::new(), 0,),
             Err(SecretAgentError::NoSecrets(_))
         ));
     }
@@ -410,7 +467,7 @@ mod tests {
         );
         let path = OwnedObjectPath::try_from("/org/freedesktop/NetworkManager/Settings/2").unwrap();
         assert!(matches!(
-            agent.get_secrets(
+            agent.secrets_for(
                 personal_connection_template(&other, profile_uuid).unwrap(),
                 path,
                 SECURITY_SETTING.to_string(),
@@ -434,7 +491,7 @@ mod tests {
         );
         let path = OwnedObjectPath::try_from("/org/freedesktop/NetworkManager/Settings/3").unwrap();
         assert!(matches!(
-            agent.get_secrets(
+            agent.secrets_for(
                 personal_connection_template(&selected, "71e4f01d-2aad-424a-b567-cea230284d54")
                     .unwrap(),
                 path.clone(),
@@ -445,7 +502,7 @@ mod tests {
             Err(SecretAgentError::InvalidConnection(_))
         ));
         assert!(agent
-            .get_secrets(
+            .secrets_for(
                 personal_connection_template(&selected, expected_uuid).unwrap(),
                 path,
                 SECURITY_SETTING.to_string(),
@@ -496,7 +553,7 @@ mod tests {
             WifiSecret::Enterprise(credentials),
         );
         let secrets = agent
-            .get_secrets(
+            .secrets_for(
                 template,
                 OwnedObjectPath::try_from("/org/freedesktop/NetworkManager/Settings/4").unwrap(),
                 ENTERPRISE_SETTING.to_string(),
@@ -509,5 +566,15 @@ mod tests {
             "private password"
         );
         assert!(!secrets[ENTERPRISE_SETTING].contains_key("psk"));
+    }
+
+    #[test]
+    fn only_networkmanager_s_unique_name_is_a_valid_caller() {
+        assert!(caller_is_service(Some(":1.7"), ":1.7"));
+        assert!(!caller_is_service(Some(":1.8"), ":1.7"));
+        assert!(!caller_is_service(None, ":1.7"));
+        // An agent that never learned the owner refuses everyone.
+        assert!(!caller_is_service(Some(""), ""));
+        assert!(!caller_is_service(Some(":1.7"), ""));
     }
 }

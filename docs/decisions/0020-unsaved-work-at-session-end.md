@@ -123,8 +123,23 @@ the work already being on disk.
    - Presses in the 2 s after a wake are ignored. Many laptops deliver the press that woke them
      once they resume, and it would otherwise send the computer straight back to sleep.
    - Nothing changes logind's configuration. No `logind.conf` drop-in is shipped, so the Ubuntu
-     / GNOME session keeps its own behaviour. While the coordinator is not running (before it
-     starts, or during a 1 s restart), the button does what logind is configured to do.
+     / GNOME session keeps its own behaviour.
+   - **Fail-safe (amended 2026-09-25): the button never falls back to power-off inside a Lulo
+     OS login.** The coordinator starts after niri, restarts 1 s after a crash, and can crash
+     in a loop. So the login wrapper (`rmac-wayland-session`) starts
+     `rmac-session-supervisor hold-power-key` *before* niri. That process holds a second
+     `handle-power-key` block inhibitor ("Lulo OS session") for the whole login.
+     - It never handles the key. It only keeps logind from acting, so while the coordinator is
+       down a press is simply ignored: niri's bind runs `rmac-shortcut-dispatch power-key`, and
+       the send fails because nothing is listening.
+     - The coordinator keeps its own inhibitor as well, so the button stays covered if either
+       holder is lost.
+     - The holder is tied to the wrapper by `PR_SET_PDEATHSIG` and is killed in `stop_rmac`, so
+       it cannot outlive the login, even after a crash of the wrapper.
+     - It is the wrapper's child, in the logind session itself, which is what polkit requires
+       for this inhibitor (`allow_any=no`).
+     - Holding the button for about four seconds is still the firmware's forced power-off, as
+       on any PC. No software sees it, and it cannot be blocked.
    - logind honours a block inhibitor only while its session is the active one. After a switch
      to another VT or to the greeter, the button follows logind's own setting again.
 
@@ -154,8 +169,9 @@ the work already being on disk.
 - **The power button has no long press.** The hardware cannot report one, so a quick second
   press opens the Mac's long-press dialog instead (item 7). The dialog opens under the menu bar
   on the first display, not centred on the screen as on the Mac. While the lock coordinator is
-  down, or the session is not the active one, the button follows logind's `HandlePowerKey`,
-  which is `poweroff` on Ubuntu.
+  down a press does nothing, because the session-long holder keeps logind from powering off.
+  Only when the Lulo OS session is not the active one (another VT, the greeter) does the button
+  follow logind's `HandlePowerKey`, which is `poweroff` on Ubuntu.
 - **The close requests on a forced shutdown** are a courtesy. A Save alert that appears cannot be
   answered before logind continues. The draft is already on disk, and the next launch offers it
   back.
@@ -186,7 +202,9 @@ Run each check once, with the journey lock held:
 5. Type into Text Editor, run `kill -TERM <pid>`, and reopen it. It should offer to restore the
    draft.
 6. Run `systemd-inhibit --list`. It should show `Lulo OS … rmac-lock-coord handle-power-key …
-   block`, and no `niri … handle-power-key` entry. (polkit allows this inhibitor only to local
+   block` and `Lulo OS session … rmac-session-su handle-power-key … block`, and no
+   `niri … handle-power-key` entry. Run `systemctl --user stop rmac-lock-coordinator.service`:
+   the `Lulo OS session` entry must remain. (polkit allows this inhibitor only to local
    sessions; a user service such as the coordinator qualifies, an SSH shell does not. The
    ignored test `power_key_inhibitor_is_a_block_on_handle_power_key`, run through
    `systemd-run --user`, showed the Lulo OS entry on the reference laptop on 2026-09-25.) Only the owner presses the power button: one

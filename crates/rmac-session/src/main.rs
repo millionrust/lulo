@@ -15,7 +15,7 @@ const RECONCILE_INTERVAL: Duration = Duration::from_secs(60);
 /// A restart is several jobs; coalesce the burst into one health snapshot.
 const EVENT_SETTLE: Duration = Duration::from_millis(250);
 
-const USAGE: &str = "usage: rmac-session-supervisor <status|diagnostics|restore-last-good-settings|write-health|monitor|observe-failure UNIT|begin-login|notify-safe-mode|leave-safe-mode|clear-safe-mode>";
+const USAGE: &str = "usage: rmac-session-supervisor <status|diagnostics|restore-last-good-settings|write-health|monitor|hold-power-key|observe-failure UNIT|begin-login|notify-safe-mode|leave-safe-mode|clear-safe-mode>";
 
 fn main() -> ExitCode {
     match run(std::env::args().skip(1).collect()) {
@@ -49,6 +49,7 @@ fn run(arguments: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
             supervisor.write_health()?;
         }
         [command] if command == "monitor" => monitor(&Supervisor::from_environment()?),
+        [command] if command == "hold-power-key" => power_key::hold()?,
         [command, unit] if command == "observe-failure" => {
             let supervisor = Supervisor::from_environment()?;
             if supervisor.observe_failure(unit)? {
@@ -436,5 +437,88 @@ mod notice {
 mod notice {
     pub fn present(_notice: &rmac_session::SafeModeNotice) -> Result<bool, String> {
         Err("safe-mode notices are shown only on Linux".into())
+    }
+}
+
+/// The session-long fail-safe for the power button (ADR 0020, item 7).
+///
+/// The login wrapper starts `hold-power-key` before niri and keeps it for the
+/// whole login. It holds logind's `handle-power-key` block inhibitor, so a
+/// press while the lock coordinator is starting, restarting or crash-looping
+/// is ignored instead of falling back to Ubuntu's `HandlePowerKey=poweroff`.
+/// It never handles the key itself; the coordinator does. Holding the
+/// button for about four seconds still forces the machine off in firmware.
+#[cfg(target_os = "linux")]
+mod power_key {
+    use zbus::zvariant::OwnedFd;
+
+    pub const WHAT: &str = "handle-power-key";
+    pub const WHO: &str = "Lulo OS session";
+    pub const WHY: &str = "Keeps the power button from shutting down while Lulo OS handles it";
+
+    /// Takes the inhibitor and holds it until the wrapper that started this
+    /// process exits (or stops it). Returns only on failure or once the
+    /// wrapper is gone.
+    pub fn hold() -> Result<(), String> {
+        let parent = end_with_parent()?;
+        let connection = zbus::blocking::Connection::system()
+            .map_err(|error| format!("could not reach the system bus: {error}"))?;
+        let reply = connection
+            .call_method(
+                Some("org.freedesktop.login1"),
+                "/org/freedesktop/login1",
+                Some("org.freedesktop.login1.Manager"),
+                "Inhibit",
+                &(WHAT, WHO, WHY, "block"),
+            )
+            .map_err(|error| {
+                format!(
+                    "logind refused the power-button inhibitor: {error}; while the lock \
+                     coordinator is down a press does what logind is configured to do"
+                )
+            })?;
+        let inhibitor: OwnedFd = reply
+            .body()
+            .deserialize()
+            .map_err(|error| format!("logind sent an unreadable inhibitor: {error}"))?;
+        // Parked, not polling. The descriptor is released when this process
+        // ends, which the parent-death signal ties to the wrapper.
+        loop {
+            std::thread::park();
+            if parent_gone(parent) {
+                drop(inhibitor);
+                return Ok(());
+            }
+        }
+    }
+
+    /// SIGTERM this process when the wrapper dies, however it dies.
+    fn end_with_parent() -> Result<libc::pid_t, String> {
+        // SAFETY: getppid has no preconditions.
+        let parent = unsafe { libc::getppid() };
+        // SAFETY: PR_SET_PDEATHSIG only changes this process's own
+        // parent-death signal.
+        if unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM, 0, 0, 0) } != 0 {
+            return Err(format!(
+                "could not tie the power-button inhibitor to the session: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        if parent_gone(parent) {
+            return Err("the session ended before the power-button inhibitor was taken".into());
+        }
+        Ok(parent)
+    }
+
+    fn parent_gone(parent: libc::pid_t) -> bool {
+        // SAFETY: getppid has no preconditions.
+        unsafe { libc::getppid() != parent }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+mod power_key {
+    pub fn hold() -> Result<(), String> {
+        Err("the power-button inhibitor exists only on Linux".into())
     }
 }

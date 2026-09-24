@@ -6351,6 +6351,7 @@ dependencies = [
 name = "rmac-session"
 version = "0.9.0-beta.1"
 dependencies = [
+ "libc",
  "rmac-gtk-settings",
  "rmac-shell-settings",
  "rmac-storage",

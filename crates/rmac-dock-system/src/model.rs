@@ -14,6 +14,8 @@ pub enum Operation {
     Reveal,
     Terminate,
     UpdatePins,
+    Hide,
+    ShowAllWindows,
     Resolve,
     OpenPlace,
     ReviewTrash,
@@ -60,6 +62,8 @@ impl fmt::Display for Operation {
             Self::OpenPlace => "open Dock place",
             Self::ReviewTrash => "review Empty Trash",
             Self::EmptyTrash => "empty Trash",
+            Self::Hide => "hide application windows",
+            Self::ShowAllWindows => "show all application windows",
         })
     }
 }
@@ -128,6 +132,13 @@ pub enum Outcome {
     },
     PinsUpdated {
         pinned: Vec<rmac_shell_settings::AppId>,
+    },
+    HideRequested {
+        app_id: String,
+        windows: usize,
+    },
+    ShowAllWindowsRequested {
+        app_id: String,
     },
     PlaceOpened {
         kind: rmac_dock::SpecialItemKind,
@@ -199,6 +210,37 @@ pub trait Backend: Send + Sync + 'static {
         &self,
         command: &rmac_dock::PinCommand,
     ) -> BackendFuture<'_, Result<Vec<rmac_shell_settings::AppId>, BackendError>>;
+
+    /// Hide windows by parking them, recording each origin workspace so Show
+    /// All (and a Dock click) can bring them back.
+    fn hide_windows(
+        &self,
+        request_id: rmac_compositor::ActivationId,
+        windows: &[rmac_compositor::WindowId],
+    ) -> BackendFuture<'_, Result<(), BackendError>> {
+        let _ = (request_id, windows);
+        Box::pin(async {
+            Err(BackendError::new(
+                FailureKind::Unsupported,
+                "hiding applications is unavailable",
+            ))
+        })
+    }
+
+    /// Bring `window` forward, then open App Exposé for its application.
+    fn show_all_windows(
+        &self,
+        request_id: rmac_compositor::ActivationId,
+        window: rmac_compositor::WindowId,
+    ) -> BackendFuture<'_, Result<(), BackendError>> {
+        let _ = (request_id, window);
+        Box::pin(async {
+            Err(BackendError::new(
+                FailureKind::Unsupported,
+                "App Exposé is unavailable",
+            ))
+        })
+    }
 
     fn reorder_pins(
         &self,

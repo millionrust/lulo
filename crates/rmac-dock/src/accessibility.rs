@@ -22,6 +22,7 @@ pub const SHOW_MENU_NAME: &str = "Show Menu";
 pub const ACTIVATE_MENU_ITEM_NAME: &str = "Activate";
 pub const CLOSE_WINDOW_NAME: &str = "Close Window";
 pub const FORCE_QUIT_NAME: &str = "Force Quit";
+pub const HIDE_OTHERS_NAME: &str = "Hide Others";
 pub const CLOSE_MENU_NAME: &str = "Close Menu";
 pub const MAX_APPLICATIONS: usize = 512;
 pub const MAX_PLACES: usize = 3;
@@ -50,6 +51,7 @@ pub enum AccessibleActionKind {
     ActivateMenuItem,
     CloseWindow,
     ForceQuitApplication,
+    HideOtherApplications,
     CloseMenu,
 }
 
@@ -702,10 +704,13 @@ fn project_menu(
             ));
         }
         if row.secondary.is_some() {
-            let (name, kind) = if row.id == RowId::Quit {
-                (FORCE_QUIT_NAME, AccessibleActionKind::ForceQuitApplication)
-            } else {
-                (CLOSE_WINDOW_NAME, AccessibleActionKind::CloseWindow)
+            let (name, kind) = match row.id {
+                RowId::Quit => (FORCE_QUIT_NAME, AccessibleActionKind::ForceQuitApplication),
+                RowId::Hide => (
+                    HIDE_OTHERS_NAME,
+                    AccessibleActionKind::HideOtherApplications,
+                ),
+                _ => (CLOSE_WINDOW_NAME, AccessibleActionKind::CloseWindow),
             };
             actions.push(menu_action(&id, name, kind, row.id.clone(), true));
         }
@@ -771,6 +776,7 @@ fn shelf_action(
         AccessibleActionKind::ActivateMenuItem
         | AccessibleActionKind::CloseWindow
         | AccessibleActionKind::ForceQuitApplication
+        | AccessibleActionKind::HideOtherApplications
         | AccessibleActionKind::CloseMenu => unreachable!("shelf action kind"),
     };
     AccessibleAction {

@@ -708,7 +708,7 @@ mod linux_wayland {
             cx.notify();
         }
 
-        fn finish_tile_drag(&mut self, platform: bool, cx: &mut Context<Self>) {
+        fn finish_tile_drag(&mut self, modifiers: gpui::Modifiers, cx: &mut Context<Self>) {
             let Some(ui) = self.tile_drag.take() else {
                 return;
             };
@@ -725,7 +725,7 @@ mod linux_wayland {
             });
             let command = match ui.drag.finish() {
                 rmac_dock::reorder::TileDrop::Click => {
-                    self.activate_entry(&ui.app_id, platform, cx);
+                    self.activate_entry(&ui.app_id, modifiers, cx);
                     return;
                 }
                 rmac_dock::reorder::TileDrop::NoChange => return,
@@ -1044,9 +1044,30 @@ mod linux_wayland {
         }
 
         /// Primary activation for one Dock tile: ⌘-click reveals in Files,
-        /// otherwise launch/focus through the system authority.
-        fn activate_entry(&mut self, app_id: &str, platform: bool, cx: &mut Context<Self>) {
-            if platform {
+        /// otherwise launch/focus through the system authority. As on the
+        /// Mac, ⌥-click also hides the application being left, and ⌥⌘-click
+        /// hides every other application.
+        fn activate_entry(
+            &mut self,
+            app_id: &str,
+            modifiers: gpui::Modifiers,
+            cx: &mut Context<Self>,
+        ) {
+            let hide = modifiers.alt.then(|| {
+                let status = self.status.read(cx);
+                let model = status.model()?;
+                let action = if modifiers.platform {
+                    model.context_menu(app_id)?.hide_others?
+                } else {
+                    let front = model
+                        .items
+                        .iter()
+                        .find(|item| item.active && item.id != app_id)?;
+                    model.context_menu(&front.id)?.hide?
+                };
+                model.authorizes_context_action(&action).then_some(action)
+            });
+            if modifiers.platform && !modifiers.alt {
                 let reveal = {
                     let status = self.status.read(cx);
                     status
@@ -1075,6 +1096,9 @@ mod linux_wayland {
                     ),
                     cx,
                 );
+            }
+            if let Some(action) = hide.flatten() {
+                self.dispatch_action(rmac_dock::menu::Action::Context(action), cx);
             }
         }
 
@@ -1391,7 +1415,7 @@ mod linux_wayland {
             match &target.id {
                 rmac_dock::presentation::EntryId::Application(app_id) => {
                     let app_id = app_id.clone();
-                    self.activate_entry(&app_id, false, cx);
+                    self.activate_entry(&app_id, gpui::Modifiers::default(), cx);
                 }
                 id => self.dispatch_action(rmac_dock::menu::Action::ActivateEntry(id.clone()), cx),
             }
@@ -1835,7 +1859,7 @@ mod linux_wayland {
                         if this.pressed.take().is_some() {
                             cx.notify();
                         }
-                        this.finish_tile_drag(event.modifiers.platform, cx);
+                        this.finish_tile_drag(event.modifiers, cx);
                     }),
                 )
                 .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
@@ -2132,7 +2156,11 @@ mod linux_wayland {
                             let click_app_id = activate_app_id.clone();
                             item = item.on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
                                 entity.update(cx, |this, cx| {
-                                    this.activate_entry(&click_app_id, false, cx);
+                                    this.activate_entry(
+                                        &click_app_id,
+                                        gpui::Modifiers::default(),
+                                        cx,
+                                    );
                                 });
                             });
                         }
@@ -2185,7 +2213,7 @@ mod linux_wayland {
                                                 {
                                                     this.activate_entry(
                                                         &activate_app_id,
-                                                        event.modifiers.platform,
+                                                        event.modifiers,
                                                         cx,
                                                     );
                                                 }

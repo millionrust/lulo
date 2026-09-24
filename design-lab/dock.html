@@ -179,6 +179,11 @@ tip.style.left = centerX(s1, term) + "px"; tip.style.bottom = (shelfTop + 6) + "
 s1.appendChild(tip);
 
 // Files menu: the Finder menu shape from f046.
+// Re-measured 2026-09-24 on Zed's Dock menu (macOS 26.2, AX): 24 pt rows,
+// 11 pt separators; the last group is Show All Windows, Hide and Quit, and
+// holding Option turns Hide into Hide Others and Quit into Force Quit in
+// place (same row frames). Lulo OS hides by parking windows (ADR 0014), and
+// Show All Windows opens App Exposé for the application.
 const menu = document.createElement("div"); menu.className = "menu checks";
 const rows = [
   ["", "Downloads"], ["✓", "Projects"], null,

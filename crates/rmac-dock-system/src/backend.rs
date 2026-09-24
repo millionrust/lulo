@@ -72,6 +72,78 @@ impl Backend for SystemBackend {
         })
     }
 
+    fn hide_windows(
+        &self,
+        request_id: rmac_compositor::ActivationId,
+        windows: &[rmac_compositor::WindowId],
+    ) -> BackendFuture<'_, Result<(), BackendError>> {
+        let windows = windows.to_vec();
+        Box::pin(async move {
+            // The niri snapshot reader is not Send; read it on its own thread.
+            let snapshot = blocking::unblock(|| {
+                futures_lite::future::block_on(rmac_compositor_niri::snapshot())
+            })
+            .await
+            .map_err(|error| BackendError::new(FailureKind::Unavailable, format!("{error:?}")))?;
+            let mut store = rmac_compositor::ParkingStore::load_default();
+            store.prune(&snapshot);
+            store.record_from(&snapshot, &windows);
+            // Record first: a window parked without its origin could not be
+            // brought back to the right Space.
+            store.save_default().map_err(|error| {
+                BackendError::new(
+                    FailureKind::Other,
+                    format!("could not save where the hidden windows belong: {error}"),
+                )
+            })?;
+            let mut failure = None;
+            for window in windows {
+                let result = rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
+                    id: request_id,
+                    action: rmac_compositor::Action::MinimizeWindow { window },
+                })
+                .await
+                .result;
+                if let Err(error) = result {
+                    failure = Some(BackendError::new(
+                        action_error_kind(error.kind),
+                        error.message,
+                    ));
+                }
+            }
+            failure.map_or(Ok(()), Err)
+        })
+    }
+
+    fn show_all_windows(
+        &self,
+        request_id: rmac_compositor::ActivationId,
+        window: rmac_compositor::WindowId,
+    ) -> BackendFuture<'_, Result<(), BackendError>> {
+        Box::pin(async move {
+            rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
+                id: request_id,
+                action: rmac_compositor::Action::FocusWindow { window },
+            })
+            .await
+            .result
+            .map_err(|error| BackendError::new(action_error_kind(error.kind), error.message))?;
+            // App Exposé shows the focused application's windows.
+            blocking::unblock(|| {
+                std::process::Command::new("/usr/libexec/rmac/rmac-mission-control")
+                    .arg("app-windows")
+                    .status()
+            })
+            .await
+            .map_err(|error| BackendError::new(FailureKind::Io(error.kind()), error.to_string()))
+            .and_then(|status| {
+                status.success().then_some(()).ok_or_else(|| {
+                    BackendError::new(FailureKind::Unavailable, "Mission Control is not running")
+                })
+            })
+        })
+    }
+
     fn reveal_application(&self, source: &Path) -> BackendFuture<'_, Result<(), BackendError>> {
         let source = source.to_path_buf();
         Box::pin(async move {

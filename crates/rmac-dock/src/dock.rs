@@ -240,6 +240,28 @@ impl Model {
             pids,
             kind: TerminationKind::ForceQuit,
         });
+        // Hiding parks windows (ADR 0014), so only visible windows count and
+        // a hidden application has nothing left to hide.
+        let visible = item
+            .windows
+            .iter()
+            .map(|window| window.id)
+            .collect::<Vec<_>>();
+        let hide = (!visible.is_empty()).then(|| ContextAction::HideApplication {
+            app_id: item.id.clone(),
+            windows: visible.clone(),
+        });
+        let hide_others = (!visible.is_empty()).then(|| ContextAction::HideOthers {
+            app_id: item.id.clone(),
+            windows: self.other_visible_windows(&canonical),
+        });
+        let show_all_windows = item
+            .windows
+            .first()
+            .map(|window| ContextAction::ShowAllWindows {
+                app_id: item.id.clone(),
+                window: window.id,
+            });
         Some(ContextMenu {
             app_id: item.id.clone(),
             application_name: item.name.clone(),
@@ -282,7 +304,23 @@ impl Model {
             },
             quit,
             force_quit,
+            show_all_windows,
+            hide,
+            hide_others,
         })
+    }
+
+    /// Every visible window of the other applications in the Dock, for
+    /// Hide Others.
+    fn other_visible_windows(&self, canonical: &str) -> Vec<rmac_compositor::WindowId> {
+        let mut windows = self
+            .items
+            .iter()
+            .filter(|item| canonical_app_id(&item.id) != canonical)
+            .flat_map(|item| item.windows.iter().map(|window| window.id))
+            .collect::<Vec<_>>();
+        windows.sort_unstable();
+        windows
     }
 
     /// Revalidates a menu command against the newest Dock projection before a
@@ -294,7 +332,10 @@ impl Model {
             | ContextAction::FocusWindow { app_id, .. }
             | ContextAction::CloseWindow { app_id, .. }
             | ContextAction::RevealApplication { app_id, .. }
-            | ContextAction::TerminateApplication { app_id, .. } => app_id,
+            | ContextAction::TerminateApplication { app_id, .. }
+            | ContextAction::HideApplication { app_id, .. }
+            | ContextAction::HideOthers { app_id, .. }
+            | ContextAction::ShowAllWindows { app_id, .. } => app_id,
             ContextAction::UpdatePins(command) => command.app_id(),
         };
         let canonical = canonical_app_id(app_id);
@@ -322,6 +363,20 @@ impl Model {
             ContextAction::UpdatePins(PinCommand::Unpin { .. }) => item.pinned,
             ContextAction::UpdatePins(PinCommand::Move { .. } | PinCommand::MoveTo { .. }) => {
                 item.pinned
+            }
+            ContextAction::HideApplication { windows, .. } => {
+                !windows.is_empty()
+                    && windows.len() == item.windows.len()
+                    && item
+                        .windows
+                        .iter()
+                        .all(|window| windows.contains(&window.id))
+            }
+            ContextAction::HideOthers { windows, .. } => {
+                !item.windows.is_empty() && *windows == self.other_visible_windows(&canonical)
+            }
+            ContextAction::ShowAllWindows { window, .. } => {
+                item.windows.iter().any(|candidate| candidate.id == *window)
             }
         }
     }

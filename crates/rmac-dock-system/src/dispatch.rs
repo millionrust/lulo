@@ -524,6 +524,17 @@ fn context_identity(action: &rmac_dock::ContextAction) -> (ActionTarget, Operati
             Operation::UpdatePins,
             command.app_id().to_owned(),
         ),
+        rmac_dock::ContextAction::HideApplication { app_id, .. }
+        | rmac_dock::ContextAction::HideOthers { app_id, .. } => (
+            ActionTarget::Application(app_id.clone()),
+            Operation::Hide,
+            app_id.clone(),
+        ),
+        rmac_dock::ContextAction::ShowAllWindows { app_id, .. } => (
+            ActionTarget::Application(app_id.clone()),
+            Operation::ShowAllWindows,
+            app_id.clone(),
+        ),
     }
 }
 
@@ -564,6 +575,18 @@ fn revalidate_context(
             }
             .filter(|candidate| candidate == requested)
         }
+        rmac_dock::ContextAction::HideApplication { app_id, .. } => model
+            .context_menu(app_id)?
+            .hide
+            .filter(|candidate| candidate == requested),
+        rmac_dock::ContextAction::HideOthers { app_id, .. } => model
+            .context_menu(app_id)?
+            .hide_others
+            .filter(|candidate| candidate == requested),
+        rmac_dock::ContextAction::ShowAllWindows { app_id, .. } => model
+            .context_menu(app_id)?
+            .show_all_windows
+            .filter(|candidate| candidate == requested),
         rmac_dock::ContextAction::UpdatePins(requested) => {
             let menu = model.context_menu(requested.app_id())?;
             match requested {

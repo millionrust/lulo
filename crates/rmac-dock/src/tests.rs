@@ -522,6 +522,79 @@ fn context_menu_exposes_real_windows_and_hides_unverifiable_process_actions() {
 }
 
 #[test]
+fn hide_hide_others_and_show_all_windows_name_live_windows_and_go_stale() {
+    let catalog = [
+        application("terminal.desktop", "Terminal"),
+        application("notes.desktop", "Notes"),
+    ];
+    let pinned = [rmac_shell_settings::AppId("terminal.desktop".into())];
+    let snapshot = |windows| rmac_compositor::Snapshot {
+        windows,
+        ..Default::default()
+    };
+    let model = Model::build(
+        &pinned,
+        &Default::default(),
+        &catalog,
+        &snapshot(vec![
+            window(1, "terminal", true, false, 20),
+            window(2, "terminal", false, false, 10),
+            window(3, "notes", false, false, 5),
+        ]),
+    );
+    let menu = model.context_menu("terminal").unwrap();
+    let hide = menu.hide.clone().expect("a running app can hide");
+    assert_eq!(
+        hide,
+        ContextAction::HideApplication {
+            app_id: "terminal.desktop".into(),
+            windows: vec![rmac_compositor::WindowId(1), rmac_compositor::WindowId(2)],
+        }
+    );
+    let others = menu.hide_others.clone().unwrap();
+    assert_eq!(
+        others,
+        ContextAction::HideOthers {
+            app_id: "terminal.desktop".into(),
+            windows: vec![rmac_compositor::WindowId(3)],
+        }
+    );
+    let show = menu.show_all_windows.clone().unwrap();
+    assert_eq!(
+        show,
+        ContextAction::ShowAllWindows {
+            app_id: "terminal.desktop".into(),
+            window: rmac_compositor::WindowId(1),
+        }
+    );
+    for action in [&hide, &others, &show] {
+        assert!(model.authorizes_context_action(action));
+    }
+
+    // A new window makes the open menu's Hide and Hide Others stale.
+    let changed = Model::build(
+        &pinned,
+        &Default::default(),
+        &catalog,
+        &snapshot(vec![
+            window(1, "terminal", true, false, 20),
+            window(2, "terminal", false, false, 10),
+            window(3, "notes", false, false, 5),
+            window(4, "notes", false, false, 4),
+        ]),
+    );
+    assert!(changed.authorizes_context_action(&hide));
+    assert!(!changed.authorizes_context_action(&others));
+
+    // A closed app offers none of them.
+    let closed = Model::build(&pinned, &Default::default(), &catalog, &snapshot(vec![]));
+    let menu = closed.context_menu("terminal").unwrap();
+    assert!(menu.hide.is_none() && menu.hide_others.is_none());
+    assert!(menu.show_all_windows.is_none());
+    assert!(!closed.authorizes_context_action(&hide));
+}
+
+#[test]
 fn context_menu_quit_actions_require_and_revalidate_exact_live_processes() {
     let catalog = [application("terminal.desktop", "Terminal")];
     let pinned = [rmac_shell_settings::AppId("terminal.desktop".into())];

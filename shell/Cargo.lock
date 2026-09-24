@@ -4786,6 +4786,7 @@ name = "rmac-dock-system"
 version = "0.9.0-beta.1"
 dependencies = [
  "blocking",
+ "futures-lite",
  "rmac-app-launch",
  "rmac-apps",
  "rmac-compositor",

@@ -197,6 +197,23 @@ pub enum ContextAction {
         kind: TerminationKind,
     },
     UpdatePins(PinCommand),
+    /// Hide: park these visible windows, recording where each came from.
+    HideApplication {
+        app_id: String,
+        windows: Vec<rmac_compositor::WindowId>,
+    },
+    /// Option-Hide (Hide Others): park every other application's visible
+    /// windows.
+    HideOthers {
+        app_id: String,
+        windows: Vec<rmac_compositor::WindowId>,
+    },
+    /// Show All Windows: App Exposé for this application, starting from its
+    /// most recent window.
+    ShowAllWindows {
+        app_id: String,
+        window: rmac_compositor::WindowId,
+    },
 }
 
 impl fmt::Debug for ContextAction {
@@ -231,6 +248,21 @@ impl fmt::Debug for ContextAction {
             Self::UpdatePins(command) => {
                 formatter.debug_tuple("UpdatePins").field(command).finish()
             }
+            Self::HideApplication { app_id, windows } => formatter
+                .debug_struct("HideApplication")
+                .field("app_id", app_id)
+                .field("windows", &windows.len())
+                .finish(),
+            Self::HideOthers { app_id, windows } => formatter
+                .debug_struct("HideOthers")
+                .field("app_id", app_id)
+                .field("windows", &windows.len())
+                .finish(),
+            Self::ShowAllWindows { app_id, window } => formatter
+                .debug_struct("ShowAllWindows")
+                .field("app_id", app_id)
+                .field("window", window)
+                .finish(),
         }
     }
 }
@@ -263,6 +295,11 @@ pub struct ContextMenu {
     pub pin: PinCommand,
     pub quit: Option<ContextAction>,
     pub force_quit: Option<ContextAction>,
+    /// Running applications only: Show All Windows, Hide, and Hide Others
+    /// (Hide's Option alternative).
+    pub show_all_windows: Option<ContextAction>,
+    pub hide: Option<ContextAction>,
+    pub hide_others: Option<ContextAction>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

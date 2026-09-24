@@ -19,6 +19,8 @@ pub enum RowId {
     Window(rmac_compositor::WindowId),
     Pin,
     ShowInFinder,
+    ShowAllWindows,
+    Hide,
     Quit,
     OpenSpecial(SpecialItemKind),
     EmptyTrash,
@@ -232,15 +234,17 @@ impl Session {
     /// The macOS 26 Dock menu, top to bottom: the app's windows (the
     /// focused one ticked), the app's own commands, Options ▸ with Keep in
     /// Dock and Show in Files, then Open for a closed app or Quit for a
-    /// running one (Option turns Quit into Force Quit). Show All Windows,
-    /// Hide and Hide Others are omitted: niri has no application hiding or
-    /// per-application Exposé.
+    /// running one, preceded by Show All Windows and Hide (Option turns
+    /// Hide into Hide Others and Quit into Force Quit). Hiding parks the
+    /// windows (ADR 0014); Show All Windows is App Exposé.
     pub fn context(menu: &ContextMenu) -> Result<Self, MenuError> {
         let row_count = usize::from(menu.open.is_some())
             + menu.application_commands.len()
             + menu.windows.len()
             + 1
             + usize::from(menu.show_in_finder.is_some())
+            + usize::from(menu.show_all_windows.is_some())
+            + usize::from(menu.hide.is_some())
             + usize::from(menu.quit.is_some());
         if row_count > MAX_MENU_ROWS {
             return Err(MenuError::TooManyRows { count: row_count });
@@ -353,6 +357,45 @@ impl Session {
                 primary: Some(Action::Context(action.clone())),
                 secondary: None,
                 alternate_label: None,
+                submenu: None,
+            });
+        }
+        if let Some(action) = &menu.show_all_windows {
+            rows.push(Row {
+                id: RowId::ShowAllWindows,
+                section: Section::Lifecycle,
+                label: "Show All Windows".into(),
+                accessible_label: bounded(&format!(
+                    "Show All Windows of {}",
+                    bounded(&menu.application_name)
+                )),
+                enabled: true,
+                checked: false,
+                urgent: false,
+                destructive: false,
+                primary: Some(Action::Context(action.clone())),
+                secondary: None,
+                alternate_label: None,
+                submenu: None,
+            });
+        }
+        if let Some(action) = &menu.hide {
+            let hide_others = menu.hide_others.clone().map(Action::Context);
+            rows.push(Row {
+                id: RowId::Hide,
+                section: Section::Lifecycle,
+                label: "Hide".into(),
+                accessible_label: bounded(&format!(
+                    "Hide {}, hold Option to Hide Others",
+                    bounded(&menu.application_name)
+                )),
+                enabled: true,
+                checked: false,
+                urgent: false,
+                destructive: false,
+                primary: Some(Action::Context(action.clone())),
+                alternate_label: hide_others.as_ref().map(|_| "Hide Others".to_owned()),
+                secondary: hide_others,
                 submenu: None,
             });
         }
@@ -765,6 +808,9 @@ mod tests {
             },
             quit: None,
             force_quit: None,
+            show_all_windows: None,
+            hide: None,
+            hide_others: None,
         };
         let mut session = Session::context(&menu).unwrap();
 
@@ -798,6 +844,9 @@ mod tests {
             },
             quit: None,
             force_quit: None,
+            show_all_windows: None,
+            hide: None,
+            hide_others: None,
         };
         let mut session = Session::context(&menu).unwrap();
         assert_eq!(session.selected(), Some(&RowId::Pin));
@@ -835,6 +884,9 @@ mod tests {
             },
             quit: None,
             force_quit: None,
+            show_all_windows: None,
+            hide: None,
+            hide_others: None,
         };
         let closed = Session::context(&menu).unwrap();
         let last = closed.rows().last().unwrap();
@@ -869,6 +921,8 @@ mod tests {
     }
 
     fn mac_menu(pin: PinCommand, windows: Vec<WindowMenu>, quit: bool) -> ContextMenu {
+        let visible = windows.iter().map(|window| window.id).collect::<Vec<_>>();
+        let first = visible.first().copied();
         ContextMenu {
             app_id: "terminal.desktop".into(),
             application_name: "Terminal".into(),
@@ -903,6 +957,18 @@ mod tests {
             quit: quit.then(|| terminate("terminal.desktop", crate::TerminationKind::Quit)),
             force_quit: quit
                 .then(|| terminate("terminal.desktop", crate::TerminationKind::ForceQuit)),
+            show_all_windows: first.map(|window| ContextAction::ShowAllWindows {
+                app_id: "terminal.desktop".into(),
+                window,
+            }),
+            hide: first.map(|_| ContextAction::HideApplication {
+                app_id: "terminal.desktop".into(),
+                windows: visible.clone(),
+            }),
+            hide_others: first.map(|_| ContextAction::HideOthers {
+                app_id: "terminal.desktop".into(),
+                windows: vec![rmac_compositor::WindowId(9)],
+            }),
         }
     }
 
@@ -936,6 +1002,8 @@ mod tests {
                 RowId::ApplicationCommand("new-window".into()),
                 RowId::Pin,
                 RowId::ShowInFinder,
+                RowId::ShowAllWindows,
+                RowId::Hide,
                 RowId::Quit,
             ]
         );
@@ -946,17 +1014,27 @@ mod tests {
         assert_eq!(rows[3].submenu, Some(Submenu::Options));
         assert_eq!(rows[4].submenu, Some(Submenu::Options));
         assert_eq!(Submenu::Options.label(), "Options");
-        // Holding Option turns Quit into Force Quit.
-        assert_eq!(rows[5].label, "Quit");
-        assert_eq!(rows[5].alternate_label.as_deref(), Some("Force Quit"));
+        // Show All Windows and Hide sit with Quit; Option turns Hide into
+        // Hide Others and Quit into Force Quit.
+        assert_eq!(rows[5].label, "Show All Windows");
+        assert_eq!(rows[6].label, "Hide");
+        assert_eq!(rows[6].alternate_label.as_deref(), Some("Hide Others"));
+        assert!(matches!(
+            rows[6].secondary,
+            Some(Action::Context(ContextAction::HideOthers { .. }))
+        ));
+        assert!(rows[5..]
+            .iter()
+            .all(|row| row.section == Section::Lifecycle));
+        assert_eq!(rows[7].label, "Quit");
+        assert_eq!(rows[7].alternate_label.as_deref(), Some("Force Quit"));
         assert_eq!(
-            rows[5].secondary,
+            rows[7].secondary,
             Some(Action::Context(terminate(
                 "terminal.desktop",
                 crate::TerminationKind::ForceQuit
             )))
         );
-        assert_eq!(rows[5].section, Section::Lifecycle);
     }
 
     #[test]

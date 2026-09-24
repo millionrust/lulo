@@ -8,6 +8,9 @@ publish = false
 
 [dependencies]
 blocking.workspace = true
+# Reads one compositor snapshot on a blocking thread (the niri reader is
+# not Send); also used by the tests.
+futures-lite.workspace = true
 rmac-app-launch.workspace = true
 rmac-apps.workspace = true
 rmac-compositor.workspace = true
@@ -19,6 +22,3 @@ rmac-places-system.workspace = true
 rmac-portal.workspace = true
 rmac-shell-settings.workspace = true
 rmac-sound.workspace = true
-
-[dev-dependencies]
-futures-lite.workspace = true

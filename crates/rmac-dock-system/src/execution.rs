@@ -117,6 +117,24 @@ pub async fn execute_context(
                 kind: *kind,
             })
             .map_err(|error| Error::new(Operation::Terminate, error.kind, app_id, error.detail)),
+        rmac_dock::ContextAction::HideApplication { app_id, windows }
+        | rmac_dock::ContextAction::HideOthers { app_id, windows } => backend
+            .hide_windows(request_id, windows)
+            .await
+            .map(|()| Outcome::HideRequested {
+                app_id: app_id.clone(),
+                windows: windows.len(),
+            })
+            .map_err(|error| Error::new(Operation::Hide, error.kind, app_id, error.detail)),
+        rmac_dock::ContextAction::ShowAllWindows { app_id, window } => backend
+            .show_all_windows(request_id, *window)
+            .await
+            .map(|()| Outcome::ShowAllWindowsRequested {
+                app_id: app_id.clone(),
+            })
+            .map_err(|error| {
+                Error::new(Operation::ShowAllWindows, error.kind, app_id, error.detail)
+            }),
         rmac_dock::ContextAction::UpdatePins(command) => backend
             .update_pins(command)
             .await

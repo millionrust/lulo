@@ -172,6 +172,11 @@ Twelve commits, each small and independently reviewable:
 
 ## Larger gaps (not fixed here, listed per the brief)
 
+- **System Settings: focus doesn't land in a pane's content after picking
+  it from the sidebar.** `select_position` never calls `window.focus`, and
+  there's only one window-level `FocusHandle` in the whole crate — see the
+  System Settings row above for the exact 4-call-site fix this needs (a
+  second `content_focus` handle, `tab_stop(false)` + `focus_next`).
 - **⌃F2 (menu bar focus)**: known limitation, needs the Dock's invisible-
   overlay-surface mechanism plus a new menu-bar state; `shell/bins/rmac-menubar`
   is excluded from this pass.
@@ -209,7 +214,10 @@ Twelve commits, each small and independently reviewable:
   `track_focus`/keyboard wiring on custom widgets rather than a binding.
 - **A real Tab-trap for `rmac_ui::dialog()`/`alert()`**: today's
   `.tab_group()` only affects ordering priority, not an enforced trap (Tab
-  can still leave a dialog for the window's first/last tab stop). The clean
-  fix is gpui-component's own `focus_trap::FocusTrapElement`, but wiring it
-  into `rmac_ui` would add new `gpui_component` surface against ADR 0015 —
-  a policy call, not made here.
+  can still leave a dialog for the window's first/last tab stop) — and
+  `dialog()` itself (used by every Wi-Fi/Bluetooth/VPN/update sheet in
+  System Settings, and by Notes'/Finder's/Text Editor's own dialogs) doesn't
+  even call `.tab_group()`, only `alert()` does. The clean fix is
+  gpui-component's own `focus_trap::FocusTrapElement`, but wiring it into
+  `rmac_ui` would add new `gpui_component` surface against ADR 0015 — a
+  policy call, not made here.

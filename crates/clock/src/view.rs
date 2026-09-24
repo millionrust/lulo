@@ -23,7 +23,7 @@ use rmac_clock::stopwatch::{self, LapMark, Phase};
 use rmac_clock::store::{self, State};
 use rmac_clock::tz::{self, Zone};
 use rmac_clock::{now_millis, schedule};
-use rmac_ui::{mac, InputEvent, InputState, SearchField, TextField, Toggle};
+use rmac_ui::{mac, InputEvent, InputState, SearchField, StyledExt as _, TextField, Toggle};
 
 use crate::{
     CloseWindow, LapReset, NewItem, ShowAlarms, ShowStopwatch, ShowTimers, ShowWorldClock,

@@ -13,7 +13,7 @@ use gpui::{
     anchored, deferred, div, prelude::FluentBuilder as _, px, Action, AnyElement, App, Context,
     ElementId, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent,
     MouseButton, ParentElement as _, Pixels, Point, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window,
+    StatefulInteractiveElement as _, Styled as _, Toggled, Window,
 };
 use gpui_component::StyledExt as _;
 
@@ -505,6 +505,12 @@ impl ContextMenu {
                         MenuCheck::Mixed => "–",
                         MenuCheck::None => "",
                     };
+                    // The visible row also carries the checkmark glyph and a
+                    // shortcut hint as sibling text runs, so a content-derived
+                    // name would read them out too (e.g. "✓ Show Hidden
+                    // Files ⌘⇧."). Every item gets an explicit name of just
+                    // its label instead.
+                    let accessible_label = label.clone();
                     let content = div()
                         .w_full()
                         .h_flex()
@@ -528,9 +534,25 @@ impl ContextMenu {
                                     .child(sc),
                             )
                         });
+                    let toggled = match checked {
+                        MenuCheck::On => Some(Toggled::True),
+                        MenuCheck::Mixed => Some(Toggled::Mixed),
+                        MenuCheck::None => None,
+                    };
+                    let role = if toggled.is_some() {
+                        Role::MenuItemCheckBox
+                    } else {
+                        Role::MenuItem
+                    };
                     let mut row = ListRow::new(("rmac-menu-item", i), content)
                         .mx(px(5.0))
-                        .px(px(8.0));
+                        .px(px(8.0))
+                        .disabled(!enabled)
+                        .role(role)
+                        .aria_label(accessible_label);
+                    if let Some(toggled) = toggled {
+                        row = row.aria_toggled(toggled);
+                    }
                     if enabled {
                         row = row.on_activate({
                             let return_focus = return_focus.clone();

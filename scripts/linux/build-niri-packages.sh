@@ -134,6 +134,7 @@ if [[ -z "$output" ]]; then
 fi
 [[ "$output" == /* && "$output" != / ]] || fail "--output must be an absolute, non-root path"
 [[ ! -e "$output" && ! -L "$output" ]] || fail "$output already exists"
+mkdir -p "$(dirname "$output")"
 
 # The repository's own pinned toolchain (rust-toolchain.toml) builds both
 # packages too, so CI and the laptop compile with the same rustc.
@@ -258,7 +259,9 @@ staging="$(mktemp -d "$work_dir/output.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 
 for name in "${selected[@]}"; do
-  eval "$(python3 "$contract" shell-vars --name "$name")"
+  pin_assignments="$(python3 "$contract" shell-vars --name "$name")" \
+    || fail "packaging/third-party/upstreams.json does not validate"
+  eval "$pin_assignments"
   echo "build-niri-packages: $PIN_NAME $PIN_DEBIAN_VERSION from $PIN_TAG ($PIN_COMMIT)"
 
   tarball="$work_dir/downloads/$PIN_ORIG_TARBALL"

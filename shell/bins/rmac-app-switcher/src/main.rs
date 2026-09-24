@@ -6,21 +6,25 @@
 //! overlay, tracks ⌘ through the surface's modifier events, and activates the
 //! selected application when ⌘ is released.
 
+#[cfg_attr(not(all(target_os = "linux", feature = "wayland")), allow(dead_code))]
+mod force_quit;
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+mod force_quit_window;
 #[cfg(unix)]
 mod ipc;
 mod model;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
-mod linux_wayland {
+pub(crate) mod linux_wayland {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
     use std::rc::Rc;
     use std::time::Duration;
 
     use gpui::{
-        div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px,
-        rgba, AnyElement, App, AsyncApp, Bounds, Context, Entity, FocusHandle, FontWeight,
-        KeyDownEvent, ModifiersChangedEvent, QuitMode, Role, Size, WeakEntity, Window,
+        div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px, rgba,
+        AnyElement, App, AsyncApp, Bounds, Context, Entity, FocusHandle, FontWeight, KeyDownEvent,
+        ModifiersChangedEvent, QuitMode, Role, Size, WeakEntity, Window,
         WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
@@ -28,6 +32,7 @@ mod linux_wayland {
     use rmac_shell_ui::tokens;
     use uuid::Uuid;
 
+    use crate::force_quit_window::{self, ForceQuitView};
     use crate::model::{self, Command, Layout, Recency, RunningApp, Session};
 
     /// A quick ⌘Tab tap switches without flashing the panel, as on macOS:
@@ -62,11 +67,12 @@ mod linux_wayland {
         icon: Option<PathBuf>,
     }
 
-    struct Service {
+    pub(crate) struct Service {
         compositor: rmac_compositor::State,
         recency: Recency,
         catalog: Rc<Vec<rmac_apps::Application>>,
         open: Option<WindowHandle<SwitcherView>>,
+        force_quit: Option<WindowHandle<ForceQuitView>>,
     }
 
     impl Service {
@@ -76,6 +82,7 @@ mod linux_wayland {
                 recency: Recency::default(),
                 catalog: Rc::new(Vec::new()),
                 open: None,
+                force_quit: None,
             };
             service.refresh_catalog(cx);
             service
@@ -119,16 +126,58 @@ mod linux_wayland {
         }
 
         fn item(&self, app: &RunningApp) -> Item {
-            let entry = rmac_apps::find_desktop_entry(&self.catalog, &app.app_id);
+            self.item_for(&app.app_id)
+        }
+
+        fn item_for(&self, app_id: &str) -> Item {
+            let entry = rmac_apps::find_desktop_entry(&self.catalog, app_id);
             let name = entry
                 .map(|entry| entry.name.clone())
-                .or_else(|| rmac_apps::identity::window_title(&app.app_id).map(str::to_owned))
-                .unwrap_or_else(|| fallback_name(&app.app_id));
+                .or_else(|| rmac_apps::identity::window_title(app_id).map(str::to_owned))
+                .unwrap_or_else(|| fallback_name(app_id));
             let icon = entry
                 .and_then(|entry| entry.icon.clone())
                 .filter(|path| path.is_file())
-                .or_else(|| packaged_icon(&app.app_id));
+                .or_else(|| packaged_icon(app_id));
             Item { name, icon }
+        }
+
+        /// Force Quit's list and icons, from the live window set.
+        fn force_quit_entries(&self) -> (Vec<crate::force_quit::Entry>, BTreeMap<String, PathBuf>) {
+            let snapshot = self.compositor.snapshot();
+            let entries = crate::force_quit::entries(
+                &snapshot,
+                |app_id| self.item_for(app_id).name,
+                crate::force_quit::process_stopped,
+            );
+            let icons = entries
+                .iter()
+                .filter_map(|entry| {
+                    self.item_for(&entry.app_id)
+                        .icon
+                        .map(|icon| (entry.app_id.clone(), icon))
+                })
+                .collect();
+            (entries, icons)
+        }
+
+        /// Keep an open Force Quit list in step with the windows.
+        fn refresh_force_quit(&mut self, cx: &mut Context<Self>) {
+            let Some(handle) = self.force_quit else {
+                return;
+            };
+            let (entries, icons) = self.force_quit_entries();
+            if handle
+                .update(cx, |view, _, cx| view.refresh(entries, icons, cx))
+                .is_err()
+            {
+                self.force_quit = None;
+            }
+        }
+
+        pub(crate) fn force_quit_closed(&mut self, cx: &mut Context<Self>) {
+            self.force_quit = None;
+            self.refresh_catalog(cx);
         }
 
         fn focused_output(&self) -> Option<Uuid> {
@@ -404,7 +453,13 @@ mod linux_wayland {
             cx.notify();
         }
 
-        fn tile(&self, index: usize, app: &RunningApp, colors: &Colors, cx: &mut Context<Self>) -> AnyElement {
+        fn tile(
+            &self,
+            index: usize,
+            app: &RunningApp,
+            colors: &Colors,
+            cx: &mut Context<Self>,
+        ) -> AnyElement {
             let layout = self.layout;
             let item = self.items.get(&app.app_id);
             let selected = index == self.session.selected;
@@ -613,13 +668,17 @@ mod linux_wayland {
     }
 
     fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
+        if command == Command::ForceQuit {
+            open_force_quit(service, cx);
+            return;
+        }
         let open = service.read(cx).open;
         if let Some(handle) = open {
             let handled = handle
                 .update(cx, |view, window, cx| match command {
                     Command::Next => view.step(true, cx),
                     Command::Previous => view.step(false, cx),
-                    Command::Cancel => view.close(window, cx),
+                    Command::Cancel | Command::ForceQuit => view.close(window, cx),
                 })
                 .is_ok();
             if handled {
@@ -630,8 +689,42 @@ mod linux_wayland {
         match command {
             Command::Next => open_switcher(service, false, cx),
             Command::Previous => open_switcher(service, true, cx),
-            Command::Cancel => {}
+            Command::Cancel | Command::ForceQuit => {}
         }
+    }
+
+    /// ⌥⌘⎋ and the logo menu's Force Quit…: bring the open window forward,
+    /// or open it on the app that was frontmost.
+    fn open_force_quit(service: &Entity<Service>, cx: &mut App) {
+        let (existing, snapshot) = {
+            let state = service.read(cx);
+            (state.force_quit, state.compositor.snapshot())
+        };
+        if let Some(handle) = existing {
+            if handle.update(cx, |_, _, _| ()).is_ok() {
+                let window = snapshot
+                    .windows
+                    .iter()
+                    .find(|window| window.app_id.as_deref() == Some(crate::force_quit::APP_ID))
+                    .map(|window| window.id);
+                if let Some(window) = window {
+                    cx.spawn(async move |_cx: &mut AsyncApp| {
+                        let action = Action::FocusWindow { window };
+                        if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                            eprintln!("could not bring Force Quit forward: {error:?}");
+                        }
+                    })
+                    .detach();
+                }
+                return;
+            }
+            service.update(cx, |service, _| service.force_quit = None);
+        }
+        let (entries, icons) = service.read(cx).force_quit_entries();
+        let frontmost = crate::force_quit::frontmost_app(&snapshot);
+        let list = crate::force_quit::List::new(entries, frontmost.as_deref());
+        let handle = force_quit_window::open(service, list, icons, cx);
+        service.update(cx, |service, _| service.force_quit = handle);
     }
 
     fn open_switcher(service: &Entity<Service>, backwards: bool, cx: &mut App) {
@@ -726,7 +819,12 @@ mod linux_wayland {
             let watched = service.clone();
             cx.spawn(async move |cx: &mut AsyncApp| {
                 while let Ok(event) = compositor_rx.recv().await {
-                    cx.update(|cx| watched.update(cx, |service, _| service.apply(event)));
+                    cx.update(|cx| {
+                        watched.update(cx, |service, cx| {
+                            service.apply(event);
+                            service.refresh_force_quit(cx);
+                        })
+                    });
                 }
             })
             .detach();
@@ -751,7 +849,9 @@ mod linux_wayland {
                 crate::ipc::send(command)
                     .map_err(|error| format!("app switcher is not running: {error}"))
             }
-            _ => Err("usage: app-switcher --service | next | previous | cancel".to_owned()),
+            _ => Err(
+                "usage: app-switcher --service | next | previous | cancel | force-quit".to_owned(),
+            ),
         }
     }
 }

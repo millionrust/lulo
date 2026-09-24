@@ -7,10 +7,11 @@
 use rmac_compositor::{window_is_parked, Action, Snapshot, Timestamp, WindowId, WorkspaceId};
 
 /// Shell helper windows that are never applications in the switcher.
-const EXCLUDED_APP_IDS: [&str; 3] = [
+const EXCLUDED_APP_IDS: [&str; 4] = [
     "org.rmac.Launcher",
     "org.rmac.QuickSettings",
     "org.rmac.NotificationCenter",
+    crate::force_quit::APP_ID,
 ];
 const EXCLUDED_APP_PREFIX: &str = "dev.rmac.";
 const MAX_REMEMBERED_APPS: usize = 256;
@@ -105,9 +106,7 @@ impl Recency {
         };
         // Stable: equal ranks keep the focus-time order built above.
         apps.sort_by(|(left, left_time), (right, right_time)| {
-            rank(left)
-                .cmp(&rank(right))
-                .then(right_time.cmp(left_time))
+            rank(left).cmp(&rank(right)).then(right_time.cmp(left_time))
         });
         apps.into_iter().map(|(app, _)| app).collect()
     }
@@ -118,6 +117,8 @@ pub enum Command {
     Next,
     Previous,
     Cancel,
+    /// Open Force Quit Applications, or bring it forward.
+    ForceQuit,
 }
 
 impl Command {
@@ -126,6 +127,7 @@ impl Command {
             "next" => Some(Self::Next),
             "previous" => Some(Self::Previous),
             "cancel" => Some(Self::Cancel),
+            "force-quit" => Some(Self::ForceQuit),
             _ => None,
         }
     }
@@ -135,6 +137,7 @@ impl Command {
             Self::Next => "next",
             Self::Previous => "previous",
             Self::Cancel => "cancel",
+            Self::ForceQuit => "force-quit",
         }
     }
 }
@@ -420,10 +423,7 @@ mod tests {
 
     #[test]
     fn hidden_applications_stay_listed_and_are_marked() {
-        let snapshot = snapshot(
-            vec![window(1, "a", 1, 10), window(2, "b", 9, 30)],
-            Some(1),
-        );
+        let snapshot = snapshot(vec![window(1, "a", 1, 10), window(2, "b", 9, 30)], Some(1));
         let apps = Recency::default().applications(&snapshot);
         assert_eq!(ids(&apps), ["a", "b"]);
         assert!(apps[1].hidden);
@@ -464,7 +464,12 @@ mod tests {
 
     #[test]
     fn commands_are_an_exact_allow_list() {
-        for command in [Command::Next, Command::Previous, Command::Cancel] {
+        for command in [
+            Command::Next,
+            Command::Previous,
+            Command::Cancel,
+            Command::ForceQuit,
+        ] {
             assert_eq!(Command::parse(command.as_str()), Some(command));
         }
         assert_eq!(Command::parse("next;quit"), None);
@@ -511,10 +516,7 @@ mod tests {
 
     #[test]
     fn activating_a_hidden_app_restores_its_windows() {
-        let snapshot = snapshot(
-            vec![window(1, "a", 9, 30), window(2, "a", 9, 20)],
-            None,
-        );
+        let snapshot = snapshot(vec![window(1, "a", 9, 30), window(2, "a", 9, 20)], None);
         let app = Recency::default().applications(&snapshot).remove(0);
         let actions = activation_actions(&snapshot, &app, |window| {
             (window == WindowId(1)).then_some(WorkspaceId(2))

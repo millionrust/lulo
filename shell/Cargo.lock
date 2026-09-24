@@ -5035,6 +5035,7 @@ dependencies = [
  "async-channel",
  "gpui",
  "gpui_platform",
+ "rmac-app-launch",
  "rmac-apps",
  "rmac-compositor",
  "rmac-compositor-niri",

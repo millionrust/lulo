@@ -18,6 +18,7 @@ x11 = ["gpui_platform/x11"]
 async-channel.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
+rmac-app-launch.workspace = true
 rmac-apps.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true

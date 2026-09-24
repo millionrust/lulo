@@ -672,7 +672,7 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     ));
     // ⌥⌘⎋ opens Force Quit, the same target as the system menu's item.
     assert!(shell.contains(
-        "Mod+Alt+Escape repeat=false hotkey-overlay-title=\"Force Quit Applications\" { spawn \"/usr/bin/rmac-system-monitor\"; }"
+        "Mod+Alt+Escape repeat=false hotkey-overlay-title=\"Force Quit Applications\" { spawn \"/usr/libexec/rmac/rmac-app-switcher\" \"force-quit\"; }"
     ));
     // ⇧⌘3/4/5 go to the resident screenshot service, not niri's own UI.
     for (keys, word) in [

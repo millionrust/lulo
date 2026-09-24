@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Force Quit Applications — exact</title>
+<!--
+  The ⌥⌘⎋ Force Quit Applications window at 1:1 logical points, measured on
+  the owner's Mac (macOS 26.2, dark mode, 2026-09-24) from its AX frames and a
+  Retina screenshot ÷ 2. Rust copies these numbers:
+  shell/bins/rmac-app-switcher/src/force_quit.rs.
+
+  window              370 × 310, a titled system dialogue ("Force Quit
+                      Applications"), radius 16 (title-bar-only window)
+  background          #20232D (window background, dark)
+  traffic lights      the usual 16 pt boxes 23 apart, first centred (16, 16);
+                      close enabled, minimise disabled (grey), zoom enabled
+  title               x 82, top 8, 16 tall, 13 pt bold, reads #9A9CA0
+  instruction         x 19, top 51, 332 × 34 (two 17 pt lines), 13 pt, #DDDDDF
+                      "If an app doesn’t respond for a while, select its name
+                      and click Force Quit."
+  list                x 20, top 92, 330 × 158; 1 pt border #353535; the list
+                      background is the window's
+  rows                22 pt pitch, the first at top 93 (inside the border),
+                      full inner width 328; icon 18 × 18 at x 28 (row + 7),
+                      2 below the row top; name from x 48, 13 pt, #DDDDDF;
+                      the selected row fills #2558CA with white text
+  not responding      " (Not Responding)" follows the name in system red
+                      (an S value: no hung app was available to capture)
+  order               the Mac lists regular apps alphabetically with Finder
+                      last; the frontmost app starts selected
+  footer              x 19, top 265, 236 × 28, 11 pt (two 14 pt lines), #DDDDDF
+                      "You can open this window by pressing
+                       Command-Option-Escape."
+  Force Quit button   x 261, top 265, 93 × 30 (16 from the right edge, 15 from
+                      the bottom), the default button: #3478F6, white 13 pt
+                      text, capsule. Return presses it. Finder's row relabels
+                      it "Relaunch" (Lulo OS has no Finder relaunch; Files
+                      keeps the Force Quit label).
+  confirmation (S)    a sheet with the standard alert: "Do you want to force
+                      “Zed” to quit?", "You will lose any unsaved changes.",
+                      Cancel and a destructive Force Quit (default). Not
+                      captured: pressing Force Quit on the Mac would have
+                      risked ending a real app.
+  keyboard            ↑↓ move the selection, Return = Force Quit, Esc and ⌘W
+                      close the window
+-->
+<style>
+  :root { --font: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif; }
+  html, body { margin: 0; background: #0e1015; }
+  body { font-family: var(--font); -webkit-font-smoothing: antialiased; padding: 40px; }
+  .win { position: relative; width: 370px; height: 310px; border-radius: 16px;
+         background: #20232d; box-shadow: 0 16px 42px rgba(0,0,0,.74);
+         outline: 1px solid rgba(255,255,255,.12); outline-offset: -1px; color: #dddddf; }
+  .light { position: absolute; top: 9px; width: 14px; height: 14px; border-radius: 50%; }
+  .close { left: 9px; background: #ff5f57; }
+  .min { left: 32px; background: #4d4f57; }
+  .zoom { left: 55px; background: #28c840; }
+  .title { position: absolute; left: 82px; top: 8px; height: 16px; line-height: 16px;
+           font-size: 13px; font-weight: 700; color: #9a9ca0; }
+  .instr { position: absolute; left: 19px; top: 51px; width: 332px; font-size: 13px;
+           line-height: 17px; }
+  .list { position: absolute; left: 20px; top: 92px; width: 328px; height: 156px;
+          border: 1px solid #353535; overflow: hidden; }
+  .row { position: relative; height: 22px; font-size: 13px; line-height: 22px; }
+  .row.sel { background: #2558ca; color: #fff; }
+  .row i { position: absolute; left: 7px; top: 2px; width: 18px; height: 18px;
+           border-radius: 4px; background: #8e8e93; }
+  .row span { position: absolute; left: 27px; }
+  .row em { font-style: normal; color: #ff453a; }
+  .footer { position: absolute; left: 19px; top: 265px; width: 236px; font-size: 11px;
+            line-height: 14px; }
+  .button { position: absolute; left: 261px; top: 265px; width: 93px; height: 30px;
+            border-radius: 15px; background: #3478f6; color: #fff; font-size: 13px;
+            line-height: 30px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="win" role="dialog" aria-label="Force Quit Applications">
+  <div class="light close"></div><div class="light min"></div><div class="light zoom"></div>
+  <div class="title">Force Quit Applications</div>
+  <div class="instr">If an app doesn’t respond for a while, select its name and click Force Quit.</div>
+  <div class="list">
+    <div class="row"><i></i><span>Calculator</span></div>
+    <div class="row"><i></i><span>Terminal <em>(Not Responding)</em></span></div>
+    <div class="row sel"><i></i><span>Text Editor</span></div>
+    <div class="row"><i></i><span>Files</span></div>
+  </div>
+  <div class="footer">You can open this window by pressing Command-Option-Escape.</div>
+  <div class="button">Force Quit</div>
+</div>
+</body>
+</html>

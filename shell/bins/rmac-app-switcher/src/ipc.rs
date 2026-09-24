@@ -122,6 +122,7 @@ mod tests {
         assert_eq!(decode(b"next"), Some(Command::Next));
         assert_eq!(decode(b"previous"), Some(Command::Previous));
         assert_eq!(decode(b"cancel"), Some(Command::Cancel));
+        assert_eq!(decode(b"force-quit"), Some(Command::ForceQuit));
         assert_eq!(decode(b"next\n"), None);
         assert_eq!(decode(&[0xff, 0xfe]), None);
     }

@@ -429,9 +429,11 @@ pub(super) fn minimized_items(
 
 /// Open/Save panels belong to the app that asked for them, as on macOS, so
 /// the separate panel process never appears as an application of its own.
+/// Force Quit Applications is a system dialogue with no Dock icon either.
 fn is_system_dialog(canonical_app_id: &str) -> bool {
     canonical_app_id == "org.rmac.filechooser"
         || canonical_app_id.starts_with("org.rmac.filechooser.")
+        || canonical_app_id == "org.rmac.forcequit"
 }
 
 pub(super) fn window_groups(

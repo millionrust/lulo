@@ -2883,11 +2883,11 @@ mod linux_wayland {
             "system::software-center" => {
                 spawn_command("gtk-launch", &["snap-store_snap-store"], cx)
             }
-            "system::force-quit" => open_or_focus_app(
-                rmac_apps::identity::SYSTEM_MONITOR,
-                "/usr/bin/rmac-system-monitor",
-                cx,
-            ),
+            // The resident switcher owns Force Quit Applications and brings
+            // an open one forward, so a second choice never opens another.
+            "system::force-quit" => {
+                spawn_command("/usr/libexec/rmac/rmac-app-switcher", &["force-quit"], cx)
+            }
             "system::sleep" => spawn_command("systemctl", &["suspend"], cx),
             "system::restart" | "system::shutdown" | "system::logout" => quit_all_then(action, cx),
             "system::lock" => dispatch_shortcut("lock", cx),

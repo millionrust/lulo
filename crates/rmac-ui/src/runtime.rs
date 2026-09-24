@@ -37,6 +37,7 @@ pub fn init_application(cx: &mut App) {
     components::init(cx);
     apply_component_theme(cx);
     start_theme_runtime(cx);
+    crate::session::install(cx);
 }
 
 /// Push the resolved rmac tokens into gpui-component's global theme so shared

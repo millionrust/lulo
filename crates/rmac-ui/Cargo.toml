@@ -21,3 +21,6 @@ rmac-compositor-niri.workspace = true
 rmac-design.workspace = true
 rmac-theme.workspace = true
 rmac-window-state.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true

@@ -6705,6 +6705,7 @@ dependencies = [
  "gpui-component",
  "gpui-component-assets",
  "gpui_platform",
+ "libc",
  "rmac-app-menu",
  "rmac-appearance",
  "rmac-appearance-portal",

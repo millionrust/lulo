@@ -262,3 +262,15 @@ fn action_listener_accepts_only_its_typed_dispatch_and_cleans_up() {
     assert!(!path.exists());
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn portal_retries_back_off_to_five_minutes() {
+    use std::time::Duration;
+    assert_eq!(portal_retry_delay(0), Duration::from_secs(2));
+    assert_eq!(portal_retry_delay(1), Duration::from_secs(2));
+    assert_eq!(portal_retry_delay(2), Duration::from_secs(4));
+    assert_eq!(portal_retry_delay(3), Duration::from_secs(8));
+    assert_eq!(portal_retry_delay(8), Duration::from_secs(256));
+    assert_eq!(portal_retry_delay(9), Duration::from_secs(300));
+    assert_eq!(portal_retry_delay(u32::MAX), Duration::from_secs(300));
+}

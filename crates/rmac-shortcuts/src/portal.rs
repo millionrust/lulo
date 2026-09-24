@@ -108,20 +108,36 @@ pub async fn watch(sender: Sender<Event>) -> Result<(), Error> {
     validate_specs(&default_shortcuts())?;
     #[cfg(target_os = "linux")]
     {
+        let mut failures = 0u32;
+        let mut reported: Option<String> = None;
         loop {
-            if let Err(error) = watch_portal(&sender).await {
+            let mut bound = false;
+            if let Err(error) = watch_portal(&sender, &mut bound).await {
                 if sender.is_closed() {
                     return Ok(());
                 }
-                let event = Event::Backend {
-                    status: BackendStatus::FallbackRequired {
-                        reason: error.detail.clone(),
-                    },
-                };
-                if sender.send(event).await.is_err() {
-                    return Ok(());
+                // A session that bound and later lost the portal starts the
+                // retry schedule afresh; a portal that keeps refusing backs
+                // off instead of being asked again every two seconds.
+                if bound {
+                    failures = 0;
+                    reported = None;
                 }
-                async_io::Timer::after(std::time::Duration::from_secs(2)).await;
+                failures = failures.saturating_add(1);
+                // The fallback status is only re-announced when the reason
+                // changes, so an idle desktop does not rewrite it each retry.
+                if reported.as_deref() != Some(error.detail.as_str()) {
+                    let event = Event::Backend {
+                        status: BackendStatus::FallbackRequired {
+                            reason: error.detail.clone(),
+                        },
+                    };
+                    if sender.send(event).await.is_err() {
+                        return Ok(());
+                    }
+                    reported = Some(error.detail);
+                }
+                async_io::Timer::after(portal_retry_delay(failures)).await;
             }
         }
     }
@@ -139,7 +155,7 @@ pub async fn watch(sender: Sender<Event>) -> Result<(), Error> {
 }
 
 #[cfg(target_os = "linux")]
-pub(super) async fn watch_portal(sender: &Sender<Event>) -> Result<(), Error> {
+pub(super) async fn watch_portal(sender: &Sender<Event>, bound: &mut bool) -> Result<(), Error> {
     use ashpd::desktop::global_shortcuts::{GlobalShortcuts, NewShortcut};
     use futures_util::{pin_mut, select, FutureExt as _, StreamExt as _};
 
@@ -201,6 +217,7 @@ pub(super) async fn watch_portal(sender: &Sender<Event>) -> Result<(), Error> {
         },
     )
     .await?;
+    *bound = true;
     send(
         sender,
         Event::Bound {
@@ -270,6 +287,17 @@ pub(super) async fn watch_portal(sender: &Sender<Event>) -> Result<(), Error> {
             },
         }
     }
+}
+
+/// How long to wait before asking the GlobalShortcuts portal again after
+/// `failures` consecutive refusals: two seconds, doubling to at most five
+/// minutes, so a portal that cannot serve rmac is not polled while idle.
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn portal_retry_delay(failures: u32) -> std::time::Duration {
+    const FIRST: u64 = 2;
+    const LONGEST: u64 = 300;
+    let exponent = failures.saturating_sub(1).min(16);
+    std::time::Duration::from_secs((FIRST << exponent).min(LONGEST))
 }
 
 #[cfg(target_os = "linux")]

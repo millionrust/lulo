@@ -185,8 +185,11 @@ pub struct Dialog {
     role: Role,
     aria_label: Option<SharedString>,
     initial_focus: InitialFocus,
-    extra_key_down: Vec<Box<dyn Fn(&KeyDownEvent, &mut Window, &mut App)>>,
+    extra_key_down: Vec<KeyDownListener>,
 }
+
+/// A key handler a dialog runs alongside its own key handling.
+type KeyDownListener = Box<dyn Fn(&KeyDownEvent, &mut Window, &mut App)>;
 
 impl Dialog {
     /// Narrow the dialog's accessible role (`alert_with_icon` uses this for

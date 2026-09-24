@@ -207,9 +207,7 @@ pub(crate) fn run() {
                 cx.spawn(async move |cx: &mut gpui::AsyncApp| {
                     let consume = async {
                         while let Ok(event) = shortcut_rx.recv().await {
-                            if cx.update(|cx| route_shortcut(event, cx)).is_err() {
-                                return Err("Launcher application context stopped".to_owned());
-                            }
+                            cx.update(|cx| route_shortcut(event, cx));
                         }
                         Ok::<(), String>(())
                     };

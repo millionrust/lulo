@@ -274,6 +274,91 @@ fn artwork_rasters_follow_the_drawn_size_and_are_embedded() {
 }
 
 #[test]
+fn column_index_for_selection_finds_the_column_holding_the_entry() {
+    let root = TestDirectory::new("column-index");
+    let child = root.0.join("child");
+    std::fs::create_dir(&child).unwrap();
+    let grandchild_file = child.join("leaf.txt");
+    std::fs::write(&grandchild_file, b"leaf").unwrap();
+
+    let col_stack = vec![root.0.clone(), child.clone()];
+    let leaf_entry = entry_for(&grandchild_file).unwrap();
+    let child_entry = entry_for(&child).unwrap();
+
+    assert_eq!(
+        column_index_for_selection(&col_stack, &leaf_entry),
+        Some(1),
+        "the file's column is the one showing its parent directory"
+    );
+    assert_eq!(
+        column_index_for_selection(&col_stack, &child_entry),
+        Some(0),
+        "the folder itself is shown one column to the left of its own contents"
+    );
+
+    let unrelated = TestDirectory::new("column-index-unrelated");
+    let stray_file = unrelated.0.join("stray.txt");
+    std::fs::write(&stray_file, b"stray").unwrap();
+    let stray_entry = entry_for(&stray_file).unwrap();
+    assert_eq!(column_index_for_selection(&col_stack, &stray_entry), None);
+}
+
+#[test]
+fn column_vertical_target_moves_within_the_column_and_clamps_at_the_ends() {
+    let root = TestDirectory::new("column-vertical");
+    let mut names = ["a.txt", "b.txt", "c.txt"];
+    for name in names.iter() {
+        std::fs::write(root.0.join(name), b"x").unwrap();
+    }
+    let mut entries = read_entries(&root.0, true);
+    sort_entries(&mut entries, SortKey::Name, true);
+    names.sort_unstable();
+    assert_eq!(
+        entries
+            .iter()
+            .map(|e| e.name.to_string())
+            .collect::<Vec<_>>(),
+        names
+    );
+
+    // No current selection: the first row is picked, whether stepping up or down.
+    assert_eq!(
+        column_vertical_target(&entries, None, 1).map(|e| e.name.to_string()),
+        Some("a.txt".to_string())
+    );
+    assert_eq!(
+        column_vertical_target(&entries, None, -1).map(|e| e.name.to_string()),
+        Some("a.txt".to_string())
+    );
+
+    // Down moves forward one row.
+    let first = entries[0].path.clone();
+    assert_eq!(
+        column_vertical_target(&entries, Some(&first), 1).map(|e| e.name.to_string()),
+        Some("b.txt".to_string())
+    );
+    // Up from the first row clamps to itself.
+    assert_eq!(
+        column_vertical_target(&entries, Some(&first), -1).map(|e| e.name.to_string()),
+        Some("a.txt".to_string())
+    );
+    // Down from the last row clamps to itself.
+    let last = entries[2].path.clone();
+    assert_eq!(
+        column_vertical_target(&entries, Some(&last), 1).map(|e| e.name.to_string()),
+        Some("c.txt".to_string())
+    );
+    // Up from the last row moves back one.
+    assert_eq!(
+        column_vertical_target(&entries, Some(&last), -1).map(|e| e.name.to_string()),
+        Some("b.txt".to_string())
+    );
+
+    // An empty column has no target at all.
+    assert_eq!(column_vertical_target(&[], None, 1), None);
+}
+
+#[test]
 fn trash_deletion_dates_read_like_the_rest_of_the_list() {
     let label = trash_updates::deletion_label("2024-02-28T23:05:00");
     assert!(!label.contains('T'), "{label}");

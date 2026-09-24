@@ -132,7 +132,6 @@ impl FinderView {
                 } else {
                     primary_text()
                 };
-                let ep = e.path.clone();
                 let open_path = e.path.clone();
                 let is_dir = e.is_dir;
                 let selected_entry = e.clone();
@@ -238,13 +237,7 @@ impl FinderView {
                                 );
                                 return;
                             }
-                            this.selected.clear();
-                            this.anchor = None;
-                            this.column_selection = Some(selected_entry.clone());
-                            this.col_stack.truncate(ci + 1);
-                            if is_dir {
-                                this.col_stack.push(ep.clone());
-                            }
+                            this.select_column_entry(ci, selected_entry.clone());
                             window.focus(&this.focus, cx);
                             cx.notify();
                         }),
@@ -491,15 +484,107 @@ impl FinderView {
         if column >= self.col_stack.len() {
             return;
         }
+        self.select_column_entry(column, entry);
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    /// Makes `entry`, shown in column `ci`, the Column-view selection: any
+    /// columns to its right close, and a folder opens its own preview
+    /// column immediately, as clicking a row does.
+    pub(super) fn select_column_entry(&mut self, ci: usize, entry: Entry) {
         self.selected.clear();
         self.anchor = None;
-        let folder = entry.is_dir.then(|| entry.path.clone());
-        self.column_selection = Some(entry);
-        self.col_stack.truncate(column + 1);
-        if let Some(folder) = folder {
-            self.col_stack.push(folder);
+        self.column_selection = Some(entry.clone());
+        self.col_stack.truncate(ci + 1);
+        if entry.is_dir {
+            self.col_stack.push(entry.path);
         }
-        window.focus(&self.focus, cx);
+    }
+
+    fn column_entries(&self, dir: &Path) -> Vec<Entry> {
+        let mut entries = read_entries(dir, self.show_hidden);
+        sort_entries(&mut entries, self.sort_key, self.sort_asc);
+        entries
+    }
+
+    /// ↑/↓: move the Column-view selection within its own column, as the
+    /// Mac does. `delta` is negative for ↑, positive for ↓.
+    pub(super) fn column_move_vertical(&mut self, delta: i32, cx: &mut Context<Self>) {
+        if self.col_stack.is_empty() {
+            return;
+        }
+        let ci = self
+            .column_selection
+            .as_ref()
+            .and_then(|selection| column_index_for_selection(&self.col_stack, selection))
+            .unwrap_or(self.col_stack.len() - 1);
+        let Some(dir) = self.col_stack.get(ci).cloned() else {
+            return;
+        };
+        let entries = self.column_entries(&dir);
+        let current = self
+            .column_selection
+            .as_ref()
+            .map(|entry| entry.path.as_path());
+        let Some(target) = column_vertical_target(&entries, current, delta) else {
+            return;
+        };
+        let target = target.clone();
+        self.select_column_entry(ci, target);
+        cx.notify();
+    }
+
+    /// →: enter the selected folder's column, selecting its first row, as
+    /// the Mac does. A no-op on a file, which has no next column, or when
+    /// nothing is selected yet (in which case ↓ starts the selection).
+    pub(super) fn column_move_right(&mut self, cx: &mut Context<Self>) {
+        let Some(selection) = self.column_selection.clone() else {
+            self.column_move_vertical(1, cx);
+            return;
+        };
+        if !selection.is_dir {
+            return;
+        }
+        let Some(ci) = column_index_for_selection(&self.col_stack, &selection) else {
+            return;
+        };
+        let next_ci = ci + 1;
+        let Some(dir) = self.col_stack.get(next_ci).cloned() else {
+            return;
+        };
+        let entries = self.column_entries(&dir);
+        let Some(first) = entries.first().cloned() else {
+            return;
+        };
+        self.select_column_entry(next_ci, first);
+        cx.notify();
+    }
+
+    /// ←: go back to the parent column, selecting the folder just left, as
+    /// the Mac does. A no-op at the leftmost column.
+    pub(super) fn column_move_left(&mut self, cx: &mut Context<Self>) {
+        let Some(selection) = self.column_selection.clone() else {
+            return;
+        };
+        let Some(ci) = column_index_for_selection(&self.col_stack, &selection) else {
+            return;
+        };
+        if ci == 0 {
+            return;
+        }
+        let parent_ci = ci - 1;
+        let Some(parent_dir) = self.col_stack.get(parent_ci).cloned() else {
+            return;
+        };
+        let Some(current_dir) = self.col_stack.get(ci).cloned() else {
+            return;
+        };
+        let entries = self.column_entries(&parent_dir);
+        let Some(target) = entries.into_iter().find(|entry| entry.path == current_dir) else {
+            return;
+        };
+        self.select_column_entry(parent_ci, target);
         cx.notify();
     }
 

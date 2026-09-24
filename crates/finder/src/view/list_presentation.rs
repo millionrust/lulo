@@ -853,6 +853,24 @@ impl FinderView {
                 if this.renaming.is_some() {
                     return;
                 }
+                // Column view is a browser: ↑/↓ move within the focused
+                // column, →/← cross into the child/parent column, and
+                // `entries`-based indices (below) don't apply to it.
+                if this.view == ViewMode::Column && !this.applications_view && !this.trash_view {
+                    match ev.keystroke.key.as_str() {
+                        "up" => this.column_move_vertical(-1, cx),
+                        "down" => this.column_move_vertical(1, cx),
+                        "right" => this.column_move_right(cx),
+                        "left" => this.column_move_left(cx),
+                        "escape" => {
+                            if this.info.take().is_some() {
+                                cx.notify();
+                            }
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
                 let current = this.anchor.and_then(|anchor| {
                     navigation_indices.iter().position(|index| *index == anchor)
                 });

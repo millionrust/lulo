@@ -1,6 +1,7 @@
 use gpui::{
-    div, prelude::FluentBuilder as _, px, Context, InteractiveElement as _, IntoElement,
-    ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window,
+    accesskit, div, prelude::FluentBuilder as _, px, AccessibleAction, Context, Entity,
+    InteractiveElement as _, IntoElement, ParentElement, Render, Role, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::{Icon, IconName, StyledExt as _};
 use rmac_ui::{mac, Button, SearchField, Table};
@@ -87,6 +88,11 @@ impl Render for MonitorView {
                 monitor.child(
                     div()
                         .id("process-action-feedback")
+                        .role(Role::Alert)
+                        .aria_label(SharedString::from(format!(
+                            "{}. {}",
+                            feedback.title, feedback.detail
+                        )))
                         .min_h(px(52.0))
                         .flex_none()
                         .h_flex()
@@ -119,9 +125,21 @@ impl Render for MonitorView {
             })
             .when(self.tab.has_process_table(), |monitor| {
                 // Activity Monitor's table: full-width 24 pt rows with every
-                // other row striped, a 5 pt gap under the header.
+                // other row striped, a 5 pt gap under the header. The
+                // underlying virtualized table widget `rmac_ui::Table` wraps
+                // sets no AT-SPI role on its own container or rows — see
+                // docs/accessibility-audit.md — so the table's own role/name
+                // live on this wrapper, and each row/header cell's role
+                // lives in `process_table.rs`.
+                let row_count = self.table.read(cx).delegate().rows.len();
+                let column_count = self.table.read(cx).delegate().visible.len();
                 monitor.child(
                     div()
+                        .id("process-table")
+                        .role(Role::Table)
+                        .aria_label("Processes")
+                        .aria_row_count(row_count)
+                        .aria_column_count(column_count)
                         .flex_1()
                         .min_h(px(0.0))
                         .text_size(rmac_ui::text_px(13.0))

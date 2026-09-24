@@ -32,6 +32,36 @@ fn selected_tab_fill() -> gpui::Hsla {
     gpui::hsla(0.0, 0.0, 1.0, 0.14)
 }
 
+/// Wrap an icon-only `rmac_ui::Button` with an outer accessible node.
+///
+/// The wrapped component library's `Button` only sets `aria_label` from
+/// `.label()`, which would also draw visible text on a glyph-only control
+/// (see docs/accessibility-audit.md's "Blocked" note on `Button`), so the
+/// accessible name and AT-SPI Click action live on this wrapper instead. The
+/// inner button keeps its own mouse click, hover, focus ring, and disabled
+/// styling exactly as before; `activate` runs the identical state change a
+/// mouse click already runs, so both input paths do the same thing.
+fn accessible_icon_button(
+    id: &'static str,
+    name: &'static str,
+    expanded: Option<bool>,
+    button: impl IntoElement,
+    view: Entity<MonitorView>,
+    activate: fn(&mut MonitorView, &mut Context<MonitorView>),
+) -> impl IntoElement {
+    div()
+        .id(SharedString::from(format!("{id}-a11y")))
+        .role(Role::Button)
+        .aria_label(name)
+        .when_some(expanded, |element, expanded| {
+            element.aria_expanded(expanded)
+        })
+        .on_a11y_action(AccessibleAction::Click, move |_data, _window, cx| {
+            view.update(cx, |this, cx| activate(this, cx));
+        })
+        .child(button)
+}
+
 impl MonitorView {
     pub(super) fn render_columns_menu(
         &self,
@@ -115,10 +145,14 @@ impl MonitorView {
         cx: &Context<Self>,
     ) -> impl IntoElement {
         let has_selection = self.selected_proc(cx).is_some();
+        let view = cx.entity();
         let tabs = Tab::ALL.into_iter().map(|tab| {
             let selected = tab == self.tab;
             div()
                 .id(SharedString::from(format!("tab-{}", tab.label())))
+                .role(Role::Tab)
+                .aria_label(tab.label())
+                .aria_selected(selected)
                 .w(px(TAB_WIDTH))
                 .h(px(TAB_PILL_HEIGHT))
                 .flex_none()
@@ -137,16 +171,49 @@ impl MonitorView {
         });
         let search_open = self.search_open || !self.search.read(cx).value().is_empty();
         let search = if search_open {
+            let query = self.search.read(cx).value().to_string();
+            let view = cx.entity();
             div()
                 .w(px(layout.search_width))
                 .flex_none()
-                .child(rmac_ui::toolbar_group(div().w_full().child(
-                    SearchField::new(&self.search).appearance(false).small(),
-                )))
+                .child(rmac_ui::toolbar_group(
+                    div()
+                        .id("monitor-search")
+                        .role(Role::TextInput)
+                        .aria_label("Search")
+                        .aria_value(SharedString::from(query))
+                        .w_full()
+                        .child(SearchField::new(&self.search).appearance(false).small())
+                        .on_a11y_action(AccessibleAction::SetValue, {
+                            let view = view.clone();
+                            move |data, window, cx| {
+                                let Some(accesskit::ActionData::Value(text)) = data else {
+                                    return;
+                                };
+                                let text = text.to_string();
+                                view.update(cx, |this, cx| {
+                                    this.set_search_from_assistive_technology(text, window, cx);
+                                });
+                            }
+                        })
+                        .on_a11y_action(AccessibleAction::ReplaceSelectedText, {
+                            move |data, window, cx| {
+                                let Some(accesskit::ActionData::Value(text)) = data else {
+                                    return;
+                                };
+                                let text = text.to_string();
+                                view.update(cx, |this, cx| {
+                                    this.set_search_from_assistive_technology(text, window, cx);
+                                });
+                            }
+                        }),
+                ))
                 .into_any_element()
         } else {
             div()
                 .id("search-toggle")
+                .role(Role::Button)
+                .aria_label("Search")
                 .size(px(SEARCH_DIAMETER))
                 .flex_none()
                 .flex()
@@ -199,28 +266,46 @@ impl MonitorView {
                     .items_center()
                     .child(
                         div().w(px(ICON_SLOT)).flex().justify_center().child(
-                            self.toolbar_icon(
+                            accessible_icon_button(
                                 "stop",
-                                IconName::CircleX,
                                 "Quit Process",
-                                has_selection,
-                            )
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.request_kill(false, cx);
-                            })),
+                                None,
+                                self.toolbar_icon(
+                                    "stop",
+                                    IconName::CircleX,
+                                    "Quit Process",
+                                    has_selection,
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, _, cx| {
+                                        this.request_kill(false, cx);
+                                    },
+                                )),
+                                view.clone(),
+                                |this, cx| this.request_kill(false, cx),
+                            ),
                         ),
                     )
                     .child(
                         div().w(px(ICON_SLOT)).flex().justify_center().child(
-                            self.toolbar_icon(
+                            accessible_icon_button(
                                 "inspect",
-                                IconName::Info,
                                 "Inspect Process",
-                                has_selection,
-                            )
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.inspect_selected(cx);
-                            })),
+                                None,
+                                self.toolbar_icon(
+                                    "inspect",
+                                    IconName::Info,
+                                    "Inspect Process",
+                                    has_selection,
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, _, cx| {
+                                        this.inspect_selected(cx);
+                                    },
+                                )),
+                                view.clone(),
+                                |this, cx| this.inspect_selected(cx),
+                            ),
                         ),
                     ),
             ))
@@ -230,7 +315,10 @@ impl MonitorView {
                         .w(px(ACTIONS_WIDTH - 2.0 * GROUP_PADDING))
                         .flex()
                         .justify_center()
-                        .child(
+                        .child(accessible_icon_button(
+                            "columns",
+                            "Columns",
+                            Some(self.cols_menu_open),
                             Button::new("columns", "")
                                 .icon(Icon::new(IconName::Ellipsis).text_color(mac::text()))
                                 .ghost()
@@ -238,10 +326,11 @@ impl MonitorView {
                                 .disabled(!self.tab.has_process_table())
                                 .tooltip("Columns")
                                 .on_click(cx.listener(|this, _, _, cx| {
-                                    this.cols_menu_open = !this.cols_menu_open;
-                                    cx.notify();
+                                    this.toggle_columns_menu(cx);
                                 })),
-                        ),
+                            view.clone(),
+                            |this, cx| this.toggle_columns_menu(cx),
+                        )),
                 )),
             )
             .child(div().pl(px(TABS_GAP)).child(rmac_ui::toolbar_group(

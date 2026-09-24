@@ -278,9 +278,10 @@ class AptPublisherTests(unittest.TestCase):
             with self.assertRaisesRegex(publisher.PublisherError, "by-hash"):
                 publisher._verify_stage_inventory(stage, contract, records)
 
+    # APT publication runs only on the Linux release runners.
     @unittest.skipUnless(
-        shutil.which("gpg") and shutil.which("gpgv"),
-        "GnuPG tools are unavailable",
+        sys.platform.startswith("linux") and shutil.which("gpg") and shutil.which("gpgv"),
+        "APT publication signing is exercised on Linux with GnuPG",
     )
     def test_real_single_signature_round_trip(self):
         with tempfile.TemporaryDirectory() as temporary:

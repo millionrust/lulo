@@ -12,6 +12,7 @@ import io
 import json
 from pathlib import Path
 import shutil
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -431,7 +432,11 @@ class PublishScriptTests(unittest.TestCase):
         self.assertNotIn("--clobber", text)
 
 
-@unittest.skipUnless(shutil.which("gpg") and shutil.which("gpgv"), "GnuPG tools are unavailable")
+# APT publication runs only on the Linux release runners.
+@unittest.skipUnless(
+    sys.platform.startswith("linux") and shutil.which("gpg") and shutil.which("gpgv"),
+    "APT publication signing is exercised on Linux with GnuPG",
+)
 class RealKeySigningTests(unittest.TestCase):
     """The owner's key script, the CI signer, and gpgv, end to end."""
 

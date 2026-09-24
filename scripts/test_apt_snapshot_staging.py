@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sys
 import subprocess
 import tempfile
 import unittest
@@ -202,7 +203,11 @@ class StageAptSnapshotTests(unittest.TestCase):
             with self.assertRaisesRegex(stager.StagingError, "control differs"):
                 stage(root, inputs)
 
-    @unittest.skipUnless(shutil.which("gpg") and shutil.which("gpgv"), "GnuPG tools are unavailable")
+    # APT publication runs only on the Linux release runners.
+    @unittest.skipUnless(
+        sys.platform.startswith("linux") and shutil.which("gpg") and shutil.which("gpgv"),
+        "APT publication signing is exercised on Linux with GnuPG",
+    )
     def test_full_round_trip_through_publish_apt_snapshot(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

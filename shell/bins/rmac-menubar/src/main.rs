@@ -57,6 +57,10 @@ mod linux_wayland {
     const BAR_LEAD: f32 = 10.0;
     const BAR_TRAIL: f32 = 7.0;
     const LOGO_SLOT: f32 = 34.0;
+    /// The Lulo OS mark (docs/brand.md) is a 14 × 14 disc: the height of
+    /// the Mac's own menu glyph (14.5, measured), one point over the 13 pt
+    /// status icons.
+    const LOGO_GLYPH: f32 = 14.0;
     const TITLE_PAD: f32 = 11.0;
     const STATUS_PAD: f32 = 10.0;
     const CLOCK_DATE_TIME_GAP: f32 = 7.0;
@@ -2017,8 +2021,7 @@ mod linux_wayland {
                                 .child(
                                     svg()
                                         .path(shell_icon_path("rmac.svg"))
-                                        .w(px(13.0))
-                                        .h(px(15.0))
+                                        .size(px(LOGO_GLYPH))
                                         .text_color(rgba(tokens::primary_text())),
                                 ),
                         )

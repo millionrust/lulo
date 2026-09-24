@@ -422,7 +422,7 @@ High contrast multiplies alpha × 1.5 (R pattern).
   `power`, `restart`, `sleep`, `logout`, `trash-empty`, `trash-full`, `folder`, `chevron-*`,
   `checkmark`, `xmark`, `plus`, `minus`, `ellipsis`, `sidebar-left`, `grid`, `list`, `columns`,
   `gallery`, `share`, `tag`, `info`, `gear`.
-- System menu glyph: original rmac mark (`assets/status/rmac.svg` exists). **Never** an apple.
+- System menu glyph: the original Lulo OS mark, Segment (`assets/status/rmac.svg`, rules in `docs/brand.md`). **Never** an apple.
 - App icons: 1024×1024 master SVGs using the Tahoe icon grid (rounded-square "squircle" 824×824
   centered, corner smoothing 0.6, drop shadow baked at 0 12 24 alpha .3). Provide light, dark, and
   tinted variants per app (Phase 1 task 1.7). Existing `packaging/rmac-apps/icons/*.svg` are the

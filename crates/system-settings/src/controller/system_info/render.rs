@@ -137,6 +137,14 @@ impl Settings {
 
         let mut session = Vec::new();
         session.push(
+            large_row(tile26("icons/lulo.svg", hsl(0xff8a1e)), "Lulo OS", None)
+                .child(trailing_value(format!(
+                    "Version {}",
+                    env!("CARGO_PKG_VERSION")
+                )))
+                .into_any_element(),
+        );
+        session.push(
             large_row(
                 tile26("icons/settings.svg", hsl(0x8e8e93)),
                 si.operating_system.clone(),

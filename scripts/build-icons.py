@@ -127,6 +127,18 @@ TRASH_PAPERS = """
 DOC_PAGE = ("M276 104h318l218 218v538c0 35-29 64-64 64H276c-35 0-64-29-64-64V168"
             "c0-35 29-64 64-64z")
 
+# The Lulo OS mark's four seed chambers on the 1024 grid.
+LULO_CHAMBERS = (
+    "M531.619 477.638L572.124 410.791A70.3 70.3 0 1 0 451.876 410.791L492.381 477.638"
+    "A22.94 22.94 0 0 0 531.619 477.638Z"
+    "M546.362 531.619L613.209 572.124A70.3 70.3 0 1 0 613.209 451.876L546.362 492.381"
+    "A22.94 22.94 0 0 0 546.362 531.619Z"
+    "M492.381 546.362L451.876 613.209A70.3 70.3 0 1 0 572.124 613.209L531.619 546.362"
+    "A22.94 22.94 0 0 0 492.381 546.362Z"
+    "M477.638 492.381L410.791 451.876A70.3 70.3 0 1 0 410.791 572.124L477.638 531.619"
+    "A22.94 22.94 0 0 0 477.638 492.381Z"
+)
+
 ICONS: dict[str, tuple[tuple[str, str] | None, str, str]] = {
     "files": (("#3CC4BE", "#0C6E76"), grad("tag", "#1AA09F", "#0C6A72"), """
   <path d="M282 312h140c16 0 31 7 41 19l34 41h245c28 0 50 22 50 50v256H232V362
@@ -303,6 +315,19 @@ ICONS: dict[str, tuple[tuple[str, str] | None, str, str]] = {
   <g fill="url(#frost)" filter="url(#lift)">
     <circle cx="372" cy="512" r="44"/><circle cx="512" cy="512" r="44"/>
     <circle cx="652" cy="512" r="44"/>
+  </g>"""),
+
+    # The Lulo OS mark (docs/brand.md): the plate is the orange skin, the
+    # frosted disc the pale flesh and the four teardrops the green seed
+    # chambers. Same geometry as shell/assets/status/rmac.svg × 37.
+    "lulo": (("#FFA53D", "#EE620C"),
+             '<radialGradient id="pulp" cx="512" cy="512" r="229.4" '
+             'gradientUnits="userSpaceOnUse"><stop offset=".15" stop-color="#D8EE86"/>'
+             '<stop offset=".75" stop-color="#A9D448"/><stop offset="1" stop-color="#7FAE2A"/>'
+             '</radialGradient>', f"""
+  <g filter="url(#lift)">
+    <path fill="url(#frost)" fill-rule="evenodd" d="M253 512a259 259 0 1 0 518 0a259 259 0 1 0 -518 0Z{LULO_CHAMBERS}"/>
+    <path fill="url(#pulp)" d="{LULO_CHAMBERS}"/>
   </g>"""),
 
     "folder": (None, FOLDER_DEFS, FOLDER),

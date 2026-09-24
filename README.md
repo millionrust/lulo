@@ -1,5 +1,12 @@
 # Lulo OS
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/lulo-os-lockup-dark.svg">
+    <img src="assets/brand/lulo-os-lockup.svg" alt="The Lulo OS mark and wordmark" height="62">
+  </picture>
+</p>
+
 Lulo OS is an open-source desktop for Linux that feels like a Mac, with Windows
 support planned. It gives you a menu bar, a Dock, Spotlight, Mission Control,
 Control Center and notifications, along with a set of apps built to match

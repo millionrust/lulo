@@ -190,3 +190,117 @@ environment-discovery, Trash-entry-matching, and report-building logic and
 runs anywhere with `python3 -m pytest scripts/test_journey_files.py` (no
 pyatspi, niri, or live session required); it does not exercise the live
 AT-SPI/niri orchestration, which only runs on the reference laptop.
+
+### Journey 3 — Terminal
+
+`scripts/linux/run-journey-terminal.py` exercises journey 3 ("Open Terminal,
+run a command, scroll, select, copy and paste, and manage tabs";
+`crates/terminal`, package `rmac-terminal`) the same way, over AT-SPI and
+niri IPC only:
+
+```sh
+scp scripts/linux/run-journey-terminal.py jacob@<reference-pc>:/tmp/
+ssh jacob@<reference-pc> \
+  'python3 /tmp/run-journey-terminal.py --output /tmp/journey-terminal-report.json'
+```
+
+The top bar's per-app menus for Terminal (AT-SPI application `rmac-top-bar`:
+"Terminal menu", "Shell menu" for New/Close/Next/Previous Tab, "Edit menu"
+for Copy/Paste/Select All, "View menu") are real, named AT-SPI buttons and
+menu items and are live-confirmed to dispatch the terminal's own GPUI actions
+end-to-end. But the terminal's own content surface has real, live-confirmed
+gaps against todo.md's "no pointer-only controls" gate:
+
+* The terminal grid publishes no AT-SPI text, caret, or selection at all.
+  `crates/terminal/src/accessibility.rs` fully implements and unit-tests
+  `TerminalAccessibilitySnapshot`/`project_visible_terminal`, but that module
+  is compiled only into an orphaned library target
+  (`crates/terminal/src/lib.rs:1-3`) that the running `rmac-terminal` binary
+  never compiles (`crates/terminal/src/main.rs`'s module list omits `mod
+  accessibility;`) or calls (`grep -rn "rmac_terminal::"` across the repo:
+  zero hits) — independently, `crates/terminal/src/controller/renderer*.rs`
+  and `chrome.rs` never call `.role()`/`.aria_label()` anywhere. **Typing a
+  command is therefore impossible over AT-SPI on this build**: there is no
+  accessible text-entry surface to type into, no clipboard CLI installed on
+  the reference laptop to preload input externally (`wl-copy`/`wl-paste`/
+  `xclip`/`xsel`/`wtype`/`ydotool`/`dotool` all confirmed absent live), and
+  this compounds the separately-documented upstream gap that the pinned
+  `accesskit_unix` AT-SPI bridge does not implement `EditableText` at all.
+  This is the `run_command` step and the headline finding of this script;
+  `scroll` fails for the same root cause (no accessible viewport node to
+  scroll or read).
+* The tab strip (`crates/terminal/src/controller/renderer/chrome.rs:65-183`)
+  gives its tab rows, close buttons, and "+" new-tab button no accessible
+  name — but, live-confirmed, GPUI/accesskit still publishes them as
+  unnamed AT-SPI "button" nodes with a working `click` action (unlike Notes'
+  note rows, which are pruned entirely — see journey 4 below). The script
+  therefore verifies tab open/close by counting unnamed clickable buttons
+  before and after each Shell-menu action (each tab contributes exactly one
+  row and one close button), rather than by name.
+
+`select_all`/`copy`/`paste` click the Edit menu's real items over AT-SPI —
+the dispatch itself is verified, but with no accessible text/selection state
+on the terminal and no clipboard-reading tool on the reference laptop, their
+functional effect cannot be independently confirmed; the report says so
+explicitly rather than claiming a pass it cannot back up.
+
+`scripts/test_journey_terminal.py` unit-tests the script's pure JSON-parsing,
+environment-discovery, budget, and tab-count-delta logic and runs anywhere
+with `python3 -m pytest scripts/test_journey_terminal.py`.
+
+### Journey 4 — Notes
+
+`scripts/linux/run-journey-notes.py` exercises journey 4 ("Create, search and
+edit a note, and recover it after a crash"; `crates/notes`, package
+`rmac-notes`) against the real Notes library on the reference laptop:
+
+```sh
+scp scripts/linux/run-journey-notes.py jacob@<reference-pc>:/tmp/
+ssh jacob@<reference-pc> \
+  'python3 /tmp/run-journey-notes.py --output /tmp/journey-notes-report.json'
+```
+
+This script deliberately stops before creating, editing, trashing, or
+deleting any note — including a throwaway test note — because two
+independent, live-confirmed accessibility gaps make it impossible to do so
+without risking the reference laptop's real Notes data, which the shared-
+laptop brief for this suite requires never be read or modified:
+
+* **No text entry surface at all.** The search field and the new-note
+  title/tags/body fields expose neither AT-SPI `Text` nor `EditableText` —
+  live-confirmed: their AT-SPI interfaces are `['Accessible', 'Component']`
+  only, not even a readable value. Notes wires no
+  `on_a11y_action(AccessibleAction::SetValue/ReplaceSelectedText, ...)`
+  handler either, unlike Spotlight's search field
+  (`crates/launcher-app/src/view/render.rs:351-360`). A title, tag, search
+  query, or body cannot be read or typed over AT-SPI on this build — so this
+  script cannot even give a test note a unique, identifiable name.
+* **The note list and folder sidebar are absent from the AT-SPI tree, not
+  merely unnamed.** Live-confirmed twice (~2 s apart) against a freshly
+  launched `rmac-notes`: its AT-SPI tree contains exactly one frame with 20
+  flat children (16 `button` nodes and 4 `entry` nodes) and no additional
+  container, list, or row node of any kind — no note row, no "Recently
+  Deleted" (`crates/notes/src/note_navigation.rs:95-104`), nothing. This is a
+  clear regression relative to Terminal's own unnamed-but-present tab
+  buttons (see journey 3 above); this script cannot state the exact
+  mechanism from source alone (full accesskit pruning vs. a responsive
+  layout collapsing the sidebar at the window's default size) and flags this
+  as an open question rather than asserting an unverified root cause.
+  Without any accessible node for a note or folder row, a note cannot be
+  selected, opened, or deleted over AT-SPI on this build.
+
+Because a test note created here could not be given an identifiable title
+and could not be reselected afterward to clean it up, this script does not
+create one — doing so would risk leaving permanent, unremovable clutter in
+the reference user's real Notes library. It instead verifies session
+liveness, launch, window timing/focus, the confirmed absence of the note-
+list/sidebar surface (`note_list_reachable`), and read-only presence checks
+of the Notes-specific top-bar menus (File/Edit/Format — opened and inspected,
+no item ever invoked), then quits the app the same way journey 1 and 3 do.
+This is the same "an honest limitation beats simulated system behaviour"
+principle from todo.md, applied one gap earlier than journey 3's stop,
+because here even the identify-and-clean-up precondition cannot be met.
+
+`scripts/test_journey_notes.py` unit-tests the script's pure JSON-parsing,
+environment-discovery, budget, and AT-SPI-node-classification logic and runs
+anywhere with `python3 -m pytest scripts/test_journey_notes.py`.

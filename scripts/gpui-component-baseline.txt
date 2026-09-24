@@ -11,7 +11,6 @@ crates/finder/src/view.rs:1
 crates/finder/src/view/chrome_presentation/sidebar.rs:1
 crates/finder/src/view/chrome_presentation/toolbar.rs:1
 crates/finder/src/view/presentation_support.rs:2
-crates/finder/src/view/search_info_controller.rs:1
 crates/launcher-app/src/assets.rs:2
 crates/launcher-app/src/view/render.rs:4
 crates/notes/src/main.rs:1

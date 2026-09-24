@@ -124,6 +124,7 @@ impl FinderView {
         let new_name = input.read(cx).value().to_string();
         if let Some(destination) = self.rename_path_to(&path, &new_name, cx) {
             if let Some(entry) = entry_for(&destination) {
+                self.info_details = file_info(&entry);
                 self.info = Some(entry);
             }
             self.info_name = Some((destination, input));

@@ -1,5 +1,4 @@
 use super::*;
-use gpui_component::scroll::ScrollableElement as _;
 
 impl FinderView {
     pub(super) fn get_info(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -10,6 +9,7 @@ impl FinderView {
             return;
         }
         self.info = self.selected_entry().cloned();
+        self.info_details = self.info.as_ref().map(file_info).unwrap_or_default();
         self.info_name = None;
         if let Some(entry) = self.info.clone() {
             if entry.application.is_none() {
@@ -181,64 +181,157 @@ impl FinderView {
         .detach();
     }
 
+    /// Get Info, laid out as Finder's info window (design-lab/finder.html):
+    /// a 265 pt panel with a title strip, the icon / name / size header,
+    /// then disclosure-style sections whose labels right-align at 67 pt.
     pub(super) fn render_info(&self, e: &Entry, cx: &mut Context<Self>) -> impl IntoElement {
-        let glyph = if e.is_dir {
-            "icons/folder-artwork.svg"
-        } else {
-            "icons/file-fill.svg"
+        let details = &self.info_details;
+        let value_of = |key: &str| {
+            details
+                .iter()
+                .find(|(name, _)| *name == key)
+                .map(|(_, value)| value.clone())
         };
-        let glyph_color = if e.is_dir { folder_blue() } else { secondary() };
+        let rows = |keys: &[&'static str]| {
+            keys.iter()
+                .filter_map(|key| value_of(*key).map(|value| (*key, value)))
+                .map(|(key, value)| {
+                    div()
+                        .flex()
+                        .items_start()
+                        .gap(px(INFO_LABEL_GAP))
+                        .py(px((INFO_ROW_PITCH - INFO_ROW_LINE) / 2.0))
+                        .text_size(rmac_ui::text_px(INFO_ROW_TEXT))
+                        .line_height(px(INFO_ROW_LINE))
+                        .text_color(label())
+                        .child(
+                            div()
+                                .w(px(INFO_LABEL_RIGHT - INFO_SECTION_INSET))
+                                .flex_none()
+                                .text_right()
+                                .child(format!("{key}:")),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w(px(0.0))
+                                .whitespace_normal()
+                                .child(value),
+                        )
+                })
+                .collect::<Vec<_>>()
+        };
+        let section = |title: &'static str| {
+            div()
+                .h(px(INFO_SECTION_HEADER))
+                .flex()
+                .items_center()
+                .gap(px(4.0))
+                .text_size(rmac_ui::text_px(INFO_SECTION_TEXT))
+                .text_color(label())
+                .child(icon("icons/chevron-down.svg", 10.0, secondary_text()))
+                .child(title)
+        };
+        let block = || {
+            div()
+                .v_flex()
+                .px(px(INFO_SECTION_INSET))
+                .pb(px(8.0))
+                .border_t_1()
+                .border_color(header_divider())
+        };
 
-        let mut card = div()
-            .id("info-panel")
-            .role(Role::Dialog)
-            .aria_label(format!("{} Info", e.name))
-            .w(px(300.0))
-            .max_h(px(500.0))
-            .overflow_hidden()
-            .rounded(px(rmac_ui::mac::radius_card()))
-            .bg(rmac_ui::mac::raised())
-            .border_1()
-            .border_color(sep())
-            .shadow_lg()
+        let header_artwork = match self.thumbs.get(&e.path) {
+            Some(thumbnail) => div()
+                .size(px(INFO_HEADER_ICON))
+                .flex_none()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    img(thumbnail.clone())
+                        .max_w(px(INFO_HEADER_ICON))
+                        .max_h(px(INFO_HEADER_ICON)),
+                )
+                .into_any_element(),
+            None => item_artwork(e.is_dir, &e.name, INFO_HEADER_ICON),
+        };
+        let title_strip = div()
+            .h(px(INFO_TITLE_HEIGHT))
+            .flex_none()
+            .relative()
+            .flex()
+            .items_center()
+            .justify_center()
             .child(
-                // header bar with close
-                div().h(px(28.0)).flex().items_center().px_2().child(
-                    Button::new("info-close", "Close")
-                        .ghost()
-                        .xsmall()
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.info = None;
-                            cx.notify();
-                        })),
-                ),
+                div()
+                    .id("info-close")
+                    .role(Role::Button)
+                    .aria_label("Close")
+                    .absolute()
+                    .left(px(INFO_CLOSE_CENTRE - INFO_CLOSE / 2.0))
+                    .top(px((INFO_TITLE_HEIGHT - INFO_CLOSE) / 2.0))
+                    .size(px(INFO_CLOSE))
+                    .rounded_full()
+                    .bg(gpui::rgb(0xff5f57))
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.info = None;
+                        this.info_details.clear();
+                        cx.notify();
+                    })),
             )
             .child(
-                // title block
                 div()
+                    .max_w(px(INFO_WIDTH - 2.0 * INFO_TITLE_TEXT_INSET))
+                    .truncate()
+                    .text_size(rmac_ui::text_px(13.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(secondary_text())
+                    .child(format!("{} Info", e.name)),
+            );
+        let header = div()
+            .flex()
+            .items_center()
+            .gap(px(10.0))
+            .px(px(INFO_SECTION_INSET))
+            .pb(px(10.0))
+            .child(header_artwork)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.0))
                     .v_flex()
-                    .items_center()
-                    .gap_1()
-                    .pb_3()
-                    .px_4()
-                    .border_b_1()
-                    .border_color(sep())
-                    .child(icon(glyph, 56.0, glyph_color))
                     .child(
                         div()
-                            .w_full()
-                            .min_w(px(0.0))
-                            .max_w(px(260.0))
-                            .overflow_hidden()
-                            .whitespace_normal()
-                            .line_clamp(2)
-                            .text_size(rmac_ui::text_px(15.0))
-                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .flex()
+                            .gap_2()
+                            .text_size(rmac_ui::text_px(13.0))
+                            .font_weight(rmac_ui::mac::BOLD)
                             .text_color(label())
-                            .text_center()
-                            .child(e.name.clone()),
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w(px(0.0))
+                                    .truncate()
+                                    .child(e.name.clone()),
+                            )
+                            .when(!e.is_dir, |line| {
+                                line.child(div().flex_none().child(e.size.clone()))
+                            }),
+                    )
+                    .child(
+                        div()
+                            .truncate()
+                            .text_size(rmac_ui::text_px(INFO_ROW_TEXT))
+                            .text_color(secondary_text())
+                            .child(format!("Modified: {}", e.modified)),
                     ),
             );
+
+        let general = block()
+            .child(section("General:"))
+            .children(rows(&["Kind", "Size", "Where", "Created", "Modified"]));
 
         // Finder's Name & Extension field: edit and press Return to rename.
         let name_field = self
@@ -246,56 +339,61 @@ impl FinderView {
             .as_ref()
             .filter(|(path, _)| *path == e.path)
             .map(|(_, input)| {
-                div()
+                block()
                     .id("info-name")
                     .role(Role::Group)
                     .aria_label("Name & Extension")
-                    .v_flex()
-                    .gap_1()
-                    .px_4()
-                    .pt_2()
-                    .pb_2()
-                    .border_b_1()
-                    .border_color(sep())
-                    .text_size(rmac_ui::text_px(12.0))
-                    .child(div().text_color(secondary()).child("Name & Extension:"))
+                    .child(section("Name & Extension:"))
                     .child(TextField::new(input).small())
             });
-        card = card.when_some(name_field, |card, field| card.child(field));
 
-        let mut details = div()
-            .v_flex()
-            .min_h(px(0.0))
-            .max_h(px(300.0))
-            .overflow_y_scrollbar();
-        for (k, v) in file_info(e) {
-            details = details.child(
+        let preview = self.thumbs.get(&e.path).map(|thumbnail| {
+            block().child(section("Preview:")).child(
                 div()
+                    .h(px(INFO_PREVIEW_HEIGHT))
                     .flex()
-                    .items_start()
-                    .gap_2()
-                    .px_4()
-                    .py_1()
-                    .text_size(rmac_ui::text_px(12.0))
+                    .items_center()
+                    .justify_center()
                     .child(
-                        div()
-                            .w(px(96.0))
-                            .flex_none()
-                            .text_color(secondary())
-                            .text_right()
-                            .child(format!("{k}:")),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(0.0))
-                            .truncate()
-                            .text_color(label())
-                            .child(v),
+                        img(thumbnail.clone())
+                            .max_w(gpui::relative(1.0))
+                            .max_h(px(INFO_PREVIEW_HEIGHT))
+                            .rounded(px(rmac_ui::mac::radius_control())),
                     ),
+            )
+        });
+
+        let permissions = block()
+            .child(section("Sharing & Permissions:"))
+            .children(rows(&["Owner", "Group", "Permissions"]));
+
+        let card = div()
+            .id("info-panel")
+            .role(Role::Dialog)
+            .aria_label(format!("{} Info", e.name))
+            .w(px(INFO_WIDTH))
+            .max_h(px(INFO_MAX_HEIGHT))
+            .v_flex()
+            .overflow_hidden()
+            .rounded(px(rmac_ui::mac::radius_card()))
+            .bg(rmac_ui::mac::raised())
+            .border_1()
+            .border_color(sep())
+            .shadow_lg()
+            .child(title_strip)
+            .child(
+                div()
+                    .id("info-body")
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .overflow_y_scroll()
+                    .v_flex()
+                    .child(header)
+                    .child(general)
+                    .children(name_field)
+                    .children(preview)
+                    .child(permissions),
             );
-        }
-        card = card.child(details);
 
         div()
             .absolute()
@@ -304,6 +402,6 @@ impl FinderView {
             .items_center()
             .justify_center()
             .bg(rmac_ui::mac::scrim())
-            .child(card.pb_3())
+            .child(card)
     }
 }

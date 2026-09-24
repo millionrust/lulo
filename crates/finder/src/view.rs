@@ -278,6 +278,9 @@ struct FinderView {
     file_words: rmac_locale::FileVocabulary,
     sections: Vec<Section>,
     info: Option<Entry>,
+    /// Get Info's rows, read from the file system once when it opens (and
+    /// after a rename from it), never while rendering.
+    info_details: Vec<(&'static str, String)>,
     /// Get Info's editable Name & Extension field and the path it renames.
     info_name: Option<(PathBuf, gpui::Entity<InputState>)>,
     open_with: Option<OpenWithPicker>,

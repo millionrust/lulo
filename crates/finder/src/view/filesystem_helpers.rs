@@ -205,25 +205,64 @@ pub(super) fn file_info(e: &Entry) -> Vec<(&'static str, String)> {
     if let Some(md) = &md {
         v.push(("Permissions", perm_string(md.permissions().mode())));
     }
-    #[cfg(target_os = "macos")]
-    let owner = Command::new("stat")
-        .args(["-f", "%Su\n%Sg", &e.path.to_string_lossy()])
-        .output();
-    #[cfg(not(target_os = "macos"))]
-    let owner = Command::new("stat")
-        .args(["-c", "%U\n%G", &e.path.to_string_lossy()])
-        .output();
-    if let Ok(out) = owner {
-        let s = String::from_utf8_lossy(&out.stdout);
-        let mut lines = s.lines();
-        if let Some(o) = lines.next().filter(|l| !l.is_empty()) {
-            v.push(("Owner", o.to_string()));
-        }
-        if let Some(g) = lines.next().filter(|l| !l.is_empty()) {
-            v.push(("Group", g.to_string()));
-        }
+    if let Some(md) = &md {
+        use std::os::unix::fs::MetadataExt as _;
+        let uid = md.uid();
+        let gid = md.gid();
+        v.push(("Owner", user_name(uid).unwrap_or_else(|| uid.to_string())));
+        v.push(("Group", group_name(gid).unwrap_or_else(|| gid.to_string())));
     }
     v
+}
+
+/// The account name for `uid` from the system user database.
+fn user_name(uid: libc::uid_t) -> Option<String> {
+    let mut buffer = vec![0u8; 16 * 1024];
+    // SAFETY: passwd is plain data; getpwuid_r writes it and the strings it
+    // points to into `buffer`, which outlives every read below.
+    unsafe {
+        let mut entry: libc::passwd = std::mem::zeroed();
+        let mut result: *mut libc::passwd = std::ptr::null_mut();
+        let code = libc::getpwuid_r(
+            uid,
+            &mut entry,
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+            &mut result,
+        );
+        if code != 0 || result.is_null() || entry.pw_name.is_null() {
+            return None;
+        }
+        std::ffi::CStr::from_ptr(entry.pw_name)
+            .to_str()
+            .ok()
+            .map(str::to_owned)
+    }
+}
+
+/// The group name for `gid` from the system group database.
+fn group_name(gid: libc::gid_t) -> Option<String> {
+    let mut buffer = vec![0u8; 16 * 1024];
+    // SAFETY: group is plain data; getgrgid_r writes it and the strings it
+    // points to into `buffer`, which outlives every read below.
+    unsafe {
+        let mut entry: libc::group = std::mem::zeroed();
+        let mut result: *mut libc::group = std::ptr::null_mut();
+        let code = libc::getgrgid_r(
+            gid,
+            &mut entry,
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+            &mut result,
+        );
+        if code != 0 || result.is_null() || entry.gr_name.is_null() {
+            return None;
+        }
+        std::ffi::CStr::from_ptr(entry.gr_name)
+            .to_str()
+            .ok()
+            .map(str::to_owned)
+    }
 }
 
 fn perm_string(mode: u32) -> String {

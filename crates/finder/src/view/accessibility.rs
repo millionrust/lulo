@@ -184,8 +184,9 @@ impl FinderView {
 
     fn accessible_info_dialog(&self, entry: &Entry) -> AccessibleDialog {
         let name = sanitize_dialog_name(entry.name.as_ref());
-        let description = file_info(entry)
-            .into_iter()
+        let description = self
+            .info_details
+            .iter()
             .map(|(key, value)| format!("{key}: {value}"))
             .collect::<Vec<_>>()
             .join("\n");

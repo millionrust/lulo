@@ -814,6 +814,27 @@ mod tests {
     use super::*;
     use std::os::unix::process::ExitStatusExt as _;
 
+    /// Manual check on a Lulo OS session: holds the power-button inhibitor
+    /// for `RMAC_POWER_KEY_HOLD_SECONDS` (default 5) so `systemd-inhibit
+    /// --list` can show it. Never presses the button.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "needs a logind session; run by hand"]
+    fn power_key_inhibitor_is_a_block_on_handle_power_key() {
+        let seconds = std::env::var("RMAC_POWER_KEY_HOLD_SECONDS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(5);
+        async_io::block_on(async {
+            let connection = zbus::Connection::system().await.unwrap();
+            let manager = LoginManagerProxy::new(&connection).await.unwrap();
+            let held = acquire_power_key_inhibitor(&manager).await;
+            assert!(held.is_some(), "logind refused the inhibitor");
+            println!("holding handle-power-key for {seconds} s");
+            async_io::Timer::after(std::time::Duration::from_secs(seconds)).await;
+        });
+    }
+
     #[test]
     fn only_successful_locker_exit_means_authenticated_unlock() {
         assert_eq!(classify_locker_exit(ExitStatus::from_raw(0)), Ok(()));

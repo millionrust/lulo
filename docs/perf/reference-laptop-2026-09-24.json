@@ -1,0 +1,121 @@
+{
+  "app_binary_discovery_fix_smoke": {
+    "apps": {
+      "rmac-notes": {
+        "display_name": "Notes",
+        "frame_timing": "not_measured",
+        "idle": {
+          "idle_cpu_percent": {
+            "budget": 0.3,
+            "value": 12.99,
+            "within_budget": false
+          },
+          "pss_mib": 49.5,
+          "suspected_idle_redraw": true,
+          "wakeups_per_second": 190.858
+        },
+        "warm_launch": {
+          "interactive_marker": "ready_file",
+          "median_ms": 698.8,
+          "p95_ms": {
+            "budget": 500.0,
+            "value": 698.837,
+            "within_budget": false
+          },
+          "samples_ms": [
+            698.8
+          ]
+        }
+      }
+    },
+    "captured_at": "2026-09-24T02:36:11Z",
+    "rustc_processes": 3,
+    "schema_version": 1,
+    "settings": {
+      "idle_seconds": 2.0,
+      "repetitions": 1,
+      "settle_seconds": 1.0,
+      "startup_timeout": 15.0,
+      "wakeup_threshold_per_second": 0.5,
+      "warmups": 0
+    },
+    "shell_surfaces": {}
+  },
+  "bugs_found_and_fixed_during_validation": [
+    "stop_app() left a rmac-text-editor process running: the tracked launcher pid exited on its own (unrelated to the SIGTERM) while a long-lived grandchild, reparented to systemd --user, survived in the same process group. Fixed by re-scanning by process-group membership (which survives reparenting) after every stop and force-killing any survivor by pid, regardless of whether wait() reported success.",
+    "discover_binary() only looked in ~/.local/libexec/rmac and /usr/libexec/rmac (where the shell surface units run from) and missed /usr/bin, where packaged applications without a dev override actually live (e.g. rmac-notes). Fixed by adding /usr/bin to the search path."
+  ],
+  "captured_at": "2026-09-24T02:31:07Z",
+  "note": "The reference laptop was running a concurrent `cargo build --profile iterate` (rustc_processes=3) for the entire session; every number below is skewed by that contention and is NOT the todo.md budget record. This run exists only to validate scripts/linux/measure-budgets.py end-to-end (shell-surface sampling, app launch/idle/close, JSON+Markdown emission) on the live session. Re-run with `pgrep -c rustc` == 0 for the real budget record; see docs/perf/reference-laptop-2026-09-24.md.",
+  "shell_surfaces_and_app_smoke": {
+    "apps": {
+      "rmac-text-editor": {
+        "display_name": "Text Editor",
+        "frame_timing": "not_measured",
+        "idle": {
+          "idle_cpu_percent": {
+            "budget": 0.3,
+            "value": 3.333,
+            "within_budget": false
+          },
+          "pss_mib": 72.7,
+          "suspected_idle_redraw": true,
+          "wakeups_per_second": 75.331
+        },
+        "warm_launch": {
+          "interactive_marker": "ready_file",
+          "median_ms": 4043.7,
+          "p95_ms": {
+            "budget": 500.0,
+            "value": 4043.69,
+            "within_budget": false
+          },
+          "samples_ms": [
+            4043.7
+          ]
+        }
+      }
+    },
+    "captured_at": "2026-09-24T02:31:07Z",
+    "rustc_processes": 3,
+    "schema_version": 1,
+    "settings": {
+      "idle_seconds": 3.0,
+      "repetitions": 1,
+      "settle_seconds": 1.0,
+      "startup_timeout": 10.0,
+      "wakeup_threshold_per_second": 0.5,
+      "warmups": 0
+    },
+    "shell_combined": {
+      "budget": 1.0,
+      "value": 2.333,
+      "within_budget": false
+    },
+    "shell_surfaces": {
+      "rmac-dock": {
+        "idle_cpu_percent": {
+          "budget": 0.3,
+          "value": 0.0,
+          "within_budget": true
+        },
+        "pss_mib": 50.2,
+        "running": true,
+        "suspected_idle_redraw": true,
+        "wakeups_per_second": 8.402
+      },
+      "rmac-top-bar": {
+        "idle_cpu_percent": {
+          "budget": 0.3,
+          "value": 2.333,
+          "within_budget": false
+        },
+        "pss_mib": 56.3,
+        "running": true,
+        "suspected_idle_redraw": true,
+        "wakeups_per_second": 28.664
+      }
+    }
+  },
+  "status": "smoke_validation_only"
+}

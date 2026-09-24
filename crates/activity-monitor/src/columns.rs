@@ -4,6 +4,7 @@ use gpui::px;
 use rmac_activity_monitor::accessibility::ProcessColumn;
 use rmac_ui::Column;
 
+use crate::metrics::Tab;
 use crate::storage;
 
 /// A column in the process table. The set is fixed and canonically ordered;
@@ -21,19 +22,22 @@ pub(crate) enum ColKey {
     Vmem,
     RunTime,
     Status,
+    Threads,
 }
 
 impl ColKey {
-    /// Canonical order, also the order shown in the chooser.
-    pub(crate) const ALL: [Self; 11] = [
-        Self::Pid,
+    /// Canonical order, also the order shown in the chooser. Process Name
+    /// leads, matching the Mac (MON-02); PID moves later rather than first.
+    pub(crate) const ALL: [Self; 12] = [
         Self::Name,
         Self::Cpu,
+        Self::Threads,
         Self::Mem,
         Self::Energy,
         Self::Disk,
-        Self::Ppid,
         Self::User,
+        Self::Pid,
+        Self::Ppid,
         Self::Vmem,
         Self::RunTime,
         Self::Status,
@@ -52,6 +56,7 @@ impl ColKey {
             Self::Vmem => "vmem",
             Self::RunTime => "runtime",
             Self::Status => "status",
+            Self::Threads => "threads",
         }
     }
 
@@ -78,6 +83,7 @@ impl ColKey {
             Self::Vmem => 120.0,
             Self::RunTime => 110.0,
             Self::Status => 110.0,
+            Self::Threads => 90.0,
         }
     }
 
@@ -92,13 +98,7 @@ impl ColKey {
                 | Self::Ppid
                 | Self::Vmem
                 | Self::RunTime
-        )
-    }
-
-    fn default_visible(self) -> bool {
-        matches!(
-            self,
-            Self::Pid | Self::Name | Self::Cpu | Self::Mem | Self::Energy | Self::Disk
+                | Self::Threads
         )
     }
 
@@ -133,6 +133,7 @@ impl From<ColKey> for ProcessColumn {
             ColKey::Vmem => Self::VirtualMemory,
             ColKey::RunTime => Self::RunTime,
             ColKey::Status => Self::Status,
+            ColKey::Threads => Self::Threads,
         }
     }
 }
@@ -151,6 +152,7 @@ impl From<ProcessColumn> for ColKey {
             ProcessColumn::VirtualMemory => Self::Vmem,
             ProcessColumn::RunTime => Self::RunTime,
             ProcessColumn::Status => Self::Status,
+            ProcessColumn::Threads => Self::Threads,
         }
     }
 }
@@ -177,10 +179,50 @@ fn config_paths() -> Result<(PathBuf, PathBuf), storage::Failure> {
     ))
 }
 
+/// The column set the app opens with, before any tab has been chosen — the
+/// same as the CPU tab's default, since `MonitorView` starts on CPU.
 pub(crate) fn default_visible() -> Vec<ColKey> {
+    default_visible_for(Tab::Cpu)
+}
+
+/// Each tab's own default column set (MON-02): the Mac shows CPU-relevant
+/// columns on the CPU tab, memory-relevant ones on the Memory tab, and so
+/// on, rather than one shared list. Only genuinely available metrics are
+/// offered — there is no per-process GPU, idle-wakeup or port count on
+/// Linux, so those Mac-only columns are left out rather than faked.
+pub(crate) fn default_visible_for(tab: Tab) -> Vec<ColKey> {
+    let wanted: &[ColKey] = match tab {
+        Tab::Cpu => &[
+            ColKey::Name,
+            ColKey::Cpu,
+            ColKey::Threads,
+            ColKey::RunTime,
+            ColKey::Pid,
+            ColKey::User,
+        ],
+        Tab::Memory => &[
+            ColKey::Name,
+            ColKey::Mem,
+            ColKey::Vmem,
+            ColKey::Threads,
+            ColKey::Pid,
+            ColKey::User,
+        ],
+        Tab::Energy => &[
+            ColKey::Name,
+            ColKey::Energy,
+            ColKey::Cpu,
+            ColKey::Pid,
+            ColKey::User,
+        ],
+        Tab::Disk => &[ColKey::Name, ColKey::Disk, ColKey::Pid, ColKey::User],
+        // Network has no process table (`Tab::has_process_table`); this
+        // list is never shown but kept so every tab has one.
+        Tab::Network => &[ColKey::Name, ColKey::Pid, ColKey::User],
+    };
     ColKey::ALL
         .into_iter()
-        .filter(|key| key.default_visible())
+        .filter(|key| wanted.contains(key))
         .collect()
 }
 
@@ -242,7 +284,8 @@ mod tests {
 
     #[test]
     fn visible_columns_round_trip_in_canonical_order() {
-        let expected = vec![ColKey::Pid, ColKey::Name, ColKey::Mem, ColKey::Status];
+        // Process Name leads the canonical order (MON-02), not PID.
+        let expected = vec![ColKey::Name, ColKey::Mem, ColKey::Pid, ColKey::Status];
         assert_eq!(parse(&format(&expected)).unwrap(), expected);
     }
 
@@ -258,7 +301,25 @@ mod tests {
     fn required_name_column_is_restored_and_order_is_normalized() {
         assert_eq!(
             parse("status,pid").unwrap(),
-            vec![ColKey::Pid, ColKey::Name, ColKey::Status]
+            vec![ColKey::Name, ColKey::Pid, ColKey::Status]
         );
+    }
+
+    #[test]
+    fn each_tab_gets_its_own_default_columns() {
+        let cpu = default_visible_for(Tab::Cpu);
+        let memory = default_visible_for(Tab::Memory);
+        let energy = default_visible_for(Tab::Energy);
+        let disk = default_visible_for(Tab::Disk);
+        assert!(cpu.contains(&ColKey::Cpu) && cpu.contains(&ColKey::Threads));
+        assert!(!cpu.contains(&ColKey::Energy));
+        assert!(memory.contains(&ColKey::Mem) && !memory.contains(&ColKey::Cpu));
+        assert!(energy.contains(&ColKey::Energy) && !energy.contains(&ColKey::Threads));
+        assert!(disk.contains(&ColKey::Disk) && !disk.contains(&ColKey::Mem));
+        // Every tab keeps the required Name anchor.
+        for columns in [&cpu, &memory, &energy, &disk] {
+            assert!(columns.contains(&ColKey::Name));
+        }
+        assert_eq!(default_visible(), cpu);
     }
 }

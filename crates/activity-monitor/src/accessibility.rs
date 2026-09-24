@@ -13,10 +13,12 @@ pub enum ProcessColumn {
     VirtualMemory,
     RunTime,
     Status,
+    /// Threads in the process's thread group (see `process_table::ProcRow`).
+    Threads,
 }
 
 impl ProcessColumn {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Pid,
         Self::Name,
         Self::Cpu,
@@ -28,6 +30,7 @@ impl ProcessColumn {
         Self::VirtualMemory,
         Self::RunTime,
         Self::Status,
+        Self::Threads,
     ];
 
     pub const fn title(self) -> &'static str {
@@ -46,6 +49,7 @@ impl ProcessColumn {
             Self::VirtualMemory => "Virtual Mem",
             Self::RunTime => "Run Time",
             Self::Status => "Status",
+            Self::Threads => "Threads",
         }
     }
 }

@@ -16,6 +16,7 @@ use crate::columns::{
 use crate::metrics::Tab;
 use crate::process_table::{resync_selection, ProcessTableDelegate};
 use crate::sampling::Sampler;
+use crate::view_filter::ViewFilter;
 use crate::{process_action, process_signal};
 
 fn process_signal_outcome(outcome: process_signal::SignalOutcome) -> process_action::Outcome {
@@ -43,6 +44,8 @@ pub(crate) struct MonitorView {
     inspect_pid: Option<u32>,
     /// Whether the toolbar's search circle has expanded into a field.
     search_open: bool,
+    /// Whether the View filter dropdown (MON-03) is open.
+    pub(crate) filter_menu_open: bool,
 }
 
 impl MonitorView {
@@ -98,6 +101,7 @@ impl MonitorView {
             persistence_error,
             inspect_pid: None,
             search_open: false,
+            filter_menu_open: false,
         };
         view.refresh(cx);
 
@@ -133,8 +137,11 @@ impl MonitorView {
     fn select_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
         self.tab = tab;
         self.cols_menu_open = false;
+        self.filter_menu_open = false;
         self.table.update(cx, |state, cx| {
             let d = state.delegate_mut();
+            // MON-02: each tab shows its own remembered column set.
+            d.activate_tab(tab);
             let want = tab.default_sort_key();
             // Only adopt the tab's default sort if that column is visible.
             if d.visible.contains(&want) {
@@ -268,6 +275,7 @@ impl MonitorView {
         if self.pending_kill.take().is_some()
             || self.inspect_pid.take().is_some()
             || std::mem::take(&mut self.cols_menu_open)
+            || std::mem::take(&mut self.filter_menu_open)
         {
             cx.notify();
         } else if empty_search {
@@ -299,8 +307,32 @@ impl MonitorView {
     fn toggle_columns_menu(&mut self, cx: &mut Context<Self>) {
         if self.tab.has_process_table() {
             self.cols_menu_open = !self.cols_menu_open;
+            self.filter_menu_open = false;
             cx.notify();
         }
+    }
+
+    /// The View filter (MON-03) currently applied to the process table.
+    pub(crate) fn view_filter(&self, cx: &Context<Self>) -> ViewFilter {
+        self.table.read(cx).delegate().view_filter
+    }
+
+    /// Toggle the View filter dropdown under the window subtitle.
+    pub(crate) fn toggle_filter_menu(&mut self, cx: &mut Context<Self>) {
+        self.filter_menu_open = !self.filter_menu_open;
+        self.cols_menu_open = false;
+        cx.notify();
+    }
+
+    /// Apply a new View filter (MON-03) and close the dropdown.
+    pub(crate) fn set_view_filter(&mut self, filter: ViewFilter, cx: &mut Context<Self>) {
+        self.filter_menu_open = false;
+        self.table.update(cx, |state, cx| {
+            state.delegate_mut().set_view_filter(filter);
+            resync_selection(state, cx);
+            state.refresh(cx);
+        });
+        cx.notify();
     }
 
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {

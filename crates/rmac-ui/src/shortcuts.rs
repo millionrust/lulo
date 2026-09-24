@@ -44,6 +44,9 @@ pub const DELETE: Shortcut = Shortcut::new("cmd-backspace", "⌘⌫");
 pub const FORCE_DELETE: Shortcut = Shortcut::new("cmd-shift-backspace", "⇧⌘⌫");
 pub const DELETE_PERMANENT: Shortcut = Shortcut::new("cmd-alt-backspace", "⌥⌘⌫");
 pub const NEW_FOLDER: Shortcut = Shortcut::new("cmd-shift-n", "⇧⌘N");
+pub const NEW_WINDOW: Shortcut = Shortcut::new("cmd-n", "⌘N");
+pub const GO_TO_FOLDER: Shortcut = Shortcut::new("cmd-shift-g", "⇧⌘G");
+pub const EMPTY_TRASH: Shortcut = Shortcut::new("cmd-shift-backspace", "⇧⌘⌫");
 pub const GO_UP: Shortcut = Shortcut::new("cmd-up", "⌘↑");
 pub const OPEN_SELECTION: Shortcut = Shortcut::new("cmd-down", "⌘↓");
 pub const TOGGLE_HIDDEN: Shortcut = Shortcut::new("cmd-shift-.", "⇧⌘.");
@@ -102,6 +105,9 @@ mod tests {
         FORCE_DELETE,
         DELETE_PERMANENT,
         NEW_FOLDER,
+        NEW_WINDOW,
+        GO_TO_FOLDER,
+        EMPTY_TRASH,
         GO_UP,
         OPEN_SELECTION,
         TOGGLE_HIDDEN,

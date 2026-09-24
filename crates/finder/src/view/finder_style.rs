@@ -331,6 +331,18 @@ pub(super) const GALLERY_INSPECTOR_TITLE_TOP: f32 = 26.0;
 pub(super) const GALLERY_INSPECTOR_SECTION_GAP: f32 = 24.0;
 pub(super) const GALLERY_INSPECTOR_ROW_HEIGHT: f32 = 23.0;
 
+// ---- Trash ---------------------------------------------------------------------
+
+/// The Trash's name-and-Empty strip above its contents (S: not measured).
+pub(super) const TRASH_BAR_HEIGHT: f32 = 36.0;
+pub(super) const TRASH_BAR_INSET: f32 = 16.0;
+
+// ---- Go to Folder --------------------------------------------------------------
+
+/// The Go to Folder sheet: 460 wide under the toolbar, 24 pt suggestions.
+pub(super) const GO_TO_WIDTH: f32 = 460.0;
+pub(super) const GO_TO_ROW_HEIGHT: f32 = 24.0;
+
 // ---- Get Info ------------------------------------------------------------------
 
 /// Finder's info window is 265 wide; its close button is centred 16 in.

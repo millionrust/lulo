@@ -58,6 +58,7 @@ impl Render for FinderView {
             )
         });
         let open_with_dialog = self.render_open_with(cx);
+        let go_to_sheet = self.render_go_to_folder(cx);
         let archive_sheet = self.render_archive_job(cx);
         let archive_alert = self.render_archive_alert(cx);
         let help_dialog = self.help_open.then(|| {
@@ -96,7 +97,36 @@ impl Render for FinderView {
             .rounded(px(rmac_ui::mac::radius_large_surface()))
             .overflow_hidden()
             .text_color(label())
-            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+            .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.go_to.is_some() {
+                    // Typing goes to the path field; these keys drive the sheet.
+                    match event.keystroke.key.as_str() {
+                        "escape" => {
+                            cx.stop_propagation();
+                            this.close_go_to_folder(window, cx);
+                        }
+                        "up" => {
+                            cx.stop_propagation();
+                            this.move_go_to_highlight(-1, cx);
+                        }
+                        "down" => {
+                            cx.stop_propagation();
+                            this.move_go_to_highlight(1, cx);
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+                if this.info.is_some()
+                    && this.info_name.is_none()
+                    && event.keystroke.key.as_str() == "escape"
+                {
+                    cx.stop_propagation();
+                    this.info = None;
+                    this.info_details.clear();
+                    cx.notify();
+                    return;
+                }
                 if this.help_open {
                     cx.stop_propagation();
                     if event.keystroke.key.as_str() == "escape" {
@@ -386,9 +416,11 @@ impl Render for FinderView {
                         )
                     })
                     .when(multi, |el| el.child(self.render_tabs(cx)))
+                    .when(self.trash_view, |el| el.child(self.render_trash_bar(cx)))
                     .child(self.render_list(window_active, window_height, cx)),
             )
             .when_some(info, |el, entry| el.child(self.render_info(&entry, cx)))
+            .when_some(go_to_sheet, |el, sheet| el.child(sheet))
             .when_some(menu_at, |el, state| {
                 let menu = match menu_purpose {
                     MenuPurpose::Context => Self::build_context_menu(

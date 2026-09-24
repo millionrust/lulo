@@ -96,5 +96,20 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("ctrl-cmd-s", ToggleSidebar, Some("Finder")),
         KeyBinding::new("alt-cmd-p", TogglePathBar, Some("Finder")),
         KeyBinding::new("cmd-shift-c", GoComputer, Some("Finder")),
+        KeyBinding::new(
+            rmac_ui::shortcuts::NEW_WINDOW.keystroke,
+            NewWindow,
+            Some("Finder"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::GO_TO_FOLDER.keystroke,
+            GoToFolder,
+            Some("Finder"),
+        ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::EMPTY_TRASH.keystroke,
+            EmptyTrash,
+            Some("Finder"),
+        ),
     ]);
 }

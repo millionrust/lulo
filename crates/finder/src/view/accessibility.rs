@@ -330,15 +330,23 @@ impl FinderView {
             .first()
             .and_then(|item| item.original_path.file_name())
             .map(|name| sanitize_dialog_name(&name.to_string_lossy()));
+        let (title, description) = if confirmation.empty_trash {
+            empty_trash_prompt(self.file_words.bin())
+        } else {
+            (
+                if count == 1 {
+                    "Delete Item Permanently?"
+                } else {
+                    "Delete Items Permanently?"
+                }
+                .to_string(),
+                permanent_delete_prompt(count, name.as_deref()),
+            )
+        };
         Some(AccessibleDialog {
             kind: DialogKind::PermanentDelete,
-            title: if count == 1 {
-                "Delete Item Permanently?"
-            } else {
-                "Delete Items Permanently?"
-            }
-            .to_string(),
-            description: permanent_delete_prompt(count, name.as_deref()),
+            title,
+            description,
             actions: vec![
                 dialog_action(
                     "permanent-delete-cancel",
@@ -347,7 +355,11 @@ impl FinderView {
                 ),
                 dialog_action(
                     "permanent-delete-confirm",
-                    "Delete",
+                    if confirmation.empty_trash {
+                        "Empty Trash"
+                    } else {
+                        "Delete"
+                    },
                     DialogActionKind::Destructive,
                 ),
             ],

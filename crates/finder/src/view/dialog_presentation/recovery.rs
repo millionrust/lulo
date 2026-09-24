@@ -144,10 +144,19 @@ impl FinderView {
             .first()
             .and_then(|item| item.original_path.file_name())
             .map(|name| sanitize_dialog_name(&name.to_string_lossy()));
-        let title = if count == 1 {
-            "Delete Item Permanently?"
+        let (title, message, confirm) = if confirmation.empty_trash {
+            let (title, message) = empty_trash_prompt(self.file_words.bin());
+            (title, message, format!("Empty {}", self.file_words.bin()))
         } else {
-            "Delete Items Permanently?"
+            (
+                if count == 1 {
+                    "Delete Item Permanently?".to_owned()
+                } else {
+                    "Delete Items Permanently?".to_owned()
+                },
+                permanent_delete_prompt(count, name.as_deref()),
+                "Delete".to_owned(),
+            )
         };
         let buttons = vec![
             rmac_ui::dialog_button(
@@ -159,19 +168,12 @@ impl FinderView {
             .into_any_element(),
             rmac_ui::dialog_button(
                 "permanent-delete-confirm",
-                "Delete",
+                confirm,
                 rmac_ui::DialogButtonKind::Destructive,
             )
             .on_click(cx.listener(|this, _, _, cx| this.confirm_permanent_delete(cx)))
             .into_any_element(),
         ];
-        Some(
-            rmac_ui::alert(
-                title,
-                permanent_delete_prompt(count, name.as_deref()),
-                buttons,
-            )
-            .into_any_element(),
-        )
+        Some(rmac_ui::alert(title, message, buttons).into_any_element())
     }
 }

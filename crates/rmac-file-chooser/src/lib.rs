@@ -9,7 +9,8 @@ pub mod browser;
 #[cfg(target_os = "linux")]
 pub mod dbus;
 pub mod filter;
-pub mod goto;
+/// Go to Folder (⇧⌘G) path resolution, shared with Files.
+pub use rmac_finder::goto;
 pub mod metrics;
 pub mod outcome;
 pub mod parent;

@@ -82,6 +82,8 @@ pub(super) struct ActiveTrash {
 #[derive(Clone)]
 pub(super) struct DeleteConfirmation {
     pub(super) items: Vec<trash_store::TrashedItem>,
+    /// Finder ▸ Empty Trash… rather than Delete Immediately on a selection.
+    pub(super) empty_trash: bool,
 }
 
 #[derive(Clone)]

@@ -1,5 +1,15 @@
 use super::*;
 
+/// Finder's Empty Trash alert: its title and message, in the locale's word
+/// for the Trash.
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn empty_trash_prompt(bin: &str) -> (String, String) {
+    (
+        format!("Are you sure you want to permanently erase the items in the {bin}?"),
+        "You can’t undo this action.".to_owned(),
+    )
+}
+
 #[cfg(any(target_os = "linux", test))]
 pub(super) fn permanent_delete_prompt(count: usize, name: Option<&str>) -> String {
     if count == 1 {

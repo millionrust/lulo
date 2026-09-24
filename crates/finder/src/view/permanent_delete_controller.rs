@@ -48,13 +48,95 @@ impl FinderView {
             self.menu_at = None;
             self.operation_error = None;
             self.operation_notice = None;
-            self.delete_confirmation = Some(DeleteConfirmation { items });
+            self.delete_confirmation = Some(DeleteConfirmation {
+                items,
+                empty_trash: false,
+            });
             let _ = rmac_sound::play_alert();
             cx.notify();
         }
         #[cfg(not(any(target_os = "linux", test)))]
         {
             self.operation_error = Some("Permanent deletion is available on Linux".into());
+            cx.notify();
+        }
+    }
+
+    /// Finder ▸ Empty Trash… (⇧⌘⌫) from any folder: list the Trash, then
+    /// ask with the Mac's alert before erasing everything in it.
+    pub(super) fn request_empty_trash(&mut self, cx: &mut Context<Self>) {
+        #[cfg(any(target_os = "linux", test))]
+        {
+            if self.transfer.is_some()
+                || self.undo_operation.is_some()
+                || self.trash_operation.is_some()
+                || self.recovery_open
+                || self.recovery_busy
+                || self.trash_recovery_open
+                || self.trash_recovery_busy
+            {
+                self.operation_error = Some("Wait for the current file operation to finish".into());
+                cx.notify();
+                return;
+            }
+            if self.trash_loading {
+                self.operation_error = Some("Files is still verifying Trash recovery".into());
+                cx.notify();
+                return;
+            }
+            let Some(store) = self.trash_store.clone() else {
+                self.operation_error =
+                    Some("Trash recovery is unavailable; no item was changed".into());
+                cx.notify();
+                return;
+            };
+            if self.trash_pending != 0 {
+                self.operation_error = Some(
+                    "A changed Trash operation needs manual recovery before it can be emptied"
+                        .into(),
+                );
+                cx.notify();
+                return;
+            }
+            self.menu_at = None;
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                let listed = cx
+                    .background_executor()
+                    .spawn(async move { store.list() })
+                    .await;
+                let _ = this.update(cx, |this: &mut FinderView, cx| {
+                    match listed {
+                        Ok(items) if items.is_empty() => {
+                            this.operation_notice =
+                                Some(format!("The {} is empty", this.file_words.bin()).into());
+                        }
+                        Ok(items) => {
+                            this.operation_error = None;
+                            this.operation_notice = None;
+                            this.delete_confirmation = Some(DeleteConfirmation {
+                                items,
+                                empty_trash: true,
+                            });
+                            let _ = rmac_sound::play_alert();
+                        }
+                        Err(error) => {
+                            this.operation_error = Some(
+                                format!(
+                                    "The {} could not be read; nothing was deleted ({error})",
+                                    this.file_words.bin()
+                                )
+                                .into(),
+                            );
+                        }
+                    }
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+        #[cfg(not(any(target_os = "linux", test)))]
+        {
+            self.operation_error = Some("Emptying the Trash is available on Linux".into());
             cx.notify();
         }
     }
@@ -85,6 +167,7 @@ impl FinderView {
             cx.notify();
             return;
         }
+        let empty_trash = confirmation.empty_trash;
         let items = confirmation.items;
         let total = items.len();
         if total == 0 {
@@ -92,7 +175,11 @@ impl FinderView {
         }
         let cancel = Arc::new(AtomicBool::new(false));
         self.trash_operation = Some(ActiveTrash {
-            label: "Deleting Permanently".into(),
+            label: if empty_trash {
+                format!("Emptying the {}", self.file_words.bin()).into()
+            } else {
+                "Deleting Permanently".into()
+            },
             processed: 0,
             total,
             cancel: cancel.clone(),

@@ -27,6 +27,11 @@ const MAX_WINDOW_ARGUMENTS: usize = 8;
 const MAX_WINDOW_ARGUMENT_BYTES: usize = 4096;
 const INSTANCE_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// The label of an exported menu whose items belong in the bold app-name
+/// menu (Finder ▸ Empty Trash…). The menu bar folds them in under "About"
+/// instead of showing a menu with this label.
+pub const APPLICATION_MENU: &str = "Application";
+
 pub type WireItem = (String, String, String, bool, bool);
 pub type WireMenu = (String, Vec<WireItem>);
 pub type WireMenus = Vec<WireMenu>;
@@ -169,8 +174,13 @@ const NOTES_MENUS: &[MenuSpec] = &[
 
 const FILES_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: APPLICATION_MENU,
+        items: &[item!("Empty Trash…", "finder::EmptyTrash", "⇧⌘⌫")],
+    },
+    MenuSpec {
         label: "File",
         items: &[
+            item!("New Finder Window", "finder::NewWindow", "⌘N"),
             item!("New Folder", "finder::NewFolder", "⇧⌘N"),
             item!("New Tab", "finder::NewTab", "⌘T", separator),
             item!("Close Tab", "finder::CloseTab", "⌘W"),
@@ -220,6 +230,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Applications", "finder::GoApplications", "⇧⌘A"),
             item!("Downloads", "finder::GoDownloads", "⌥⌘L"),
             item!("Trash", "finder::GoTrash", ""),
+            item!("Go to Folder…", "finder::GoToFolder", "⇧⌘G", separator),
         ],
     },
     MenuSpec {
@@ -476,6 +487,7 @@ fn definition_for_vocabulary(
                     label: match item.action {
                         "finder::MoveToTrash" => format!("Move to {}", file_words.bin()),
                         "finder::GoTrash" => file_words.bin().to_owned(),
+                        "finder::EmptyTrash" => format!("Empty {}…", file_words.bin()),
                         _ => item.label.to_owned(),
                     },
                     action: item.action.to_owned(),
@@ -494,6 +506,19 @@ fn definition_for_vocabulary(
         })
         .collect::<Vec<_>>();
     (!menus.is_empty()).then_some(menus)
+}
+
+/// Removes the exported [`APPLICATION_MENU`] from `menus` and returns its
+/// items, the first one marked to follow a separator.
+pub fn take_application_items(menus: &mut Vec<Menu>) -> Vec<Item> {
+    let Some(index) = menus.iter().position(|menu| menu.label == APPLICATION_MENU) else {
+        return Vec::new();
+    };
+    let mut items = menus.remove(index).items;
+    if let Some(first) = items.first_mut() {
+        first.separator_before = true;
+    }
+    items
 }
 
 #[derive(Clone)]
@@ -1207,6 +1232,36 @@ mod tests {
             "x".repeat(MAX_WINDOW_ARGUMENT_BYTES + 1)
         ]));
         assert!(!valid_window_arguments(&["a\0b".to_owned()]));
+    }
+
+    #[test]
+    fn files_empty_trash_joins_the_app_menu() {
+        let mut menus = definition_for_vocabulary(
+            rmac_apps::identity::FILES,
+            &[
+                "finder::EmptyTrash",
+                "finder::NewWindow",
+                "finder::GoToFolder",
+            ],
+            rmac_locale::FileVocabulary::for_locale("en_US.UTF-8"),
+        )
+        .unwrap();
+        assert!(validate_menus(&menus).is_ok());
+        let items = take_application_items(&mut menus);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].label, "Empty Trash…");
+        assert_eq!(items[0].shortcut, "⇧⌘⌫");
+        assert!(items[0].separator_before);
+        assert_eq!(
+            menus
+                .iter()
+                .map(|menu| menu.label.as_str())
+                .collect::<Vec<_>>(),
+            ["File", "Go"]
+        );
+        assert_eq!(menus[0].items[0].label, "New Finder Window");
+        assert_eq!(menus[1].items[0].label, "Go to Folder…");
+        assert!(take_application_items(&mut menus).is_empty());
     }
 
     #[test]

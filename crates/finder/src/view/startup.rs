@@ -227,6 +227,8 @@ impl FinderView {
             file_words,
             sections,
             info: None,
+            go_to: None,
+            pending_select: None,
             info_details: Vec::new(),
             info_name: None,
             open_with: None,

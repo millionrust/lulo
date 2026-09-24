@@ -487,21 +487,43 @@ pub fn boot_unified_app_instance_with_assets<A, V, F>(
         .run(move |cx: &mut App| {
             init_application(cx);
             let requested = build.clone();
+            let opener: Rc<dyn Fn(Vec<String>, &mut App)> = Rc::new(move |arguments, cx| {
+                if let Err(error) =
+                    open_unified_window(app_id, width, height, arguments, requested.clone(), cx)
+                {
+                    eprintln!("{app_id} could not open a new window: {error}");
+                }
+            });
+            cx.set_global(AppWindowOpener(opener.clone()));
             crate::runtime::install_app_instance(
                 app_id,
-                move |arguments, cx| {
-                    if let Err(error) =
-                        open_unified_window(app_id, width, height, arguments, requested.clone(), cx)
-                    {
-                        eprintln!("{app_id} could not open a new window: {error}");
-                    }
-                },
+                move |arguments, cx| opener(arguments, cx),
                 cx,
             );
             open_unified_window(app_id, width, height, arguments, build, cx)
                 .expect("failed to open window");
             cx.activate(true);
         });
+}
+
+/// How a one-process app opens another of its windows.
+struct AppWindowOpener(Rc<dyn Fn(Vec<String>, &mut App)>);
+
+impl gpui::Global for AppWindowOpener {}
+
+/// File ▸ New Window for an app booted with
+/// [`boot_unified_app_instance_with_assets`]: opens another window in this
+/// process for `arguments`, exactly as a second launch would. Returns false
+/// when the app was not booted that way.
+pub fn open_another_window(arguments: Vec<String>, cx: &mut App) -> bool {
+    let Some(opener) = cx
+        .try_global::<AppWindowOpener>()
+        .map(|opener| opener.0.clone())
+    else {
+        return false;
+    };
+    opener(arguments, cx);
+    true
 }
 
 fn open_unified_window<V, F>(

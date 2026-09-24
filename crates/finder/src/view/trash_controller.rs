@@ -1,6 +1,40 @@
 use super::*;
 
 impl FinderView {
+    /// The strip Finder shows above the Trash's contents: its name and an
+    /// Empty button (geometry S: the owner's Trash was not opened to measure).
+    pub(super) fn render_trash_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(any(target_os = "linux", test))]
+        let empty = self.trash_items.is_empty();
+        #[cfg(not(any(target_os = "linux", test)))]
+        let empty = true;
+        div()
+            .id("trash-bar")
+            .role(Role::Toolbar)
+            .aria_label(self.file_words.bin())
+            .h(px(TRASH_BAR_HEIGHT))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_between()
+            .px(px(TRASH_BAR_INSET))
+            .border_b_1()
+            .border_color(hairline())
+            .child(
+                div()
+                    .text_size(rmac_ui::text_px(13.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(primary_text())
+                    .child(self.file_words.bin()),
+            )
+            .child(
+                Button::new("empty-trash", "Empty")
+                    .small()
+                    .disabled(empty)
+                    .on_click(cx.listener(|this, _, _, cx| this.request_empty_trash(cx))),
+            )
+    }
+
     pub(super) fn move_to_trash(&mut self, cx: &mut Context<Self>) {
         if self.trash_view {
             self.restore_selected(cx);

@@ -819,6 +819,11 @@ impl FinderView {
             .on_action(
                 cx.listener(|this, _: &GoComputer, _, cx| this.navigate(PathBuf::from("/"), cx)),
             )
+            .on_action(cx.listener(|this, _: &NewWindow, _, cx| this.new_window(cx)))
+            .on_action(
+                cx.listener(|this, _: &GoToFolder, window, cx| this.open_go_to_folder(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &EmptyTrash, _, cx| this.request_empty_trash(cx)))
             .on_action(cx.listener(|this, _: &ShowHelp, _, cx| {
                 this.help_open = true;
                 cx.notify();

@@ -1474,15 +1474,18 @@ mod linux_wayland {
             let indicators = top_bar_indicator_labels(snapshot);
             let focused_window_id = snapshot.focused.window_id;
             let mut menus = status.menus.clone();
+            let application_items = rmac_app_menu::take_application_items(&mut menus);
             menus.insert(0, system_menu());
             // The bold app name is the app menu (§3.3): it is synthesized, not
             // exported, so every app gets About/Hide/Hide Others/Show All/Quit.
+            // An app's own entries (Files' Empty Trash…) follow About.
             menus.insert(
                 1,
                 app_menu(
                     &active_app,
                     active_app_id.as_deref(),
                     !self.parking.is_empty(),
+                    application_items,
                 ),
             );
 
@@ -2577,7 +2580,12 @@ mod linux_wayland {
 
     /// The bold-name app menu every application gets, exported or not (§3.3).
     /// Hide and Hide Others park the app's windows; Show All unparks them.
-    fn app_menu(app_name: &str, app_id: Option<&str>, any_parked: bool) -> rmac_app_menu::Menu {
+    fn app_menu(
+        app_name: &str,
+        app_id: Option<&str>,
+        any_parked: bool,
+        application_items: Vec<rmac_app_menu::Item>,
+    ) -> rmac_app_menu::Menu {
         use rmac_app_menu::Item;
 
         let known = app_id.is_some();
@@ -2593,6 +2601,9 @@ mod linux_wayland {
             // No app ships About metadata yet, so the row is present but
             // disabled rather than inventing facts (§FD-8).
             row(format!("About {app_name}"), "app::about", "", false, false),
+        ];
+        items.extend(application_items);
+        items.extend([
             row("Services".into(), "app::services", "›", false, true),
             row(format!("Hide {app_name}"), "app::hide", "⌘H", known, true),
             row(
@@ -2603,7 +2614,7 @@ mod linux_wayland {
                 false,
             ),
             row("Show All".into(), "app::show-all", "", any_parked, false),
-        ];
+        ]);
         // Files, like Finder, can never be quit (§2.9).
         if app_id != Some(rmac_apps::identity::FILES) {
             items.push(row(

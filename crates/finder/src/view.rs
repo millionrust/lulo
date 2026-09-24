@@ -15,6 +15,7 @@ mod filesystem_helpers;
 mod finder_behaviour;
 mod finder_style;
 mod gallery_presentation;
+mod go_to_folder_controller;
 mod item_operations;
 mod lifecycle_controller;
 mod list_presentation;
@@ -141,6 +142,9 @@ actions!(
         ToggleSidebar,
         TogglePathBar,
         GoComputer,
+        NewWindow,
+        GoToFolder,
+        EmptyTrash,
     ]
 );
 
@@ -278,6 +282,10 @@ struct FinderView {
     file_words: rmac_locale::FileVocabulary,
     sections: Vec<Section>,
     info: Option<Entry>,
+    /// Go ▸ Go to Folder…, while its sheet is open.
+    go_to: Option<go_to_folder_controller::GoToSheet>,
+    /// An item Go to Folder named, selected once its folder loads.
+    pending_select: Option<PathBuf>,
     /// Get Info's rows, read from the file system once when it opens (and
     /// after a rename from it), never while rendering.
     info_details: Vec<(&'static str, String)>,

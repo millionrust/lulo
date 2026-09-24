@@ -95,6 +95,23 @@ def write_program(path: Path, contents: str) -> None:
     path.chmod(0o755)
 
 
+# A fake niri-session that reports itself running until the wrapper has started
+# the rmac session (the fake rmac-session-start writes $RMAC_TEST_CAPTURE), then
+# exits like a compositor at logout. Exiting on that signal instead of after a
+# fixed sleep means a slow machine can never see niri leave before the wrapper's
+# readiness poll. The loop bound only keeps a broken wrapper from leaving it
+# behind.
+FAKE_NIRI_SESSION = (
+    ': >"$RMAC_TEST_ROOT/niri-running"\n'
+    "waited=0\n"
+    'while [ ! -e "$RMAC_TEST_CAPTURE" ] && [ "$waited" -lt 600 ]; do\n'
+    "    /bin/sleep 0.05\n"
+    "    waited=$((waited + 1))\n"
+    "done\n"
+    'rm -f "$RMAC_TEST_ROOT/niri-running"\n'
+)
+
+
 def add_wrapper_config_fixture(root: Path) -> None:
     packaged = root / "usr/share/rmac/niri/config.kdl"
     packaged.parent.mkdir(parents=True, exist_ok=True)
@@ -360,9 +377,7 @@ class SessionPackageTests(unittest.TestCase):
             add_wrapper_config_fixture(root)
             write_program(
                 root / "usr/bin/niri-session",
-                ': >"$RMAC_TEST_ROOT/niri-running"\n'
-                "/bin/sleep 0.8\n"
-                'rm -f "$RMAC_TEST_ROOT/niri-running"\n',
+                FAKE_NIRI_SESSION,
             )
             write_program(
                 root / "usr/bin/systemctl",
@@ -538,9 +553,7 @@ class SessionPackageTests(unittest.TestCase):
         add_wrapper_config_fixture(root)
         write_program(
             root / "usr/bin/niri-session",
-            ': >"$RMAC_TEST_ROOT/niri-running"\n'
-            "/bin/sleep 0.8\n"
-            'rm -f "$RMAC_TEST_ROOT/niri-running"\n',
+            FAKE_NIRI_SESSION,
         )
         # An earlier login's niri and rmac units still run in the shared
         # user manager until something stops them.

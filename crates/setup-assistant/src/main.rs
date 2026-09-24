@@ -8,11 +8,19 @@ mod view;
 
 use std::borrow::Cow;
 
-use gpui::{AssetSource, Result, SharedString};
+use gpui::{actions, AssetSource, KeyBinding, Result, SharedString};
 use rmac_setup_assistant::flow::Availability;
 use rmac_setup_assistant::{marker, services, APP_ID};
 
 use crate::view::{SetupView, WINDOW_SIZE};
+
+// Return activates the current screen's default (rightmost) button, the
+// same as macOS's own Setup Assistant. Without this a keyboard-only user
+// had no way to advance past Welcome at all: its round "Get Started" button
+// is a plain div with no track_focus (a separate, larger gap -- see
+// docs/keyboard-audit.md), so Tab never reaches it and only Skip Setup
+// (which ends the whole assistant) was keyboard-reachable there.
+actions!(setup_assistant, [Continue]);
 
 /// The page icons (lucide, as in design-lab/setup-assistant.html), served
 /// under `setup/`.
@@ -61,6 +69,14 @@ fn main() {
         "Setup Assistant",
         width,
         height,
-        move |window, cx| SetupView::new(availability, wifi, account, window, cx),
+        move |window, cx| {
+            let view = SetupView::new(availability, wifi, account, window, cx);
+            cx.bind_keys([KeyBinding::new(
+                rmac_ui::shortcuts::ENTER.keystroke,
+                Continue,
+                Some("SetupAssistant"),
+            )]);
+            view
+        },
     );
 }

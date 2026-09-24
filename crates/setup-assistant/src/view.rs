@@ -6,8 +6,9 @@ use std::time::{Duration, Instant};
 
 use gpui::{
     div, img, prelude::FluentBuilder as _, px, rgb, svg, AnyElement, App, AppContext as _,
-    ClickEvent, Context, Div, Entity, FontWeight, Hsla, InteractiveElement as _, IntoElement,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    ClickEvent, Context, Div, Entity, FocusHandle, FontWeight, Hsla, InteractiveElement as _,
+    IntoElement, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
+    Styled as _, Window,
 };
 use rmac_setup_assistant::flow::{Availability, Completion, Event, Flow, Outcome, Step};
 use rmac_setup_assistant::names::{self, LocaleChoice};
@@ -48,6 +49,7 @@ const INDIGO_TILE: u32 = 0x5E5CE6;
 const GREEN_TILE: u32 = 0x30D158;
 
 pub struct SetupView {
+    focus: FocusHandle,
     flow: Flow,
     greeting_started: Instant,
     busy: bool,
@@ -101,7 +103,11 @@ impl SetupView {
             true
         });
 
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
+
         let mut this = Self {
+            focus,
             flow: Flow::new(availability),
             greeting_started: Instant::now(),
             busy: false,
@@ -1027,6 +1033,9 @@ impl Render for SetupView {
             None => page,
         };
         div()
+            .track_focus(&self.focus)
+            .key_context("SetupAssistant")
+            .on_action(cx.listener(|view, _: &crate::Continue, _, cx| view.continue_pressed(cx)))
             .relative()
             .size_full()
             .bg(mac::window())

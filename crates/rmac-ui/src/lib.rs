@@ -27,7 +27,7 @@ pub use chrome::{
 };
 pub use components::{
     alert, alert_with_icon, dialog, dialog_button, type_select_match, ContextMenu,
-    ContextMenuState, DialogButtonKind, DismissMenu, MenuCheck, RequestClose,
+    ContextMenuState, Dialog, DialogButtonKind, DismissMenu, MenuCheck, RequestClose,
 };
 pub use controls::{
     uniform_list_scrollbar, Button, ButtonRole, Checkbox, CollectionState, DocumentTitleMenu,

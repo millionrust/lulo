@@ -12,7 +12,7 @@
 use gpui::{
     anchored, deferred, div, prelude::FluentBuilder as _, px, Action, AnyElement, App, Context,
     ElementId, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent,
-    MouseButton, ParentElement as _, Pixels, Point, Role, SharedString,
+    MouseButton, ParentElement as _, Pixels, Point, RenderOnce, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, Toggled, Window,
 };
 use gpui_component::StyledExt as _;
@@ -95,24 +95,190 @@ pub fn dialog_button(
         .rounded_full()
 }
 
-/// Wrap arbitrary content in a centered modal: a dimmed full-window scrim with
-/// the content floated in the middle. Used by [`alert`]; exposed for custom
-/// dialogs (e.g. a text-field sheet).
-pub fn dialog(id: impl Into<ElementId>, content: impl IntoElement) -> gpui::Stateful<gpui::Div> {
-    div()
-        .id(id)
-        // Identifies the whole overlay as a dialog surface; `alert_with_icon`
-        // narrows this to `AlertDialog` and adds the title as its name.
-        .role(Role::Dialog)
-        .absolute()
-        .inset_0()
-        .flex()
-        .items_center()
-        .justify_center()
-        .bg(mac::scrim())
-        // Swallow clicks on the scrim so they don't fall through to the app.
-        .occlude()
-        .child(content)
+/// Which end of a dialog's own tab order receives focus when it first
+/// appears with focus still outside it.
+#[derive(Clone, Copy)]
+enum InitialFocus {
+    /// The first tab stop — right for arbitrary content such as a form
+    /// whose own first field wants the cursor.
+    First,
+    /// The last tab stop — macOS puts an alert's default action rightmost,
+    /// so [`alert_with_icon`] asks for this instead.
+    Last,
+}
+
+/// Move focus to the next/previous tab stop, wrapping back inside `boundary`
+/// rather than letting it escape — the real trap behind both an open
+/// [`Dialog`]'s Tab/Shift-Tab handling and [`ContextMenu`]'s.
+fn cycle_focus_within(boundary: &FocusHandle, forward: bool, window: &mut Window, cx: &mut App) {
+    if forward {
+        window.focus_next(cx);
+        if !boundary.contains_focused(window, cx) {
+            window.focus(boundary, cx);
+            window.focus_next(cx);
+        }
+    } else {
+        window.focus_prev(cx);
+        if !boundary.contains_focused(window, cx) {
+            // Starting reverse traversal without a current focus wraps to the
+            // final enabled tab stop, so blur before retrying.
+            window.blur();
+            window.focus_prev(cx);
+        }
+    }
+
+    // Empty or fully disabled content keeps focus on the boundary itself
+    // rather than leaking keyboard input to whatever is behind it.
+    if !boundary.contains_focused(window, cx) {
+        window.focus(boundary, cx);
+    }
+}
+
+/// Bring focus inside `boundary` if it currently isn't — a dialog's "just
+/// appeared" initial focus, and its recovery if focus ever ends up outside
+/// it. Runs on every render.
+///
+/// This is deliberately two frames, not one: `window.focus_next`/`focus_prev`
+/// read the *last painted* frame's tab stops (`Window::focus_next`), which on
+/// the frame a dialog first appears don't include its own content yet — only
+/// `window.focus(boundary, ...)` is safe to call before that content has ever
+/// been painted. So the first frame focus lands on `boundary` (the dialog's
+/// own container, a legitimate landing spot for a screen reader), and once
+/// that has been painted at least once, the next frame steps from it onto the
+/// real first/last control.
+fn enter_dialog_focus(
+    boundary: &FocusHandle,
+    initial: InitialFocus,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    if boundary.is_focused(window) {
+        match initial {
+            InitialFocus::First => window.focus_next(cx),
+            InitialFocus::Last => {
+                window.blur();
+                window.focus_prev(cx);
+            }
+        }
+        if !boundary.contains_focused(window, cx) {
+            window.focus(boundary, cx);
+        }
+        return;
+    }
+    if !boundary.contains_focused(window, cx) {
+        window.focus(boundary, cx);
+    }
+}
+
+/// A centered modal: a dimmed, click-swallowing scrim with `content` floated
+/// over it. While a `Dialog` is on screen, Tab/Shift-Tab cycle within
+/// `content` and can never land back on whatever is behind the scrim — the
+/// same real trap [`ContextMenu`] already gives a menu, rather than the
+/// ordering-only `tab_group()` this used to rely on. Built by [`dialog`] and
+/// [`alert`]; render it as the LAST child of the app root (its wrap-to-first/
+/// wrap-to-last both depend on being final in tab order), gated on the app's
+/// "is a dialog open?" state.
+#[derive(IntoElement)]
+pub struct Dialog {
+    id: ElementId,
+    content: AnyElement,
+    role: Role,
+    aria_label: Option<SharedString>,
+    initial_focus: InitialFocus,
+    extra_key_down: Vec<Box<dyn Fn(&KeyDownEvent, &mut Window, &mut App)>>,
+}
+
+impl Dialog {
+    /// Narrow the dialog's accessible role (`alert_with_icon` uses this for
+    /// `Role::AlertDialog`).
+    fn role(mut self, role: Role) -> Self {
+        self.role = role;
+        self
+    }
+
+    /// Set the dialog's accessible name.
+    fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Land initial focus on the last tab stop (the default action) instead
+    /// of the first.
+    fn initial_focus_last(mut self) -> Self {
+        self.initial_focus = InitialFocus::Last;
+        self
+    }
+
+    /// Add a key-down handler alongside the dialog's own Tab trap — for a
+    /// caller's own Escape-cancels/Return-submits wiring (e.g. the Wi-Fi and
+    /// Bluetooth sheets in System Settings).
+    pub fn capture_key_down(
+        mut self,
+        listener: impl Fn(&KeyDownEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        self.extra_key_down.push(Box::new(listener));
+        self
+    }
+}
+
+impl RenderOnce for Dialog {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let boundary = window
+            .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        enter_dialog_focus(&boundary, self.initial_focus, window, cx);
+        let navigation_boundary = boundary.clone();
+
+        let mut element = div()
+            .id(self.id)
+            .role(self.role)
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(mac::scrim())
+            // Swallow clicks on the scrim so they don't fall through to the app.
+            .occlude()
+            .track_focus(&boundary)
+            .capture_key_down(move |event: &KeyDownEvent, window, cx| {
+                let forward = match event.keystroke.key.as_str() {
+                    "tab" => Some(!event.keystroke.modifiers.shift),
+                    _ => None,
+                };
+                if let Some(forward) = forward {
+                    cx.stop_propagation();
+                    cycle_focus_within(&navigation_boundary, forward, window, cx);
+                }
+            })
+            .when_some(self.aria_label, |el, name| el.aria_label(name))
+            .child(self.content);
+        for listener in self.extra_key_down {
+            element = element.capture_key_down(
+                move |event: &KeyDownEvent, window: &mut Window, cx: &mut App| {
+                    listener(event, window, cx)
+                },
+            );
+        }
+        element
+    }
+}
+
+/// Wrap arbitrary content in a centered modal. Used by [`alert`]; exposed for
+/// custom dialogs (e.g. a text-field sheet). See [`Dialog`] for the trap this
+/// gives Tab/Shift-Tab.
+pub fn dialog(id: impl Into<ElementId>, content: impl IntoElement) -> Dialog {
+    Dialog {
+        id: id.into(),
+        content: content.into_any_element(),
+        // `alert_with_icon` narrows this to `AlertDialog` and adds the
+        // title as its accessible name.
+        role: Role::Dialog,
+        aria_label: None,
+        initial_focus: InitialFocus::First,
+        extra_key_down: Vec::new(),
+    }
 }
 
 /// A standard macOS 26 alert, measured on NSAlert (design-lab/chrome.html):
@@ -219,6 +385,9 @@ pub fn alert_with_icon(
     dialog("rmac-alert", card)
         .role(Role::AlertDialog)
         .when_some(accessible_name, |el, name| el.aria_label(name))
+        // macOS puts the default action rightmost; land initial (and
+        // wrapped) focus there instead of the leftmost/Cancel button.
+        .initial_focus_last()
 }
 
 // ---- Context menu ---------------------------------------------------------
@@ -296,35 +465,6 @@ impl ContextMenuState {
         };
         window.focus(&menu.return_focus, cx);
         true
-    }
-}
-
-fn move_context_menu_focus(
-    menu_focus: &FocusHandle,
-    forward: bool,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    if forward {
-        window.focus_next(cx);
-        if !menu_focus.contains_focused(window, cx) {
-            window.focus(menu_focus, cx);
-            window.focus_next(cx);
-        }
-    } else {
-        window.focus_prev(cx);
-        if !menu_focus.contains_focused(window, cx) {
-            // The menu is rendered last. Starting reverse traversal without a
-            // current focus therefore wraps to its final enabled item.
-            window.blur();
-            window.focus_prev(cx);
-        }
-    }
-
-    // Empty or fully disabled menus retain focus on their overlay rather than
-    // leaking keyboard input to the application underneath.
-    if !menu_focus.contains_focused(window, cx) {
-        window.focus(menu_focus, cx);
     }
 }
 
@@ -615,7 +755,7 @@ impl ContextMenu {
                 };
                 if let Some(forward) = forward {
                     cx.stop_propagation();
-                    move_context_menu_focus(&navigation_focus, forward, window, cx);
+                    cycle_focus_within(&navigation_focus, forward, window, cx);
                 }
             })
             .on_mouse_down(MouseButton::Left, |_, window, cx| {

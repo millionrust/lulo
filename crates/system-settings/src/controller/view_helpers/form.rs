@@ -844,7 +844,7 @@ pub(in crate::controller) fn settings_sheet(
     sidebar: Option<AnyElement>,
     body: AnyElement,
     footer: Vec<AnyElement>,
-) -> gpui::Stateful<Div> {
+) -> impl IntoElement {
     let has_sidebar = sidebar.is_some();
     let content_left = if has_sidebar {
         style::SIDEBAR_INSET + style::SHEET_SIDEBAR_WIDTH

@@ -72,6 +72,20 @@ class ExpectedUiStringTests(unittest.TestCase):
         self.assertEqual(journey.expected_confirm_button_label(force=True), "Force Quit")
 
 
+class RowNameMatchesPidTests(unittest.TestCase):
+    def test_matches_the_full_live_accessible_name(self):
+        # crates/activity-monitor/src/process_table.rs's render_tr appends
+        # ", {cpu}% CPU, {mem}" after accessibility.rs's row label.
+        self.assertTrue(journey.row_name_matches_pid("sleep (PID 4242), 0.1% CPU, 1.2 MB", 4242))
+
+    def test_rejects_a_different_pid(self):
+        self.assertFalse(journey.row_name_matches_pid("sleep (PID 4242), 0.1% CPU, 1.2 MB", 9999))
+
+    def test_rejects_a_pid_that_is_only_a_substring(self):
+        # 424 must not match a row actually naming PID 4242.
+        self.assertFalse(journey.row_name_matches_pid("sleep (PID 4242), 0.1% CPU, 1.2 MB", 424))
+
+
 class NiriJsonParsingTests(unittest.TestCase):
     def test_parse_windows_accepts_an_array(self):
         windows = journey.parse_windows('[{"id": 1, "app_id": "org.rmac.SystemMonitor"}]')

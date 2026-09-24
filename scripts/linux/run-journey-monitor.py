@@ -343,11 +343,14 @@ def find_node(
     node_name: str,
     role: Optional[str] = None,
     timeout: float = ATSPI_FIND_TIMEOUT_S,
+    name_prefix: bool = False,
 ):
     def search():
         for node in _atspi_snapshot(app_name):
             try:
-                if node.name != node_name:
+                name = node.name
+                matches = name.startswith(node_name) if name_prefix else name == node_name
+                if not matches:
                     continue
                 if role is not None and node.getRoleName() != role:
                     continue
@@ -357,6 +360,17 @@ def find_node(
         return None
 
     return _wait_for(search, timeout)
+
+
+def is_selected(node) -> bool:
+    """True if the AT-SPI node's states include SELECTED -- reflects
+    `.aria_selected(..)` on the process row (crates/activity-monitor/src/
+    process_table.rs:466-468)."""
+
+    try:
+        return bool(node.getState().contains(pyatspi.STATE_SELECTED))
+    except (LookupError, RuntimeError, AttributeError):
+        return False
 
 
 def action_names(node) -> list[str]:
@@ -429,40 +443,71 @@ def check_quit_controls_exist() -> dict[str, Any]:
     # exercising concurrently; a full traversal to find "Process menu" can
     # take noticeably longer than the in-window lookups below, so it gets a
     # more generous timeout rather than being (mis)reported as absent.
-    in_window = find_node(SYSTEM_MONITOR["atspi_name"], "Quit", role="button", timeout=2.0)
-    in_window_force = find_node(
-        SYSTEM_MONITOR["atspi_name"], "Force Quit", role="button", timeout=2.0
+    #
+    # The toolbar's Quit control is now a real, named AT-SPI button --
+    # "Quit Process" -- via an outer accessible wrapper
+    # (crates/activity-monitor/src/view/render/chrome.rs:44-63
+    # accessible_icon_button); there is no equivalent in-window "Force
+    # Quit" icon (Force Quit is reachable only via the top bar's Process
+    # menu, or the confirmation dialog's own escalation button), so this
+    # checks the menu item instead of a nonexistent toolbar button.
+    quit_button = find_node(
+        SYSTEM_MONITOR["atspi_name"], "Quit Process", role="button", timeout=2.0
     )
     menu_button = find_node("rmac-top-bar", "Process menu", role="button", timeout=8.0)
-    found = bool(in_window and in_window_force and menu_button)
+    force_quit_item = None
+    if menu_button is not None and "click" in action_names(menu_button):
+        click(menu_button)
+        force_quit_item = find_node(
+            "rmac-top-bar", "Force Quit Process…", role="menu item", timeout=2.0
+        )
+        # Close the menu again without invoking anything.
+        click(menu_button)
+    found = bool(quit_button and menu_button and force_quit_item)
     missing = [
         label
         for label, node in (
-            ("in-window Quit button", in_window),
-            ("in-window Force Quit button", in_window_force),
+            ("in-window 'Quit Process' button", quit_button),
             ("top bar Process menu", menu_button),
+            ("'Force Quit Process…' menu item", force_quit_item),
         )
         if node is None
     ]
     return make_step(
         "quit_controls_exist",
         found,
-        "Quit/Force Quit exist as AT-SPI buttons and the top bar's Process menu"
+        "the 'Quit Process' button, the top bar's Process menu, and its "
+        "'Force Quit Process…' item all exist over AT-SPI"
         if found
         else f"not found over AT-SPI: {', '.join(missing)}",
     )
 
 
 def find_disposable_row(pid: int, timeout: float = ROW_SEARCH_TIMEOUT_S):
-    """Looks for a row carrying the exact label
-    `accessibility.rs::AccessibleProcessRow.label` defines, under any role
-    (future-proof against the model being wired up under a "table row",
-    "list item", or other role). Returns the node, or None -- never guesses
-    by process name alone, since more than one process can share a name and
-    this script must only ever touch its own."""
+    """Looks for a "table row" whose accessible name starts with the exact
+    label `accessibility.rs::AccessibleProcessRow.label` defines
+    (`process_table.rs::render_tr` appends ", {cpu}% CPU, {mem}" after it,
+    so this matches by prefix rather than exact equality). Returns the
+    node, or None -- never guesses by process name alone, since more than
+    one process can share a name and this script must only ever touch its
+    own."""
 
     label = expected_row_label(DISPOSABLE_COMMAND_NAME, pid)
-    return find_node(SYSTEM_MONITOR["atspi_name"], label, timeout=timeout)
+    return find_node(
+        SYSTEM_MONITOR["atspi_name"],
+        label,
+        role="table row",
+        timeout=timeout,
+        name_prefix=True,
+    )
+
+
+def row_name_matches_pid(name: str, pid: int) -> bool:
+    """True if a process row's accessible name carries exactly this PID --
+    the safety check this script runs immediately before every Quit/Force
+    Quit invocation, so it never signals a process it did not start."""
+
+    return expected_row_label(DISPOSABLE_COMMAND_NAME, pid) in name
 
 
 def request_process_action(force: bool) -> bool:
@@ -614,12 +659,38 @@ def run_journey(token: str) -> dict[str, Any]:
             make_step(
                 "select_disposable_process",
                 selected,
-                "selected the disposable process row"
+                "selected the disposable process row via its AT-SPI Click "
+                "action"
                 if selected
                 else "found the row but could not select it",
             )
         )
         if not selected:
+            return build_report(steps, gaps, started_at_unix_ms)
+
+        # Re-find the row and confirm both that it now reports itself
+        # selected (aria_selected -> AT-SPI STATE_SELECTED) and that its
+        # name still carries this exact PID, before this script ever
+        # invokes Quit -- "Never touch any other process" per the journey
+        # brief.
+        reselected_row = find_disposable_row(disposable.pid, timeout=CONFIRM_TIMEOUT_S)
+        selection_confirmed = reselected_row is not None and is_selected(reselected_row)
+        pid_confirmed = reselected_row is not None and row_name_matches_pid(
+            reselected_row.name, disposable.pid
+        )
+        steps.append(
+            make_step(
+                "selection_verified",
+                selection_confirmed and pid_confirmed,
+                "the selected row reports STATE_SELECTED and its name still "
+                "carries this run's own PID"
+                if selection_confirmed and pid_confirmed
+                else f"selection_confirmed={selection_confirmed} "
+                f"pid_confirmed={pid_confirmed}; refusing to proceed to Quit "
+                "without both",
+            )
+        )
+        if not (selection_confirmed and pid_confirmed):
             return build_report(steps, gaps, started_at_unix_ms)
 
         requested = request_process_action(force=False)
@@ -660,8 +731,25 @@ def run_journey(token: str) -> dict[str, Any]:
             expected_confirm_button_label(force=False),
             timeout=CONFIRM_TIMEOUT_S,
         )
-        if confirm_button is not None and "click" in action_names(confirm_button):
+        # Last check before the destructive action: re-read the still-
+        # selected row's name one more time and refuse to click Quit if it
+        # no longer names this run's own PID.
+        final_row = find_disposable_row(disposable.pid, timeout=1.0)
+        pid_still_matches = final_row is not None and row_name_matches_pid(
+            final_row.name, disposable.pid
+        )
+        if confirm_button is not None and "click" in action_names(confirm_button) and pid_still_matches:
             click(confirm_button)
+        elif not pid_still_matches:
+            steps.append(
+                make_step(
+                    "confirm_terminates_process",
+                    False,
+                    "refused to click Quit: the selected row no longer named "
+                    "this run's own PID immediately before confirming",
+                )
+            )
+            return build_report(steps, gaps, started_at_unix_ms)
         terminated = _wait_for(lambda: not pid_alive(disposable.pid), TERMINATE_TIMEOUT_S)
         steps.append(
             make_step(

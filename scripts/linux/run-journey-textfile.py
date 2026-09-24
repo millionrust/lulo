@@ -50,9 +50,18 @@ for real:
     calls the portal. Whatever answers -- `rmac-file-chooser` if deployed,
     GNOME's/GTK's chooser otherwise per `rmac-portals.conf`'s fallback list
     -- is driven generically: sidebar/breadcrumb navigation by name match,
-    then a file/folder row activated by name match. If that dialog cannot be
-    driven (backend not deployed, unexpected layout, dispatch didn't fire),
-    the script falls back to loading the document directly with
+    then a file/folder row activated by name match. If row navigation fails
+    (e.g. the reference laptop's rmac-file-chooser isn't wired up yet and
+    the GNOME/Nautilus portal chooser answers with a layout this script's
+    row-matching doesn't reach), it then tries a best-effort fallback: GTK's
+    own AT-SPI bridge (unlike rmac's pinned accesskit_unix) does implement
+    EditableText, so `drive_chooser_via_location_entry` sets a location
+    entry's full path in one AT-SPI call and commits it via the entry's own
+    "activate" action or a confirm button -- never a simulated keystroke,
+    since typing one character at a time is not possible without an
+    injector. If neither path works (backend not deployed, unexpected
+    layout, no location entry present), the script falls back to loading
+    the document directly with
     `rmac-text-editor <path>` (the same command `Exec=%F` in
     org.rmac.TextEditor.desktop runs for a real double-click), exactly the
     way run-journey-launch.py falls back to a direct spawn when Dock/
@@ -134,6 +143,13 @@ ATSPI_FIND_TIMEOUT_S = 5.0
 CHOOSER_APPEAR_TIMEOUT_S = 6.0
 CHOOSER_NAV_TIMEOUT_S = 4.0
 CONFLICT_DETECT_TIMEOUT_S = 6.0
+# The shell top bar's per-app menu bridge has been observed to take longer
+# than ATSPI_FIND_TIMEOUT_S to register after a launch, especially under
+# heavy concurrent CPU load on the shared reference laptop (see
+# run-journey-terminal.py's identical observation); a Text Editor menu
+# lookup that only allows 3 s can misreport a slow-to-register menu as
+# absent, so it gets the same generous budget as everything else here.
+TOPBAR_MENU_TIMEOUT_S = 10.0
 POLL_INTERVAL_S = 0.05
 
 TEXT_EDITOR: dict[str, str] = {
@@ -552,6 +568,80 @@ def drive_chooser_to_row(
     return True, f"drove the {app_name!r} chooser to {row_name!r}"
 
 
+def find_editable_text_entry(app_name: str, timeout: float = CHOOSER_NAV_TIMEOUT_S):
+    """A location/path entry exposing real AT-SPI EditableText inside an
+    already-located chooser application. GTK's own AT-SPI bridge (unlike the
+    pinned accesskit_unix used by rmac's own windows) does implement
+    EditableText for a plain GtkEntry, so a GNOME/Nautilus chooser's
+    location bar can actually be set this way even though typing a path
+    keystroke-by-keystroke is not possible without an injector."""
+
+    def search():
+        for node in _atspi_snapshot(app_name):
+            try:
+                role = node.getRoleName()
+            except (LookupError, RuntimeError):
+                continue
+            if role not in ("entry", "text"):
+                continue
+            if has_editable_text(node):
+                return node
+        return None
+
+    return _wait_for(search, timeout)
+
+
+def drive_chooser_via_location_entry(
+    app_name: str,
+    target_path: Path,
+    confirm_names: list[str],
+) -> tuple[bool, str]:
+    """Best-effort fallback for a GNOME/Nautilus chooser that
+    `drive_chooser_to_row` could not navigate by clicking rows (e.g. no row
+    for a not-yet-visible folder, or a layout this script does not
+    recognize): set a location entry's full text in one AT-SPI
+    EditableText call -- never a simulated keystroke, since none is
+    available -- then commit it via the entry's own "activate" action (a
+    GtkEntry's AT-SPI equivalent of pressing Return) if one exists, falling
+    back to any confirm button still present. Returns (succeeded, detail);
+    on failure the detail explains precisely what was not found, so the
+    caller can report this as blocked-by-environment rather than a product
+    failure."""
+
+    entry = find_editable_text_entry(app_name)
+    if entry is None:
+        return False, (
+            f"{app_name!r} chooser: no entry with AT-SPI EditableText was "
+            "found (e.g. a 'Ctrl+L' location bar not currently shown); "
+            "cannot set a path without a keyboard injector"
+        )
+    try:
+        entry.queryEditableText().setTextContents(str(target_path))
+    except (LookupError, RuntimeError, NotImplementedError) as error:
+        return False, f"{app_name!r} chooser: setTextContents failed: {error}"
+
+    committed = False
+    entry_actions = action_names(entry)
+    if "activate" in entry_actions:
+        entry.queryAction().doAction(entry_actions.index("activate"))
+        committed = True
+    time.sleep(0.5)
+
+    confirm = find_any_node(app_name, confirm_names, timeout=1.5)
+    if confirm is not None and "click" in action_names(confirm):
+        click(confirm)
+        committed = True
+
+    if not committed:
+        return False, (
+            f"{app_name!r} chooser: set the location entry's text via "
+            "EditableText, but it exposes no 'activate' action and no "
+            "confirm button was found to commit it -- cannot proceed "
+            "without a keyboard injector to send Return"
+        )
+    return True, f"set the {app_name!r} chooser's location entry via AT-SPI EditableText"
+
+
 def attempt_edit(app_name: str) -> dict[str, Any]:
     """The honest check for the two documented gaps: no entry in the window
     exposes Text/EditableText, so no AT-SPI action can modify the buffer."""
@@ -595,13 +685,16 @@ def quit_editor(window: dict[str, Any]) -> dict[str, Any]:
     """Close through the app's own top-bar Quit menu item, mirroring
     run-journey-launch.py's quit_app."""
 
-    menu_button = find_node("rmac-top-bar", "Text Editor menu", role="button", timeout=3.0)
+    menu_button = find_node(
+        "rmac-top-bar", "Text Editor menu", role="button", timeout=TOPBAR_MENU_TIMEOUT_S
+    )
     if menu_button is None or "click" not in action_names(menu_button):
         niri_close_window(window["id"])
         return make_step(
             "close",
             wait_for_window_gone(window["id"]),
-            "Text Editor menu was not found over AT-SPI; closed via niri instead",
+            "Text Editor menu was not found over AT-SPI within "
+            f"{TOPBAR_MENU_TIMEOUT_S:.0f} s; closed via niri instead",
         )
     click(menu_button)
     quit_item = find_node("rmac-top-bar", "Quit Text Editor", timeout=ATSPI_FIND_TIMEOUT_S)
@@ -677,6 +770,19 @@ def run_journey(base_dir: Path, token: str, skip_interrupt: bool) -> dict[str, A
                         row_name=original_path.name,
                         confirm_names=["Open", "_Open", "Select"],
                     )
+                if not ok:
+                    # Row navigation failed (e.g. this chooser's layout is
+                    # GNOME/Nautilus and the fixture folder's row isn't
+                    # where expected); best-effort fallback via a GTK
+                    # location entry's real AT-SPI EditableText, per the
+                    # journey brief.
+                    location_ok, location_detail = drive_chooser_via_location_entry(
+                        chooser_app, original_path, confirm_names=["Open", "_Open", "Select"]
+                    )
+                    if location_ok:
+                        ok, detail = location_ok, location_detail
+                    else:
+                        detail = f"{detail}; location-entry fallback also failed: {location_detail}"
 
         steps.append(
             make_step(
@@ -763,6 +869,17 @@ def run_journey(base_dir: Path, token: str, skip_interrupt: bool) -> dict[str, A
                     row_name=saved_as_dir.name,
                     confirm_names=["Save", "_Save", "Replace"],
                 )
+                if not save_as_ok:
+                    location_ok, location_detail = drive_chooser_via_location_entry(
+                        chooser_app, new_path, confirm_names=["Save", "_Save", "Replace"]
+                    )
+                    if location_ok:
+                        save_as_ok, save_as_detail = location_ok, location_detail
+                    else:
+                        save_as_detail = (
+                            f"{save_as_detail}; location-entry fallback also failed: "
+                            f"{location_detail}"
+                        )
         steps.append(
             make_step(
                 "save_as_via_portal",

@@ -221,5 +221,13 @@ class ChooseFilesExecTests(unittest.TestCase):
             self.assertEqual(journey.choose_files_exec(None, Path(home)), journey.FILES_EXEC)
 
 
+class WlCopyAvailableTests(unittest.TestCase):
+    def test_true_when_which_finds_the_binary(self):
+        self.assertTrue(journey.wl_copy_available(which=lambda name: "/usr/bin/wl-copy"))
+
+    def test_false_when_which_finds_nothing(self):
+        self.assertFalse(journey.wl_copy_available(which=lambda name: None))
+
+
 if __name__ == "__main__":
     unittest.main()

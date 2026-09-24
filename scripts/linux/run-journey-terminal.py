@@ -43,64 +43,46 @@ below still attempt to find and click these menus with a generous retry
 budget and report precisely whether they were present on whatever the
 reference laptop was actually running at run time.
 
-But the terminal's own *content* surface has real, confirmed accessibility
-gaps against todo.md's "no pointer-only controls" gate, both live-verified
-against a real `rmac-terminal` window on the reference laptop (its AT-SPI
-tree exposed exactly 4 button nodes -- a profile-picker button plus 3
-unnamed tab-strip buttons -- and *no* text/entry node at all for the grid):
+The terminal's own *content* surface has real accessibility gaps left
+against todo.md's "no pointer-only controls" gate, but far fewer than before:
+`crates/terminal/src/controller/renderer/accessibility.rs` now wires
+`project_visible_terminal` into the running binary, publishing the grid as a
+live, named `Role::Terminal` node ("Terminal") with a synthetic
+`Role::TextRun` child carrying its visible text over AT-SPI's Text
+interface, and the tab strip (`crates/terminal/src/controller/renderer/
+chrome.rs:65-183`) now gives each tab a real `Role::Tab` with its title as
+its accessible name, plus named "Close tab {title}" and "New Tab" buttons.
+What is verified live, and what still isn't:
 
-  * The terminal grid publishes no accessible text, caret or selection
-    whatsoever. `crates/terminal/src/accessibility.rs` fully implements and
-    unit-tests `TerminalAccessibilitySnapshot`/`project_visible_terminal`,
-    but that module is compiled only into `crates/terminal/src/lib.rs:1-3`
-    (an orphaned library target), never into the running `rmac-terminal`
-    binary: `crates/terminal/src/main.rs`'s own module list never declares
-    `mod accessibility;`, and nothing else in the workspace depends on the
-    `rmac-terminal` library (`grep -rn "rmac_terminal::"` across the repo:
-    zero hits). Independently, `crates/terminal/src/controller/renderer*.rs`
-    and `chrome.rs` never call `.role(...)`/`.aria_label(...)` anywhere
-    (zero matches), unlike Dock tiles and top-bar menu items which do. This
-    is *why* `run_command`, `scroll` and the read-back half of `select`/
-    `copy` below cannot be driven or verified over AT-SPI: there is no node
-    to find.
-  * There is consequently no AT-SPI EditableText, no custom accesskit
-    "insert text" action, and no way to set the terminal's input focus
-    content at all without a keyboard injector (`crates/terminal/src/
-    keyboard.rs`, `controller/input.rs`, `controller/ime_bridge.rs` contain
-    no `InsertText`/`EditableText`/`accesskit::Action` wiring). This compounds
-    the already-documented, shared upstream gap: the pinned `accesskit_unix`/
-    `accesskit_atspi_common` AT-SPI bridge (accesskit_unix 0.21.0, per
-    `shell/compat/gpui_linux/Cargo.toml:57`) does not implement
-    `org.a11y.atspi.EditableText` at all (see `docs/known-limitations.md:42-
-    49` and `docs/journey-suite.md`'s Spotlight write-up) -- so even a fixed
-    terminal could not be typed into without a keyboard injector, but today
-    the terminal additionally has no accessible surface to type into or read
-    from in the first place.
-  * The tab strip (`crates/terminal/src/controller/renderer/chrome.rs:65-
-    183`) uses only `.id(...)` for its tab rows, close ("x") buttons and the
-    "+" new-tab button -- never `.role()`/`.aria_label()`. Live evidence
-    shows GPUI/accesskit still publishes these as unnamed AT-SPI "button"
-    nodes with a working "click" action (unlike Notes' note rows, see
-    scripts/linux/run-journey-notes.py, which are pruned from the tree
-    entirely), so this script can still drive and count tabs structurally
-    (see `count_tab_buttons` below), but cannot identify a specific tab by
-    name, nor read back which tab is active.
+  * The grid's text is now readable over AT-SPI (`run_command`'s check reads
+    it back), and Select All's effect is independently verifiable via the
+    grid's AT-SPI Text selection span, rather than only a dispatched click.
+  * There is still no AT-SPI EditableText or custom "insert text" action on
+    the grid, so nothing can be typed into it without a keyboard injector
+    (`crates/terminal/src/keyboard.rs`, `controller/input.rs`,
+    `controller/ime_bridge.rs` still wire no `InsertText`/`EditableText`/
+    `accesskit::Action`). This is the same pinned upstream `accesskit_unix`/
+    `accesskit_atspi_common` gap documented for Spotlight and other fields
+    (`docs/known-limitations.md:42-49`), not Terminal-specific.
+  * No scroll action, Value, or Table interface exists on the grid, so
+    scrollback still cannot be driven or read over AT-SPI.
+  * Tabs can now be identified, switched, and closed by name/role ("page
+    tab"), rather than only counted as unnamed clickable buttons.
 
 Because typing is impossible, this script cannot literally "run a command"
 by typing `seq 1 500` and pressing Return -- there is no keyboard injector on
-the reference laptop, no accessible text-entry surface on the terminal grid,
-and no Wayland clipboard CLI installed there (`wl-copy`/`wl-paste`/`xclip`/
-`xsel`/`wtype`/`ydotool`/`dotool` were all confirmed absent live) that could
-be used to preload the clipboard from outside and paste it in. The
-`run_command` step below fails for exactly this reason and is the headline
-finding of this script; see the module docstring principle in todo.md ("An
-honest limitation beats simulated system behaviour"). The rest of the
-journey that *is* safely and honestly drivable -- launch, window timing,
-focus, the Edit menu's Select All/Copy/Paste actions (dispatch verified,
-functional effect unverifiable), and tab open/close/switch (verified by
-counting unnamed clickable "button" nodes before and after, since each tab
-contributes exactly one tab-row and one close button) -- is still exercised
-and measured.
+the reference laptop, and no Wayland clipboard CLI installed there
+(`wl-copy`/`wl-paste`/`xclip`/`xsel`/`wtype`/`ydotool`/`dotool` were all
+confirmed absent live) that could be used to preload the clipboard from
+outside and paste it in. The `run_command` step below fails for exactly this
+reason and is the headline finding of this script; see the module docstring
+principle in todo.md ("An honest limitation beats simulated system
+behaviour"). The rest of the journey that *is* safely and honestly
+drivable -- launch (with an adaptive window-appearance wait and the load
+average at launch, since heavy concurrent CPU load has been observed to slow
+a normally-instant launch), focus, the Edit menu's Select All (now
+independently verified)/Copy/Paste actions, and tab open/close/switch (now
+identified by name/role) -- is still exercised and measured.
 
 The report is privacy-safe: no screenshots, no home-directory paths, no
 window titles (the terminal's own window title on this laptop is a shell
@@ -138,6 +120,15 @@ JOURNEY_TITLE = (
 
 NIRI_TIMEOUT_S = 5.0
 WINDOW_APPEAR_TIMEOUT_S = 5.0
+# A generous, adaptive ceiling for the *first* window-appearance poll: under
+# heavy concurrent CPU load (a cargo build elsewhere on the shared reference
+# laptop, load average observed as high as ~7) a launch that is instant when
+# idle has been seen to take several seconds longer than
+# WINDOW_APPEAR_TIMEOUT_S. Waiting up to this long, and reporting the actual
+# elapsed time plus the load average observed at launch, turns a load-related
+# timeout into an honest, explained pass rather than a false "no window
+# appeared" product failure.
+ADAPTIVE_WINDOW_APPEAR_TIMEOUT_S = 15.0
 FOCUS_TIMEOUT_S = 3.0
 # The top bar's per-app menu can take longer than 5 s to switch to a
 # just-focused app's menu spec under heavy CPU contention (observed live on
@@ -359,6 +350,18 @@ def wait_for_window(app_id: str, timeout: float = WINDOW_APPEAR_TIMEOUT_S):
     return window, elapsed_ms
 
 
+def get_load_average() -> Optional[tuple[float, float, float]]:
+    """The 1/5/15-minute load average this host reports right now, or
+    ``None`` where unavailable (e.g. non-Linux) -- included in the
+    window-appearance report so a slow launch under heavy build load is
+    distinguishable from a real regression."""
+
+    try:
+        return os.getloadavg()
+    except OSError:
+        return None
+
+
 def wait_for_window_gone(window_id: int, timeout: float = CLOSE_TIMEOUT_S) -> bool:
     def gone() -> bool:
         return all(window.get("id") != window_id for window in niri_windows())
@@ -448,6 +451,14 @@ def click(node) -> bool:
     return bool(actions.doAction(names.index("click")))
 
 
+def has_text_interface(node) -> bool:
+    try:
+        node.queryText()
+        return True
+    except (LookupError, RuntimeError, NotImplementedError):
+        return False
+
+
 def any_text_capable_node(app_name: str) -> bool:
     """True if any node in the app exposes AT-SPI Text or EditableText --
     i.e. any surface a query/command could plausibly be typed into or read
@@ -463,26 +474,69 @@ def any_text_capable_node(app_name: str) -> bool:
     return False
 
 
-def count_tab_buttons(app_name: str = APP["atspi_app_name"]) -> int:
-    """Count unnamed, clickable AT-SPI "button" nodes -- the tab strip's
-    per-tab row/close buttons and the "+" new-tab button all match this
-    (crates/terminal/src/controller/renderer/chrome.rs:65-183 gives them no
-    accessible name), while the profile-picker button does not (it carries
-    a real name, e.g. "rmac Dark  ▼")."""
+def find_terminal_grid_node(
+    app_name: str = APP["atspi_app_name"], timeout: float = ATSPI_FIND_TIMEOUT_S
+):
+    """The terminal grid's own AT-SPI node -- `Role::Terminal`, named
+    "Terminal" (crates/terminal/src/controller/renderer/interactions.rs:27-
+    31), publishing the live grid's text via a synthetic `Role::TextRun`
+    child (crates/terminal/src/controller/renderer/accessibility.rs)."""
+
+    return find_node(app_name, "Terminal", role="terminal", timeout=timeout)
+
+
+def selection_span(node) -> int:
+    """Total selected character count over `node`'s AT-SPI Text interface,
+    or 0 if it has none or nothing is selected."""
+
+    try:
+        text_iface = node.queryText()
+        count = text_iface.getNSelections()
+    except (LookupError, RuntimeError, NotImplementedError):
+        return 0
+    total = 0
+    for index in range(count):
+        try:
+            start, end = text_iface.getSelection(index)
+        except (LookupError, RuntimeError):
+            continue
+        total += max(0, end - start)
+    return total
+
+
+def count_tabs(app_name: str = APP["atspi_app_name"]) -> int:
+    """Count AT-SPI "page tab" nodes -- each terminal tab now renders as a
+    real, named `Role::Tab` (crates/terminal/src/controller/renderer/
+    chrome.rs:65-158), distinct from its own "Close tab {title}" button and
+    the shared "New Tab" button, both also named but a different role."""
 
     count = 0
     for node in _atspi_snapshot(app_name):
         try:
-            if node.getRoleName() != "button":
-                continue
-            if node.name != "":
-                continue
-            if "click" not in action_names(node):
-                continue
+            if node.getRoleName() == "page tab":
+                count += 1
         except (LookupError, RuntimeError):
             continue
-        count += 1
     return count
+
+
+def tab_names(app_name: str = APP["atspi_app_name"]) -> list[str]:
+    names = []
+    for node in _atspi_snapshot(app_name):
+        try:
+            if node.getRoleName() != "page tab":
+                continue
+            names.append(node.name)
+        except (LookupError, RuntimeError):
+            continue
+    return names
+
+
+def is_selected(node) -> bool:
+    try:
+        return bool(node.getState().contains(pyatspi.STATE_SELECTED))
+    except (LookupError, RuntimeError, AttributeError):
+        return False
 
 
 def set_gsettings_accessibility(enabled: bool) -> None:
@@ -723,16 +777,25 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
         if not launch_step["passed"]:
             return build_report(steps, gaps, performance, started_at_unix_ms)
 
-        window, elapsed_ms = wait_for_window(APP["app_id"])
+        load_average = get_load_average()
+        window, elapsed_ms = wait_for_window(
+            APP["app_id"], timeout=ADAPTIVE_WINDOW_APPEAR_TIMEOUT_S
+        )
         performance["launch"] = evaluate_budget(elapsed_ms, budget_ms)
+        performance["launch"]["load_average"] = load_average
         steps.append(
             make_step(
                 "window_appeared",
                 window is not None,
                 (
-                    f"window appeared with app_id={APP['app_id']!r} in {elapsed_ms:.0f} ms"
+                    f"window appeared with app_id={APP['app_id']!r} in "
+                    f"{elapsed_ms:.0f} ms (load average at launch: "
+                    f"{load_average}, adaptive wait up to "
+                    f"{ADAPTIVE_WINDOW_APPEAR_TIMEOUT_S:.0f} s)"
                     if window
-                    else "no window with the expected app_id appeared"
+                    else "no window with the expected app_id appeared within "
+                    f"{ADAPTIVE_WINDOW_APPEAR_TIMEOUT_S:.0f} s (load average "
+                    f"at launch: {load_average})"
                 ),
             )
         )
@@ -750,19 +813,26 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
         )
 
         # -- run_command: the headline, expected-to-fail gap. --------------
-        has_text_surface = any_text_capable_node(APP["atspi_app_name"])
+        # The terminal grid is no longer accessibility-dead: it is a live,
+        # named `Role::Terminal` node exposing the visible grid's text over
+        # AT-SPI's Text interface (crates/terminal/src/controller/renderer/
+        # accessibility.rs, project_visible_terminal). It is still
+        # read-only: there is no EditableText/insert-text action, so a
+        # command still cannot be typed without a keyboard injector.
+        grid_node = find_terminal_grid_node(timeout=3.0)
         missing_tools = missing_injector_tools()
-        if has_text_surface:
-            # Unexpected on today's build, but keep the script honest if a
-            # future build wires this up: still cannot type without an
-            # injector, so this remains a failure, with a narrower detail.
+        if grid_node is not None and has_text_interface(grid_node):
+            grid_text_length = len(grid_node.queryText().getText(0, -1))
             steps.append(
                 make_step(
                     "run_command",
                     False,
-                    "a text-capable AT-SPI node now exists on the terminal, but "
-                    "there is still no keyboard injector or clipboard CLI on "
-                    f"this host to enter a command (missing: {missing_tools})",
+                    "the terminal grid now exposes its visible content over "
+                    f"AT-SPI Text ({grid_text_length} characters read back), "
+                    "but there is still no EditableText/insert-text action on "
+                    "it, and no keyboard injector or clipboard CLI is "
+                    f"installed on this host to enter a command (missing: "
+                    f"{missing_tools}); a command still cannot be run",
                 )
             )
         else:
@@ -770,51 +840,48 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
                 make_step(
                     "run_command",
                     False,
-                    "the terminal grid exposes no AT-SPI Text/EditableText node "
-                    "at all (crates/terminal/src/main.rs never compiles "
-                    "crates/terminal/src/accessibility.rs's "
-                    "TerminalAccessibilitySnapshot into the running binary; "
-                    "crates/terminal/src/controller/renderer/chrome.rs and "
-                    "renderer.rs never call .role()/.aria_label()), and no "
-                    f"clipboard CLI is installed to preload input externally "
-                    f"(missing: {missing_tools}); a command cannot be run "
-                    "without a keyboard injector",
+                    "no AT-SPI 'terminal' node with a Text interface was "
+                    "found for the grid (grid_node_found="
+                    f"{grid_node is not None}), and no clipboard CLI is "
+                    f"installed to preload input externally (missing: "
+                    f"{missing_tools}); a command cannot be run without a "
+                    "keyboard injector",
                 )
             )
         gaps.append(
             {
-                "surface": "terminal-grid",
-                "issue": "no AT-SPI text/caret/selection exposure and no "
-                "EditableText/insert-text action exist for the terminal's "
-                "content area; TerminalAccessibilitySnapshot/"
-                "project_visible_terminal (crates/terminal/src/"
-                "accessibility.rs) are fully implemented and unit-tested but "
-                "live only in an orphaned lib.rs target that the running "
-                "rmac-terminal binary never compiles or calls "
-                "(crates/terminal/src/main.rs's module list omits `mod "
-                "accessibility;`; `grep -rn \"rmac_terminal::\"` across the "
-                "repo returns zero hits). Typing is a core accessibility "
-                "need (todo.md); this blocks it entirely on this build, "
-                "independent of the separately-documented upstream "
-                "accesskit_unix EditableText gap "
-                "(docs/known-limitations.md:42-49).",
+                "surface": "terminal-grid-input",
+                "issue": "the terminal grid (Role::Terminal, crates/terminal/"
+                "src/controller/renderer/accessibility.rs) now exposes its "
+                "visible text read-only over AT-SPI, but has no "
+                "EditableText or custom insert-text action, so it still "
+                "cannot be typed into without a keyboard injector -- the "
+                "same pinned upstream accesskit_unix EditableText gap "
+                "documented for Spotlight and other fields "
+                "(docs/known-limitations.md:42-49), not a Terminal-specific "
+                "regression.",
             }
         )
 
-        # -- scroll: same root cause, no accessible grid surface. -----------
+        # -- scroll: no accessible scroll surface on the grid. ---------------
         steps.append(
             make_step(
                 "scroll",
                 False,
-                "no AT-SPI node for the terminal viewport exposes a scroll "
-                "action, Value, or Table interface (confirmed: the terminal's "
-                "AT-SPI tree exposes only button nodes -- a profile picker "
-                "plus tab-strip controls -- no scrollable content node at "
-                "all); scrollback cannot be driven or read over AT-SPI",
+                "the terminal grid's AT-SPI node exposes readable Text now, "
+                "but no scroll action, Value, or Table interface exists for "
+                "it (grid_node_found="
+                f"{grid_node is not None}); scrollback still cannot be "
+                "driven over AT-SPI",
             )
         )
 
-        # -- select / copy / paste: dispatch is real, effect unverifiable. --
+        # -- select / copy / paste ------------------------------------------
+        # Select All is now independently verifiable: the grid's Text
+        # interface reports a real selection span. Copy/Paste dispatch is
+        # still real but their clipboard effect remains unverifiable (no
+        # Wayland clipboard CLI on this host).
+        baseline_selection = selection_span(grid_node) if grid_node is not None else 0
         for step_id, menu_label, item_label in (
             ("select_all", "Edit menu", "Select All"),
             ("copy", "Edit menu", "Copy"),
@@ -831,15 +898,32 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
                 )
                 continue
             clicked = click_menu_item(item_label)
+            if step_id == "select_all" and clicked and grid_node is not None:
+                selected_after = selection_span(grid_node)
+                verified = selected_after > baseline_selection
+                steps.append(
+                    make_step(
+                        step_id,
+                        verified,
+                        f"clicked {menu_label} > {item_label}; the grid's AT-SPI "
+                        f"Text selection span grew from {baseline_selection} to "
+                        f"{selected_after} character(s)"
+                        if verified
+                        else f"clicked {menu_label} > {item_label}, but the "
+                        f"grid's AT-SPI Text selection span did not grow "
+                        f"({baseline_selection} -> {selected_after})",
+                    )
+                )
+                continue
             steps.append(
                 make_step(
                     step_id,
                     clicked,
                     (
-                        f"clicked {menu_label} > {item_label} via AT-SPI; the "
-                        "terminal exposes no accessible text/selection state "
-                        "or clipboard-reading tool on this host, so the "
-                        "functional effect cannot be independently verified"
+                        f"clicked {menu_label} > {item_label} via AT-SPI; no "
+                        "Wayland clipboard CLI is installed on this host, so "
+                        "the clipboard effect cannot be independently "
+                        "verified"
                         if clicked
                         else f"the {item_label!r} menu item was not found or "
                         "not actionable over AT-SPI"
@@ -856,74 +940,70 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
             }
         )
 
-        # -- tabs: verified by counting unnamed clickable buttons. ----------
-        baseline_tabs = count_tab_buttons()
-        new_tab_menu = open_top_bar_menu("Shell menu")
-        if new_tab_menu is None:
-            steps.append(make_step("new_tab", False, "the Shell menu was not found over AT-SPI"))
-        else:
-            clicked = click_menu_item("New Tab")
-            after_new_tab = _wait_for(
-                lambda: count_tab_buttons() if count_tab_buttons() != baseline_tabs else None,
-                TAB_SETTLE_TIMEOUT_S,
+        # -- tabs: each tab is now a real, named Role::Tab. ------------------
+        baseline_names = set(tab_names())
+        new_tab_button = find_node(APP["atspi_app_name"], "New Tab", role="button", timeout=3.0)
+        new_tab_clicked = new_tab_button is not None and click(new_tab_button)
+        after_new_tab_names = _wait_for(
+            lambda: (set(tab_names()) - baseline_names) or None, TAB_SETTLE_TIMEOUT_S
+        )
+        created = next(iter(after_new_tab_names), None) if after_new_tab_names else None
+        steps.append(
+            make_step(
+                "new_tab",
+                new_tab_clicked and created is not None,
+                f"clicked the named 'New Tab' button; a new tab "
+                f"({len(tab_names())} total) appeared"
+                if new_tab_clicked and created is not None
+                else f"new_tab_button_found={new_tab_button is not None} "
+                f"clicked={new_tab_clicked}; no new tab appeared",
             )
-            after_new_tab = after_new_tab if after_new_tab is not None else count_tab_buttons()
-            delta = expected_tab_button_delta(baseline_tabs, after_new_tab)
+        )
+
+        if created is not None:
+            tab_node = find_node(APP["atspi_app_name"], created, role="page tab", timeout=2.0)
+            was_selected_before = tab_node is not None and is_selected(tab_node)
+            # The new tab is selected on creation; switch to the previous
+            # one to have something real to verify, then back.
+            other_names = [name for name in tab_names() if name != created]
+            switched = False
+            if other_names:
+                other_tab = find_node(
+                    APP["atspi_app_name"], other_names[0], role="page tab", timeout=2.0
+                )
+                switched = other_tab is not None and click(other_tab)
+            after_switch_selected = tab_node is not None and is_selected(tab_node)
             steps.append(
                 make_step(
-                    "new_tab",
-                    clicked and delta == 2,
-                    f"Shell > New Tab clicked={clicked}; tab-button count "
-                    f"{baseline_tabs} -> {after_new_tab} (delta {delta}, "
-                    "expected 2: one new tab row plus one close button)",
+                    "switch_tab",
+                    switched and was_selected_before and not after_switch_selected,
+                    f"the new tab was selected on creation "
+                    f"(was_selected_before={was_selected_before}) and clicking "
+                    f"another tab moved AT-SPI's STATE_SELECTED off it "
+                    f"(after_switch_selected={after_switch_selected})"
+                    if switched
+                    else "could not find another tab to switch to over AT-SPI",
                 )
             )
 
-            if clicked and delta == 2:
-                switch_menu = open_top_bar_menu("Shell menu")
-                switched = switch_menu is not None and click_menu_item("Previous Tab")
-                after_switch = count_tab_buttons()
-                steps.append(
-                    make_step(
-                        "switch_tab",
-                        switched and after_switch == after_new_tab,
-                        f"Shell > Previous Tab clicked={switched}; tab-button "
-                        f"count unchanged at {after_switch} (active-tab identity "
-                        "itself is not exposed over AT-SPI, so only the tab "
-                        "count's stability can be verified)",
-                    )
+            close_button = find_node(
+                APP["atspi_app_name"], f"Close tab {created}", role="button", timeout=2.0
+            )
+            closed = close_button is not None and click(close_button)
+            after_close_names = _wait_for(
+                lambda: created not in tab_names() or None, TAB_SETTLE_TIMEOUT_S
+            )
+            steps.append(
+                make_step(
+                    "close_tab",
+                    bool(closed and after_close_names),
+                    f"clicked the named 'Close tab {created}' button and it "
+                    "left the tab strip"
+                    if closed and after_close_names
+                    else f"close_button_found={close_button is not None} "
+                    f"clicked={closed}; the tab was still present afterward",
                 )
-
-                close_menu = open_top_bar_menu("Shell menu")
-                closed = close_menu is not None and click_menu_item("Close Tab")
-                after_close = _wait_for(
-                    lambda: count_tab_buttons() if count_tab_buttons() != after_new_tab else None,
-                    TAB_SETTLE_TIMEOUT_S,
-                )
-                after_close = after_close if after_close is not None else count_tab_buttons()
-                close_delta = expected_tab_button_delta(after_new_tab, after_close)
-                steps.append(
-                    make_step(
-                        "close_tab",
-                        closed and close_delta == -2,
-                        f"Shell > Close Tab clicked={closed}; tab-button count "
-                        f"{after_new_tab} -> {after_close} (delta {close_delta}, "
-                        "expected -2)",
-                    )
-                )
-        gaps.append(
-            {
-                "surface": "terminal-tabs",
-                "issue": "tab rows, their close buttons, and the new-tab '+' "
-                "button carry no AT-SPI accessible name (crates/terminal/src/"
-                "controller/renderer/chrome.rs:65-183 use only .id(), never "
-                ".role()/.aria_label()), so a specific tab cannot be targeted "
-                "by name and active-tab identity cannot be read back over "
-                "AT-SPI; this script verifies tab lifecycle only by counting "
-                "unnamed clickable button nodes before and after each Shell "
-                "menu action",
-            }
-        )
+            )
 
         if keep_open:
             return build_report(steps, gaps, performance, started_at_unix_ms)

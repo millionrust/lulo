@@ -15,81 +15,54 @@ follows (find_node/click/_atspi_snapshot).
 This script deliberately stops short of creating, editing, trashing or
 permanently deleting any note, including a throwaway test note, and explains
 why below. This is a safety decision required by the brief's "never read or
-modify other notes" constraint, not an oversight: two independent,
-live-confirmed accessibility gaps make it impossible to satisfy that
-constraint on this build.
+modify other notes" constraint, not an oversight. One of the two gaps that
+previously forced this has since been fixed; the other still stands.
 
-1. Every text-entry surface in Notes (the search field, and the new-note
-   title/tags/body fields) exposes neither AT-SPI Text nor EditableText --
-   live-confirmed: a fresh `rmac-notes` window's AT-SPI tree lists its four
-   `entry`-roled nodes with `interfaces=['Accessible', 'Component']` only, no
-   Text, no EditableText, not even a readable value. Source-side,
-   `crates/rmac-ui/src/controls.rs` and the vendored `gpui_component::Input`
-   set only `.role(Role::TextInput/MultilineTextInput)` -- no
-   `aria_label`/`aria_value`/`aria_placeholder`, and (unlike Spotlight's
-   search field, `crates/launcher-app/src/view/render.rs:351-360`) Notes
-   wires no `on_a11y_action(AccessibleAction::SetValue/ReplaceSelectedText,
-   ...)` handler at all (`grep -rn "on_a11y_action|AccessibleAction"
-   crates/notes/src/*.rs crates/rmac-editor/src/lib.rs`: zero matches). A
-   title, tag, search query or body cannot be read or typed via pure AT-SPI
-   on this build -- there is no accessible-name-bearing, uniquely
-   identifiable string this script could give a test note even if it could
-   otherwise select one.
+1. FIXED: the note list and folder sidebar now render real AT-SPI structure.
+   `crates/notes/src/note_navigation.rs` gives every note and folder row
+   `Role::ListItem` inside a `Role::List` ("Folders"/"Notes"/"Results"), so a
+   note or folder row is a real, selectable AT-SPI node -- this script's
+   `note_list_reachable` step verifies this live and now passes. This script
+   still never reads an *existing* note's accessible label into anything it
+   prints (its content -- title/date/preview -- would be real user data),
+   consistent with "never read or modify other notes".
 
-2. The entire note list and folder sidebar -- including "Recently Deleted"
-   (`crates/notes/src/note_navigation.rs:95-104`, a plain
-   `div().id("trash-notes")...on_click(...)` with no `.role()`/
-   `.aria_label()`, per `crates/notes/src/presentation.rs:49-90`'s
-   `folder_row`) and every note row (`crates/notes/src/note_navigation.rs:
-   271-274`, same pattern) -- is completely absent from the AT-SPI tree, not
-   merely unnamed. Live-confirmed twice, ~2 seconds apart, against a freshly
-   launched `rmac-notes`: its AT-SPI tree contains exactly one frame with 20
-   flat children (16 `button` nodes -- 12 clickable and unnamed, 2 disabled/
-   inert, and 2 named "Edit"/"Preview" view-toggle buttons -- and 4 `entry`
-   nodes for search/title/tags/body), and *no* additional
-   container, list, or row nodes of any kind. (For comparison, Terminal's
-   equally unnamed, equally `.id()`-only tab-strip buttons -- see
-   scripts/linux/run-journey-terminal.py -- *do* still appear as generic
-   AT-SPI "button" nodes; Notes' sidebar rows do not appear at all. This
-   script cannot state the exact mechanism from source alone -- it may be
-   pruned entirely, or the sidebar may be collapsed by a responsive layout
-   at the window's default size -- and flags this uncertainty rather than
-   asserting a root cause it did not verify live beyond the two dumps
-   above.) Without any accessible node for a note or folder row, this script
-   cannot select an existing note, open "Recently Deleted", or verify that a
-   newly created note was not left behind: a wrong guess among the flat,
-   nameless toolbar buttons (`crates/notes/src/toolbar.rs`'s `sort`,
-   `import-note`, `import-bundle`, `compose`, `export-notes`, `checklist`,
-   `add-image`, `move-note`, `pin`, `trash`, `delete-permanently`, all
-   `Button::new(id, "")`) risks acting on whatever note the app already had
-   open -- which could be real user data -- with no way to verify or undo it
-   afterward.
+2. STILL OPEN: every text-entry surface in Notes (the search field, and the
+   title/tags/body fields) now carries `Role::TextInput` and a live
+   `aria_value` (`crates/notes/src/editor_presentation.rs`, `toolbar.rs`),
+   but still exposes neither AT-SPI Text nor EditableText -- the same pinned
+   upstream `accesskit_unix`/`accesskit_atspi_common` limitation documented
+   for Spotlight and other fields (`docs/known-limitations.md:42-49`), not a
+   Notes-specific regression. `any_entry_is_text_capable` checks this live
+   each run rather than assuming it.
 
-Given (1) and (2) together, any note this script created would (a) be
-untitled/unidentifiable, and (b) be permanently un-removable by this script
-afterward (no AT-SPI path exists to select it in a list it cannot see), which
-would leave clutter in the reference user's real Notes library forever --
-exactly the outcome the brief's cleanup requirement exists to prevent. The
-only accessible-name-bearing, safely reversible actions available today are
-the global top-bar per-app menu items (`crates/rmac-app-menu/src/
-lib.rs:133-156` NOTES_MENUS: File > New Note/New Folder/Export Notes..., Edit
-> Find..., Format > Checklist, View > Sort by ...) and the in-editor
-Edit/Preview toggle -- and even File > New Note is excluded here because it
-is a note-creating action this script could not clean up afterward. So this
-script verifies session liveness, launch, window timing/focus, the
-AT-SPI-confirmed absence of the note-list/sidebar surface, and the presence
-(read-only: opened and inspected, but no destructive item is invoked) of the
-top-bar's Notes-specific menus, then quits the app cleanly. Live testing
-found the File/Edit/Format category menus present on one run and absent on
-another from an otherwise-identical fresh launch (the same inconsistency
-observed for Terminal's Shell/Edit/View menus, see
+Because of (2), a title, tag, search query or body still cannot be read or
+typed via pure AT-SPI -- but (1) being fixed means a *created* note could now
+be found and selected in principle. What still blocks a full create-edit-
+delete cycle is a third, narrower gap: the toolbar's `trash`/
+`delete-permanently` controls (`crates/notes/src/toolbar.rs`) remain plain,
+unnamed `Button::new(id, "")` nodes among a dozen other unnamed buttons --
+unlike the search field, they were never given an `aria_label` -- and no
+other accessible delete path exists (no top-bar "Move to Trash" item, no
+context-menu access without a pointer). A note this script created could
+therefore still not be safely, uniquely removed afterward, so File > New
+Note is still not attempted: doing so would risk leaving unremovable clutter
+in the real reference-laptop Notes library, which the brief's cleanup
+requirement exists to prevent.
+
+So this script verifies session liveness, launch (with an adaptive
+window-appearance wait and the load average at launch -- see
+run-journey-terminal.py's identical rationale), window timing/focus, the
+now-real note-list/sidebar surface, the text-entry gap's current live state,
+and the presence (read-only: opened and inspected, but no destructive item is
+invoked) of the top-bar's Notes-specific menus, then quits the app cleanly.
+Live testing found the File/Edit/Format category menus present on one run
+and absent on another from an otherwise-identical fresh launch (the same
+inconsistency observed for Terminal's Shell/Edit/View menus, see
 scripts/linux/run-journey-terminal.py) -- this script cannot explain it from
 available evidence and reports precisely whichever state it finds each run
-rather than assuming success. This is the same
-honest-limitation approach todo.md asks for ("An honest limitation beats
-simulated system behaviour"), applied one gap earlier than
-scripts/linux/run-journey-terminal.py's equivalent stop, because here even
-the identify-and-clean-up precondition cannot be met.
+rather than assuming success. This is the same honest-limitation approach
+todo.md asks for ("An honest limitation beats simulated system behaviour").
 
 The report is privacy-safe: no screenshots, no home-directory paths, no note
 titles or bodies (impossible to read anyway -- see above), no user names.
@@ -123,6 +96,11 @@ JOURNEY_TITLE = "Create, search and edit a note, and recover it after a crash."
 
 NIRI_TIMEOUT_S = 5.0
 WINDOW_APPEAR_TIMEOUT_S = 5.0
+# See run-journey-terminal.py's identical constant: under heavy concurrent
+# CPU load on the shared reference laptop (a cargo build elsewhere, load
+# average observed as high as ~7) a launch that is instant when idle has been
+# seen to take several seconds longer than WINDOW_APPEAR_TIMEOUT_S.
+ADAPTIVE_WINDOW_APPEAR_TIMEOUT_S = 15.0
 FOCUS_TIMEOUT_S = 3.0
 # The top bar's per-app menu can take longer than 5 s to switch to a
 # just-focused app's menu spec under heavy CPU contention (observed live on
@@ -379,6 +357,15 @@ def wait_for_window(app_id: str, timeout: float = WINDOW_APPEAR_TIMEOUT_S):
     return window, elapsed_ms
 
 
+def get_load_average() -> Optional[tuple[float, float, float]]:
+    """See run-journey-terminal.py's identical helper."""
+
+    try:
+        return os.getloadavg()
+    except OSError:
+        return None
+
+
 def wait_for_window_gone(window_id: int, timeout: float = CLOSE_TIMEOUT_S) -> bool:
     def gone() -> bool:
         return all(window.get("id") != window_id for window in niri_windows())
@@ -458,6 +445,40 @@ def action_names(node) -> list[str]:
         return []
     actions = node.queryAction()
     return [actions.getName(index) for index in range(actions.nActions)]
+
+
+def has_editable_text(node) -> bool:
+    try:
+        node.queryEditableText()
+        return True
+    except (LookupError, RuntimeError, NotImplementedError):
+        return False
+
+
+def has_text_interface(node) -> bool:
+    try:
+        node.queryText()
+        return True
+    except (LookupError, RuntimeError, NotImplementedError):
+        return False
+
+
+def any_entry_is_text_capable(app_name: str = APP["atspi_app_name"]) -> bool:
+    """True if any entry/text-input node in the app exposes AT-SPI Text or
+    EditableText -- used to check live whether the search/title/tags/body
+    fields' new `aria_value` (crates/notes/src/editor_presentation.rs,
+    toolbar.rs) is actually reachable over AT-SPI, rather than assuming
+    it still isn't."""
+
+    for node in _atspi_snapshot(app_name):
+        try:
+            if node.getRoleName() not in ("entry", "text"):
+                continue
+        except (LookupError, RuntimeError):
+            continue
+        if has_editable_text(node) or has_text_interface(node):
+            return True
+    return False
 
 
 def click(node) -> bool:
@@ -712,16 +733,25 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
         if not launch_step["passed"]:
             return build_report(steps, gaps, performance, started_at_unix_ms)
 
-        window, elapsed_ms = wait_for_window(APP["app_id"])
+        load_average = get_load_average()
+        window, elapsed_ms = wait_for_window(
+            APP["app_id"], timeout=ADAPTIVE_WINDOW_APPEAR_TIMEOUT_S
+        )
         performance["launch"] = evaluate_budget(elapsed_ms, budget_ms)
+        performance["launch"]["load_average"] = load_average
         steps.append(
             make_step(
                 "window_appeared",
                 window is not None,
                 (
-                    f"window appeared with app_id={APP['app_id']!r} in {elapsed_ms:.0f} ms"
+                    f"window appeared with app_id={APP['app_id']!r} in "
+                    f"{elapsed_ms:.0f} ms (load average at launch: "
+                    f"{load_average}, adaptive wait up to "
+                    f"{ADAPTIVE_WINDOW_APPEAR_TIMEOUT_S:.0f} s)"
                     if window
-                    else "no window with the expected app_id appeared"
+                    else "no window with the expected app_id appeared within "
+                    f"{ADAPTIVE_WINDOW_APPEAR_TIMEOUT_S:.0f} s (load average "
+                    f"at launch: {load_average})"
                 ),
             )
         )
@@ -762,45 +792,82 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
                 ),
             )
         )
-        gaps.append(
-            {
-                "surface": "notes-sidebar",
-                "issue": "the note list and folder sidebar (including "
-                "'Recently Deleted') are absent from the AT-SPI tree, not "
-                "merely unnamed (crates/notes/src/note_navigation.rs:271-274 "
-                "note rows and crates/notes/src/presentation.rs:49-90 "
-                "folder_row are plain .id()-only divs with no .role()/"
-                ".aria_label()); a specific note cannot be selected, opened, "
-                "trashed, or permanently deleted over AT-SPI on this build",
-            }
-        )
-        gaps.append(
-            {
-                "surface": "notes-text-entry",
-                "issue": "the search field and the title/tags/body fields "
-                "expose neither AT-SPI Text nor EditableText (confirmed live: "
-                "their interfaces are ['Accessible', 'Component'] only), and "
-                "Notes wires no on_a11y_action SetValue/ReplaceSelectedText "
-                "handler either (unlike Spotlight's search field); a note's "
-                "title, tags, body, or a search query cannot be read or typed "
-                "over AT-SPI on this build",
-            }
-        )
+        if not list_present:
+            gaps.append(
+                {
+                    "surface": "notes-sidebar",
+                    "issue": "the note list and folder sidebar (including "
+                    "'Recently Deleted') are absent from the AT-SPI tree, not "
+                    "merely unnamed (crates/notes/src/note_navigation.rs:271-274 "
+                    "note rows and crates/notes/src/presentation.rs:49-90 "
+                    "folder_row are plain .id()-only divs with no .role()/"
+                    ".aria_label()); a specific note cannot be selected, opened, "
+                    "trashed, or permanently deleted over AT-SPI on this build",
+                }
+            )
+        # Notes' search/title/tags/body fields now carry Role::TextInput and
+        # a live `aria_value` (crates/notes/src/editor_presentation.rs,
+        # toolbar.rs), a real fix over the previous Role-less entries. This
+        # checks live whether that value is actually reachable over AT-SPI's
+        # Text/EditableText interfaces rather than assuming it still isn't.
+        text_entry_reachable = any_entry_is_text_capable()
+        if not text_entry_reachable:
+            gaps.append(
+                {
+                    "surface": "notes-text-entry",
+                    "issue": "the search field and the title/tags/body fields "
+                    "now carry Role::TextInput and a live aria_value "
+                    "(crates/notes/src/editor_presentation.rs, toolbar.rs), "
+                    "but still expose neither AT-SPI Text nor EditableText "
+                    "(confirmed live this run) -- the same pinned upstream "
+                    "accesskit_unix limitation documented elsewhere in this "
+                    "suite; a note's title, tags, body, or a search query "
+                    "still cannot be read or typed over AT-SPI on this build",
+                }
+            )
 
+        # The toolbar's trash/delete-permanently controls remain plain,
+        # unnamed Button::new(id, "") nodes among 12 other unnamed buttons
+        # (crates/notes/src/toolbar.rs) -- unlike the search field, they were
+        # not given an aria_label. Even now that a created note could be
+        # selected via its new ListItem, this script still could not safely,
+        # uniquely delete one it made afterward.
+        unnamed_clickable_buttons = sum(
+            1
+            for node in nodes
+            if node.get("role") == "button" and not node.get("name") and node.get("has_click")
+        )
+        can_create_safely = list_present and text_entry_reachable
         steps.append(
             make_step(
                 "note_lifecycle_blocked",
                 False,
-                "create/search/edit/recover/delete were not attempted: with "
-                "no accessible note-list/sidebar surface (note_list_reachable "
-                "above) and no way to type or read a title, this script "
-                "cannot create a uniquely identifiable test note, verify it "
-                "is the note it later acts on, or clean it up afterward -- "
-                "attempting any of File > New Note / trash / permanent "
-                "delete blind would risk leaving unremovable clutter in, or "
-                "acting on, the real reference-laptop Notes library, which "
-                "violates the 'never read or modify other notes' safety "
-                "requirement; see module docstring for the full reasoning",
+                (
+                    "create/search/edit/recover/delete were not attempted: "
+                    "the note list is now reachable over AT-SPI "
+                    "(note_list_reachable above) and a search/title/tags/body "
+                    "field's value is now readable/writable over AT-SPI, but "
+                    "this script still cannot safely clean up a note it "
+                    "creates -- the toolbar's trash/delete-permanently "
+                    f"controls remain {unnamed_clickable_buttons} unnamed, "
+                    "unidentifiable clickable buttons "
+                    "(crates/notes/src/toolbar.rs) among no other reachable "
+                    "delete path, so File > New Note is still not attempted "
+                    "to avoid leaving unremovable clutter in the real "
+                    "reference-laptop Notes library"
+                    if can_create_safely
+                    else "create/search/edit/recover/delete were not "
+                    "attempted: with no accessible note-list/sidebar surface "
+                    "(note_list_reachable above) and no way to type or read "
+                    "a title, this script cannot create a uniquely "
+                    "identifiable test note, verify it is the note it later "
+                    "acts on, or clean it up afterward -- attempting any of "
+                    "File > New Note / trash / permanent delete blind would "
+                    "risk leaving unremovable clutter in, or acting on, the "
+                    "real reference-laptop Notes library, which "
+                    "violates the 'never read or modify other notes' safety "
+                    "requirement; see module docstring for the full reasoning"
+                ),
             )
         )
 

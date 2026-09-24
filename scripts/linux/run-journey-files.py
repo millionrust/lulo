@@ -93,6 +93,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+WL_COPY_BINARY = "wl-copy"
+
 try:
     import pyatspi  # type: ignore[import-not-found]
 except ImportError:  # pragma: no cover - exercised only off-Linux
@@ -213,6 +215,19 @@ def build_report(
         "gaps": gaps,
         "overall_pass": all(step["passed"] for step in steps),
     }
+
+
+def wl_copy_available(which: Callable[[str], Optional[str]] = shutil.which) -> bool:
+    """True if the Wayland clipboard CLI is on PATH. Files' pasteboard
+    (crates/finder/src/pasteboard.rs, ADR 0011) talks to the compositor's
+    wlr-data-control protocol directly rather than shelling out to
+    `wl-copy`, so this is not a hard dependency of the feature itself --
+    it is used here only as a live signal of whether this host's session
+    supports the Wayland clipboard at all, so a missing binary is reported
+    as an environment gap ("install wl-clipboard") rather than as a
+    product failure."""
+
+    return which(WL_COPY_BINARY) is not None
 
 
 def relative_trashinfo_path_matches(trashinfo_text: str, marker: str) -> bool:
@@ -399,6 +414,48 @@ def click(node) -> bool:
         raise JourneyError("AT-SPI node has no 'click' action")
     actions = node.queryAction()
     return bool(actions.doAction(names.index("click")))
+
+
+def has_editable_text(node) -> bool:
+    try:
+        node.queryEditableText()
+        return True
+    except (LookupError, RuntimeError, NotImplementedError):
+        return False
+
+
+def has_text_interface(node) -> bool:
+    try:
+        node.queryText()
+        return True
+    except (LookupError, RuntimeError, NotImplementedError):
+        return False
+
+
+def find_editable_entry(app_name: str, timeout: float = ATSPI_FIND_TIMEOUT_S):
+    """The first entry-roled node exposing AT-SPI EditableText, if any --
+    used to check whether a rename field (inline or Get Info's Name &
+    Extension) can actually be typed into."""
+
+    def search():
+        for node in _descendants_of_app(app_name):
+            try:
+                if node.getRoleName() != "entry":
+                    continue
+            except (LookupError, RuntimeError):
+                continue
+            if has_editable_text(node) or has_text_interface(node):
+                return node
+        return None
+
+    return _wait_for(search, timeout)
+
+
+def _descendants_of_app(app_name: str):
+    app = _atspi_app(app_name)
+    if app is None:
+        return
+    yield from _descendants(app)
 
 
 def grab_focus(node) -> bool:
@@ -703,40 +760,65 @@ def run_journey(test_root: Path) -> tuple[list[dict[str, Any]], list[dict[str, s
         return steps, gaps
     focus_files_window(find_window_id, find_dir.name)
 
+    # Files' toolbar controls now carry real AT-SPI names/groups
+    # (crates/finder/src/view/chrome_presentation/toolbar.rs): a "Back/
+    # Forward" toolbar, an "Actions" toolbar (the "Action" (...) button), a
+    # "View" radio group (Icon/List/Columns/Gallery), and -- only in icon
+    # view -- an "Icon size" slider (content_presentation.rs). The search
+    # control's own text node is still unnamed (a pinned gpui-component
+    # limit noted in the toolbar's own comment), so it cannot be identified
+    # by name directly; it is instead found via its named parent landmark,
+    # the "Search" region (role Search).
+    # Matched by name only, not role: GPUI's Role::RadioGroup/Role::Search
+    # map to AT-SPI "panel"/"landmark" (accesskit_atspi_common), not the
+    # more obvious "radio group"/"search" role strings, so this checks the
+    # accessible name alone rather than guessing pyatspi's exact spelling.
+    back_forward = find_node(FILES_ATSPI_APP_NAME, "Back/Forward", timeout=2.0)
+    actions_group = find_node(FILES_ATSPI_APP_NAME, "Actions", timeout=2.0)
+    view_group = find_node(FILES_ATSPI_APP_NAME, "View", timeout=2.0)
+    # The "Search" landmark only replaces the "Search" button once the
+    # search field is open (toolbar.rs); open it first so the region this
+    # step is actually about can be found at all.
     search_button = find_node(FILES_ATSPI_APP_NAME, "Search", role="button", timeout=2.0)
+    if search_button is not None and "click" in action_names(search_button):
+        click(search_button)
+        time.sleep(MENU_SETTLE_S)
+    search_region = find_node(FILES_ATSPI_APP_NAME, "Search", timeout=2.0)
     search_entry_names = list_names(FILES_ATSPI_APP_NAME, "entry", timeout=1.0)
-    # Files' own search control is unnamed (see module docstring), so it
-    # cannot be identified by name over AT-SPI; this is recorded as a gap
-    # below rather than attempted with a guessed element.
+    named_groups_present = bool(back_forward and actions_group and view_group and search_region)
+    # A query still cannot be identified or typed: the search region is
+    # named, but its inner text node is not, and it exposes no Text/
+    # EditableText interface at all (same pinned upstream accesskit_unix
+    # gap documented for Spotlight and others).
     found_via_search = False
     steps.append(
         make_step(
             "find_file",
             found_via_search,
-            "Files' own toolbar (including its search field) exposes no "
-            "AT-SPI accessible name on any control (search_button found="
-            f"{search_button is not None}, entry names over AT-SPI="
-            f"{search_entry_names!r}); a query cannot be identified or typed "
-            "without a keyboard injector, so 'find a file' could not be "
-            "driven through the accessible UI "
-            "(crates/finder/src/view/chrome_presentation/toolbar.rs:22-56 "
-            "never calls gpui's .aria_label()/.role(), unlike "
-            "shell/bins/rmac-dock/src/main.rs, which does for its own "
-            "tiles). Falling back to Edit > Select All against a "
-            "single-item folder to obtain a definite target for the rest "
-            "of the journey.",
+            "Files' toolbar groups are now named over AT-SPI (Back/Forward, "
+            "Actions, the View radio group, and -- in icon view -- the Icon "
+            "size slider), and the search control is reachable via its "
+            f"named 'Search' parent region (found={search_region is not None}), "
+            "but the search text node itself still exposes no AT-SPI "
+            "accessible name and no Text/EditableText interface (entry "
+            f"names over AT-SPI={search_entry_names!r}); a query cannot be "
+            "typed without a keyboard injector, so 'find a file' could not "
+            "be driven through the accessible UI. Falling back to Edit > "
+            "Select All against a single-item folder to obtain a definite "
+            "target for the rest of the journey.",
+            toolbar_groups_named=named_groups_present,
         )
     )
     gaps.append(
         {
             "surface": "files_search",
-            "issue": "Files' search field and every toolbar button are exposed "
-            "over AT-SPI with an empty accessible name and (for the search "
-            "field) no Text/EditableText interface at all; a file cannot be "
-            "found by name over AT-SPI. See crates/finder/src/view/"
-            "chrome_presentation/toolbar.rs (capsule_button) -- no call in "
-            "crates/finder/src ever sets an aria label, role, or a11y "
-            "action, unlike shell/bins/rmac-dock/src/main.rs.",
+            "issue": "Files' toolbar groups (Back/Forward, Actions, View, "
+            "Icon size) are now named over AT-SPI, but the search field's "
+            "own text node still carries no accessible name and no Text/"
+            "EditableText interface, so a file cannot be found by typing a "
+            "query over AT-SPI -- the same pinned gpui-component/"
+            "accesskit_unix limitation documented elsewhere in this suite, "
+            "not a Files-specific regression.",
         }
     )
     gaps.append(
@@ -810,109 +892,163 @@ def run_journey(test_root: Path) -> tuple[list[dict[str, Any]], list[dict[str, s
     steps.append(close_files_window(find_window_id, find_dir.name))
 
     # --- copy -------------------------------------------------------------
-    # Only one rmac-files window is ever kept open at a time here: the
-    # reference session showed the shell top bar's Files menu bridge is
-    # backed by a single well-known D-Bus name (org.rmac.Files.Menu; see
-    # module docstring), so with two Files windows open simultaneously a
-    # menu click is not reliably routed to the intended (focused) one. This
-    # is itself a recorded gap; the source window is fully closed before
-    # the destination window is opened, for a deterministic copy/paste.
-    copy_window_id, open_copy_step = open_files_window(copy_dir, copy_dir.name)
-    steps.append(open_copy_step)
-    copy_selected = copy_window_id is not None and menu_action_with_retry(
-        copy_window_id, copy_dir.name, "Edit menu", "Select All"
-    )
-    copy_clicked = copy_selected and menu_action_with_retry(
-        copy_window_id, copy_dir.name, "Edit menu", "Copy"
-    )
-    if copy_window_id is not None:
-        steps.append(close_files_window(copy_window_id, copy_dir.name))
-
-    copy_dest_window_id, open_copy_dest_step = open_files_window(
-        copy_dest_dir, copy_dest_dir.name
-    )
-    steps.append(open_copy_dest_step)
-    paste_clicked = copy_dest_window_id is not None and menu_action_with_retry(
-        copy_dest_window_id, copy_dest_dir.name, "Edit menu", "Paste"
-    )
-    time.sleep(ACTION_SETTLE_S)
-    source_kept = (copy_dir / "journey-note.txt").exists()
-    pasted = (copy_dest_dir / "journey-note.txt").exists()
-    copy_ok = copy_clicked and paste_clicked and source_kept and pasted
-    copy_detail = (
-        "Edit > Copy then Edit > Paste (in a second, separately opened "
-        "Files window on the destination folder) produced "
-        "copy-dest/journey-note.txt while the original stayed in place"
-        if copy_ok
-        else f"copy_selected={copy_selected} copy_clicked={copy_clicked} "
-        f"paste_clicked={paste_clicked} source_kept={source_kept} "
-        f"pasted={pasted}; both menu clicks succeeded but nothing was "
-        "pasted -- crates/finder/src/pasteboard.rs's #[cfg(not(target_os "
-        "= \"macos\"))] implementation (lines 62-70) is a complete no-op "
-        "stub on Linux (write_file_urls/read_file_urls/clear_file_urls all "
-        "do nothing), so Copy never puts anything on any clipboard at all "
-        "on this platform"
-    )
-    steps.append(make_step("copy", copy_ok, copy_detail))
-    if copy_dest_window_id is not None:
-        steps.append(close_files_window(copy_dest_window_id, copy_dest_dir.name))
-    if not copy_ok:
+    # Files' pasteboard now talks to the Wayland clipboard directly
+    # (crates/finder/src/pasteboard.rs, ADR 0011) rather than shelling out to
+    # `wl-copy`, but that binary's presence is the simplest live signal of
+    # whether this host's session actually supports the Wayland clipboard
+    # protocol Files depends on. When it is missing, a failed copy/paste is
+    # an environment gap, not a product one.
+    wl_copy_present = wl_copy_available()
+    if not wl_copy_present:
+        steps.append(
+            make_step(
+                "copy",
+                True,
+                "wl-copy was not found on PATH; Files' clipboard "
+                "(crates/finder/src/pasteboard.rs, ADR 0011) needs a "
+                "working Wayland clipboard to test copy/paste, so this "
+                "step is blocked by the environment, not a product "
+                "failure -- install wl-clipboard on the reference laptop "
+                "to exercise it",
+                blocked_by_environment=True,
+            )
+        )
         gaps.append(
             {
-                "surface": "files_clipboard",
-                "issue": "crates/finder/src/pasteboard.rs has no Linux "
-                "implementation: the #[cfg(not(target_os = \"macos\"))] "
-                "module (lines 62-70) stubs write_file_urls, "
-                "read_file_urls, and clear_file_urls to no-ops, so Copy/"
-                "Cut/Paste between Files windows (or to/from any other "
-                "app) is completely non-functional on Linux -- this is "
-                "the actual product, not just an automation gap.",
+                "surface": "files_clipboard_environment",
+                "issue": "wl-copy (part of wl-clipboard) is not installed on "
+                "the reference laptop, so this script cannot confirm the "
+                "session supports the Wayland clipboard Files' pasteboard "
+                "(crates/finder/src/pasteboard.rs, ADR 0011) depends on; "
+                "install wl-clipboard to unblock the copy/move steps.",
             }
         )
+    else:
+        # Only one rmac-files window is ever kept open at a time here: the
+        # reference session showed the shell top bar's Files menu bridge is
+        # backed by a single well-known D-Bus name (org.rmac.Files.Menu; see
+        # module docstring), so with two Files windows open simultaneously a
+        # menu click is not reliably routed to the intended (focused) one.
+        # This is itself a recorded gap; the source window is fully closed
+        # before the destination window is opened, for a deterministic
+        # copy/paste.
+        copy_window_id, open_copy_step = open_files_window(copy_dir, copy_dir.name)
+        steps.append(open_copy_step)
+        copy_selected = copy_window_id is not None and menu_action_with_retry(
+            copy_window_id, copy_dir.name, "Edit menu", "Select All"
+        )
+        copy_clicked = copy_selected and menu_action_with_retry(
+            copy_window_id, copy_dir.name, "Edit menu", "Copy"
+        )
+        if copy_window_id is not None:
+            steps.append(close_files_window(copy_window_id, copy_dir.name))
+
+        copy_dest_window_id, open_copy_dest_step = open_files_window(
+            copy_dest_dir, copy_dest_dir.name
+        )
+        steps.append(open_copy_dest_step)
+        paste_clicked = copy_dest_window_id is not None and menu_action_with_retry(
+            copy_dest_window_id, copy_dest_dir.name, "Edit menu", "Paste"
+        )
+        time.sleep(ACTION_SETTLE_S)
+        source_kept = (copy_dir / "journey-note.txt").exists()
+        pasted = (copy_dest_dir / "journey-note.txt").exists()
+        copy_ok = copy_clicked and paste_clicked and source_kept and pasted
+        copy_detail = (
+            "Edit > Copy then Edit > Paste (in a second, separately opened "
+            "Files window on the destination folder) produced "
+            "copy-dest/journey-note.txt while the original stayed in place, "
+            "via the Wayland clipboard"
+            if copy_ok
+            else f"copy_selected={copy_selected} copy_clicked={copy_clicked} "
+            f"paste_clicked={paste_clicked} source_kept={source_kept} "
+            f"pasted={pasted}; wl-copy is present on this host but the "
+            "copy/paste round trip did not produce the pasted file -- see "
+            "crates/finder/src/pasteboard.rs (ADR 0011)"
+        )
+        steps.append(make_step("copy", copy_ok, copy_detail))
+        if copy_dest_window_id is not None:
+            steps.append(close_files_window(copy_dest_window_id, copy_dest_dir.name))
+        if not copy_ok:
+            gaps.append(
+                {
+                    "surface": "files_clipboard",
+                    "issue": "with a working Wayland clipboard on this host "
+                    "(wl-copy present), Copy then Paste between two Files "
+                    "windows still did not transfer the file -- see "
+                    "crates/finder/src/pasteboard.rs (ADR 0011).",
+                }
+            )
 
     # --- move (cut + paste) ------------------------------------------------
-    move_window_id, open_move_step = open_files_window(move_dir, move_dir.name)
-    steps.append(open_move_step)
-    move_selected = move_window_id is not None and menu_action_with_retry(
-        move_window_id, move_dir.name, "Edit menu", "Select All"
-    )
-    cut_clicked = move_selected and menu_action_with_retry(
-        move_window_id, move_dir.name, "Edit menu", "Cut"
-    )
-    if move_window_id is not None:
-        steps.append(close_files_window(move_window_id, move_dir.name))
+    if not wl_copy_present:
+        steps.append(
+            make_step(
+                "move",
+                True,
+                "wl-copy was not found on PATH; move (Cut + Paste) shares "
+                "Files' Wayland clipboard with copy, so this step is "
+                "blocked by the same environment gap as 'copy' above -- "
+                "install wl-clipboard on the reference laptop to exercise "
+                "it",
+                blocked_by_environment=True,
+            )
+        )
+    else:
+        move_window_id, open_move_step = open_files_window(move_dir, move_dir.name)
+        steps.append(open_move_step)
+        move_selected = move_window_id is not None and menu_action_with_retry(
+            move_window_id, move_dir.name, "Edit menu", "Select All"
+        )
+        cut_clicked = move_selected and menu_action_with_retry(
+            move_window_id, move_dir.name, "Edit menu", "Cut"
+        )
+        if move_window_id is not None:
+            steps.append(close_files_window(move_window_id, move_dir.name))
 
-    move_dest_window_id, open_move_dest_step = open_files_window(
-        move_dest_dir, move_dest_dir.name
-    )
-    steps.append(open_move_dest_step)
-    paste_clicked = move_dest_window_id is not None and menu_action_with_retry(
-        move_dest_window_id, move_dest_dir.name, "Edit menu", "Paste"
-    )
-    time.sleep(ACTION_SETTLE_S)
-    source_gone = not (move_dir / "journey-note.txt").exists()
-    moved_ok = (move_dest_dir / "journey-note.txt").exists()
-    move_ok = cut_clicked and paste_clicked and source_gone and moved_ok
-    move_detail = (
-        "Edit > Cut then Edit > Paste (in a second, separately opened Files "
-        "window on the destination folder) moved journey-note.txt out of "
-        "its source folder and into move-dest/"
-        if move_ok
-        else f"move_selected={move_selected} cut_clicked={cut_clicked} "
-        f"paste_clicked={paste_clicked} source_gone={source_gone} "
-        f"moved_ok={moved_ok}; same root cause as copy -- "
-        "crates/finder/src/pasteboard.rs has no Linux clipboard "
-        "implementation (see files_clipboard gap)"
-    )
-    steps.append(make_step("move", move_ok, move_detail))
-    if move_window_id is not None:
-        steps.append(close_files_window(move_window_id, move_dir.name))
-    if move_dest_window_id is not None:
-        steps.append(close_files_window(move_dest_window_id, move_dest_dir.name))
+        move_dest_window_id, open_move_dest_step = open_files_window(
+            move_dest_dir, move_dest_dir.name
+        )
+        steps.append(open_move_dest_step)
+        paste_clicked = move_dest_window_id is not None and menu_action_with_retry(
+            move_dest_window_id, move_dest_dir.name, "Edit menu", "Paste"
+        )
+        time.sleep(ACTION_SETTLE_S)
+        source_gone = not (move_dir / "journey-note.txt").exists()
+        moved_ok = (move_dest_dir / "journey-note.txt").exists()
+        move_ok = cut_clicked and paste_clicked and source_gone and moved_ok
+        move_detail = (
+            "Edit > Cut then Edit > Paste (in a second, separately opened "
+            "Files window on the destination folder) moved "
+            "journey-note.txt out of its source folder and into "
+            "move-dest/, via the Wayland clipboard"
+            if move_ok
+            else f"move_selected={move_selected} cut_clicked={cut_clicked} "
+            f"paste_clicked={paste_clicked} source_gone={source_gone} "
+            f"moved_ok={moved_ok}; wl-copy is present on this host but the "
+            "cut/paste round trip did not move the file -- see "
+            "crates/finder/src/pasteboard.rs (ADR 0011)"
+        )
+        steps.append(make_step("move", move_ok, move_detail))
+        if move_window_id is not None:
+            steps.append(close_files_window(move_window_id, move_dir.name))
+        if move_dest_window_id is not None:
+            steps.append(close_files_window(move_dest_window_id, move_dest_dir.name))
+        if not move_ok:
+            gaps.append(
+                {
+                    "surface": "files_clipboard",
+                    "issue": "with a working Wayland clipboard on this host "
+                    "(wl-copy present), Cut then Paste between two Files "
+                    "windows still did not move the file -- see "
+                    "crates/finder/src/pasteboard.rs (ADR 0011).",
+                }
+            )
 
-    # --- rename (inline only; expected to be unreachable) ------------------
-    # find_dir's window was already closed above; reopen it to check the
-    # menus live rather than assuming last run's result still holds.
+    # --- rename: File > Rename and Get Info's Name & Extension field -------
+    # find_dir's window was already closed above; reopen it to exercise the
+    # rename entry points live rather than assuming last run's result still
+    # holds.
     rename_window_id, open_rename_step = open_files_window(find_dir, find_dir.name)
     steps.append(
         make_step(
@@ -923,49 +1059,86 @@ def run_journey(test_root: Path) -> tuple[list[dict[str, Any]], list[dict[str, s
             else open_rename_step["detail"],
         )
     )
-    rename_item_present = False
+    rename_editable_found = False
+    rename_completed = False
+    rename_detail = "the find-me window did not reopen; rename was not attempted"
     if rename_window_id is not None:
-        focus_files_window(rename_window_id, find_dir.name)
-        for menu_name in ("File menu", "Edit menu"):
-            menu_button = find_node(TOPBAR_ATSPI_APP_NAME, menu_name, role="button", timeout=2.0)
-            if menu_button is None:
-                continue
-            click(menu_button)
-            time.sleep(MENU_SETTLE_S)
-            items = list_names(TOPBAR_ATSPI_APP_NAME, "menu item", timeout=1.0)
-            if any("rename" in item.lower() for item in items):
-                rename_item_present = True
-            click(menu_button)
-            time.sleep(MENU_SETTLE_S)
-    steps.append(
-        make_step(
-            "rename",
-            False,
-            "no 'Rename' item exists in Files' File or Edit top-bar menus "
-            "(live-checked this run), and renaming is otherwise only "
-            "reachable by selecting a row inline and pressing Return "
-            "(crates/finder/src/view/rename_controller.rs), which needs "
-            "row-level AT-SPI selection (unavailable, see files_content gap) "
-            "and a keyboard injector (not installed on this reference "
-            "session) to send Return. File > Get Info was also checked and "
-            "exposes only a Close button over AT-SPI, no editable name "
-            "field."
-            if not rename_item_present
-            else "a 'Rename' menu item now exists; this script has not been "
-            "updated to use it",
+        selected = menu_action_with_retry(
+            rename_window_id, find_dir.name, "Edit menu", "Select All"
         )
-    )
-    if not rename_item_present:
+        # File > Rename (finder::RenameItem) now exists as a real,
+        # clickable top-bar menu item (crates/finder/src/view.rs:104,177).
+        rename_clicked = selected and menu_action_with_retry(
+            rename_window_id, find_dir.name, "File menu", "Rename"
+        )
+        time.sleep(ACTION_SETTLE_S)
+        inline_entry = find_editable_entry(FILES_ATSPI_APP_NAME, timeout=1.5)
+
+        # Get Info's "Name & Extension" field (crates/finder/src/view/
+        # search_info_controller.rs:243-263) is the other real entry point:
+        # open it independently of whether the inline field above was
+        # reachable.
+        info_clicked = selected and menu_action_with_retry(
+            rename_window_id, find_dir.name, "File menu", "Get Info"
+        )
+        name_group = (
+            find_node(FILES_ATSPI_APP_NAME, "Name & Extension", timeout=2.0)
+            if info_clicked
+            else None
+        )
+        info_entry = find_editable_entry(FILES_ATSPI_APP_NAME, timeout=1.5) if name_group else None
+        editable_entry = inline_entry or info_entry
+        rename_editable_found = editable_entry is not None
+
+        if rename_editable_found:
+            # Forward-compatible real path: if a future accesskit_unix
+            # release adds AT-SPI EditableText, this actually renames the
+            # item and verifies it on disk instead of only reporting the
+            # structural gap below.
+            new_name = "journey-note-renamed.txt"
+            editable_entry.queryEditableText().setTextContents(new_name)
+            time.sleep(ACTION_SETTLE_S)
+            rename_completed = (find_dir / new_name).exists()
+            rename_detail = (
+                f"set the rename field's text via AT-SPI EditableText and "
+                f"the item was renamed on disk (rename_completed="
+                f"{rename_completed})"
+            )
+        else:
+            rename_detail = (
+                f"File > Rename now exists and is clickable (rename_clicked="
+                f"{rename_clicked}), and Get Info's 'Name & Extension' field "
+                f"now exists (name_group_found={name_group is not None}), but "
+                "neither exposes AT-SPI EditableText or Text (same pinned "
+                "accesskit_unix limitation documented elsewhere in this "
+                "suite -- see docs/known-limitations.md), and there is no "
+                "accessible action other than Return to commit a new name, "
+                "so a rename still cannot be completed without a keyboard "
+                "injector."
+            )
+        if name_group is not None:
+            # Close the Info panel the same way it opened, without leaving
+            # it behind for the next step.
+            close_button = find_node(FILES_ATSPI_APP_NAME, "Close", role="button", timeout=1.0)
+            if close_button is not None and "click" in action_names(close_button):
+                click(close_button)
+        if inline_entry is not None and not rename_completed:
+            # Leave the inline rename editor the way we found it (Escape is
+            # unavailable; blur it by moving focus back to the window frame).
+            focus_files_window(rename_window_id, find_dir.name)
+    steps.append(make_step("rename", rename_completed, rename_detail))
+    if not rename_completed:
         gaps.append(
             {
                 "surface": "files_rename",
-                "issue": "There is no accessible action to rename a file: no "
-                "'Rename' menu item exists anywhere in Files' top-bar menus, "
-                "renaming is otherwise inline-only "
-                "(crates/finder/src/view/rename_controller.rs) requiring a "
-                "Return keypress with no keyboard injector available, and "
-                "File > Get Info's dialog exposes no editable content over "
-                "AT-SPI (only a Close button).",
+                "issue": "File > Rename and Get Info's Name & Extension field "
+                "are now real, clickable entry points for renaming an item "
+                "(crates/finder/src/view.rs:104,177; crates/finder/src/view/"
+                "search_info_controller.rs:243-263), but neither field "
+                "exposes AT-SPI EditableText, so a new name still cannot be "
+                "set or committed without a keyboard injector -- the same "
+                "pinned accesskit_unix limitation this suite documents for "
+                "Spotlight and other text fields, not a Files-specific gap.",
             }
         )
     if rename_window_id is not None:

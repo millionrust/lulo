@@ -4,4 +4,4 @@ xwayland-satellite (0.8.2-0lulo1) resolute; urgency=medium
     (commit 8d135d3b2854b30fd01ea6cd6c27e523dd50a839), unmodified, with
     its Cargo dependencies vendored for an offline build.
 
- -- Jacob Samas <samasjacob@icloud.com>  Thu, 24 Sep 2026 12:00:00 +0000
+ -- Jacob Samas <samasjacob@icloud.com>  Thu, 24 Sep 2026 04:00:00 +0000

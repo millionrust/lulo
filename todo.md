@@ -58,20 +58,30 @@ and a manual accessibility check on the reference laptop.
 Check each item against the app and tick what's already done. "Done" includes
 loading, empty, unavailable, permission-denied and error states.
 
-- [ ] **Text Editor:** UTF-8 text, open/save, find/replace, crash recovery,
+- [x] **Text Editor:** UTF-8 text, open/save, find/replace, crash recovery,
       status, a printing or export path. Later: rich text.
-- [ ] **Notes:** folders, tags, search, attachments, pinning, import/export,
-      recovery. Later: collaboration.
-- [ ] **Terminal:** real PTY, dynamic resize, scrollback, selection, search,
-      tabs, profiles. Later: multiplexing.
-- [ ] **Files:** safe file operations, Trash, undo, mounts, search, previews,
+      (`docs/app-scope-audit.md`; audit-only, another agent owns the crate)
+- [x] **Notes:** folders, tags, search, attachments, pinning, import/export,
+      recovery. Later: collaboration. (`docs/app-scope-audit.md`)
+- [x] **Terminal:** real PTY, dynamic resize, scrollback, selection, search,
+      tabs, profiles. Later: multiplexing. (`docs/app-scope-audit.md`;
+      find-in-scrollback fixed on this pass — `a23265a8`)
+- [x] **Files:** safe file operations, Trash, undo, mounts, search, previews,
       open-with actions. Later: universal remote filesystems.
-- [ ] **System Monitor:** process and resource views, search and sort, safe
+      (`docs/app-scope-audit.md`)
+- [x] **System Monitor:** process and resource views, search and sort, safe
       terminate, history. Never invent per-process GPU numbers.
+      (`docs/app-scope-audit.md`; empty/loading states fixed on this pass —
+      `b1d83bc0`)
 - [ ] **Apps:** standards-compliant discovery, icons, actions, search and
-      launch. Later: installing apps.
-- [ ] **System Settings:** only panes with a real backend (Network,
+      launch. Later: installing apps. Partial: search is plain substring
+      matching, not the fuzzy matcher Spotlight already uses
+      (`docs/app-scope-audit.md`).
+- [x] **System Settings:** only panes with a real backend (Network,
       Bluetooth, Power, Sound, Display info, Appearance). No placeholder panes.
+      (`docs/app-scope-audit.md`; audit-only for the required six panes,
+      another agent owns the crate — its extra panes beyond the six were not
+      re-audited)
 
 Files safety rules: never block the UI thread on recursive I/O; never follow
 symlinks during recursive copy or delete; every overwrite has an explicit

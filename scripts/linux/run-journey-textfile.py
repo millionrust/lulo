@@ -479,7 +479,7 @@ def open_file_menu_item(item_name: str, timeout: float = ATSPI_FIND_TIMEOUT_S) -
     if menu_button is None or "click" not in action_names(menu_button):
         return False
     click(menu_button)
-    item = find_node("rmac-top-bar", item_name, role="menu item", timeout=2.0)
+    item = find_node("rmac-top-bar", item_name, role="menu item", timeout=ATSPI_FIND_TIMEOUT_S)
     if item is None or "click" not in action_names(item):
         return False
     click(item)
@@ -592,7 +592,7 @@ def quit_editor(window: dict[str, Any]) -> dict[str, Any]:
             "Text Editor menu was not found over AT-SPI; closed via niri instead",
         )
     click(menu_button)
-    quit_item = find_node("rmac-top-bar", "Quit Text Editor", timeout=2.0)
+    quit_item = find_node("rmac-top-bar", "Quit Text Editor", timeout=ATSPI_FIND_TIMEOUT_S)
     if quit_item is None or "click" not in action_names(quit_item):
         niri_close_window(window["id"])
         return make_step(
@@ -720,13 +720,17 @@ def run_journey(base_dir: Path, token: str, skip_interrupt: bool) -> dict[str, A
         saved_no_change = open_file_menu_item("Save")
         time.sleep(0.5)
         unchanged = original_path.read_bytes() == original_content
+        if not saved_no_change:
+            detail = "File menu > Save was not found (or not clickable) over AT-SPI"
+        elif unchanged:
+            detail = "Save left the file byte-identical"
+        else:
+            detail = "the file changed even though the buffer was not dirty"
         steps.append(
             make_step(
                 "save_without_changes_preserves_content",
                 saved_no_change and unchanged,
-                "Save left the file byte-identical"
-                if unchanged
-                else "the file changed even though the buffer was not dirty",
+                detail,
             )
         )
 

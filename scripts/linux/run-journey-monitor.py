@@ -409,18 +409,32 @@ def check_search_field_editable() -> dict[str, Any]:
 
 
 def check_quit_controls_exist() -> dict[str, Any]:
+    # rmac-top-bar's AT-SPI tree carries one frame per workspace/output, most
+    # of them empty placeholders on a laptop this many agents have been
+    # exercising concurrently; a full traversal to find "Process menu" can
+    # take noticeably longer than the in-window lookups below, so it gets a
+    # more generous timeout rather than being (mis)reported as absent.
     in_window = find_node(SYSTEM_MONITOR["atspi_name"], "Quit", role="button", timeout=2.0)
     in_window_force = find_node(
         SYSTEM_MONITOR["atspi_name"], "Force Quit", role="button", timeout=2.0
     )
-    menu_button = find_node("rmac-top-bar", "Process menu", role="button", timeout=2.0)
+    menu_button = find_node("rmac-top-bar", "Process menu", role="button", timeout=8.0)
     found = bool(in_window and in_window_force and menu_button)
+    missing = [
+        label
+        for label, node in (
+            ("in-window Quit button", in_window),
+            ("in-window Force Quit button", in_window_force),
+            ("top bar Process menu", menu_button),
+        )
+        if node is None
+    ]
     return make_step(
         "quit_controls_exist",
         found,
         "Quit/Force Quit exist as AT-SPI buttons and the top bar's Process menu"
         if found
-        else "one or more of the Quit/Force Quit AT-SPI controls was not found",
+        else f"not found over AT-SPI: {', '.join(missing)}",
     )
 
 

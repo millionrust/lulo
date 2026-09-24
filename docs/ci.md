@@ -113,10 +113,13 @@ all; not adopted yet to avoid the extra per-PR runner cost.
 
 `cargo deny check advisories` for both workspaces, plus
 [`rustsec/audit-check`](https://github.com/rustsec/audit-check) (`cargo
-audit`) for both `Cargo.lock` files. Opens a GitHub issue labeled
-`dependencies` on failure (best-effort; the `gh issue create` step is
-`|| true` so a transient API error doesn't leave the job red for an
-unrelated reason).
+audit`) for both `Cargo.lock` files. `rustsec/audit-check` opens its own
+GitHub issue automatically when it finds an advisory on a scheduled run
+(that's the action's built-in behavior, not something this job configures);
+a separate best-effort `gh issue create` step (`|| true`, so a transient
+API error doesn't leave the job red for an unrelated reason) covers the
+`cargo deny` steps failing for a different reason, which the action can't
+see.
 
 Run locally:
 

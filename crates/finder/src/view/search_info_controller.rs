@@ -192,7 +192,7 @@ impl FinderView {
                 .find(|(name, _)| *name == key)
                 .map(|(_, value)| value.clone())
         };
-        let rows = |keys: &[&'static str]| {
+        let rows = |keys: &[&'static str], label_width: f32| {
             keys.iter()
                 .filter_map(|key| value_of(*key).map(|value| (*key, value)))
                 .map(|(key, value)| {
@@ -206,7 +206,8 @@ impl FinderView {
                         .text_color(label())
                         .child(
                             div()
-                                .w(px(INFO_LABEL_RIGHT - INFO_SECTION_INSET))
+                                .w(px(label_width))
+                                .whitespace_nowrap()
                                 .flex_none()
                                 .text_right()
                                 .child(format!("{key}:")),
@@ -329,9 +330,10 @@ impl FinderView {
                     ),
             );
 
-        let general = block()
-            .child(section("General:"))
-            .children(rows(&["Kind", "Size", "Where", "Created", "Modified"]));
+        let general = block().child(section("General:")).children(rows(
+            &["Kind", "Size", "Where", "Created", "Modified"],
+            INFO_LABEL_RIGHT - INFO_SECTION_INSET,
+        ));
 
         // Finder's Name & Extension field: edit and press Return to rename.
         let name_field = self
@@ -365,7 +367,10 @@ impl FinderView {
 
         let permissions = block()
             .child(section("Sharing & Permissions:"))
-            .children(rows(&["Owner", "Group", "Permissions"]));
+            .children(rows(
+                &["Owner", "Group", "Permissions"],
+                INFO_PERMISSIONS_LABEL,
+            ));
 
         let card = div()
             .id("info-panel")

@@ -232,6 +232,7 @@ impl FinderView {
                 .inset_0()
                 .flex()
                 .justify_center()
+                .items_start()
                 .pt(px(TOOLBAR_HEIGHT))
                 .child(panel)
                 .into_any_element(),

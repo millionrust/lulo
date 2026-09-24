@@ -272,3 +272,11 @@ fn artwork_rasters_follow_the_drawn_size_and_are_embedded() {
         );
     }
 }
+
+#[test]
+fn trash_deletion_dates_read_like_the_rest_of_the_list() {
+    let label = trash_updates::deletion_label("2024-02-28T23:05:00");
+    assert!(!label.contains('T'), "{label}");
+    assert!(label.contains("2024") || label.contains("Feb"), "{label}");
+    assert_eq!(trash_updates::deletion_label("not a date"), "not a date");
+}

@@ -363,6 +363,8 @@ pub(super) const INFO_ROW_LINE: f32 = 14.0;
 pub(super) const INFO_ROW_PITCH: f32 = 14.0;
 pub(super) const INFO_LABEL_RIGHT: f32 = 67.0;
 pub(super) const INFO_LABEL_GAP: f32 = 5.5;
+/// "Permissions:" needs a wider label column than General's (S).
+pub(super) const INFO_PERMISSIONS_LABEL: f32 = 80.0;
 pub(super) const INFO_PREVIEW_HEIGHT: f32 = 130.0;
 
 // ---- path and status bars --------------------------------------------------

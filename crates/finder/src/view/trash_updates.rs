@@ -49,7 +49,7 @@ impl FinderView {
                                 .to_string_lossy()
                                 .into_owned()
                                 .into();
-                            entry.modified = item.deleted_at.clone().into();
+                            entry.modified = deletion_label(&item.deleted_at).into();
                             entries.push(entry);
                         }
                         sort_entries(&mut entries, key, asc);
@@ -92,4 +92,16 @@ impl FinderView {
             cx.notify();
         }
     }
+}
+
+/// A Trash item's XDG `DeletionDate` (local time, `YYYY-MM-DDThh:mm:ss`) in
+/// the list's date style ("Today at 11:19 AM"); an unreadable one is shown
+/// as written.
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn deletion_label(raw: &str) -> String {
+    chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S")
+        .ok()
+        .and_then(|local| local.and_local_timezone(chrono::Local).earliest())
+        .map(|time| rmac_finder::listing::date_label(std::time::SystemTime::from(time)))
+        .unwrap_or_else(|| raw.to_owned())
 }

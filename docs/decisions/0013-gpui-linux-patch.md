@@ -108,14 +108,30 @@ change than one accessibility ticket warrants, and this machine's rule against
 uncontrolled Cargo rebuilds makes an unvalidated fork of an async D-Bus crate
 too risky to land blind.
 
-What gpui_linux *can* do, and now does (`shell/compat/gpui_linux/src/linux/a11y.rs`,
-called from both backends' `a11y_tree_update`): fill in the separate, genuinely
-reachable `accesskit::Tree.toolkit_name`/`toolkit_version` fields, which
-upstream GPUI's `crates/gpui/src/window/a11y.rs` leaves `None`. Those back
-AT-SPI's `Application.ToolkitName`/`Application.Version` properties, distinct
-from `Application.Name`; without this, `accesskit_consumer` reports the
-generic fallback `"AccessKit"` with no version for every rmac window. rmac
-windows now report `gpui_linux` and this crate's own version there.
+What gpui_linux *can* do, and now does (`shell/compat/gpui_linux/src/linux/a11y.rs`):
+fill in the separate, genuinely reachable `accesskit::Tree.toolkit_name`/
+`toolkit_version` fields, which upstream GPUI's `crates/gpui/src/window/a11y.rs`
+leaves `None`. Those back AT-SPI's `Application.ToolkitName`/`Application.Version`
+properties, distinct from `Application.Name`; without this, `accesskit_consumer`
+reports the generic fallback `"AccessKit"` with no version for every rmac
+window. The label has to be applied at two call sites, both in
+`TrivialActivationHandler::request_initial_tree` and in `a11y_tree_update`,
+because `accesskit_atspi_common` reads `toolkit_name` only once, at whichever
+transition first activates the adapter — and on-device testing showed
+`accesskit_unix` almost always takes the `request_initial_tree` path (GPUI's
+own activation callback, already holding a full tree by the time AT-SPI turns
+on) rather than the per-frame `a11y_tree_update` path; labeling only the
+latter left `ToolkitName` at the `"AccessKit"` fallback in practice. rmac
+windows now report `gpui_linux` and this crate's own version there, confirmed
+live on the reference PC (`pyatspi`, `Registry.getDesktop(0)`, after
+`rmac-calculator` opened):
+
+```
+[4] Name='rmac-calculator' ToolkitName='gpui_linux' ToolkitVersion='0.1.0'
+```
+
+The same run confirms the `Application.Name` gap remains exactly as
+diagnosed above (`Name='rmac-calculator'`, not `'Calculator'`).
 
 Each app's *window*-level accessible name (`Role::Window`, what a screen
 reader speaks once focus reaches the window rather than the top-level

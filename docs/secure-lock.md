@@ -13,15 +13,20 @@ documents an authentication bypass.
 
 The global `lock` shortcut bypasses the general shell-event socket and runs the
 fixed `systemctl --user start rmac-lock.service` request without a shell. The
-unit starts `rmac-locker`, which launches `/usr/bin/swaylock` with the installed
-absolute config path and captures its dedicated readiness descriptor on stdout.
-Only the exact newline handshake advances the unit to ready. `systemd-notify`
-then completes the `Type=notify` start transaction, so a successful shortcut
-return means niri has already hidden security-sensitive content.
+unit starts `rmac-lock-provider`, which takes the ext-session-lock and
+authenticates through the PAM service `/etc/pam.d/rmac-lock`. It reports
+`READY=1` only after the compositor confirms the lock, which completes the
+`Type=notify` start transaction, so a successful shortcut return means niri has
+already hidden security-sensitive content. The unit asserts the PAM service
+exists (`AssertPathExists=`), so a missing policy fails the start instead of
+reporting success.
 
-The locker remains a foreground child in the same systemd control group. A
-normal zero exit clears logind's locked hint. A signal or nonzero exit fails the
-unit; systemd retries after one second without a start-limit ceiling. niri's
+Only an authenticated unlock exits 0. A crash, a watchdog kill (10 seconds) or
+a nonzero exit fails the unit; systemd retries after one second, up to 5 starts
+in 30 seconds. Past that limit `OnFailure=` starts `rmac-lock-fallback.service`:
+`rmac-locker` launches `/usr/bin/swaylock` with the installed absolute config
+path and captures its readiness descriptor on stdout, and that unit restarts
+without a start-limit ceiling. niri's
 protocol behavior keeps the session locked during that gap. The generated niri
 fallback adds `allow-when-locked=true` only to the lock shortcut for manual
 recovery.
@@ -37,8 +42,10 @@ different-user, non-Wayland, seatless, control-bearing, whitespace-bearing, or
 oversized routes fail before readiness; session identity and object paths stay
 out of diagnostics.
 
-The development installer requires `/usr/bin/swaylock`, installs the supervisor
-and unit, and writes the default rmac swaylock config only when the user has no
+The development installer refuses to build or install anything until
+`/etc/pam.d/rmac-lock` exists, requires `/usr/bin/swaylock` for the fallback,
+builds and installs `rmac-lock-provider`, the supervisor and both lock units,
+and writes the default rmac swaylock config only when the user has no
 existing config. Production packaging must depend on the Ubuntu swaylock build
 with PAM support rather than installing a setuid or vendored binary.
 

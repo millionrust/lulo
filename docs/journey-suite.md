@@ -43,6 +43,65 @@ as a replacement for them.
 
 ## Live reference-hardware acceptance tests
 
+### Current results (2026-09-24, laptop under heavy concurrent-build load)
+
+The scripts below were updated the same day to stop reporting several
+already-fixed accessibility gaps as failures, then re-run live against
+today's `~/rmac-dev-bin` build (09:51). The laptop was shared with three to
+four other agents' `cargo build --profile iterate` pipelines the whole time
+(`rmac-notes`+`rmac-terminal`, `rmac-system-settings`, `rmac-finder`,
+`rmac-text-editor`, all serialized behind one `flock`), with load average
+swinging between ~1 and ~6 — several journeys were run more than once to
+separate load-related flakiness from real regressions; the table gives the
+most recent run of each.
+
+| Journey | Steps passed | Overall pass | Representative finding |
+| --- | --- | --- | --- |
+| 1 — Launch/switch/close | not re-run this session | — | unchanged from its own last run (see below) |
+| 2 — Files | 14/16 | fail | Rename/Get Info entry points now real; both still blocked by the pinned accesskit_unix EditableText gap. Copy/Move correctly reported `blocked_by_environment` (`wl-copy` absent). |
+| 3 — Terminal | 3/4 | fail | Dock-launched Terminal never produced a window within the adaptive 15 s wait, 3 runs in a row, despite `dock_launch`/`app_launched` reporting success — see the new launch-reliability finding below. Grid/tab accessibility fixes could not be exercised because the app never opened. |
+| 4 — Notes | 3/4 | fail | Same Dock-launch-never-produces-a-window pattern, 2 runs in a row, including at load average 0.86 (ruling out pure CPU load as the sole cause). List/ListItem and field-value fixes could not be exercised for the same reason. |
+| 5 — Text file | 7/11 | fail | Open/Save/Save As intermittently can't find the top bar's "File menu" across 3 runs (worked fully on none, partially on each) — the same per-app category-menu registration flakiness already documented for Terminal/Notes, now confirmed for Text Editor too. `edit_content` still blocked by the EditableText gap. |
+| 6 — System Monitor | 2–3/6 (varied by run) | fail | **New finding**: the process table's AT-SPI row model is real and live (not dead code) but its projection is bounded to the visible viewport (~18–19 rows here); the idle disposable test process fell outside it and column headers have no AT-SPI Action interface to re-sort. `quit_controls_exist` (the top bar's Process menu) was also intermittently missing, matching the same category-menu flakiness as journey 5. |
+
+None of this session's script changes were reverted or found to be wrong;
+every failure above is now backed by a live, reproduced, precisely-cited
+product behavior rather than a stale assumption. See "Remaining real product
+bugs" below for the exact list to hand to engineering.
+
+#### New finding: Dock-driven launches can silently produce no window
+
+Confirmed independently for both Terminal and Notes, 5 times in a row across
+several minutes and load averages from 0.86 to ~6: `attempt_dock_launch`
+finds the Dock's "Terminal"/"Notes" button, confirms it has an AT-SPI
+`click` action, invokes it, and `doAction` returns `true` — but no window
+ever appears within a 15 s adaptive wait, and `pgrep` confirms **no process
+was even started**. Directly spawning the same binary
+(`~/rmac-dev-bin/rmac-terminal` / `rmac-notes`) always worked instantly, and
+a bare, ad-hoc reproduction of the identical AT-SPI click sequence (run
+standalone, not through the journey script) also worked every time it was
+tried (4/4). The discrepancy could not be isolated further within this
+session's time budget: it reproduces reliably when run as the actual journey
+script (including via a direct Python import of its own
+`attempt_dock_launch`), and did not reproduce in several standalone manual
+attempts interleaved with the failing runs.
+
+The most likely mechanism, based on reading the launch path: Dock activation
+goes through niri's compositor IPC so niri can attach an XDG activation
+token to the spawned process (`crates/rmac-app-launch/src/application.rs`).
+`launch()`'s `Ok(())` branch (`crates/rmac-app-launch/src/application.rs:19-24`)
+treats niri **accepting** the `action spawn` IPC request as success and
+returns `Delivery::CompositorActivation` with `process_id: None` —
+there is no confirmation that niri's own `fork`+`exec` of the target binary
+actually succeeded, and no error path back to the Dock, an assistive
+technology, or the user if it silently didn't (e.g. a transient `fork()`
+failure under the heavy concurrent-build resource pressure observed
+throughout this session). This would violate todo.md's "errors must be
+visible and actionable" if confirmed. **Not fully proven** — the coordinator
+should reproduce with `strace -f` on niri or a `RUST_LOG` trace through
+`rmac-compositor-niri::execute` while deliberately loading the machine, to
+confirm or rule this out.
+
 `scripts/linux/run-journey-launch.py` exercises journey 1 ("Log in, launch an
 app from the Dock or Spotlight, switch apps, and close it") against the real
 session on the reference laptop, over AT-SPI (`pyatspi`) and niri IPC only —
@@ -689,3 +748,78 @@ process is selected — is unchanged by this fix and should still hold: the
 PID and observe `aria_selected` flip, but the script's existing caution
 about a shared laptop session choosing what to click is a script-side
 decision this fix does not alter.
+
+## Remaining real product bugs (2026-09-24)
+
+Verified live against today's build, precisely enough to hand to engineering
+without further triage. Each is a genuine gap, not a stale test assumption
+(see "Current results" above for how each was distinguished from
+load-related flakiness).
+
+1. **Dock-driven launches can silently produce no window.**
+   `crates/rmac-app-launch/src/application.rs:19-24` treats niri's IPC
+   acceptance of `action spawn` as launch success and returns
+   `Delivery::CompositorActivation` with no `process_id`, with no
+   confirmation the target process actually started and no visible error if
+   it didn't. Reproduced 5/5 times via `scripts/linux/run-journey-terminal.py`
+   and `scripts/linux/run-journey-notes.py`'s real Dock-click path (including
+   at load average 0.86), while direct spawns of the same binaries and
+   ad-hoc manual AT-SPI clicks outside the journey scripts succeeded 4/4
+   times. Root cause not fully proven within this session — see the
+   "Current results" section above for the reproduction recipe.
+2. **System Monitor's process table AT-SPI projection is bounded to the
+   visible viewport, with no accessible way to bring another row into it.**
+   Confirmed live: only ~18-19 "table row" nodes existed at once (matching
+   the highest-%CPU processes), and a deliberately idle test process outside
+   that set had no AT-SPI node at all. Column headers
+   (`crates/activity-monitor/src/process_table.rs`'s `render_th`) expose
+   AT-SPI's Accessible and Component interfaces only — confirmed live, no
+   Action interface — so they cannot be clicked to re-sort (e.g. by PID) to
+   bring a specific process into view, and the search field still has no
+   Text/EditableText either (`crates/activity-monitor/src/view.rs:59`).
+3. **The shell top bar's per-app category menus (distinct from the generic
+   app menu with About/Hide/Quit) intermittently fail to register or vanish
+   for the focused app**, independent of window/focus state:
+   `crates/rmac-ui/src/runtime.rs:195`'s `install_app_menu` and
+   `crates/rmac-app-menu/src/lib.rs`'s per-app `MenuSpec`s
+   (`shell/bins/rmac-menubar`'s rendering side). Previously documented for
+   Terminal's "Shell/Edit/View" menus and Notes' "File/Edit/Format" menus;
+   this session additionally confirmed it for System Monitor's "Process"
+   menu (present on the first post-fix run, absent on the next two) and
+   Text Editor's "File" menu (Open/Save/Save As each failed to find it at
+   least once across three runs, never all three in the same run). This is
+   the single highest-impact remaining gap in this suite: it blocks Quit
+   flows, Save/Save As, and Copy/Paste across four different apps whenever
+   it doesn't register.
+4. **Files' search field's own text node still has no AT-SPI name or
+   Text/EditableText** (`crates/finder/src/view/chrome_presentation/
+   toolbar.rs:184-206`), even though its parent "Search" landmark and every
+   other toolbar group are now named. Combined with the pinned
+   `accesskit_unix` not implementing `EditableText` at all
+   (`docs/known-limitations.md:42-49`), a file still cannot be found by
+   typing a query.
+5. **File > Rename and Get Info's "Name & Extension" field
+   (`crates/finder/src/view.rs:104,177`,
+   `crates/finder/src/view/search_info_controller.rs:243-263`) are real,
+   clickable entry points now, but neither field can actually be renamed
+   over AT-SPI** — same upstream `accesskit_unix` EditableText gap as #4.
+6. **Text Editor's document buffer and encoding/line-ending picker remain
+   unreachable for editing** (`crates/text-editor/src/view/render/
+   chrome.rs:80-127`'s picker has a `click` action but never opens its
+   dropdown over AT-SPI) — same upstream EditableText gap, unchanged this
+   session.
+7. **rmac's own file chooser is not deployed on the reference laptop**
+   (`systemctl --user status rmac-file-chooser.service` reports the unit
+   does not exist), so journey 5 falls back to the GNOME/Nautilus portal
+   chooser, which this session's new location-entry fallback
+   (`scripts/linux/run-journey-textfile.py`'s
+   `drive_chooser_via_location_entry`) still could not drive: no row named
+   for the fixture folder, and no GTK location-bar entry was found open by
+   default. This is an environment/deployment gap for the coordinator to
+   close by shipping `rmac-file-chooser`, not a script issue.
+
+Not real product bugs, correctly reported as environment gaps rather than
+failures: `wl-copy` is not installed on the reference laptop (journeys 2's
+copy/move steps report `blocked_by_environment` rather than failing), and
+`wtype`/`ydotool`/a keyboard injector are not installed anywhere on it
+(affects every journey that would otherwise need to type).

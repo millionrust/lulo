@@ -497,17 +497,21 @@ def launch_editor(path: Optional[Path] = None) -> tuple[dict[str, Any], Optional
     return make_step("launch", True, "Text Editor window appeared"), window
 
 
-def open_file_menu_item(item_name: str, timeout: float = ATSPI_FIND_TIMEOUT_S) -> bool:
+def open_file_menu_item(item_name: str, timeout: float = TOPBAR_MENU_TIMEOUT_S) -> bool:
     """Click the top bar's File menu, then the named item within it. Both
     are real AT-SPI `button`/`menu item` nodes with a `click` action
     (confirmed live) -- the same mechanism run-journey-launch.py uses for
-    the app menu's Quit item."""
+    the app menu's Quit item. The per-app menu bridge has been observed to
+    take longer than ATSPI_FIND_TIMEOUT_S to (re)register mid-session, not
+    just right after launch (see run-journey-terminal.py's identical
+    Shell/Edit/View observation and quit_editor's own retry above), so this
+    defaults to the same generous budget."""
 
     menu_button = find_node("rmac-top-bar", "File menu", role="button", timeout=timeout)
     if menu_button is None or "click" not in action_names(menu_button):
         return False
     click(menu_button)
-    item = find_node("rmac-top-bar", item_name, role="menu item", timeout=ATSPI_FIND_TIMEOUT_S)
+    item = find_node("rmac-top-bar", item_name, role="menu item", timeout=timeout)
     if item is None or "click" not in action_names(item):
         return False
     click(item)

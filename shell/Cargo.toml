@@ -26,6 +26,7 @@ rmac-app-launch = { version = "=0.9.0-beta.1", path = "../crates/rmac-app-launch
 rmac-app-menu = { version = "=0.9.0-beta.1", path = "../crates/rmac-app-menu" }
 rmac-appearance = { version = "=0.9.0-beta.1", path = "../crates/rmac-appearance" }
 rmac-appearance-portal = { version = "=0.9.0-beta.1", path = "../crates/rmac-appearance-portal" }
+rmac-archive = { version = "=0.9.0-beta.1", path = "../crates/rmac-archive" }
 rmac-compositor = { version = "=0.9.0-beta.1", path = "../crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.9.0-beta.1", path = "../crates/rmac-compositor-niri" }
 rmac-design = { version = "=0.9.0-beta.1", path = "../crates/rmac-design" }
@@ -34,14 +35,17 @@ rmac-desktop-widgets = { version = "=0.9.0-beta.1", path = "../crates/rmac-deskt
 rmac-dock = { version = "=0.9.0-beta.1", path = "../crates/rmac-dock" }
 rmac-dock-runtime = { version = "=0.9.0-beta.1", path = "../crates/rmac-dock-runtime" }
 rmac-dock-system = { version = "=0.9.0-beta.1", path = "../crates/rmac-dock-system" }
+rmac-finder = { version = "=0.9.0-beta.1", path = "../crates/finder" }
 rmac-network = { version = "=0.9.0-beta.1", path = "../crates/rmac-network" }
 rmac-places = { version = "=0.9.0-beta.1", path = "../crates/rmac-places" }
 rmac-places-system = { version = "=0.9.0-beta.1", path = "../crates/rmac-places-system" }
 rmac-power = { version = "=0.9.0-beta.1", path = "../crates/rmac-power" }
+rmac-quick-look = { version = "=0.9.0-beta.1", path = "../crates/rmac-quick-look" }
 rmac-recent-documents = { version = "=0.9.0-beta.1", path = "../crates/rmac-recent-documents" }
 rmac-process = { version = "=0.9.0-beta.1", path = "../crates/rmac-process" }
 rmac-screen-reader = { version = "=0.9.0-beta.1", path = "../crates/rmac-screen-reader" }
 rmac-search = { version = "=0.9.0-beta.1", path = "../crates/rmac-search" }
+rmac-storage = { version = "=0.9.0-beta.1", path = "../crates/rmac-storage" }
 rmac-osd = { version = "=0.9.0-beta.1", path = "../crates/rmac-osd" }
 rmac-login-items-linux = { version = "=0.9.0-beta.1", path = "../crates/rmac-login-items-linux" }
 rmac-shell-layer = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-layer" }

@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use gpui::{
     canvas, deferred, div, point, prelude::FluentBuilder as _, px, App, Bounds, Context, Entity,
-    Hsla, InteractiveElement as _, IntoElement, ParentElement as _, PathBuilder, Pixels,
-    RenderOnce, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    FocusHandle, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, PathBuilder,
+    Pixels, RenderOnce, Role, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
     WindowControlArea,
 };
 use gpui_component::{ActiveTheme as _, InteractiveElementExt as _, StyledExt as _};
@@ -177,15 +177,24 @@ const LIGHTS_GROUP: &str = "rmac-traffic-lights";
 /// One light: a 16 pt hit box (the AX button frame) holding the 14 pt circle.
 /// Glyphs appear when the pointer is anywhere over the group, and an inactive
 /// window's grey lights regain their colours at the same moment.
+///
+/// `name` is the accessible name AppKit gives the same control ("Close
+/// window", "Minimize", "Enter Full Screen"); `focus` makes the light a Tab
+/// stop so keyboard and switch-control users can reach it, matching AppKit's
+/// AX button semantics rather than requiring a pointer.
+#[allow(clippy::too_many_arguments)]
 fn traffic_light(
     id: &'static str,
+    name: &'static str,
     (fill, border): (Hsla, Hsla),
     glyph: Glyph,
     active: bool,
     enabled: bool,
+    focus: Option<(FocusHandle, bool)>,
 ) -> gpui::Stateful<gpui::Div> {
     let (inactive_fill, inactive_border) = mac::traffic_inactive();
     let lit = active && enabled;
+    let is_focused = focus.as_ref().is_some_and(|(_, focused)| *focused);
     let circle = div()
         .relative()
         .size(px(mac::traffic_light_diameter()))
@@ -193,6 +202,7 @@ fn traffic_light(
         .border_1()
         .bg(if lit { fill } else { inactive_fill })
         .border_color(if lit { border } else { inactive_border })
+        .when(is_focused, |circle| circle.shadow(mac::focus_ring_shadow()))
         .when(enabled && !active, |circle| {
             circle.group_hover(LIGHTS_GROUP, move |style| {
                 style.bg(fill).border_color(border)
@@ -216,11 +226,16 @@ fn traffic_light(
         });
     div()
         .id(id)
+        .role(Role::Button)
+        .aria_label(name)
         .size(px(mac::traffic_light_hit_width()))
         .flex_none()
         .flex()
         .items_center()
         .justify_center()
+        .when_some(focus, |el, (handle, _)| {
+            el.track_focus(&handle.tab_stop(true).tab_index(0))
+        })
         .child(circle)
 }
 
@@ -451,12 +466,29 @@ impl RenderOnce for TrafficLights {
         let metrics = rmac_design::Metrics::default();
         let zoom_enabled = self.zoom_enabled;
         let hover_menu = menu.clone();
+        let close_focus = window
+            .use_keyed_state("tl-close-focus", cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let min_focus = window
+            .use_keyed_state("tl-min-focus", cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let zoom_focus = window
+            .use_keyed_state("tl-zoom-focus", cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let close_is_focused = close_focus.is_focused(window);
+        let min_is_focused = min_focus.is_focused(window);
+        let zoom_is_focused = zoom_focus.is_focused(window);
         let zoom = traffic_light(
             "tl-zoom",
+            "Enter Full Screen",
             mac::traffic_zoom(),
             Glyph::FullScreen,
             active,
             zoom_enabled,
+            zoom_enabled.then_some((zoom_focus, zoom_is_focused)),
         )
         .when(zoom_enabled, |zoom| {
             zoom.on_hover(move |hovered, _, cx| {
@@ -482,20 +514,30 @@ impl RenderOnce for TrafficLights {
             .items_center()
             .gap(px(metrics.traffic_spacing - hit))
             .child(
-                traffic_light("tl-close", mac::traffic_close(), Glyph::Close, active, true)
-                    // Route through the app's close guard (e.g. an unsaved-changes
-                    // prompt) rather than closing the window directly.
-                    .on_click(|_, window, cx| {
-                        window.dispatch_action(Box::new(components::RequestClose), cx)
-                    }),
+                traffic_light(
+                    "tl-close",
+                    "Close window",
+                    mac::traffic_close(),
+                    Glyph::Close,
+                    active,
+                    true,
+                    Some((close_focus, close_is_focused)),
+                )
+                // Route through the app's close guard (e.g. an unsaved-changes
+                // prompt) rather than closing the window directly.
+                .on_click(|_, window, cx| {
+                    window.dispatch_action(Box::new(components::RequestClose), cx)
+                }),
             )
             .child(
                 traffic_light(
                     "tl-min",
+                    "Minimize",
                     mac::traffic_minimize(),
                     Glyph::Minimize,
                     active,
                     true,
+                    Some((min_focus, min_is_focused)),
                 )
                 .on_click(|_, _, cx| send_window_action(WindowAction::Minimize, cx)),
             )

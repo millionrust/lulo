@@ -275,8 +275,10 @@ for name in "${selected[@]}"; do
     rm -f "$tarball"
     fail "$PIN_ORIG_TARBALL has SHA-256 $actual, not the pinned $PIN_TARBALL_SHA256"
   fi
-  commit="$(gzip -dc "$tarball" | git get-tar-commit-id)" \
-    || fail "$PIN_ORIG_TARBALL does not record its commit"
+  # git stops reading after the tar header, so gzip dies of SIGPIPE; read the
+  # id without pipefail and judge it by its value alone.
+  commit="$(set +o pipefail; gzip -dc "$tarball" 2>/dev/null | git get-tar-commit-id)"
+  [[ -n "$commit" ]] || fail "$PIN_ORIG_TARBALL does not record its commit"
   [[ "$commit" == "$PIN_COMMIT" ]] \
     || fail "$PIN_ORIG_TARBALL was made from $commit, not the pinned $PIN_COMMIT"
 

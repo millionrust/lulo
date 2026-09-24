@@ -62,22 +62,20 @@ JSON/parsing logic, not a live run.
 
 | Metric | Budget | Status |
 |---|---|---|
-| Warm launch to interactive | p95 ≤ 500 ms (900 ms Files/Terminal) | **Not yet run** |
-| Idle CPU | ≤ 0.3%/app, ≤ 1% shell combined | **Not yet run** |
-| Idle wake-ups | none while nothing changes | **Not yet run** |
+| Warm launch to interactive | p95 ≤ 500 ms (900 ms Files/Terminal) | **Measured under build contention** — Notes, System Monitor, System Settings over; re-run with `rustc` at 0 |
+| Idle CPU | ≤ 0.3%/app, ≤ 1% shell combined | **Fail** — shell 2.78% (top bar 1.98%); System Settings 24.95%, Files 5.32%, System Monitor 3.13%, Clock 1.58% |
+| Idle wake-ups | none while nothing changes | **Fail** — ~4/s per visible layer window (gpui_linux idle re-check); top bar 24/s, shortcut broker 23/s |
 | Input to visible response | p95 ≤ 50 ms | **Not yet run** — no frame-timing harness exists yet |
 | 60/120 Hz animation frame budget | ≥ 99% / ≥ 95% within budget | **Not yet run** — `docs/performance-baseline.md` notes no per-frame trace is available yet |
 | Memory (8-hour soak) | per-app budget, no leak | **Not yet run** |
 | Repeat on an NVIDIA system | required before Beta | **Not yet run** — no NVIDIA station in the matrix yet |
 
 Evidence: [docs/perf/reference-laptop-2026-09-24.md](perf/reference-laptop-2026-09-24.md)
-is explicitly a **smoke validation only** of the new `measure-budgets.py`
-harness — the reference laptop was mid-`cargo build` for the whole session,
-so every number in it (idle CPU as high as 12.99%, 190 wake-ups/s) reflects
-build contention, not the product, and the doc says so in its own words.
-The real measurement run (idle laptop, `pgrep -c rustc` reporting 0) has not
-been done. **Status: Fail** — the todo.md budget table has no real
-measurement behind any row yet.
+is the first real run (system audit, 2026-09-24): shell surfaces were measured
+on an idle laptop (`rustc` at 0); applications were measured while a
+coordinator build started, so their launch times need a re-run. **Status:
+Fail** — idle CPU and idle wake-ups are over budget; see
+[docs/system-audit-2026-09-24.md](system-audit-2026-09-24.md).
 
 ## 3. Accessibility gates (todo.md)
 

@@ -104,6 +104,10 @@ APPS: tuple[tuple[str, str, str], ...] = (
     ("System Settings", "rmac-system-settings", "org.rmac.SystemSettings"),
     ("Terminal", "rmac-terminal", "org.rmac.Terminal"),
     ("Text Editor", "rmac-text-editor", "org.rmac.TextEditor"),
+    ("Calculator", "rmac-calculator", "org.rmac.Calculator"),
+    ("Clock", "rmac-clock", "org.rmac.Clock"),
+    ("Weather", "rmac-weather", "org.rmac.Weather"),
+    ("Preview", "rmac-preview", "org.rmac.Preview"),
 )
 
 # todo.md: "p95 <= 500 ms for simple apps; <= 900 ms for Files and Terminal".

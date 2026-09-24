@@ -144,6 +144,12 @@ actions!(
         NewWindow,
         GoToFolder,
         EmptyTrash,
+        Find,
+        CopyAsPathname,
+        MoveItemHere,
+        GoDesktop,
+        GoDocuments,
+        GoRecents,
     ]
 );
 

@@ -113,6 +113,22 @@ impl FinderView {
         }
     }
 
+    /// Go ▸ Desktop, ⇧⌘D.
+    pub(super) fn go_desktop(&mut self, cx: &mut Context<Self>) {
+        let desktop = self.home.join("Desktop");
+        if desktop.is_dir() {
+            self.navigate(desktop, cx);
+        }
+    }
+
+    /// Go ▸ Documents, ⇧⌘O.
+    pub(super) fn go_documents(&mut self, cx: &mut Context<Self>) {
+        let documents = self.home.join("Documents");
+        if documents.is_dir() {
+            self.navigate(documents, cx);
+        }
+    }
+
     pub(super) fn navigate(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if !path.is_dir() || (path == self.cwd && !self.trash_view && !self.applications_view) {
             return;

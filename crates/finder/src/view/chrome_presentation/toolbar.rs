@@ -70,6 +70,14 @@ fn capsule_rule(visible: bool) -> Div {
 }
 
 impl FinderView {
+    /// ⌘F, and the search circle's own click: open the search field and
+    /// give it the keyboard, as Edit ▸ Find does on the Mac.
+    pub(in crate::view) fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search_open = true;
+        self.query.update(cx, |state, cx| state.focus(window, cx));
+        cx.notify();
+    }
+
     pub(in crate::view) fn render_toolbar(
         &self,
         layout: crate::view::responsive_layout::ResponsiveLayout,
@@ -215,11 +223,7 @@ impl FinderView {
                         false,
                         true,
                     )
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.search_open = true;
-                        this.query.update(cx, |state, cx| state.focus(window, cx));
-                        cx.notify();
-                    })),
+                    .on_click(cx.listener(|this, _, window, cx| this.open_search(window, cx))),
                 )
                 .into_any_element()
         };

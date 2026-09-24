@@ -147,6 +147,19 @@ impl FinderView {
         self.write_clip_text(cx);
     }
 
+    /// ⌥⌘C: put the selection's absolute paths on the clipboard as plain
+    /// text, one per line, leaving the file clipboard (and Paste) alone —
+    /// the Mac's Copy “x” as Pathname is a text copy, not a file one.
+    pub(super) fn copy_as_pathname(&mut self, cx: &mut Context<Self>) {
+        let paths = self.selected_paths();
+        if paths.is_empty() {
+            return;
+        }
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(pathname_clipboard_text(
+            &paths,
+        )));
+    }
+
     pub(super) fn cut(&mut self, cx: &mut Context<Self>) {
         if self.applications_view {
             self.operation_error = Some("Applications cannot be moved from this view".into());
@@ -171,13 +184,26 @@ impl FinderView {
     /// window or another file manager are pasted, then runs the ordinary
     /// transfer (conflict sheet, cancellation, undo journal).
     pub(super) fn paste(&mut self, cx: &mut Context<Self>) {
+        self.paste_with_kind(false, cx);
+    }
+
+    /// ⌥⌘V, Move Item Here: paste as a move even though the clipboard held
+    /// a plain Copy, exactly as the Mac's Edit menu item does — ⌘C an item
+    /// elsewhere, then ⌥⌘V it here instead of copying it.
+    pub(super) fn move_item_here(&mut self, cx: &mut Context<Self>) {
+        self.paste_with_kind(true, cx);
+    }
+
+    fn paste_with_kind(&mut self, force_move: bool, cx: &mut Context<Self>) {
         if self.block_mutation_during_transfer(cx) {
             return;
         }
         let pending = pasteboard::read_file_list();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let read = pending.wait().await;
-            let _ = this.update(cx, |this: &mut FinderView, cx| this.paste_from(read, cx));
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                this.paste_from(read, force_move, cx)
+            });
         })
         .detach();
     }
@@ -185,6 +211,7 @@ impl FinderView {
     fn paste_from(
         &mut self,
         read: std::result::Result<Option<pasteboard::FileList>, pasteboard::PasteboardError>,
+        force_move: bool,
         cx: &mut Context<Self>,
     ) {
         if self.block_mutation_during_transfer(cx) {
@@ -237,14 +264,15 @@ impl FinderView {
             cx.notify();
             return;
         }
-        let kind = if self.clip_cut {
+        let move_it = force_move || self.clip_cut;
+        let kind = if move_it {
             file_ops::TransferKind::Move
         } else {
             file_ops::TransferKind::Copy
         };
         let mut tasks = Vec::new();
         for source in self.clipboard.clone() {
-            if self.clip_cut && source.parent() == Some(self.cwd.as_path()) {
+            if move_it && source.parent() == Some(self.cwd.as_path()) {
                 continue;
             }
             let Some(name) = source.file_name().map(|name| name.to_owned()) else {
@@ -257,7 +285,7 @@ impl FinderView {
             });
         }
         if tasks.is_empty() {
-            if self.clip_cut {
+            if move_it {
                 let pasted = std::mem::take(&mut self.clipboard);
                 self.clip_cut = false;
                 self.clear_pasteboard_after_move(pasted, cx);
@@ -268,9 +296,9 @@ impl FinderView {
             return;
         }
         self.start_transfer_with_conflicts(
-            if self.clip_cut { "Moving" } else { "Copying" },
+            if move_it { "Moving" } else { "Copying" },
             tasks,
-            self.clip_cut,
+            move_it,
             false,
             cx,
         );
@@ -350,6 +378,16 @@ impl FinderView {
         window.focus(&self.focus, cx);
         cx.notify();
     }
+}
+
+/// ⌥⌘C, Copy “x” as Pathname: the clipboard text for a selection, one
+/// absolute path per line, in selection order.
+pub(super) fn pathname_clipboard_text(paths: &[PathBuf]) -> String {
+    paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Publish one file item to assistive technology: its role, its name, whether

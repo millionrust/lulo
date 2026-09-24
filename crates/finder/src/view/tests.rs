@@ -359,6 +359,19 @@ fn column_vertical_target_moves_within_the_column_and_clamps_at_the_ends() {
 }
 
 #[test]
+fn pathname_clipboard_text_is_one_absolute_path_per_line() {
+    assert_eq!(pathname_clipboard_text(&[]), "");
+    assert_eq!(
+        pathname_clipboard_text(&[PathBuf::from("/tmp/one.txt")]),
+        "/tmp/one.txt"
+    );
+    assert_eq!(
+        pathname_clipboard_text(&[PathBuf::from("/tmp/one.txt"), PathBuf::from("/tmp/two.txt"),]),
+        "/tmp/one.txt\n/tmp/two.txt"
+    );
+}
+
+#[test]
 fn trash_deletion_dates_read_like_the_rest_of_the_list() {
     let label = trash_updates::deletion_label("2024-02-28T23:05:00");
     assert!(!label.contains('T'), "{label}");

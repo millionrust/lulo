@@ -6,8 +6,8 @@ use std::time::Duration;
 use gpui::{
     div, prelude::FluentBuilder as _, px, rgb, rgba, size, svg, AnyElement, ClipboardItem, Context,
     FocusHandle, FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent,
-    ParentElement as _, Render, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
-    WindowControlArea,
+    ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
+    Window, WindowControlArea,
 };
 use rmac_calculator::engine::{fitted_font_size, Calculator, HistoryEntry, Key as BasicKey};
 use rmac_calculator::keypad::{
@@ -241,10 +241,12 @@ impl CalculatorView {
         let hit_height = mac::traffic_light_hit_height();
         let sidebar_x = self.sidebar_button_center_x();
         let mode_x = self.mode_button_center_x();
-        let button = |id: &'static str, center_x: f32, glyph: &'static str| {
+        let button = |id: &'static str, name: &'static str, center_x: f32, glyph: &'static str| {
             let diameter = keypad::TOOLBAR_BUTTON_DIAMETER;
             div()
                 .id(id)
+                .role(Role::Button)
+                .aria_label(name)
                 .absolute()
                 .left(px(center_x - diameter / 2.0))
                 .top(px(light_y - diameter / 2.0))
@@ -288,14 +290,20 @@ impl CalculatorView {
             .child(
                 button(
                     "calculator-history",
+                    "History",
                     sidebar_x,
                     "icons/calculator/sidebar.svg",
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.toggle_history(cx))),
             )
             .child(
-                button("calculator-mode", mode_x, "icons/calculator/calculator.svg")
-                    .on_click(cx.listener(|this, _, _, cx| this.toggle_mode_menu(cx))),
+                button(
+                    "calculator-mode",
+                    "Mode",
+                    mode_x,
+                    "icons/calculator/calculator.svg",
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.toggle_mode_menu(cx))),
             )
     }
 
@@ -310,9 +318,12 @@ impl CalculatorView {
         let (_, light_y) = keypad::TRAFFIC_LIGHT_CENTER;
         let top = light_y + diameter / 2.0 + 6.0;
         let width = 148.0;
-        let row = |id: &'static str, active: bool| {
+        let row = |id: &'static str, name: &'static str, active: bool| {
             div()
                 .id(id)
+                .role(Role::MenuItem)
+                .aria_label(name)
+                .aria_selected(active)
                 .h(px(24.0))
                 .px(px(10.0))
                 .flex()
@@ -335,6 +346,8 @@ impl CalculatorView {
         };
         div()
             .id("calculator-mode-menu")
+            .role(Role::Menu)
+            .aria_label("Mode")
             .absolute()
             .top(px(top))
             .left(px((mode_x - width / 2.0)
@@ -351,7 +364,7 @@ impl CalculatorView {
             .flex_col()
             .gap(px(2.0))
             .child(
-                row("calculator-mode-basic", self.mode == Mode::Basic)
+                row("calculator-mode-basic", "Basic", self.mode == Mode::Basic)
                     .cursor_pointer()
                     .child("Basic")
                     .when(self.mode == Mode::Basic, |el| el.child("✓"))
@@ -360,22 +373,26 @@ impl CalculatorView {
                     })),
             )
             .child(
-                row("calculator-mode-scientific", self.mode == Mode::Scientific)
-                    .cursor_pointer()
-                    .child("Scientific")
-                    .when(self.mode == Mode::Scientific, |el| el.child("✓"))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.set_mode(Mode::Scientific, window, cx);
-                    })),
+                row(
+                    "calculator-mode-scientific",
+                    "Scientific",
+                    self.mode == Mode::Scientific,
+                )
+                .cursor_pointer()
+                .child("Scientific")
+                .when(self.mode == Mode::Scientific, |el| el.child("✓"))
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.set_mode(Mode::Scientific, window, cx);
+                })),
             )
             .child(
-                row("calculator-mode-programmer", false)
+                row("calculator-mode-programmer", "Programmer", false)
                     .opacity(0.4)
                     .child("Programmer")
                     .child(soon()),
             )
             .child(
-                row("calculator-mode-convert", false)
+                row("calculator-mode-convert", "Convert", false)
                     .opacity(0.4)
                     .child("Convert")
                     .child(soon()),
@@ -397,6 +414,11 @@ impl CalculatorView {
             rows.push(
                 div()
                     .id(SharedString::from(format!("calculator-history-{index}")))
+                    .role(Role::MenuItem)
+                    .aria_label(SharedString::from(format!(
+                        "{} = {}",
+                        entry.expression, entry.result
+                    )))
                     .cursor_pointer()
                     .px(px(12.0))
                     .py(px(6.0))
@@ -444,6 +466,8 @@ impl CalculatorView {
         };
         div()
             .id("calculator-history-panel")
+            .role(Role::Menu)
+            .aria_label("History")
             .absolute()
             .top(px(top))
             .left_0()

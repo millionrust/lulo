@@ -63,6 +63,9 @@ pub(crate) struct DeskState {
     /// Counts presses and keys, so a pending click-to-rename can tell it
     /// was followed by something else (a double-click opens instead).
     pub rename_click: u64,
+    /// The press on bare wallpaper was a plain click that dismissed nothing;
+    /// released in place, it shows the desktop (reveal.rs).
+    pub reveal_click: bool,
 }
 
 /// An icon's name being edited in place.
@@ -371,6 +374,13 @@ impl Wallpaper {
         cx: &mut Context<Self>,
     ) {
         self.note_display(cx);
+        // A second press of a double-click is not a new click (S).
+        self.desk.reveal_click = event.click_count == 1
+            && !(event.modifiers.platform || event.modifiers.shift)
+            && self.desk.menu.is_none()
+            && self.desk.panel.is_none()
+            && self.desk.rename.is_none()
+            && self.status.read(cx).app_drawer_window().is_none();
         self.dismiss_app_drawer(cx);
         // Focusing the desktop ends any rename in progress (it commits).
         window.focus(&self.focus, cx);
@@ -613,7 +623,14 @@ impl Wallpaper {
                     });
                 }
             }
-            Drag::Marquee { .. } | Drag::Slider { .. } => {}
+            Drag::Marquee { start, .. } => {
+                let dx = f32::from(event.position.x - start.x);
+                let dy = f32::from(event.position.y - start.y);
+                if std::mem::take(&mut self.desk.reveal_click) && dx.hypot(dy) <= DRAG_THRESHOLD {
+                    super::reveal::wallpaper_clicked();
+                }
+            }
+            Drag::Slider { .. } => {}
         }
         cx.notify();
     }

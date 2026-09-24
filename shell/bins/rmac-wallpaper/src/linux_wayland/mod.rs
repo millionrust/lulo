@@ -5,6 +5,7 @@
 mod desktop;
 mod gallery;
 mod menu;
+mod reveal;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};

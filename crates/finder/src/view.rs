@@ -53,11 +53,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use gpui::{
-    actions, div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, AssetSource,
-    ClickEvent, Context, Div, Entity, ExternalPaths, FocusHandle, Focusable as _, Hsla,
-    InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, ParentElement, Pixels, Point, Render, Result, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled, Svg, Window,
+    actions, div, img, prelude::FluentBuilder as _, px, svg, AccessibleAction, AppContext as _,
+    AssetSource, ClickEvent, Context, Div, Entity, ExternalPaths, FocusHandle, Focusable as _,
+    Hsla, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton,
+    MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render, Result, Role,
+    SharedString, Stateful, StatefulInteractiveElement as _, Styled, Svg, Toggled, Window,
 };
 use gpui_component::{Icon, IconName, StyledExt as _};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};

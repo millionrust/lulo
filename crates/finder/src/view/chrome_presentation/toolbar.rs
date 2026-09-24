@@ -18,7 +18,8 @@ fn capsule(id: &'static str) -> Stateful<Div> {
 }
 
 /// A 36 × 36 capsule button. The selected state is the 34 × 28 pill the view
-/// control draws behind its current mode.
+/// control draws behind its current mode. The tooltip text doubles as the
+/// accessible name, since the button itself shows only a glyph.
 fn capsule_button(
     id: &'static str,
     glyph: &'static str,
@@ -34,6 +35,8 @@ fn capsule_button(
     };
     div()
         .id(id)
+        .role(Role::Button)
+        .aria_label(tooltip)
         .w(px(CAPSULE_BUTTON))
         .h(px(CAPSULE_BUTTON))
         .flex_none()
@@ -75,6 +78,8 @@ impl FinderView {
         let can_go_back = self.trash_view || self.applications_view || !self.back.is_empty();
         let can_go_forward = !self.fwd.is_empty();
         let navigation_control = capsule("navigation")
+            .role(Role::Toolbar)
+            .aria_label("Back/Forward")
             .child(
                 capsule_button(
                     "back",
@@ -105,15 +110,24 @@ impl FinderView {
             ("v-col", "icons/columns-3.svg", "Columns", ViewMode::Column),
             ("v-gal", "icons/gallery.svg", "Gallery", ViewMode::Gallery),
         ];
-        let mut view_control = capsule("view-control");
+        let mut view_control = capsule("view-control")
+            .role(Role::RadioGroup)
+            .aria_label("View");
         for (index, (id, glyph, tooltip, mode)) in modes.into_iter().enumerate() {
             if index > 0 {
                 let previous = modes[index - 1].3;
                 view_control =
                     view_control.child(capsule_rule(self.view != mode && self.view != previous));
             }
+            let current = self.view == mode;
             view_control = view_control.child(
-                capsule_button(id, glyph, TOOLBAR_GLYPH, tooltip, self.view == mode, true)
+                capsule_button(id, glyph, TOOLBAR_GLYPH, tooltip, current, true)
+                    .role(Role::RadioButton)
+                    .aria_toggled(if current {
+                        Toggled::True
+                    } else {
+                        Toggled::False
+                    })
                     .on_click(cx.listener(move |this, _, _, cx| this.select_view_mode(mode, cx))),
             );
         }
@@ -121,6 +135,8 @@ impl FinderView {
         // Finder's "Group" pop-up. Files has no grouping, so it offers the
         // Sort By choices that the pop-up also carries.
         let sort_control = capsule("sort")
+            .role(Role::Button)
+            .aria_label("Sort By")
             .w(px(GROUP_CAPSULE_WIDTH))
             .justify_center()
             .gap(px(1.0))
@@ -141,26 +157,29 @@ impl FinderView {
 
         // Finder's action capsule also holds Share and Tags; Files has no
         // backend for either, so only the Action (…) menu is shown.
-        let action_control = capsule("actions").child(
-            capsule_button(
-                "more",
-                "icons/ellipsis.svg",
-                TOOLBAR_GLYPH,
-                "Action",
-                false,
-                true,
-            )
-            .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
-                this.menu_purpose = MenuPurpose::Context;
-                this.menu_at = Some(rmac_ui::ContextMenuState::open(
-                    event.position(),
-                    &this.focus,
-                    window,
-                    cx,
-                ));
-                cx.notify();
-            })),
-        );
+        let action_control = capsule("actions")
+            .role(Role::Toolbar)
+            .aria_label("Actions")
+            .child(
+                capsule_button(
+                    "more",
+                    "icons/ellipsis.svg",
+                    TOOLBAR_GLYPH,
+                    "Action",
+                    false,
+                    true,
+                )
+                .on_click(cx.listener(|this, event: &ClickEvent, window, cx| {
+                    this.menu_purpose = MenuPurpose::Context;
+                    this.menu_at = Some(rmac_ui::ContextMenuState::open(
+                        event.position(),
+                        &this.focus,
+                        window,
+                        cx,
+                    ));
+                    cx.notify();
+                })),
+            );
 
         // Search is a 36 pt circle that opens into a field, as in Finder; it
         // stays open while it holds a query.
@@ -168,7 +187,11 @@ impl FinderView {
             || !self.query.read(cx).value().is_empty()
             || self.search_summary.is_some();
         let search: gpui::AnyElement = if search_open {
+            // The pinned text field publishes an unnamed text node; the
+            // search landmark around it carries the name.
             capsule("search")
+                .role(Role::Search)
+                .aria_label("Search")
                 .w(px(layout.search_width))
                 .gap(px(6.0))
                 .pl(px(10.0))
@@ -215,6 +238,8 @@ impl FinderView {
 
         div()
             .id("toolbar")
+            .role(Role::Toolbar)
+            .aria_label("Toolbar")
             .h(px(TOOLBAR_HEIGHT))
             .flex_none()
             .w_full()

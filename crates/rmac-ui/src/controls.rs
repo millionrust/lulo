@@ -899,6 +899,7 @@ pub struct Slider {
     state: Entity<SliderState>,
     axis: SliderAxis,
     disabled: bool,
+    accessible_name: Option<SharedString>,
     style: StyleRefinement,
 }
 
@@ -908,8 +909,18 @@ impl Slider {
             state: state.clone(),
             axis: SliderAxis::Horizontal,
             disabled: false,
+            accessible_name: None,
             style: StyleRefinement::default(),
         }
+    }
+
+    /// Name the slider for assistive technology ("Icon size"). The pinned
+    /// component publishes its value, range and increment/decrement actions
+    /// but has no label of its own, so the name is carried by the labelled
+    /// group that already wraps it.
+    pub fn accessible_name(mut self, name: impl Into<SharedString>) -> Self {
+        self.accessible_name = Some(name.into());
+        self
     }
 
     pub fn horizontal(mut self) -> Self {
@@ -941,7 +952,19 @@ impl RenderOnce for Slider {
             SliderAxis::Vertical => ComponentSlider::new(&self.state).vertical(),
         }
         .disabled(self.disabled);
-        div().refine_style(&self.style).child(slider)
+        match self.accessible_name {
+            Some(name) => div()
+                .id(("slider-label", self.state.entity_id()))
+                .role(Role::Group)
+                .aria_label(name)
+                .refine_style(&self.style)
+                .child(slider)
+                .into_any_element(),
+            None => div()
+                .refine_style(&self.style)
+                .child(slider)
+                .into_any_element(),
+        }
     }
 }
 

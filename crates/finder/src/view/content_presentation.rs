@@ -467,7 +467,13 @@ impl FinderView {
                     .justify_center()
                     .text_size(rmac_ui::text_px(STATUS_TEXT))
                     .text_color(chrome_text())
-                    .child(status)
+                    .child(
+                        div()
+                            .id("status-text")
+                            .role(Role::Status)
+                            .aria_label(status.clone())
+                            .child(status),
+                    )
                     .when(self.view == ViewMode::Icon, |bar| {
                         bar.child(
                             div()
@@ -477,7 +483,11 @@ impl FinderView {
                                 .h_full()
                                 .flex()
                                 .items_center()
-                                .child(Slider::new(&self.icon_size_slider).w_full()),
+                                .child(
+                                    Slider::new(&self.icon_size_slider)
+                                        .accessible_name("Icon size")
+                                        .w_full(),
+                                ),
                         )
                     }),
             )
@@ -538,6 +548,8 @@ impl FinderView {
                 crumbs = crumbs.child(
                     div()
                         .id(("path-crumb", index))
+                        .role(Role::Link)
+                        .aria_label(name.clone())
                         .flex_none()
                         .flex()
                         .items_center()

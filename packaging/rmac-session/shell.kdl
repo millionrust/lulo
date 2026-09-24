@@ -268,6 +268,11 @@ binds {
     // ⌃F3 moves keyboard focus to the Dock, as on macOS. The resident Dock
     // holds the keyboard until Esc, an activation or a click.
     Ctrl+F3 repeat=false hotkey-overlay-title="Move Focus to the Dock" { spawn "/usr/libexec/rmac/rmac-dock" "focus"; }
+    // ⌥⌘⎋ is Force Quit, as on macOS. It opens the same place as the
+    // system menu's Force Quit… item: System Monitor, whose Quit Process
+    // alert offers Force Quit. keyd never translates ⌘⎋, so it reaches niri
+    // in every keyboard profile.
+    Mod+Alt+Escape repeat=false hotkey-overlay-title="Force Quit Applications" { spawn "/usr/bin/rmac-system-monitor"; }
 }
 
 // Super+grave keeps niri's MRU cycle restricted to the current app's

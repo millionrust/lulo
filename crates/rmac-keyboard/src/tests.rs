@@ -212,9 +212,9 @@ fn native_profile_is_the_installed_pass_through_file() {
 #[test]
 fn no_profile_translates_a_key_niri_binds_under_command() {
     // packaging/rmac-session/shell.kdl and shortcuts-fallback.kdl bind
-    // Mod+Space, Mod+Tab, Mod+grave and Mod+Shift+3/4/5.
+    // Mod+Space, Mod+Tab, Mod+grave, Mod+Shift+3/4/5 and Mod+Alt+Escape.
     for profile in [Profile::PcApp, Profile::Terminal] {
-        for key in ["space", "tab", "grave", "3", "4", "5", "h", "m"] {
+        for key in ["space", "tab", "grave", "3", "4", "5", "h", "m", "esc"] {
             assert!(
                 !bind_arguments(profile)
                     .iter()

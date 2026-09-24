@@ -670,6 +670,10 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     assert!(shell.contains(
         "Ctrl+F3 repeat=false hotkey-overlay-title=\"Move Focus to the Dock\" { spawn \"/usr/libexec/rmac/rmac-dock\" \"focus\"; }"
     ));
+    // ⌥⌘⎋ opens Force Quit, the same target as the system menu's item.
+    assert!(shell.contains(
+        "Mod+Alt+Escape repeat=false hotkey-overlay-title=\"Force Quit Applications\" { spawn \"/usr/bin/rmac-system-monitor\"; }"
+    ));
     // ⇧⌘3/4/5 go to the resident screenshot service, not niri's own UI.
     for (keys, word) in [
         ("Mod+Shift+3", "screen"),

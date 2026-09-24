@@ -36,7 +36,10 @@ impl ProcessColumn {
             Self::Name => "Process Name",
             Self::Cpu => "% CPU",
             Self::Memory => "Memory",
-            Self::Energy => "Energy",
+            // macOS's own Energy Impact figure is proprietary; ours is a
+            // stated estimate from CPU and disk I/O (process_table.rs), so
+            // the column header says so rather than implying a measurement.
+            Self::Energy => "Energy (Est.)",
             Self::Disk => "Disk I/O",
             Self::ParentPid => "Parent PID",
             Self::User => "User",

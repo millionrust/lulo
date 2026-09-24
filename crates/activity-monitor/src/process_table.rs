@@ -26,6 +26,11 @@ pub(crate) struct ProcRow {
     /// Lower-cased command line / executable path, used for search matching only.
     cmd_search: SharedString,
     pub(crate) cpu: f32,
+    /// `sysinfo` computes per-process CPU as a delta between two reads; the
+    /// very first refresh has no previous reading and always reports 0.0.
+    /// `cell_text` shows "—" instead of that false idle reading until a
+    /// second sample exists, matching the header CPU figures.
+    pub(crate) cpu_ready: bool,
     pub(crate) mem: u64,
     /// Bytes read+written since the last refresh (a per-tick I/O proxy).
     pub(crate) disk: u64,
@@ -52,7 +57,13 @@ impl ProcRow {
         match key {
             ColKey::Pid => self.pid.to_string(),
             ColKey::Name => self.name.to_string(),
-            ColKey::Cpu => format!("{:.1}", self.cpu),
+            ColKey::Cpu => {
+                if self.cpu_ready {
+                    format!("{:.1}", self.cpu)
+                } else {
+                    "—".to_string()
+                }
+            }
             ColKey::Mem => format_mem(self.mem),
             ColKey::Energy => format!("{:.1}", self.energy),
             ColKey::Disk => format_mem(self.disk),
@@ -110,6 +121,10 @@ pub(crate) struct ProcessTableDelegate {
     /// data refresh/filter/sort/column-toggle cadence the table already runs
     /// on — and on every selection change, never per render frame.
     pub(crate) accessible: ProcessTableAccessibilitySnapshot,
+    /// Counts calls to `refresh()`. Per-process CPU needs two `sysinfo`
+    /// reads to compute a delta, so rows built from the first refresh get
+    /// `cpu_ready: false`.
+    refresh_count: u32,
 }
 
 /// A placeholder snapshot for before the first refresh, or if a projection
@@ -142,6 +157,7 @@ impl ProcessTableDelegate {
             sort_asc: false,
             selected_pid: None,
             accessible: empty_accessibility_snapshot(),
+            refresh_count: 0,
         };
         delegate.refresh();
         delegate
@@ -217,6 +233,11 @@ impl ProcessTableDelegate {
 
     /// Pull a fresh snapshot from `sysinfo`, then reapply the active view.
     pub(crate) fn refresh(&mut self) {
+        self.refresh_count = self.refresh_count.saturating_add(1);
+        // The first refresh has no previous `sysinfo` reading to diff
+        // against, so every process would otherwise read 0.0% CPU.
+        let cpu_ready = self.refresh_count >= 2;
+
         // Frequency and static CPU metadata do not change on this screen; only
         // refresh usage deltas on the two-second sampling path.
         self.system.refresh_cpu_usage();
@@ -267,6 +288,7 @@ impl ProcessTableDelegate {
                     name: process.name().to_string_lossy().into_owned().into(),
                     cmd_search: cmd_search.into(),
                     cpu,
+                    cpu_ready,
                     mem: process.memory(),
                     disk,
                     energy: cpu + (disk as f32 / 1_048_576.0) * 0.5,
@@ -524,7 +546,7 @@ impl TableDelegate for ProcessTableDelegate {
 
 #[cfg(test)]
 mod tests {
-    use super::selection_projection;
+    use super::{selection_projection, ColKey, ProcRow};
 
     #[test]
     fn process_churn_clears_only_a_vanished_selection() {
@@ -540,5 +562,34 @@ mod tests {
             selection_projection(Some(20), [10, 30], [10, 30]),
             (None, None)
         );
+    }
+
+    fn row(cpu: f32, cpu_ready: bool) -> ProcRow {
+        ProcRow {
+            pid: 1,
+            name: "proc".into(),
+            cmd_search: "proc".into(),
+            cpu,
+            cpu_ready,
+            mem: 0,
+            disk: 0,
+            energy: 0.0,
+            ppid: None,
+            user: "user".into(),
+            vmem: 0,
+            run_time: 0,
+            start_time: 0,
+            status: "Running".into(),
+        }
+    }
+
+    #[test]
+    fn cpu_reads_a_dash_until_the_second_sample() {
+        assert_eq!(row(0.0, false).cell_text(ColKey::Cpu), "—");
+        // Even a nonzero first-sample reading (sysinfo's own transient
+        // values) stays hidden until a real delta exists.
+        assert_eq!(row(12.5, false).cell_text(ColKey::Cpu), "—");
+        assert_eq!(row(0.0, true).cell_text(ColKey::Cpu), "0.0");
+        assert_eq!(row(12.5, true).cell_text(ColKey::Cpu), "12.5");
     }
 }

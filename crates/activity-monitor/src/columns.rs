@@ -69,7 +69,9 @@ impl ColKey {
             Self::Name => 280.0,
             Self::Cpu => 96.0,
             Self::Mem => 110.0,
-            Self::Energy => 96.0,
+            // Wider than the other 96px columns: the header now reads
+            // "Energy (Est.)" rather than plain "Energy".
+            Self::Energy => 116.0,
             Self::Disk => 120.0,
             Self::Ppid => 96.0,
             Self::User => 130.0,

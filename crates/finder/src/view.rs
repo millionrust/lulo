@@ -92,6 +92,7 @@ use finder_style::*;
 use presentation_persistence::{FinderPersistence, MAX_RESTORED_TABS};
 use presentation_support::*;
 use search_helpers::*;
+use selection_controller::accessible_item;
 use transient_state::*;
 
 pub(crate) use presentation_support::sanitize_dialog_name;

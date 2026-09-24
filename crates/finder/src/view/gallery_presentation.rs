@@ -275,60 +275,73 @@ impl FinderView {
                 },
             );
 
-        let filmstrip = visible_indices.iter().filter_map(|&index| {
-            let entry = self.entries.get(index)?;
-            let selected = self.selected.contains(&index);
-            let glyph = if entry.is_dir {
-                "icons/folder-artwork.svg"
-            } else {
-                "icons/file-fill.svg"
-            };
-            let visual = entry
-                .application
-                .as_ref()
-                .and_then(|application| application.icon.clone())
-                .map(|path| {
-                    img(path)
-                        .w(px(48.0))
-                        .h(px(48.0))
-                        .rounded(px(rmac_ui::mac::radius_menu()))
-                        .into_any_element()
-                })
-                .unwrap_or_else(|| {
-                    self.thumbs.get(&entry.path).map_or_else(
-                        || {
-                            icon(
-                                glyph,
-                                GALLERY_THUMB,
-                                if entry.is_dir {
-                                    folder_blue()
-                                } else {
-                                    secondary()
-                                },
-                            )
+        let entity = cx.entity();
+        let visible_count = visible_indices.len();
+        let filmstrip = visible_indices
+            .iter()
+            .enumerate()
+            .filter_map(|(position, &index)| {
+                let entry = self.entries.get(index)?;
+                let selected = self.selected.contains(&index);
+                let glyph = if entry.is_dir {
+                    "icons/folder-artwork.svg"
+                } else {
+                    "icons/file-fill.svg"
+                };
+                let visual = entry
+                    .application
+                    .as_ref()
+                    .and_then(|application| application.icon.clone())
+                    .map(|path| {
+                        img(path)
+                            .w(px(48.0))
+                            .h(px(48.0))
+                            .rounded(px(rmac_ui::mac::radius_menu()))
                             .into_any_element()
-                        },
-                        |thumbnail| {
-                            img(thumbnail.clone())
-                                .max_w(px(58.0))
-                                .max_h(px(48.0))
-                                .rounded(px(rmac_ui::mac::radius_menu_item()))
+                    })
+                    .unwrap_or_else(|| {
+                        self.thumbs.get(&entry.path).map_or_else(
+                            || {
+                                icon(
+                                    glyph,
+                                    GALLERY_THUMB,
+                                    if entry.is_dir {
+                                        folder_blue()
+                                    } else {
+                                        secondary()
+                                    },
+                                )
                                 .into_any_element()
-                        },
-                    )
-                });
-            let drag_paths = if selected {
-                self.selected_paths()
-            } else {
-                vec![entry.path.clone()]
-            };
-            let drag_count = drag_paths.len();
-            let drop_directory = entry.path.clone();
-            let is_directory = entry.is_dir;
+                            },
+                            |thumbnail| {
+                                img(thumbnail.clone())
+                                    .max_w(px(58.0))
+                                    .max_h(px(48.0))
+                                    .rounded(px(rmac_ui::mac::radius_menu_item()))
+                                    .into_any_element()
+                            },
+                        )
+                    });
+                let drag_paths = if selected {
+                    self.selected_paths()
+                } else {
+                    vec![entry.path.clone()]
+                };
+                let drag_count = drag_paths.len();
+                let drop_directory = entry.path.clone();
+                let is_directory = entry.is_dir;
 
-            Some(
-                div()
-                    .id(("gallery-item", index))
+                Some(
+                    accessible_item(
+                        div().id(("gallery-item", index)),
+                        Role::ListBoxOption,
+                        entry.name.clone(),
+                        selected,
+                        position,
+                        visible_count,
+                        &entity,
+                        move |this, window, cx| this.accessible_select(index, window, cx),
+                    )
                     .w(px(GALLERY_THUMB + 6.0))
                     .h(px(GALLERY_THUMB + 6.0))
                     .flex_none()
@@ -394,8 +407,8 @@ impl FinderView {
                         },
                     )
                     .into_any_element(),
-            )
-        });
+                )
+            });
 
         let browser = div()
             .flex_1()
@@ -406,6 +419,8 @@ impl FinderView {
             .child(
                 div()
                     .id("gallery-filmstrip")
+                    .role(Role::ListBox)
+                    .aria_label(self.title())
                     .h(px(GALLERY_THUMB + 16.0))
                     .flex_none()
                     .flex()

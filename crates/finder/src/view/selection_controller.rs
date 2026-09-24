@@ -333,4 +333,64 @@ impl FinderView {
         self.selected.clear();
         cx.notify();
     }
+
+    /// Select exactly one item in the current listing, as a plain click does,
+    /// and give the file view keyboard focus so selection-scoped commands
+    /// (Rename, Move to Trash, Quick Look…) act on it.
+    pub(super) fn accessible_select(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if index >= self.entries.len() {
+            return;
+        }
+        self.select_single(index);
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+}
+
+/// Publish one file item to assistive technology: its role, its name, whether
+/// it is selected and where it sits in its list, plus the Click and Focus
+/// actions a screen reader (or an AT-SPI test) uses to select it. `select`
+/// runs the same selection a plain click makes, and works whether or not the
+/// item is scrolled into view (GPUI's own Click fallback synthesizes a mouse
+/// click at the item's on-screen centre).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn accessible_item(
+    element: Stateful<Div>,
+    role: Role,
+    name: SharedString,
+    selected: bool,
+    position: usize,
+    count: usize,
+    entity: &Entity<FinderView>,
+    select: impl Fn(&mut FinderView, &mut Window, &mut Context<FinderView>) + Clone + 'static,
+) -> Stateful<Div> {
+    let click_entity = entity.clone();
+    let click_select = select.clone();
+    let focus_entity = entity.clone();
+    element
+        .role(role)
+        .aria_label(name)
+        .aria_selected(selected)
+        .aria_position_in_set(position + 1)
+        .aria_size_of_set(count)
+        .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
+            focus_entity_update(&click_entity, window, cx, &click_select);
+        })
+        .on_a11y_action(AccessibleAction::Focus, move |_, window, cx| {
+            focus_entity_update(&focus_entity, window, cx, &select);
+        })
+}
+
+fn focus_entity_update(
+    entity: &Entity<FinderView>,
+    window: &mut Window,
+    cx: &mut gpui::App,
+    select: &impl Fn(&mut FinderView, &mut Window, &mut Context<FinderView>),
+) {
+    entity.update(cx, |this, cx| select(this, window, cx));
 }

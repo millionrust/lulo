@@ -39,6 +39,9 @@ impl FinderView {
         let np = p.path.clone();
         let tag_name = p.name.clone();
         let kind = p.kind;
+        let a11y_path = p.path.clone();
+        let a11y_name = p.name.clone();
+        let entity = cx.entity();
         let main = div()
             .id(SharedString::from(format!("placemain-{key}")))
             .flex_1()
@@ -58,16 +61,23 @@ impl FinderView {
                     .text_color(sidebar_text())
                     .child(p.name.clone()),
             )
-            .on_click(cx.listener(move |this, _, _, cx| match kind {
-                PlaceKind::Tag => this.tag_click(tag_name.clone(), cx),
-                PlaceKind::Recents => this.recents_click(cx),
-                PlaceKind::Trash => this.trash_click(cx),
-                PlaceKind::Applications => this.applications_click(cx),
-                _ => this.navigate(np.clone(), cx),
+            .on_click(cx.listener(move |this, _, _, cx| {
+                this.activate_place(kind, tag_name.clone(), np.clone(), cx)
             }));
 
+        // The row is the sidebar item assistive technology sees: its name,
+        // whether it is the current location, and a Click that goes there
+        // without needing the row to be on screen.
         let mut row = div()
             .id(SharedString::from(format!("place-{key}")))
+            .role(Role::ListItem)
+            .aria_label(p.name.clone())
+            .aria_selected(selected)
+            .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
+                entity.update(cx, |this, cx| {
+                    this.activate_place(kind, a11y_name.clone(), a11y_path.clone(), cx)
+                });
+            })
             .flex_none()
             .flex()
             .items_center()
@@ -93,6 +103,8 @@ impl FinderView {
             row = row.child(
                 div()
                     .id(SharedString::from(format!("eject-{key}")))
+                    .role(Role::Button)
+                    .aria_label(format!("Eject {}", p.name))
                     .flex_none()
                     .w(px(20.0))
                     .h(px(20.0))
@@ -108,6 +120,23 @@ impl FinderView {
             );
         }
         row
+    }
+
+    /// Go to a sidebar place, as a click on its row does.
+    fn activate_place(
+        &mut self,
+        kind: PlaceKind,
+        name: SharedString,
+        path: PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        match kind {
+            PlaceKind::Tag => self.tag_click(name, cx),
+            PlaceKind::Recents => self.recents_click(cx),
+            PlaceKind::Trash => self.trash_click(cx),
+            PlaceKind::Applications => self.applications_click(cx),
+            _ => self.navigate(path, cx),
+        }
     }
 
     pub(in crate::view) fn trash_click(&mut self, cx: &mut Context<Self>) {
@@ -187,6 +216,10 @@ impl FinderView {
             if !section.title.is_empty() {
                 contents = contents.child(
                     div()
+                        .id(SharedString::from(format!("section-{}", section.title)))
+                        .role(Role::Heading)
+                        .aria_label(section.title.clone())
+                        .aria_level(2)
                         .flex_none()
                         .mt(px(SIDEBAR_SECTION_GAP))
                         .h(px(SIDEBAR_SECTION_HEIGHT))
@@ -262,6 +295,9 @@ impl FinderView {
                     .child(titlebar)
                     .child(
                         div()
+                            .id("sidebar-places")
+                            .role(Role::List)
+                            .aria_label("Sidebar")
                             .flex_1()
                             .min_h(px(0.0))
                             .child(contents.overflow_y_scrollbar()),

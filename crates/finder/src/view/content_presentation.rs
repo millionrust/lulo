@@ -79,8 +79,13 @@ impl FinderView {
                 .render_application_columns(window_active, cx)
                 .into_any_element();
         }
+        // Column view is a browser of nested folders: assistive technology
+        // sees one tree whose items carry their column as their level.
+        let entity = cx.entity();
         let mut row = div()
             .id("columns")
+            .role(Role::Tree)
+            .aria_label(self.title())
             .flex_1()
             .flex()
             .overflow_x_scroll()
@@ -99,7 +104,8 @@ impl FinderView {
                 .overflow_y_scroll()
                 .v_flex()
                 .pt(px(COLUMN_ROWS_TOP));
-            for e in entries {
+            let column_count = entries.len();
+            for (position, e) in entries.into_iter().enumerate() {
                 // The focused selection is blue; the folders leading to it in
                 // earlier columns keep the grey unfocused selection.
                 let is_focus_sel = self
@@ -119,6 +125,7 @@ impl FinderView {
                 let selected_entry = e.clone();
                 let context_entry = e.clone();
                 let rename_entry = e.clone();
+                let accessible_entry = e.clone();
                 let name_cell: gpui::AnyElement = match &self.renaming {
                     Some((rename_path, input)) if rename_path == &e.path => div()
                         .flex_1()
@@ -163,73 +170,89 @@ impl FinderView {
                     secondary_text()
                 };
                 col = col.child(
-                    div()
-                        .id(SharedString::from(format!("colrow-{ci}-{}", e.name)))
-                        .flex()
-                        .items_center()
-                        .flex_none()
-                        .h(px(COLUMN_ROW_HEIGHT))
-                        .mx(px(COLUMN_ROW_INSET))
-                        .pl(px(COLUMN_ICON_X))
-                        .rounded(px(ROW_RADIUS))
-                        .text_size(rmac_ui::text_px(13.0))
-                        .when(is_sel, |el: Stateful<Div>| el.bg(selection(row_active)))
-                        .child(icon(glyph, LIST_ICON, icol))
-                        .child(
-                            div()
-                                .w(px(COLUMN_TEXT_X - COLUMN_ICON_X - LIST_ICON))
-                                .flex_none(),
-                        )
-                        .child(name_cell)
-                        .when(is_dir, |el: Stateful<Div>| {
-                            el.child(icon(
-                                "icons/chevron-right.svg",
-                                12.0,
-                                if is_sel { row_text } else { chrome_text() },
-                            ))
-                        })
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                                cx.stop_propagation();
-                                if event.modifiers.control {
-                                    this.open_column_context_menu(
-                                        selected_entry.clone(),
-                                        event.position,
-                                        window,
-                                        cx,
-                                    );
-                                    return;
-                                }
-                                this.selected.clear();
-                                this.anchor = None;
-                                this.column_selection = Some(selected_entry.clone());
-                                this.col_stack.truncate(ci + 1);
-                                if is_dir {
-                                    this.col_stack.push(ep.clone());
-                                }
-                                window.focus(&this.focus, cx);
-                                cx.notify();
-                            }),
-                        )
-                        .on_mouse_down(
-                            MouseButton::Right,
-                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                                cx.stop_propagation();
+                    accessible_item(
+                        div().id(SharedString::from(format!("colrow-{ci}-{}", e.name))),
+                        Role::TreeItem,
+                        e.name.clone(),
+                        is_sel,
+                        position,
+                        column_count,
+                        &entity,
+                        move |this, window, cx| {
+                            this.accessible_select_column(ci, accessible_entry.clone(), window, cx)
+                        },
+                    )
+                    .aria_level(ci + 1)
+                    .when(is_dir, |item| {
+                        item.aria_expanded(selected_child.as_ref() == Some(&e.path))
+                    })
+                    .flex()
+                    .items_center()
+                    .flex_none()
+                    .h(px(COLUMN_ROW_HEIGHT))
+                    .mx(px(COLUMN_ROW_INSET))
+                    .pl(px(COLUMN_ICON_X))
+                    .rounded(px(ROW_RADIUS))
+                    .text_size(rmac_ui::text_px(13.0))
+                    .when(is_sel, |el: Stateful<Div>| el.bg(selection(row_active)))
+                    .child(icon(glyph, LIST_ICON, icol))
+                    .child(
+                        div()
+                            .w(px(COLUMN_TEXT_X - COLUMN_ICON_X - LIST_ICON))
+                            .flex_none(),
+                    )
+                    .child(name_cell)
+                    .when(is_dir, |el: Stateful<Div>| {
+                        el.child(icon(
+                            "icons/chevron-right.svg",
+                            12.0,
+                            if is_sel { row_text } else { chrome_text() },
+                        ))
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            if event.modifiers.control {
                                 this.open_column_context_menu(
-                                    context_entry.clone(),
+                                    selected_entry.clone(),
                                     event.position,
                                     window,
                                     cx,
                                 );
-                            }),
-                        )
-                        .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                                return;
+                            }
+                            this.selected.clear();
+                            this.anchor = None;
+                            this.column_selection = Some(selected_entry.clone());
+                            this.col_stack.truncate(ci + 1);
+                            if is_dir {
+                                this.col_stack.push(ep.clone());
+                            }
+                            window.focus(&this.focus, cx);
+                            cx.notify();
+                        }),
+                    )
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            this.open_column_context_menu(
+                                context_entry.clone(),
+                                event.position,
+                                window,
+                                cx,
+                            );
+                        }),
+                    )
+                    .on_click(cx.listener(
+                        move |this, event: &ClickEvent, _, cx| {
                             if event.click_count() < 2 || is_dir {
                                 return;
                             }
                             this.open_paths(vec![open_path.clone()], cx);
-                        })),
+                        },
+                    )),
                 );
             }
             row = row.child(col);
@@ -265,6 +288,8 @@ impl FinderView {
     ) -> impl IntoElement {
         let mut applications = div()
             .id("applications-column")
+            .role(Role::ListBox)
+            .aria_label("Applications")
             .w(px(COLUMN_WIDTH))
             .h_full()
             .flex_none()
@@ -274,6 +299,8 @@ impl FinderView {
             .border_r_1()
             .border_color(dark_rule());
 
+        let entity = cx.entity();
+        let count = self.entries.len();
         for (index, entry) in self.entries.iter().enumerate() {
             let selected = self.selected.contains(&index);
             let icon_element = entry
@@ -291,62 +318,66 @@ impl FinderView {
                     },
                 );
             applications = applications.child(
-                div()
-                    .id(("application-column-row", index))
-                    .h(px(COLUMN_ROW_HEIGHT))
-                    .mx(px(COLUMN_ROW_INSET))
-                    .pl(px(COLUMN_ICON_X))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .gap(px(COLUMN_TEXT_X - COLUMN_ICON_X - LIST_ICON))
-                    .rounded(px(ROW_RADIUS))
-                    .when(selected, |element: Stateful<Div>| {
-                        element.bg(selection(window_active))
-                    })
-                    .child(icon_element)
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w(px(0.0))
-                            .truncate()
-                            .text_size(rmac_ui::text_px(13.0))
-                            .text_color(if selected {
-                                selected_text(window_active)
-                            } else {
-                                primary_text()
-                            })
-                            .child(entry.name.clone()),
-                    )
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                            cx.stop_propagation();
-                            if event.modifiers.control {
-                                this.open_context_menu(Some(index), event.position, window, cx);
-                                return;
-                            }
-                            this.handle_click(
-                                index,
-                                event.modifiers.platform,
-                                event.modifiers.shift,
-                            );
-                            window.focus(&this.focus, cx);
-                            cx.notify();
-                        }),
-                    )
-                    .on_mouse_down(
-                        MouseButton::Right,
-                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                            cx.stop_propagation();
+                accessible_item(
+                    div().id(("application-column-row", index)),
+                    Role::ListBoxOption,
+                    entry.name.clone(),
+                    selected,
+                    index,
+                    count,
+                    &entity,
+                    move |this, window, cx| this.accessible_select(index, window, cx),
+                )
+                .h(px(COLUMN_ROW_HEIGHT))
+                .mx(px(COLUMN_ROW_INSET))
+                .pl(px(COLUMN_ICON_X))
+                .flex_none()
+                .flex()
+                .items_center()
+                .gap(px(COLUMN_TEXT_X - COLUMN_ICON_X - LIST_ICON))
+                .rounded(px(ROW_RADIUS))
+                .when(selected, |element: Stateful<Div>| {
+                    element.bg(selection(window_active))
+                })
+                .child(icon_element)
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.0))
+                        .truncate()
+                        .text_size(rmac_ui::text_px(13.0))
+                        .text_color(if selected {
+                            selected_text(window_active)
+                        } else {
+                            primary_text()
+                        })
+                        .child(entry.name.clone()),
+                )
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                        cx.stop_propagation();
+                        if event.modifiers.control {
                             this.open_context_menu(Some(index), event.position, window, cx);
-                        }),
-                    )
-                    .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-                        if event.click_count() >= 2 {
-                            this.open_index(index, cx);
+                            return;
                         }
-                    })),
+                        this.handle_click(index, event.modifiers.platform, event.modifiers.shift);
+                        window.focus(&this.focus, cx);
+                        cx.notify();
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                        cx.stop_propagation();
+                        this.open_context_menu(Some(index), event.position, window, cx);
+                    }),
+                )
+                .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
+                    if event.click_count() >= 2 {
+                        this.open_index(index, cx);
+                    }
+                })),
             );
         }
 
@@ -429,6 +460,31 @@ impl FinderView {
                     this.open_context_menu(None, event.position, window, cx);
                 }),
             )
+    }
+
+    /// Select one Column-view item for assistive technology, as a plain click
+    /// on its row does: the item becomes the selection, later columns close,
+    /// and a folder opens its own column.
+    fn accessible_select_column(
+        &mut self,
+        column: usize,
+        entry: Entry,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if column >= self.col_stack.len() {
+            return;
+        }
+        self.selected.clear();
+        self.anchor = None;
+        let folder = entry.is_dir.then(|| entry.path.clone());
+        self.column_selection = Some(entry);
+        self.col_stack.truncate(column + 1);
+        if let Some(folder) = folder {
+            self.col_stack.push(folder);
+        }
+        window.focus(&self.focus, cx);
+        cx.notify();
     }
 
     /// macOS-style status bar: item / selection count + free space available.

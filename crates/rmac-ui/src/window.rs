@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use gpui::{
-    point, px, size, App, AppContext as _, Bounds, Context, Pixels, Render, SharedString, Size,
-    TitlebarOptions, Window, WindowBounds, WindowDecorations, WindowOptions,
+    point, px, size, App, AppContext as _, Bounds, Context, Decorations, Edges, Pixels, Render,
+    SharedString, Size, TitlebarOptions, Window, WindowBounds, WindowDecorations, WindowOptions,
 };
 use gpui_component::Root;
 use rmac_window_state::{DisplayBounds, Store as WindowStateStore, WindowMode, WindowState};
@@ -68,6 +68,61 @@ fn normalize_title_fragment(value: &str, limit: usize) -> String {
         output.push(character);
     }
     output
+}
+
+/// The transparent margin the root view reserves around an app window on
+/// Linux for its client-side shadow and resize edges (gpui-component's Root
+/// default). GPUI's window bounds include it; the compositor's window
+/// geometry — the window the user sees — does not.
+#[cfg(target_os = "linux")]
+const CLIENT_FRAME_INSET: f32 = 12.0;
+#[cfg(not(target_os = "linux"))]
+const CLIENT_FRAME_INSET: f32 = 0.0;
+
+/// Outer window bounds for a visible window of `width` × `height`.
+pub(crate) fn outer_window_size(width: f32, height: f32) -> (f32, f32) {
+    (
+        width + 2.0 * CLIENT_FRAME_INSET,
+        height + 2.0 * CLIENT_FRAME_INSET,
+    )
+}
+
+/// Tell the platform about the client frame before the first configure, so
+/// the compositor's first window geometry already excludes it and a new
+/// window opens at exactly the size the app asked for.
+fn reserve_client_frame(window: &mut Window) {
+    if CLIENT_FRAME_INSET > 0.0 {
+        window.set_client_inset(px(CLIENT_FRAME_INSET));
+    }
+}
+
+/// How far the visible window sits inside GPUI's window bounds on each side:
+/// the client frame on untiled edges, nothing under server decorations.
+pub fn window_content_insets(window: &Window) -> Edges<Pixels> {
+    match window.window_decorations() {
+        Decorations::Server => Edges::all(px(0.0)),
+        Decorations::Client { tiling } => {
+            let inset = window.client_inset().unwrap_or(px(0.0));
+            let edge = |tiled: bool| if tiled { px(0.0) } else { inset };
+            Edges {
+                top: edge(tiling.top),
+                right: edge(tiling.right),
+                bottom: edge(tiling.bottom),
+                left: edge(tiling.left),
+            }
+        }
+    }
+}
+
+/// The size of the window the user sees — `viewport_size` less the client
+/// frame. Layout that fills the window (a terminal grid) must use this.
+pub fn window_content_size(window: &Window) -> Size<Pixels> {
+    let viewport = window.viewport_size();
+    let insets = window_content_insets(window);
+    size(
+        (viewport.width - insets.left - insets.right).max(px(0.0)),
+        (viewport.height - insets.top - insets.bottom).max(px(0.0)),
+    )
 }
 
 fn minimum_window_size(width: f32, height: f32) -> Size<Pixels> {
@@ -635,9 +690,14 @@ pub fn boot_app_with_assets<A, V, F>(
         .run(move |cx: &mut App| {
             init_application(cx);
             install_app_menu(app_id, cx);
-            let options = window_options_for_app_with_title(app_id, title, width, height, cx);
+            // The caller names the visible window's size (the Mac's); the
+            // outer bounds add the client frame around it.
+            let (outer_width, outer_height) = outer_window_size(width, height);
+            let options =
+                window_options_for_app_with_title(app_id, title, outer_width, outer_height, cx);
 
             cx.open_window(options, move |window, cx| {
+                reserve_client_frame(window);
                 prepare_surface_window(window, cx);
                 fit_to_display_after_first_frame(window, cx);
                 let view = cx.new(|cx| {

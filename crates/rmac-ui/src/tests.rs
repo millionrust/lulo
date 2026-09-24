@@ -1,6 +1,9 @@
 use gpui::{SharedString, WindowBounds, WindowDecorations, WindowOptions};
 
-use super::{app_id, native_window_title, window::window_options_for_app_with_bounds};
+use super::{
+    app_id, native_window_title,
+    window::{outer_window_size, window_options_for_app_with_bounds},
+};
 
 fn native_title(options: &WindowOptions) -> Option<&SharedString> {
     options
@@ -81,4 +84,14 @@ fn live_native_titles_are_bounded_and_spoof_resistant() {
     assert!(title.len() <= 256);
     assert!(title.ends_with(" — Terminal"));
     assert!(title.is_char_boundary(title.len()));
+}
+
+#[test]
+fn app_windows_open_at_the_visible_size_plus_the_client_frame() {
+    let (width, height) = outer_window_size(580.0, 385.0);
+    if cfg!(target_os = "linux") {
+        assert_eq!((width, height), (604.0, 409.0));
+    } else {
+        assert_eq!((width, height), (580.0, 385.0));
+    }
 }

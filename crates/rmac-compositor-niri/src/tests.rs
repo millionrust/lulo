@@ -218,6 +218,29 @@ fn fill_and_tiling_set_the_whole_floating_frame_by_id() {
 }
 
 #[test]
+fn set_window_frame_sends_an_arbitrary_floating_frame_by_id() {
+    let sequence = convert_action_sequence(&domain::Action::SetWindowFrame {
+        window: domain::WindowId(7),
+        x: domain::Distance(12.5),
+        y: domain::Distance(8.0),
+        width: domain::Distance(40.0),
+        height: domain::Distance(60.0),
+    })
+    .unwrap();
+    assert_eq!(
+        sequence
+            .iter()
+            .map(|wire| serde_json::to_string(wire).unwrap())
+            .collect::<Vec<_>>(),
+        [
+            r#"{"SetWindowWidth":{"id":7,"change":{"SetProportion":40.0}}}"#,
+            r#"{"SetWindowHeight":{"id":7,"change":{"SetProportion":60.0}}}"#,
+            r#"{"MoveFloatingWindow":{"id":7,"x":{"SetProportion":12.5},"y":{"SetProportion":8.0}}}"#,
+        ]
+    );
+}
+
+#[test]
 fn reveal_desktop_moves_windows_by_a_distance_and_crossfades() {
     let moved = convert_action_sequence(&domain::Action::MoveWindowBy {
         window: domain::WindowId(7),

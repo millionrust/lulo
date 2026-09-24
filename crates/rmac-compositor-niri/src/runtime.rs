@@ -64,6 +64,7 @@ pub fn action_capabilities() -> domain::ActionCapabilities {
             domain::ActionKind::FillWindow,
             domain::ActionKind::CenterWindow,
             domain::ActionKind::TileWindow,
+            domain::ActionKind::SetWindowFrame,
             domain::ActionKind::MinimizeWindow,
             domain::ActionKind::RestoreWindow,
             domain::ActionKind::NameWorkspace,
@@ -157,6 +158,9 @@ pub(super) fn convert_action(action: &domain::Action) -> wire::Action {
             let (x, y, _, _) = region.frame_percent();
             move_floating(*window, x, y)
         }
+        // `convert_action_sequence` sends the whole frame; this exhaustive
+        // fallback (unreachable through `execute_at`) matches `FillWindow`.
+        domain::Action::SetWindowFrame { window, x, y, .. } => move_floating(*window, x.0, y.0),
         domain::Action::MinimizeWindow { window } => wire::Action::MoveWindowToWorkspace {
             window_id: Some(window.0),
             reference: wire::WorkspaceReference::Name(domain::PARKING_WORKSPACE.into()),
@@ -227,6 +231,13 @@ pub(super) fn convert_action_sequence(
         domain::Action::TileWindow { window, region } => {
             Ok(floating_frame(*window, region.frame_percent()))
         }
+        domain::Action::SetWindowFrame {
+            window,
+            x,
+            y,
+            width,
+            height,
+        } => Ok(floating_frame(*window, (x.0, y.0, width.0, height.0))),
         domain::Action::FullscreenWindow { window, .. }
         | domain::Action::CenterWindow { window } => Ok(vec![
             wire::Action::FocusWindow { id: window.0 },

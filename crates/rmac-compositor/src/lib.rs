@@ -10,12 +10,14 @@ mod model;
 mod parking;
 pub mod reveal;
 mod state;
+mod tile_history;
 
 pub use actions::*;
 pub use events::*;
 pub use model::*;
 pub use parking::*;
 pub use state::*;
+pub use tile_history::*;
 
 #[cfg(test)]
 mod tests;

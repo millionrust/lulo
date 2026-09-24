@@ -305,6 +305,10 @@ pub(crate) fn run() {
                     rmac_ui::RequestClose,
                     Some("SystemSettings"),
                 ),
+                // System Settings is a single window, so ⌘Q and ⌘W both
+                // just need to close it -- reuse the same guarded handler
+                // (it already declines to close mid-VPN-import, etc.).
+                KeyBinding::new("cmd-q", rmac_ui::RequestClose, Some("SystemSettings")),
             ]);
             Settings::new(window, cx)
         },

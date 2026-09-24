@@ -23,6 +23,7 @@ futures-util.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
 image.workspace = true
+libc.workspace = true
 rmac-apps.workspace = true
 rmac-app-launch.workspace = true
 rmac-app-menu.workspace = true

@@ -21,6 +21,7 @@ futures-util = "0.3"
 gpui = { version = "=0.2.2", git = "https://github.com/zed-industries/zed.git", package = "gpui" }
 gpui_platform = { version = "=0.1.0", git = "https://github.com/zed-industries/zed.git", package = "gpui_platform", features = ["font-kit"] }
 image = { version = "0.25", default-features = false }
+libc = "=0.2.186"
 rmac-apps = { version = "=0.9.0-beta.1", path = "../crates/rmac-apps" }
 rmac-app-launch = { version = "=0.9.0-beta.1", path = "../crates/rmac-app-launch" }
 rmac-app-menu = { version = "=0.9.0-beta.1", path = "../crates/rmac-app-menu" }

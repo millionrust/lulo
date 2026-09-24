@@ -6324,6 +6324,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-screen-reader"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "libc",
+]
+
+[[package]]
 name = "rmac-search"
 version = "0.9.0-beta.1"
 dependencies = [
@@ -6566,6 +6574,7 @@ dependencies = [
  "rmac-privacy",
  "rmac-privacy-linux",
  "rmac-recent-documents",
+ "rmac-screen-reader",
  "rmac-sharing",
  "rmac-sharing-linux",
  "rmac-shell-settings",

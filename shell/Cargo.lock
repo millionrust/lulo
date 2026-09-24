@@ -5009,6 +5009,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-screen-reader"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "libc",
+]
+
+[[package]]
 name = "rmac-search"
 version = "0.9.0-beta.1"
 dependencies = [
@@ -5207,6 +5215,7 @@ dependencies = [
  "rmac-osd",
  "rmac-places",
  "rmac-recent-documents",
+ "rmac-screen-reader",
  "rmac-search",
  "rmac-shell-layer",
  "rmac-shell-runtime",
@@ -5218,6 +5227,7 @@ dependencies = [
  "rmac-wallpaper-runtime",
  "trash",
  "uuid",
+ "zbus",
 ]
 
 [[package]]

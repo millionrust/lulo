@@ -310,6 +310,72 @@ pub fn text_tertiary() -> Hsla {
     crate::theme::current().colors.text_tertiary.hsla()
 }
 
+fn dark_scheme() -> bool {
+    crate::theme::current().color_scheme == rmac_appearance::ResolvedColorScheme::Dark
+}
+
+/// A title-bar window's title (TextEdit, Terminal): #9F9EAB in the key
+/// window and #64636F behind it, measured on the tinted dark bar
+/// (design-lab/chrome.html, design-lab/apps.html). Light is S.
+pub fn window_title(active: bool) -> Hsla {
+    match (dark_scheme(), active) {
+        (true, true) => gpui::rgb(0x9f9eab).into(),
+        (true, false) => gpui::rgb(0x64636f).into(),
+        (false, true) => text_secondary(),
+        (false, false) => text_tertiary(),
+    }
+}
+
+/// The " — Edited" that follows a dirty document's title: #63626F in the
+/// key window (measured, design-lab/apps.html). Inactive and light are S.
+pub fn window_title_edited(active: bool) -> Hsla {
+    match (dark_scheme(), active) {
+        (true, true) => gpui::rgb(0x63626f).into(),
+        (true, false) => gpui::rgb(0x4a4a55).into(),
+        (false, _) => text_tertiary(),
+    }
+}
+
+/// NSTextView's insertion point: #3478F6, 2 pt wide, measured in TextEdit
+/// dark. Light is S (the accent).
+pub fn text_caret() -> Hsla {
+    if dark_scheme() {
+        gpui::rgb(0x3478f6).into()
+    } else {
+        accent()
+    }
+}
+
+/// Selected-text highlight of a key text view: opaque #476288 over the
+/// #1E1E1E text background in TextEdit dark (measured). Light is AppKit's
+/// selectedTextBackgroundColor #B3D7FF (S).
+pub fn text_selection() -> Hsla {
+    if dark_scheme() {
+        gpui::rgb(0x476288).into()
+    } else {
+        gpui::rgb(0xb3d7ff).into()
+    }
+}
+
+/// The overlay scroller's knob while scrolling: #9A9A9A over #1E1E1E, i.e.
+/// white at 55 % (measured in TextEdit dark). Light is black at 50 % (S).
+pub fn scroller_knob() -> Hsla {
+    if dark_scheme() {
+        gpui::rgba(0xffffff8c).into()
+    } else {
+        gpui::rgba(0x00000080).into()
+    }
+}
+
+/// The knob under the pointer (S): a step stronger than [`scroller_knob`].
+pub fn scroller_knob_hover() -> Hsla {
+    if dark_scheme() {
+        gpui::rgba(0xffffffb3).into()
+    } else {
+        gpui::rgba(0x000000a6).into()
+    }
+}
+
 // Lines & fills
 /// Hairline separator (~8% black).
 pub fn separator() -> Hsla {

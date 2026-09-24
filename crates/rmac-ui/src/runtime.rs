@@ -74,8 +74,10 @@ fn apply_component_theme(cx: &mut App) {
     theme.list_active_border = colors.accent.hsla();
     theme.list_even = colors.row_alternate.hsla();
     theme.list_head = colors.chrome.hsla();
-    theme.selection = colors.accent_subtle.hsla();
-    theme.caret = colors.accent.hsla();
+    // Text views take AppKit's measured insertion point and selected-text
+    // highlight rather than the accent fills used by lists and buttons.
+    theme.selection = crate::mac::text_selection();
+    theme.caret = crate::mac::text_caret();
     theme.ring = colors.accent.hsla();
     theme.danger = colors.button_destructive.hsla();
     theme.danger_foreground = colors.on_button_destructive.hsla();
@@ -85,7 +87,13 @@ fn apply_component_theme(cx: &mut App) {
     theme.sidebar_accent = colors.accent.hsla();
     theme.sidebar_accent_foreground = colors.on_accent.hsla();
     theme.sidebar_border = colors.separator.hsla();
-    theme.scrollbar_thumb = colors.separator.hsla();
+    // The overlay scroller's knob. gpui-component paints scroll bars from
+    // its derived tokens, which `Theme::change` rebuilds from its own
+    // defaults, so set the tokens as well as the colours.
+    theme.scrollbar_thumb = crate::mac::scroller_knob();
+    theme.scrollbar_thumb_hover = crate::mac::scroller_knob_hover();
+    theme.tokens.scrollbar_thumb = crate::mac::scroller_knob().into();
+    theme.tokens.scrollbar_thumb_hover = crate::mac::scroller_knob_hover().into();
     theme.group_box = colors.raised.hsla();
     theme.group_box_foreground = colors.text.hsla();
     theme.progress_bar = colors.control_fill.hsla();
@@ -255,6 +263,10 @@ fn install_app_endpoint(
 pub fn prepare_surface_window(window: &mut Window, cx: &mut App) {
     apply_window_text_scale(window, theme::current().text_scale);
     gpui_component::theme::Theme::change(current_component_theme_mode(), Some(window), cx);
+    // `Theme::change` reloads gpui-component's stock palette; put the rmac
+    // tokens back so inputs, carets, selections and scroll bars in this
+    // window draw with them (as `apply_resolved_tokens` does on a change).
+    apply_component_theme(cx);
     mark_benchmark_first_frame(window);
 }
 

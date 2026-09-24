@@ -30,6 +30,9 @@ Palette (sRGB), documented in docs/wallpaper.md:
     Stone        #CFC8BD   warm neutral mid
     Graphite     #1B1D20   neutral dark ground
     Ink          #08090B   near-black
+
+The Lulo mark (design-lab/brand.html) uses the same hues at full strength,
+#FF8A1E and #7FAE2A; the wallpapers soften them for large, calm fields.
 """
 
 from __future__ import annotations

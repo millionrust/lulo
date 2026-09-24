@@ -41,6 +41,11 @@ translucent green flesh in four segments:
 | Graphite | `#1B1D20` | neutral dark ground |
 | Ink | `#08090B` | near-black |
 
+The Lulo mark (`design-lab/brand.html`, branch `lulo-brand`) uses the same
+two hues at full strength, `#FF8A1E` orange and `#7FAE2A` green; the
+wallpapers use the slightly softened neighbours above so large fields stay
+calm behind translucent menus and the Dock.
+
 The procedural set that came first, `rmac-aurora`, `rmac-tide`, `rmac-basalt`,
 `rmac-monsoon` and `rmac-paper`, stays available. Each carries a dark
 `palette` and a distinct `light_palette`; `BuiltInMetadata::palette_for(dark)`

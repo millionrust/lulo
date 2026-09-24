@@ -34,13 +34,15 @@ impl Command {
     }
 }
 
-fn invalid(message: &'static str) -> io::Error {
+pub(crate) fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied, message)
 }
 
-/// `$XDG_RUNTIME_DIR/rmac/dock.sock`, refusing symlinks and directories
-/// owned by anyone but the runtime directory's owner.
-fn socket_path() -> io::Result<PathBuf> {
+/// `$XDG_RUNTIME_DIR/rmac/<name>`, refusing symlinks and directories owned
+/// by anyone but the runtime directory's owner. Shared by every bounded
+/// local Dock socket (`dock.sock` here, `dock-drag.sock` in
+/// `drag_endpoint`), so the privacy checks are written and reviewed once.
+pub(crate) fn socket_path(name: &str) -> io::Result<PathBuf> {
     let runtime = std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
@@ -62,7 +64,7 @@ fn socket_path() -> io::Result<PathBuf> {
         }
         Err(error) => return Err(error),
     }
-    Ok(directory.join(SOCKET_NAME))
+    Ok(directory.join(name))
 }
 
 pub struct Listener {
@@ -74,7 +76,7 @@ pub struct Listener {
 
 impl Listener {
     pub fn bind() -> io::Result<Self> {
-        let path = socket_path()?;
+        let path = socket_path(SOCKET_NAME)?;
         match fs::symlink_metadata(&path) {
             Ok(metadata) if metadata.file_type().is_socket() => fs::remove_file(&path)?,
             Ok(_) => return Err(invalid("the Dock socket path is not a socket")),
@@ -123,7 +125,7 @@ impl Drop for Listener {
 
 pub fn send(command: Command) -> io::Result<()> {
     let socket = UnixDatagram::unbound()?;
-    socket.send_to(command.as_str().as_bytes(), socket_path()?)?;
+    socket.send_to(command.as_str().as_bytes(), socket_path(SOCKET_NAME)?)?;
     Ok(())
 }
 

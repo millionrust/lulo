@@ -201,6 +201,42 @@ fn special_item_id(kind: rmac_dock::SpecialItemKind) -> &'static str {
     }
 }
 
+/// A stack's "Open <name>" (opens Files at its folder). A plain click on
+/// the stack tile that shows its Fan/Grid popover instead never reaches
+/// this dispatch layer at all — see `rmac_dock::StackActivation`.
+pub async fn execute_stack_activation(
+    activation: &rmac_dock::StackActivation,
+    backend: &impl Backend,
+) -> Result<Outcome, Error> {
+    match activation {
+        rmac_dock::StackActivation::OpenDirectory { kind, path } => backend
+            .open_directory(path)
+            .await
+            .map(|()| Outcome::StackOpened { kind: kind.clone() })
+            .map_err(|error| {
+                Error::new(
+                    Operation::OpenPlace,
+                    error.kind,
+                    stack_item_id(kind),
+                    error.detail,
+                )
+            }),
+        rmac_dock::StackActivation::Unavailable { kind, detail } => Err(Error::new(
+            Operation::Resolve,
+            FailureKind::Unavailable,
+            stack_item_id(kind),
+            detail,
+        )),
+    }
+}
+
+fn stack_item_id(kind: &rmac_shell_settings::DockStackKind) -> String {
+    match kind {
+        rmac_shell_settings::DockStackKind::Downloads => "Downloads".into(),
+        rmac_shell_settings::DockStackKind::Path { .. } => "stack".into(),
+    }
+}
+
 /// Revalidate the count projected into the context menu and retain the exact,
 /// path-free Trash identities that may be deleted after explicit confirmation.
 /// This is blocking filesystem work and belongs on a worker thread.

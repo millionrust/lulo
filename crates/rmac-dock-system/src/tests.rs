@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::*;
-use crate::backend::{reorder_pins_in_store, update_pins_in_store};
+use crate::backend::{reorder_pins_in_store, update_pins_in_store, update_stacks_in_store};
 
 #[derive(Default)]
 struct FakeBackend {
@@ -457,6 +457,93 @@ fn pin_store_transaction_preserves_unrelated_shell_settings() {
     assert!(loaded
         .providers
         .contains_key(&rmac_shell_settings::ProviderId("files".into())));
+
+    std::fs::remove_dir_all(&directory).unwrap_or_else(|error| {
+        panic!("remove Dock settings test directory {directory:?}: {error}")
+    });
+}
+
+#[test]
+fn stack_store_transaction_persists_and_preserves_unrelated_shell_settings() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "rmac-dock-system-stacks-{}-{unique}",
+        std::process::id()
+    ));
+    let store = rmac_shell_settings::ShellSettingsStore::new(directory.join("shell.json"));
+    let settings = rmac_shell_settings::ShellSettings {
+        dock: rmac_shell_settings::DockSettings {
+            autohide: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    store.save(&settings).expect("seed settings");
+
+    let stacks = update_stacks_in_store(
+        &store,
+        &rmac_dock::StackCommand::Add(rmac_shell_settings::DockStackKind::Downloads),
+    )
+    .expect("stack persists");
+    assert_eq!(
+        stacks,
+        [rmac_shell_settings::DockStackEntry {
+            kind: rmac_shell_settings::DockStackKind::Downloads,
+            display_as: rmac_shell_settings::DockStackDisplayAs::default(),
+            view_content_as: rmac_shell_settings::DockStackViewContentAs::default(),
+            sort_by: rmac_shell_settings::DockStackSortBy::default(),
+        }]
+    );
+    let loaded = store.load().expect("reload settings").settings;
+    assert!(loaded.dock.autohide);
+
+    let updated = update_stacks_in_store(
+        &store,
+        &rmac_dock::StackCommand::SetDisplayAs {
+            kind: rmac_shell_settings::DockStackKind::Downloads,
+            display_as: rmac_shell_settings::DockStackDisplayAs::Folder,
+        },
+    )
+    .expect("display-as persists");
+    assert_eq!(
+        updated[0].display_as,
+        rmac_shell_settings::DockStackDisplayAs::Folder
+    );
+
+    let removed = update_stacks_in_store(
+        &store,
+        &rmac_dock::StackCommand::Remove(rmac_shell_settings::DockStackKind::Downloads),
+    )
+    .expect("removal persists");
+    assert!(removed.is_empty());
+
+    std::fs::remove_dir_all(&directory).unwrap_or_else(|error| {
+        panic!("remove Dock settings test directory {directory:?}: {error}")
+    });
+}
+
+#[test]
+fn stack_store_transaction_rejects_removing_a_stack_not_kept() {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "rmac-dock-system-stacks-missing-{}-{unique}",
+        std::process::id()
+    ));
+    let store = rmac_shell_settings::ShellSettingsStore::new(directory.join("shell.json"));
+    store.save(&Default::default()).expect("seed settings");
+
+    let error = update_stacks_in_store(
+        &store,
+        &rmac_dock::StackCommand::Remove(rmac_shell_settings::DockStackKind::Downloads),
+    )
+    .unwrap_err();
+    assert_eq!(error.kind, crate::FailureKind::Unsupported);
 
     std::fs::remove_dir_all(&directory).unwrap_or_else(|error| {
         panic!("remove Dock settings test directory {directory:?}: {error}")

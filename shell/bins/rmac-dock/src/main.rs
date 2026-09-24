@@ -2,6 +2,9 @@
 mod ipc;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
+mod drag_endpoint;
+
+#[cfg(all(target_os = "linux", feature = "wayland"))]
 mod linux_wayland {
     use std::env;
     use std::fs::{self, OpenOptions};
@@ -872,6 +875,94 @@ mod linux_wayland {
                                 error.detail
                             );
                         }
+                    }
+                })
+                .detach();
+        }
+
+        /// A folder or file dropped on the Dock (anywhere but the Trash and
+        /// pinned application tiles, which have their own drop handling)
+        /// becomes a stack, kept left of the Trash.
+        fn keep_dropped_stacks(&mut self, paths: Vec<PathBuf>, cx: &mut Context<Self>) {
+            if paths.is_empty() {
+                return;
+            }
+            cx.background_executor()
+                .spawn(async move {
+                    use rmac_dock_system::Backend as _;
+                    let backend = rmac_dock_system::SystemBackend;
+                    for path in paths {
+                        let Some(path) = path
+                            .canonicalize()
+                            .ok()
+                            .and_then(|path| path.into_os_string().into_string().ok())
+                        else {
+                            continue;
+                        };
+                        let command = rmac_dock::StackCommand::Add(
+                            rmac_shell_settings::DockStackKind::Path { path },
+                        );
+                        if let Err(error) = backend.update_stacks(&command).await {
+                            eprintln!("could not keep the item in the Dock: {}", error.detail);
+                        }
+                    }
+                })
+                .detach();
+        }
+
+        /// Keep an application dragged out of Apps (crates/app-drawer) in
+        /// the Dock, at roughly the position it was dropped. This is the
+        /// Dock command endpoint `drag_endpoint` documents: GPUI's Linux
+        /// backend cannot start a real cross-process Wayland drag, so Apps
+        /// reports its own window-local pointer position over a private
+        /// socket instead, and the Dock resolves it against its catalog
+        /// exactly like a `.desktop` file drop.
+        fn keep_dragged_application(
+            &mut self,
+            app_id: String,
+            fraction: f32,
+            cx: &mut Context<Self>,
+        ) {
+            cx.background_executor()
+                .spawn(async move {
+                    use rmac_dock_system::Backend as _;
+                    let Ok(catalog) = rmac_apps::discover() else {
+                        eprintln!("could not read the installed applications");
+                        return;
+                    };
+                    let Some(application) =
+                        catalog.iter().find(|application| application.id == app_id)
+                    else {
+                        return;
+                    };
+                    let backend = rmac_dock_system::SystemBackend;
+                    let pin = rmac_dock::PinCommand::Pin {
+                        app_id: application.id.clone(),
+                    };
+                    let pinned = match backend.update_pins(&pin).await {
+                        Ok(pinned) => pinned,
+                        Err(error) => {
+                            eprintln!(
+                                "could not keep the dragged application in the Dock: {}",
+                                error.detail
+                            );
+                            return;
+                        }
+                    };
+                    // Insert at roughly the dropped position; clamped, since
+                    // the sender's fraction is an untrusted hint.
+                    let destination = ((fraction.clamp(0.0, 1.0) * pinned.len() as f32).round()
+                        as usize)
+                        .min(pinned.len().saturating_sub(1));
+                    let move_to = rmac_dock::PinCommand::MoveTo {
+                        app_id: application.id.clone(),
+                        index: destination,
+                    };
+                    if let Err(error) = backend.update_pins(&move_to).await {
+                        eprintln!(
+                            "kept the dragged application, but could not place it: {}",
+                            error.detail
+                        );
                     }
                 })
                 .detach();
@@ -2010,9 +2101,17 @@ mod linux_wayland {
             } else {
                 shelf.flex_col().items_center()
             };
-            // An application dropped anywhere else on the shelf is kept.
+            // An application (.desktop entry) dropped anywhere else on the
+            // shelf is kept; a folder or other file becomes a stack (§
+            // folder/file stacks left of the Trash).
             shelf = shelf.on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
-                this.keep_dropped_applications(paths.paths().to_vec(), cx);
+                let (desktop_entries, stack_paths): (Vec<_>, Vec<_>) =
+                    paths.paths().iter().cloned().partition(|path| {
+                        path.extension()
+                            .is_some_and(|extension| extension == "desktop")
+                    });
+                this.keep_dropped_applications(desktop_entries, cx);
+                this.keep_dropped_stacks(stack_paths, cx);
             }));
             let minimized_children: Vec<gpui::AnyElement> = minimized_entries
                 .iter()
@@ -3822,6 +3921,68 @@ mod linux_wayland {
         let _ = dock.update(cx, |dock, window, cx| dock.begin_keyboard(window, cx));
     }
 
+    /// A drag out of Apps (crates/app-drawer) resolved to `Drop`: keep the
+    /// application in whichever Dock the drag reached. Hover and Cancel are
+    /// accepted but not yet rendered (§ drag from Apps, live gap preview is
+    /// a follow-up); the functional outcome — the application ends up
+    /// pinned near where it was dropped — does not depend on it.
+    fn apply_drag_command(
+        windows: &DockWindows,
+        command: crate::drag_endpoint::Command,
+        cx: &mut App,
+    ) {
+        let crate::drag_endpoint::Command::Drop { app_id, fraction } = command else {
+            return;
+        };
+        let Some(dock) = windows
+            .windows
+            .values()
+            .next()
+            .map(|(_, foreground, _)| *foreground)
+            .and_then(|handle| handle.downcast::<Dock>())
+        else {
+            return;
+        };
+        let _ = dock.update(cx, |dock, _window, cx| {
+            dock.keep_dragged_application(app_id, fraction, cx);
+        });
+    }
+
+    /// Receive Apps' drag-hint datagrams (`drag_endpoint`) on a thread; the
+    /// Dock keeps running without drag-to-keep from Apps if the socket
+    /// cannot be bound.
+    fn listen_for_drag_commands() -> Option<async_channel::Receiver<crate::drag_endpoint::Command>>
+    {
+        let listener = match crate::drag_endpoint::Listener::bind() {
+            Ok(listener) => listener,
+            Err(error) => {
+                eprintln!("Dock drag-from-Apps endpoint is unavailable: {error}");
+                return None;
+            }
+        };
+        let (command_tx, command_rx) = async_channel::bounded(8);
+        let spawned = std::thread::Builder::new()
+            .name("rmac-dock-drag".into())
+            .spawn(move || loop {
+                match listener.receive() {
+                    Ok(command) => {
+                        if command_tx.send_blocking(command).is_err() {
+                            return;
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("Dock drag-from-Apps endpoint stopped: {error}");
+                        return;
+                    }
+                }
+            });
+        if let Err(error) = spawned {
+            eprintln!("could not start the Dock drag-from-Apps endpoint: {error}");
+            return None;
+        }
+        Some(command_rx)
+    }
+
     /// Receive `rmac-dock focus` datagrams on a thread; the Dock keeps
     /// running without ⌃F3 if the socket cannot be bound.
     fn listen_for_commands() -> Option<async_channel::Receiver<crate::ipc::Command>> {
@@ -3882,6 +4043,7 @@ mod linux_wayland {
 
     fn run_service() {
         let commands = listen_for_commands();
+        let drag_commands = listen_for_drag_commands();
         let app = application().with_quit_mode(QuitMode::Explicit);
         app.run(|cx: &mut App| {
             rmac_shell_ui::tokens::install_appearance_watch(cx);
@@ -3922,6 +4084,15 @@ mod linux_wayland {
                                 focus_dock(&windows.borrow(), &status, cx);
                             }
                         });
+                    }
+                })
+                .detach();
+            }
+            if let Some(drag_commands) = drag_commands {
+                let windows = windows.clone();
+                cx.spawn(async move |cx| {
+                    while let Ok(command) = drag_commands.recv().await {
+                        let _ = cx.update(|cx| apply_drag_command(&windows.borrow(), command, cx));
                     }
                 })
                 .detach();

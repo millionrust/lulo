@@ -61,6 +61,8 @@ enum Execution {
     Context(rmac_dock::ContextAction),
     Reorder(rmac_dock::drag::RevalidatedReorder),
     Special(rmac_dock::SpecialActivation),
+    StackActivation(rmac_dock::StackActivation),
+    Stack(rmac_dock::StackCommand),
     Rejected(Error),
 }
 
@@ -279,6 +281,10 @@ impl PendingAction {
             Execution::Context(action) => crate::execute_context(action, request_id, backend).await,
             Execution::Reorder(reorder) => execute_reorder(reorder, backend).await,
             Execution::Special(activation) => crate::execute_special(activation, backend).await,
+            Execution::StackActivation(activation) => {
+                crate::execute_stack_activation(activation, backend).await
+            }
+            Execution::Stack(command) => execute_stack(command, backend).await,
             Execution::Rejected(error) => Err(error.clone()),
         };
         Completion {
@@ -328,10 +334,16 @@ pub fn prepare(
         rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Overflow) => {
             Err(PrepareError::UnsupportedEntry)
         }
+        rmac_dock::menu::Action::ActivateEntry(rmac_dock::presentation::EntryId::Stack(kind)) => {
+            Ok(Preparation::Ready(prepare_stack_activation(model, kind)))
+        }
         rmac_dock::menu::Action::Context(action) => {
             Ok(Preparation::Ready(prepare_context_action(model, &action)))
         }
         rmac_dock::menu::Action::SpecialContext(action) => Ok(prepare_trash_review(model, &action)),
+        rmac_dock::menu::Action::StackContext(command) => Ok(Preparation::Ready(
+            prepare_stack_context_action(model, &command),
+        )),
     }
 }
 
@@ -373,6 +385,34 @@ async fn execute_reorder(
         })
 }
 
+/// A path-free identity for error messages and `Operation` context; a
+/// stack's real folder never appears here (matches `rmac_dock`'s own
+/// `DockStackKind` Debug redaction).
+fn stack_item_id(kind: &rmac_shell_settings::DockStackKind) -> String {
+    match kind {
+        rmac_shell_settings::DockStackKind::Downloads => "Downloads".into(),
+        rmac_shell_settings::DockStackKind::Path { .. } => "stack".into(),
+    }
+}
+
+async fn execute_stack(
+    command: &rmac_dock::StackCommand,
+    backend: &impl Backend,
+) -> Result<Outcome, Error> {
+    backend
+        .update_stacks(command)
+        .await
+        .map(|stacks| Outcome::StacksUpdated { stacks })
+        .map_err(|error| {
+            Error::new(
+                Operation::UpdateStacks,
+                error.kind,
+                stack_item_id(command.kind()),
+                error.detail,
+            )
+        })
+}
+
 fn prepare_trash_review(
     model: &rmac_dock::Model,
     requested: &rmac_dock::SpecialContextAction,
@@ -406,6 +446,49 @@ fn prepare_special_activation(
         target: ActionTarget::Special(kind),
         operation,
         execution: Execution::Special(activation),
+    }
+}
+
+/// A stack's "Open <name>" opens it in Files, exactly like
+/// `prepare_special_activation`; the popover a plain click on the stack
+/// shows is Dock-local UI state that never reaches this dispatch layer.
+fn prepare_stack_activation(
+    model: &rmac_dock::Model,
+    kind: rmac_shell_settings::DockStackKind,
+) -> PreparedAction {
+    let activation = model.activate_stack(&kind);
+    let operation = match &activation {
+        rmac_dock::StackActivation::OpenDirectory { .. } => Operation::OpenPlace,
+        rmac_dock::StackActivation::Unavailable { .. } => Operation::Resolve,
+    };
+    PreparedAction {
+        target: ActionTarget::Stack(kind),
+        operation,
+        execution: Execution::StackActivation(activation),
+    }
+}
+
+/// Revalidate a Sort By/Display As/View Content As/Remove request against
+/// the newest Dock model: the stack must still be kept. The requested
+/// choice itself is not re-derived from server state (unlike Pin/Unpin),
+/// since every `StackCommand` variant already states the user's full
+/// intent, the same way `PinCommand::Move`/`MoveTo` do.
+fn prepare_stack_context_action(
+    model: &rmac_dock::Model,
+    requested: &rmac_dock::StackCommand,
+) -> PreparedAction {
+    let kind = requested.kind().clone();
+    match model.stack_context_menu(&kind) {
+        Some(_) => PreparedAction {
+            target: ActionTarget::Stack(kind),
+            operation: Operation::UpdateStacks,
+            execution: Execution::Stack(requested.clone()),
+        },
+        None => rejected(
+            ActionTarget::Stack(kind.clone()),
+            Operation::UpdateStacks,
+            &stack_item_id(&kind),
+        ),
     }
 }
 

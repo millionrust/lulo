@@ -1,9 +1,10 @@
 mod content;
 
 use gpui::{
-    div, img, prelude::FluentBuilder as _, px, svg, Context, Div, InteractiveElement as _,
-    IntoElement, MouseButton, MouseDownEvent, ObjectFit, ParentElement, Render, SharedString,
-    Stateful, StatefulInteractiveElement as _, Styled, StyledImage as _, Window,
+    div, img, prelude::FluentBuilder as _, px, svg, AppContext as _, Context, Div, DragMoveEvent,
+    InteractiveElement as _, IntoElement, MouseButton, MouseDownEvent, MouseUpEvent, ObjectFit,
+    ParentElement, Render, SharedString, Stateful, StatefulInteractiveElement as _, Styled,
+    StyledImage as _, Window,
 };
 use gpui_component::StyledExt as _;
 use rmac_app_drawer::accessibility::{DrawerEmptyState, OPENING_ANNOUNCEMENT};
@@ -152,6 +153,50 @@ impl Render for AppDrawer {
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 this.dismiss(window, cx);
             }))
+            // Drag from Apps to the Dock (§ drag from Apps): GPUI's Linux
+            // backend has no cross-process drag source, so this reports
+            // Apps' own window-relative pointer position over
+            // `drag_endpoint` instead of a real Wayland drag. Crossing
+            // below Apps' own window is the nearest available proxy for
+            // "heading toward the Dock", which normally sits at the
+            // screen's bottom edge, below Apps' centered popover.
+            .on_drag_move(cx.listener(
+                |this, event: &DragMoveEvent<content::DraggedApp>, window, cx| {
+                    let app_id = event.drag(cx).app_id.clone();
+                    let size = window.viewport_size();
+                    let below = f32::from(event.event.position.y) > f32::from(size.height);
+                    if below {
+                        let fraction = (f32::from(event.event.position.x) / f32::from(size.width))
+                            .clamp(0.0, 1.0);
+                        crate::drag_endpoint::send(
+                            &app_id,
+                            crate::drag_endpoint::Phase::Hover(fraction),
+                        );
+                        this.dock_drag = Some(app_id);
+                    } else if this.dock_drag.take().is_some() {
+                        crate::drag_endpoint::send(&app_id, crate::drag_endpoint::Phase::Cancel);
+                    }
+                },
+            ))
+            // The drop itself is only meaningful once the pointer has left
+            // Apps' own window (see the comment above `on_drag_move`), so
+            // this listens for release *outside* the root hitbox, not a
+            // release inside it.
+            .on_mouse_up_out(
+                MouseButton::Left,
+                cx.listener(|this, event: &MouseUpEvent, window, _cx| {
+                    let Some(app_id) = this.dock_drag.take() else {
+                        return;
+                    };
+                    let size = window.viewport_size();
+                    let fraction =
+                        (f32::from(event.position.x) / f32::from(size.width)).clamp(0.0, 1.0);
+                    crate::drag_endpoint::send(
+                        &app_id,
+                        crate::drag_endpoint::Phase::Drop(fraction),
+                    );
+                }),
+            )
             .size_full()
             .v_flex()
             .bg(mac::material_popover())

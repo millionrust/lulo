@@ -5,7 +5,7 @@ use std::fmt;
 use crate::presentation::{EntryId, OverflowGroup};
 use crate::{
     ContextAction, ContextMenu, PinCommand, SpecialActivation, SpecialContextAction,
-    SpecialContextMenu, SpecialItemKind,
+    SpecialContextMenu, SpecialItemKind, StackActivation, StackCommand, StackContextMenu,
 };
 
 pub const MAX_MENU_ROWS: usize = 512;
@@ -24,6 +24,11 @@ pub enum RowId {
     Quit,
     OpenSpecial(SpecialItemKind),
     EmptyTrash,
+    OpenStack,
+    StackSortBy(rmac_shell_settings::DockStackSortBy),
+    StackDisplayAs(rmac_shell_settings::DockStackDisplayAs),
+    StackViewContentAs(rmac_shell_settings::DockStackViewContentAs),
+    RemoveStack,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,12 +47,22 @@ pub enum Section {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Submenu {
     Options,
+    /// A stack's "Sort by" (Name, Date Added, Date Modified, Date Created,
+    /// Kind).
+    SortBy,
+    /// A stack's "Display as" (Stack, Folder).
+    DisplayAs,
+    /// A stack's "View content as" (Fan, Grid, List, Automatic).
+    ViewContentAs,
 }
 
 impl Submenu {
     pub fn label(self) -> &'static str {
         match self {
             Self::Options => "Options",
+            Self::SortBy => "Sort By",
+            Self::DisplayAs => "Display As",
+            Self::ViewContentAs => "View Content As",
         }
     }
 }
@@ -57,6 +72,7 @@ pub enum Action {
     ActivateEntry(EntryId),
     Context(ContextAction),
     SpecialContext(SpecialContextAction),
+    StackContext(StackCommand),
 }
 
 impl fmt::Debug for Action {
@@ -65,6 +81,9 @@ impl fmt::Debug for Action {
             Self::ActivateEntry(id) => formatter.debug_tuple("ActivateEntry").field(id).finish(),
             Self::Context(_) => formatter.write_str("Context(<redacted>)"),
             Self::SpecialContext(_) => formatter.write_str("SpecialContext(<redacted>)"),
+            Self::StackContext(action) => {
+                formatter.debug_tuple("StackContext").field(action).finish()
+            }
         }
     }
 }
@@ -492,6 +511,132 @@ impl Session {
         Self::new(
             EntryId::Special(menu.kind),
             name.into(),
+            format!("{name} Dock menu"),
+            rows,
+        )
+    }
+
+    /// A stack's context menu: Open "<name>", Sort By, Display As, View
+    /// Content As, then Options ▸ Remove from Dock (§ folder/file stacks).
+    pub fn stack(menu: &StackContextMenu) -> Result<Self, MenuError> {
+        let available = matches!(menu.open, StackActivation::OpenDirectory { .. });
+        let name = bounded(&menu.name);
+        let mut rows = vec![Row {
+            id: RowId::OpenStack,
+            section: Section::Commands,
+            label: format!("Open “{name}”"),
+            accessible_label: format!("Open {name}"),
+            enabled: available,
+            checked: false,
+            urgent: false,
+            destructive: false,
+            primary: available.then_some(Action::ActivateEntry(EntryId::Stack(menu.kind.clone()))),
+            secondary: None,
+            alternate_label: None,
+            submenu: None,
+        }];
+        for (sort_by, label) in [
+            (rmac_shell_settings::DockStackSortBy::Name, "Name"),
+            (rmac_shell_settings::DockStackSortBy::Kind, "Kind"),
+            (
+                rmac_shell_settings::DockStackSortBy::DateAdded,
+                "Date Added",
+            ),
+            (
+                rmac_shell_settings::DockStackSortBy::DateModified,
+                "Date Modified",
+            ),
+            (
+                rmac_shell_settings::DockStackSortBy::DateCreated,
+                "Date Created",
+            ),
+        ] {
+            rows.push(Row {
+                id: RowId::StackSortBy(sort_by),
+                section: Section::Organization,
+                label: label.into(),
+                accessible_label: format!("Sort By {label}"),
+                enabled: true,
+                checked: menu.sort_by == sort_by,
+                urgent: false,
+                destructive: false,
+                primary: Some(Action::StackContext(StackCommand::SetSortBy {
+                    kind: menu.kind.clone(),
+                    sort_by,
+                })),
+                secondary: None,
+                alternate_label: None,
+                submenu: Some(Submenu::SortBy),
+            });
+        }
+        for (display_as, label) in [
+            (rmac_shell_settings::DockStackDisplayAs::Stack, "Stack"),
+            (rmac_shell_settings::DockStackDisplayAs::Folder, "Folder"),
+        ] {
+            rows.push(Row {
+                id: RowId::StackDisplayAs(display_as),
+                section: Section::Organization,
+                label: label.into(),
+                accessible_label: format!("Display As {label}"),
+                enabled: true,
+                checked: menu.display_as == display_as,
+                urgent: false,
+                destructive: false,
+                primary: Some(Action::StackContext(StackCommand::SetDisplayAs {
+                    kind: menu.kind.clone(),
+                    display_as,
+                })),
+                secondary: None,
+                alternate_label: None,
+                submenu: Some(Submenu::DisplayAs),
+            });
+        }
+        for (view_content_as, label) in [
+            (rmac_shell_settings::DockStackViewContentAs::Fan, "Fan"),
+            (rmac_shell_settings::DockStackViewContentAs::Grid, "Grid"),
+            (rmac_shell_settings::DockStackViewContentAs::List, "List"),
+            (
+                rmac_shell_settings::DockStackViewContentAs::Automatic,
+                "Automatic",
+            ),
+        ] {
+            rows.push(Row {
+                id: RowId::StackViewContentAs(view_content_as),
+                section: Section::Organization,
+                label: label.into(),
+                accessible_label: format!("View Content As {label}"),
+                enabled: true,
+                checked: menu.view_content_as == view_content_as,
+                urgent: false,
+                destructive: false,
+                primary: Some(Action::StackContext(StackCommand::SetViewContentAs {
+                    kind: menu.kind.clone(),
+                    view_content_as,
+                })),
+                secondary: None,
+                alternate_label: None,
+                submenu: Some(Submenu::ViewContentAs),
+            });
+        }
+        rows.push(Row {
+            id: RowId::RemoveStack,
+            section: Section::Organization,
+            label: "Remove from Dock".into(),
+            accessible_label: format!("Remove from Dock, {name}"),
+            enabled: true,
+            checked: false,
+            urgent: false,
+            destructive: false,
+            primary: Some(Action::StackContext(StackCommand::Remove(
+                menu.kind.clone(),
+            ))),
+            secondary: None,
+            alternate_label: None,
+            submenu: Some(Submenu::Options),
+        });
+        Self::new(
+            EntryId::Stack(menu.kind.clone()),
+            name.clone(),
             format!("{name} Dock menu"),
             rows,
         )
@@ -1092,6 +1237,135 @@ mod tests {
             session.selected(),
             Some(&RowId::OpenSpecial(SpecialItemKind::Trash))
         );
+    }
+
+    fn stack_menu(
+        kind: rmac_shell_settings::DockStackKind,
+        name: &str,
+        available: bool,
+    ) -> StackContextMenu {
+        StackContextMenu {
+            kind: kind.clone(),
+            name: name.into(),
+            open: if available {
+                StackActivation::OpenDirectory {
+                    kind: kind.clone(),
+                    path: std::path::PathBuf::from(format!("/home/test/{name}")),
+                }
+            } else {
+                StackActivation::Unavailable {
+                    kind: kind.clone(),
+                    detail: "the stack's folder is unavailable".into(),
+                }
+            },
+            display_as: rmac_shell_settings::DockStackDisplayAs::Stack,
+            view_content_as: rmac_shell_settings::DockStackViewContentAs::Automatic,
+            sort_by: rmac_shell_settings::DockStackSortBy::DateAdded,
+        }
+    }
+
+    #[test]
+    fn stack_menu_opens_names_and_ticks_the_current_choices() {
+        let menu = stack_menu(
+            rmac_shell_settings::DockStackKind::Downloads,
+            "Downloads",
+            true,
+        );
+        let session = Session::stack(&menu).unwrap();
+        let rows = session.rows();
+        assert_eq!(rows[0].id, RowId::OpenStack);
+        assert_eq!(rows[0].label, "Open “Downloads”");
+        assert!(rows[0].enabled);
+
+        let sort = rows
+            .iter()
+            .find(|row| {
+                row.id == RowId::StackSortBy(rmac_shell_settings::DockStackSortBy::DateAdded)
+            })
+            .unwrap();
+        assert!(sort.checked);
+        let other_sort = rows
+            .iter()
+            .find(|row| row.id == RowId::StackSortBy(rmac_shell_settings::DockStackSortBy::Name))
+            .unwrap();
+        assert!(!other_sort.checked);
+
+        let display = rows
+            .iter()
+            .find(|row| {
+                row.id == RowId::StackDisplayAs(rmac_shell_settings::DockStackDisplayAs::Stack)
+            })
+            .unwrap();
+        assert!(display.checked);
+
+        let view = rows
+            .iter()
+            .find(|row| {
+                row.id
+                    == RowId::StackViewContentAs(
+                        rmac_shell_settings::DockStackViewContentAs::Automatic,
+                    )
+            })
+            .unwrap();
+        assert!(view.checked);
+
+        let remove = rows
+            .iter()
+            .find(|row| row.id == RowId::RemoveStack)
+            .unwrap();
+        assert_eq!(remove.label, "Remove from Dock");
+        assert_eq!(remove.submenu, Some(Submenu::Options));
+    }
+
+    #[test]
+    fn unavailable_stack_disables_open_but_keeps_the_rest_editable() {
+        let menu = stack_menu(
+            rmac_shell_settings::DockStackKind::Path {
+                path: "/home/test/Projects".into(),
+            },
+            "Projects",
+            false,
+        );
+        let session = Session::stack(&menu).unwrap();
+        let open = &session.rows()[0];
+        assert!(!open.enabled);
+        assert!(open.primary.is_none());
+    }
+
+    #[test]
+    fn selecting_a_sort_by_row_activates_the_matching_set_sort_by_command() {
+        let menu = stack_menu(
+            rmac_shell_settings::DockStackKind::Downloads,
+            "Downloads",
+            true,
+        );
+        let mut session = Session::stack(&menu).unwrap();
+        session.select(&RowId::StackSortBy(
+            rmac_shell_settings::DockStackSortBy::Kind,
+        ));
+        assert_eq!(
+            session.handle_key(KeyCommand::Return),
+            Effect::Activate {
+                action: Action::StackContext(StackCommand::SetSortBy {
+                    kind: rmac_shell_settings::DockStackKind::Downloads,
+                    sort_by: rmac_shell_settings::DockStackSortBy::Kind,
+                }),
+                restore_focus: EntryId::Stack(rmac_shell_settings::DockStackKind::Downloads),
+            }
+        );
+    }
+
+    #[test]
+    fn stack_menu_never_copies_a_private_path_into_its_debug() {
+        let menu = stack_menu(
+            rmac_shell_settings::DockStackKind::Path {
+                path: "/home/alex/Private Projects".into(),
+            },
+            "Private Projects",
+            true,
+        );
+        let session = Session::stack(&menu).unwrap();
+        assert!(!format!("{session:?}").contains("Private Projects"));
     }
 
     #[test]

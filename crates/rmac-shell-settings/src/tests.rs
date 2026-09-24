@@ -43,6 +43,22 @@ fn settings() -> ShellSettings {
             AppId("org.rmac.Files".into()),
             AppId("org.rmac.Terminal".into()),
         ],
+        dock_stacks: vec![
+            DockStackEntry {
+                kind: DockStackKind::Downloads,
+                display_as: DockStackDisplayAs::Stack,
+                view_content_as: DockStackViewContentAs::Fan,
+                sort_by: DockStackSortBy::DateAdded,
+            },
+            DockStackEntry {
+                kind: DockStackKind::Path {
+                    path: "/home/test/Projects".into(),
+                },
+                display_as: DockStackDisplayAs::Folder,
+                view_content_as: DockStackViewContentAs::Grid,
+                sort_by: DockStackSortBy::Name,
+            },
+        ],
         dock: DockSettings {
             placement: DockPlacement::Left,
             outputs: OutputScope::Named("DP-1".into()),
@@ -338,6 +354,103 @@ fn validation_rejects_duplicates_and_incoherent_focus_expiry() {
         built_in.wallpaper.default.source = Some(format!("builtin:{id}"));
         assert!(validate(&built_in, path).is_ok(), "{id} was rejected");
     }
+}
+
+#[test]
+fn dock_stacks_default_empty_and_old_settings_without_the_field_still_parse() {
+    let (root, store) = test_store("dock-stacks-back-compat");
+    std::fs::create_dir_all(&root).unwrap();
+    // A settings file saved before dock stacks existed: no `dock_stacks` key
+    // at all, at the current version.
+    std::fs::write(
+        store.path(),
+        format!(
+            r#"{{"version":{CURRENT_VERSION},"settings":{{"pinned_apps":["org.rmac.Files"]}}}}"#
+        ),
+    )
+    .unwrap();
+    let snapshot = store.load().unwrap();
+    assert_eq!(snapshot.migrated_from, None);
+    assert!(snapshot.settings.dock_stacks.is_empty());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn dock_stacks_round_trip_through_versioned_primary_and_last_good_files() {
+    let (root, store) = test_store("dock-stacks-round-trip");
+    let expected = settings();
+    store.save(&expected).unwrap();
+
+    let loaded = store.load().unwrap().settings;
+    assert_eq!(loaded.dock_stacks, expected.dock_stacks);
+    let stored: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(store.path()).unwrap()).unwrap();
+    assert_eq!(
+        stored["settings"]["dock_stacks"][0]["kind"]["source"],
+        "downloads"
+    );
+    assert_eq!(
+        stored["settings"]["dock_stacks"][1]["kind"]["path"],
+        "/home/test/Projects"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn validation_rejects_malformed_duplicate_and_excessive_dock_stacks() {
+    let path = Path::new("shell.json");
+
+    let mut relative = ShellSettings::default();
+    relative.dock_stacks.push(DockStackEntry {
+        kind: DockStackKind::Path {
+            path: "Projects".into(),
+        },
+        display_as: DockStackDisplayAs::default(),
+        view_content_as: DockStackViewContentAs::default(),
+        sort_by: DockStackSortBy::default(),
+    });
+    assert!(validate(&relative, path).is_err());
+
+    let mut duplicate = ShellSettings::default();
+    duplicate.dock_stacks = vec![
+        DockStackEntry {
+            kind: DockStackKind::Downloads,
+            display_as: DockStackDisplayAs::default(),
+            view_content_as: DockStackViewContentAs::default(),
+            sort_by: DockStackSortBy::default(),
+        },
+        DockStackEntry {
+            kind: DockStackKind::Downloads,
+            display_as: DockStackDisplayAs::default(),
+            view_content_as: DockStackViewContentAs::default(),
+            sort_by: DockStackSortBy::default(),
+        },
+    ];
+    assert!(validate(&duplicate, path).is_err());
+
+    let mut too_many = ShellSettings::default();
+    too_many.dock_stacks = (0..=MAX_DOCK_STACKS)
+        .map(|index| DockStackEntry {
+            kind: DockStackKind::Path {
+                path: format!("/home/test/stack-{index}"),
+            },
+            display_as: DockStackDisplayAs::default(),
+            view_content_as: DockStackViewContentAs::default(),
+            sort_by: DockStackSortBy::default(),
+        })
+        .collect();
+    assert!(validate(&too_many, path).is_err());
+
+    let mut ok = ShellSettings::default();
+    ok.dock_stacks.push(DockStackEntry {
+        kind: DockStackKind::Path {
+            path: "/home/test/Projects".into(),
+        },
+        display_as: DockStackDisplayAs::Folder,
+        view_content_as: DockStackViewContentAs::List,
+        sort_by: DockStackSortBy::Kind,
+    });
+    assert!(validate(&ok, path).is_ok());
 }
 
 #[test]

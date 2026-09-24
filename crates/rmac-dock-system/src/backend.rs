@@ -188,6 +188,21 @@ impl Backend for SystemBackend {
         })
     }
 
+    fn update_stacks(
+        &self,
+        command: &rmac_dock::StackCommand,
+    ) -> BackendFuture<'_, Result<Vec<rmac_shell_settings::DockStackEntry>, BackendError>> {
+        let command = command.clone();
+        Box::pin(async move {
+            blocking::unblock(move || {
+                let store = rmac_shell_settings::ShellSettingsStore::from_environment()
+                    .map_err(settings_error)?;
+                update_stacks_in_store(&store, &command)
+            })
+            .await
+        })
+    }
+
     fn reorder_pins(
         &self,
         reorder: &rmac_dock::drag::RevalidatedReorder,
@@ -282,6 +297,23 @@ pub(crate) fn reorder_pins_in_store(
     store
         .load()
         .map(|snapshot| snapshot.settings.pinned_apps)
+        .map_err(settings_error)
+}
+
+pub(crate) fn update_stacks_in_store(
+    store: &rmac_shell_settings::ShellSettingsStore,
+    command: &rmac_dock::StackCommand,
+) -> Result<Vec<rmac_shell_settings::DockStackEntry>, BackendError> {
+    let mut settings = store.load().map_err(settings_error)?.settings;
+    let next = rmac_dock::apply_stack_command(&settings.dock_stacks, command)
+        .map_err(|error| BackendError::new(FailureKind::Unsupported, error.to_string()))?;
+    if next != settings.dock_stacks {
+        settings.dock_stacks = next;
+        store.save(&settings).map_err(settings_error)?;
+    }
+    store
+        .load()
+        .map(|snapshot| snapshot.settings.dock_stacks)
         .map_err(settings_error)
 }
 

@@ -94,6 +94,64 @@ pub struct SpecialContextMenu {
     pub empty_trash: Option<SpecialContextAction>,
 }
 
+/// A folder/file stack kept to the left of the Trash, resolved from the
+/// persisted `rmac_shell_settings::DockStackEntry` against the live
+/// filesystem (existence, no other I/O).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StackPlace {
+    pub kind: rmac_shell_settings::DockStackKind,
+    /// Folder/file basename, or "Downloads" for the special stack.
+    pub name: String,
+    pub available: bool,
+    pub display_as: rmac_shell_settings::DockStackDisplayAs,
+    pub view_content_as: rmac_shell_settings::DockStackViewContentAs,
+    pub sort_by: rmac_shell_settings::DockStackSortBy,
+    pub(super) activation: StackActivation,
+}
+
+#[derive(Clone, Eq, PartialEq)]
+pub enum StackActivation {
+    /// Open the stack's folder in Files, exactly as macOS's Dock stack
+    /// "Open <name>" row does. A left-click on the stack tile instead opens
+    /// its Fan/Grid popover, a Dock-local UI state that never reaches the
+    /// backend dispatch layer this activation belongs to.
+    OpenDirectory {
+        kind: rmac_shell_settings::DockStackKind,
+        path: PathBuf,
+    },
+    Unavailable {
+        kind: rmac_shell_settings::DockStackKind,
+        detail: String,
+    },
+}
+
+impl fmt::Debug for StackActivation {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::OpenDirectory { kind, .. } => formatter
+                .debug_struct("OpenDirectory")
+                .field("kind", kind)
+                .field("path", &"<private>")
+                .finish(),
+            Self::Unavailable { kind, detail } => formatter
+                .debug_struct("Unavailable")
+                .field("kind", kind)
+                .field("detail", detail)
+                .finish(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StackContextMenu {
+    pub kind: rmac_shell_settings::DockStackKind,
+    pub name: String,
+    pub open: StackActivation,
+    pub display_as: rmac_shell_settings::DockStackDisplayAs,
+    pub view_content_as: rmac_shell_settings::DockStackViewContentAs,
+    pub sort_by: rmac_shell_settings::DockStackSortBy,
+}
+
 /// A window the shell parked on the hidden workspace, shown as a tile in the
 /// Dock's right group until it is restored (§4.11).
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -303,6 +361,57 @@ pub struct ContextMenu {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StackCommand {
+    /// Dropping a folder/file onto the Dock, or Options ▸ Keep in Dock from
+    /// a stack's own popover, keeps it as a new stack.
+    Add(rmac_shell_settings::DockStackKind),
+    /// Options ▸ Remove from Dock, or a drag off the shelf.
+    Remove(rmac_shell_settings::DockStackKind),
+    SetDisplayAs {
+        kind: rmac_shell_settings::DockStackKind,
+        display_as: rmac_shell_settings::DockStackDisplayAs,
+    },
+    SetViewContentAs {
+        kind: rmac_shell_settings::DockStackKind,
+        view_content_as: rmac_shell_settings::DockStackViewContentAs,
+    },
+    SetSortBy {
+        kind: rmac_shell_settings::DockStackKind,
+        sort_by: rmac_shell_settings::DockStackSortBy,
+    },
+}
+
+impl StackCommand {
+    pub fn kind(&self) -> &rmac_shell_settings::DockStackKind {
+        match self {
+            Self::Add(kind) | Self::Remove(kind) => kind,
+            Self::SetDisplayAs { kind, .. }
+            | Self::SetViewContentAs { kind, .. }
+            | Self::SetSortBy { kind, .. } => kind,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StackError {
+    /// `Add` for a kind the Dock already keeps.
+    AlreadyKept,
+    /// Any mutation of a kind the Dock does not keep.
+    NotKept,
+}
+
+impl fmt::Display for StackError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::AlreadyKept => "the Dock already keeps this stack",
+            Self::NotKept => "the Dock does not keep this stack",
+        })
+    }
+}
+
+impl std::error::Error for StackError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PinError {
     InvalidIdentity,
     NotPinned { app_id: String },
@@ -323,9 +432,13 @@ impl std::error::Error for PinError {}
 pub struct Model {
     pub items: Vec<Item>,
     /// Non-application endpoints kept after a renderer-owned separator. The
-    /// default projection contains only Trash; Files remains a configured app
-    /// and optional folder stacks require persisted user configuration.
+    /// default projection contains only Trash; Files remains a configured
+    /// app.
     pub special_items: Vec<SpecialItem>,
+    /// Folder/file stacks, rendered between the application group and
+    /// `special_items` so Trash stays the rightmost endpoint (§ folder/file
+    /// stacks left of the Trash).
+    pub stacks: Vec<StackPlace>,
     /// Parked windows shown as minimized tiles ahead of the special items when
     /// "minimize into application icon" is off (§4.11). These windows are
     /// excluded from `items` so they never count as running applications.

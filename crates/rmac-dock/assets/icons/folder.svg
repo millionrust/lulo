@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Original rmac artwork, MIT licensed. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="128" height="128">
+<defs><linearGradient id="gback" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9AA6B2" stop-opacity="1"/><stop offset="1" stop-color="#717C88" stop-opacity="1"/></linearGradient><linearGradient id="gfront" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#DDE3E9" stop-opacity="1"/><stop offset="1" stop-color="#B7C0C9" stop-opacity="1"/></linearGradient><linearGradient id="gedge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF" stop-opacity="0.9"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0.25"/></linearGradient><filter id="glift" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity=".28"/></filter></defs>
+<g>
+  <path d="M150 262c0-35 29-64 64-64h190c20 0 38 9 51 24l34 42h321c35 0 64 29 64 64v428c0 35-29 64-64 64H214c-35 0-64-29-64-64z" fill="url(#gback)"/>
+  <path d="M150 392c0-35 29-64 64-64h596c35 0 64 29 64 64v370c0 35-29 64-64 64H214c-35 0-64-29-64-64z" fill="url(#gfront)" filter="url(#glift)"/>
+  <path d="M150 392c0-35 29-64 64-64h596c35 0 64 29 64 64v370c0 35-29 64-64 64H214c-35 0-64-29-64-64z" fill="none" stroke="url(#gedge)" stroke-width="6"/>
+</g>
+</svg>

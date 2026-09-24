@@ -121,6 +121,7 @@ impl AppDrawer {
             loading: true,
             was_active: false,
             _catalog_watcher: catalog_watcher,
+            dock_drag: None,
         }
     }
 

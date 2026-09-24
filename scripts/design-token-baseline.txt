@@ -7,6 +7,7 @@ crates/launcher-app/src/view/render/query_panel.rs:10
 crates/launcher-app/src/view/render/results.rs:1
 crates/quick-settings-app/src/render/cards.rs:1
 crates/quick-settings-app/src/render/controls.rs:1
+crates/quick-settings-app/src/render/detail.rs:2
 crates/system-settings/src/controller/appearance/render.rs:1
 crates/system-settings/src/controller/notifications.rs:3
 crates/system-settings/src/controller/settings_style.rs:33
@@ -20,6 +21,7 @@ crates/system-settings/src/controller/wifi/render.rs:1
 crates/terminal/src/controller/renderer/chrome.rs:2
 crates/text-editor/src/view/render.rs:2
 crates/text-editor/src/view/render/chrome.rs:1
+shell/bins/rmac-app-switcher/src/force_quit_window.rs:2
 shell/bins/rmac-app-switcher/src/main.rs:2
 shell/bins/rmac-dock/src/main.rs:3
 shell/bins/rmac-menubar/src/main.rs:6

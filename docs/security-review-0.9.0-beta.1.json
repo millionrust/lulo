@@ -8,10 +8,9 @@
   "hardware_manifest_sha256": "ab5a80a837594775e442c9a7d966ae0abf27e2e14ae4f2807303a30669f20b40",
   "journey_manifest_sha256": "6c3867951d1bdaf5742eb53c4a89e9409dc56510227bdf5acee2d57eb6acf264",
   "open_findings": [
-    "SR-12 medium updates: CI mirror of the live APT repository is always empty (monotonic, retention and immutability checks bypassed)",
     "SR-15 low packages: build-host paths embedded in shipped binaries",
-    "SR-17 low packages: install.sh --from-release authenticity rests on HTTPS when gh is absent (attestation is mandatory and workflow-bound when gh is present)",
-    "SR-18 low packages: release hardening (unpinned rustup/container/cargo-install inputs; publisher keyring source); manifest mode check fixed"
+    "SR-17 low packages: install.sh --from-release (the offline path; the default is now the signed APT repository) rests on HTTPS when gh is absent (attestation is mandatory and workflow-bound when gh is present)",
+    "SR-18 low packages: release hardening (unpinned rustup/container/cargo-install inputs); manifest mode check and publisher keyring source fixed"
   ],
   "results": [
     {
@@ -327,7 +326,7 @@
     {
       "check": "atomic-inrelease-last-and-monotonic",
       "domain": "updates",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "backend-failure-recovers-authoritatively",
@@ -342,7 +341,7 @@
     {
       "check": "immutable-pool-and-by-hash",
       "domain": "updates",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "keyring-public-only-and-package-scoped",

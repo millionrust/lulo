@@ -5,94 +5,187 @@ This is the runbook for `.github/workflows/release.yml` and
 this document is the day-to-day operator's guide to the pipeline that
 implements it, not a restatement of the trust design itself.
 
-## What exists today
+## What a tag does
 
-Tagging `vX.Y.Z` always:
+Tagging `vX.Y.Z` (or a pre-release such as `v0.9.0-beta.1`):
 
 - builds `rmac-apps` and `rmac-session` on amd64 (a real `ubuntu:26.04`
   container, since GitHub has no hosted Ubuntu 26.04 image yet -- see
-  "Runner decisions" below);
+  "Runner decisions" below), twice, and requires byte-identical packages;
 - builds the same on arm64 **only if** the `RMAC_HAS_ARM64_RUNNER`
   repository variable is `true` (nothing is configured today, so this job
   is skipped, not failed);
 - builds Lulo OS's `niri` and `xwayland-satellite` packages, their complete
   source packages, and their SBOMs (see "Third-party packages: niri and
   xwayland-satellite" below);
+- builds the `rmac` Debian source package (`rmac-source`: `git archive` of
+  the commit plus one `cargo vendor` of both workspaces, and
+  `packaging/rmac-source/debian`), then proves it in `rmac-source-rebuild`
+  by unpacking it with `dpkg-source -x` and rebuilding both binary packages
+  with cargo's network disabled;
+- builds the `rmac-archive-keyring` packages from the committed public
+  keyring, once the archive key exists (the `keyring` job, gated on the
+  `RMAC_ARCHIVE_SIGNING_FINGERPRINT` variable);
 - generates an SBOM with `cargo-cyclonedx` (version pinned in
   `release.yml`'s `RMAC_CARGO_CYCLONEDX_VERSION`);
-- attests build provenance with `actions/attest-build-provenance`; and
 - attaches the `.deb` files, the niri/xwayland-satellite source packages,
-  `SHA256SUMS`, and the SBOMs to the GitHub Release, creating it if
-  needed. Any `~` in a file name (rmac's pre-release versions) becomes `.`
-  first, because GitHub rewrites it in asset names.
+  `apt-inputs-<tag>.tar` (the exact, unrenamed package sets the APT
+  repository is built from, including the `rmac` source package and the
+  keyring packages), `SHA256SUMS`, and the SBOMs to the GitHub Release, and
+  attests build provenance for all of them. Any `~` in a file name (rmac's
+  pre-release versions) becomes `.` first, because GitHub rewrites it in
+  asset names; the `rmac` source package keeps its real names inside
+  `apt-inputs-<tag>.tar`. A Release that the APT repository already serves
+  is sealed: re-running `attach-release` for it fails rather than replace
+  its assets;
+- once signed updates are switched on (below), `apt-repository` rebuilds
+  the published repository from the Releases, stages the new release at
+  `Phased-Update-Percentage: 10`, waits for the `apt-signing` reviewer,
+  signs, promotes, records `apt-snapshot-<id>.tar` on the Release, and
+  `apt-pages` deploys it to GitHub Pages.
 
-None of that needs a secret. That release bundle is also what
-`scripts/linux/install.sh --from-release <tag>` and `--from-dir` install
-from today, ahead of the signed APT repository below (see
-[Install](install.md) "Install from a GitHub Release (the Beta path)" and
-[Beta clean-VM checklist](beta-clean-vm-checklist.md)).
+`rollout.yml` then runs every 6 hours: it re-signs the repository before
+its 48-hour `Valid-Until` gets close and steps the phase 10 -> 25 -> 50 ->
+100, at least 24 hours apart, through the unattended `apt-refresh`
+environment. It can never add a package (`--rollout-only`).
 
-Signing and publishing the APT repository -- `stage-apt-snapshot.py`,
-clearsigning `InRelease`, `publish-apt-snapshot.py`, and
-`actions/deploy-pages` -- is fully wired in `release.yml`'s
-`apt-repository` job and in `rollout.yml`, but both stay off
-(`vars.RMAC_SOURCE_PACKAGING_READY != 'true'`) until the two gaps in
-"What the owner still has to do" are closed. Building the keyring packages
-(`keyring` job in `release.yml`) is separately gated on
-`vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT` being set, and then fails if the
-`RMAC_ARCHIVE_PUBLIC_KEYRING_B64` secret is missing (a job-level `if`
-cannot read secrets).
+Everything up to and including `attach-release` needs no secret. That
+release bundle is also what `scripts/linux/install.sh --from-release <tag>`
+and `--from-dir` install from (see [Install](install.md)), with no
+automatic updates. The default `install.sh` path is the signed repository.
 
-## What the owner still has to do
+## Switching on signed updates
 
-1. **Decide who holds the signing keys** (`update-trust.md` "Decisions
-   needed" is still unchecked). Generate the offline primary key and a
-   bounded-lifetime online signing subkey, per `update-trust.md` "Signing
-   and rotation". Nothing in this repository, and no workflow here, ever
-   generates a key -- that stays a deliberate, offline, human action.
+This is the owner's one-time setup. Everything else is already wired; until
+step 9, `apt-repository` and `rollout` are skipped. You need `gh` logged in
+as a repository admin (`gh auth status`) and GnuPG 2.2 or newer on the Mac
+(`brew install gnupg`). Run the commands from an up-to-date checkout of
+`master` that contains this pipeline.
 
-2. **Build a real Debian source package for `rmac`.** `update-trust.md`
-   requires a genuine source offer bound to the exact `Cargo.lock` and
-   commit for every binary publication; a promise to add it later is
-   explicitly not acceptable. Nothing in this repository builds one today
-   -- `build-native-packages.py` deliberately packages prebuilt ELF
-   binaries without a `dpkg-buildpackage` source flow, and there is no
-   `debian/` source-packaging tree for the Rust workspace. Until a real
-   builder exists (producing a `.dsc`, source tarball, `.buildinfo`, and
-   `.changes` for package `rmac`, ideally as a new job in `release.yml`
-   feeding a `rmac-source` artifact), `apt-repository` and `rollout` must
-   stay off. Do not flip `RMAC_SOURCE_PACKAGING_READY` to `true` before
-   this exists.
+1. **Create the archive key** (ideally offline, on an encrypted volume):
 
-3. **Configure the secrets and variables**, once 1 and 2 are done:
-   - Repository/environment variable `RMAC_ARCHIVE_SIGNING_FINGERPRINT`
-     (the subkey's fingerprint -- not secret, published in the README,
-     `docs/install.md`, and every Release).
-   - Environment secret `RMAC_APT_SIGNING_SUBKEY` in the `apt-signing`
-     GitHub Environment (an ASCII-armored export of the signing subkey
-     only, never the offline primary key).
-   - Repository secret `RMAC_ARCHIVE_PUBLIC_KEYRING_B64` (the exported
-     public keyring, base64-encoded) so the `keyring` job can build
-     `rmac-archive-keyring`.
-   - Repository variable `RMAC_SOURCE_PACKAGING_READY = true`, last, once
-     everything above is in place.
+   ```sh
+   scripts/release/create-archive-key.sh
+   ```
 
-4. **Configure the `apt-signing` GitHub Environment** (Settings ->
-   Environments) to require a reviewer's approval before a job using it
-   runs. Both `apt-repository` and `rollout` reference this environment, so
-   every publish and every rollout step waits for that approval.
+   Give the archive e-mail address, keep the default one-year subkey
+   lifetime, choose two *different* passphrases of at least 16 characters
+   (primary key, backup archive), and type `create`. It works only in a
+   throwaway `GNUPGHOME`, uploads nothing, and writes to
+   `./lulo-archive-key-<date>/`:
+   `archive-keyring.asc` / `rmac-archive-keyring.gpg` (public),
+   `primary-fingerprint.txt`, `RMAC_APT_SIGNING_SUBKEY.asc` (the signing
+   subkey only, no passphrase, primary stripped -- self-checked), and
+   `primary-key-backup.tar.gpg` (the primary secret key, its revocation
+   certificate, and restore/renew instructions, encrypted with the backup
+   passphrase). It also writes the pin into the repository:
+   `packaging/apt/archive-keyring.asc`, `packaging/apt/archive-key.json`, and
+   the `RMAC_ARCHIVE_KEYRING_FINGERPRINT` line of `scripts/linux/install.sh`.
 
-5. **Enable GitHub Pages** for this repository with source "GitHub Actions"
-   (Settings -> Pages), so `actions/deploy-pages` has somewhere to deploy
-   to.
+2. **Store the offline key.** Copy `primary-key-backup.tar.gpg` to two
+   offline media kept in different places, then delete the local copy. Keep
+   the two passphrases apart (password manager and paper). Note the subkey
+   expiry printed by the script and set a reminder one month before it
+   (renewal: README in the backup; the release after a renewal must ship the
+   new `archive-keyring.asc`).
 
-6. Publish the archive fingerprint in the README, `docs/install.md`, and
-   each Release, and replace `install.sh`'s and `uninstall.sh`'s TODO
-   fingerprint placeholder with the real value.
+3. **Create the two signing environments.** `apt-signing` (new packages)
+   requires your approval and only deploys from `v*` tags; `apt-refresh`
+   (rollout steps and signature refreshes, unattended) only runs from
+   `master`:
 
-7. If arm64 releases are wanted, provision a
-   `[self-hosted, linux, arm64]` runner and set
-   `RMAC_HAS_ARM64_RUNNER = true`.
+   ```sh
+   repo=millionrust/lulo
+   me="$(gh api user --jq .id)"
+   printf '{"reviewers":[{"type":"User","id":%s}],"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' "$me" \
+     | gh api -X PUT "repos/$repo/environments/apt-signing" --input -
+   gh api -X POST "repos/$repo/environments/apt-signing/deployment-branch-policies" -f name='v*' -f type=tag
+   printf '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' \
+     | gh api -X PUT "repos/$repo/environments/apt-refresh" --input -
+   gh api -X POST "repos/$repo/environments/apt-refresh/deployment-branch-policies" -f name=master -f type=branch
+   ```
+
+4. **Add the signing subkey and the fingerprint**, then destroy the subkey
+   export:
+
+   ```sh
+   key_dir=./lulo-archive-key-<date>     # the directory step 1 printed
+   gh secret set RMAC_APT_SIGNING_SUBKEY --repo "$repo" --env apt-signing < "$key_dir/RMAC_APT_SIGNING_SUBKEY.asc"
+   gh secret set RMAC_APT_SIGNING_SUBKEY --repo "$repo" --env apt-refresh < "$key_dir/RMAC_APT_SIGNING_SUBKEY.asc"
+   gh variable set RMAC_ARCHIVE_SIGNING_FINGERPRINT --repo "$repo" --body "$(cat "$key_dir/primary-fingerprint.txt")"
+   rm -P "$key_dir/RMAC_APT_SIGNING_SUBKEY.asc"
+   ```
+
+   The variable is the PRIMARY fingerprint (not secret; it is also in
+   `install.sh`). No public-keyring secret is needed any more: the keyring
+   package is built from the committed `packaging/apt/archive-keyring.asc`.
+
+5. **Enable GitHub Pages** with source "GitHub Actions", and let its
+   `github-pages` environment accept deployments from `v*` tags and
+   `master`:
+
+   ```sh
+   gh api -X POST "repos/$repo/pages" -f build_type=workflow \
+     || gh api -X PUT "repos/$repo/pages" -f build_type=workflow
+   printf '{"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' \
+     | gh api -X PUT "repos/$repo/environments/github-pages" --input -
+   gh api -X POST "repos/$repo/environments/github-pages/deployment-branch-policies" -f name=master -f type=branch
+   gh api -X POST "repos/$repo/environments/github-pages/deployment-branch-policies" -f name='v*' -f type=tag
+   ```
+
+6. **Commit the pin** and get it onto `master` (the tag must contain it,
+   and the scheduled rollout runs from `master`):
+
+   ```sh
+   git add packaging/apt/archive-keyring.asc packaging/apt/archive-key.json scripts/linux/install.sh
+   git commit -m "Pin the Lulo OS archive signing key"
+   python3 -m pytest -q scripts/test_install_uninstall.py scripts/test_apt_publication.py
+   git push origin HEAD:master
+   ```
+
+   The key must be older than the release commit: the keyring package build
+   refuses a key created after `SOURCE_DATE_EPOCH`.
+
+7. **Optionally** set `RMAC_HAS_ARM64_RUNNER=true` once a
+   `[self-hosted, linux, arm64]` runner exists. Until then the repository
+   serves arm64 machines only the keyring.
+
+8. **Allow the first publication, once:**
+
+   ```sh
+   gh variable set RMAC_APT_FIRST_PUBLICATION --repo "$repo" --body true
+   ```
+
+9. **Switch publishing on and tag the Beta:**
+
+   ```sh
+   gh variable set RMAC_APT_PUBLISHING_ENABLED --repo "$repo" --body true
+   git tag v0.9.0-beta.1 && git push origin v0.9.0-beta.1
+   ```
+
+   Watch the Release run. When `apt-repository` waits for review, open the
+   run, check the tag and commit are the ones you meant, and approve
+   `apt-signing`. When `apt-pages` has deployed:
+
+   ```sh
+   gh variable delete RMAC_APT_FIRST_PUBLICATION --repo "$repo"
+   curl -fsSI https://millionrust.github.io/lulo/dists/resolute/InRelease
+   ```
+
+   Leaving the first-publication variable set makes the next publication
+   fail on purpose.
+
+10. **Check a client** on a disposable Ubuntu 26.04 machine:
+    `curl -fsSL https://millionrust.github.io/lulo/install.sh | sh`, log in
+    to Lulo OS, then after the next release confirm that
+    `systemctl --user start rmac-update-check.service` prepares the update
+    and a restart installs it ([Software Update](software-update.md)).
+
+Keep the repository active: GitHub disables scheduled workflows in a public
+repository after 60 days without activity, and without `rollout.yml` the
+repository's signatures expire 48 hours later and every client's
+`apt update` reports an error for it (re-enable the workflow and run it by
+hand with the current phase to recover).
 
 ## Third-party packages: niri and xwayland-satellite
 
@@ -248,9 +341,11 @@ and re-run the tests. A rebuild of the same upstream bumps `0luloN`.
   user-sysroot pkg-config rewrite and `bindgen`'s view of it).
 - **Reproducibility is designed for, not proven.** Unlike rmac's own
   packages there is no second independent build compared byte for byte.
-- **The signed APT repository does not carry them yet.**
-  `stage-apt-snapshot.py` only knows `rmac` and `rmac-archive-keyring`
-  sources; it must learn these two before `apt-repository` is enabled.
+- **In the APT repository** they are published like rmac's own packages,
+  pinned to priority 500 by `rmac.pref`. A rebuilt `niri` with an unchanged
+  version is never republished: the published bytes are carried forward
+  (the pool is immutable), so a new niri build only reaches clients with a
+  new `0luloN` revision or upstream version.
 - **arm64** needs the same self-hosted runner as rmac's arm64 packages.
 
 ## Runner decisions
@@ -278,57 +373,52 @@ do not, since a two-architecture APT repository needs both.
 ## Tagging a release
 
 1. Make sure `dev` is what you want to ship, then fast-forward or merge
-   into the branch the tag will point at.
+   into `master`.
 2. `git tag vX.Y.Z` (matching the workspace version in the root
-   `Cargo.toml`) and `git push origin vX.Y.Z`.
-3. Watch the `Release` workflow run. `dependency-policy`, `build-amd64`,
-   and `sbom` need no approval. `apt-repository` (once enabled) will pause
-   for the `apt-signing` environment's required reviewer approval --
-   approve it from the run's page only after checking the staged snapshot
-   looks right.
+   `Cargo.toml`) and `git push origin vX.Y.Z`. The version must be higher
+   than the published one: the stager refuses a version that goes
+   backwards, and refuses a reused orig tarball name with new bytes (a
+   Debian-revision-only bump must not change the source).
+3. Watch the `Release` workflow run. Nothing before `apt-repository` needs
+   approval. `apt-repository` pauses for the `apt-signing` reviewer --
+   approve it only after checking the tag and commit range.
 4. Once `attach-release` finishes, check the Release page: `.deb` files
    (including `niri` and `xwayland-satellite`), their `.dsc`,
    `.orig.tar.gz`, `.orig-vendor.tar.xz`, `.debian.tar.xz`, `.buildinfo`,
-   and `.changes`, `SHA256SUMS`, the SBOMs, and a provenance attestation
-   should all be attached.
+   and `.changes`, `apt-inputs-<tag>.tar`, `SHA256SUMS`, the SBOMs, and a
+   provenance attestation should all be attached, and after publication an
+   `apt-snapshot-<id>.tar`.
 
 ## Tagging a pre-release (Alpha/Beta/RC)
 
 A tag whose name is not exactly `vX.Y.Z` (for example `v0.9.0-beta.1`,
 matching a workspace version of `0.9.0-beta.1`) is a pre-release. The
-`attach-release` job detects the suffix and passes `--prerelease` to
-`gh release create`/`gh release edit`, so it publishes as a GitHub
-pre-release rather than "Latest" -- readers of the Releases page see it
-correctly labeled, and it never gets picked up by a tool that only follows
-"Latest". Everything else about the workflow is unchanged: `build-amd64`,
-`sbom`, and `attach-release` need no secrets and no approval, so a Beta tag
-produces its `.deb` files, `SHA256SUMS`, the SBOM, and a provenance
-attestation the same way a final release does. `apt-repository` and
-`keyring` stay off regardless (see "What exists today" above) until the
-owner's signing-key and source-package decisions are made -- a Beta
-pre-release is a GitHub Release with a manual install guide
-([docs/install.md](install.md)), not an APT repository entry.
+`attach-release` job passes `--prerelease` to `gh release create`/`gh
+release edit`, so it publishes as a GitHub pre-release rather than
+"Latest". Everything else is the same, including APT publication: the
+Debian version `0.9.0~beta.1-38` sorts below `0.9.0-38`, so the final
+release later upgrades Beta machines normally.
 
 ## Approving the signing environment
 
-Every run of a job with `environment: apt-signing` (both `release.yml`'s
-`apt-repository` and `rollout.yml`) stops and waits in GitHub's "Review
-deployments" UI until an authorized reviewer approves it. Before approving:
+Every run of `apt-repository` stops in GitHub's "Review deployments" UI
+until you approve `apt-signing`. Before approving, confirm the tag and run
+are ones you expect (no unexpected commit range). Rejecting stops the job
+before it touches key material.
 
-- confirm the tag/run is one you expect (no unexpected commit range);
-- for a rollout step, confirm the requested phase makes sense (a scheduled
-  tick should only ever be the next step forward; a manual dispatch should
-  match what was actually agreed).
-
-Rejecting the deployment stops the job before it imports any key material.
+`rollout.yml` signs through `apt-refresh`, which has no reviewer because the
+repository must be re-signed at least every 48 hours. It can only republish
+the already-published pool (`stage-apt-snapshot.py --rollout-only`): a phase
+change or a fresh Date and `Valid-Until`, never a new package.
 
 ## Halting a rollout
 
 Run `rollout.yml` manually (Actions -> Rollout -> Run workflow) with
-`phase: "0"`. `next-rollout-phase.py` allows an explicit `0` immediately,
-regardless of how long the current phase has been live. A scheduled tick
-never resumes a halted (0%) rollout on its own -- resuming needs another
-manual dispatch with a real phase.
+`phase: "0"`. A halt is allowed immediately, regardless of how long the
+current phase has been live. A scheduled tick never resumes a halted (0%)
+rollout on its own -- it only keeps re-signing it at 0% -- so resuming needs
+another manual run with a real phase. A manual run can never move the phase
+backwards except to 0.
 
 ## Emergency higher-version path
 
@@ -337,43 +427,41 @@ APT versions and Release snapshots only move forward
 pin-above-1000, forced revert, or replayed older `Release` file. To ship an
 emergency fix:
 
-1. Fix the issue and bump the workspace version (or just the Debian
-   revision) so the new build's version compares higher than the affected
-   one.
-2. Tag and push as normal (`git tag vX.Y.Z+1`). Security fixes should
-   publish at `--phase 100` directly rather than starting the normal
-   10/25/50/100 phasing -- this is not yet wired as a `release.yml` input;
-   until it is, edit the `--phase` argument in the `apt-repository` job for
-   that run, or extend the workflow with a `workflow_dispatch` override
-   before relying on this in practice.
-3. The previous signed snapshot and package hashes stay retained
-   (`publish-apt-snapshot.py` keeps at least three) for diagnosis; automatic
-   clients only ever see the higher-version revert.
+1. Fix the issue and bump the workspace version (or just
+   `DEBIAN_REVISION` in `native_package_contract.py`) so the new build's
+   version compares higher than the affected one.
+2. Tag and push as normal. The release publishes at 10%; for a security
+   fix, run `rollout.yml` by hand with `phase: "100"` right after
+   `apt-pages` deploys.
+3. The previous three signed snapshots stay retained (their bundles remain
+   on their Releases) for diagnosis; automatic clients only ever see the
+   higher-version revert.
 
 ## Known gaps and risks (read before your first real run)
 
-- **Untested runner plumbing.** The non-root-build-user-in-a-container
-  pattern in `build-amd64`/`build-arm64`/`keyring` has not been exercised
-  against a real GitHub Actions run. Expect to debug it on the first tag
-  push.
-- **Container disk space.** See "Runner decisions" above.
-- **No `rmac` source-package builder.** This is the hard blocker on
-  `apt-repository`/`rollout` ever running; see item 2 above.
-- **`rollout.yml`'s republish step is a stub.** The phase-decision logic
-  (`next-rollout-phase.py`) is real and tested; the actual
-  stage/sign/promote/deploy call is left as a documented `TODO` that
-  mirrors `release.yml`'s `apt-repository` job, because it depends on how
-  the release bundle ends up shaped once the source-package builder exists.
-  Wire it up before relying on scheduled rollout steps.
-- **Pages has no history.** `actions/deploy-pages` deploys an artifact, not
-  a `gh-pages` branch, so nothing but the live site itself remembers what
-  was previously published. `apt-repository` mirrors the current live site
-  with `wget` before promoting so `publish-apt-snapshot.py` can compare
-  against it and keep retained snapshots; if the mirror step or the Pages
-  size limit (1 GB) ever drops old snapshots, treat that as an incident,
-  not routine behavior.
+- **None of this has run on GitHub yet.** The container build pattern, the
+  `rmac-source` vendoring, the offline rebuild, the publication job, and the
+  Pages deployment are exercised by tests and by local runs (a real APT
+  client accepting a staged, subkey-signed repository, including phasing,
+  was checked on the reference laptop), not by a real Actions run. Expect to
+  debug the first tag.
+- **Disk.** `build-native-inputs.sh` refuses to start below 25 GiB free,
+  both in `build-amd64` and inside `rmac-source-rebuild`; hosted runners may
+  not have that. The publication jobs delete preinstalled toolchains to stay
+  above `publish-apt-snapshot.py`'s 15 GiB floor.
+- **Pages size.** Pages sites are limited to about 1 GB. The site holds the
+  pool of the three retained snapshots: normally one release, two for a few
+  days after a new one. The `rmac` vendor tarball is the largest object; if
+  the site outgrows the limit, filter platform-only crates from the vendor
+  tarball or move to another static host.
+- **Signature freshness depends on the schedule.** If `rollout.yml` stops
+  (disabled schedule, lost secret, failing job), clients start failing
+  `apt update` for this repository 48 hours after the last signature.
+- **Subkey expiry.** The signing subkey expires (default one year); renew it
+  offline and release the new public keyring before it lapses.
+- **Unsigned sidecar.** `rmac-snapshot.json` is not signed; it can only
+  choose where verified bytes are fetched from and when a phase began.
 - **`cargo-cyclonedx` is pinned to a specific version** for reproducible
   SBOMs; bump `RMAC_CARGO_CYCLONEDX_VERSION` deliberately, not implicitly.
-- **Key custody is still an open decision** (`update-trust.md` "Decisions
-  needed"): who holds the offline primary key, and how it is stored, is
-  not decided by this document or by any workflow here.
+- **Runner and supply-chain pinning** (SR-18): rustup is installed by
+  `curl | sh`, the `ubuntu:26.04` container is pinned by tag.

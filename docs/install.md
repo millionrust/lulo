@@ -32,12 +32,12 @@ and run the read-only preflight from
 
 ## Install from the APT repository
 
-> This is the eventual normal path once the release pipeline in
-> [Release process](release-process.md) has real signing keys. Today
-> `install.sh` refuses to run: its pinned archive fingerprint is still an
-> unfilled placeholder awaiting the key (see "Decisions needed" in
-> [Update trust](update-trust.md)). Nothing below works yet, but this is
-> the exact flow that will replace source builds for everyday testers.
+> This is the default and the only path that receives automatic updates.
+> It works once the owner has created the archive key and switched on
+> publishing ([Release process](release-process.md) "Switching on signed
+> updates"). Until then `install.sh` refuses to run without an argument --
+> its pinned archive fingerprint is still a placeholder -- and points at
+> `--from-release` below.
 
 One line, on a disposable Ubuntu 26.04 amd64 or arm64 machine:
 
@@ -62,10 +62,21 @@ following, and nothing else:
    and writes `/etc/apt/sources.list.d/rmac.sources` and
    `/etc/apt/preferences.d/rmac.pref` (the rendered
    `packaging/apt/rmac.sources.in` / `packaging/apt/rmac.pref`, pinned to
-   `rmac-apps`, `rmac-session`, and the keyring package only).
+   `rmac-apps`, `rmac-session`, `niri`, `xwayland-satellite`, and the
+   keyring package only; every other package from the rmac origin gets
+   priority -1, so the repository can never replace an Ubuntu package).
 5. Runs `apt update && apt install rmac-archive-keyring rmac-session`: the
    keyring package now comes from the signed repository and takes over the
-   keyring file, and `rmac-session` pulls in `rmac-apps`.
+   keyring file, and `rmac-session` pulls in `rmac-apps`, `niri`, and
+   `xwayland-satellite`. (A newer `niri` already installed from a PPA wins
+   by version and is kept.)
+
+From then on every Lulo OS release -- including new `niri` and
+`xwayland-satellite` builds -- is an ordinary APT/PackageKit update from
+this repository ("Keeping rmac up to date" below). The repository publishes
+amd64 builds; until an arm64 builder exists an arm64 machine sees only the
+keyring package, and installing `rmac-session` fails with "no installation
+candidate".
 
 It never touches the GNOME session: no session default changes, no GDM
 restart. The same steps written out by hand:
@@ -93,7 +104,7 @@ Signed-By: /usr/share/keyrings/rmac-archive-keyring.gpg
 Check-Valid-Until: yes
 EOF
 sudo tee /etc/apt/preferences.d/rmac.pref >/dev/null <<'EOF'
-Package: rmac-apps rmac-archive-keyring rmac-session
+Package: niri rmac-apps rmac-archive-keyring rmac-session xwayland-satellite
 Pin: release o=rmac,n=resolute,c=main
 Pin-Priority: 500
 
@@ -134,10 +145,11 @@ reviews and installs them through PackageKit directly. To turn off both the
 notification and the automatic preparation, run
 `systemctl --user disable --now rmac-update-check.timer`.
 
-## Install from a GitHub Release (the Beta path)
+## Install from a GitHub Release (offline or pinned installs)
 
-Until the signed APT repository above exists, a tagged release still
-publishes `rmac-apps` and `rmac-session` `.deb` files, Lulo OS's own
+This path adds no repository, so it receives no automatic updates; use it
+before the signed repository is switched on, offline, or to pin one exact
+release. Every tagged release publishes `rmac-apps` and `rmac-session` `.deb` files, Lulo OS's own
 `niri` and `xwayland-satellite` `.deb` files with their source packages, a
 `SHA256SUMS`, SBOMs, and a build-provenance attestation to its GitHub
 Release page (see
@@ -147,7 +159,7 @@ and `uninstall.sh` can use that release directly, on a disposable Ubuntu
 configuration:
 
 ```sh
-curl -fsSL -O https://raw.githubusercontent.com/millionrust/lulo/main/scripts/linux/install.sh
+curl -fsSL -O https://raw.githubusercontent.com/millionrust/lulo/master/scripts/linux/install.sh
 sh install.sh --from-release vX.Y.Z
 ```
 
@@ -177,7 +189,7 @@ sh install.sh --from-dir /absolute/path/to/native-package-set
 Reverse either one the same way as the APT-repository path:
 
 ```sh
-curl -fsSL -O https://raw.githubusercontent.com/millionrust/lulo/main/scripts/linux/uninstall.sh
+curl -fsSL -O https://raw.githubusercontent.com/millionrust/lulo/master/scripts/linux/uninstall.sh
 sh uninstall.sh
 ```
 

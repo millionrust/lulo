@@ -7,13 +7,12 @@ This is the I6 security and privacy review
 as [security-review-0.9.0-beta.1.json](security-review-0.9.0-beta.1.json).
 
 **Gate status: Fail.** The source review is done: every one of the 10 domains
-was read, 9 findings were fixed during the review and 14 more after it (the
+was read, 9 findings were fixed during the review and 15 more after it (the
 tables below give each fix's commit), with regression tests wherever code changed, and nothing
 Critical or High is open. Three things still block the gate:
 
-- 4 findings are still open, one Medium and three Low (two of those only
-  partly fixed). SR-12 is latent while APT publishing is gated off.
-- 27 checks need native execution on real stations.
+- 3 findings are still open, all Low (two of them only partly fixed).
+- 25 checks need native execution on real stations.
 - None of the three Beta H8 stations has been run. `amd64-nvidia-desktop`
   does not exist yet.
 
@@ -82,7 +81,8 @@ accepts the stored names (dev `b31c3e2c` and earlier; tests `f7d482f3`:
 | SR-10 | High (development installs) | lock-boundary | `install-session-units.sh` builds and installs `rmac-lock-provider` (`--features rmac-lock-provider-linux/provider`), keeps `rmac-lock-fallback.service`, and refuses to build or install anything while `/etc/pam.d/rmac-lock` is missing, printing the `sudo install` command. It re-checks that the provider, locker and both units are installed. Tests: `DevelopmentInstallLockTests` in `scripts/test_session_package.py`. | `57d61973` |
 | SR-11 | Medium | notifications | Live notifications are capped at 100 and 4 MiB of payload per sender and 1024 and 32 MiB overall. A post past a cap closes the sender's (or, globally, anyone's) oldest non-urgent, non-persistent notification, hidden banners first, and reports it as an expiry (legacy `NotificationClosed` reason 1). When only urgent or persistent notifications could make room, the post fails with `LimitsExceeded`. A live entry whose banner is gone is released when history drops it. Tests: seven reducer tests in `crates/rmac-notifications/src/tests.rs`. | `5b8a0824` |
 | SR-13 | Medium | dbus-polkit | Verified against keyd 2.5.0's source (Debian 2.5.0-5 does not patch it). The daemon runs as root, the socket is mode 0660 for group `keyd`, there is no peer check, `bind` accepts `command()` bindings that run `/bin/sh -c` as root, and `input`/`macro` inject keystrokes. So the group is root. No session is added to `keyd` any more, and the helper removes a leftover membership. The follower names one of three profiles on `/run/rmac-mac-keyboard.socket`. A socket-activated `DynamicUser` relay that holds only the `keyd` group (no capabilities, AF_UNIX only) accepts exactly `native`, `pc-app` or `terminal` and applies rmac's generated bindings, which a test proves never contain `command(`. See [ADR 0017](decisions/0017-mac-keyboard.md), "Revision". Tests: `parse_relay_request`, `no_profile_binding_can_run_a_command`, `MacKeyboardRelayTests`. | `27a1e644` |
-| SR-14 | Low | updates | `rmac.pref` adds `Package: *` / `Pin: release o=rmac` / `Pin-Priority: -1`. The verifier, the `install.sh` heredoc and `docs/install.md` all match. Test: `test_the_rmac_origin_cannot_replace_other_packages`. | `ff3653cf`, `c27dd2e1` |
+| SR-12 | Medium | updates | The publisher's state no longer lives on Pages. Every release attaches `apt-inputs-<tag>.tar`, and every publication attaches `apt-snapshot-<id>.tar` (the signed metadata snapshot plus a sidecar naming each pool object's Release) to its Release. `scripts/linux/apt-publication.py collect` verifies the newest three snapshots with `gpgv` against the packaged keyring (pinned by `packaging/apt/archive-key.json`), checks every metadata file against the signed manifest, and re-fetches the pool from `SHA256SUMS`- and attestation-checked release inputs. `publish-apt-snapshot.py` therefore promotes onto the real previous repository, so the monotonic, immutable-pool and retention checks run. No history fails closed unless `RMAC_APT_FIRST_PUBLICATION` is set, and that flag is refused once history exists. The stager carries published versions forward byte for byte and refuses version regressions. A Release the repository serves is sealed against re-upload, and the `wget` mirror is gone. Tests: `scripts/test_apt_publication.py` (rebuilt repository equals the published one byte for byte; tampered bundle, missing attestation, SHA256SUMS mismatch, vanished pool object and backwards Date are all refused; an older version is refused; unchanged niri is carried forward), plus a real-APT check of a subkey-signed repository (`RealKeySigningTests`, run on the reference laptop). See `docs/update-trust.md` "Stateless publication from GitHub Releases". | `7121c7ff` |
+| SR-14 | Low | updates | `rmac.pref` adds `Package: *` / `Pin: release o=rmac` / `Pin-Priority: -1`. The verifier, the `install.sh` heredoc and `docs/install.md` all match. Test: `test_the_rmac_origin_cannot_replace_other_packages`. The priority-500 list now also names `niri` and `xwayland-satellite`, which the repository publishes (`7121c7ff`). | `ff3653cf`, `c27dd2e1` |
 | SR-16 | Low | packages | Every `ci.yml` action is pinned by a commit SHA, each checked against its tag through the GitHub API. `ci-quality.yml` pinned cargo-deny-action "v2.1.1" to the annotated tag object's SHA, not the commit; it now uses the commit (`3c634983`). The pin tests cover every workflow, and one label must map to one SHA. | `81f8f770` |
 | SR-19 | Low | file-operations | The poppler tools run through `preview::bounded::run`: 60-second deadline, 256 MiB stdout cap, 16 KiB stderr, and the tool is killed and reaped on either. Tests in `crates/preview/src/bounded.rs`. | `abcd747c` |
 | SR-20 | Low | desktop-entry-execution | `Path=` is used only when absolute (`platform::working_directory`). Test: `only_an_absolute_desktop_entry_path_becomes_the_working_directory`. | `cc492231` |
@@ -102,16 +102,20 @@ Partly fixed; the rest stays open below:
   check. Tests: `InstallReleaseAttestationTests`.
 - **SR-18** (`e16f8d5c`): the application and session package verifiers accept
   only the modes `0644` and `0755`. Tests:
-  `test_manifest_cannot_claim_a_privileged_mode` (both packages).
+  `test_manifest_cannot_claim_a_privileged_mode` (both packages). (`7121c7ff`):
+  the publisher now verifies InRelease against the keyring inside the
+  Release's own `rmac-archive-keyring` package, whose primary fingerprints must
+  equal `packaging/apt/archive-key.json`, rather than a keyring exported from
+  the signing secret. `sign-apt-release.sh` refuses a secret that carries the
+  offline primary key.
 
 ## Open findings
 
 | ID | Severity | Boundary | Evidence | Exploit scenario | Recommended fix |
 |---|---|---|---|---|---|
-| SR-12 | Medium (latent: APT publishing is gated off) | updates | `.github/workflows/release.yml` and `rollout.yml` both run `wget --mirror https://millionrust.github.io/lulo/ \|\| true`. Pages has no directory listings, so the mirror is always empty. `publish-apt-snapshot.py` then sees no current repository. | The "Date/snapshot must increase" check (`publish-apt-snapshot.py:1186-1190`) never runs, and retained snapshots, by-hash indices and old pool objects are dropped on each deploy. Re-running an old tag republishes older packages with a fresh date, and rollback evidence disappears. | Keep the publisher's state (`.rmac-publisher/state.json` plus the pool) somewhere authoritative, such as a Pages branch or a release asset. Fail closed when it can't be fetched, unless an explicit first-publish variable is set. Not done here: it needs a decision on where the state lives. |
 | SR-15 | Low | packages | There is no `--remap-path-prefix`. Panic locations keep `$CARGO_HOME/…` and `../crates/*` absolute paths (`Cargo.toml:162-167` strips symbols only). | Local and reference-PC builds embed `/home/<user>/…`. `check-native-reproducibility.sh` builds twice on one host, so it cannot catch this. | Remap `$CARGO_HOME` and the repository root in `build-native-inputs.sh`, and scan packaged binaries for `/home/` and `/Users/`. Not done here: it changes every release binary and needs a build to verify. |
-| SR-17 | Low (partly fixed) | packages | Without `gh`, `install.sh --from-release` still checks only `SHA256SUMS`, which comes from the same release. It now says so. | Authenticity then rests on HTTPS and GitHub account security. | Require `gh attestation verify` unless an explicit `--allow-unattested` is passed. That changes the documented install path, so it is left for a decision. |
-| SR-18 | Low (partly fixed) | packages | rustup is installed by `curl \| sh`, the `ubuntu:26.04` container is pinned by tag, and `cargo install` is pinned by version only (`release.yml`). The publisher checks InRelease against the keyring exported from the signing secret, not the packaged keyring. | Supply-chain drift. A wrong subkey causes an outage, which fails closed. | Pin by digest or hash. Pass `--keyring` from `keyring/*.deb`. (The manifest mode check is fixed.) |
+| SR-17 | Low (partly fixed) | packages | Without `gh`, `install.sh --from-release` still checks only `SHA256SUMS`, which comes from the same release. It now says so. The default `install.sh` path is now the signed APT repository; `--from-release` remains the offline path. | Authenticity then rests on HTTPS and GitHub account security. | Require `gh attestation verify` unless an explicit `--allow-unattested` is passed. That changes the documented install path, so it is left for a decision. |
+| SR-18 | Low (partly fixed) | packages | rustup is installed by `curl \| sh`, the `ubuntu:26.04` container is pinned by tag, and `cargo install` is pinned by version only (`release.yml`). | Supply-chain drift. | Pin by digest or hash. (The manifest mode check and the publisher's keyring source are fixed.) |
 
 **Informational, no severity:**
 
@@ -230,10 +234,10 @@ Legend:
 | Check | Verdict | Evidence |
 |---|---|---|
 | apt-key-scope-isolated | pass | `Signed-By` keyring (`packaging/apt/rmac.sources.in:6`); `verify-update-trust.py:201-206` rejects `trusted=yes` and `trusted.gpg.d`; SR-01 fixed |
-| atomic-inrelease-last-and-monotonic | pending (SR-12) | InRelease written last with `os.replace` and fsync (`publish-apt-snapshot.py:1231-1240`) |
+| atomic-inrelease-last-and-monotonic | pass | InRelease written last with `os.replace` and fsync (`publish-apt-snapshot.py` `promote`); the Date/snapshot check now runs against the repository rebuilt from the retained signed snapshots (SR-12 fixed) |
 | backend-failure-recovers-authoritatively | pass | re-read after install (`crates/system-settings/src/controller/software_updates.rs:194-195`) |
 | cancellation-and-restart-readback | pass | `crates/rmac-updates-linux/src/transaction.rs:255-301` |
-| immutable-pool-and-by-hash | pending (SR-12) | |
+| immutable-pool-and-by-hash | pass | the rebuilt repository carries the retained pool and by-hash objects byte for byte; the stager carries published versions forward and refuses a published path with new bytes; published Releases are sealed (SR-12 fixed) |
 | keyring-public-only-and-package-scoped | pass | `keyring_package_contract.py:237-238,631-633`; SR-01 fixed |
 | packagekit-invoked-without-shell | pass | zbus only (`crates/rmac-updates-linux/src/transaction.rs:327-389`) |
 | polkit-interaction-is-user-initiated | pass | `interactive=true` only on install, reached only from `confirm_update_plan` (`transaction.rs:217`) |
@@ -269,5 +273,6 @@ and `Debug` derive, plus journal inspection on a station, is still required:
 - **SR-13 changed a privileged boundary.** The keyd relay needs a station
   check: Mac shortcuts switch per app without the user in `keyd`, and a
   request other than the three profile names is refused.
-- **SR-12** must be fixed before the signed APT repository is switched on. It
-  does not block the GitHub-Release Beta.
+- **SR-12 is fixed**, but the stateless publication has only run against
+  fixtures and a local APT client; the first real tag must prove it on
+  GitHub Actions and Pages.

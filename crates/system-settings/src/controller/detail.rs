@@ -3,10 +3,15 @@
 use super::*;
 
 impl Settings {
-    pub(super) fn render_detail(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_detail(&self, cx: &mut Context<Self>) -> AnyElement {
         debug_assert!(category_has_dedicated_renderer(
             self.current().name.as_ref()
         ));
+        // Wallpaper keeps its preview strip fixed and scrolls only the
+        // gallery under it, so it lays out the whole column itself.
+        if self.nav.is_empty() && self.current().name.as_ref() == "Wallpaper" {
+            return self.render_wallpaper(cx).into_any_element();
+        }
         let content: Div = if let Some(sub) = self.nav.last().cloned() {
             self.render_subpage(&sub, cx)
         } else {
@@ -35,7 +40,6 @@ impl Settings {
                 "VPN" => self.render_vpn(cx),
                 "Desktop & Dock" => self.render_desktop_dock(cx),
                 "Spotlight" => self.render_spotlight(cx),
-                "Wallpaper" => self.render_wallpaper(cx),
                 _ => self.render_unregistered_category(),
             }
         };
@@ -73,6 +77,7 @@ impl Settings {
                     })
                     .child(content),
             )
+            .into_any_element()
     }
 
     /// macOS 26 opens General (only) with a hero group (large

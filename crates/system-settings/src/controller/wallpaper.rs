@@ -1,4 +1,4 @@
-//! Wallpaper preview, chooser, mutation, rollback, and pane authority.
+//! Wallpaper preview, chooser, mutation, and pane authority.
 
 use super::*;
 
@@ -134,7 +134,7 @@ impl Settings {
             })
             .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_wallpaper_mutation(result, Some(previous));
+                this.finish_wallpaper_mutation(result);
                 this.refresh_wallpaper_preview(cx);
                 cx.notify();
             });
@@ -145,19 +145,11 @@ impl Settings {
     pub(super) fn finish_wallpaper_mutation(
         &mut self,
         result: std::result::Result<rmac_shell_settings::Snapshot, rmac_shell_settings::Error>,
-        previous: Option<rmac_shell_settings::WallpaperSettings>,
     ) {
         self.shell_settings_loading = false;
         self.shell_settings_busy = false;
         match result {
             Ok(snapshot) => {
-                if self
-                    .shell_settings
-                    .as_ref()
-                    .is_some_and(|current| current.settings.dock != snapshot.settings.dock)
-                {
-                    self.shell_settings_revert = None;
-                }
                 if self.shell_settings.as_ref().is_some_and(|current| {
                     SpotlightAuthority::from_settings(&current.settings)
                         != SpotlightAuthority::from_settings(&snapshot.settings)
@@ -165,7 +157,6 @@ impl Settings {
                     self.spotlight_revert = None;
                 }
                 self.shell_settings = Some(snapshot);
-                self.wallpaper_revert = previous;
                 self.wallpaper_error = None;
                 self.shell_settings_error = None;
                 self.shell_settings_stream_error = None;
@@ -216,30 +207,6 @@ impl Settings {
                     }
                     None => this.refresh_shell_settings(true, cx),
                 }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    pub(super) fn revert_wallpaper_change(&mut self, cx: &mut Context<Self>) {
-        if self.shell_settings_loading || self.shell_settings_busy {
-            return;
-        }
-        let Some(previous) = self.wallpaper_revert.clone() else {
-            return;
-        };
-        self.shell_settings_busy = true;
-        self.wallpaper_error = None;
-        cx.notify();
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = blocking::unblock(move || {
-                persist_shell_settings_mutation(ShellSettingsMutation::RestoreWallpaper(previous))
-            })
-            .await;
-            let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_wallpaper_mutation(result, None);
-                this.refresh_wallpaper_preview(cx);
                 cx.notify();
             });
         })

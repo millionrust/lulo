@@ -53,16 +53,6 @@ impl Settings {
                 let wallpaper_changed = self.shell_settings.as_ref().is_none_or(|current| {
                     current.settings.wallpaper != snapshot.settings.wallpaper
                 });
-                if self
-                    .shell_settings
-                    .as_ref()
-                    .is_some_and(|current| current.settings.dock != snapshot.settings.dock)
-                {
-                    self.shell_settings_revert = None;
-                }
-                if wallpaper_changed {
-                    self.wallpaper_revert = None;
-                }
                 self.shell_settings = Some(snapshot);
                 self.spotlight_revert = previous;
                 self.spotlight_error = None;

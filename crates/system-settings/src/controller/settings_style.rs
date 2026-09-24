@@ -420,3 +420,24 @@ pub(super) fn well_fill() -> Hsla {
         rmac_ui::mac::control_fill()
     }
 }
+
+// ---- wallpaper -------------------------------------------------------------
+
+/// The rule between the Wallpaper pane's preview strip and its gallery:
+/// 1 pt, rgb(54,56,65) over the window, across the whole detail column.
+pub(super) fn wallpaper_rule() -> Hsla {
+    if dark() {
+        white(0.10)
+    } else {
+        rmac_ui::mac::separator()
+    }
+}
+
+/// The "Add Photo…" well in the Wallpaper gallery: rgb(42,44,54).
+pub(super) fn add_photo_fill() -> Hsla {
+    if dark() {
+        rgb(0x2a2c36).into()
+    } else {
+        rmac_ui::mac::control_fill()
+    }
+}

@@ -7,37 +7,18 @@ use super::*;
 impl Settings {
     pub(super) fn render_desktop_dock(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
-        let refresh_view = view.clone();
-        let revert_view = view.clone();
-        let footer = footer_buttons(vec![
-            push_button("dock-revert", "Revert")
-                .disabled(
-                    self.shell_settings_loading
-                        || self.shell_settings_busy
-                        || self.shell_settings_revert.is_none(),
-                )
-                .on_click(move |_, _, cx| {
-                    revert_view.update(cx, |settings, cx| settings.revert_dock_change(cx));
-                })
-                .into_any_element(),
-            push_button(
-                "dock-refresh",
-                if self.shell_settings_busy {
-                    "Applying…"
-                } else if self.shell_settings_loading {
-                    "Loading…"
-                } else {
-                    "Refresh"
-                },
-            )
+        let retry_view = view.clone();
+        // Changes save as they are made and the store's live stream keeps the
+        // pane current, so, as on the Mac, there is nothing to revert or
+        // refresh by hand. Only an unreadable store offers a retry.
+        let footer = footer_buttons(vec![push_button("dock-refresh", "Try Again")
             .disabled(self.shell_settings_loading || self.shell_settings_busy)
             .on_click(move |_, _, cx| {
-                refresh_view.update(cx, |settings, cx| {
+                retry_view.update(cx, |settings, cx| {
                     settings.refresh_shell_settings(false, cx)
                 });
             })
-            .into_any_element(),
-        ]);
+            .into_any_element()]);
         let mut cards = Vec::new();
 
         if self.shell_settings_loading && self.shell_settings.is_none() {
@@ -289,7 +270,6 @@ impl Settings {
                 "niri is not connected in this process. Output-specific choices are limited to currently known outputs; saved Dock policy remains editable and is applied when the Lulo OS niri session is available.",
             ));
         }
-        cards.push(footer);
         self.pane(cards)
     }
 }

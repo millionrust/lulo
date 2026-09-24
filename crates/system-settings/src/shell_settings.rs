@@ -264,12 +264,10 @@ impl WallpaperChange {
 
 pub(super) enum ShellSettingsMutation {
     Change(DockChange),
-    Restore(rmac_shell_settings::DockSettings),
     Wallpaper {
         target: WallpaperTarget,
         change: WallpaperChange,
     },
-    RestoreWallpaper(rmac_shell_settings::WallpaperSettings),
     Spotlight(SpotlightChange),
     RestoreSpotlight(SpotlightAuthority),
     MenuBar(MenuBarChange),
@@ -283,11 +281,9 @@ impl ShellSettingsMutation {
     pub(super) fn apply(self, settings: &mut rmac_shell_settings::ShellSettings) {
         match self {
             Self::Change(change) => change.apply(&mut settings.dock),
-            Self::Restore(dock) => settings.dock = dock,
             Self::Wallpaper { target, change } => {
                 change.apply(&target, &mut settings.wallpaper);
             }
-            Self::RestoreWallpaper(wallpaper) => settings.wallpaper = wallpaper,
             Self::Spotlight(change) => change.apply(settings),
             Self::RestoreSpotlight(spotlight) => spotlight.apply_to(settings),
             Self::MenuBar(change) => change.apply(settings),

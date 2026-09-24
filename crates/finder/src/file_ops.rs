@@ -293,6 +293,26 @@ fn validate_copy_destination(source: &Path, destination: &Path) -> io::Result<()
     Ok(())
 }
 
+/// Open `path` for reading only if it is a regular file and not a symlink,
+/// and return the opened file's own metadata. A FIFO swapped in does not
+/// block the open (`O_NONBLOCK`), and is refused.
+fn open_regular_nofollow(path: &Path) -> io::Result<(std::fs::File, std::fs::Metadata)> {
+    use std::os::unix::fs::OpenOptionsExt as _;
+
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "the item changed while it was being copied",
+        ));
+    }
+    Ok((file, metadata))
+}
+
 fn copy_recursive_cancellable(
     source: &Path,
     destination: &Path,
@@ -320,7 +340,10 @@ fn copy_recursive_cancellable(
         }
         std::fs::set_permissions(destination, metadata.permissions())?;
     } else if metadata.is_file() {
-        let mut source = std::fs::File::open(source)?;
+        // The lstat above is only a hint: in a folder others can write to, a
+        // symlink or FIFO can replace the file before it is opened. The
+        // opened file itself decides what is copied, and with which mode.
+        let (mut source, metadata) = open_regular_nofollow(source)?;
         let mut destination_file = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -1515,6 +1538,26 @@ pub(crate) fn execute_transfers(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn copy_sources_are_opened_without_following_a_swapped_in_link() {
+        let root = std::env::temp_dir().join(format!("rmac-nofollow-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("file.txt");
+        std::fs::write(&file, b"ok").unwrap();
+        let link = root.join("link.txt");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        let fifo = root.join("fifo");
+        let fifo_name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: mkfifo reads a NUL-terminated path that outlives the call.
+        assert_eq!(unsafe { libc::mkfifo(fifo_name.as_ptr(), 0o600) }, 0);
+
+        let (_, metadata) = super::open_regular_nofollow(&file).unwrap();
+        assert_eq!(metadata.len(), 2);
+        assert!(super::open_regular_nofollow(&link).is_err());
+        assert!(super::open_regular_nofollow(&fifo).is_err());
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
     use super::*;
     use std::cell::{Cell, RefCell};
     use std::time::{SystemTime, UNIX_EPOCH};

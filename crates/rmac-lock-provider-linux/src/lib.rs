@@ -27,6 +27,8 @@ pub use secret::*;
 #[cfg(target_os = "linux")]
 pub mod pam;
 #[cfg(target_os = "linux")]
+mod picture;
+#[cfg(target_os = "linux")]
 pub mod shm;
 #[cfg(target_os = "linux")]
 mod text_renderer;

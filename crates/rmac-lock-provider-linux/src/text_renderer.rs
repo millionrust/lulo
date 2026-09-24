@@ -260,6 +260,10 @@ impl LockTextRasters {
             account: self.account.as_ref(),
             placeholder: self.placeholder.as_ref(),
             prompt: self.prompt.as_ref(),
+            // LOCK-01's background/picture rasters are not text; the caller
+            // (`wayland.rs` `render_output`) overrides these with its own
+            // cached `PictureRaster`s.
+            ..LockTexts::default()
         }
     }
 

@@ -315,6 +315,60 @@ impl fmt::Display for TextRasterError {
 
 impl std::error::Error for TextRasterError {}
 
+/// A small, fixed-size RGB8 raster this process only ever reads as raw,
+/// length-checked bytes (LOCK-01; `crate::picture`) — never as a decoded
+/// image format. Used for the blurred wallpaper background and the real
+/// account picture, in place of the Aurora gradient and the monogram disc.
+#[derive(Clone)]
+pub struct PictureRaster {
+    width: u32,
+    height: u32,
+    rgb: Arc<[u8]>,
+}
+
+impl PictureRaster {
+    /// `rgb` must be exactly `width * height * 3` bytes (row-major, no
+    /// padding, no alpha). Anything else is rejected rather than truncated
+    /// or reinterpreted.
+    pub fn new(width: u32, height: u32, rgb: Vec<u8>) -> Option<Self> {
+        if width == 0 || height == 0 {
+            return None;
+        }
+        let expected = u64::from(width)
+            .checked_mul(u64::from(height))?
+            .checked_mul(3)?;
+        if rgb.len() as u64 != expected {
+            return None;
+        }
+        Some(Self {
+            width,
+            height,
+            rgb: rgb.into(),
+        })
+    }
+
+    /// Nearest-neighbour sample at a fractional position, `u` and `v` each
+    /// meant to range over `[0, 1)`; out-of-range values clamp to the edge.
+    fn sample(&self, u: f32, v: f32) -> Rgb {
+        let clamp01 = |value: f32| value.clamp(0.0, 0.999_999);
+        let x = (clamp01(u) * self.width as f32) as u32;
+        let y = (clamp01(v) * self.height as f32) as u32;
+        let x = x.min(self.width.saturating_sub(1));
+        let y = y.min(self.height.saturating_sub(1));
+        let offset = ((y * self.width + x) * 3) as usize;
+        match self.rgb.get(offset..offset + 3) {
+            Some([red, green, blue]) => Rgb::new(*red, *green, *blue),
+            _ => BLACK,
+        }
+    }
+}
+
+impl fmt::Debug for PictureRaster {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("PictureRaster(<redacted>)")
+    }
+}
+
 impl Rgb {
     pub const fn new(red: u8, green: u8, blue: u8) -> Self {
         Self { red, green, blue }
@@ -385,6 +439,14 @@ pub struct LockTexts<'a> {
     /// "Enter Password", drawn inside the empty pill and moved by the shake.
     pub placeholder: Option<&'a TextRaster>,
     pub prompt: Option<&'a TextRaster>,
+    /// The user's current wallpaper, blurred (LOCK-01). `None` paints the
+    /// Aurora gradient, exactly as before — the documented fallback for a
+    /// missing cache file or a `Reduce Transparency`-equivalent restricted
+    /// read (crate::picture).
+    pub background: Option<&'a PictureRaster>,
+    /// The account picture (LOCK-01). `None` keeps the monogram disc and
+    /// letter (`avatar` above).
+    pub picture: Option<&'a PictureRaster>,
 }
 
 impl fmt::Debug for LockTexts<'_> {
@@ -441,39 +503,56 @@ fn paint_pixel(
     visual: LockVisualState,
     texts: LockTexts<'_>,
 ) -> Rgb {
-    let denominator = height.saturating_sub(1).max(1);
-    let mut color = palette
-        .top
-        .interpolate(palette.bottom, y.min(denominator), denominator);
-
     let center_x = i64::from(width / 2);
-    let glow_x = percent(width, 70);
-    let glow_y = percent(height, 32);
-    let dx = i64::from(x) - glow_x;
-    let dy = i64::from(y) - glow_y;
-    let glow_radius = u64::from(width.min(height).max(1)) * 55 / 100;
-    let distance_squared = (dx * dx + dy * dy) as u64;
-    let radius_squared = glow_radius.saturating_mul(glow_radius).max(1);
-    if distance_squared < radius_squared {
-        let strength = ((radius_squared - distance_squared) * 58 / radius_squared) as u8;
-        color = color.blend(palette.glow, strength);
-    }
+    let mut color = match texts.background {
+        // LOCK-01: the real wallpaper, already blurred by the small
+        // fixed-size thumbnail it was sampled down to (crate::picture,
+        // rmac_wallpaper_image::lock_thumbnail). No synthetic glow: a real
+        // photo already has its own colour, unlike the Aurora artwork below.
+        Some(background) => background.sample(
+            x as f32 / width.max(1) as f32,
+            y as f32 / height.max(1) as f32,
+        ),
+        None => {
+            let denominator = height.saturating_sub(1).max(1);
+            let mut color =
+                palette
+                    .top
+                    .interpolate(palette.bottom, y.min(denominator), denominator);
 
-    let secondary_x = percent(width, 20);
-    let secondary_y = percent(height, 72);
-    let secondary_dx = i64::from(x) - secondary_x;
-    let secondary_dy = i64::from(y) - secondary_y;
-    let secondary_radius = u64::from(width.min(height).max(1)) * 62 / 100;
-    let secondary_distance = (secondary_dx * secondary_dx + secondary_dy * secondary_dy) as u64;
-    let secondary_radius_squared = secondary_radius.saturating_mul(secondary_radius).max(1);
-    if secondary_distance < secondary_radius_squared {
-        let strength =
-            ((secondary_radius_squared - secondary_distance) * 52 / secondary_radius_squared) as u8;
-        color = color.blend(palette.secondary_glow, strength);
-    }
+            let glow_x = percent(width, 70);
+            let glow_y = percent(height, 32);
+            let dx = i64::from(x) - glow_x;
+            let dy = i64::from(y) - glow_y;
+            let glow_radius = u64::from(width.min(height).max(1)) * 55 / 100;
+            let distance_squared = (dx * dx + dy * dy) as u64;
+            let radius_squared = glow_radius.saturating_mul(glow_radius).max(1);
+            if distance_squared < radius_squared {
+                let strength = ((radius_squared - distance_squared) * 58 / radius_squared) as u8;
+                color = color.blend(palette.glow, strength);
+            }
+
+            let secondary_x = percent(width, 20);
+            let secondary_y = percent(height, 72);
+            let secondary_dx = i64::from(x) - secondary_x;
+            let secondary_dy = i64::from(y) - secondary_y;
+            let secondary_radius = u64::from(width.min(height).max(1)) * 62 / 100;
+            let secondary_distance =
+                (secondary_dx * secondary_dx + secondary_dy * secondary_dy) as u64;
+            let secondary_radius_squared = secondary_radius.saturating_mul(secondary_radius).max(1);
+            if secondary_distance < secondary_radius_squared {
+                let strength = ((secondary_radius_squared - secondary_distance) * 52
+                    / secondary_radius_squared) as u8;
+                color = color.blend(palette.secondary_glow, strength);
+            }
+            color
+        }
+    };
 
     // The Aurora artwork is already made of soft gradients, so it reads as the
     // Mac's blurred wallpaper; the Mac then lays a black 20 % veil over it (S).
+    // The same veil applies over a real wallpaper thumbnail above, matching
+    // how the Mac darkens its own blurred wallpaper behind the lock UI.
     color = color.blend(BLACK, 51);
 
     let px = i64::from(x);
@@ -481,15 +560,26 @@ fn paint_pixel(
     let unit = i64::from(scale.max(1));
     let shake = i64::from(visual.shake_offset) * unit;
 
-    // Monogram avatar: a grey vertical gradient disc, like a Contacts
-    // monogram without a picture (S).
+    // The account picture (LOCK-01) when one is cached, else the monogram
+    // fallback: a grey vertical gradient disc, like a Contacts monogram
+    // without a picture (S).
     let avatar_center_y = layout::from_bottom(height, scale, layout::AVATAR_CENTER_FROM_BOTTOM);
     let avatar_radius = i64::from(layout::AVATAR_DIAMETER / 2) * unit;
     if inside_circle(px, py, center_x, avatar_center_y, avatar_radius) {
         let top = avatar_center_y - avatar_radius;
         let span = (2 * avatar_radius).max(1);
-        let position = ((py - top).clamp(0, span) * 255 / span) as u32;
-        color = Rgb::new(165, 171, 184).interpolate(Rgb::new(132, 137, 147), position, 255);
+        match texts.picture {
+            Some(picture) => {
+                let left = center_x - avatar_radius;
+                let u = (px - left) as f32 / span as f32;
+                let v = (py - top) as f32 / span as f32;
+                color = picture.sample(u, v);
+            }
+            None => {
+                let position = ((py - top).clamp(0, span) * 255 / span) as u32;
+                color = Rgb::new(165, 171, 184).interpolate(Rgb::new(132, 137, 147), position, 255);
+            }
+        }
     }
 
     // The glass password pill, displaced by the wrong-password shake.
@@ -606,7 +696,8 @@ fn paint_pixel(
     let placeholder = texts.placeholder.filter(|_| placeholder_visible);
     for (text, strength, sample_x) in [
         (texts.date, 230, px),
-        (texts.avatar, 255, px),
+        // The monogram letter only makes sense over the grey disc fallback.
+        (texts.avatar.filter(|_| texts.picture.is_none()), 255, px),
         (texts.account, 255, px),
         (placeholder, 153, px - shake),
         (texts.prompt, 204, px),

@@ -4,6 +4,7 @@
 
 mod desktop;
 mod gallery;
+mod lock_picture;
 mod menu;
 mod reveal;
 
@@ -91,6 +92,11 @@ impl AssetSource for WallpaperAssets {
         if let Some(bytes) = rmac_desktop_widgets::asset(path) {
             return Ok(Some(Cow::Borrowed(bytes)));
         }
+        // Quick Look (DESK-01) opens its own window inside this process and
+        // draws through the host app's asset source, exactly like Files'.
+        if let Some(data) = rmac_quick_look::asset(path) {
+            return Ok(Some(data));
+        }
         let bytes: Option<&'static [u8]> = match path {
             FOLDER_ICON => Some(include_bytes!("../../../../../assets/icons/folder.svg")),
             DOCUMENT_ICON => Some(include_bytes!("../../../../../assets/icons/document.svg")),
@@ -105,6 +111,11 @@ impl AssetSource for WallpaperAssets {
             .chain([FOLDER_ICON, DOCUMENT_ICON].iter())
             .filter(|asset| asset.starts_with(path))
             .map(|asset| SharedString::from(*asset))
+            .chain(
+                rmac_quick_look::asset_paths(path)
+                    .into_iter()
+                    .map(SharedString::from),
+            )
             .collect())
     }
 }
@@ -622,6 +633,12 @@ fn start_status(cx: &mut App) -> Entity<WallpaperStatus> {
                                         },
                                     );
                                 }
+                                // LOCK-01: keep the lock screen's blurred
+                                // wallpaper cache current. Multi-monitor: the
+                                // last surface prepared here wins, since the
+                                // lock screen shows one picture regardless
+                                // of output (S).
+                                lock_picture::write_background(&surface.image);
                                 if let Some((output, surface)) = prepare_surface(surface) {
                                     prepared.insert(output, surface);
                                 }
@@ -959,6 +976,13 @@ pub fn run() {
         .with_quit_mode(QuitMode::Explicit);
     app.run(|cx: &mut App| {
         rmac_shell_ui::tokens::install_appearance_watch(cx);
+        // LOCK-01: refresh the lock screen's account-picture cache once per
+        // session start (see lock_picture.rs for why this is not live).
+        cx.background_executor()
+            .spawn(async move {
+                blocking::unblock(lock_picture::write_avatar_once).await;
+            })
+            .detach();
         let status = start_status(cx);
         let (output_tx, output_rx) = async_channel::bounded(4);
         cx.background_executor()

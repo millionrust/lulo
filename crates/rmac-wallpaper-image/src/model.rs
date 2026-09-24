@@ -125,6 +125,65 @@ pub fn summarize_color(image: &Decoded) -> Option<ColorSummary> {
     })
 }
 
+/// Fixed size of the [`lock_thumbnail`] this crate produces for the lock
+/// screen (LOCK-01). Fixed on purpose: the lock provider is a security-
+/// critical process that must never parse a variable-length or externally
+/// formatted image, so it only ever reads a file of exactly this many RGB8
+/// bytes (see `crates/rmac-lock-provider-linux/src/paint.rs`) and falls back
+/// to its own Aurora gradient otherwise. The image decoder that can safely
+/// handle arbitrary wallpaper files lives only here, in the ordinary
+/// desktop-session wallpaper process.
+pub const LOCK_THUMBNAIL_WIDTH: u32 = 48;
+pub const LOCK_THUMBNAIL_HEIGHT: u32 = 27;
+
+/// A small box-downsampled copy of `image`, `LOCK_THUMBNAIL_WIDTH` ×
+/// `LOCK_THUMBNAIL_HEIGHT` RGB8 (no alpha — wallpapers are always opaque),
+/// row-major, top to bottom. Averaging a whole source block into each
+/// output pixel both shrinks and softens the picture, so the lock screen's
+/// cheap upscale of this thumbnail reads as "blurred" without a separate
+/// blur pass. Bounded the same way [`summarize_color`] is: exactly
+/// `LOCK_THUMBNAIL_WIDTH * LOCK_THUMBNAIL_HEIGHT` reads over the source
+/// regardless of its resolution.
+pub fn lock_thumbnail(image: &Decoded) -> Option<Vec<u8>> {
+    if image.width == 0 || image.height == 0 {
+        return None;
+    }
+    let expected = u64::from(image.width)
+        .checked_mul(u64::from(image.height))?
+        .checked_mul(4)?;
+    if expected != image.rgba.len() as u64 {
+        return None;
+    }
+    let (out_w, out_h) = (LOCK_THUMBNAIL_WIDTH, LOCK_THUMBNAIL_HEIGHT);
+    let mut out = Vec::with_capacity((out_w * out_h * 3) as usize);
+    for row in 0..out_h {
+        let y0 = (u64::from(row) * u64::from(image.height)) / u64::from(out_h);
+        let y1 = ((u64::from(row) + 1) * u64::from(image.height)) / u64::from(out_h);
+        let y1 = y1.max(y0 + 1).min(u64::from(image.height));
+        for column in 0..out_w {
+            let x0 = (u64::from(column) * u64::from(image.width)) / u64::from(out_w);
+            let x1 = ((u64::from(column) + 1) * u64::from(image.width)) / u64::from(out_w);
+            let x1 = x1.max(x0 + 1).min(u64::from(image.width));
+            let mut sums = [0_u64; 3];
+            let mut count = 0_u64;
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    let offset = ((y * u64::from(image.width) + x) * 4) as usize;
+                    sums[0] += u64::from(image.rgba[offset]);
+                    sums[1] += u64::from(image.rgba[offset + 1]);
+                    sums[2] += u64::from(image.rgba[offset + 2]);
+                    count += 1;
+                }
+            }
+            let count = count.max(1);
+            for sum in sums {
+                out.push(((sum + count / 2) / count) as u8);
+            }
+        }
+    }
+    Some(out)
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum Key {
     BuiltIn {

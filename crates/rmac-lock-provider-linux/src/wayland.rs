@@ -481,6 +481,12 @@ struct PreparedState {
     /// Start of the running wrong-password shake. Presentation only: it
     /// never delays PAM, input, or the compositor's lock decision.
     shake_started: Option<Instant>,
+    /// LOCK-01: the blurred wallpaper and account picture, read once (no
+    /// polling) when this process starts — a fresh process starts for every
+    /// lock, so a wallpaper or picture change is only picked up next time.
+    /// `None` keeps this frame's Aurora gradient and monogram disc.
+    background_picture: Option<crate::paint::PictureRaster>,
+    avatar_picture: Option<crate::paint::PictureRaster>,
 }
 
 impl Default for PreparedState {
@@ -498,6 +504,8 @@ impl Default for PreparedState {
             text_renderer: LockTextRenderer::default(),
             caps_lock: CapsLockState::default(),
             shake_started: None,
+            background_picture: crate::picture::background(),
+            avatar_picture: crate::picture::avatar(),
         }
     }
 }
@@ -1085,7 +1093,12 @@ impl PreparedState {
                 return Err(WireError::Text(error));
             }
         };
-        let frame = match ShmFrame::paint(&plan, LockPalette::MIDNIGHT, visual, text.texts()) {
+        let texts = crate::paint::LockTexts {
+            background: self.background_picture.as_ref(),
+            picture: self.avatar_picture.as_ref(),
+            ..text.texts()
+        };
+        let frame = match ShmFrame::paint(&plan, LockPalette::MIDNIGHT, visual, texts) {
             Ok(frame) => frame,
             Err(error) => {
                 self.surfaces

@@ -3363,46 +3363,71 @@ mod linux_wayland {
                 let mut tracker = TopBarTracker::default();
                 let mut removed_outputs = BTreeSet::new();
                 match output_rx.recv().await {
-                    Ok(mut desired) => 'updates: loop {
-                        let complete = cx.update(|cx| {
-                            tracker.reconcile(Some(&desired), &status, &backdrop_tx, cx);
-                            tracker.len() == desired.len()
-                        });
-                        if complete {
-                            let Ok(next) = output_rx.recv().await else {
-                                break;
-                            };
-                            restart_for_reappeared_output(&desired, &next, &mut removed_outputs);
-                            desired = next;
-                            continue;
-                        }
-                        let update = output_rx.recv().fuse();
-                        let retry = cx
-                            .background_executor()
-                            .timer(Duration::from_millis(50))
-                            .fuse();
-                        futures_util::pin_mut!(update, retry);
-                        futures_util::select! {
-                            next = update => match next {
-                                Ok(next) => {
-                                    restart_for_reappeared_output(
-                                        &desired,
-                                        &next,
-                                        &mut removed_outputs,
+                    Ok(mut desired) => {
+                        let mut attempt = 0;
+                        'updates: loop {
+                            let complete = cx.update(|cx| {
+                                tracker.reconcile(Some(&desired), &status, &backdrop_tx, cx);
+                                tracker.len() == desired.len()
+                            });
+                            // An output niri reports can reach GPUI a moment
+                            // later, so re-check on a short backoff; then stop
+                            // and wait for the next output change instead of
+                            // polling forever (idle means idle).
+                            let retry = if complete {
+                                None
+                            } else {
+                                let delay = menu_model::reconcile_retry_delay(attempt);
+                                if delay.is_none() {
+                                    eprintln!(
+                                        "top-bar: niri reports {} output(s) but GPUI has a display for only {}; the bar waits for the next output change",
+                                        desired.len(),
+                                        tracker.len()
                                     );
-                                    desired = next;
+                                }
+                                attempt = attempt.saturating_add(1);
+                                delay
+                            };
+                            let update = output_rx.recv().fuse();
+                            let executor = cx.background_executor().clone();
+                            let retry = async move {
+                                match retry {
+                                    Some(delay) => executor.timer(delay).await,
+                                    None => futures_util::future::pending::<()>().await,
+                                }
+                            }
+                            .fuse();
+                            futures_util::pin_mut!(update, retry);
+                            futures_util::select! {
+                                next = update => match next {
+                                    Ok(next) => {
+                                        restart_for_reappeared_output(
+                                            &desired,
+                                            &next,
+                                            &mut removed_outputs,
+                                        );
+                                        desired = next;
+                                        attempt = 0;
+                                    },
+                                    Err(_) => break 'updates,
                                 },
-                                Err(_) => break 'updates,
-                            },
-                            _ = retry => {}
+                                _ = retry => {}
+                            }
                         }
-                    },
-                    Err(_) => loop {
+                    }
+                    Err(_) => {
+                        // Without niri's output list the bar follows GPUI's
+                        // displays: settle the first ones on the same short
+                        // backoff, then stay asleep.
                         cx.update(|cx| tracker.reconcile(None, &status, &backdrop_tx, cx));
-                        cx.background_executor()
-                            .timer(Duration::from_millis(500))
-                            .await;
-                    },
+                        for delay in (0..).map_while(menu_model::reconcile_retry_delay) {
+                            cx.background_executor().timer(delay).await;
+                            cx.update(|cx| tracker.reconcile(None, &status, &backdrop_tx, cx));
+                        }
+                        eprintln!(
+                            "top-bar: niri's output list is unavailable, so the bar will not follow displays added later"
+                        );
+                    }
                 }
             })
             .detach();

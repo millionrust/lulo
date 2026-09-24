@@ -672,6 +672,22 @@ pub fn battery_menu_rows(
     rows
 }
 
+// ---- Output reconciliation ----
+
+/// How long the bar waits before its `attempt`th (0-based) re-check for an
+/// output niri reports but GPUI has no display for yet, or `None` once it
+/// should stop and wait for the next output change instead.
+///
+/// A hot-plugged output normally reaches GPUI within a few milliseconds of
+/// niri announcing it, so the first check is quick; the delay then doubles,
+/// and after about 6 s the bar gives up rather than polling forever for an
+/// output GPUI will never show (idle means idle).
+pub fn reconcile_retry_delay(attempt: u32) -> Option<Duration> {
+    const FIRST: Duration = Duration::from_millis(50);
+    const ATTEMPTS: u32 = 7;
+    (attempt < ATTEMPTS).then(|| FIRST * 2u32.pow(attempt))
+}
+
 // ---- Log Out, Restart and Shut Down ----
 
 /// How long a confirmed Log Out, Restart or Shut Down waits for every
@@ -1592,5 +1608,15 @@ mod tests {
             open_or_focus(&snapshot, settings),
             OpenOrFocus::Focus(WindowId(5))
         );
+    }
+
+    #[test]
+    fn output_reconcile_retries_back_off_and_then_stop() {
+        let delays = (0..)
+            .map_while(reconcile_retry_delay)
+            .map(|delay| delay.as_millis())
+            .collect::<Vec<_>>();
+        assert_eq!(delays, [50, 100, 200, 400, 800, 1600, 3200]);
+        assert_eq!(reconcile_retry_delay(u32::MAX), None);
     }
 }

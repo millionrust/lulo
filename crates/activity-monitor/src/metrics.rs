@@ -48,6 +48,22 @@ impl Tab {
     }
 }
 
+/// Index into [`Tab::ALL`] that Left, Right, Home or End move to from
+/// `current` — the toolbar's CPU/Memory/Energy/Disk/Network pill strip's
+/// roving arrow-key selection, matching the same left-to-right-only
+/// convention `rmac_ui::SegmentedControl` uses for its own horizontal strip
+/// (no Up/Down, since this is a row, not a set). `None` for any other key.
+pub(crate) fn tab_roving_target(current: usize, key: &str) -> Option<usize> {
+    let len = Tab::ALL.len();
+    match key {
+        "left" => Some((current + len - 1) % len),
+        "right" => Some((current + 1) % len),
+        "home" => Some(0),
+        "end" => Some(len - 1),
+        _ => None,
+    }
+}
+
 /// Aggregate readings recomputed every tick for summaries and graphs.
 #[derive(Default)]
 pub(crate) struct Aggregates {
@@ -199,5 +215,30 @@ mod tests {
         assert_eq!(Tab::Memory.default_sort_key(), ColKey::Mem);
         assert_eq!(Tab::Energy.default_sort_key(), ColKey::Energy);
         assert_eq!(Tab::Disk.default_sort_key(), ColKey::Disk);
+    }
+
+    #[test]
+    fn tab_roving_wraps_at_both_ends() {
+        assert_eq!(tab_roving_target(0, "left"), Some(4));
+        assert_eq!(tab_roving_target(4, "right"), Some(0));
+    }
+
+    #[test]
+    fn tab_roving_steps_by_one() {
+        assert_eq!(tab_roving_target(1, "right"), Some(2));
+        assert_eq!(tab_roving_target(2, "left"), Some(1));
+    }
+
+    #[test]
+    fn tab_roving_home_and_end_jump_to_the_edges() {
+        assert_eq!(tab_roving_target(2, "home"), Some(0));
+        assert_eq!(tab_roving_target(2, "end"), Some(4));
+    }
+
+    #[test]
+    fn tab_roving_ignores_unrelated_keys() {
+        assert_eq!(tab_roving_target(2, "up"), None);
+        assert_eq!(tab_roving_target(2, "down"), None);
+        assert_eq!(tab_roving_target(2, "tab"), None);
     }
 }

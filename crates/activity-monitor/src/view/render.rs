@@ -57,7 +57,7 @@ impl Render for MonitorView {
             .font_features(mac::tabular_font_features())
             .bg(mac::window())
             .text_color(mac::text())
-            .child(self.render_toolbar(layout, cx))
+            .child(self.render_toolbar(layout, window, cx))
             .when_some(persistence_error, |monitor, message| {
                 monitor.child(
                     div()

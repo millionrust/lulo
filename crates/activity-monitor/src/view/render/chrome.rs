@@ -142,14 +142,25 @@ impl MonitorView {
     pub(super) fn render_toolbar(
         &self,
         layout: ToolbarLayout,
-        cx: &Context<Self>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let has_selection = self.selected_proc(cx).is_some();
         let view = cx.entity();
-        let tabs = Tab::ALL.into_iter().map(|tab| {
+        let current_tab_index = Tab::ALL
+            .iter()
+            .position(|&candidate| candidate == self.tab)
+            .unwrap_or(0);
+        let tabs = Tab::ALL.into_iter().enumerate().map(|(index, tab)| {
             let selected = tab == self.tab;
+            let tab_id = SharedString::from(format!("tab-{}", tab.label()));
+            let focus = window
+                .use_keyed_state(tab_id.clone(), cx, |_, cx| cx.focus_handle())
+                .read(cx)
+                .clone();
+            let focused = focus.is_focused(window);
             div()
-                .id(SharedString::from(format!("tab-{}", tab.label())))
+                .id(tab_id)
                 .role(Role::Tab)
                 .aria_label(tab.label())
                 .aria_selected(selected)
@@ -166,8 +177,31 @@ impl MonitorView {
                 .when(!selected, |element| {
                     element.hover(|hover| hover.bg(mac::hover()))
                 })
+                .track_focus(&focus.tab_stop(true).tab_index(index as isize))
+                .when(focused, |el| el.shadow(mac::focus_ring_shadow()))
                 .child(tab.label())
                 .on_click(cx.listener(move |this, _, _, cx| this.select_tab(tab, cx)))
+        });
+        let tabs_row = div().flex().items_center().children(tabs).on_key_down({
+            let view = view.clone();
+            move |event: &gpui::KeyDownEvent, window, cx| {
+                let Some(next) = crate::metrics::tab_roving_target(
+                    current_tab_index,
+                    event.keystroke.key.as_str(),
+                ) else {
+                    return;
+                };
+                window.prevent_default();
+                cx.stop_propagation();
+                let target = Tab::ALL[next];
+                let target_id = SharedString::from(format!("tab-{}", target.label()));
+                let handle = window
+                    .use_keyed_state(target_id, cx, |_, cx| cx.focus_handle())
+                    .read(cx)
+                    .clone();
+                handle.focus(window, cx);
+                view.update(cx, |this, cx| this.select_tab(target, cx));
+            }
         });
         let search_open = self.search_open || !self.search.read(cx).value().is_empty();
         let search = if search_open {
@@ -333,9 +367,11 @@ impl MonitorView {
                         )),
                 )),
             )
-            .child(div().pl(px(TABS_GAP)).child(rmac_ui::toolbar_group(
-                div().flex().items_center().children(tabs),
-            )))
+            .child(
+                div()
+                    .pl(px(TABS_GAP))
+                    .child(rmac_ui::toolbar_group(tabs_row)),
+            )
             .child(div().flex_1().min_w(px(8.0)))
             .child(search);
         rmac_ui::toolbar(row)

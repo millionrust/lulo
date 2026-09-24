@@ -351,6 +351,17 @@ impl ProcessTableDelegate {
     }
 }
 
+/// The `ColumnSort` a header's Space/AT-SPI-Click activation should apply:
+/// flip direction on the column already sorted, default a newly-chosen one
+/// to ascending. Pure model behind [`ProcessTableDelegate::activate_sort`].
+fn next_header_sort(already_sorting: bool, currently_ascending: bool) -> ColumnSort {
+    if already_sorting && currently_ascending {
+        ColumnSort::Descending
+    } else {
+        ColumnSort::Ascending
+    }
+}
+
 /// Select the row at `row_index` exactly the way a mouse click does — used by
 /// this table's own mouse handlers and, identically, by the AT-SPI Click and
 /// Focus actions wired on each row in `render_tr`.
@@ -430,6 +441,27 @@ impl TableDelegate for ProcessTableDelegate {
         cx.defer_in(window, |state, _window, cx| resync_selection(state, cx));
     }
 
+    /// Sort by `column_index` from the keyboard (Space on a focused header)
+    /// or AT-SPI (`AccessibleAction::Click`), reusing the exact same
+    /// [`Self::perform_sort`] the table's own mouse-driven header click
+    /// calls: re-activating the current sort column flips its direction,
+    /// picking a new one defaults it to ascending. This updates the real
+    /// sort order and `self.accessible`'s per-column `sort` field, which is
+    /// what `render_th`'s own `aria_label` reads — but not the table
+    /// widget's private sort-icon state, which only its own mouse-click path
+    /// (already unaffected by this) can reach; an honest limitation, not
+    /// simulated behaviour.
+    fn activate_sort(
+        &mut self,
+        column_index: usize,
+        window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) {
+        let already_sorting = self.visible.get(column_index) == Some(&self.sort_key);
+        let sort = next_header_sort(already_sorting, self.sort_asc);
+        self.perform_sort(column_index, sort, window, cx);
+    }
+
     fn render_header(
         &mut self,
         _window: &mut Window,
@@ -441,15 +473,65 @@ impl TableDelegate for ProcessTableDelegate {
     fn render_th(
         &mut self,
         col_ix: usize,
-        _window: &mut Window,
-        _cx: &mut Context<TableState<Self>>,
+        window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
     ) -> impl IntoElement {
         let name = self.columns[col_ix].name.clone();
+        // `self.accessible.columns` is rebuilt alongside `self.rows` on every
+        // sort (`apply_view` -> `refresh_accessible`), so this always
+        // reflects the real, current sort order — including one set from
+        // the keyboard/AT-SPI path below, which never touches the table
+        // widget's own (private, mouse-only) sort-icon state.
+        let sort = self
+            .accessible
+            .columns
+            .get(col_ix)
+            .and_then(|column| column.sort);
+        let accessible_name: SharedString = match sort {
+            Some(SortDirection::Ascending) => format!("{name}, sorted ascending").into(),
+            Some(SortDirection::Descending) => format!("{name}, sorted descending").into(),
+            None => name.clone(),
+        };
+        let focus = window
+            .use_keyed_state(("col-header-focus", col_ix), cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let focused = focus.is_focused(window);
+        let view = cx.entity();
         div()
             .id(("col-header-name", col_ix))
             .role(Role::ColumnHeader)
-            .aria_label(name.clone())
+            .aria_label(accessible_name)
             .size_full()
+            .cursor_pointer()
+            .track_focus(&focus.tab_stop(true).tab_index(0))
+            .when(focused, |el| el.shadow(rmac_ui::mac::focus_ring_shadow()))
+            // Deliberately not `on_click`: the table widget's own header
+            // wrapper already calls back into `perform_sort` on a real mouse
+            // click (bubbled up from this div), and GPUI's generic
+            // Space/Return-activates-a-focused-click mapping only fires a
+            // div's own listeners, not its ancestors' — adding a second
+            // `on_click` here would double-fire (and double-toggle the sort
+            // direction) on every mouse click. Space is handled directly
+            // instead, entirely independent of the mouse path.
+            .on_key_down({
+                let view = view.clone();
+                move |event: &gpui::KeyDownEvent, window, cx| {
+                    if event.keystroke.key.as_str() == "space"
+                        && !event.keystroke.modifiers.modified()
+                    {
+                        cx.stop_propagation();
+                        view.update(cx, |table, cx| {
+                            table.delegate_mut().activate_sort(col_ix, window, cx);
+                        });
+                    }
+                }
+            })
+            .on_a11y_action(AccessibleAction::Click, move |_data, window, cx| {
+                view.update(cx, |table, cx| {
+                    table.delegate_mut().activate_sort(col_ix, window, cx);
+                });
+            })
             .child(name)
     }
 
@@ -546,7 +628,20 @@ impl TableDelegate for ProcessTableDelegate {
 
 #[cfg(test)]
 mod tests {
-    use super::{selection_projection, ColKey, ProcRow};
+    use super::{next_header_sort, selection_projection, ColKey, ProcRow};
+    use rmac_ui::ColumnSort;
+
+    #[test]
+    fn header_sort_flips_direction_on_the_active_column() {
+        assert_eq!(next_header_sort(true, true), ColumnSort::Descending);
+        assert_eq!(next_header_sort(true, false), ColumnSort::Ascending);
+    }
+
+    #[test]
+    fn header_sort_defaults_a_new_column_to_ascending() {
+        assert_eq!(next_header_sort(false, true), ColumnSort::Ascending);
+        assert_eq!(next_header_sort(false, false), ColumnSort::Ascending);
+    }
 
     #[test]
     fn process_churn_clears_only_a_vanished_selection() {

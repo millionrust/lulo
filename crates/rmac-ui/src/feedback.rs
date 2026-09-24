@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use gpui::{
     div, prelude::FluentBuilder as _, px, relative, App, ClickEvent, ElementId,
-    InteractiveElement as _, IntoElement, ParentElement as _, RenderOnce, SharedString,
+    InteractiveElement as _, IntoElement, ParentElement as _, RenderOnce, Role, SharedString,
     StatefulInteractiveElement as _, StyleRefinement, Styled, Window,
 };
 use gpui_component::StyledExt as _;
@@ -460,8 +460,18 @@ impl RenderOnce for Toast {
             ),
         };
         let dismiss_id: ElementId = SharedString::from(format!("{}-dismiss", self.id)).into();
+        // A toast is announced as it appears rather than found by keyboard
+        // navigation, so the whole message goes on one alert node
+        // (AccessKit's live-region equivalent — matches gpui_component's own
+        // `alert.rs`) rather than relying on the child text runs.
+        let accessible_name = match &self.message {
+            Some(message) => SharedString::from(format!("{}. {}", self.title, message)),
+            None => self.title.clone(),
+        };
         div()
             .id(self.id)
+            .role(Role::Alert)
+            .aria_label(accessible_name)
             .relative()
             .min_h(px(44.0))
             .flex()

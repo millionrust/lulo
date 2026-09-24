@@ -6,6 +6,11 @@ license.workspace = true
 authors.workspace = true
 publish = false
 
+[features]
+# Exposes `FakeBackend` for other crates' tests (quick-settings-app,
+# system-settings), so they don't have to redefine it.
+test-support = []
+
 [dependencies]
 rmac-audio.workspace = true
 rmac-bluetooth.workspace = true

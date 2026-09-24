@@ -4,6 +4,8 @@
 
 mod backend;
 mod execution;
+#[cfg(any(test, feature = "test-support"))]
+pub mod fake;
 mod model;
 
 pub use backend::{Backend, SystemBackend};

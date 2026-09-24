@@ -885,6 +885,144 @@ impl RenderOnce for Radio {
     }
 }
 
+type RadioGroupHandler = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// First enabled option at or after `start` in the direction implied by
+/// `forward`, wrapping around. Pure model behind [`RadioGroup`]'s roving
+/// arrow-key selection.
+fn next_radio_index(current: usize, len: usize, key: &str) -> Option<usize> {
+    if len == 0 {
+        return None;
+    }
+    match key {
+        "up" | "left" => Some((current + len - 1) % len),
+        "down" | "right" => Some((current + 1) % len),
+        "home" => Some(0),
+        "end" => Some(len - 1),
+        _ => None,
+    }
+}
+
+/// Group of mutually exclusive [`Radio`] buttons with roving arrow-key
+/// selection: Up/Left move to the previous option, Down/Right to the next,
+/// Home/End to the ends, each immediately selecting and moving keyboard focus
+/// together, matching the ARIA `radiogroup` convention and AppKit's own radio
+/// matrices. Without this, Tab is the only way to reach a later radio in the
+/// set and arrow keys do nothing (the gap this component closes).
+#[derive(IntoElement)]
+pub struct RadioGroup {
+    id: ElementId,
+    label: Option<SharedString>,
+    options: Vec<SharedString>,
+    selected: usize,
+    disabled: bool,
+    on_change: Option<RadioGroupHandler>,
+    style: StyleRefinement,
+}
+
+impl RadioGroup {
+    pub fn new(
+        id: impl Into<ElementId>,
+        options: impl IntoIterator<Item = impl Into<SharedString>>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            label: None,
+            options: options.into_iter().map(Into::into).collect(),
+            selected: 0,
+            disabled: false,
+            on_change: None,
+            style: StyleRefinement::default(),
+        }
+    }
+
+    pub fn selected(mut self, index: usize) -> Self {
+        self.selected = index;
+        self
+    }
+
+    /// Accessible name for the group itself (e.g. a settings row's question).
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn on_change(mut self, handler: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
+        self.on_change = Some(Rc::new(handler));
+        self
+    }
+}
+
+impl Styled for RadioGroup {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl RenderOnce for RadioGroup {
+    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let len = self.options.len();
+        let selected = self.selected.min(len.saturating_sub(1));
+        let disabled = self.disabled;
+        let group_id = self.id.clone();
+        let click_handler = self.on_change.clone();
+        let radios = self
+            .options
+            .into_iter()
+            .enumerate()
+            .map(move |(index, label)| {
+                let handler = click_handler.clone();
+                let item_id: ElementId = SharedString::from(format!("{group_id}-{index}")).into();
+                Radio::new(item_id)
+                    .label(label)
+                    .selected(index == selected)
+                    .disabled(disabled)
+                    .on_change(move |checked, window, cx| {
+                        if *checked {
+                            if let Some(handler) = handler.as_ref() {
+                                handler(index, window, cx);
+                            }
+                        }
+                    })
+            });
+        let keyboard_handler = self.on_change;
+        let key_group_id = self.id.clone();
+        div()
+            .id(self.id)
+            .role(Role::RadioGroup)
+            .when_some(self.label, |el, label| el.aria_label(label))
+            .v_flex()
+            .gap_1()
+            .refine_style(&self.style)
+            .when(!disabled, |group| {
+                group.on_key_down(move |event: &KeyDownEvent, window, cx| {
+                    let Some(next) = next_radio_index(selected, len, event.keystroke.key.as_str())
+                    else {
+                        return;
+                    };
+                    window.prevent_default();
+                    cx.stop_propagation();
+                    let target_id: ElementId =
+                        SharedString::from(format!("{key_group_id}-{next}")).into();
+                    let focus_handle = window
+                        .use_keyed_state(target_id, cx, |_, cx| cx.focus_handle())
+                        .read(cx)
+                        .clone();
+                    focus_handle.focus(window, cx);
+                    if let Some(handler) = keyboard_handler.as_ref() {
+                        handler(next, window, cx);
+                    }
+                })
+            })
+            .children(radios)
+    }
+}
+
 /// Orientation of a shared [`Slider`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SliderAxis {
@@ -1260,6 +1398,8 @@ pub struct List {
     children: Vec<AnyElement>,
     state: CollectionState,
     message: Option<SharedString>,
+    label: Option<SharedString>,
+    container_role: Role,
     style: StyleRefinement,
 }
 
@@ -1272,6 +1412,8 @@ impl List {
                 .collect(),
             state: CollectionState::Ready,
             message: None,
+            label: None,
+            container_role: Role::List,
             style: StyleRefinement::default(),
         }
     }
@@ -1283,6 +1425,19 @@ impl List {
 
     pub fn message(mut self, message: impl Into<SharedString>) -> Self {
         self.message = Some(message.into());
+        self
+    }
+
+    /// Accessible name for the list container itself (e.g. "Bookmarks",
+    /// "Search results"). Optional: a list with no label renders exactly as
+    /// it did before this method existed.
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    pub(crate) fn container_role(mut self, role: Role) -> Self {
+        self.container_role = role;
         self
     }
 }
@@ -1299,7 +1454,23 @@ impl RenderOnce for List {
         let message = self
             .message
             .unwrap_or_else(|| collection_message(state).into());
-        div()
+        // Loading and empty/unavailable states are polite status announcements;
+        // a real load failure is an alert, matching `Toast`'s own role split
+        // and the ARIA convention of reserving `alert` for content that
+        // demands immediate attention.
+        let message_role = if state == CollectionState::Error {
+            Some(Role::Alert)
+        } else if matches!(
+            state,
+            CollectionState::Empty | CollectionState::Loading | CollectionState::Unavailable
+        ) {
+            Some(Role::Status)
+        } else {
+            None
+        };
+        let message_id: ElementId =
+            SharedString::from(format!("list-message-{state:?}-{message}")).into();
+        let body = div()
             .v_flex()
             .refine_style(&self.style)
             .when(state == CollectionState::Stale, |list| {
@@ -1333,6 +1504,10 @@ impl RenderOnce for List {
                 |list| {
                     list.child(
                         div()
+                            .id(message_id)
+                            .when_some(message_role, |el, role| {
+                                el.role(role).aria_label(message.clone())
+                            })
                             .min_h(px(96.0))
                             .flex()
                             .items_center()
@@ -1347,7 +1522,17 @@ impl RenderOnce for List {
                             .child(message),
                     )
                 },
-            )
+            );
+        match self.label {
+            Some(label) => {
+                let id: ElementId = SharedString::from(format!("list-{label}")).into();
+                body.id(id)
+                    .role(self.container_role)
+                    .aria_label(label)
+                    .into_any_element()
+            }
+            None => body.into_any_element(),
+        }
     }
 }
 
@@ -1360,6 +1545,15 @@ pub struct ListRow {
     disabled: bool,
     on_activate: Option<ClickHandler>,
     style: StyleRefinement,
+    // Crate-private accessibility overrides. `ListRow` defaults to
+    // `Role::ListItem` and a content-derived name (the same convention the
+    // pinned `Button` it used to wrap already had); `TreeRow` and
+    // `ContextMenu` override these to become a tree item or a menu item.
+    role: Role,
+    aria_label: Option<SharedString>,
+    aria_toggled: Option<Toggled>,
+    aria_expanded: Option<bool>,
+    aria_level: Option<usize>,
 }
 
 impl ListRow {
@@ -1371,6 +1565,11 @@ impl ListRow {
             disabled: false,
             on_activate: None,
             style: StyleRefinement::default(),
+            role: Role::ListItem,
+            aria_label: None,
+            aria_toggled: None,
+            aria_expanded: None,
+            aria_level: None,
         }
     }
 
@@ -1395,6 +1594,31 @@ impl ListRow {
     pub fn on_click(self, handler: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_activate(handler)
     }
+
+    pub(crate) fn role(mut self, role: Role) -> Self {
+        self.role = role;
+        self
+    }
+
+    pub(crate) fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.aria_label = Some(label.into());
+        self
+    }
+
+    pub(crate) fn aria_toggled(mut self, toggled: Toggled) -> Self {
+        self.aria_toggled = Some(toggled);
+        self
+    }
+
+    pub(crate) fn aria_expanded(mut self, expanded: bool) -> Self {
+        self.aria_expanded = Some(expanded);
+        self
+    }
+
+    pub(crate) fn aria_level(mut self, level: usize) -> Self {
+        self.aria_level = Some(level);
+        self
+    }
 }
 
 impl Styled for ListRow {
@@ -1404,30 +1628,57 @@ impl Styled for ListRow {
 }
 
 impl RenderOnce for ListRow {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let transparent: Hsla = rgba(0x00000000).into();
         let (fill, text, hover) = if self.selected {
             (mac::accent(), mac::on_accent(), None)
         } else {
             (transparent, mac::text(), Some(mac::hover()))
         };
-        let mut row = painted(
-            ComponentButton::new(self.id)
-                .with_size(Size::Small)
-                .disabled(self.disabled),
-            fill,
-            text,
-            hover,
-            self.disabled,
-            cx,
-        )
-        .w_full()
-        .h(px(mac::list_row_height()))
-        .justify_start()
-        .refine_style(&self.style)
-        .child(self.content);
+        let disabled = self.disabled;
+        let selected = self.selected;
+        let focus_handle = window
+            .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let is_focused = focus_handle.is_focused(window);
+        let mut row = div()
+            .id(self.id)
+            .role(self.role)
+            .aria_selected(selected)
+            .when_some(self.aria_label, |el, label| el.aria_label(label))
+            .when_some(self.aria_toggled, |el, toggled| el.aria_toggled(toggled))
+            .when_some(self.aria_expanded, |el, expanded| {
+                el.aria_expanded(expanded)
+            })
+            .when_some(self.aria_level, |el, level| el.aria_level(level))
+            .w_full()
+            .h(px(mac::list_row_height()))
+            .px_3()
+            .rounded(px(mac::radius_control()))
+            .flex()
+            .items_center()
+            .justify_start()
+            .gap_1()
+            .bg(fill)
+            .text_color(text)
+            .cursor_default()
+            .when(!disabled, |el| {
+                el.track_focus(&focus_handle.clone().tab_stop(true).tab_index(0))
+            })
+            .when(disabled, |el| el.opacity(0.5))
+            .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
+            .when_some(hover, |el, hover_color| {
+                el.hover(move |style| style.bg(hover_color))
+            })
+            .refine_style(&self.style)
+            .child(self.content);
         if let Some(handler) = self.on_activate {
-            row = row.on_click(move |event, window, cx| handler(event, window, cx));
+            row = row.on_click(move |event, window, cx| {
+                if !disabled {
+                    handler(event, window, cx);
+                }
+            });
         }
         row
     }
@@ -1442,7 +1693,7 @@ pub struct Tree {
 impl Tree {
     pub fn new(children: impl IntoIterator<Item = impl IntoElement>) -> Self {
         Self {
-            list: List::new(children),
+            list: List::new(children).container_role(Role::Tree),
         }
     }
 
@@ -1453,6 +1704,12 @@ impl Tree {
 
     pub fn message(mut self, message: impl Into<SharedString>) -> Self {
         self.list = self.list.message(message);
+        self
+    }
+
+    /// Accessible name for the tree container itself.
+    pub fn label(mut self, label: impl Into<SharedString>) -> Self {
+        self.list = self.list.label(label);
         self
     }
 }
@@ -1560,19 +1817,26 @@ impl RenderOnce for TreeRow {
         let activate = self.on_activate;
         let has_children = self.has_children;
         let expanded = self.expanded;
-        let row = ListRow::new(self.id, content)
-            .selected(self.selected)
-            .on_activate(move |event, window, cx| {
-                if has_children {
-                    if let Some(handler) = expansion_click.as_ref() {
-                        handler(&!expanded, window, cx);
-                        return;
-                    }
+        // ARIA levels are 1-based; a root-depth row (depth 0) is level 1.
+        let level = usize::from(self.depth) + 1;
+        let mut row = ListRow::new(self.id, content)
+            .role(Role::TreeItem)
+            .aria_level(level)
+            .selected(self.selected);
+        if has_children {
+            row = row.aria_expanded(expanded);
+        }
+        let row = row.on_activate(move |event, window, cx| {
+            if has_children {
+                if let Some(handler) = expansion_click.as_ref() {
+                    handler(&!expanded, window, cx);
+                    return;
                 }
-                if let Some(handler) = activate.as_ref() {
-                    handler(event, window, cx);
-                }
-            });
+            }
+            if let Some(handler) = activate.as_ref() {
+                handler(event, window, cx);
+            }
+        });
         div()
             .on_key_down(move |event: &KeyDownEvent, window, cx| {
                 let requested = match event.keystroke.key.as_str() {

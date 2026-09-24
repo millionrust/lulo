@@ -274,7 +274,11 @@ const MONITOR_MENUS: &[MenuSpec] = &[
 
 const SETTINGS_MENUS: &[MenuSpec] = &[MenuSpec {
     label: "View",
-    items: &[item!("Back", "system_settings::GoBack", "⌘[")],
+    items: &[
+        item!("Back", "system_settings::GoBack", "⌘["),
+        item!("Forward", "system_settings::GoForward", "⌘]"),
+        item!("Search", "system_settings::FocusSearch", "⌘F", separator),
+    ],
 }];
 
 const CALCULATOR_MENUS: &[MenuSpec] = &[

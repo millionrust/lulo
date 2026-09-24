@@ -126,6 +126,10 @@ impl Render for Settings {
             }))
             .on_action(cx.listener(|t, _: &GoBack, window, cx| t.go_back(window, cx)))
             .on_action(cx.listener(|t, _: &GoForward, _, cx| t.go_forward(cx)))
+            .on_action(cx.listener(|t, _: &FocusSearch, window, cx| {
+                let focus = t.search.read(cx).focus_handle(cx);
+                window.focus(&focus, cx);
+            }))
             .on_action(cx.listener(|this, _: &SelectAlert, _, cx| {
                 this.apply_sound_policy_change(
                     sound::SoundPolicyChange::AlertSound(rmac_sound::Cue::Alert),

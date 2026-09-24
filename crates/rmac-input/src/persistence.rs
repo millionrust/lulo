@@ -185,6 +185,11 @@ pub(super) fn update_managed_source(
         replace_flag(touchpad, "tap", settings.touchpad.tap_to_click);
         replace_flag(touchpad, "dwt", settings.touchpad.disable_while_typing);
         replace_flag(touchpad, "drag-lock", settings.touchpad.drag_lock);
+        replace_string_value(
+            touchpad,
+            "click-method",
+            settings.touchpad.secondary_click.id(),
+        );
     }
     document.ensure_v1();
     Ok(format!("{MANAGED_HEADER}\n{document}"))

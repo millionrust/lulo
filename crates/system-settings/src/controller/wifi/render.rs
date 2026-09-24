@@ -70,6 +70,8 @@ impl Settings {
             .into_any_element()];
         if self.wifi_on {
             if let Some(network) = self.wifi_networks.iter().find(|network| network.connected) {
+                let details_view = view.clone();
+                let interface = self.wifi_interface.clone();
                 header_rows.push(
                     row_base()
                         .child(text_block(
@@ -80,6 +82,16 @@ impl Settings {
                             !security_is_open(&network.security),
                             Some(network.strength),
                         ))
+                        .when_some(interface, |row, interface| {
+                            row.child(push_button("wifi-details", "Details…").on_click(
+                                move |_, _, cx| {
+                                    let interface = interface.clone();
+                                    details_view.update(cx, |settings, cx| {
+                                        settings.push(SubPage::NetworkService { interface }, cx)
+                                    });
+                                },
+                            ))
+                        })
                         .into_any_element(),
                 );
             }

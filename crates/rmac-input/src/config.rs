@@ -316,6 +316,9 @@ pub(super) fn apply_input(input: &KdlDocument, effective: &mut EffectiveConfig) 
             effective.settings.touchpad.disable_while_typing =
                 flag(touchpad, "dwt").unwrap_or(false);
             effective.settings.touchpad.drag_lock = flag(touchpad, "drag-lock").unwrap_or(false);
+            effective.settings.touchpad.secondary_click = string(touchpad, "click-method")
+                .and_then(SecondaryClick::from_id)
+                .unwrap_or_default();
         }
         effective.touchpad_node = Some(touchpad_node.clone());
     }

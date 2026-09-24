@@ -136,6 +136,8 @@ pub(crate) fn terms_for_pane(name: &str) -> &'static [&'static str] {
             "application clicks",
             "click wallpaper to show desktop",
             "hot corners",
+            "show indicators for open applications",
+            "show suggested and recent apps in Dock",
         ],
         "Menu Bar" => &[
             "menu bar items",
@@ -218,6 +220,7 @@ pub(crate) fn terms_for_pane(name: &str) -> &'static [&'static str] {
             "natural scrolling",
             "pointer acceleration",
             "primary click",
+            "secondary click",
             "drag lock",
             "ignore while typing",
         ],

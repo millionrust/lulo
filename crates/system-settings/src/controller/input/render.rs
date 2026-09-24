@@ -332,6 +332,39 @@ impl Settings {
                     writable,
                     InputChange::TouchpadDragLock,
                 ),
+                {
+                    let secondary_click_view = view.clone();
+                    let secondary_click_choices: Vec<PopupChoice> = [
+                        rmac_input::SecondaryClick::TwoFingerClickOrTap,
+                        rmac_input::SecondaryClick::CornerClick,
+                    ]
+                    .into_iter()
+                    .map(|value| {
+                        let selected = settings.secondary_click == value;
+                        let choice_view = secondary_click_view.clone();
+                        choice(value.label(), selected, move |_, cx| {
+                            if !selected {
+                                choice_view.update(cx, |settings, cx| {
+                                    settings.apply_input_change(
+                                        InputChange::TouchpadSecondaryClick(value),
+                                        cx,
+                                    )
+                                });
+                            }
+                        })
+                    })
+                    .collect();
+                    let secondary_click_current =
+                        popup_value(&secondary_click_choices, settings.secondary_click.label());
+                    popup_row(
+                        "touchpad-secondary-click",
+                        "Secondary click",
+                        None,
+                        secondary_click_current,
+                        secondary_click_choices,
+                        writable,
+                    )
+                },
                 input_switch(
                     &view,
                     "touchpad-left-handed",

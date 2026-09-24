@@ -177,6 +177,104 @@ fn settings_and_compositor_changes_rebuild_the_authoritative_model() {
     );
 }
 
+#[test]
+fn show_running_indicators_off_hides_the_dot_without_changing_running_state() {
+    let mut coordinator = Coordinator::default();
+    coordinator.apply_catalog(Ok(vec![app("terminal.desktop")]));
+    let mut settings = rmac_shell_settings::ShellSettings {
+        pinned_apps: vec![rmac_shell_settings::AppId("terminal.desktop".into())],
+        ..Default::default()
+    };
+    settings.dock.show_running_indicators = false;
+    coordinator.apply_settings(Ok(settings));
+    coordinator.apply_compositor(rmac_compositor::Event::WindowsReplaced {
+        windows: vec![rmac_compositor::Window {
+            id: rmac_compositor::WindowId(5),
+            title: Some("Terminal".into()),
+            app_id: Some("terminal".into()),
+            pid: None,
+            workspace: None,
+            focused: true,
+            floating: false,
+            urgent: false,
+            focus_timestamp: None,
+            layout: Default::default(),
+        }],
+    });
+
+    // The Dock still knows the app is running (grouping, badges, the Dock
+    // menu's "Quit" and the accessible label all stay truthful); only the
+    // visual dot is suppressed.
+    assert!(coordinator.snapshot().model.items[0].running);
+    assert_eq!(
+        coordinator.snapshot().content.applications[0].activity,
+        rmac_dock::presentation::ActivityIndicator::None
+    );
+    assert!(coordinator.snapshot().content.applications[0]
+        .accessible_label
+        .contains("running"));
+}
+
+fn quit_after_running(show_recent_apps: bool) -> Coordinator {
+    let mut coordinator = Coordinator::default();
+    coordinator.apply_catalog(Ok(vec![app("notes.desktop")]));
+    coordinator.apply_places(Ok(places_report("/home/alex/Downloads", 0)));
+    coordinator.apply_appearance(Ok(false));
+    // An empty Dock (no default pinned apps) so items[0] is unambiguously
+    // the one app this test runs and quits, not one of the profile's
+    // deliberate first-party pinned apps (which happens to include Notes
+    // under a different, unrelated app identity).
+    let mut settings = rmac_shell_settings::ShellSettings {
+        pinned_apps: Vec::new(),
+        ..Default::default()
+    };
+    settings.dock.show_recent_apps = show_recent_apps;
+    coordinator.apply_settings(Ok(settings));
+    let window = rmac_compositor::Window {
+        id: rmac_compositor::WindowId(9),
+        title: Some("Notes".into()),
+        app_id: Some("notes".into()),
+        pid: None,
+        workspace: None,
+        focused: true,
+        floating: false,
+        urgent: false,
+        focus_timestamp: None,
+        layout: Default::default(),
+    };
+    coordinator.apply_compositor(rmac_compositor::Event::WindowsReplaced {
+        windows: vec![window],
+    });
+    assert!(coordinator.ready());
+    assert!(coordinator.snapshot().model.items[0].running);
+    coordinator.apply_compositor(rmac_compositor::Event::WindowsReplaced {
+        windows: Vec::new(),
+    });
+    coordinator
+}
+
+#[test]
+fn show_recent_apps_off_drops_a_quit_application_immediately() {
+    let coordinator = quit_after_running(false);
+    assert!(coordinator
+        .snapshot()
+        .model
+        .items
+        .iter()
+        .all(|item| item.id != "notes.desktop"));
+}
+
+#[test]
+fn show_recent_apps_on_keeps_a_quit_application_in_the_recents_section() {
+    let coordinator = quit_after_running(true);
+    assert!(coordinator
+        .snapshot()
+        .model
+        .items
+        .iter()
+        .any(|item| item.id == "notes.desktop" && !item.running));
+}
+
 fn output(id: &str) -> rmac_compositor::Output {
     rmac_compositor::Output {
         id: id.into(),

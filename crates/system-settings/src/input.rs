@@ -24,6 +24,7 @@ pub(super) enum InputChange {
     TouchpadTap(bool),
     TouchpadDwt(bool),
     TouchpadDragLock(bool),
+    TouchpadSecondaryClick(rmac_input::SecondaryClick),
 }
 
 impl InputChange {
@@ -55,6 +56,7 @@ impl InputChange {
             Self::TouchpadTap(value) => settings.touchpad.tap_to_click = value,
             Self::TouchpadDwt(value) => settings.touchpad.disable_while_typing = value,
             Self::TouchpadDragLock(value) => settings.touchpad.drag_lock = value,
+            Self::TouchpadSecondaryClick(value) => settings.touchpad.secondary_click = value,
         }
     }
 }

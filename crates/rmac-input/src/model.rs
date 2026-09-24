@@ -138,12 +138,50 @@ impl Default for PointerSettings {
     }
 }
 
+/// libinput's touchpad `click-method`: how a secondary (right) click is
+/// produced from a device with no dedicated secondary button. The Mac also
+/// offers a bottom-left corner, which libinput's `button-areas` method does
+/// not support choosing independently of `left-handed`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SecondaryClick {
+    /// `clickfinger`: click or tap with two fingers anywhere on the pad.
+    TwoFingerClickOrTap,
+    /// `button-areas`: click or tap in a screen-bottom corner.
+    #[default]
+    CornerClick,
+}
+
+impl SecondaryClick {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::TwoFingerClickOrTap => "Click or Tap with Two Fingers",
+            Self::CornerClick => "Click or Tap in Corner",
+        }
+    }
+
+    pub(super) fn id(self) -> &'static str {
+        match self {
+            Self::TwoFingerClickOrTap => "clickfinger",
+            Self::CornerClick => "button-areas",
+        }
+    }
+
+    pub(super) fn from_id(value: &str) -> Option<Self> {
+        match value {
+            "clickfinger" => Some(Self::TwoFingerClickOrTap),
+            "button-areas" => Some(Self::CornerClick),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TouchpadSettings {
     pub pointer: PointerSettings,
     pub tap_to_click: bool,
     pub disable_while_typing: bool,
     pub drag_lock: bool,
+    pub secondary_click: SecondaryClick,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

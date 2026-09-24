@@ -75,6 +75,12 @@ pub(super) struct Settings {
     pub(super) file_sharing_confirmation: Option<bool>,
     pub(super) power: rmac_power::Snapshot,
     pub(super) display: rmac_display::Snapshot,
+    /// The built-in panel's backlight, 0-100; `None` on a machine with no
+    /// backlight device logind can drive (an external-only setup).
+    pub(super) brightness: Option<u8>,
+    pub(super) brightness_slider: Entity<SliderState>,
+    pub(super) brightness_generation: u32,
+    pub(super) brightness_error: Option<SharedString>,
     pub(super) network: rmac_network::NetworkSnapshot,
     pub(super) storage: Vec<rmac_mounts::Volume>,
     pub(super) storage_busy: bool,

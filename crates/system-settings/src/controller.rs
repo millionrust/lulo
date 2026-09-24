@@ -167,6 +167,7 @@ actions!(
     [
         GoBack,
         GoForward,
+        FocusSearch,
         SelectAlert,
         SelectErrorAlert,
         SelectNotificationAlert,
@@ -287,6 +288,9 @@ pub(crate) fn run() {
                 ),
                 // ⌘] replays a page left with Back, as on the Mac.
                 KeyBinding::new("cmd-]", GoForward, Some("SystemSettings")),
+                // ⌘F focuses the sidebar search field, as on the Mac's
+                // View ▸ Search.
+                KeyBinding::new("cmd-f", FocusSearch, Some("SystemSettings")),
                 // ⌘W closes the window; already handled by on_action in
                 // shell_render.rs, just never had a keystroke bound to it.
                 KeyBinding::new(

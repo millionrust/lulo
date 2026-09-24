@@ -123,6 +123,7 @@ impl Settings {
             .or(self.power_error.as_ref())
             .or(self.power_stream_error.as_ref())
             .or(self.display_error.as_ref())
+            .or(self.brightness_error.as_ref())
             .or(self.input_error.as_ref())
             .or(self.input_stream_error.as_ref())
             .or(self.theme_error.as_ref())

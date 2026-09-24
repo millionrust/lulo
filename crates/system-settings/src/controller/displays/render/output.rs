@@ -150,6 +150,17 @@ impl Settings {
                     ));
                 }
 
+                if output.primary {
+                    if let Some(percentage) = self.brightness {
+                        controls.push(value_slider_row(
+                            "Brightness",
+                            SharedString::from(format!("display-brightness-{}", output.id)),
+                            &self.brightness_slider,
+                            format!("{percentage}%").into(),
+                        ));
+                    }
+                }
+
                 if !output.primary {
                     if let Some(anchor) =
                         main_output.as_ref().and_then(|main| main.logical.as_ref())

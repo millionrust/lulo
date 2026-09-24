@@ -74,7 +74,7 @@ impl MonitorView {
                 let row_ix = *row_ix;
                 table.update(cx, |state, _| {
                     let pid = state.delegate().rows.get(row_ix).map(|r| r.pid);
-                    state.delegate_mut().selected_pid = pid;
+                    state.delegate_mut().set_selected_pid(pid);
                 });
             }
             TableEvent::DoubleClickedRow(row_ix) => {
@@ -172,7 +172,7 @@ impl MonitorView {
                 .and_then(|ix| state.delegate().rows.get(ix))
                 .map(|r| r.pid)
             {
-                state.delegate_mut().selected_pid = Some(pid);
+                state.delegate_mut().set_selected_pid(Some(pid));
             }
         });
         if let Some(process) = self.selected_proc(cx) {
@@ -288,9 +288,34 @@ impl MonitorView {
         }
     }
 
+    /// Toggle the column chooser (toolbar ⋯). A no-op when the current tab
+    /// has no process table, matching the button's own disabled state.
+    fn toggle_columns_menu(&mut self, cx: &mut Context<Self>) {
+        if self.tab.has_process_table() {
+            self.cols_menu_open = !self.cols_menu_open;
+            cx.notify();
+        }
+    }
+
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search_open = true;
         self.search.update(cx, |s, cx| s.focus(window, cx));
+        cx.notify();
+    }
+
+    /// Set the search query from an AT-SPI `SetValue`/`ReplaceSelectedText`
+    /// request, the same way `crates/launcher-app` handles Spotlight's query
+    /// field. `apply_filter` runs from the existing `cx.observe(&search, ..)`
+    /// once the field's value changes, so no extra wiring is needed here.
+    pub(crate) fn set_search_from_assistive_technology(
+        &mut self,
+        text: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.search_open = true;
+        self.search
+            .update(cx, |state, cx| state.set_value(text, window, cx));
         cx.notify();
     }
 

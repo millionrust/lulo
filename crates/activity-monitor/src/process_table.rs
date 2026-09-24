@@ -1,11 +1,13 @@
 use std::cmp::Ordering;
 
 use gpui::{
-    div, App, Context, InteractiveElement as _, IntoElement, MouseButton, ParentElement,
-    SharedString, Stateful, Window,
+    div, AccessibleAction, App, Context, InteractiveElement as _, IntoElement, MouseButton,
+    ParentElement, Role, SharedString, Stateful, StatefulInteractiveElement as _, Window,
 };
 use gpui_component::menu::PopupMenu;
-use rmac_activity_monitor::accessibility::{ProcessColumn, ProcessRowSemantics};
+use rmac_activity_monitor::accessibility::{
+    self, ProcessColumn, ProcessRowSemantics, ProcessTableAccessibilitySnapshot, SortDirection,
+};
 use rmac_ui::{Column, ColumnSort, TableDelegate, TableState};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind, Users};
 
@@ -102,6 +104,26 @@ pub(crate) struct ProcessTableDelegate {
     /// PID is the selection source of truth because row indexes drift whenever
     /// the table is refreshed or sorted.
     pub(crate) selected_pid: Option<u32>,
+    /// AT-SPI projection of the currently visible rows (accessibility.rs's
+    /// `project_process_table`). Refreshed alongside `apply_view` — the same
+    /// data refresh/filter/sort/column-toggle cadence the table already runs
+    /// on — and on every selection change, never per render frame.
+    pub(crate) accessible: ProcessTableAccessibilitySnapshot,
+}
+
+/// A placeholder snapshot for before the first refresh, or if a projection
+/// is ever rejected (e.g. a pathological duplicate-PID race) — the table
+/// keeps rendering visible content either way; only the AT-SPI names would
+/// be temporarily stale, an honest degradation rather than a crash.
+fn empty_accessibility_snapshot() -> ProcessTableAccessibilitySnapshot {
+    ProcessTableAccessibilitySnapshot {
+        name: "Processes".to_string(),
+        columns: Vec::new(),
+        rows: Vec::new(),
+        selected_row: None,
+        row_count: 0,
+        column_count: 0,
+    }
 }
 
 impl ProcessTableDelegate {
@@ -118,9 +140,40 @@ impl ProcessTableDelegate {
             sort_key: ColKey::Cpu,
             sort_asc: false,
             selected_pid: None,
+            accessible: empty_accessibility_snapshot(),
         };
         delegate.refresh();
         delegate
+    }
+
+    /// Set the selected PID and keep the AT-SPI projection's per-row
+    /// `selected` flag in sync. This is the only place `selected_pid` should
+    /// be assigned from outside this module.
+    pub(crate) fn set_selected_pid(&mut self, pid: Option<u32>) {
+        self.selected_pid = pid;
+        self.refresh_accessible();
+    }
+
+    /// Recompute the bounded AT-SPI table projection from the current visible
+    /// rows, columns, sort, and selection. Cheap and bounded (<=300 rows,
+    /// <=11 columns) — called on data refresh, filter/sort/column changes,
+    /// and selection changes, never from a per-frame render path.
+    fn refresh_accessible(&mut self) {
+        let columns: Vec<ProcessColumn> = self.visible.iter().map(|&key| key.into()).collect();
+        let direction = if self.sort_asc {
+            SortDirection::Ascending
+        } else {
+            SortDirection::Descending
+        };
+        self.accessible = accessibility::project_process_table(
+            "Processes",
+            &self.rows,
+            &columns,
+            self.selected_pid,
+            self.sort_key.into(),
+            direction,
+        )
+        .unwrap_or_else(|_| empty_accessibility_snapshot());
     }
 
     /// Show or hide a column. The Process Name anchor cannot be hidden, and the
@@ -245,6 +298,7 @@ impl ProcessTableDelegate {
             .take(300)
             .cloned()
             .collect();
+        self.refresh_accessible();
     }
 
     fn sort_rows(rows: &mut [ProcRow], key: ColKey, ascending: bool) {
@@ -274,6 +328,19 @@ impl ProcessTableDelegate {
     }
 }
 
+/// Select the row at `row_index` exactly the way a mouse click does — used by
+/// this table's own mouse handlers and, identically, by the AT-SPI Click and
+/// Focus actions wired on each row in `render_tr`.
+fn select_row(
+    state: &mut TableState<ProcessTableDelegate>,
+    row_index: usize,
+    cx: &mut Context<TableState<ProcessTableDelegate>>,
+) {
+    let pid = state.delegate().rows.get(row_index).map(|row| row.pid);
+    state.delegate_mut().set_selected_pid(pid);
+    state.set_selected_row(row_index, cx);
+}
+
 /// Re-point the selected row at the stored PID after refresh/filter/sort. A PID
 /// hidden by the current filter remains retained; a vanished PID is forgotten.
 pub(crate) fn resync_selection(
@@ -288,7 +355,7 @@ pub(crate) fn resync_selection(
             delegate.all_rows.iter().map(|row| row.pid),
         )
     };
-    state.delegate_mut().selected_pid = retained_pid;
+    state.delegate_mut().set_selected_pid(retained_pid);
     match visible_index {
         Some(index) => state.set_selected_row(index, cx),
         None if state.selected_row().is_some() => state.clear_selection(cx),
@@ -340,30 +407,83 @@ impl TableDelegate for ProcessTableDelegate {
         cx.defer_in(window, |state, _window, cx| resync_selection(state, cx));
     }
 
+    fn render_header(
+        &mut self,
+        _window: &mut Window,
+        _cx: &mut Context<TableState<Self>>,
+    ) -> Stateful<gpui::Div> {
+        div().id("header").role(Role::Row)
+    }
+
+    fn render_th(
+        &mut self,
+        col_ix: usize,
+        _window: &mut Window,
+        _cx: &mut Context<TableState<Self>>,
+    ) -> impl IntoElement {
+        let name = self.columns[col_ix].name.clone();
+        div()
+            .id(("col-header-name", col_ix))
+            .role(Role::ColumnHeader)
+            .aria_label(name.clone())
+            .size_full()
+            .child(name)
+    }
+
     fn render_tr(
         &mut self,
         row_index: usize,
         _window: &mut Window,
         cx: &mut Context<TableState<Self>>,
     ) -> Stateful<gpui::Div> {
+        let selected = self
+            .accessible
+            .rows
+            .get(row_index)
+            .map(|row| row.selected)
+            .unwrap_or(false);
+        let name = self
+            .accessible
+            .rows
+            .get(row_index)
+            .map(|row| row.label.clone())
+            .or_else(|| self.rows.get(row_index).map(|row| row.name.to_string()))
+            .unwrap_or_default();
+        let description = self
+            .rows
+            .get(row_index)
+            .map(|row| format!("{:.1}% CPU, {}", row.cpu, format_mem(row.mem)))
+            .unwrap_or_default();
+        let accessible_name = if description.is_empty() {
+            name
+        } else {
+            format!("{name}, {description}")
+        };
+        let view = cx.entity();
         div()
             .id(("row", row_index))
+            .role(Role::Row)
+            .aria_label(SharedString::from(accessible_name))
+            .aria_selected(selected)
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(move |state, _, _, cx| {
-                    let pid = state.delegate().rows.get(row_index).map(|row| row.pid);
-                    state.delegate_mut().selected_pid = pid;
-                    state.set_selected_row(row_index, cx);
-                }),
+                cx.listener(move |state, _, _, cx| select_row(state, row_index, cx)),
             )
             .on_mouse_down(
                 MouseButton::Right,
-                cx.listener(move |state, _, _, cx| {
-                    let pid = state.delegate().rows.get(row_index).map(|row| row.pid);
-                    state.delegate_mut().selected_pid = pid;
-                    state.set_selected_row(row_index, cx);
-                }),
+                cx.listener(move |state, _, _, cx| select_row(state, row_index, cx)),
             )
+            // A screen reader selects a row exactly like a mouse click: both
+            // paths funnel through `set_selected_pid` + `set_selected_row`.
+            .on_a11y_action(AccessibleAction::Click, {
+                let view = view.clone();
+                move |_data, _window, cx| {
+                    view.update(cx, |state, cx| select_row(state, row_index, cx));
+                }
+            })
+            .on_a11y_action(AccessibleAction::Focus, move |_data, _window, cx| {
+                view.update(cx, |state, cx| select_row(state, row_index, cx));
+            })
     }
 
     fn context_menu(
@@ -375,8 +495,9 @@ impl TableDelegate for ProcessTableDelegate {
     ) -> PopupMenu {
         // This stays on the table widget because its right-clicked row index is
         // not otherwise exposed; replacing it would duplicate table hit-testing.
-        if let Some(row) = self.rows.get(row_index) {
-            self.selected_pid = Some(row.pid);
+        let pid = self.rows.get(row_index).map(|row| row.pid);
+        if pid.is_some() {
+            self.set_selected_pid(pid);
         }
         menu.menu("Quit", Box::new(QuitProcess))
             .menu("Force Quit", Box::new(ForceQuitProcess))

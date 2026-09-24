@@ -87,6 +87,17 @@ impl FinderView {
                 .into_iter()
                 .map(from_spec),
         );
+        // User-added Favourites (drag a folder onto the Favourites header),
+        // shared by every window and pruned to folders that still exist.
+        let favourite_extras: Vec<PathBuf> = sidebar_favourites::load_sidebar_favourites()
+            .into_iter()
+            .filter(|path| path.is_dir())
+            .collect();
+        favorites.extend(
+            favourite_extras
+                .iter()
+                .map(|path| sidebar_favourites::extra_favourite_place(path)),
+        );
         #[cfg(target_os = "linux")]
         locations.push(p(
             file_words.bin(),
@@ -244,6 +255,7 @@ impl FinderView {
             fwd: Vec::new(),
             file_words,
             sections,
+            favourite_extras,
             info: None,
             go_to: None,
             pending_select: None,

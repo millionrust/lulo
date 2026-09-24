@@ -34,6 +34,7 @@ mod responsive_layout;
 mod search_helpers;
 mod search_info_controller;
 mod selection_controller;
+mod sidebar_favourites;
 mod startup;
 mod thumbnail_controller;
 mod transient_state;
@@ -288,6 +289,9 @@ struct FinderView {
     fwd: Vec<PathBuf>,
     file_words: rmac_locale::FileVocabulary,
     sections: Vec<Section>,
+    /// User-added Favourites, over and above the built-in ones — the same
+    /// list `sidebar_favourites` persists and every window shares.
+    favourite_extras: Vec<PathBuf>,
     info: Option<Entry>,
     /// Go ▸ Go to Folder…, while its sheet is open.
     go_to: Option<go_to_folder_controller::GoToSheet>,

@@ -372,6 +372,37 @@ fn pathname_clipboard_text_is_one_absolute_path_per_line() {
 }
 
 #[test]
+fn sidebar_favourites_drop_relative_and_duplicate_paths_and_cap_the_list() {
+    let paths = vec![
+        PathBuf::from("relative/not-a-favourite"),
+        PathBuf::from("/home/jake/Projects"),
+        PathBuf::from("/home/jake/Projects"),
+        PathBuf::from("/home/jake/Music"),
+    ];
+
+    assert_eq!(
+        dedupe_absolute_directories(paths),
+        [
+            PathBuf::from("/home/jake/Projects"),
+            PathBuf::from("/home/jake/Music"),
+        ]
+    );
+
+    let too_many: Vec<PathBuf> = (0..40)
+        .map(|index| PathBuf::from(format!("/home/jake/folder-{index}")))
+        .collect();
+    assert_eq!(dedupe_absolute_directories(too_many).len(), 32);
+}
+
+#[test]
+fn extra_favourite_place_is_named_after_the_folder_not_its_full_path() {
+    let place = extra_favourite_place(Path::new("/home/jake/Projects/rmac"));
+    assert_eq!(place.name.as_ref(), "rmac");
+    assert_eq!(place.path, PathBuf::from("/home/jake/Projects/rmac"));
+    assert!(place.kind == PlaceKind::Item);
+}
+
+#[test]
 fn trash_deletion_dates_read_like_the_rest_of_the_list() {
     let label = trash_updates::deletion_label("2024-02-28T23:05:00");
     assert!(!label.contains('T'), "{label}");

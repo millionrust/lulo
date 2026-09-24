@@ -14,6 +14,9 @@ pub use catalog::*;
 use icons::*;
 pub use model::*;
 use platform::*;
+// Only the desktop-entry tokenizer is re-exported, for the desktop_entry
+// fuzz target; the rest of `platform` stays crate-private.
+pub use platform::desktop_group_named;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};

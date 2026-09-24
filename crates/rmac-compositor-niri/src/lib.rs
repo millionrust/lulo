@@ -22,7 +22,9 @@ mod runtime;
 mod tests;
 mod translate;
 mod transport;
-mod wire;
+// `pub` so the niri_ipc fuzz target (fuzz/fuzz_targets/niri_ipc.rs) can
+// deserialize into the real wire types.
+pub mod wire;
 
 pub use model::*;
 pub use runtime::*;

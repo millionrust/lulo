@@ -292,7 +292,11 @@ pub(super) fn desktop_group(contents: &str) -> HashMap<String, String> {
     desktop_group_named(contents, "Desktop Entry")
 }
 
-pub(super) fn desktop_group_named(contents: &str, group: &str) -> HashMap<String, String> {
+/// Parses one `[group]` section of a freedesktop desktop-entry (INI-like)
+/// file into its `key=value` pairs. `pub` (rather than `pub(super)`) so the
+/// `desktop_entry` fuzz target (fuzz/fuzz_targets/desktop_entry.rs) can call
+/// the real tokenizer directly.
+pub fn desktop_group_named(contents: &str, group: &str) -> HashMap<String, String> {
     let mut values = HashMap::new();
     let mut active = false;
     for raw in contents.lines() {

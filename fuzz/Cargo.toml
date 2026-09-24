@@ -1,0 +1,64 @@
+[package]
+name = "rmac-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+# This directory is its own Cargo workspace, deliberately separate from the
+# root workspace (Cargo.toml) and from shell/ (shell/Cargo.toml): cargo-fuzz
+# expects to own fuzz/Cargo.lock and fuzz/target, and none of the crates it
+# exercises need the GPUI dependency graph. See docs/ci.md.
+[workspace]
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+alacritty_terminal = "0.25"
+vte = "0.15"
+rmac-apps = { path = "../crates/rmac-apps" }
+rmac-appearance = { path = "../crates/rmac-appearance" }
+rmac-compositor-niri = { path = "../crates/rmac-compositor-niri" }
+rmac-shell-settings = { path = "../crates/rmac-shell-settings" }
+rmac-storage = { path = "../crates/rmac-storage" }
+rmac-theme = { path = "../crates/rmac-theme" }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "desktop_entry"
+path = "fuzz_targets/desktop_entry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "shell_settings_config"
+path = "fuzz_targets/shell_settings_config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "theme_config"
+path = "fuzz_targets/theme_config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "terminal_escape"
+path = "fuzz_targets/terminal_escape.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "niri_ipc"
+path = "fuzz_targets/niri_ipc.rs"
+test = false
+doc = false
+bench = false

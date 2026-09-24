@@ -54,6 +54,10 @@ pub const PREVIOUS_MARK: Shortcut = Shortcut::new("cmd-up", "⌘↑");
 pub const NEXT_MARK: Shortcut = Shortcut::new("cmd-down", "⌘↓");
 pub const SELECT_COMMAND_OUTPUT: Shortcut = Shortcut::new("cmd-shift-a", "⇧⌘A");
 pub const TOGGLE_MONOSPACE: Shortcut = Shortcut::new("cmd-shift-m", "⇧⌘M");
+/// Window and application shortcuts every rmac app answers (components.rs).
+pub const MINIMIZE: Shortcut = Shortcut::new("cmd-m", "⌘M");
+pub const HIDE: Shortcut = Shortcut::new("cmd-h", "⌘H");
+pub const HIDE_OTHERS: Shortcut = Shortcut::new("cmd-alt-h", "⌥⌘H");
 
 pub const ENTER: Shortcut = Shortcut::new("enter", "↩");
 pub const ESCAPE: Shortcut = Shortcut::new("escape", "Esc");
@@ -107,6 +111,9 @@ mod tests {
         NEXT_MARK,
         SELECT_COMMAND_OUTPUT,
         TOGGLE_MONOSPACE,
+        MINIMIZE,
+        HIDE,
+        HIDE_OTHERS,
         ENTER,
         ESCAPE,
         SPACE,

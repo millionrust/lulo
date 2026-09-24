@@ -83,6 +83,61 @@ pub fn minimize_focused_window(cx: &mut App) {
     send_window_action(WindowAction::Minimize, cx);
 }
 
+/// ⌘H: hide this application, parking every visible window it owns the
+/// way the menu bar's Hide does, so Show All, the Dock and ⌘Tab bring them
+/// back. With `others`, ⌥⌘H parks every other application's windows instead.
+pub fn hide_application(others: bool, cx: &mut App) {
+    cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
+        let pid = std::process::id() as i32;
+        let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+            eprintln!("could not read windows to hide");
+            return;
+        };
+        let windows = hidden_windows(&snapshot, pid, others);
+        if windows.is_empty() {
+            return;
+        }
+        let mut store = rmac_compositor::ParkingStore::load_default();
+        store.prune(&snapshot);
+        store.record_from(&snapshot, &windows);
+        if let Err(error) = store.save_default() {
+            eprintln!("could not save the parking set: {error}");
+        }
+        for window in windows {
+            let action = rmac_compositor::Action::MinimizeWindow { window };
+            if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                eprintln!("could not hide a window: {error:?}");
+            }
+        }
+    })
+    .detach();
+}
+
+/// The windows ⌘H (`others == false`) or ⌥⌘H (`others == true`) parks for
+/// the process `pid`: its own visible windows, or every other application's.
+fn hidden_windows(
+    snapshot: &rmac_compositor::Snapshot,
+    pid: i32,
+    others: bool,
+) -> Vec<rmac_compositor::WindowId> {
+    let own_app = snapshot
+        .windows
+        .iter()
+        .filter(|window| window.pid == Some(pid))
+        .min_by_key(|window| i32::from(!window.focused))
+        .and_then(|window| window.app_id.clone());
+    snapshot
+        .windows
+        .iter()
+        .filter(|window| !rmac_compositor::window_is_parked(snapshot, window))
+        .filter(|window| {
+            let own = window.pid == Some(pid) || (own_app.is_some() && window.app_id == own_app);
+            own != others
+        })
+        .map(|window| window.id)
+        .collect()
+}
+
 /// Capture a logical rectangle into `path` for a minimized-window thumbnail.
 /// `grim` scales the region to the output's physical pixels; if the tool is
 /// missing or fails the tile simply falls back to the application icon.
@@ -727,4 +782,75 @@ pub fn toolbar_group(children: impl IntoElement) -> impl IntoElement {
         .border_1()
         .border_color(mac::separator())
         .child(children)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmac_compositor::{Snapshot, WindowId, WindowLayout, Workspace, WorkspaceId};
+
+    fn window(
+        id: u64,
+        app: &str,
+        pid: i32,
+        workspace: u64,
+        focused: bool,
+    ) -> rmac_compositor::Window {
+        rmac_compositor::Window {
+            id: WindowId(id),
+            title: None,
+            app_id: Some(app.into()),
+            pid: Some(pid),
+            workspace: Some(WorkspaceId(workspace)),
+            focused,
+            floating: true,
+            urgent: false,
+            focus_timestamp: None,
+            layout: WindowLayout::default(),
+        }
+    }
+
+    fn workspace(id: u64, name: &str) -> Workspace {
+        Workspace {
+            id: WorkspaceId(id),
+            index: id as u8,
+            name: Some(name.into()),
+            output: None,
+            urgent: false,
+            active: id == 1,
+            focused: id == 1,
+            active_window: None,
+        }
+    }
+
+    #[test]
+    fn hide_parks_this_apps_visible_windows_and_hide_others_the_rest() {
+        let snapshot = Snapshot {
+            workspaces: vec![
+                workspace(1, "Desktop"),
+                workspace(2, rmac_compositor::PARKING_WORKSPACE),
+            ],
+            windows: vec![
+                window(10, "org.rmac.TextEditor", 100, 1, true),
+                // A second process of the same app still counts as this app.
+                window(11, "org.rmac.TextEditor", 101, 1, false),
+                // Already hidden: never parked twice.
+                window(12, "org.rmac.TextEditor", 100, 2, false),
+                window(20, "firefox", 200, 1, false),
+                window(21, "firefox", 200, 2, false),
+                window(30, "org.rmac.Notes", 300, 1, false),
+            ],
+            ..Snapshot::default()
+        };
+        assert_eq!(
+            hidden_windows(&snapshot, 100, false),
+            vec![WindowId(10), WindowId(11)]
+        );
+        assert_eq!(
+            hidden_windows(&snapshot, 100, true),
+            vec![WindowId(20), WindowId(30)]
+        );
+        // A process with no window of its own hides nothing.
+        assert!(hidden_windows(&snapshot, 999, false).is_empty());
+    }
 }

@@ -19,7 +19,16 @@ use gpui_component::StyledExt as _;
 
 use crate::{mac, shortcuts::Shortcut, Button, ButtonRole, ListRow};
 
-gpui::actions!(rmac_ui, [DismissMenu, RequestClose]);
+gpui::actions!(
+    rmac_ui,
+    [
+        DismissMenu,
+        RequestClose,
+        MinimizeWindow,
+        HideApplication,
+        HideOtherApplications
+    ]
+);
 
 const MENU_CONTEXT: &str = "RmacContextMenu";
 
@@ -29,6 +38,22 @@ pub(crate) fn init(cx: &mut App) {
         DismissMenu,
         Some(MENU_CONTEXT),
     )]);
+    // ⌘M, ⌘H and ⌥⌘H work in every rmac app, as they do in every Mac app.
+    // niri hands ⌘-letter keys to the focused app, so each app answers them;
+    // these context-free bindings are the fallback an app's own binding for
+    // the same keys (System Settings' ⌘M) still overrides.
+    cx.bind_keys([
+        KeyBinding::new(crate::shortcuts::MINIMIZE.keystroke, MinimizeWindow, None),
+        KeyBinding::new(crate::shortcuts::HIDE.keystroke, HideApplication, None),
+        KeyBinding::new(
+            crate::shortcuts::HIDE_OTHERS.keystroke,
+            HideOtherApplications,
+            None,
+        ),
+    ]);
+    cx.on_action(|_: &MinimizeWindow, cx| crate::chrome::minimize_focused_window(cx));
+    cx.on_action(|_: &HideApplication, cx| crate::chrome::hide_application(false, cx));
+    cx.on_action(|_: &HideOtherApplications, cx| crate::chrome::hide_application(true, cx));
 }
 
 /// Visual role of a dialog button (drives fill / text color).

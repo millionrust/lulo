@@ -96,6 +96,10 @@ sudo tee /etc/apt/preferences.d/rmac.pref >/dev/null <<'EOF'
 Package: rmac-apps rmac-archive-keyring rmac-session
 Pin: release o=rmac,n=resolute,c=main
 Pin-Priority: 500
+
+Package: *
+Pin: release o=rmac
+Pin-Priority: -1
 EOF
 
 # 3. Install.

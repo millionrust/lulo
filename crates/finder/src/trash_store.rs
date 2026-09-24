@@ -3281,6 +3281,15 @@ mod tests {
             .with_timezone(&Local)
     }
 
+    /// [`deleted_at`], formatted exactly the way `trash_info_bytes` writes a
+    /// `DeletionDate`. The fixture is a fixed instant, but its local-time
+    /// rendering depends on the host's time zone (IST on the reference Mac,
+    /// UTC on CI); assertions must compare against this instead of a literal
+    /// so they hold under either.
+    fn deleted_at_text() -> String {
+        deleted_at().format("%Y-%m-%dT%H:%M:%S").to_string()
+    }
+
     fn setup(label: &str) -> (TestDirectory, TrashStore, TrashLayout) {
         let directory = TestDirectory::new(label);
         let store = TrashStore::open(directory.0.join("state"))
@@ -3457,7 +3466,10 @@ mod tests {
         assert_eq!(fs::read(data_path).unwrap(), b"important");
         assert_eq!(
             fs::read_to_string(info_path).unwrap(),
-            "[Trash Info]\nPath=report.txt\nDeletionDate=2026-07-29T08:09:10\n"
+            format!(
+                "[Trash Info]\nPath=report.txt\nDeletionDate={}\n",
+                deleted_at_text()
+            )
         );
         assert!(store.read_records().unwrap().is_empty());
     }
@@ -3612,7 +3624,7 @@ mod tests {
 
         assert_eq!(item.name, OsStr::new("report 1.txt"));
         assert_eq!(item.original_path, source);
-        assert_eq!(item.deleted_at, "2026-07-29T08:09:10");
+        assert_eq!(item.deleted_at, deleted_at_text());
         assert!(!format!("{item:?}").contains("report"));
     }
 

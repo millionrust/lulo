@@ -48,6 +48,27 @@ workspace and the shell workspace.
 - The changes are offered upstream to Zed once proven on the reference PC; the
   owner decides when anything is published.
 
+### Idle frame loop (amended 2026-09-24)
+
+The first idle fix stopped requesting a frame callback once a frame drew
+nothing, but then re-checked the window on a timer that backed off from 16 ms
+to 250 ms, so every visible surface still woke about 4 times a second. GPUI at
+this revision has no way to tell the platform that a window became dirty
+(upstream `gpui-pre` added a platform frame waker for that), so the frame loop
+now parks instead:
+
+- While frames draw, the window asks for the next vblank as before; after two
+  frames that draw nothing and with no callback pending, it is *parked*.
+- A parked window is re-checked only at the end of an event-loop iteration
+  (`WaylandClient::run`). GPUI marks a window dirty only on the main thread,
+  inside a task, a timer or a platform callback, and each of those wakes the
+  event loop first, so no change is missed while an idle process never wakes.
+- A check that finds nothing dirty draws and commits nothing, so the
+  compositor is not woken either. Input still runs a frame at once
+  (`wake_frame`), which also keeps the kinetic-scroll momentum ticks drawing.
+- Known gap: a `Window::on_next_frame` callback queued by a frame that drew
+  nothing waits for the next event-loop wake-up rather than the next vblank.
+
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_linux` and re-applying the

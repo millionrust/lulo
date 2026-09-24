@@ -1033,7 +1033,24 @@ impl LinuxClient for WaylandClient {
             .run(
                 None,
                 &mut WaylandClientStatePtr(Rc::downgrade(&self.0)),
-                |_| {},
+                // rmac: every wake-up of this loop (input, a Wayland event, a
+                // task or a timer) may have made a parked window dirty; check
+                // them here instead of on a timer, so an idle app sleeps.
+                |client| {
+                    let Some(client) = client.0.upgrade() else {
+                        return;
+                    };
+                    let parked: Vec<WaylandWindowStatePtr> = client
+                        .borrow()
+                        .windows
+                        .values()
+                        .filter(|window| window.is_parked())
+                        .cloned()
+                        .collect();
+                    for window in parked {
+                        window.check_parked();
+                    }
+                },
             )
             .log_err();
     }

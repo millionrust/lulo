@@ -4,10 +4,7 @@ use std::{
     ptr::NonNull,
     rc::{Rc, Weak},
     sync::Arc,
-    time::Duration,
 };
-
-use calloop::timer::{TimeoutAction, Timer};
 
 use collections::{FxHashMap, HashMap};
 use futures::channel::oneshot::Receiver;
@@ -128,8 +125,10 @@ pub struct WaylandWindowState {
     in_progress_configure: Option<InProgressConfigure>,
     resize_throttle: bool,
     /// rmac: idle frame scheduling. A frame callback is only requested while
-    /// frames draw; an idle window re-checks on a backing-off timer instead
-    /// of waking itself and the compositor every vblank.
+    /// frames draw; once a frame draws nothing the window parks, and the
+    /// client re-checks parked windows only after its event loop woke for
+    /// something else (input, a Wayland event, a task or a timer), so an
+    /// idle window never wakes itself or the compositor (ADR 0013).
     frame_requested: bool,
     drew_frame: bool,
     idle_streak: u32,
@@ -502,11 +501,12 @@ pub struct WaylandWindowStatePtr {
     callbacks: Rc<RefCell<Callbacks>>,
 }
 
-/// A window reference that does not keep the window alive. rmac: the idle
-/// frame checks below hold this, not a [`WaylandWindowStatePtr`]; a strong
-/// reference let every closed window re-arm its own check forever, so its
-/// state -- including its AccessKit adapter, which keeps publishing the dead
-/// window's controls over AT-SPI -- was never freed (docs/decisions/0013).
+/// A window reference that does not keep the window alive. rmac: deferred
+/// frame work (`wake_frame`) holds this, not a [`WaylandWindowStatePtr`]; a
+/// strong reference once let every closed window re-arm an idle check
+/// forever, so its state -- including its AccessKit adapter, which keeps
+/// publishing the dead window's controls over AT-SPI -- was never freed
+/// (docs/decisions/0013).
 struct WeakWaylandWindowStatePtr {
     state: Weak<RefCell<WaylandWindowState>>,
     callbacks: Weak<RefCell<Callbacks>>,
@@ -777,11 +777,11 @@ impl WaylandWindow {
     }
 }
 
-/// rmac: how long an idle window waits before re-checking for changes that
-/// did not arrive as input (timers, async updates): 16 ms growing to 250 ms.
-fn idle_check_delay(idle_streak: u32) -> Duration {
-    let millis = 16u64 << idle_streak.saturating_sub(2).min(4);
-    Duration::from_millis(millis.min(250))
+/// rmac: whether a window's frame loop is parked: its last two frames drew
+/// nothing and no frame callback is pending, so only an outside event can
+/// make it dirty again.
+fn frame_loop_parked(idle_streak: u32, frame_requested: bool) -> bool {
+    idle_streak >= 2 && !frame_requested
 }
 
 impl WaylandWindowStatePtr {
@@ -879,30 +879,33 @@ impl WaylandWindowStatePtr {
             }
             return;
         }
+        // Nothing drew. Either the callback already requested runs one more
+        // check at the next vblank, or the loop is now parked until
+        // `check_parked` sees the event loop wake for something else.
         state.idle_streak = state.idle_streak.saturating_add(1);
-        if state.frame_requested {
-            // The callback already requested will run the next check.
-            return;
+    }
+
+    /// rmac: whether this window's frame loop is parked (see `frame`).
+    pub fn is_parked(&self) -> bool {
+        let state = self.state.borrow();
+        state.acknowledged_first_configure
+            && frame_loop_parked(state.idle_streak, state.frame_requested)
+    }
+
+    /// rmac: re-check a parked window after the event loop ran other work.
+    /// GPUI marks a window dirty only from the main thread, inside a task,
+    /// timer or platform callback, and each of those wakes the event loop,
+    /// so checking after every wake-up misses no change while an idle
+    /// session never wakes at all. A check that finds nothing dirty draws
+    /// and commits nothing, so the compositor is not woken either.
+    pub fn check_parked(&self) {
+        if self.is_parked() {
+            self.frame();
         }
-        let delay = idle_check_delay(state.idle_streak);
-        let generation = state.idle_generation;
-        let client = state.client.get_client();
-        drop(state);
-        let window = self.downgrade();
-        let loop_handle = client.borrow().loop_handle.clone();
-        let _ = loop_handle.insert_source(Timer::from_duration(delay), move |_, _, _| {
-            if let Some(window) = window.upgrade() {
-                let current = window.state.borrow().idle_generation == generation;
-                if current {
-                    window.frame();
-                }
-            }
-            TimeoutAction::Drop
-        });
     }
 
     /// Input, resizes and configures can make an idle window dirty; run a
-    /// frame right away instead of waiting for the idle timer.
+    /// frame right away in this loop iteration.
     pub fn wake_frame(&self) {
         let mut state = self.state.borrow_mut();
         if state.idle_streak < 2 || !state.acknowledged_first_configure {
@@ -2132,4 +2135,32 @@ fn inset_by_tiling(mut bounds: Bounds<Pixels>, inset: Pixels, tiling: Tiling) ->
     }
 
     bounds
+}
+
+#[cfg(test)]
+mod rmac_frame_loop_tests {
+    use super::frame_loop_parked;
+
+    #[test]
+    fn a_drawing_window_is_not_parked() {
+        assert!(!frame_loop_parked(0, true));
+        assert!(!frame_loop_parked(0, false));
+    }
+
+    #[test]
+    fn one_idle_frame_still_waits_for_its_vblank_check() {
+        assert!(!frame_loop_parked(1, true));
+        assert!(!frame_loop_parked(1, false));
+    }
+
+    #[test]
+    fn two_idle_frames_with_no_callback_pending_park_the_loop() {
+        assert!(frame_loop_parked(2, false));
+        assert!(frame_loop_parked(u32::MAX, false));
+    }
+
+    #[test]
+    fn a_pending_frame_callback_keeps_the_loop_awake() {
+        assert!(!frame_loop_parked(5, true));
+    }
 }

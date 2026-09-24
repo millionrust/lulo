@@ -5,7 +5,6 @@
 use std::fs::File;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -191,16 +190,23 @@ pub fn rotate(pixels: &RgbaImage, rotation: Rotation) -> RgbaImage {
 }
 
 fn run(tool: &str, args: Vec<std::ffi::OsString>) -> Result<Vec<u8>, String> {
-    let output = Command::new(tool)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|error| match error.kind() {
-            std::io::ErrorKind::NotFound => poppler::missing_tool_message(tool),
-            _ => format!("{tool} could not start: {error}"),
-        })?;
+    use crate::bounded::{self, RunError};
+
+    let output = bounded::run(
+        tool,
+        args,
+        bounded::TOOL_TIMEOUT,
+        bounded::MAX_TOOL_OUTPUT_BYTES,
+    )
+    .map_err(|error| match error {
+        RunError::Start(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            poppler::missing_tool_message(tool)
+        }
+        RunError::Start(error) => format!("{tool} could not start: {error}"),
+        RunError::TimedOut => format!("{tool} took too long and was stopped"),
+        RunError::TooLarge => format!("{tool} produced more output than Preview allows"),
+        RunError::Read(error) => format!("{tool} output could not be read: {error}"),
+    })?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr);
         let detail = detail.lines().next().unwrap_or("").trim();

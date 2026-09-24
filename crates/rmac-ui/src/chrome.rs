@@ -75,6 +75,14 @@ fn send_window_action(action: WindowAction, cx: &mut App) {
     .detach();
 }
 
+/// Minimize this process's focused window, the same way the yellow traffic
+/// light does. Exposed so an app can bind ⌘M to it (`todo.md` journey 8):
+/// `WindowAction` and `send_window_action` are private to this module, so a
+/// caller in another crate has no other way to reach this path.
+pub fn minimize_focused_window(cx: &mut App) {
+    send_window_action(WindowAction::Minimize, cx);
+}
+
 /// Capture a logical rectangle into `path` for a minimized-window thumbnail.
 /// `grim` scales the region to the output's physical pixels; if the tool is
 /// missing or fails the tile simply falls back to the application icon.

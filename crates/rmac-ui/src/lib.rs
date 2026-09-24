@@ -20,9 +20,9 @@ mod window;
 
 pub use assets::{layered_assets, LayeredAssets};
 pub use chrome::{
-    body_bg, page, title_bar, title_bar_content, toolbar, toolbar_group, toolbar_title,
-    traffic_lights, traffic_lights_active, traffic_lights_fixed_size, traffic_lights_origin,
-    TrafficLights,
+    body_bg, minimize_focused_window, page, title_bar, title_bar_content, toolbar, toolbar_group,
+    toolbar_title, traffic_lights, traffic_lights_active, traffic_lights_fixed_size,
+    traffic_lights_origin, TrafficLights,
 };
 pub use components::{
     alert, alert_with_icon, dialog, dialog_button, type_select_match, ContextMenu,

@@ -170,6 +170,20 @@ fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
             let Some((screen_width, screen_height)) = screen else {
                 return;
             };
+            // This process's own newly mapped window (WIN-02): niri centres
+            // a *resize* on the working area below the menu bar and beside
+            // the Dock (the same area `Action::CenterWindow` and the green
+            // button's Centre use), but centres a window's *initial*
+            // placement on the whole output. Shrinking an oversized window
+            // in place can therefore still leave it partly under the Dock
+            // unless it is recentred too.
+            let pid = std::process::id() as i32;
+            let window_id = snapshot
+                .windows
+                .iter()
+                .filter(|window| window.pid == Some(pid))
+                .min_by_key(|window| i32::from(!window.focused))
+                .map(|window| window.id);
             // niri configures a new floating window after it maps and would
             // replace a size set before that, so keep fitting briefly until
             // the window stays inside the space above the Dock.
@@ -177,7 +191,7 @@ fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
                 cx.background_executor()
                     .timer(std::time::Duration::from_millis(100))
                     .await;
-                let fits = cx.update(|window, _| {
+                let oversized = cx.update(|window, _| {
                     let current = window.bounds().size;
                     let (width, height) = fit_to_screen(
                         f32::from(current.width),
@@ -190,10 +204,16 @@ fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
                     if oversized {
                         window.resize(size(px(width), px(height)));
                     }
-                    !oversized
+                    oversized
                 });
-                if fits.unwrap_or(true) {
+                let Ok(true) = oversized else {
                     break;
+                };
+                if let Some(window_id) = window_id {
+                    let _ = rmac_compositor_niri::execute_action(
+                        &rmac_compositor::Action::CenterWindow { window: window_id },
+                    )
+                    .await;
                 }
             }
         })

@@ -25,7 +25,7 @@ while time.monotonic() < deadline:
     bars = [
         node
         for node in descendants(desktop)
-        if node.getRoleName() == "tool bar" and node.name == "rmac top bar"
+        if node.getRoleName() == "tool bar" and node.name == "top bar"
     ]
     if len(bars) == EXPECTED_BARS:
         break

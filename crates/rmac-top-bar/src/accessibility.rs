@@ -4,7 +4,7 @@ use std::fmt;
 
 use crate::{BuiltinIcon, Content, IndicatorKind, PanelTarget, SYSTEM_MARK_ACCESSIBLE_NAME};
 
-pub const TOP_BAR_NAME: &str = "rmac top bar";
+pub const TOP_BAR_NAME: &str = "top bar";
 pub const ROOT_ID: &str = "top-bar";
 pub const SYSTEM_MARK_ID: &str = "top-bar-system";
 pub const ACTIVE_APP_ID: &str = "top-bar-active-app";

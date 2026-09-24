@@ -78,7 +78,7 @@ fn focused_identity_and_optional_workspace_are_bounded_without_using_title() {
     status.clock.show_workspace = true;
     let content = project(&status, now(), LocaleHourCycle::TwelveHour).content;
     assert_eq!(content.system_mark.icon, BuiltinIcon::System);
-    assert_eq!(content.system_mark.accessible, "rmac desktop");
+    assert_eq!(content.system_mark.accessible, "desktop");
     assert_eq!(content.active_app, "Finder");
     assert!(content.workspace.as_ref().unwrap().chars().count() <= MAX_WORKSPACE_CHARACTERS + 1);
     assert!(!format!("{content:?}").contains("Private client"));

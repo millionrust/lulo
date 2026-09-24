@@ -1810,7 +1810,7 @@ mod linux_wayland {
             let root = div()
                 .id(format!("dock-{}", self.display_id))
                 .role(Role::Toolbar)
-                .aria_label("rmac Dock")
+                .aria_label("Dock")
                 .size_full()
                 .relative()
                 .flex()

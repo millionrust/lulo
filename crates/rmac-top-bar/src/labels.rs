@@ -66,7 +66,7 @@ pub fn active_app_name(snapshot: &rmac_shell_status::Snapshot) -> String {
         })
         .map(|name| bounded(name.trim(), MAX_ACTIVE_APP_CHARACTERS))
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "rmac".into())
+        .unwrap_or_else(|| "Lulo OS".into())
 }
 
 pub fn indicator_labels(snapshot: &rmac_shell_status::Snapshot) -> Vec<IndicatorLabel> {

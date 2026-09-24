@@ -1972,7 +1972,7 @@ mod linux_wayland {
             let bar = div()
                 .id(format!("top-bar-strip-{}", self.display_id))
                 .role(Role::Toolbar)
-                .aria_label("rmac top bar")
+                .aria_label("top bar")
                 .absolute()
                 .top(px(if visible { 0.0 } else { -BAR_HEIGHT }))
                 .left_0()
@@ -1994,7 +1994,7 @@ mod linux_wayland {
                             div()
                                 .id(format!("desktop-mark-{}", self.display_id))
                                 .role(Role::Button)
-                                .aria_label("rmac menu")
+                                .aria_label("menu")
                                 .w(px(LOGO_SLOT))
                                 .h(px(SLOT_HEIGHT))
                                 .flex()
@@ -2426,10 +2426,10 @@ mod linux_wayland {
             .map(|name| format!("Log Out {name}…"))
             .unwrap_or_else(|| "Log Out…".into());
         rmac_app_menu::Menu {
-            label: "rmac".into(),
+            label: "System".into(),
             items: vec![
                 Item {
-                    label: "About This rmac".into(),
+                    label: "About This Lulo OS".into(),
                     action: "system::about".into(),
                     shortcut: String::new(),
                     enabled: true,

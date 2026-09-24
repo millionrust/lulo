@@ -168,7 +168,7 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
                 "Desktop & Dock",
                 "icons/app-window.svg",
                 color(0x1d1d1f),
-                "Choose authoritative rmac Dock behavior and display placement.",
+                "Choose authoritative Dock behavior and display placement.",
             ),
             cat(
                 "Displays",

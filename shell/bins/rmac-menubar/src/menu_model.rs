@@ -766,7 +766,7 @@ mod tests {
     #[test]
     fn standard_items_get_their_macos_symbols() {
         assert_eq!(
-            menu_item_icon("system::about", "About This rmac"),
+            menu_item_icon("system::about", "About This Lulo OS"),
             Some("laptop")
         );
         assert_eq!(menu_item_icon("app::quit", "Quit Files"), None);

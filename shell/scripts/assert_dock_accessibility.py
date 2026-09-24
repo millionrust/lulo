@@ -28,7 +28,7 @@ while time.monotonic() < deadline:
     docks = [
         node
         for node in descendants(desktop)
-        if node.getRoleName() == "tool bar" and node.name == "rmac Dock"
+        if node.getRoleName() == "tool bar" and node.name == "Dock"
     ]
     if len(docks) == EXPECTED_DOCKS:
         break

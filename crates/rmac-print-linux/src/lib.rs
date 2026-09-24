@@ -11,4 +11,6 @@
 mod linux;
 
 #[cfg(unix)]
-pub use linux::{print_document, Error, Outcome, PrintDocument};
+pub use linux::{
+    print_document, print_prepared_document, Error, Outcome, PreparedPrintDocument, PrintDocument,
+};

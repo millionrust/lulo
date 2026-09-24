@@ -77,6 +77,13 @@ fn profile_order_is_stable_and_duplicates_are_removed() {
 }
 
 #[test]
+fn bus_driver_signals_are_not_power_changes() {
+    assert!(sent_by_service(Some(":1.42")));
+    assert!(!sent_by_service(Some("org.freedesktop.DBus")));
+    assert!(!sent_by_service(None));
+}
+
+#[test]
 fn owner_events_distinguish_upower_outages_from_optional_profile_changes() {
     assert_eq!(
         power_owner_event("org.freedesktop.UPower", ""),

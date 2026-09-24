@@ -624,16 +624,16 @@ pub(super) async fn watch_once(
         futures_util::pin_mut!(closed);
         let event = futures_util::select! {
             message = upower.next() => {
-                read_signal(message, "read UPower change")?;
-                Some(PowerOwnerEvent::Upower(true))
+                read_signal(message, "read UPower change")?
+                    .then_some(PowerOwnerEvent::Upower(true))
             },
             message = modern_profiles.next() => {
-                read_signal(message, "read power-profile change")?;
-                Some(PowerOwnerEvent::Profiles)
+                read_signal(message, "read power-profile change")?
+                    .then_some(PowerOwnerEvent::Profiles)
             },
             message = legacy_profiles.next() => {
-                read_signal(message, "read legacy power-profile change")?;
-                Some(PowerOwnerEvent::Profiles)
+                read_signal(message, "read legacy power-profile change")?
+                    .then_some(PowerOwnerEvent::Profiles)
             },
             message = owners.next() => read_owner_event(message)?,
             _ = closed => return Ok(()),
@@ -668,16 +668,36 @@ pub(super) fn service_signal_rule(
     Ok(rule)
 }
 
+/// Reads one message from a service's signal stream and returns whether the
+/// service itself sent it.
+///
+/// zbus cannot match a well-known sender on the client side, so each
+/// sender-only stream also receives every signal the connection's other
+/// rules let in, including the bus's own `NameOwnerChanged` for every client
+/// that connects or disconnects. Treating those as power changes made the
+/// desktop re-read UPower on a fresh connection whose `NameOwnerChanged`
+/// triggered the next read: a loop that kept the desktop busy at idle.
 #[cfg(not(target_os = "macos"))]
 pub(super) fn read_signal(
     message: Option<Result<zbus::Message, zbus::Error>>,
     operation: &'static str,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
     match message {
-        Some(Ok(_)) => Ok(()),
+        Some(Ok(message)) => {
+            let header = message.header();
+            Ok(sent_by_service(
+                header.sender().map(|sender| sender.as_str()),
+            ))
+        }
         Some(Err(error)) => Err(Error::new(operation, error.to_string())),
         None => Err(Error::new(operation, "the signal stream ended")),
     }
+}
+
+/// Whether a signal came from a service rather than the message bus itself.
+#[cfg(any(not(target_os = "macos"), test))]
+pub(super) fn sent_by_service(sender: Option<&str>) -> bool {
+    matches!(sender, Some(sender) if sender != "org.freedesktop.DBus")
 }
 
 #[cfg(any(not(target_os = "macos"), test))]

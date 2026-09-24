@@ -275,9 +275,13 @@ for name in "${selected[@]}"; do
     rm -f "$tarball"
     fail "$PIN_ORIG_TARBALL has SHA-256 $actual, not the pinned $PIN_TARBALL_SHA256"
   fi
-  # git stops reading after the tar header, so gzip dies of SIGPIPE; read the
-  # id without pipefail and judge it by its value alone.
-  commit="$(set +o pipefail; gzip -dc "$tarball" 2>/dev/null | git get-tar-commit-id)"
+  # GitHub records the commit in the archive's pax global header; read it
+  # directly rather than through a pipe whose early close depends on how
+  # SIGPIPE is inherited.
+  commit="$(python3 -I -c 'import sys, tarfile
+with tarfile.open(sys.argv[1], "r:gz") as archive:
+    print(archive.pax_headers.get("comment", ""))' "$tarball")" \
+    || fail "$PIN_ORIG_TARBALL could not be read"
   [[ -n "$commit" ]] || fail "$PIN_ORIG_TARBALL does not record its commit"
   [[ "$commit" == "$PIN_COMMIT" ]] \
     || fail "$PIN_ORIG_TARBALL was made from $commit, not the pinned $PIN_COMMIT"

@@ -249,7 +249,7 @@ class BuildScriptTests(unittest.TestCase):
         self.assertIn('df -Pk "$work_dir"', text)
         self.assertIn('"${HOME:-}/rmac-niri-build"', text)
         self.assertIn('LULO_CARGO_TARGET_DIR="$work_dir/target"', text)
-        self.assertIn("git get-tar-commit-id", text)
+        self.assertIn("pax_headers.get(\"comment\"", text)
         self.assertIn("cargo vendor --locked", text)
         self.assertIn("check-vendor", text)
         self.assertIn('[[ ${EUID} -ne 0 ]]', text)

@@ -81,6 +81,72 @@ honour, and keeps the same public API over `accesskit` 0.24, so the vendored
 manifest now requires 0.22.1. `scripts/test_accesskit_activation.py` fails if
 either lockfile falls back to an older release.
 
+### AT-SPI application name and toolkit metadata (amendment 2026-09-24)
+
+Once `accesskit_unix` 0.22.1 started registering every window with AT-SPI
+(previous amendment), each app's node under the registry root spoke as
+`rmac-calculator`, `rmac-text-editor`, and so on — the executable's file
+name — instead of a user-visible name like Calculator, the way VoiceOver
+would say it on the Mac.
+
+Tracing the exact API (`~/.cargo/registry/src/*/accesskit_unix-0.22.1` and
+`accesskit_atspi_common-0.19.1`, cross-checked against the latest published
+`accesskit_unix` 0.23.0 via docs.rs) shows this AT-SPI `Application.Name`
+comes from `accesskit_atspi_common::AppContext.name`, which
+`accesskit_unix::context::get_or_init_app_context` sets exactly once, from a
+process-global `OnceLock`, by calling a private `app_name()` helper that
+returns `std::env::current_exe()`'s file name. `AppContext` has no public
+setter for `name`, `accesskit_unix::Adapter::new` takes only the three
+AccessKit handlers (no app-name argument in any published version, including
+0.23.0), and `AppContext::new` itself is only ever called from inside
+`accesskit_unix`. No amount of `accesskit::Tree`/`TreeUpdate` content changes
+what `AppContext.name` reports, because it is derived once, independently of
+the tree, before the first frame. **There is no hook in application code —
+gpui_linux included — that can change this property without forking
+`accesskit_unix`.** That fork is out of scope here: it is a much larger
+change than one accessibility ticket warrants, and this machine's rule against
+uncontrolled Cargo rebuilds makes an unvalidated fork of an async D-Bus crate
+too risky to land blind.
+
+What gpui_linux *can* do, and now does (`shell/compat/gpui_linux/src/linux/a11y.rs`):
+fill in the separate, genuinely reachable `accesskit::Tree.toolkit_name`/
+`toolkit_version` fields, which upstream GPUI's `crates/gpui/src/window/a11y.rs`
+leaves `None`. Those back AT-SPI's `Application.ToolkitName`/`Application.Version`
+properties, distinct from `Application.Name`; without this, `accesskit_consumer`
+reports the generic fallback `"AccessKit"` with no version for every rmac
+window. The label has to be applied at two call sites, both in
+`TrivialActivationHandler::request_initial_tree` and in `a11y_tree_update`,
+because `accesskit_atspi_common` reads `toolkit_name` only once, at whichever
+transition first activates the adapter — and on-device testing showed
+`accesskit_unix` almost always takes the `request_initial_tree` path (GPUI's
+own activation callback, already holding a full tree by the time AT-SPI turns
+on) rather than the per-frame `a11y_tree_update` path; labeling only the
+latter left `ToolkitName` at the `"AccessKit"` fallback in practice. rmac
+windows now report `gpui_linux` and this crate's own version there, confirmed
+live on the reference PC (`pyatspi`, `Registry.getDesktop(0)`, after
+`rmac-calculator` opened):
+
+```
+[4] Name='rmac-calculator' ToolkitName='gpui_linux' ToolkitVersion='0.1.0'
+```
+
+The same run confirms the `Application.Name` gap remains exactly as
+diagnosed above (`Name='rmac-calculator'`, not `'Calculator'`).
+
+Each app's *window*-level accessible name (`Role::Window`, what a screen
+reader speaks once focus reaches the window rather than the top-level
+application object) was already correct: `rmac_ui::window_options_for_app`
+sets the GPUI window title from `rmac_apps::identity::window_title(app_id)`
+("Calculator", "Text Editor", …), and shell surfaces set their own accessible
+names directly ("top bar", "Dock"), which is why
+`shell/scripts/assert_*_accessibility.py` continues to pass unchanged. The
+remaining gap is specifically the AT-SPI application object's `Name`.
+
+Follow-up, if this is worth the cost later: fork `accesskit_unix` (and its
+`accesskit_atspi_common` dependency) the way `gpui_linux` is vendored here,
+adding a real constructor argument or setter for the application name, then
+thread each app's `rmac_apps::identity::window_title` through it.
+
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_linux` and re-applying the

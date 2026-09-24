@@ -6,7 +6,7 @@
      layout (docs/decisions/0017-mac-keyboard.md). The helper accepts only
      enumerated arguments; see crates/rmac-keyboard/src/helper.rs. -->
 <policyconfig>
-  <vendor>rmac</vendor>
+  <vendor>Lulo OS</vendor>
   <action id="org.rmac.mac-keyboard.apply">
     <description>Change how the keyboard's Mac keys work</description>
     <message>System Settings wants to change how Command, Option and Caps Lock work for all users.</message>

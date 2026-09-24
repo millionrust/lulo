@@ -273,15 +273,15 @@ def build(output: Path) -> None:
         (output / alias).write_bytes((output / target).read_bytes())
     (output / "cursor.theme").write_text(
         "[Icon Theme]\n"
-        "Name=rmac\n"
-        "Comment=Original rmac pointer theme\n"
+        "Name=Lulo OS\n"
+        "Comment=Original Lulo OS pointer theme\n"
         "Inherits=Adwaita\n",
         encoding="utf-8",
     )
     (output / "index.theme").write_text(
         "[Icon Theme]\n"
-        "Name=rmac\n"
-        "Comment=Original rmac pointer theme\n"
+        "Name=Lulo OS\n"
+        "Comment=Original Lulo OS pointer theme\n"
         "Inherits=Adwaita\n",
         encoding="utf-8",
     )

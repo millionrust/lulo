@@ -9,14 +9,14 @@
   <summary>Browse and launch installed applications</summary>
   <summary xml:lang="hi">इंस्टॉल किए गए अनुप्रयोग देखें और चलाएँ</summary>
   <description>
-    <p>Apps provides the rmac session with a searchable grid of valid applications and desktop actions.</p>
+    <p>Apps provides the Lulo OS session with a searchable grid of valid applications and desktop actions.</p>
     <p>It follows freedesktop menu metadata, executable availability, localization, and live catalog changes.</p>
   </description>
   <launchable type="desktop-id">org.rmac.AppDrawer.desktop</launchable>
   <icon type="stock">org.rmac.AppDrawer</icon>
   <provides><binary>rmac-app-drawer</binary></provides>
   <url type="homepage">https://github.com/snehacodex/rmac</url>
-  <developer id="org.rmac"><name>rmac contributors</name></developer>
+  <developer id="org.rmac"><name>Lulo OS contributors</name></developer>
   <releases><release version="0.1.0" date="2026-07-25"/></releases>
   <content_rating type="oars-1.1"/>
 </component>

@@ -503,7 +503,7 @@ def _verify_metainfo(root: Path, identity: str, specification: dict[str, object]
         != "https://github.com/snehacodex/rmac"
         or developer is None
         or developer.attrib != {"id": "org.rmac"}
-        or developer.findtext("name") != "rmac contributors"
+        or developer.findtext("name") != "Lulo OS contributors"
         or release is None
         or release.attrib != {"version": "0.1.0", "date": "2026-07-25"}
         or rating is None

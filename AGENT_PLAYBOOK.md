@@ -49,16 +49,13 @@ It captures desktop, menu open, Search, Control Center, banner, Notification Cen
 four views, OSD, Mission Control and the Dock menu, then pairs each with the macOS capture in
 `target/evidence/reference-mac/`.
 
-**Then**, for every pair, write one line per visible difference into
-`docs/visual-gap-2026-09-19.md`, in this exact shape:
+**Then**, for every pair, add one row per visible difference to the matching section of
+[docs/parity.md](docs/parity.md#shell) (Shell for menu bar/Dock/Control Center/Notification
+Center/Apps/Mission Control, Apps → Files for the four Finder views), with the `Gap` column
+in the doc's "Mac: … / Lulo: …" shape and key measurements inline.
 
-```
-menu-open: panel 12 px too wide (281 vs 269) · rows 28 px vs 24 · separator too bright
-           (#55595F vs #3E424B) · no select-blink on activation
-```
-
-**Done when:** `docs/visual-gap-2026-09-19.md` lists every surface with at least three concrete,
-numeric differences, and the pair images exist. Commit both.
+**Done when:** every captured surface has at least three concrete, numeric rows in
+`docs/parity.md`, and the pair images exist. Commit both.
 
 ---
 
@@ -75,8 +72,8 @@ numeric differences, and the pair images exist. Commit both.
 - Split every material alpha into **light** and **dark** values; light materials are near-opaque
   (Spotlight light measures `FCFCFC`), dark ones are genuinely translucent.
 
-**Verify:** `cargo test -p rmac-design`; re-run Task 1's capture; the colour differences in
-`visual-gap` must shrink to zero for flat surfaces.
+**Verify:** `cargo test -p rmac-design`; re-run Task 1's capture; the colour-difference rows in
+[docs/parity.md](docs/parity.md#shell) must shrink to zero for flat surfaces.
 
 **Done when:** no surface colour in the gap list differs by more than 2 per channel.
 

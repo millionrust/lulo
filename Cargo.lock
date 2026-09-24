@@ -6575,6 +6575,7 @@ dependencies = [
  "rmac-notifications",
  "rmac-notifications-linux",
  "rmac-notifications-store",
+ "rmac-osd",
  "rmac-portal",
  "rmac-power",
  "rmac-privacy",

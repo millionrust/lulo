@@ -356,8 +356,18 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
+          # A tag like "v0.9.0-beta1" or "v0.9.0-rc.1" carries a semver
+          # pre-release suffix after "vX.Y.Z"; only a bare "vX.Y.Z" is a
+          # final release. Pre-release tags publish as a GitHub pre-release
+          # so they never show up as "Latest" ahead of a real final release.
+          prerelease_args=()
+          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            prerelease_args=(--prerelease)
+          fi
           if ! gh release view "$tag" >/dev/null 2>&1; then
-            gh release create "$tag" --title "$tag" --generate-notes
+            gh release create "$tag" --title "$tag" --generate-notes "${prerelease_args[@]}"
+          elif [ "${#prerelease_args[@]}" -gt 0 ]; then
+            gh release edit "$tag" "${prerelease_args[@]}"
           fi
           gh release upload "$tag" release-bundle/* --clobber
 

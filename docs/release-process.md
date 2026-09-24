@@ -120,6 +120,23 @@ do not, since a two-architecture APT repository needs both.
    `SHA256SUMS`, the SBOM, and a provenance attestation should all be
    attached.
 
+## Tagging a pre-release (Alpha/Beta/RC)
+
+A tag whose name is not exactly `vX.Y.Z` (for example `v0.9.0-beta.1`,
+matching a workspace version of `0.9.0-beta.1`) is a pre-release. The
+`attach-release` job detects the suffix and passes `--prerelease` to
+`gh release create`/`gh release edit`, so it publishes as a GitHub
+pre-release rather than "Latest" -- readers of the Releases page see it
+correctly labeled, and it never gets picked up by a tool that only follows
+"Latest". Everything else about the workflow is unchanged: `build-amd64`,
+`sbom`, and `attach-release` need no secrets and no approval, so a Beta tag
+produces its `.deb` files, `SHA256SUMS`, the SBOM, and a provenance
+attestation the same way a final release does. `apt-repository` and
+`keyring` stay off regardless (see "What exists today" above) until the
+owner's signing-key and source-package decisions are made -- a Beta
+pre-release is a GitHub Release with a manual install guide
+([docs/install.md](install.md)), not an APT repository entry.
+
 ## Approving the signing environment
 
 Every run of a job with `environment: apt-signing` (both `release.yml`'s

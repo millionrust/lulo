@@ -3,10 +3,10 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, rgba, AnyElement, App, ClickEvent, Context, ElementId,
-    Entity, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _,
-    RenderOnce, Role, SharedString, StatefulInteractiveElement as _, StyleRefinement, Styled,
-    Toggled, Window,
+    div, prelude::FluentBuilder as _, px, rgba, AnyElement, App, ClickEvent, Context, DismissEvent,
+    ElementId, Entity, Focusable as _, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent,
+    MouseButton, ParentElement as _, RenderOnce, Role, SharedString,
+    StatefulInteractiveElement as _, StyleRefinement, Styled, Toggled, Window,
 };
 use gpui_component::{
     button::{
@@ -15,6 +15,7 @@ use gpui_component::{
     },
     input::Input as ComponentInput,
     menu::{DropdownMenu as _, PopupMenu},
+    popover::Popover,
     slider::Slider as ComponentSlider,
     table::DataTable as ComponentTable,
     tooltip::Tooltip as ComponentTooltip,
@@ -357,64 +358,177 @@ impl Styled for PopUpButton {
     }
 }
 
-impl RenderOnce for PopUpButton {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        if self.form {
-            let metrics = rmac_design::Metrics::default();
-            let circle = metrics.popup_chevron;
-            let text = if self.disabled {
-                mac::text_tertiary()
-            } else {
-                mac::text()
-            };
-            let content = div()
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .child(
-                    div()
-                        .text_size(crate::text_px(13.0))
-                        .text_color(text)
-                        .whitespace_nowrap()
-                        .child(self.label),
-                )
-                .child(
-                    div()
-                        .size(px(circle))
-                        .flex_none()
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded_full()
-                        .bg(mac::button_secondary())
-                        .child(
-                            gpui::svg()
-                                .path("icons/chevrons-up-down.svg")
-                                .size(px(12.0))
-                                .text_color(text),
-                        ),
-                );
-            let transparent = rgba(0x00000000).into();
-            let button = painted(
-                ComponentButton::new(self.id)
-                    .compact()
-                    .disabled(self.disabled)
-                    .child(content),
-                transparent,
-                text,
-                None,
-                self.disabled,
-                cx,
+/// Menu built by a [`PopUpButtonTrigger`]'s popover, cached across renders
+/// the same way `gpui-component`'s own `DropdownMenuPopover` caches its menu:
+/// `Popover::content` is called on every render while open, so building a
+/// fresh `PopupMenu` entity there every time would leak one per frame.
+#[derive(Default)]
+struct PopUpMenuCache {
+    menu: Option<Entity<PopupMenu>>,
+}
+
+/// Trigger for the grouped-form [`PopUpButton`] (5.2's `.form()` variant):
+/// the value in plain 13 pt text followed by the ⌃⌄ circle. Built directly on
+/// `div()` so it can carry `Role::ComboBox`, `aria_expanded`, and the
+/// selected value as `aria_value` — the wrapped `Button`/`DropdownButton`
+/// this used to render through hardcode `Role::Button` with no exposed hook
+/// for any of those. `gpui_component::popover::Popover::trigger` folds
+/// whether the popover is open into this element's own `Selectable::selected`
+/// flag, which is how `open` below reflects it.
+#[derive(IntoElement)]
+struct PopUpButtonTrigger {
+    id: ElementId,
+    value: SharedString,
+    circle: f32,
+    disabled: bool,
+    highlighted: bool,
+    open: bool,
+    style: StyleRefinement,
+}
+
+impl gpui_component::Selectable for PopUpButtonTrigger {
+    fn selected(mut self, selected: bool) -> Self {
+        self.open = selected;
+        self
+    }
+
+    fn is_selected(&self) -> bool {
+        self.open
+    }
+}
+
+impl Styled for PopUpButtonTrigger {
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
+}
+
+impl RenderOnce for PopUpButtonTrigger {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let metrics = rmac_design::Metrics::default();
+        let text = if self.disabled {
+            mac::text_tertiary()
+        } else {
+            mac::text()
+        };
+        let content = div()
+            .flex()
+            .items_center()
+            .gap(px(6.0))
+            .child(
+                div()
+                    .text_size(crate::text_px(13.0))
+                    .text_color(text)
+                    .whitespace_nowrap()
+                    .child(self.value.clone()),
             )
+            .child(
+                div()
+                    .size(px(self.circle))
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .bg(mac::button_secondary())
+                    .child(
+                        gpui::svg()
+                            .path("icons/chevrons-up-down.svg")
+                            .size(px(12.0))
+                            .text_color(text),
+                    ),
+            );
+        let disabled = self.disabled;
+        let open = self.open;
+        // Highlighted while open, matching AppKit's own pop-up-button fill,
+        // in addition to whatever fixed highlight the caller asked for.
+        let highlighted = self.highlighted || open;
+        let focus_handle = window
+            .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let is_focused = focus_handle.is_focused(window);
+        div()
+            .id(self.id)
+            .role(Role::ComboBox)
+            .aria_expanded(open)
+            .aria_value(self.value)
+            .cursor_default()
             .h(px(metrics.control_height_regular))
             .px(px(2.0))
-            .refine_style(&self.style);
-            return match self.menu {
-                Some(builder) if !self.disabled => button
-                    .dropdown_menu(move |menu, window, cx| builder(menu, window, cx))
-                    .into_any_element(),
-                _ => button.into_any_element(),
+            .rounded(px(mac::radius_control()))
+            .flex()
+            .items_center()
+            .when(highlighted, |el| el.bg(mac::control_fill_hover()))
+            .when(!disabled, |el| {
+                el.track_focus(&focus_handle.clone().tab_stop(true).tab_index(0))
+            })
+            .when(disabled, |el| {
+                // `Popover`'s own wrapping div toggles open on any mouse-down
+                // that reaches it, with no disabled check of its own — the
+                // same reason a disabled `Button` stops the event here rather
+                // than just dimming itself.
+                el.opacity(0.5)
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+            })
+            .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
+            .refine_style(&self.style)
+            .child(content)
+    }
+}
+
+impl RenderOnce for PopUpButton {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        if self.form {
+            let metrics = rmac_design::Metrics::default();
+            let disabled = self.disabled;
+            let base_id = self.id.clone();
+            let trigger = PopUpButtonTrigger {
+                id: SharedString::from(format!("{base_id}-trigger")).into(),
+                value: self.label,
+                circle: metrics.popup_chevron,
+                disabled,
+                highlighted: self.selected,
+                open: false,
+                style: self.style,
             };
+            let mut popover = Popover::new(self.id)
+                .appearance(false)
+                .overlay_closable(false)
+                .trigger(trigger);
+            if let Some(builder) = self.menu {
+                if !disabled {
+                    let cache_id: ElementId =
+                        SharedString::from(format!("{base_id}-menu-cache")).into();
+                    let cache =
+                        window.use_keyed_state(cache_id, cx, |_, _| PopUpMenuCache::default());
+                    popover = popover.content(move |_state, window, cx| {
+                        let existing = cache.read(cx).menu.clone();
+                        match existing {
+                            Some(menu) => menu,
+                            None => {
+                                let builder = builder.clone();
+                                let menu = PopupMenu::build(window, cx, move |menu, window, cx| {
+                                    builder(menu, window, cx)
+                                });
+                                cache.update(cx, |state, _| state.menu = Some(menu.clone()));
+                                menu.focus_handle(cx).focus(window, cx);
+                                let popover_state = cx.entity();
+                                let cache_for_dismiss = cache.clone();
+                                window
+                                    .subscribe(&menu, cx, move |_, _: &DismissEvent, window, cx| {
+                                        popover_state
+                                            .update(cx, |state, cx| state.dismiss(window, cx));
+                                        cache_for_dismiss.update(cx, |state, _| state.menu = None);
+                                    })
+                                    .detach();
+                                menu
+                            }
+                        }
+                    });
+                }
+            }
+            return popover.into_any_element();
         }
         let fill = if self.selected {
             mac::control_fill_hover()

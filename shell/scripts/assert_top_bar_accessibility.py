@@ -51,13 +51,21 @@ for bar in bars:
             "top bar must expose named Spotlight, Control Center, and one "
             f"date/time button; missing={sorted(missing)!r}, found={roles!r}"
         )
-    focusable = [
-        node
+    # Menu titles take keyboard focus so the arrow keys can move between
+    # open menus, as on the Mac; nothing else in the bar may be a focus stop.
+    stray_focus = [
+        (node.getRoleName(), node.name)
         for node in nodes
         if node.getState().contains(pyatspi.STATE_FOCUSABLE)
+        and not (
+            node.getRoleName() in {"button", "push button"}
+            and node.name.endswith(" menu")
+        )
     ]
-    if focusable:
-        raise AssertionError("passive top bar must not add keyboard focus stops")
+    if stray_focus:
+        raise AssertionError(
+            f"top bar must only add focus stops for menu titles; found={stray_focus!r}"
+        )
 
 print(
     f"AT-SPI exposed {EXPECTED_BARS} passive top bars with current actionable semantics"

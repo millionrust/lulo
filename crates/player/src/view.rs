@@ -1,7 +1,9 @@
 //! The Media Player window: the picture (or the compact audio controller)
 //! with QuickTime Player's floating controls.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+#[cfg(target_os = "linux")]
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use gpui::{

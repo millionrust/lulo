@@ -693,8 +693,12 @@ pub fn boot_app_with_assets<A, V, F>(
             // The caller names the visible window's size (the Mac's); the
             // outer bounds add the client frame around it.
             let (outer_width, outer_height) = outer_window_size(width, height);
-            let options =
+            let mut options =
                 window_options_for_app_with_title(app_id, title, outer_width, outer_height, cx);
+            // The minimum size reaches the compositor as xdg_toplevel's
+            // min_size, which is in window-geometry terms (without the
+            // frame); in outer terms niri widens the window by the frame.
+            options.window_min_size = Some(minimum_window_size(width, height));
 
             cx.open_window(options, move |window, cx| {
                 reserve_client_frame(window);

@@ -179,12 +179,8 @@ impl PlayerView {
                 }
             }
             Command::Open(uri) => {
-                if let Some(path) = uri.strip_prefix("file://").map(percent_decode) {
-                    if self
-                        .playlist
-                        .append([std::path::PathBuf::from(path)])
-                        .is_some()
-                    {
+                if let Some(path) = playlist::path_from_open_uri(&uri) {
+                    if self.playlist.append([path]).is_some() {
                         self.load_current();
                     }
                 }
@@ -842,25 +838,6 @@ impl PlayerView {
     }
 }
 
-fn percent_decode(text: &str) -> String {
-    let hex = |byte: u8| (byte as char).to_digit(16).map(|digit| digit as u8);
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%' && index + 2 < bytes.len() {
-            if let (Some(high), Some(low)) = (hex(bytes[index + 1]), hex(bytes[index + 2])) {
-                out.push(high << 4 | low);
-                index += 3;
-                continue;
-            }
-        }
-        out.push(bytes[index]);
-        index += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 impl Render for PlayerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         for image in self.garbage.drain(..) {
@@ -982,20 +959,5 @@ impl Render for PlayerView {
                     .when(audio, |label| label.top(px(34.0)).text_size(px(11.0)))
                     .child(message)
             }))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::percent_decode;
-
-    #[test]
-    fn file_uris_decode() {
-        assert_eq!(
-            percent_decode("/home/me/My%20Song.mp3"),
-            "/home/me/My Song.mp3"
-        );
-        assert_eq!(percent_decode("/a%2"), "/a%2");
-        assert_eq!(percent_decode("/%E2%9C%93"), "/✓");
     }
 }

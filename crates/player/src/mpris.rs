@@ -161,7 +161,11 @@ impl PlayerInterface {
     }
 
     fn open_uri(&self, uri: &str) {
-        self.send(Command::Open(uri.to_owned()));
+        // The window validates the path; this only keeps oversized requests
+        // from being copied into the command queue.
+        if uri.len() <= rmac_player::playlist::MAX_URI_BYTES {
+            self.send(Command::Open(uri.to_owned()));
+        }
     }
 
     #[zbus(property)]

@@ -214,10 +214,10 @@ nothing breaks and existing test machines keep their settings.
 
 ### Rename what people see
 
-- [ ] Login screen session name: `Name=rmac` in
+- [x] Login screen session name: `Name=rmac` in
       `packaging/rmac-session/rmac.desktop`.
-- [ ] About windows, the system menu and any remaining "rmac" UI strings.
-- [ ] User guide, install and troubleshooting docs.
+- [x] About windows, the system menu and any remaining "rmac" UI strings.
+- [x] User guide, install and troubleshooting docs.
 
 ### Rename the technical names (one pull request each)
 

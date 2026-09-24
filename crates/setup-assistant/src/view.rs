@@ -541,7 +541,7 @@ impl SetupView {
         self.page(
             "setup/globe.svg",
             mac::accent(),
-            "Choose the language rmac uses and the region for dates, times and numbers.",
+            "Choose the language Lulo OS uses and the region for dates, times and numbers.",
         )
         .child(body)
     }
@@ -627,7 +627,7 @@ impl SetupView {
         self.page(
             "setup/keyboard.svg",
             rgb(GREY_TILE).into(),
-            "rmac works like a Mac. On a PC keyboard it can put ⌘ Command next to the space bar and make ⌘C and ⌘V work in every app.",
+            "Lulo OS works like a Mac. On a PC keyboard it can put ⌘ Command next to the space bar and make ⌘C and ⌘V work in every app.",
         )
         .child(body)
     }
@@ -898,7 +898,7 @@ impl SetupView {
         self.page(
             "setup/shield.svg",
             mac::accent(),
-            "rmac is designed to keep your information on this computer.",
+            "Lulo OS is designed to keep your information on this computer.",
         )
         .child(
             self.content()
@@ -906,7 +906,7 @@ impl SetupView {
                     "setup/lock.svg",
                     rgb(GREEN_TILE).into(),
                     "Stays on your computer",
-                    "rmac collects no usage data. Notes, clipboard history and notifications are stored only in your home folder.",
+                    "Lulo OS collects no usage data. Notes, clipboard history and notifications are stored only in your home folder.",
                 ))
                 .child(tip(
                     "setup/user.svg",

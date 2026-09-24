@@ -117,7 +117,7 @@ pub use accounts::{account, set_icon_file, set_real_name};
 
 #[cfg(not(target_os = "linux"))]
 pub fn account() -> Result<Account, String> {
-    Err("accounts are available in the rmac Linux session".into())
+    Err("accounts are available in the Lulo OS Linux session".into())
 }
 
 #[cfg(not(target_os = "linux"))]

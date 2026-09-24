@@ -17,7 +17,16 @@ uv run /tmp/flatpak-cargo-generator.py Cargo.lock \
 python3 scripts/linux/verify-flatpak-package.py
 ```
 
+The generator clones each locked Git repository (Zed, gpui-component and
+Zed's forks) into `$XDG_CACHE_HOME/flatpak-cargo/` and vendors each Git crate
+from the last directory it finds with that package name. Zed's tree also
+carries lint fixtures named `gpui` and `gpui_shared_string` under
+`tooling/lints/test_fixture/`, so delete that directory from the cached Zed
+checkout before generating; the verifier rejects a vendored Git crate whose
+name or version differs from `Cargo.lock`.
+
 The verifier binds every generated crate URL and SHA-256 to `Cargo.lock`,
+every Git checkout to its locked repository and commit,
 requires offline Cargo configuration, rejects an incomplete/extra inventory,
 and enforces the reviewed runtime permissions. A lockfile change must update
 the generated sources in the same commit.

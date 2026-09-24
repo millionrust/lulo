@@ -10,6 +10,8 @@ import re
 import stat
 import sys
 import tomllib
+from typing import NamedTuple
+from urllib.parse import parse_qs, urlparse
 
 
 class VerificationError(RuntimeError):
@@ -152,13 +154,33 @@ def verify_manifest(document: dict) -> None:
         raise VerificationError("Flatpak source exclusions are incomplete")
 
 
-def registry_packages(lock_path: Path) -> dict[tuple[str, str], str]:
+VENDOR = "cargo/vendor"
+GIT_CACHE = "flatpak-cargo/git"
+GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+GIT_COPY = re.compile(
+    r'^cp -r --reflink=auto "(flatpak-cargo/git/[^"/]+)/([^"]+)" "cargo/vendor/([^"/]+)"$'
+)
+
+
+class GitPackage(NamedTuple):
+    """A Cargo.lock package fetched from a Git repository at a fixed commit."""
+
+    repository: str
+    commit: str
+    version: str
+    rev: str | None
+
+
+def _read_lock(lock_path: Path) -> dict:
     try:
-        lock = tomllib.loads(lock_path.read_text(encoding="utf-8"))
+        return tomllib.loads(lock_path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as error:
         raise VerificationError(f"could not read Cargo.lock: {error}") from error
+
+
+def registry_packages(lock_path: Path) -> dict[tuple[str, str], str]:
     packages = {}
-    for package in lock.get("package", []):
+    for package in _read_lock(lock_path).get("package", []):
         source = package.get("source", "")
         if not source.startswith("registry+"):
             continue
@@ -170,11 +192,65 @@ def registry_packages(lock_path: Path) -> dict[tuple[str, str], str]:
     return packages
 
 
-def verify_cargo_sources(sources: list, locked: dict[tuple[str, str], str]) -> None:
-    if not isinstance(sources, list) or len(sources) != len(locked) * 2 + 1:
+def canonical_git_url(source: str) -> str:
+    """Cargo's canonical repository URL, as flatpak-cargo-generator spells it."""
+    parsed = urlparse(source.removeprefix("git+"))
+    path = parsed.path.rstrip("/")
+    if parsed.netloc == "github.com":
+        path = path.lower()
+    path = path.removesuffix(".git")
+    if parsed.scheme != "https" or not parsed.netloc or path.count("/") != 2:
+        raise VerificationError(f"unsupported locked Git source {source}")
+    return f"https://{parsed.netloc}{path}"
+
+
+def git_packages(lock_path: Path) -> dict[str, GitPackage]:
+    packages = {}
+    for package in _read_lock(lock_path).get("package", []):
+        source = package.get("source", "")
+        if not source.startswith("git+"):
+            continue
+        name = package["name"]
+        parsed = urlparse(source)
+        commit = parsed.fragment
+        revs = parse_qs(parsed.query).get("rev")
+        # The generator vendors Git crates by bare name, so two locked Git
+        # packages with one name would overwrite each other.
+        if name in packages or not GIT_COMMIT.fullmatch(commit) or (
+            revs is not None and len(revs) != 1
+        ):
+            raise VerificationError(f"invalid or duplicate locked Git package {name}")
+        packages[name] = GitPackage(
+            canonical_git_url(source),
+            commit,
+            package["version"],
+            revs[0] if revs else None,
+        )
+    return packages
+
+
+def git_checkout(package: GitPackage) -> str:
+    repository = package.repository.rsplit("/", 1)[1]
+    return f"{GIT_CACHE}/{repository}-{package.commit[:7]}"
+
+
+def verify_cargo_sources(
+    sources: list,
+    locked: dict[tuple[str, str], str],
+    git_locked: dict[str, GitPackage] | None = None,
+) -> None:
+    git_locked = git_locked or {}
+    repositories = {
+        (package.repository, package.commit) for package in git_locked.values()
+    }
+    expected_count = len(locked) * 2 + len(repositories) + len(git_locked) * 3 + 1
+    if not isinstance(sources, list) or len(sources) != expected_count:
         raise VerificationError("generated Cargo source cardinality does not match Cargo.lock")
     archives = {}
     checksum_files = {}
+    manifests = {}
+    copies = {}
+    checkouts = set()
     config = []
     for source in sources:
         if not isinstance(source, dict):
@@ -182,16 +258,39 @@ def verify_cargo_sources(sources: list, locked: dict[tuple[str, str], str]) -> N
         source_type = source.get("type")
         if source_type == "archive":
             dest = source.get("dest", "")
-            prefix = "cargo/vendor/"
+            prefix = f"{VENDOR}/"
             if not dest.startswith(prefix):
                 raise VerificationError("Cargo archive escaped the vendor directory")
             key = dest[len(prefix) :]
             archives[key] = source
+        elif source_type == "git":
+            if set(source) != {"type", "url", "commit", "dest"}:
+                raise VerificationError("generated Git source is not exact")
+            checkouts.add((source["url"], source["commit"], source["dest"]))
+        elif source_type == "shell":
+            commands = source.get("commands")
+            if set(source) != {"type", "commands"} or not (
+                isinstance(commands, list) and len(commands) == 1
+            ):
+                raise VerificationError("generated Git crate copy is not exact")
+            match = GIT_COPY.fullmatch(commands[0])
+            if match is None:
+                raise VerificationError("generated Git crate copy is not exact")
+            checkout, path, name = match.groups()
+            if (
+                name in copies
+                or path.startswith("/")
+                or ".." in path.split("/")
+            ):
+                raise VerificationError("generated Git crate copy escaped its checkout")
+            copies[name] = (checkout, path)
         elif (
             source_type == "inline"
             and source.get("dest-filename") == ".cargo-checksum.json"
         ):
             checksum_files[source.get("dest", "")] = source
+        elif source_type == "inline" and source.get("dest-filename") == "Cargo.toml":
+            manifests[source.get("dest", "")] = source
         elif source_type == "inline" and source.get("dest") == "cargo":
             config.append(source)
         else:
@@ -204,20 +303,27 @@ def verify_cargo_sources(sources: list, locked: dict[tuple[str, str], str]) -> N
         config_document = tomllib.loads(config[0].get("contents", ""))
     except tomllib.TOMLDecodeError as error:
         raise VerificationError("generated Cargo config is invalid") from error
-    if config_document != {
-        "source": {
-            "vendored-sources": {"directory": "cargo/vendor"},
-            "crates-io": {"replace-with": "vendored-sources"},
-        }
-    }:
+    expected_config = {
+        "vendored-sources": {"directory": VENDOR},
+        "crates-io": {"replace-with": "vendored-sources"},
+    }
+    for package in git_locked.values():
+        replacement = {"git": package.repository, "replace-with": "vendored-sources"}
+        if package.rev is not None:
+            replacement["rev"] = package.rev
+        if expected_config.setdefault(package.repository, replacement) != replacement:
+            raise VerificationError(f"locked Git source {package.repository} is ambiguous")
+    if config_document != {"source": expected_config}:
         raise VerificationError("generated Cargo config does not force vendored sources")
 
     expected_names = {f"{name}-{version}" for name, version in locked}
     if set(archives) != expected_names:
         raise VerificationError("generated Cargo archive inventory differs from Cargo.lock")
-    if set(checksum_files) != {
-        f"cargo/vendor/{name}" for name in expected_names
-    }:
+    expected_checksums = {f"{VENDOR}/{name}" for name in expected_names}
+    expected_checksums |= {f"{VENDOR}/{name}" for name in git_locked}
+    if set(checksum_files) != expected_checksums or len(expected_checksums) != len(
+        expected_names
+    ) + len(git_locked):
         raise VerificationError("generated Cargo checksum inventory differs from Cargo.lock")
     for (name, version), checksum in locked.items():
         vendor_name = f"{name}-{version}"
@@ -231,15 +337,40 @@ def verify_cargo_sources(sources: list, locked: dict[tuple[str, str], str]) -> N
             or archive.get("sha256") != checksum
         ):
             raise VerificationError(f"generated source mismatch for {vendor_name}")
-        checksum_source = checksum_files[f"cargo/vendor/{vendor_name}"]
+        _verify_checksum_file(checksum_files[f"{VENDOR}/{vendor_name}"], vendor_name, checksum)
+
+    expected_checkouts = {
+        (package.repository, package.commit, git_checkout(package))
+        for package in git_locked.values()
+    }
+    if checkouts != expected_checkouts:
+        raise VerificationError("generated Git checkouts differ from Cargo.lock")
+    if set(copies) != set(git_locked) or set(manifests) != {
+        f"{VENDOR}/{name}" for name in git_locked
+    }:
+        raise VerificationError("generated Git crate inventory differs from Cargo.lock")
+    for name, package in git_locked.items():
+        if copies[name][0] != git_checkout(package):
+            raise VerificationError(f"generated Git crate {name} is copied from another checkout")
         try:
-            checksum_document = json.loads(checksum_source.get("contents", ""))
-        except json.JSONDecodeError as error:
-            raise VerificationError(
-                f"generated checksum is invalid for {vendor_name}"
-            ) from error
-        if checksum_document != {"package": checksum, "files": {}}:
-            raise VerificationError(f"generated checksum mismatch for {vendor_name}")
+            manifest = tomllib.loads(manifests[f"{VENDOR}/{name}"].get("contents", ""))
+        except tomllib.TOMLDecodeError as error:
+            raise VerificationError(f"generated manifest is invalid for {name}") from error
+        declared = manifest.get("package", {})
+        if declared.get("name") != name or declared.get("version") != package.version:
+            raise VerificationError(f"generated Git crate {name} is not the locked package")
+        _verify_checksum_file(checksum_files[f"{VENDOR}/{name}"], name, None)
+
+
+def _verify_checksum_file(source: dict, vendor_name: str, checksum: str | None) -> None:
+    try:
+        checksum_document = json.loads(source.get("contents", ""))
+    except json.JSONDecodeError as error:
+        raise VerificationError(
+            f"generated checksum is invalid for {vendor_name}"
+        ) from error
+    if checksum_document != {"package": checksum, "files": {}}:
+        raise VerificationError(f"generated checksum mismatch for {vendor_name}")
 
 
 def verify_offline_driver_text(text: str) -> None:
@@ -325,7 +456,11 @@ def verify_repository(root: Path) -> None:
     sources = read_json(package / "cargo-sources.json")
     verify_decisions(decisions)
     verify_manifest(manifest)
-    verify_cargo_sources(sources, registry_packages(root / "Cargo.lock"))
+    verify_cargo_sources(
+        sources,
+        registry_packages(root / "Cargo.lock"),
+        git_packages(root / "Cargo.lock"),
+    )
     verify_offline_driver(root / "scripts/linux/build-flatpak-candidate.sh")
     for path in [
         root / "packaging/rmac-apps/applications/org.rmac.TextEditor.desktop",

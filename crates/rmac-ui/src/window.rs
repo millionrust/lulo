@@ -454,28 +454,43 @@ pub fn boot_unified_app_with_assets<A, V, F>(
 }
 
 /// [`boot_unified_app_with_assets`] for an app that keeps every window in
-/// one process, as a macOS app does. If the app is already running, this
-/// launch hands `arguments` to it over D-Bus, the running process opens a
-/// new window for them, and this function returns without starting GPUI.
-/// Otherwise it opens the first window for `arguments` and serves later
-/// launches' requests with `build` too.
+/// one process, as a macOS app does. `windows` holds one argument list per
+/// window this launch asks for (none means one default window). If the app
+/// is already running, this launch hands each list to it over D-Bus, the
+/// running process opens a window for each, and this function returns
+/// without starting GPUI. Otherwise it opens the windows itself and serves
+/// later launches' requests with `build` too.
 pub fn boot_unified_app_instance_with_assets<A, V, F>(
     app_id: &'static str,
     assets: A,
     width: f32,
     height: f32,
-    arguments: Vec<String>,
+    windows: Vec<Vec<String>>,
     build: F,
 ) where
     A: gpui::AssetSource,
     V: Render + 'static,
     F: Fn(&[String], &mut Window, &mut Context<V>) -> V + 'static,
 {
+    let mut windows = windows;
+    if windows.is_empty() {
+        windows.push(Vec::new());
+    }
     #[cfg(target_os = "linux")]
     match async_io::block_on(rmac_app_menu::open_window_in_running_instance(
-        app_id, &arguments,
+        app_id,
+        &windows[0],
     )) {
-        Ok(true) => return,
+        Ok(true) => {
+            for arguments in &windows[1..] {
+                if let Err(error) = async_io::block_on(
+                    rmac_app_menu::open_window_in_running_instance(app_id, arguments),
+                ) {
+                    eprintln!("{app_id} could not open another window: {error}");
+                }
+            }
+            return;
+        }
         Ok(false) => {}
         // A process owns the name but did not answer: start normally, as
         // before single-instance hand-off existed, rather than show nothing.
@@ -500,8 +515,18 @@ pub fn boot_unified_app_instance_with_assets<A, V, F>(
                 move |arguments, cx| opener(arguments, cx),
                 cx,
             );
-            open_unified_window(app_id, width, height, arguments, build, cx)
-                .expect("failed to open window");
+            let mut windows = windows.into_iter();
+            if let Some(first) = windows.next() {
+                open_unified_window(app_id, width, height, first, build.clone(), cx)
+                    .expect("failed to open window");
+            }
+            for arguments in windows {
+                if let Err(error) =
+                    open_unified_window(app_id, width, height, arguments, build.clone(), cx)
+                {
+                    eprintln!("{app_id} could not open another window: {error}");
+                }
+            }
             cx.activate(true);
         });
 }

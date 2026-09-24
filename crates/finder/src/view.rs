@@ -357,13 +357,14 @@ struct FinderView {
     spring: SpringLoading,
 }
 
-pub(crate) fn run(arguments: Vec<String>) {
+/// Opens one window per argument list (see `StartupDestination`).
+pub(crate) fn run(windows: Vec<Vec<String>>) {
     rmac_ui::boot_unified_app_instance_with_assets(
         rmac_ui::app_id::FILES,
         CombinedAssets,
         finder_style::WINDOW_WIDTH,
         finder_style::WINDOW_HEIGHT,
-        arguments,
+        windows,
         |arguments, window, cx| {
             // Another launch's arguments were checked in that process; a
             // folder that has since gone away opens the default window.
@@ -374,6 +375,12 @@ pub(crate) fn run(arguments: Vec<String>) {
                 crate::StartupDestination::Default => {}
                 crate::StartupDestination::Trash => finder.trash_click(cx),
                 crate::StartupDestination::Directory(path) => finder.navigate(path, cx),
+                crate::StartupDestination::Reveal(path) => {
+                    if let Some(folder) = path.parent().map(Path::to_path_buf) {
+                        finder.pending_select = Some(path);
+                        finder.navigate(folder, cx);
+                    }
+                }
                 crate::StartupDestination::Search(query) => {
                     // The home folder, searched as Return in the search
                     // field does.

@@ -157,19 +157,23 @@ considerably less accessible than journey 1's Dock/Spotlight surfaces:
   unless the target Files window's AT-SPI frame is given focus first via
   the `Component` interface's `grabFocus()`; the script always does this
   immediately before such a click.
-* `View > Quick Look` does not open any visible window or layer-shell
-  surface on this build even with a real selection and a focused window
-  (`crates/finder/src/view/quick_look_controller/controller.rs:33`); the
-  `preview` step fails for real.
-* **Copy and Move do not work on Linux at all.** Both menu actions are
-  reached and clicked correctly, but nothing is ever pasted:
-  `crates/finder/src/pasteboard.rs`'s `#[cfg(not(target_os = "macos"))]`
-  module (lines 62-70) stubs `write_file_urls`, `read_file_urls`, and
-  `clear_file_urls` to complete no-ops, so Copy never writes anything a
-  Paste could read back, on this window or any other. This is a real
-  product gap, not flaky automation -- the `copy`/`move` steps fail for
-  real, every run, once the script deliberately never keeps two Files
-  windows open at the same time (see below).
+* `View > Quick Look` did not open any visible window or layer-shell
+  surface. Cause: the script launched `/usr/bin/rmac-files`, a package
+  build from 2026-09-20 that predates the Quick Look panel
+  (`strings` finds no `org.rmac.QuickLook` in it). The current build
+  (`~/rmac-dev-bin/rmac-files`), driven the same way (focus the window,
+  then the `finder::SelectAll` and `finder::QuickLook` menu actions over
+  `org.rmac.AppMenu1`), opens a floating `org.rmac.QuickLook` window.
+  The script now tests `~/rmac-dev-bin/rmac-files` when it exists
+  (`--files-exec` overrides it) and prints the binary it chose.
+* Copy and Move did not work on Linux: the pasteboard's Linux module was
+  a no-op, so Copy never wrote anything a Paste in another window could
+  read. Files now writes `text/uri-list` (copy) or
+  `x-special/gnome-copied-files` (cut) through wl-clipboard, which keeps
+  serving the selection after the source window closes, and Paste reads
+  either one back (plus KDE's `application/x-kde-cutselection`). This
+  needs the `wl-clipboard` package, which `rmac-apps` now depends on;
+  without it Copy and Paste show an error naming the package.
 * Two simultaneously open `rmac-files` processes were observed to register
   only one `org.rmac.Files.Menu` D-Bus name between them (`dbus-send
   ... org.freedesktop.DBus.ListNames` shows a single entry with two Files

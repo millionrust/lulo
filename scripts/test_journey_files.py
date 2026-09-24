@@ -195,5 +195,31 @@ class MakeStepTests(unittest.TestCase):
         self.assertEqual(step["method"], "fallback")
 
 
+class ChooseFilesExecTests(unittest.TestCase):
+    def test_explicit_binary_wins(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as home:
+            self.assertEqual(
+                journey.choose_files_exec("/opt/rmac-files", Path(home)), "/opt/rmac-files"
+            )
+
+    def test_dev_deployment_is_preferred_over_the_package(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as home:
+            dev = Path(home) / "rmac-dev-bin" / "rmac-files"
+            dev.parent.mkdir()
+            dev.write_text("#!/bin/sh\n")
+            dev.chmod(0o755)
+            self.assertEqual(journey.choose_files_exec(None, Path(home)), str(dev))
+
+    def test_package_binary_is_the_fallback(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as home:
+            self.assertEqual(journey.choose_files_exec(None, Path(home)), journey.FILES_EXEC)
+
+
 if __name__ == "__main__":
     unittest.main()

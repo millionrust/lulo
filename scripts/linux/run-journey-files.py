@@ -122,6 +122,11 @@ POLL_INTERVAL_S = 0.05
 
 FILES_APP_ID = "org.rmac.Files"
 FILES_EXEC = "/usr/bin/rmac-files"
+# The reference laptop deploys fresh builds here; /usr/bin holds whatever the
+# last installed package shipped, which can be days older than the code under
+# test (the 2026-09-24 run exercised a 2026-09-20 package that predates Quick
+# Look's panel).
+DEV_FILES_EXEC = Path("rmac-dev-bin") / "rmac-files"
 FILES_ATSPI_APP_NAME = "rmac-files"
 TOPBAR_ATSPI_APP_NAME = "rmac-top-bar"
 
@@ -573,6 +578,18 @@ def check_logged_in() -> dict[str, Any]:
 # another agent or a real user may have their own Files window open at the
 # same time (see the shared UI-driving lock this script is run under).
 _OPENED_WINDOW_IDS: set[int] = set()
+
+
+def choose_files_exec(explicit: Optional[str], home: Path) -> str:
+    """The rmac-files binary to test: --files-exec when given, else the dev
+    deployment under ~/rmac-dev-bin when it exists, else the packaged one."""
+
+    if explicit:
+        return explicit
+    dev = home / DEV_FILES_EXEC
+    if dev.is_file() and os.access(dev, os.X_OK):
+        return str(dev)
+    return FILES_EXEC
 
 
 def open_files_window(path: Path, title_marker: str) -> tuple[Optional[int], dict[str, Any]]:
@@ -1087,6 +1104,7 @@ def cleanup_windows() -> None:
 
 
 def main() -> int:
+    global FILES_EXEC
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--output",
@@ -1094,7 +1112,15 @@ def main() -> int:
         default=None,
         help="absolute path to write the JSON report to (also printed to stdout)",
     )
+    parser.add_argument(
+        "--files-exec",
+        default=None,
+        help="rmac-files binary to test (default: ~/rmac-dev-bin/rmac-files when "
+        f"present, else {FILES_EXEC})",
+    )
     arguments = parser.parse_args()
+    FILES_EXEC = choose_files_exec(arguments.files_exec, Path.home())
+    print(f"journey 2: testing {FILES_EXEC}", file=sys.stderr)
 
     try:
         additions = discover_environment(dict(os.environ), Path(f"/run/user/{os.getuid()}"))

@@ -59,6 +59,13 @@ fn main() {
                     CancelKill,
                     Some("ActivityMonitor"),
                 ),
+                // ⌘W closes the window; already handled by on_action in
+                // view/render.rs, just never had a keystroke bound to it.
+                gpui::KeyBinding::new(
+                    rmac_ui::shortcuts::CLOSE.keystroke,
+                    rmac_ui::RequestClose,
+                    Some("ActivityMonitor"),
+                ),
             ]);
             window.focus(&view.focus, cx);
             view

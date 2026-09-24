@@ -1,16 +1,47 @@
 //! The Preview window: unified toolbar, thumbnail sidebar, the document
 //! (an image, or PDF pages in continuous scroll), search and Get Info.
+//!
+//! ## Markup and signing (not implemented — design notes)
+//!
+//! Mac Preview's Markup (Show Markup Toolbar ⇧⌘A) and Signature tools are
+//! deliberately out of scope here; they are the largest remaining Preview
+//! gap and need their own pass. Sketch of how they would fit this module:
+//!
+//! - **Data model**: a new `Annotation` enum (Highlight, Underline,
+//!   StrikeThrough, Rectangle, Oval, Line, Arrow, Text, Note, Signature),
+//!   each carrying a page index and a unit-rect or point path, kept in
+//!   `Slot` next to `text` — a fourth `SlotState`-adjacent field, e.g.
+//!   `annotations: Vec<Annotation>`, undo/redo as a simple command stack.
+//! - **Persisting them**: rmac has no PDF *writer* (`rmac_print::render_pdf`
+//!   only rasterises plain text; `crate::pdfwriter` only wraps one raster
+//!   image). Baking annotations into the saved PDF would need a proper
+//!   incremental-update PDF writer (new page content streams plus `/Annots`
+//!   objects) — realistically a small vendored writer or a `lopdf`-style
+//!   dependency, not a from-scratch format like `pdfwriter`'s.
+//! - **Toolbar**: a second capsule row under the title bar (Show Markup
+//!   Toolbar ⇧⌘A toggles it), tool buttons mirroring `metrics::` capsule
+//!   sizing, a colour/line-width popover.
+//! - **Drawing**: the free-form pen tool needs point-sampled mouse capture
+//!   like `text_mouse_down`/`text_mouse_move` already do for selection, but
+//!   accumulating a path instead of a text range.
+//! - **Signature**: Preview offers trackpad drawing, camera capture, and a
+//!   typed cursive font; only the typed-text path is feasible without new
+//!   camera/trackpad-gesture plumbing, so that would ship first.
+//!
+//! None of this is started; `crate::pdfwriter`'s image-in-PDF writer is the
+//! one piece already built that a later pass could extend toward it.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use gpui::{
     div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AnyElement, AppContext as _,
     ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable as _, FontWeight, Image,
-    ImageFormat, InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, Render,
-    RenderImage, ScrollHandle, ScrollWheelEvent, SharedString, StatefulInteractiveElement as _,
-    Styled as _, Window, WindowControlArea,
+    ImageFormat, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, ParentElement as _, Render, RenderImage, ScrollHandle,
+    ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    WindowControlArea,
 };
 use rmac_preview::document::{self, Kind};
 use rmac_preview::layout::{self, Rect, Rotation, ThumbItem};
@@ -20,9 +51,9 @@ use rmac_preview::zoom::{self, ContentKind, Zoom};
 use rmac_ui::{mac, InputEvent, InputState};
 
 use crate::{
-    ActualSize, CloseWindow, Copy, Find, FindNext, FindPrevious, HideSidebar, NextItem,
-    PreviousItem, RotateLeft, RotateRight, ShowInspector, ShowThumbnails, ZoomIn, ZoomOut,
-    ZoomToFit,
+    ActualSize, CloseWindow, Copy, Find, FindNext, FindPrevious, GoToPage, HideSidebar, NextItem,
+    PreviousItem, PrintDocument, RotateLeft, RotateRight, SelectAll, ShowInspector, ShowThumbnails,
+    ZoomIn, ZoomOut, ZoomToFit,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -33,6 +64,8 @@ const MAX_PAGE_BITMAPS: usize = 8;
 const MAX_THUMBNAILS: usize = 80;
 /// Arrow-key scroll step.
 const LINE_SCROLL: f32 = 40.0;
+
+static NEXT_WINDOW_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 #[derive(Clone, Copy)]
 struct Palette {
@@ -129,6 +162,25 @@ enum TextState {
     Loading,
     Ready(Arc<Vec<TextPage>>),
     Failed(SharedString),
+}
+
+/// A position in a PDF's extracted text: a page, a word on it, and a
+/// character insertion index within that word (0..=chars). Ordered in
+/// reading order, so a selection is just its lower and upper `TextPos`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct TextPos {
+    page: usize,
+    word: usize,
+    char: usize,
+}
+
+/// A selection's two ends in reading order, whichever the drag direction was.
+fn ordered(anchor: TextPos, focus: TextPos) -> (TextPos, TextPos) {
+    if anchor <= focus {
+        (anchor, focus)
+    } else {
+        (focus, anchor)
+    }
 }
 
 /// One open document.
@@ -255,6 +307,21 @@ pub(crate) struct PreviewView {
     /// The document column measured on the last frame.
     viewport: (f32, f32),
     title: String,
+    /// Drag-selected PDF text (Edit ▸ Copy, double-click a word, triple-click
+    /// a line, ⌘A). `None` outside a PDF and when nothing is selected.
+    text_selection: Option<(TextPos, TextPos)>,
+    /// True while the left button is held dragging a text selection.
+    text_selecting: bool,
+    go_to_page_input: Entity<InputState>,
+    go_to_page_open: bool,
+    recent_documents: Vec<PathBuf>,
+    /// This window's stable identity for the print portal transaction.
+    window_generation: u64,
+    /// Bumped whenever the selected document changes, so a print or export
+    /// started before that never lands on the newer document (or vice
+    /// versa). Shared with the async print/export task as `current`.
+    document_generation: Arc<std::sync::atomic::AtomicU64>,
+    print_busy: bool,
 }
 
 impl PreviewView {
@@ -284,6 +351,17 @@ impl PreviewView {
             },
         )
         .detach();
+        let go_to_page_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("Page number")
+                .clean_on_escape()
+        });
+        cx.subscribe(&go_to_page_input, |this, _, event: &InputEvent, cx| {
+            if let InputEvent::PressEnter { .. } = event {
+                this.submit_go_to_page(cx);
+            }
+        })
+        .detach();
         let slots: Vec<Slot> = paths
             .into_iter()
             .enumerate()
@@ -307,6 +385,15 @@ impl PreviewView {
             garbage: Vec::new(),
             viewport: (0.0, 0.0),
             title: String::new(),
+            text_selection: None,
+            text_selecting: false,
+            go_to_page_input,
+            go_to_page_open: false,
+            recent_documents: load_recent_documents(),
+            window_generation: NEXT_WINDOW_GENERATION
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            document_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            print_busy: false,
         };
         for index in 0..view.slots.len() {
             view.start_load(index, cx);
@@ -336,6 +423,7 @@ impl PreviewView {
                 let Some(slot) = view.slots.iter_mut().find(|slot| slot.id == id) else {
                     return;
                 };
+                let opened = result.is_ok();
                 slot.state = match result {
                     Ok(loaded) => SlotState::Ready(loaded),
                     Err(error) => SlotState::Failed(error.into()),
@@ -346,6 +434,10 @@ impl PreviewView {
                 if view.slots.len() == 1 && pages > 1 {
                     view.sidebar = true;
                 }
+                if opened {
+                    record_recent_document(slot.path.clone(), cx);
+                }
+                view.ensure_text(cx);
                 cx.notify();
             });
         })
@@ -365,7 +457,12 @@ impl PreviewView {
         }
         self.selected = index;
         self.clear_search(cx);
+        self.text_selection = None;
+        self.text_selecting = false;
         self.scroll.set_offset(point(px(0.0), px(0.0)));
+        self.ensure_text(cx);
+        self.document_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
         cx.notify();
     }
 
@@ -411,6 +508,10 @@ impl PreviewView {
             *old = Slot::new(id, path);
         }
         self.inspector_refresh();
+        self.text_selection = None;
+        self.text_selecting = false;
+        self.document_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
         self.start_load(self.selected, cx);
         cx.notify();
     }
@@ -429,6 +530,43 @@ impl PreviewView {
         if let Some(slot) = self.slot_mut() {
             slot.current_page = page;
         }
+        cx.notify();
+    }
+
+    // ---- Go to Page (⌥⌘G) -------------------------------------------------
+
+    fn open_go_to_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.slot().and_then(Slot::kind) != Some(Kind::Pdf) {
+            return;
+        }
+        self.go_to_page_open = true;
+        let current = self.slot().map(|slot| slot.current_page + 1).unwrap_or(1);
+        self.go_to_page_input.update(cx, |state, cx| {
+            state.set_value(current.to_string(), window, cx);
+            state.focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    fn close_go_to_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.go_to_page_open = false;
+        window.focus(&self.focus, cx);
+        cx.notify();
+    }
+
+    fn submit_go_to_page(&mut self, cx: &mut Context<Self>) {
+        let value = self.go_to_page_input.read(cx).value().to_string();
+        let pages = self
+            .slot()
+            .and_then(Slot::loaded)
+            .map(Loaded::page_count)
+            .unwrap_or(0);
+        if let Ok(page) = value.trim().parse::<usize>() {
+            if page >= 1 && page <= pages {
+                self.go_to_page(page - 1, cx);
+            }
+        }
+        self.go_to_page_open = false;
         cx.notify();
     }
 
@@ -535,10 +673,25 @@ impl PreviewView {
 
     // ---- copy -------------------------------------------------------------
 
-    /// Edit ▸ Copy: the whole image when nothing is selected (PDF text
-    /// selection is not implemented, so Copy does nothing for PDFs).
+    /// Edit ▸ Copy: the selected PDF text, or the whole image.
     fn copy(&mut self, cx: &mut Context<Self>) {
         let Some(slot) = self.slot() else { return };
+        if slot.kind() == Some(Kind::Pdf) {
+            if let (Some((anchor, focus)), TextState::Ready(pages)) =
+                (self.text_selection, &slot.text)
+            {
+                let (from, to) = ordered(anchor, focus);
+                let text = poppler::selected_text(
+                    pages,
+                    (from.page, from.word, from.char),
+                    (to.page, to.word, to.char),
+                );
+                if !text.is_empty() {
+                    cx.write_to_clipboard(ClipboardItem::new_string(text));
+                }
+            }
+            return;
+        }
         let Some(Content::Image(image)) = slot.loaded().map(|loaded| &loaded.content) else {
             return;
         };
@@ -560,6 +713,324 @@ impl PreviewView {
             }
         })
         .detach();
+    }
+
+    // ---- print --------------------------------------------------------------
+
+    /// File ▸ Print… (⌘P) for a PDF: the document's own bytes go straight to
+    /// the print portal — nothing is re-rendered, so what prints matches
+    /// what's on screen exactly. Printing an image isn't implemented yet
+    /// (see `crate::pdfwriter` for the building block a later pass would use
+    /// to wrap one in a page first, the same way `Export as PDF…` would).
+    #[cfg(target_os = "linux")]
+    fn print_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.print_busy {
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        if slot.kind() != Some(Kind::Pdf) {
+            eprintln!("rmac-preview: printing an image isn't supported yet");
+            return;
+        }
+        let path = slot.path.clone();
+        let title = slot.name.clone();
+        let raw_window =
+            raw_window_handle::HasWindowHandle::window_handle(window).map(|handle| handle.as_raw());
+        let raw_display = raw_window_handle::HasDisplayHandle::display_handle(window)
+            .map(|handle| handle.as_raw());
+        let (raw_window, raw_display) = match (raw_window, raw_display) {
+            (Ok(raw_window), Ok(raw_display)) => (raw_window, raw_display),
+            _ => {
+                eprintln!("rmac-preview: printing requires the current exported window");
+                return;
+            }
+        };
+        let document_generation = self
+            .document_generation
+            .load(std::sync::atomic::Ordering::Acquire);
+        let request = rmac_print_linux::PreparedPrintDocument {
+            window: raw_window,
+            display: raw_display,
+            window_generation: self.window_generation,
+            document_generation,
+            current_document_generation: self.document_generation.clone(),
+            title,
+            pdf: Vec::new(),
+        };
+        self.print_busy = true;
+        cx.spawn_in(window, async move |this, cx| {
+            let pdf = cx
+                .background_executor()
+                .spawn(async move { std::fs::read(&path) })
+                .await;
+            let outcome = match pdf {
+                Ok(pdf) => rmac_print_linux::print_prepared_document(
+                    rmac_print_linux::PreparedPrintDocument { pdf, ..request },
+                )
+                .await
+                .map_err(|error| error.to_string()),
+                Err(error) => Err(format!(
+                    "the document could not be read to print it: {error}"
+                )),
+            };
+            let _ = this.update_in(cx, |this, _, cx| {
+                this.print_busy = false;
+                if let Err(error) = outcome {
+                    eprintln!("rmac-preview: could not print: {error}");
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn print_document(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
+        eprintln!("rmac-preview: printing is implemented for the supported Linux session");
+    }
+
+    // ---- PDF text selection -------------------------------------------------
+
+    /// Edit ▸ Select All for a PDF: the whole document's extracted text.
+    fn select_all(&mut self, cx: &mut Context<Self>) {
+        let Some(slot) = self.slot() else { return };
+        if slot.kind() != Some(Kind::Pdf) {
+            return;
+        }
+        let TextState::Ready(pages) = &slot.text else {
+            return;
+        };
+        let Some(last_page) = pages.len().checked_sub(1) else {
+            return;
+        };
+        let last_word = pages[last_page].words.len().saturating_sub(1);
+        let last_chars = pages[last_page]
+            .words
+            .get(last_word)
+            .map(|word| word.text.chars().count())
+            .unwrap_or(0);
+        self.text_selection = Some((
+            TextPos {
+                page: 0,
+                word: 0,
+                char: 0,
+            },
+            TextPos {
+                page: last_page,
+                word: last_word,
+                char: last_chars,
+            },
+        ));
+        cx.notify();
+    }
+
+    /// Maps a window-space point onto the current PDF's page geometry: the
+    /// page index and that page's unit coordinates (0‥1), already displayed
+    /// (i.e. after the viewer's rotation).
+    fn screen_to_page_point(
+        &self,
+        position: gpui::Point<gpui::Pixels>,
+    ) -> Option<(usize, (f32, f32))> {
+        let slot = self.slot()?;
+        if slot.kind() != Some(Kind::Pdf) {
+            return None;
+        }
+        let left = metrics::document_left(self.sidebar);
+        let scale = slot.zoom.resolve(slot.fit_scale(self.viewport));
+        let sizes = slot.page_sizes();
+        let layout = layout::continuous(&sizes, scale, self.viewport.0);
+        let scroll_x = -f32::from(self.scroll.offset().x);
+        let scroll_y = -f32::from(self.scroll.offset().y);
+        let doc_x = f32::from(position.x) - left + scroll_x;
+        let doc_y = f32::from(position.y) - metrics::TOOLBAR_HEIGHT + scroll_y;
+        layout::point_to_page(&layout.pages, (doc_x, doc_y))
+    }
+
+    /// The word/character position under a window-space point, in the raw
+    /// (unrotated) text-extraction space `poppler::hit_test` works in.
+    fn hit_test_text(&self, position: gpui::Point<gpui::Pixels>) -> Option<TextPos> {
+        let (page, unit) = self.screen_to_page_point(position)?;
+        let slot = self.slot()?;
+        let TextState::Ready(pages) = &slot.text else {
+            return None;
+        };
+        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect {
+            x0: unit.0,
+            y0: unit.1,
+            x1: unit.0,
+            y1: unit.1,
+        });
+        let (word, char) = poppler::hit_test(pages, page, (raw.x0, raw.y0))?;
+        Some(TextPos { page, word, char })
+    }
+
+    /// ⌘-click a plain `http(s)://` URL in the extracted text (see the
+    /// module notes for why only literal URL text is followed, not the
+    /// document's own `/Link` annotations).
+    fn link_at(&self, position: gpui::Point<gpui::Pixels>) -> Option<String> {
+        let (page, unit) = self.screen_to_page_point(position)?;
+        let slot = self.slot()?;
+        let TextState::Ready(pages) = &slot.text else {
+            return None;
+        };
+        let raw = slot.rotation.inverse().apply_unit_rect(layout::UnitRect {
+            x0: unit.0,
+            y0: unit.1,
+            x1: unit.0,
+            y1: unit.1,
+        });
+        let text_page = pages.get(page)?;
+        poppler::find_links(text_page)
+            .into_iter()
+            .find(|(_, rect, _)| {
+                raw.x0 >= rect.x0 && raw.x0 <= rect.x1 && raw.y0 >= rect.y0 && raw.y0 <= rect.y1
+            })
+            .map(|(_, _, uri)| uri)
+    }
+
+    fn open_link(&mut self, uri: String, cx: &mut Context<Self>) {
+        cx.spawn(async move |_, _cx| {
+            if let Err(error) = rmac_portal::open_uri(&uri).await {
+                eprintln!("rmac-preview: could not open the link: {error}");
+            }
+        })
+        .detach();
+    }
+
+    fn text_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.button != MouseButton::Left {
+            return;
+        }
+        if event.modifiers.platform {
+            if let Some(uri) = self.link_at(event.position) {
+                self.open_link(uri, cx);
+                return;
+            }
+        }
+        let Some(pos) = self.hit_test_text(event.position) else {
+            self.text_selection = None;
+            cx.notify();
+            return;
+        };
+        window.focus(&self.focus, cx);
+        match event.click_count {
+            2 => {
+                let Some(slot) = self.slot() else { return };
+                let TextState::Ready(pages) = &slot.text else {
+                    return;
+                };
+                let chars = pages
+                    .get(pos.page)
+                    .and_then(|page| page.words.get(pos.word))
+                    .map(|word| word.text.chars().count())
+                    .unwrap_or(0);
+                self.text_selection = Some((
+                    TextPos {
+                        page: pos.page,
+                        word: pos.word,
+                        char: 0,
+                    },
+                    TextPos {
+                        page: pos.page,
+                        word: pos.word,
+                        char: chars,
+                    },
+                ));
+                self.text_selecting = false;
+            }
+            count if count >= 3 => {
+                let Some(slot) = self.slot() else { return };
+                let TextState::Ready(pages) = &slot.text else {
+                    return;
+                };
+                let Some(text_page) = pages.get(pos.page) else {
+                    return;
+                };
+                let (first, last) = poppler::line_bounds(text_page, pos.word);
+                let last_chars = text_page
+                    .words
+                    .get(last)
+                    .map(|word| word.text.chars().count())
+                    .unwrap_or(0);
+                self.text_selection = Some((
+                    TextPos {
+                        page: pos.page,
+                        word: first,
+                        char: 0,
+                    },
+                    TextPos {
+                        page: pos.page,
+                        word: last,
+                        char: last_chars,
+                    },
+                ));
+                self.text_selecting = false;
+            }
+            _ => {
+                self.text_selection = Some((pos, pos));
+                self.text_selecting = true;
+            }
+        }
+        cx.stop_propagation();
+        cx.notify();
+    }
+
+    fn text_mouse_move(&mut self, event: &MouseMoveEvent, cx: &mut Context<Self>) {
+        if !self.text_selecting {
+            return;
+        }
+        let Some(pos) = self.hit_test_text(event.position) else {
+            return;
+        };
+        if let Some((anchor, _)) = self.text_selection {
+            self.text_selection = Some((anchor, pos));
+            cx.notify();
+        }
+    }
+
+    fn text_mouse_up(&mut self, cx: &mut Context<Self>) {
+        if self.text_selecting {
+            self.text_selecting = false;
+            cx.notify();
+        }
+    }
+
+    /// Selection highlight rectangles per page, already rotated for display.
+    fn selection_highlights(&self, slot: &Slot) -> HashMap<usize, Vec<(layout::UnitRect, u32)>> {
+        let mut map: HashMap<usize, Vec<(layout::UnitRect, u32)>> = HashMap::new();
+        let Some((anchor, focus)) = self.text_selection else {
+            return map;
+        };
+        let TextState::Ready(pages) = &slot.text else {
+            return map;
+        };
+        let (from, to) = ordered(anchor, focus);
+        if from == to {
+            return map;
+        }
+        let color = (palette().selection << 8) | 0x66;
+        for page_index in from.page..=to.page.min(pages.len().saturating_sub(1)) {
+            let Some(text_page) = pages.get(page_index) else {
+                continue;
+            };
+            let from_bound = (page_index == from.page).then_some((from.word, from.char));
+            let to_bound = (page_index == to.page).then_some((to.word, to.char));
+            let rects = poppler::selection_rects(text_page, from_bound, to_bound);
+            if rects.is_empty() {
+                continue;
+            }
+            map.entry(page_index).or_default().extend(
+                rects
+                    .into_iter()
+                    .map(|rect| (slot.rotation.apply_unit_rect(rect), color)),
+            );
+        }
+        map
     }
 
     // ---- search -----------------------------------------------------------
@@ -591,32 +1062,44 @@ impl PreviewView {
                 eprintln!("rmac-preview: PDF text is unavailable: {error}");
             }
             TextState::NotLoaded => {
-                slot.text = TextState::Loading;
                 self.search.waiting = Some(query);
-                let (id, path) = (slot.id, slot.path.clone());
-                cx.spawn(async move |this, cx| {
-                    let text = cx
-                        .background_executor()
-                        .spawn(async move { render::extract_text(&path) })
-                        .await;
-                    let _ = this.update(cx, |view, cx| {
-                        let Some(slot) = view.slots.iter_mut().find(|slot| slot.id == id) else {
-                            return;
-                        };
-                        slot.text = match text {
-                            Ok(pages) => TextState::Ready(Arc::new(pages)),
-                            Err(error) => TextState::Failed(error.into()),
-                        };
-                        if let Some(query) = view.search.waiting.take() {
-                            view.run_search(query, cx);
-                        }
-                        cx.notify();
-                    });
-                })
-                .detach();
+                self.ensure_text(cx);
             }
         }
         cx.notify();
+    }
+
+    /// Load the current slot's word/position text (once) so PDF search, text
+    /// selection, and plain-URL link detection all have it ready.
+    fn ensure_text(&mut self, cx: &mut Context<Self>) {
+        let Some(slot) = self.slots.get_mut(self.selected) else {
+            return;
+        };
+        if slot.kind() != Some(Kind::Pdf) || !matches!(slot.text, TextState::NotLoaded) {
+            return;
+        }
+        slot.text = TextState::Loading;
+        let (id, path) = (slot.id, slot.path.clone());
+        cx.spawn(async move |this, cx| {
+            let text = cx
+                .background_executor()
+                .spawn(async move { render::extract_text(&path) })
+                .await;
+            let _ = this.update(cx, |view, cx| {
+                let Some(slot) = view.slots.iter_mut().find(|slot| slot.id == id) else {
+                    return;
+                };
+                slot.text = match text {
+                    Ok(pages) => TextState::Ready(Arc::new(pages)),
+                    Err(error) => TextState::Failed(error.into()),
+                };
+                if let Some(query) = view.search.waiting.take() {
+                    view.run_search(query, cx);
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn step_match(&mut self, delta: isize, cx: &mut Context<Self>) {
@@ -836,6 +1319,13 @@ impl PreviewView {
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.search_input.focus_handle(cx).is_focused(window) {
+            return;
+        }
+        if self.go_to_page_input.focus_handle(cx).is_focused(window) {
+            if event.keystroke.key == "escape" {
+                self.close_go_to_page(window, cx);
+                cx.stop_propagation();
+            }
             return;
         }
         let modifiers = event.keystroke.modifiers;
@@ -1355,11 +1845,9 @@ impl PreviewView {
     ) -> AnyElement {
         let viewport = self.viewport;
         let scroll_top = -f32::from(self.scroll.offset().y);
+        let is_pdf = self.slot().and_then(Slot::kind) == Some(Kind::Pdf);
         let body = match self.slots.get(self.selected) {
-            None => message(
-                "No document is open. Choose File ▸ Open… to open images or PDF documents.",
-                palette,
-            ),
+            None => self.render_empty_state(palette, cx),
             Some(slot) => match &slot.state {
                 SlotState::Loading => div().into_any_element(),
                 SlotState::Failed(error) => message(error.as_ref(), palette),
@@ -1391,7 +1879,10 @@ impl PreviewView {
                         let visible =
                             layout::visible_pages(&layout.pages, scroll_top, viewport.1, 1);
                         let current = layout::current_page(&layout.pages, scroll_top, viewport.1);
-                        let highlights = self.page_highlights(slot, palette);
+                        let mut highlights = self.page_highlights(slot, palette);
+                        for (page, rects) in self.selection_highlights(slot) {
+                            highlights.entry(page).or_default().extend(rects);
+                        }
                         let pages = visible.map(|page| {
                             let rect = layout.pages[page];
                             render_page(
@@ -1425,8 +1916,96 @@ impl PreviewView {
             .overflow_scroll()
             .track_scroll(&self.scroll)
             .on_scroll_wheel(cx.listener(|_, _: &ScrollWheelEvent, _, cx| cx.notify()))
+            .when(is_pdf, |document| {
+                document
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                            this.text_mouse_down(event, window, cx);
+                        }),
+                    )
+                    .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                        this.text_mouse_move(event, cx);
+                    }))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, _, cx| this.text_mouse_up(cx)),
+                    )
+                    .on_mouse_up_out(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseUpEvent, _, cx| this.text_mouse_up(cx)),
+                    )
+            })
             .child(body)
             .into_any_element()
+    }
+
+    /// The Open panel's placeholder: an explanation plus recently opened
+    /// documents, if any — an in-window stand-in for File ▸ Open Recent,
+    /// which the D-Bus menu bar cannot show as a dynamic submenu.
+    fn render_empty_state(&self, palette: Palette, cx: &mut Context<Self>) -> AnyElement {
+        if self.recent_documents.is_empty() {
+            return message(
+                "No document is open. Choose File ▸ Open… to open images or PDF documents.",
+                palette,
+            );
+        }
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .gap(px(12.0))
+            .child(
+                div()
+                    .text_size(px(13.0))
+                    .text_color(rgb(palette.subtitle))
+                    .child("No document is open. Choose File ▸ Open… or a recent document:"),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    .max_w(px(420.0))
+                    .children(
+                        self.recent_documents
+                            .iter()
+                            .enumerate()
+                            .map(|(index, path)| {
+                                let name = document::display_name(path);
+                                div()
+                                    .id(("preview-recent", index))
+                                    .px(px(10.0))
+                                    .py(px(4.0))
+                                    .rounded(px(6.0))
+                                    .text_size(px(12.0))
+                                    .text_color(rgb(palette.glyph))
+                                    .truncate()
+                                    .active(|style| style.opacity(0.6))
+                                    .child(SharedString::from(name))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.open_recent(index, cx);
+                                    }))
+                            }),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn open_recent(&mut self, index: usize, cx: &mut Context<Self>) {
+        let Some(path) = self.recent_documents.get(index).cloned() else {
+            return;
+        };
+        if self.slots.is_empty() {
+            let id = self.next_id;
+            self.next_id += 1;
+            self.slots.push(Slot::new(id, path));
+            self.selected = 0;
+            self.start_load(0, cx);
+            cx.notify();
+        }
     }
 
     /// Search highlight rectangles per page, in page-relative unit space
@@ -1581,6 +2160,77 @@ impl PreviewView {
                 .children(cards),
         )
     }
+
+    /// Go ▸ Go to Page… (⌥⌘G): a small centred field over the document.
+    fn render_go_to_page(&self, palette: Palette, width: f32, height: f32) -> impl IntoElement {
+        let pages = self
+            .slot()
+            .and_then(Slot::loaded)
+            .map(Loaded::page_count)
+            .unwrap_or(0);
+        div()
+            .id("preview-go-to-page")
+            .absolute()
+            .left(px((width - 220.0) / 2.0))
+            .top(px(height / 3.0))
+            .w(px(220.0))
+            .rounded(px(10.0))
+            .bg(rgb(palette.card))
+            .border_1()
+            .border_color(rgb(palette.card_separator))
+            .shadow_lg()
+            .p(px(10.0))
+            .flex()
+            .flex_col()
+            .gap(px(8.0))
+            .child(
+                div()
+                    .text_size(px(12.0))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(rgb(palette.glyph))
+                    .child(SharedString::from(format!("Go to page (1–{pages})"))),
+            )
+            .child(rmac_ui::TextField::new(&self.go_to_page_input).small())
+            .into_any_element()
+    }
+}
+
+/// Recents shown in the empty-window state: capped so a long shared history
+/// (Files and other apps add to the same store) never floods one small list.
+const MAX_RECENTS_SHOWN: usize = 10;
+
+fn is_openable_document(path: &Path) -> bool {
+    let name = path.to_string_lossy();
+    name.to_ascii_lowercase().ends_with(".pdf") || document::has_image_extension(&name)
+}
+
+/// The documents Preview (and any other rmac app) has opened lately, newest
+/// first, filtered to what Preview can itself open.
+fn load_recent_documents() -> Vec<PathBuf> {
+    let Ok(store) = rmac_recent_documents::Store::from_environment() else {
+        return Vec::new();
+    };
+    let Ok(snapshot) = store.load() else {
+        return Vec::new();
+    };
+    snapshot
+        .paths
+        .into_iter()
+        .filter(|path| is_openable_document(path))
+        .take(MAX_RECENTS_SHOWN)
+        .collect()
+}
+
+/// Records an opened document in the shared Recents store, off the render
+/// thread (it touches disk).
+fn record_recent_document(path: PathBuf, cx: &mut Context<PreviewView>) {
+    cx.background_executor()
+        .spawn(async move {
+            if let Ok(store) = rmac_recent_documents::Store::from_environment() {
+                let _ = store.record(&path);
+            }
+        })
+        .detach();
 }
 
 fn image_thumbnail(slot: &Slot) -> Option<Arc<RenderImage>> {
@@ -1680,6 +2330,13 @@ impl Render for PreviewView {
                 this.on_key_down(event, window, cx);
             }))
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
+            .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
+            .on_action(cx.listener(|this, _: &GoToPage, window, cx| {
+                this.open_go_to_page(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &PrintDocument, window, cx| {
+                this.print_document(window, cx);
+            }))
             .on_action(cx.listener(|this, _: &Find, window, cx| {
                 if this.slot().and_then(Slot::kind) == Some(Kind::Pdf) {
                     this.search_input
@@ -1719,5 +2376,8 @@ impl Render for PreviewView {
             .children(self.render_inspector(palette, width, height))
             .child(self.render_toolbar(palette, width, window, cx))
             .children(menu)
+            .when(self.go_to_page_open, |root| {
+                root.child(self.render_go_to_page(palette, width, height))
+            })
     }
 }

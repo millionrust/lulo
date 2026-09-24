@@ -34,6 +34,9 @@ gpui::actions!(
         ShowInspector,
         RotateLeft,
         RotateRight,
+        SelectAll,
+        GoToPage,
+        PrintDocument,
     ]
 );
 
@@ -71,6 +74,9 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new(shortcuts::OPEN.keystroke, OpenFile, None),
         KeyBinding::new(shortcuts::CLOSE.keystroke, CloseWindow, context),
         KeyBinding::new(shortcuts::COPY.keystroke, Copy, context),
+        KeyBinding::new(shortcuts::SELECT_ALL.keystroke, SelectAll, context),
+        KeyBinding::new("alt-cmd-g", GoToPage, context),
+        KeyBinding::new(shortcuts::PRINT.keystroke, PrintDocument, context),
         KeyBinding::new(shortcuts::FIND.keystroke, Find, context),
         KeyBinding::new(shortcuts::FIND_NEXT.keystroke, FindNext, context),
         KeyBinding::new(shortcuts::FIND_PREVIOUS.keystroke, FindPrevious, context),

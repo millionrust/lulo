@@ -6,21 +6,30 @@
 //! ⌥←/⌥→ move by word, ⌘←/⌘→ reach the line ends, and the Emacs keys
 //! (⌃A/⌃E/⌃K/⌃D/⌃H/⌃F/⌃B) edit as in Cocoa text fields instead of acting as
 //! PC shortcuts.
+//!
+//! A text field binds only keys it acts on. A binding in the "Input"
+//! context outranks the app's own binding for the same key, and a handler
+//! that returns without acting still consumes the key, so a key the field
+//! does not use must not be bound here: the app's menu command for it has
+//! to win, as an AppKit key equivalent does. ⌘F is the case in point: it
+//! was bound to the field's own search, which rmac never enables, so ⌘F
+//! typed in Text Editor's body or a Notes field did nothing instead of
+//! opening Find (MENU-10).
 
 use gpui::{App, KeyBinding};
 
 pub(crate) fn init(cx: &mut App) {
     // macOS already receives these from gpui-component.
     if cfg!(not(target_os = "macos")) {
-        bind(cx);
+        cx.bind_keys(bindings());
     }
 }
 
-fn bind(cx: &mut App) {
+fn bindings() -> Vec<KeyBinding> {
     use gpui_component::input::*;
 
     const CONTEXT: Option<&str> = Some("Input");
-    cx.bind_keys([
+    vec![
         KeyBinding::new("cmd-backspace", DeleteToBeginningOfLine, CONTEXT),
         KeyBinding::new("cmd-delete", DeleteToEndOfLine, CONTEXT),
         KeyBinding::new("alt-backspace", DeleteToPreviousWordStart, CONTEXT),
@@ -57,6 +66,21 @@ fn bind(cx: &mut App) {
         KeyBinding::new("alt-right", MoveToNextWord, CONTEXT),
         KeyBinding::new("cmd-shift-up", SelectToStart, CONTEXT),
         KeyBinding::new("cmd-shift-down", SelectToEnd, CONTEXT),
-        KeyBinding::new("cmd-f", Search, CONTEXT),
-    ]);
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bindings;
+
+    #[test]
+    fn text_fields_leave_find_to_the_apps_menu() {
+        let bindings = bindings();
+        assert!(!bindings.is_empty());
+        // No rmac text field is searchable, so the field's own search
+        // would swallow ⌘F without doing anything.
+        assert!(bindings
+            .iter()
+            .all(|binding| binding.action().name() != "input::Search"));
+    }
 }

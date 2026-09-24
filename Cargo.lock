@@ -6271,7 +6271,6 @@ dependencies = [
  "chrono",
  "gpui",
  "gpui-component",
- "gpui-component-assets",
  "libc",
  "rmac-app-launch",
  "rmac-apps",

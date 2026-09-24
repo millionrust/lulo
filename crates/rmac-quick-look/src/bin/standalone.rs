@@ -15,25 +15,23 @@ use std::path::PathBuf;
 
 use gpui::{App, AssetSource, Result, SharedString};
 
+// The panel draws entirely through its own embedded SVGs (content.rs,
+// metrics.rs) and gpui-component's window-chrome wrapper only — no
+// gpui-component widget here needs the bundled icon/font assets those
+// widgets normally read through gpui-component-assets, so this asset
+// source stays scoped to what Quick Look itself ships.
 struct Assets;
 
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
-        if let Some(data) = rmac_quick_look::asset(path) {
-            return Ok(Some(data));
-        }
-        gpui_component_assets::Assets.load(path)
+        Ok(rmac_quick_look::asset(path))
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
-        let mut assets = rmac_quick_look::asset_paths(path)
+        Ok(rmac_quick_look::asset_paths(path)
             .into_iter()
             .map(SharedString::from)
-            .collect::<Vec<_>>();
-        if let Ok(mut component_assets) = gpui_component_assets::Assets.list(path) {
-            assets.append(&mut component_assets);
-        }
-        Ok(assets)
+            .collect())
     }
 }
 

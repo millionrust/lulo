@@ -13,7 +13,6 @@ publish = false
 chrono.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
-gpui-component-assets.workspace = true
 libc.workspace = true
 rmac-app-launch.workspace = true
 rmac-apps.workspace = true

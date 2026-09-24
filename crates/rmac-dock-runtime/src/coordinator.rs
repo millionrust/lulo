@@ -24,7 +24,7 @@ impl Coordinator {
                 )
             },
         );
-        let model = model.with_recent_applications(&self.recents, &self.catalog);
+        let model = model.with_recent_applications(&self.recents, &self.catalog, &self.superseded);
         let outputs = rmac_dock::surface_outputs(
             &compositor,
             &self.settings.dock.outputs,
@@ -149,6 +149,10 @@ impl Coordinator {
         match result {
             Ok(catalog) => {
                 self.catalog = catalog;
+                // Refreshed alongside the catalog rather than per snapshot: it
+                // is packaging state that only changes on an rmac-apps
+                // upgrade, not on every render.
+                self.superseded = rmac_apps::superseded_desktop_ids();
                 self.health.catalog = SourceHealth::Healthy;
             }
             Err(detail) => self.health.catalog = SourceHealth::Unavailable { detail },

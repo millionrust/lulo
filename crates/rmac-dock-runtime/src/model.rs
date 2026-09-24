@@ -116,6 +116,11 @@ pub struct Coordinator {
     pub(super) compositor: rmac_compositor::State,
     pub(super) settings: rmac_shell_settings::ShellSettings,
     pub(super) catalog: Vec<rmac_apps::Application>,
+    /// The "superseded in Lulo OS" desktop-ID list, refreshed alongside
+    /// `catalog`. Only the Dock's quit-app suggestion strip consults it
+    /// (`Coordinator::snapshot`); pinned and running items always resolve
+    /// against the full `catalog` above.
+    pub(super) superseded: std::collections::HashMap<String, String>,
     pub(super) places: Option<rmac_places::Snapshot>,
     pub(super) primary_output: Option<rmac_compositor::OutputId>,
     pub(super) reduced_motion: bool,

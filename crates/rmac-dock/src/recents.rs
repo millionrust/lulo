@@ -8,7 +8,7 @@
 //! Running apps are never evicted, so more than three may show while that
 //! many are open. Dragging an app out of the section removes it.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::{canonical_app_id, Item, Model};
 
@@ -88,10 +88,18 @@ impl Model {
     /// Order the not-kept section by `recent` and add the recent apps that
     /// have quit, without a running dot. Only installed apps are added; a
     /// running app keeps its place even if it is missing from `recent`.
+    ///
+    /// `superseded` is the "superseded in Lulo OS" desktop-ID list
+    /// (`rmac_apps::superseded_desktop_ids`): a quit app on that list is not
+    /// re-suggested here, the way Nautilus does not reappear as a Files
+    /// suggestion once it is closed. A currently running instance is
+    /// unaffected -- it is already in `self.items` from `Model::build`, which
+    /// resolves windows against the full, unfiltered catalog.
     pub fn with_recent_applications(
         mut self,
         recent: &[String],
         catalog: &[rmac_apps::Application],
+        superseded: &HashMap<String, String>,
     ) -> Self {
         let applications = crate::catalog_index(catalog);
         let pinned_len = self.items.iter().take_while(|item| item.pinned).count();
@@ -108,6 +116,9 @@ impl Model {
                 continue;
             }
             if let Some(application) = applications.get(&canonical) {
+                if superseded.contains_key(&application.id) {
+                    continue;
+                }
                 section.push(crate::build_item(
                     &application.id,
                     Some(*application),
@@ -219,6 +230,7 @@ mod tests {
                 "files.desktop",
             ]),
             &catalog,
+            &HashMap::new(),
         );
         let names: Vec<_> = model.items.iter().map(|item| item.name.as_str()).collect();
         assert_eq!(names, ["Files", "Clock", "Weather"]);
@@ -228,6 +240,31 @@ mod tests {
             model.activate("clock.desktop"),
             crate::Activation::Launch { .. }
         ));
+    }
+
+    #[test]
+    fn a_quit_superseded_app_is_not_suggested_again() {
+        let catalog = [
+            application("org.gnome.nautilus.desktop", "Files"),
+            application("clock.desktop", "Clock"),
+        ];
+        let superseded = HashMap::from([(
+            "org.gnome.nautilus.desktop".to_string(),
+            "org.rmac.Files".to_string(),
+        )]);
+        let model = Model::build(
+            &[],
+            &Default::default(),
+            &catalog,
+            &rmac_compositor::Snapshot::default(),
+        )
+        .with_recent_applications(
+            &ids(&["org.gnome.nautilus.desktop", "clock.desktop"]),
+            &catalog,
+            &superseded,
+        );
+        let names: Vec<_> = model.items.iter().map(|item| item.name.as_str()).collect();
+        assert_eq!(names, ["Clock"]);
     }
 
     #[test]

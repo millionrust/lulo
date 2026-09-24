@@ -2,6 +2,16 @@
 
 use super::*;
 
+/// One persisted `DockStackEntry` resolved against the live filesystem. The
+/// existence check is the caller's I/O to make (a background executor task
+/// in the resident Dock, or the dispatch layer's snapshot builder); `Model`
+/// itself never touches the filesystem.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedStack {
+    pub entry: rmac_shell_settings::DockStackEntry,
+    pub available: bool,
+}
+
 impl Model {
     pub fn build(
         pinned: &[rmac_shell_settings::AppId],
@@ -9,7 +19,7 @@ impl Model {
         catalog: &[rmac_apps::Application],
         compositor: &rmac_compositor::Snapshot,
     ) -> Self {
-        Self::build_inner(pinned, settings, catalog, compositor, None)
+        Self::build_inner(pinned, settings, catalog, compositor, None, &[])
     }
 
     pub fn build_with_places(
@@ -19,7 +29,21 @@ impl Model {
         compositor: &rmac_compositor::Snapshot,
         places: &rmac_places::Snapshot,
     ) -> Self {
-        Self::build_inner(pinned, settings, catalog, compositor, Some(places))
+        Self::build_inner(pinned, settings, catalog, compositor, Some(places), &[])
+    }
+
+    /// As `build_with_places`, and also projects folder/file stacks kept
+    /// left of the Trash. `stacks` is the persisted configuration resolved
+    /// against the filesystem by the caller (see `ResolvedStack`).
+    pub fn build_with_stacks(
+        pinned: &[rmac_shell_settings::AppId],
+        settings: &rmac_shell_settings::DockSettings,
+        catalog: &[rmac_apps::Application],
+        compositor: &rmac_compositor::Snapshot,
+        places: &rmac_places::Snapshot,
+        stacks: &[ResolvedStack],
+    ) -> Self {
+        Self::build_inner(pinned, settings, catalog, compositor, Some(places), stacks)
     }
 
     fn build_inner(
@@ -28,6 +52,7 @@ impl Model {
         catalog: &[rmac_apps::Application],
         compositor: &rmac_compositor::Snapshot,
         places: Option<&rmac_places::Snapshot>,
+        stacks: &[ResolvedStack],
     ) -> Self {
         let applications = catalog_index(catalog);
         let mut windows = window_groups(compositor);
@@ -74,6 +99,7 @@ impl Model {
         Self {
             items,
             special_items: places.map(project_special_items).unwrap_or_default(),
+            stacks: project_stacks(stacks, places),
             minimized,
             repeated_click: settings.repeated_click,
         }
@@ -97,6 +123,32 @@ impl Model {
                 kind,
                 detail: "the place is not present in the Dock".into(),
             })
+    }
+
+    pub fn activate_stack(&self, kind: &rmac_shell_settings::DockStackKind) -> StackActivation {
+        self.stacks
+            .iter()
+            .find(|stack| &stack.kind == kind)
+            .map(|stack| stack.activation.clone())
+            .unwrap_or_else(|| StackActivation::Unavailable {
+                kind: kind.clone(),
+                detail: "the stack is not present in the Dock".into(),
+            })
+    }
+
+    pub fn stack_context_menu(
+        &self,
+        kind: &rmac_shell_settings::DockStackKind,
+    ) -> Option<StackContextMenu> {
+        let stack = self.stacks.iter().find(|stack| &stack.kind == kind)?;
+        Some(StackContextMenu {
+            kind: stack.kind.clone(),
+            name: stack.name.clone(),
+            open: stack.activation.clone(),
+            display_as: stack.display_as,
+            view_content_as: stack.view_content_as,
+            sort_by: stack.sort_by,
+        })
     }
 
     pub fn special_context_menu(&self, kind: SpecialItemKind) -> Option<SpecialContextMenu> {
@@ -416,6 +468,54 @@ pub(super) fn project_special_items(places: &rmac_places::Snapshot) -> Vec<Speci
     // tail. Until folder stacks have a persisted configuration authority, the
     // only permanent Dock endpoint is the authoritative desktop Trash.
     vec![trash]
+}
+
+/// Project persisted, filesystem-resolved stack configuration into the
+/// shelf's stack group, kept between the application group and the special
+/// items so Trash stays rightmost (§ folder/file stacks).
+pub(super) fn project_stacks(
+    stacks: &[ResolvedStack],
+    places: Option<&rmac_places::Snapshot>,
+) -> Vec<StackPlace> {
+    stacks
+        .iter()
+        .map(|resolved| {
+            let (name, path) = match &resolved.entry.kind {
+                rmac_shell_settings::DockStackKind::Downloads => (
+                    "Downloads".to_owned(),
+                    places.map(|places| places.downloads.path.clone()),
+                ),
+                rmac_shell_settings::DockStackKind::Path { path } => {
+                    let path_buf = PathBuf::from(path);
+                    let name = path_buf
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| path.clone());
+                    (name, Some(path_buf))
+                }
+            };
+            let activation = match (resolved.available, path) {
+                (true, Some(path)) => StackActivation::OpenPopover {
+                    kind: resolved.entry.kind.clone(),
+                    path,
+                },
+                _ => StackActivation::Unavailable {
+                    kind: resolved.entry.kind.clone(),
+                    detail: "the stack's folder is unavailable".into(),
+                },
+            };
+            StackPlace {
+                kind: resolved.entry.kind.clone(),
+                name,
+                available: matches!(activation, StackActivation::OpenPopover { .. }),
+                display_as: resolved.entry.display_as,
+                view_content_as: resolved.entry.view_content_as,
+                sort_by: resolved.entry.sort_by,
+                activation,
+            }
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug)]

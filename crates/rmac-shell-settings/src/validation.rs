@@ -16,6 +16,36 @@ pub(super) fn validate(settings: &ShellSettings, path: &Path) -> Result<(), Erro
             return Err(invalid(path, "pinned applications must be unique"));
         }
     }
+    if settings.dock_stacks.len() > MAX_DOCK_STACKS {
+        return Err(invalid(path, "Dock stacks exceed the 32-item safety limit"));
+    }
+    let mut stacks = BTreeSet::new();
+    for stack in &settings.dock_stacks {
+        let key = match &stack.kind {
+            DockStackKind::Downloads => "downloads".to_owned(),
+            DockStackKind::Path { path: stack_path } => {
+                validate_identifier(stack_path, "Dock stack path", path)?;
+                let normalized = Path::new(stack_path);
+                if !normalized.is_absolute()
+                    || normalized.components().any(|component| {
+                        matches!(
+                            component,
+                            std::path::Component::CurDir | std::path::Component::ParentDir
+                        )
+                    })
+                {
+                    return Err(invalid(
+                        path,
+                        "Dock stack path must be a normalized absolute path",
+                    ));
+                }
+                format!("path:{stack_path}")
+            }
+        };
+        if !stacks.insert(key) {
+            return Err(invalid(path, "Dock stacks must be unique"));
+        }
+    }
     if !(1.0..=2.5).contains(&settings.dock.magnification_scale)
         || !settings.dock.magnification_scale.is_finite()
     {

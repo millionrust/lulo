@@ -13,6 +13,7 @@ mod pins;
 pub mod presentation;
 pub mod recents;
 pub mod reorder;
+mod stacks;
 mod surfaces;
 #[cfg(test)]
 mod tests;
@@ -20,6 +21,7 @@ mod tests;
 use dock::*;
 pub use model::*;
 pub use pins::*;
+pub use stacks::*;
 pub use surfaces::*;
 
 use std::cmp::Reverse;

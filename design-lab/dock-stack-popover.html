@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dock stack popover — S (unmeasured)</title>
+<link rel="stylesheet" href="tokens.css">
+<!--
+  Fan and Grid popovers for a Dock folder/file stack (§ folder/file stacks
+  left of the Trash), plus the Downloads special stack icon and the stack's
+  right-click menu. This mock has NOT been measured against the owner's Mac
+  (no mac.lock capture session in this pass) — every popover-specific value
+  below is marked S and is a starting point, not a spec. `design-lab/dock.html`
+  remains the measured source for the shelf/tile geometry the stack icon
+  itself sits in; this file only adds the popover.
+
+  S values used here (all to be replaced by measured captures):
+    popover corner radius     14px   (matches --radius-popover if present,
+                                       else a guess between menu/card radius)
+    popover padding            10px
+    grid cell                  72px square, 8px gap
+    grid columns                4 (macOS scales this with item count/screen)
+    fan item size               64px, largest (front) item full size,
+                                 each item behind 0.92x scale, 6px stagger,
+                                 ±6deg rotation — S, not measured
+    fan item count shown         3 (+ "N more" is not modeled here)
+
+  All icons on this page are original CSS/SVG shapes (rounded folders,
+  plain document rectangles) — no artwork traced from macOS.
+-->
+<style>
+  :root {
+    --t: 64px; /* Dock tile size, matches design-lab/dock.html's T=64 capture */
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: #1b1c20;
+    font-family: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif;
+    color: var(--label);
+    display: flex;
+    flex-direction: column;
+    gap: 48px;
+    align-items: center;
+    padding: 64px 24px;
+  }
+  h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--label-2);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin: 0 0 16px;
+  }
+  .scene { position: relative; }
+
+  /* ---------- Dock strip (abbreviated; see dock.html for the real shelf) */
+  .dock {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    padding: 10px;
+    border-radius: 28.5px;
+    background: var(--mat-dock);
+    border: 1px solid var(--mat-dock-border);
+    backdrop-filter: blur(40px) saturate(180%);
+  }
+  .tile {
+    width: var(--t);
+    height: var(--t);
+    border-radius: calc(var(--t) * 0.203);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .separator {
+    width: 1px;
+    height: calc(var(--t) * 0.97);
+    background: rgba(255,255,255,.33);
+    align-self: center;
+    margin: 0 6px;
+  }
+
+  /* ---------- original folder/document artwork (S geometry, not traced) */
+  .folder-icon {
+    width: 100%; height: 100%;
+  }
+  .doc-icon { width: 70%; height: 82%; }
+
+  .downloads-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .downloads-badge svg { width: 11px; height: 11px; }
+
+  /* ---------- Fan popover ---------------------------------------------- */
+  .fan-popover {
+    position: absolute;
+    bottom: calc(var(--t) + 22px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 220px;
+    height: 130px;
+  }
+  .fan-item {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 64px;
+    height: 64px;
+    margin-left: -32px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 22px rgba(0,0,0,.35);
+    transform-origin: 50% 100%;
+  }
+  .fan-item .label {
+    position: absolute;
+    bottom: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: var(--label-2);
+    white-space: nowrap;
+  }
+  .fan-item.back  { transform: translate(-46px, 4px) rotate(-8deg) scale(.92); z-index: 1; opacity: .85; }
+  .fan-item.mid   { transform: translate(46px, 4px) rotate(8deg) scale(.92); z-index: 1; opacity: .85; }
+  .fan-item.front { transform: translate(0, -8px) rotate(0deg) scale(1); z-index: 2; }
+  .fan-item .doc-icon { background: transparent; }
+
+  /* ---------- Grid popover ---------------------------------------------- */
+  .grid-popover {
+    position: absolute;
+    bottom: calc(var(--t) + 14px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 328px;
+    padding: 10px;
+    border-radius: 14px;
+    background: var(--mat-popover);
+    border: 1px solid var(--separator-strong);
+    backdrop-filter: blur(40px) saturate(180%);
+    box-shadow: 0 24px 48px rgba(0,0,0,.45);
+  }
+  .grid-title {
+    font-size: 11px;
+    color: var(--label-3);
+    padding: 2px 4px 8px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 72px);
+    gap: 8px;
+  }
+  .cell {
+    width: 72px;
+    height: 84px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    padding-top: 8px;
+  }
+  .cell:hover { background: var(--hover); }
+  .cell-icon { width: 40px; height: 40px; }
+  .cell-label {
+    font-size: 10.5px;
+    color: var(--label-2);
+    text-align: center;
+    max-width: 64px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ---------- context menu (Sort by / Display as / View content as) ---- */
+  .menu {
+    position: absolute;
+    bottom: calc(var(--t) + 14px);
+    left: 50%;
+    transform: translateX(-8px);
+    width: 232px;
+    padding: 6px;
+    border-radius: 10px;
+    background: var(--mat-menu);
+    border: 1px solid var(--separator-strong);
+    backdrop-filter: blur(50px) saturate(180%);
+    box-shadow: 0 20px 40px rgba(0,0,0,.5);
+    font-size: 13px;
+  }
+  .menu-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 10px;
+    border-radius: 6px;
+    color: var(--label);
+  }
+  .menu-row.submenu-parent::after { content: "›"; color: var(--label-3); }
+  .menu-row.checked::before { content: "✓ "; color: var(--label); margin-right: 2px; }
+  .menu-row:hover { background: var(--accent); color: var(--on-accent); }
+  .menu-sep { height: 1px; background: var(--separator); margin: 4px 6px; }
+</style>
+</head>
+<body>
+
+<div class="scene">
+  <h2>Downloads stack (special icon) — resting</h2>
+  <div class="dock">
+    <div class="tile"><svg class="doc-icon" viewBox="0 0 100 100"><rect x="14" y="8" width="72" height="86" rx="8" fill="#EDEDED"/><rect x="24" y="24" width="52" height="6" rx="3" fill="#B8B8B8"/><rect x="24" y="38" width="52" height="6" rx="3" fill="#B8B8B8"/><rect x="24" y="52" width="32" height="6" rx="3" fill="#B8B8B8"/></svg></div>
+    <div class="tile" aria-label="Downloads, stack">
+      <svg class="folder-icon" viewBox="0 0 100 100"><path d="M8 30c0-4 3-7 7-7h20c2 0 4 1 5 3l4 5h41c4 0 7 3 7 7v43c0 4-3 7-7 7H15c-4 0-7-3-7-7z" fill="#3E8FE0"/><path d="M8 42c0-4 3-7 7-7h70c4 0 7 3 7 7v34c0 4-3 7-7 7H15c-4 0-7-3-7-7z" fill="#6FB2F5"/></svg>
+      <div class="downloads-badge"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 11l5 5 5-5"/></svg></div>
+    </div>
+    <div class="separator"></div>
+    <div class="tile"><svg viewBox="0 0 100 100"><rect x="14" y="16" width="72" height="66" rx="6" fill="#8E8E93"/></svg></div>
+  </div>
+</div>
+
+<div class="scene">
+  <h2>Fan popover — click the stack, "Display as: Stack, View content as: Fan"</h2>
+  <div class="dock" style="padding-top:150px;">
+    <div class="fan-popover">
+      <div class="fan-item back"><svg class="doc-icon" viewBox="0 0 100 100"><rect x="14" y="8" width="72" height="86" rx="8" fill="#EDEDED"/><rect x="24" y="24" width="52" height="6" rx="3" fill="#B8B8B8"/></svg><div class="label">invoice.pdf</div></div>
+      <div class="fan-item mid"><svg class="doc-icon" viewBox="0 0 100 100"><rect x="14" y="8" width="72" height="86" rx="8" fill="#EDEDED"/><rect x="24" y="24" width="52" height="6" rx="3" fill="#B8B8B8"/></svg><div class="label">photo.png</div></div>
+      <div class="fan-item front"><svg class="doc-icon" viewBox="0 0 100 100"><rect x="14" y="8" width="72" height="86" rx="8" fill="#F5F5F5"/><rect x="24" y="24" width="52" height="6" rx="3" fill="#9A9A9A"/><rect x="24" y="38" width="52" height="6" rx="3" fill="#9A9A9A"/></svg><div class="label">notes.txt — newest</div></div>
+    </div>
+    <div class="tile">
+      <svg class="folder-icon" viewBox="0 0 100 100"><path d="M8 30c0-4 3-7 7-7h20c2 0 4 1 5 3l4 5h41c4 0 7 3 7 7v43c0 4-3 7-7 7H15c-4 0-7-3-7-7z" fill="#3E8FE0"/><path d="M8 42c0-4 3-7 7-7h70c4 0 7 3 7 7v34c0 4-3 7-7 7H15c-4 0-7-3-7-7z" fill="#6FB2F5"/></svg>
+      <div class="downloads-badge"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 11l5 5 5-5"/></svg></div>
+    </div>
+  </div>
+</div>
+
+<div class="scene">
+  <h2>Grid popover — "View content as: Grid", newest first</h2>
+  <div class="dock" style="padding-top:230px;">
+    <div class="grid-popover">
+      <div class="grid-title">Downloads · Date Added</div>
+      <div class="grid">
+        <div class="cell"><svg class="cell-icon" viewBox="0 0 100 100"><rect x="14" y="8" width="72" height="86" rx="8" fill="#F5F5F5"/><rect x="24" y="24" width="52" height="6" rx="3" fill="#9A9A9A"/></svg><div class="cell-label">notes.txt</div></div>
+        <div class="cell"><svg class="cell-icon" viewBox="0 0 100 100"><rect x="14" y="8" width="72" height="86" rx="8" fill="#EDEDED"/><circle cx="50" cy="50" r="26" fill="#B8B8B8"/></svg><div class="cell-label">photo.png</div></div>
+        <div class="cell"><svg class="cell-icon" viewBox="0 0 100 100"><rect x="14" y="8" width="72" height="86" rx="8" fill="#EDEDED"/><rect x="24" y="24" width="52" height="6" rx="3" fill="#D24"/></svg><div class="cell-label">invoice.pdf</div></div>
+        <div class="cell"><svg class="cell-icon" viewBox="0 0 100 100"><path d="M8 30c0-4 3-7 7-7h20c2 0 4 1 5 3l4 5h41c4 0 7 3 7 7v43c0 4-3 7-7 7H15c-4 0-7-3-7-7z" fill="#9AA6B2"/><path d="M8 42c0-4 3-7 7-7h70c4 0 7 3 7 7v34c0 4-3 7-7 7H15c-4 0-7-3-7-7z" fill="#DDE3E9"/></svg><div class="cell-label">Archive</div></div>
+      </div>
+    </div>
+    <div class="tile">
+      <svg class="folder-icon" viewBox="0 0 100 100"><path d="M8 30c0-4 3-7 7-7h20c2 0 4 1 5 3l4 5h41c4 0 7 3 7 7v43c0 4-3 7-7 7H15c-4 0-7-3-7-7z" fill="#3E8FE0"/><path d="M8 42c0-4 3-7 7-7h70c4 0 7 3 7 7v34c0 4-3 7-7 7H15c-4 0-7-3-7-7z" fill="#6FB2F5"/></svg>
+      <div class="downloads-badge"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 11l5 5 5-5"/></svg></div>
+    </div>
+  </div>
+</div>
+
+<div class="scene">
+  <h2>Right-click menu — Sort By / Display As / View Content As / Options</h2>
+  <div class="dock" style="padding-top:230px;">
+    <div class="menu">
+      <div class="menu-row">Open "Downloads"</div>
+      <div class="menu-sep"></div>
+      <div class="menu-row submenu-parent">Sort By</div>
+      <div class="menu-row submenu-parent">Display As</div>
+      <div class="menu-row submenu-parent">View Content As</div>
+      <div class="menu-sep"></div>
+      <div class="menu-row submenu-parent">Options</div>
+    </div>
+    <div class="tile">
+      <svg class="folder-icon" viewBox="0 0 100 100"><path d="M8 30c0-4 3-7 7-7h20c2 0 4 1 5 3l4 5h41c4 0 7 3 7 7v43c0 4-3 7-7 7H15c-4 0-7-3-7-7z" fill="#3E8FE0"/><path d="M8 42c0-4 3-7 7-7h70c4 0 7 3 7 7v34c0 4-3 7-7 7H15c-4 0-7-3-7-7z" fill="#6FB2F5"/></svg>
+      <div class="downloads-badge"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 11l5 5 5-5"/></svg></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

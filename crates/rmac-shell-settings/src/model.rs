@@ -273,10 +273,84 @@ impl ClickWallpaperToReveal {
     }
 }
 
+/// What a Dock stack shows itself as (Desktop & Dock's "Display as").
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DockStackDisplayAs {
+    #[default]
+    Stack,
+    Folder,
+}
+
+/// The popover a Dock stack opens with ("View content as").
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DockStackViewContentAs {
+    #[default]
+    Automatic,
+    Fan,
+    Grid,
+    List,
+}
+
+/// Order a Dock stack's popover lists its contents in ("Sort by"). Linux
+/// filesystems do not reliably distinguish "date added" from "date
+/// modified" the way HFS+/APFS do, so `DateAdded` and `DateModified` both
+/// resolve to the same measured `mtime` (S: not separately measurable).
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DockStackSortBy {
+    #[default]
+    DateAdded,
+    Name,
+    DateModified,
+    DateCreated,
+    Kind,
+}
+
+/// What a Dock stack points at. `Downloads` always resolves to the live XDG
+/// Downloads directory (it moves if the user relocates it) and draws the
+/// dedicated Downloads glyph; `Path` pins one fixed folder or file.
+#[derive(Clone, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "source", rename_all = "kebab-case")]
+pub enum DockStackKind {
+    Downloads,
+    Path { path: String },
+}
+
+/// Hand-written so a stack's filesystem path never appears in a log, error
+/// message, or debug assertion built from `EntryId`/`StackContextMenu`
+/// (mirrors `rmac_dock::SpecialActivation`'s and `ContextAction`'s redacted
+/// Debug impls).
+impl fmt::Debug for DockStackKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Downloads => formatter.write_str("Downloads"),
+            Self::Path { .. } => formatter.write_str("Path(<private>)"),
+        }
+    }
+}
+
+/// One persisted Dock stack, next to `pinned_apps` (§ folder/file stacks
+/// left of the Trash).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DockStackEntry {
+    pub kind: DockStackKind,
+    #[serde(default)]
+    pub display_as: DockStackDisplayAs,
+    #[serde(default)]
+    pub view_content_as: DockStackViewContentAs,
+    #[serde(default)]
+    pub sort_by: DockStackSortBy,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct ShellSettings {
     pub pinned_apps: Vec<AppId>,
+    /// Folder/file stacks kept to the left of the Trash. Empty by default:
+    /// the owner's reference Dock pins no places (15180aa5).
+    pub dock_stacks: Vec<DockStackEntry>,
     pub dock: DockSettings,
     pub clock: ClockSettings,
     pub indicators: IndicatorSettings,
@@ -306,6 +380,7 @@ impl Default for ShellSettings {
             .into_iter()
             .map(|identity| AppId(identity.into()))
             .collect(),
+            dock_stacks: Vec::new(),
             dock: DockSettings::default(),
             clock: ClockSettings::default(),
             indicators: IndicatorSettings::default(),

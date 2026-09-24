@@ -46,7 +46,18 @@ for dock in docks:
     ]
     names = [button.name for button in buttons]
     trash_names = [name for name in names if name == "Trash" or name.startswith("Trash, ")]
-    if len(buttons) < 2 or len(trash_names) != 1 or any(not name for name in names):
+    # Folder/file stacks (§ folder/file stacks left of the Trash) are named
+    # "<name>, stack" (Downloads' being "Downloads, stack"), the same
+    # convention Trash and other place buttons already use for their state.
+    # No stack is expected in every Dock, so this only checks the ones that
+    # do appear are well-formed and still counted as buttons.
+    stack_names = [name for name in names if name.endswith(", stack")]
+    if (
+        len(buttons) < 2
+        or len(trash_names) != 1
+        or any(not name for name in names)
+        or any(name == ", stack" for name in stack_names)
+    ):
         roles = [(node.getRoleName(), node.name) for node in nodes]
         raise AssertionError(
             "a Dock must expose at least one named application and exactly one Trash; "

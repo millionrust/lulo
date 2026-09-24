@@ -14,6 +14,7 @@ pub enum Operation {
     Reveal,
     Terminate,
     UpdatePins,
+    UpdateStacks,
     Hide,
     ShowAllWindows,
     Resolve,
@@ -80,6 +81,7 @@ impl fmt::Display for Operation {
             Self::Reveal => "show application in Files",
             Self::Terminate => "terminate application",
             Self::UpdatePins => "update pinned applications",
+            Self::UpdateStacks => "update Dock stacks",
             Self::Resolve => "resolve Dock activation",
             Self::OpenPlace => "open Dock place",
             Self::ReviewTrash => "review Empty Trash",
@@ -154,6 +156,9 @@ pub enum Outcome {
     },
     PinsUpdated {
         pinned: Vec<rmac_shell_settings::AppId>,
+    },
+    StacksUpdated {
+        stacks: Vec<rmac_shell_settings::DockStackEntry>,
     },
     HideRequested {
         app_id: String,
@@ -232,6 +237,21 @@ pub trait Backend: Send + Sync + 'static {
         &self,
         command: &rmac_dock::PinCommand,
     ) -> BackendFuture<'_, Result<Vec<rmac_shell_settings::AppId>, BackendError>>;
+
+    /// Add, remove, or reconfigure a folder/file stack. Unsupported by
+    /// default so an existing `Backend` implementor need not stub it.
+    fn update_stacks(
+        &self,
+        command: &rmac_dock::StackCommand,
+    ) -> BackendFuture<'_, Result<Vec<rmac_shell_settings::DockStackEntry>, BackendError>> {
+        let _ = command;
+        Box::pin(async {
+            Err(BackendError::new(
+                FailureKind::Unsupported,
+                "Dock stacks are unavailable",
+            ))
+        })
+    }
 
     /// Hide windows by parking them, recording each origin workspace so Show
     /// All (and a Dock click) can bring them back.

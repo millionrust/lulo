@@ -3,7 +3,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use crate::{motion, Item, Model, SpecialItem, SpecialItemKind, SurfaceDescription};
+use crate::{motion, Item, Model, SpecialItem, SpecialItemKind, StackPlace, SurfaceDescription};
 
 pub const SHELF_AXIS_PADDING: f32 = 8.0;
 pub const GROUP_GAP: f32 = 24.0;
@@ -18,6 +18,8 @@ pub enum BuiltinIcon {
     TrashEmpty,
     TrashFull,
     More,
+    /// A generic folder/file stack that is not the Downloads special case.
+    Folder,
 }
 
 impl BuiltinIcon {
@@ -31,6 +33,7 @@ impl BuiltinIcon {
             Self::TrashEmpty => include_str!("../assets/icons/trash-empty.svg"),
             Self::TrashFull => include_str!("../assets/icons/trash-full.svg"),
             Self::More => include_str!("../assets/icons/more.svg"),
+            Self::Folder => include_str!("../assets/icons/folder.svg"),
         }
     }
 }
@@ -54,6 +57,8 @@ impl fmt::Debug for Icon {
 pub enum EntryId {
     Application(String),
     Special(SpecialItemKind),
+    /// A folder/file stack, kept left of the Trash.
+    Stack(rmac_shell_settings::DockStackKind),
     /// A parked window shown as a minimized tile in the right group (§4.11).
     Minimized(rmac_compositor::WindowId),
     Overflow,
@@ -244,13 +249,20 @@ impl From<motion::ConfigError> for LayoutError {
 
 impl ShelfContent {
     pub fn project(model: &Model) -> Self {
-        // Minimized tiles lead the right group so the authoritative Trash
-        // endpoint stays rightmost.
+        // Minimized tiles lead the right group, then stacks, then special
+        // items with Trash last, so the authoritative Trash endpoint stays
+        // rightmost (§ folder/file stacks left of the Trash).
+        let (trash, other_special): (Vec<_>, Vec<_>) = model
+            .special_items
+            .iter()
+            .partition(|item| item.kind == SpecialItemKind::Trash);
         let places = model
             .minimized
             .iter()
             .map(minimized_entry)
-            .chain(model.special_items.iter().map(special_entry))
+            .chain(other_special.into_iter().map(special_entry))
+            .chain(model.stacks.iter().map(stack_entry))
+            .chain(trash.into_iter().map(special_entry))
             .collect();
         Self {
             applications: model.items.iter().map(application_entry).collect(),
@@ -660,6 +672,28 @@ fn special_entry(item: &SpecialItem) -> Entry {
         activity: ActivityIndicator::None,
         urgent: false,
         badge,
+    }
+}
+
+fn stack_entry(item: &StackPlace) -> Entry {
+    let icon = match item.kind {
+        rmac_shell_settings::DockStackKind::Downloads => BuiltinIcon::Downloads,
+        rmac_shell_settings::DockStackKind::Path { .. } => BuiltinIcon::Folder,
+    };
+    let mut accessible = vec![item.name.clone(), "stack".into()];
+    if !item.available {
+        accessible.push("unavailable".into());
+    }
+    Entry {
+        id: EntryId::Stack(item.kind.clone()),
+        label: item.name.clone(),
+        accessible_label: accessible.join(", "),
+        icon: Icon::Builtin(icon),
+        miniature: None,
+        enabled: item.available,
+        activity: ActivityIndicator::None,
+        urgent: false,
+        badge: None,
     }
 }
 

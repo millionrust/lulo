@@ -8,7 +8,7 @@ use crate::menu::{self, RowId};
 use crate::presentation::{
     self, ActivityIndicator, BuiltinIcon, Entry, EntryId, Icon, ShelfContent, ShelfLayoutPlan,
 };
-use crate::{Activation, Model, SpecialActivation, SpecialItemKind};
+use crate::{Activation, Model, SpecialActivation, SpecialItemKind, StackActivation};
 
 pub const DOCK_NAME: &str = "Dock";
 pub const ROOT_ID: &str = "dock";
@@ -25,7 +25,10 @@ pub const FORCE_QUIT_NAME: &str = "Force Quit";
 pub const HIDE_OTHERS_NAME: &str = "Hide Others";
 pub const CLOSE_MENU_NAME: &str = "Close Menu";
 pub const MAX_APPLICATIONS: usize = 512;
-pub const MAX_PLACES: usize = 3;
+/// Bounds the right group: minimized tiles, folder/file stacks (up to
+/// `rmac_shell_settings`'s 32-item Dock-stacks safety limit), and special
+/// items (Files, Trash).
+pub const MAX_PLACES: usize = 48;
 pub const MAX_ID_BYTES: usize = 512;
 pub const MAX_TEXT_BYTES: usize = 4 * 1024;
 pub const MAX_SEMANTIC_TEXT_BYTES: usize = 2 * 1024 * 1024;
@@ -284,7 +287,10 @@ pub fn project_accessibility(
     {
         return Err(AccessibilityProjectionError::ApplicationLimit);
     }
-    if input.model.special_items.len() > MAX_PLACES || input.content.places.len() > MAX_PLACES {
+    if input.model.special_items.len() > MAX_PLACES
+        || input.model.stacks.len() > MAX_PLACES
+        || input.content.places.len() > MAX_PLACES
+    {
         return Err(AccessibilityProjectionError::PlaceLimit);
     }
     if ShelfContent::project(input.model) != *input.content {
@@ -345,7 +351,7 @@ pub fn project_accessibility(
         }
         let menu_enabled = match &visible.entry.id {
             EntryId::Application(_) | EntryId::Overflow => true,
-            EntryId::Special(_) => visible.entry.enabled,
+            EntryId::Special(_) | EntryId::Stack(_) => visible.entry.enabled,
             // Minimized tiles restore on activation and have no menu yet.
             EntryId::Minimized(_) => false,
         };
@@ -375,6 +381,16 @@ pub fn project_accessibility(
                         return Err(AccessibilityProjectionError::InvalidEntry);
                     }
                     available
+                }
+                EntryId::Stack(kind) => {
+                    let activation_available = !matches!(
+                        input.model.activate_stack(kind),
+                        StackActivation::Unavailable { .. }
+                    );
+                    if visible.entry.enabled != activation_available {
+                        return Err(AccessibilityProjectionError::InvalidEntry);
+                    }
+                    activation_available
                 }
                 EntryId::Overflow => unreachable!("overflow handled above"),
             };
@@ -466,21 +482,11 @@ fn validate_content(
         }
         validate_entry(entry, budget)?;
     }
-    let place_ids = content
-        .places
-        .iter()
-        .map(|entry| entry.id.clone())
-        .collect::<Vec<_>>();
-    if !place_ids.is_empty()
-        && place_ids
-            != [
-                EntryId::Special(SpecialItemKind::Files),
-                EntryId::Special(SpecialItemKind::Downloads),
-                EntryId::Special(SpecialItemKind::Trash),
-            ]
-    {
-        return Err(AccessibilityProjectionError::InvalidEntry);
-    }
+    // A fixed [Files, Downloads, Trash] shape was checked here before folder
+    // stacks and minimized tiles could appear between the application group
+    // and Trash; the caller-vs-`ShelfContent::project` equality check above
+    // already rejects any place list the model would not itself produce, so
+    // a second fixed-shape assertion would only reject valid content.
     for entry in &content.places {
         validate_entry(entry, budget)?;
     }
@@ -500,13 +506,15 @@ fn validate_entry(
         (EntryId::Special(SpecialItemKind::Trash), Icon::Builtin(BuiltinIcon::TrashEmpty))
         | (EntryId::Special(SpecialItemKind::Trash), Icon::Builtin(BuiltinIcon::TrashFull)) => {}
         (EntryId::Overflow, Icon::Builtin(BuiltinIcon::More)) => {}
+        (EntryId::Stack(_), Icon::Builtin(BuiltinIcon::Downloads | BuiltinIcon::Folder)) => {}
         _ => return Err(AccessibilityProjectionError::InvalidEntry),
     }
     if entry.activity == ActivityIndicator::Active && !entry.enabled
-        || matches!(entry.id, EntryId::Special(_))
+        || matches!(entry.id, EntryId::Special(_) | EntryId::Stack(_))
             && (entry.activity != ActivityIndicator::None || entry.urgent)
         || matches!(entry.id, EntryId::Application(_)) && entry.badge.is_some()
         || matches!(entry.id, EntryId::Overflow) && entry.badge.is_none_or(|badge| badge == 0)
+        || matches!(entry.id, EntryId::Stack(_)) && entry.badge.is_some()
     {
         return Err(AccessibilityProjectionError::InvalidEntry);
     }
@@ -596,6 +604,18 @@ fn validate_layout<'a>(
                     group: ShelfGroup::Places,
                 });
             }
+            EntryId::Stack(kind) => {
+                let entry = content
+                    .places
+                    .iter()
+                    .find(|entry| entry.id == EntryId::Stack(kind.clone()))
+                    .ok_or(AccessibilityProjectionError::InvalidLayout)?;
+                visible.push(VisibleEntry {
+                    entry,
+                    semantic_id: stack_id(kind),
+                    group: ShelfGroup::Places,
+                });
+            }
         }
     }
     let projected_application_count = visible
@@ -628,6 +648,10 @@ fn validate_menu_authority(
             .overflow
             .as_ref()
             .and_then(|overflow| menu::Session::overflow(overflow).ok()),
+        EntryId::Stack(kind) => model
+            .stack_context_menu(kind)
+            .as_ref()
+            .and_then(|menu| menu::Session::stack(menu).ok()),
         // A minimized tile never owns a menu session.
         EntryId::Minimized(_) => None,
     }
@@ -824,6 +848,21 @@ const fn special_id(kind: SpecialItemKind) -> &'static str {
         SpecialItemKind::Files => FILES_ID,
         SpecialItemKind::Downloads => DOWNLOADS_ID,
         SpecialItemKind::Trash => TRASH_ID,
+    }
+}
+
+/// A deterministic, path-free semantic id for a stack, so a Path stack's
+/// filesystem location never appears in the accessibility tree's ids.
+fn stack_id(kind: &rmac_shell_settings::DockStackKind) -> String {
+    match kind {
+        rmac_shell_settings::DockStackKind::Downloads => "dock-stack-downloads".into(),
+        rmac_shell_settings::DockStackKind::Path { path } => {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = DefaultHasher::new();
+            path.hash(&mut hasher);
+            format!("dock-stack-path-{:016x}", hasher.finish())
+        }
     }
 }
 

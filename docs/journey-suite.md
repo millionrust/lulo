@@ -57,10 +57,19 @@ ssh jacob@<reference-pc> \
 
 It publishes a privacy-safe JSON report (no screenshots, no window titles,
 no paths under a home directory) with one entry per step — session liveness,
-Dock launch, Spotlight launch, window appearance and warm launch-to-window
-timing against the todo.md performance budget (p95 ≤ 500 ms for simple apps),
-focus, app switching by `niri msg action focus-window`, and closing through
-each app's own top-bar Quit menu item — plus a `gaps` list. "Log in" checks
+Dock launch, Spotlight launch, window appearance, focus, app switching by
+`niri msg action focus-window`, and closing through each app's own top-bar
+Quit menu item — plus a `gaps` list. Each launched app's `performance` entry
+reports both `mapped_ms` (when niri considers the window present) and
+`interactive_ms` (when the app's own `RMAC_BENCHMARK_READY_FILE` marker says
+its real content, not a loading placeholder, is on screen — see
+`crates/rmac-ui`'s `mark_content_ready`), and evaluates todo.md's warm
+launch-to-interactive budget (p95 ≤ 500 ms for simple apps) against
+`interactive_ms` whenever it is available. A real Dock/Spotlight activation
+cannot be instrumented with that env var, so `interactive_ms` is `null` for
+an `accessible_ui` launch and the verdict falls back to `mapped_ms`; a
+`fallback_spawn` launch (used whenever the Dock/Spotlight accessible actions
+above aren't available) gets both. "Log in" checks
 that a real graphical rmac session is already active rather than performing a
 full logout/login, so the shared reference session is never disturbed; the
 destructive full GDM login/logout journey is

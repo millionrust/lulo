@@ -102,6 +102,27 @@ impl Settings {
             )));
         }
 
+        cards.push(card(vec![
+            dock_switch_row(
+                view.clone(),
+                "dock-show-running-indicators",
+                "Show indicators for open applications",
+                None,
+                dock.show_running_indicators,
+                enabled,
+                DockChange::ShowRunningIndicators,
+            ),
+            dock_switch_row(
+                view.clone(),
+                "dock-show-recent-apps",
+                "Show suggested and recent apps in Dock",
+                None,
+                dock.show_recent_apps,
+                enabled,
+                DockChange::ShowRecentApps,
+            ),
+        ]));
+
         cards.push(card(vec![dock_segment_row(
             view.clone(),
             "dock-repeated-click",

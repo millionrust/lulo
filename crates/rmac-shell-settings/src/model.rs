@@ -42,6 +42,14 @@ fn default_magnification_scale() -> f32 {
     1.5
 }
 
+fn default_show_running_indicators() -> bool {
+    true
+}
+
+fn default_show_recent_apps() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct DockSettings {
@@ -52,6 +60,14 @@ pub struct DockSettings {
     pub magnification_scale: f32,
     pub reserve_space: bool,
     pub repeated_click: RepeatedClickBehavior,
+    /// macOS Desktop & Dock ▸ "Show indicators for open applications": a
+    /// purely visual switch. Turning it off never changes which apps are
+    /// actually running, only whether the Dock draws the dot for them.
+    #[serde(default = "default_show_running_indicators")]
+    pub show_running_indicators: bool,
+    /// macOS Desktop & Dock ▸ "Show suggested and recent apps in Dock".
+    #[serde(default = "default_show_recent_apps")]
+    pub show_recent_apps: bool,
 }
 
 impl Default for DockSettings {
@@ -64,6 +80,8 @@ impl Default for DockSettings {
             magnification_scale: default_magnification_scale(),
             reserve_space: true,
             repeated_click: RepeatedClickBehavior::DoNothing,
+            show_running_indicators: default_show_running_indicators(),
+            show_recent_apps: default_show_recent_apps(),
         }
     }
 }

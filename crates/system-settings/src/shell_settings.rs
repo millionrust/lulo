@@ -12,6 +12,8 @@ pub(super) enum DockChange {
     MagnificationScale(f32),
     ReserveSpace(bool),
     RepeatedClick(rmac_shell_settings::RepeatedClickBehavior),
+    ShowRunningIndicators(bool),
+    ShowRecentApps(bool),
 }
 
 impl DockChange {
@@ -24,6 +26,8 @@ impl DockChange {
             Self::MagnificationScale(value) => dock.magnification_scale = value,
             Self::ReserveSpace(value) => dock.reserve_space = value,
             Self::RepeatedClick(value) => dock.repeated_click = value,
+            Self::ShowRunningIndicators(value) => dock.show_running_indicators = value,
+            Self::ShowRecentApps(value) => dock.show_recent_apps = value,
         }
     }
 }

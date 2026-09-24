@@ -262,6 +262,18 @@ impl ShelfContent {
         !self.applications.is_empty() && !self.places.is_empty()
     }
 
+    /// Clear every entry's visual activity dot without touching whether it
+    /// is actually running or active: macOS's "Show indicators for open
+    /// applications" is a purely visual switch (SET-32), so accessible
+    /// labels and Dock-menu "running" state, which are computed separately
+    /// from `item.running`/`item.active`, stay truthful either way.
+    pub fn without_activity_indicators(mut self) -> Self {
+        for entry in self.applications.iter_mut().chain(self.places.iter_mut()) {
+            entry.activity = ActivityIndicator::None;
+        }
+        self
+    }
+
     /// Produce output-axis geometry from stable base centers. Pointer distance
     /// never uses a previously rendered center, including when the final shelf
     /// is shifted just enough to remain inside a physical output edge.
@@ -760,6 +772,23 @@ mod tests {
             content.applications[1].accessible_label,
             "Missing, unavailable"
         );
+    }
+
+    #[test]
+    fn hiding_activity_indicators_clears_the_dot_but_not_the_accessible_label() {
+        let mut terminal = item("Terminal");
+        terminal.running = true;
+        terminal.active = true;
+        let content = ShelfContent::project(&Model {
+            items: vec![terminal],
+            ..Default::default()
+        })
+        .without_activity_indicators();
+
+        assert_eq!(content.applications[0].activity, ActivityIndicator::None);
+        // "Show indicators for open applications" is a visual switch only:
+        // the accessible label still says the app is active.
+        assert!(content.applications[0].accessible_label.contains("active"));
     }
 
     #[test]

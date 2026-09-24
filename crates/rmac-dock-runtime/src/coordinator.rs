@@ -37,6 +37,11 @@ impl Coordinator {
             self.reduced_motion,
         );
         let content = rmac_dock::presentation::ShelfContent::project(&model);
+        let content = if self.settings.dock.show_running_indicators {
+            content
+        } else {
+            content.without_activity_indicators()
+        };
         let overview_visible = compositor.overview_visible;
         Snapshot {
             compositor,
@@ -55,6 +60,13 @@ impl Coordinator {
     /// section. Only installed apps are recorded, since only they can be
     /// shown again after they quit.
     fn advance_recents(&mut self) {
+        if !self.settings.dock.show_recent_apps {
+            if !self.recents.is_empty() {
+                self.recents.clear();
+                self.recents_dirty = true;
+            }
+            return;
+        }
         let model = rmac_dock::Model::build(
             &self.settings.pinned_apps,
             &self.settings.dock,

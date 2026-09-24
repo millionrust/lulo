@@ -51,6 +51,8 @@ fn settings() -> ShellSettings {
             magnification_scale: 1.8,
             reserve_space: false,
             repeated_click: RepeatedClickBehavior::HideApplication,
+            show_running_indicators: false,
+            show_recent_apps: false,
         },
         clock: ClockSettings {
             format: ClockFormat::TwentyFourHour,

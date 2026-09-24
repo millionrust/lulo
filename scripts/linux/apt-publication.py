@@ -137,6 +137,25 @@ def pinned_fingerprints(path: Path = ARCHIVE_KEY_PATH) -> Tuple[str, ...]:
 # --- GitHub ------------------------------------------------------------------------
 
 
+def parse_json_stream(text: str) -> List[Dict[str, object]]:
+    """Consecutive JSON objects, as `gh api --paginate --jq` prints them."""
+    decoder = json.JSONDecoder()
+    values: List[Dict[str, object]] = []
+    index = 0
+    while True:
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index == len(text):
+            return values
+        try:
+            value, index = decoder.raw_decode(text, index)
+        except json.JSONDecodeError as error:
+            raise PublicationError("gh returned release data that is not JSON") from error
+        if not isinstance(value, dict):
+            raise PublicationError("gh returned an unexpected release record")
+        values.append(value)
+
+
 class GitHub:
     """The few `gh` calls the job needs, all with structured (JSON) output."""
 
@@ -172,11 +191,7 @@ class GitHub:
             ],
             "list the releases",
         )
-        releases = []
-        for line in output.decode("utf-8").splitlines():
-            if line.strip():
-                releases.append(json.loads(line))
-        return releases
+        return parse_json_stream(output.decode("utf-8"))
 
     def download(self, tag: str, name: str, directory: Path) -> Path:
         directory.mkdir(parents=True, exist_ok=True)

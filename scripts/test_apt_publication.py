@@ -326,6 +326,18 @@ class DecideTests(unittest.TestCase):
         self.assertEqual((decision["action"], decision["phase"]), ("publish", 100))
 
 
+class GitHubOutputTests(unittest.TestCase):
+    def test_compact_and_pretty_json_streams_both_parse(self):
+        compact = '{"tag":"v1","draft":false,"assets":["a"]}\n{"tag":"v2","draft":true,"assets":[]}\n'
+        pretty = '{\n  "tag": "v1",\n  "draft": false,\n  "assets": [\n    "a"\n  ]\n}\n{"tag": "v2", "draft": true, "assets": []}'
+        for text in (compact, pretty):
+            releases = publication.parse_json_stream(text)
+            self.assertEqual([release["tag"] for release in releases], ["v1", "v2"])
+        self.assertEqual(publication.parse_json_stream("\n"), [])
+        with self.assertRaises(publication.PublicationError):
+            publication.parse_json_stream('["not a release"]')
+
+
 class NewestSnapshotTests(PublicationTestCase):
     def test_a_superseded_site_is_detected(self):
         self.release("v1.0.0")

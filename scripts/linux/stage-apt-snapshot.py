@@ -26,7 +26,7 @@ PackageKit resolve dependencies from the index exactly as dpkg will.
 When the currently published repository is supplied (``--previous-repository``
 with its ``rmac-snapshot.json`` sidecar), every source package version that is
 already published is carried forward byte for byte from it rather than taken
-from the new build: a rebuilt ``niri 26.04-0lulo1`` with different bytes must
+from the new build: a rebuilt ``niri 26.04+lulo1`` with different bytes must
 never replace the published one (the pool is immutable). A package version
 that would go *backwards* is refused; an emergency revert is a higher version.
 ``--rollout-only`` additionally refuses any pool object that is not already

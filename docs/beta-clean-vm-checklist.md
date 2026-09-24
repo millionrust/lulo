@@ -26,11 +26,13 @@ on a machine with data you care about.
 - **niri and xwayland-satellite come from the same Release.** Neither is in
   the Ubuntu 26.04 archive, so every Release (and every `--from-dir` set
   assembled from `build-niri-packages.sh` output) carries Lulo OS's own
-  `niri_26.04-0luloN` and `xwayland-satellite_0.8.2-0luloN` packages, and
+  `niri_26.04+luloN` and `xwayland-satellite_0.8.2+luloN` packages, and
   `install.sh` installs them with rmac. Do **not** add the danklinux PPA to
   a clean VM: the point of this run is to prove the Release alone is
-  enough. (On a machine that already has the PPA's newer `26.04ppa3`,
-  `install.sh` keeps it and says so; that is expected, not a failure.)
+  enough. (On a machine that already has the PPA's `26.04ppa3`, Lulo OS's
+  own build sorts above it, so `install.sh` upgrades to ours as an ordinary
+  install, not a downgrade; only a genuinely newer install -- a later
+  official package, say -- is kept, with `install.sh` saying so.)
 - Two package sets to test an upgrade: a "baseline" (older) and a
   "candidate" (newer) `rmac-apps`/`rmac-session` `.deb` pair, either from two
   tagged GitHub Releases or from two local `build-native-inputs.sh` +
@@ -56,7 +58,7 @@ check succeeded (dpkg status lines, `df -h`, etc.) alongside the screenshot.
    - Pass: exit 0; `dpkg-query -W -f='${Status}\t${Version}' rmac-apps
      rmac-session` shows `install ok installed` at the baseline version for
      both; `dpkg-query -W -f='${Status}\t${Version}\n' niri
-     xwayland-satellite` shows both installed at a `-0luloN` version;
+     xwayland-satellite` shows both installed at a `+luloN` version;
      `niri --version` prints `26.04 (8ed0da4)`; Ubuntu/GNOME's own session
      entry is still present and unmodified (`ls
      /usr/share/wayland-sessions/`, still has GNOME's `.desktop`; niri's own

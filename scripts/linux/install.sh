@@ -339,10 +339,13 @@ verify_local_package_directory() {
     ) || fail "downloaded/local package checksums did not match SHA256SUMS"
 }
 
-# True when PACKAGE is already installed at a version newer than DEB's --
-# typically the danklinux PPA's "26.04ppa3" against Lulo OS's "26.04-0lulo1".
-# That install already satisfies rmac-session, and apt would refuse the
-# downgrade, so it is kept and the way to switch is printed instead.
+# True when PACKAGE is already installed at a version newer than DEB's.
+# Lulo OS's own build ("26.04+lulo1") sorts above the danklinux PPA's
+# "26.04ppaN" for any N, so this normally lets an ordinary `apt-get install`
+# upgrade the PPA build to ours. It still guards the rarer case -- an
+# official Debian/Ubuntu package, or a later PPA release, already newer than
+# this release's pinned build -- where apt would refuse the downgrade; that
+# install is kept and the way to switch is printed instead.
 installed_third_party_is_newer() {
     package="$1"
     deb="$2"

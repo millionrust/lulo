@@ -111,11 +111,11 @@ class ReleaseHistoryTests(PublicationTestCase):
         self.assertEqual(summary["latest"]["phase"], 10)
 
     def test_a_new_release_carries_an_unchanged_niri_forward_byte_for_byte(self):
-        # v1.0.1 rebuilds niri 26.04-0lulo1 with different bytes; the pool is
+        # v1.0.1 rebuilds niri 26.04+lulo1 with different bytes; the pool is
         # immutable, so the published v1.0.0 objects keep being served.
         self.release("v1.0.1", rmac="1.0.1-38", keyring="1.0.1-1", salt="-rebuilt")
         _, _, second = self.publish(mode="release", tag="v1.0.1", now=T0 + DAY)
-        niri = "pool/main/n/niri/niri_26.04-0lulo1_amd64.deb"
+        niri = "pool/main/n/niri/niri_26.04+lulo1_amd64.deb"
         self.assertEqual(
             fixtures.tree_digest(second)[niri], fixtures.tree_digest(self.first)[niri]
         )
@@ -131,7 +131,7 @@ class ReleaseHistoryTests(PublicationTestCase):
             )
         }
         self.assertEqual(packages["rmac-apps"], "1.0.1-38")
-        self.assertEqual(packages["niri"], "26.04-0lulo1")
+        self.assertEqual(packages["niri"], "26.04+lulo1")
         # A third release rebuilds the pool from both earlier Releases.
         self.release("v1.0.2", rmac="1.0.2-38", keyring="1.0.2-1")
         _, _, third = self.publish(mode="release", tag="v1.0.2", now=T0 + 2 * DAY)
@@ -227,7 +227,7 @@ class ReleaseHistoryTests(PublicationTestCase):
         # first published is still what every snapshot serves.
         self.assertFalse((repository / "pool/main/r/rmac/rmac-apps_1.0.0-38_amd64.deb").exists())
         self.assertTrue((repository / "pool/main/r/rmac/rmac-apps_1.0.1-38_amd64.deb").exists())
-        self.assertTrue((repository / "pool/main/n/niri/niri_26.04-0lulo1_amd64.deb").exists())
+        self.assertTrue((repository / "pool/main/n/niri/niri_26.04+lulo1_amd64.deb").exists())
 
 
 class RolloutTests(PublicationTestCase):
@@ -596,7 +596,7 @@ class RealKeySigningTests(unittest.TestCase):
             self.assertEqual(show.returncode, 0, show.stderr)
             record = apt_archive.parse_deb822(show.stdout, "apt-cache show")[0]
             self.assertEqual(record["Version"], "1.0.0~beta.1-38")
-            self.assertIn("niri (>= 26.04)", record["Depends"])
+            self.assertIn("niri (>= 26.04+lulo1)", record["Depends"])
             download = apt("apt-get", "download", "rmac-session", "niri", cwd=root / "downloads")
             self.assertEqual(download.returncode, 0, download.stdout + download.stderr)
             source = apt("apt-get", "source", "--download-only", "rmac", cwd=root / "downloads")

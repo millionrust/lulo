@@ -112,7 +112,7 @@ class PinTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "packaging" / "third-party").mkdir(parents=True)
-            for field, value in (("debian_revision", "0~lulo1"), ("tag", "v26.08")):
+            for field, value in (("debian_revision", "~lulo1"), ("tag", "v26.08")):
                 broken = json.loads(json.dumps(document))
                 broken["packages"]["niri"][field] = value
                 (root / third_party.PINS_PATH).write_text(json.dumps(broken), encoding="utf-8")
@@ -129,45 +129,71 @@ class VersionPolicyTests(unittest.TestCase):
         self.assertOrdered("1.0~rc1", "1.0")
         self.assertOrdered("1.0", "1.0a")
         self.assertOrdered("1.9", "1.10")
-        self.assertOrdered("1.0-0lulo2", "1.0-0lulo10")
+        self.assertOrdered("1.0+lulo2", "1.0+lulo10")
         self.assertOrdered("9:1.0", "10:0.1")
         self.assertEqual(third_party.compare_versions("1.0-1", "1.0-1"), 0)
 
-    def test_lulo_builds_satisfy_rmac_but_yield_to_ppa_and_official_packages(self):
+    @staticmethod
+    def _next_upstream_release(version: str) -> str:
+        parts = version.split(".")
+        parts[-1] = str(int(parts[-1]) + 1)
+        return ".".join(parts)
+
+    def test_lulo_builds_outrank_the_ppa_and_official_packages_but_yield_to_a_newer_upstream(self):
         for pin in third_party.load_pins(REPO_ROOT).values():
             ours = pin.debian_version
             upstream = pin.upstream_version
-            # rmac-session's "(>= upstream)" accepts our build...
+            # rmac-session's "(>= our exact build)" accepts our build, or
+            # anything higher...
             self.assertOrdered(upstream, ours)
-            # ...but a PPA install already on the machine stays (no forced
-            # downgrade), and a future official Debian/Ubuntu package wins.
-            self.assertOrdered(ours, f"{upstream}ppa1")
-            self.assertOrdered(ours, f"{upstream}-1")
-            self.assertOrdered(ours, f"{upstream}-0ubuntu1")
-            self.assertOrdered(ours, f"{upstream}-0.1")
+            # ...and our build now outranks the danklinux PPA's
+            # "<version>ppaN" unconditionally (any N: the "+lulo" vs "ppa"
+            # comparison is decided before either side's trailing digits
+            # are ever reached), and any plain Debian/Ubuntu revision of the
+            # same upstream, so apt upgrades a PPA-equipped machine to ours
+            # as an ordinary install, never a downgrade.
+            for ppa_build in (f"{upstream}ppa1", f"{upstream}ppa3", f"{upstream}ppa99"):
+                self.assertOrdered(ppa_build, ours)
+            self.assertOrdered(f"{upstream}-1", ours)
+            self.assertOrdered(f"{upstream}-0ubuntu1", ours)
+            self.assertOrdered(f"{upstream}-0.1", ours)
+            # ...but a future official upstream release still wins.
+            self.assertOrdered(ours, self._next_upstream_release(upstream))
             self.assertNotIn("~", ours)
             self.assertNotIn(":", ours)
-        self.assertOrdered("26.04-0lulo1", "26.04ppa3")
-        self.assertOrdered("0.8.2-0lulo1", "0.8.2ppa1")
+        self.assertOrdered("26.04ppa3", "26.04+lulo1")
+        self.assertOrdered("0.8.2ppa1", "0.8.2+lulo1")
 
-    def test_rmac_session_floors_are_the_pinned_upstream_versions(self):
+    def test_embedding_the_exact_ppa_version_beaten_would_have_been_fragile(self):
+        # Documented rejection in docs/release-process.md "Package names and
+        # versions": unlike a plain "+luloN" suffix, "<ppa-version>+luloN"
+        # only outranks that specific PPA build -- the PPA's very next point
+        # release sorts above it again, since the digit comparison of the
+        # embedded PPA build number decides the ordering before "+luloN" is
+        # ever reached.
+        self.assertOrdered("26.04ppa3+lulo1", "26.04ppa4")
+
+    def test_rmac_session_floors_are_the_pinned_third_party_builds(self):
         session = next(spec for spec in native.PACKAGE_SPECS if spec.name == "rmac-session")
         for pin in third_party.load_pins(REPO_ROOT).values():
-            relation = f"{pin.name} (>= {pin.upstream_version})"
+            relation = f"{pin.name} (>= {pin.debian_version})"
             self.assertIn(relation, session.static_dependencies)
-            # Every build that satisfies the floor: ours and the PPA's.
-            for candidate in (pin.debian_version, f"{pin.upstream_version}ppa3"):
-                self.assertGreaterEqual(
-                    third_party.compare_versions(candidate, pin.upstream_version), 0
-                )
+            # Satisfies the floor: our own build, or anything higher.
+            self.assertGreaterEqual(
+                third_party.compare_versions(pin.debian_version, pin.debian_version), 0
+            )
+            # Does not satisfy it: the danklinux PPA build alone.
+            self.assertLess(
+                third_party.compare_versions(f"{pin.upstream_version}ppa3", pin.debian_version), 0
+            )
         control = native.control_bytes(
             session,
             version="0.9.0~beta.1-38",
             architecture="amd64",
             dependencies=native.resolved_static_dependencies(session, "0.9.0~beta.1-38"),
         ).decode("utf-8")
-        self.assertIn("niri (>= 26.04)", control)
-        self.assertIn("xwayland-satellite (>= 0.8.2)", control)
+        self.assertIn("niri (>= 26.04+lulo1)", control)
+        self.assertIn("xwayland-satellite (>= 0.8.2+lulo1)", control)
 
 
 class NoticeAndSbomTests(unittest.TestCase):
@@ -231,8 +257,10 @@ class NoticeAndSbomTests(unittest.TestCase):
     def test_shell_assignments_are_quoted_and_complete(self):
         pin = third_party.load_pins(REPO_ROOT)["xwayland-satellite"]
         text = third_party.shell_assignments(pin)
-        self.assertIn("PIN_DEBIAN_VERSION='0.8.2-0lulo1'\n", text)
-        self.assertIn("PIN_VENDOR_TARBALL='xwayland-satellite_0.8.2.orig-vendor.tar.xz'\n", text)
+        self.assertIn("PIN_DEBIAN_VERSION='0.8.2+lulo1'\n", text)
+        self.assertIn(
+            "PIN_VENDOR_TARBALL='xwayland-satellite_0.8.2+lulo1.orig-vendor.tar.xz'\n", text
+        )
         for line in text.splitlines():
             self.assertRegex(line, r"^PIN_[A-Z0-9_]+='[^']*'$")
 

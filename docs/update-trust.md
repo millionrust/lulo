@@ -166,7 +166,7 @@ flag is itself refused once a history exists.
 
 `stage-apt-snapshot.py` then carries every already-published source-package
 version forward byte for byte from that rebuilt pool (a rebuilt
-`niri 26.04-0lulo1` with different bytes never replaces the published one),
+`niri 26.04+lulo1` with different bytes never replaces the published one),
 refuses any package version lower than the published one and any architecture
 that would disappear, and refuses a reused pool path (such as an orig tarball)
 with different bytes. The Pages site is the promoted `dists/` and `pool/` plus

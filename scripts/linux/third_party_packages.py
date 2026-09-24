@@ -18,7 +18,7 @@ side-effect-free parts it and the tests share, plus a small CLI:
                                  compare a vendor tarball with its recorded pin
 
 Packages keep the upstream names (niri, xwayland-satellite) with a Debian
-revision of 0luloN, never an epoch or a tilde; see docs/release-process.md
+version suffix of +luloN, never an epoch or a tilde; see docs/release-process.md
 "Third-party packages" for why.
 """
 
@@ -61,23 +61,41 @@ class Pin:
 
     @property
     def debian_version(self) -> str:
-        return f"{self.upstream_version}-{self.debian_revision}"
+        # No hyphen: dpkg compares the upstream_version *component* of a
+        # hyphenated version ("26.04" here) on its own before it ever looks
+        # at a revision after a hyphen, and a bare "26.04" already sorts
+        # below the danklinux PPA's "26.04ppaN" (letters sort below the "+"
+        # that follows them). Folding "+luloN" into the upstream-version
+        # component itself -- Debian's usual "+dfsg"/"+repack" pattern -- is
+        # the only way to sort above the PPA. See docs/release-process.md
+        # "Package names and versions".
+        return f"{self.upstream_version}+{self.debian_revision}"
 
     @property
     def orig_tarball(self) -> str:
-        return f"{self.name}_{self.upstream_version}.orig.tar.gz"
+        # Named after the *full* debian_version, not the bare upstream tag:
+        # with no hyphen in the version, "26.04+lulo1" is the whole
+        # upstream-version component dpkg-source expects the orig tarball's
+        # name to carry.
+        return f"{self.name}_{self.debian_version}.orig.tar.gz"
 
     @property
     def vendor_tarball(self) -> str:
-        return f"{self.name}_{self.upstream_version}.orig-vendor.tar.xz"
+        return f"{self.name}_{self.debian_version}.orig-vendor.tar.xz"
 
 
 _FIELD_PATTERNS = {
     "upstream_version": r"[0-9]+(?:\.[0-9]+)+",
-    # 0luloN sorts above a bare upstream version but below any official
-    # Debian (-1) or Ubuntu (-0ubuntu1) revision and below the danklinux PPA's
-    # "<version>ppaN". No tilde: GitHub renames "~" in Release asset names.
-    "debian_revision": r"0lulo[1-9][0-9]*",
+    # "+luloN" sorts above a bare upstream version, above any official
+    # Debian (-1) or Ubuntu (-0ubuntu1) revision, and above the danklinux
+    # PPA's "<version>ppaN" (letters sort below "+"), while a future upstream
+    # release ("26.05") still sorts above it, since the minor-version digits
+    # differ before "+luloN" is ever compared. No tilde: GitHub renames "~"
+    # in Release asset names. No epoch: unneeded here, and an epoch is
+    # permanent and highly visible in `apt policy`/`dpkg -l` for something
+    # that only exists to out-rank a PPA. See docs/release-process.md
+    # "Package names and versions".
+    "debian_revision": r"lulo[1-9][0-9]*",
     "tag": r"v[0-9]+(?:\.[0-9]+)+",
     "commit": r"[0-9a-f]{40}",
     "tarball_url": r"https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/archive/refs/tags/v[0-9.]+\.tar\.gz",

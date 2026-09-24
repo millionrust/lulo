@@ -227,10 +227,7 @@ pub(super) fn parse_desktop_entry(
         launch: LaunchSpec::Command {
             program,
             args,
-            working_dir: values
-                .get("Path")
-                .filter(|value| !value.is_empty())
-                .map(PathBuf::from),
+            working_dir: working_directory(&values),
             terminal: bool_value(values.get("Terminal")),
         },
         actions,
@@ -244,10 +241,7 @@ pub(super) fn desktop_actions(
     source: &Path,
     environment: &Environment,
 ) -> Vec<DesktopAction> {
-    let working_dir = entry
-        .get("Path")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from);
+    let working_dir = working_directory(entry);
     let terminal = bool_value(entry.get("Terminal"));
     let mut seen = HashSet::new();
     split_list(entry.get("Actions"))
@@ -278,6 +272,16 @@ pub(super) fn desktop_actions(
         })
         .take(MAX_DESKTOP_ACTIONS)
         .collect()
+}
+
+/// The entry's `Path=`, only when it is absolute. A relative path would be
+/// resolved against the launcher's own working directory, which the entry's
+/// author cannot know, so it is ignored like a missing key.
+pub(super) fn working_directory(values: &HashMap<String, String>) -> Option<PathBuf> {
+    values
+        .get("Path")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
 }
 
 pub(super) fn valid_action_id(id: &str) -> bool {

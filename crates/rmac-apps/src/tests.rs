@@ -554,3 +554,20 @@ fn write_theme(
         )
         .unwrap();
 }
+
+#[test]
+fn only_an_absolute_desktop_entry_path_becomes_the_working_directory() {
+    let entry =
+        |value: &str| std::collections::HashMap::from([("Path".to_owned(), value.to_owned())]);
+    assert_eq!(
+        crate::platform::working_directory(&entry("/home/user/Projects")),
+        Some(std::path::PathBuf::from("/home/user/Projects"))
+    );
+    for relative in ["", "Projects", "./bin", "../..", "~/Documents"] {
+        assert_eq!(crate::platform::working_directory(&entry(relative)), None);
+    }
+    assert_eq!(
+        crate::platform::working_directory(&std::collections::HashMap::new()),
+        None
+    );
+}

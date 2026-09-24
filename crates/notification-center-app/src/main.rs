@@ -294,11 +294,7 @@ fn main() {
                 cx.spawn(async move |cx: &mut gpui::AsyncApp| {
                     let consume = async {
                         while shortcut_rx.recv().await.is_ok() {
-                            if cx.update(route_shortcut).is_err() {
-                                return Err(
-                                    "Notification Center application context stopped".to_owned()
-                                );
-                            }
+                            cx.update(route_shortcut);
                         }
                         Ok::<(), String>(())
                     };

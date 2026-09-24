@@ -30,6 +30,97 @@ Reboot if Ubuntu requests it, log into the untouched GNOME Wayland session,
 and run the read-only preflight from
 [Linux reference PC bring-up](linux-reference-bringup.md) before compiling.
 
+## Install from the APT repository
+
+> This is the eventual normal path once the release pipeline in
+> [Release process](release-process.md) has real signing keys. Today
+> `install.sh` refuses to run: its pinned archive fingerprint is still an
+> unfilled placeholder awaiting the key (see "Decisions needed" in
+> [Update trust](update-trust.md)). Nothing below works yet, but this is
+> the exact flow that will replace source builds for everyday testers.
+
+One line, on a disposable Ubuntu 26.04 amd64 or arm64 machine:
+
+```sh
+curl -fsSL https://millionrust.github.io/lulo/install.sh | sh
+```
+
+That script (`scripts/linux/install.sh` in this repository) does exactly the
+following, and nothing else:
+
+1. Refuses to run as root; it calls `sudo` itself only for the steps that
+   need it.
+2. Checks that the machine reports Ubuntu 26.04 on amd64 or arm64.
+3. Downloads `rmac-archive-keyring-latest.deb` over HTTPS and verifies with
+   `gpg` that it contains the exact archive fingerprint pinned in the
+   script -- HTTPS transport security is never treated as package
+   authentication (see [Update trust](update-trust.md)).
+4. Installs that keyring package (`/usr/share/keyrings/rmac-archive-keyring.gpg`)
+   and writes `/etc/apt/sources.list.d/rmac.sources` and
+   `/etc/apt/preferences.d/rmac.pref` (the rendered
+   `packaging/apt/rmac.sources.in` / `packaging/apt/rmac.pref`, pinned to
+   `rmac-apps`, `rmac-session`, and the keyring package only).
+5. Runs `apt update && apt install rmac-session` (which pulls in
+   `rmac-apps` as a dependency).
+
+It never touches the GNOME session: no session default changes, no GDM
+restart. The same steps written out by hand:
+
+```sh
+# 1. Download and verify the keyring, then install it.
+curl -fsSL -o rmac-archive-keyring.deb \
+  https://millionrust.github.io/lulo/rmac-archive-keyring-latest.deb
+gpg --show-keys --with-colons \
+  <(dpkg-deb --fsys-tarfile rmac-archive-keyring.deb \
+      | tar -xO ./usr/share/keyrings/rmac-archive-keyring.gpg) \
+  | grep fpr   # compare this fingerprint by hand against the README/Release notes
+sudo dpkg -i rmac-archive-keyring.deb
+
+# 2. Add the repository and its pin.
+sudo tee /etc/apt/sources.list.d/rmac.sources >/dev/null <<'EOF'
+Types: deb deb-src
+URIs: https://millionrust.github.io/lulo/
+Suites: resolute
+Components: main
+Architectures: amd64 arm64
+Signed-By: /usr/share/keyrings/rmac-archive-keyring.gpg
+Check-Valid-Until: yes
+EOF
+sudo tee /etc/apt/preferences.d/rmac.pref >/dev/null <<'EOF'
+Package: rmac-apps rmac-archive-keyring rmac-session
+Pin: release o=rmac,n=resolute,c=main
+Pin-Priority: 500
+EOF
+
+# 3. Install.
+sudo apt update
+sudo apt install rmac-session
+```
+
+Log out and choose Lulo OS on the login screen. Keep Ubuntu/GNOME as the
+recovery session.
+
+To remove rmac later:
+
+```sh
+curl -fsSL https://millionrust.github.io/lulo/uninstall.sh | sh
+```
+
+or by hand: `sudo apt purge rmac-session rmac-apps rmac-archive-keyring`
+then remove `/etc/apt/sources.list.d/rmac.sources` and
+`/etc/apt/preferences.d/rmac.pref`.
+
+### Keeping rmac up to date
+
+Once installed, `rmac-update-check.timer` asks PackageKit for updates once a
+day and shows a notification when any exist; it never installs, downloads,
+or removes anything itself. Reviewing and applying updates happens in
+System Settings (see [Software Update](software-update.md)), which drives
+PackageKit directly. PackageKit installs on the next restart ("offline
+updates"), so a running session is never replaced mid-session. An optional
+"install updates automatically" setting for `origin=rmac` security updates
+is still on the todo list and not implemented yet.
+
 ## Build one application
 
 Build only what you need while developing:

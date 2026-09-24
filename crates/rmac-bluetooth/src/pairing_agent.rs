@@ -430,7 +430,7 @@ impl PairingAgent {
         }
     }
 
-    fn from_service(&self, header: &Header<'_>) -> bool {
+    fn sent_by_service(&self, header: &Header<'_>) -> bool {
         caller_is_service(
             header.sender().map(|name| name.as_str()),
             &self.service_owner,
@@ -438,7 +438,7 @@ impl PairingAgent {
     }
 
     fn check_caller(&self, header: &Header<'_>) -> Result<(), PairingAgentError> {
-        if self.from_service(header) {
+        if self.sent_by_service(header) {
             Ok(())
         } else {
             Err(PairingAgentError::Rejected(
@@ -462,7 +462,7 @@ impl PairingAgent {
 #[zbus::interface(name = "org.bluez.Agent1")]
 impl PairingAgent {
     fn release(&self, #[zbus(header)] header: Header<'_>) {
-        if self.from_service(&header) {
+        if self.sent_by_service(&header) {
             self.session.cancel();
         }
     }
@@ -575,7 +575,7 @@ impl PairingAgent {
     }
 
     fn cancel(&self, #[zbus(header)] header: Header<'_>) {
-        if self.from_service(&header) {
+        if self.sent_by_service(&header) {
             self.session.agent_request_canceled();
         }
     }

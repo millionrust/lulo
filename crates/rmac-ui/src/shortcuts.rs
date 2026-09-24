@@ -58,6 +58,7 @@ pub const TOGGLE_MONOSPACE: Shortcut = Shortcut::new("cmd-shift-m", "⇧⌘M");
 pub const MINIMIZE: Shortcut = Shortcut::new("cmd-m", "⌘M");
 pub const HIDE: Shortcut = Shortcut::new("cmd-h", "⌘H");
 pub const HIDE_OTHERS: Shortcut = Shortcut::new("cmd-alt-h", "⌥⌘H");
+pub const QUIT: Shortcut = Shortcut::new("cmd-q", "⌘Q");
 
 pub const ENTER: Shortcut = Shortcut::new("enter", "↩");
 pub const ESCAPE: Shortcut = Shortcut::new("escape", "Esc");
@@ -114,6 +115,7 @@ mod tests {
         MINIMIZE,
         HIDE,
         HIDE_OTHERS,
+        QUIT,
         ENTER,
         ESCAPE,
         SPACE,

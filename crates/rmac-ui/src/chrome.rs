@@ -113,6 +113,57 @@ pub fn hide_application(others: bool, cx: &mut App) {
     .detach();
 }
 
+/// ⌘Q: quit this application the way the menu bar's and the Dock's Quit do,
+/// by asking the compositor to close each of its windows. Every window
+/// therefore goes through its own close guard, so an edited document still
+/// asks Save / Don't Save / Cancel. Files, like Finder, never quits.
+pub fn quit_application(cx: &mut App) {
+    cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
+        let pid = std::process::id() as i32;
+        let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+            eprintln!("could not read windows to quit");
+            return;
+        };
+        let Some(windows) = quit_windows(&snapshot, pid) else {
+            return;
+        };
+        let mut store = rmac_compositor::ParkingStore::load_default();
+        for window in &windows {
+            store.forget(*window);
+        }
+        if let Err(error) = store.save_default() {
+            eprintln!("could not save the parking set: {error}");
+        }
+        for window in windows {
+            let action = rmac_compositor::Action::CloseWindow { window };
+            if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                eprintln!("could not close a window to quit: {error:?}");
+            }
+        }
+    })
+    .detach();
+}
+
+/// Every window, hidden or not, that ⌘Q closes for the process `pid`, or
+/// `None` when the process is Files, which has no Quit.
+fn quit_windows(
+    snapshot: &rmac_compositor::Snapshot,
+    pid: i32,
+) -> Option<Vec<rmac_compositor::WindowId>> {
+    let own = snapshot
+        .windows
+        .iter()
+        .filter(|window| window.pid == Some(pid))
+        .collect::<Vec<_>>();
+    if own
+        .iter()
+        .any(|window| window.app_id.as_deref() == Some(rmac_apps::identity::FILES))
+    {
+        return None;
+    }
+    Some(own.into_iter().map(|window| window.id).collect())
+}
+
 /// The windows ⌘H (`others == false`) or ⌥⌘H (`others == true`) parks for
 /// the process `pid`: its own visible windows, or every other application's.
 fn hidden_windows(
@@ -821,6 +872,31 @@ mod tests {
             focused: id == 1,
             active_window: None,
         }
+    }
+
+    #[test]
+    fn quit_closes_every_window_of_this_process_except_in_files() {
+        let snapshot = Snapshot {
+            workspaces: vec![
+                workspace(1, "Desktop"),
+                workspace(2, rmac_compositor::PARKING_WORKSPACE),
+            ],
+            windows: vec![
+                window(10, "org.rmac.TextEditor", 100, 1, true),
+                // Hidden windows close too.
+                window(12, "org.rmac.TextEditor", 100, 2, false),
+                // Another process of the same app is not this process.
+                window(11, "org.rmac.TextEditor", 101, 1, false),
+                window(40, rmac_apps::identity::FILES, 400, 1, false),
+            ],
+            ..Snapshot::default()
+        };
+        assert_eq!(
+            quit_windows(&snapshot, 100),
+            Some(vec![WindowId(10), WindowId(12)])
+        );
+        assert_eq!(quit_windows(&snapshot, 400), None);
+        assert_eq!(quit_windows(&snapshot, 999), Some(Vec::new()));
     }
 
     #[test]

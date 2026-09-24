@@ -108,7 +108,7 @@ impl ApplicationSemantics for App {
 }
 
 pub(crate) fn scan() -> (Vec<App>, Option<SharedString>) {
-    let catalog = match rmac_apps::discover() {
+    let catalog = match rmac_apps::discover_for_browsing() {
         Ok(catalog) => catalog,
         Err(error) => {
             return (

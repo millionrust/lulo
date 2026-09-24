@@ -21,7 +21,7 @@ impl ApplicationProvider {
     }
 
     pub fn discover() -> Result<Self, ProviderError> {
-        rmac_apps::discover()
+        rmac_apps::discover_for_browsing()
             .map(Self::new)
             .map_err(|error| ProviderError {
                 detail: error.to_string(),
@@ -64,7 +64,7 @@ impl ApplicationProvider {
     }
 
     pub fn refresh(&self) -> Result<bool, ProviderError> {
-        let catalog = rmac_apps::discover().map_err(|error| ProviderError {
+        let catalog = rmac_apps::discover_for_browsing().map_err(|error| ProviderError {
             detail: error.to_string(),
         })?;
         Ok(self.replace_catalog(catalog))

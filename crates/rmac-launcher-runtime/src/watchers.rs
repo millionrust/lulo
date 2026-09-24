@@ -74,7 +74,7 @@ pub async fn watch_application_catalog(
         let mut refresh = true;
         loop {
             if refresh {
-                let discovery = blocking::unblock(rmac_apps::discover).await;
+                let discovery = blocking::unblock(rmac_apps::discover_for_browsing).await;
                 refresh = discovery.is_err();
                 let update = match discovery {
                     Ok(catalog) => CatalogUpdate {

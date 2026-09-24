@@ -195,6 +195,17 @@ pub fn accent() -> u32 {
     hex(current().colors.accent)
 }
 
+/// Keyboard-focus ring color, matching `rmac-ui`'s `mac::focus_ring()`.
+pub fn focus_ring() -> u32 {
+    hex(current().colors.focus_ring)
+}
+
+/// Measured keyboard-focus ring width (3 pt regular, 4 pt high-contrast),
+/// matching `rmac-ui`'s `theme::current().focus.ring_width`.
+pub fn focus_ring_width() -> f32 {
+    current().metrics.focus_ring_width
+}
+
 pub fn accent_hover() -> u32 {
     hex(current().colors.accent)
 }

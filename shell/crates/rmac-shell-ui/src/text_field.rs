@@ -18,6 +18,7 @@ use gpui::{
 };
 
 use crate::text_edit::{self, Motion, TextEdit};
+use crate::tokens;
 
 /// The caret's width (S).
 const CARET_WIDTH: f32 = 1.0;
@@ -252,8 +253,9 @@ impl TextField {
 }
 
 impl Render for TextField {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let style = self.style;
+        let is_focused = self.focus.is_focused(window);
         div()
             .id(ElementId::Name(self.id.clone()))
             .role(Role::TextInput)
@@ -264,6 +266,17 @@ impl Render for TextField {
             .px(px(style.padding_x))
             .rounded(px(style.radius))
             .bg(rgba(style.background))
+            // A visible keyboard-focus ring, matching rmac-ui's
+            // `mac::focus_ring_shadow()` (previously `track_focus` made this
+            // field a tab stop with no visible indicator of that at all).
+            .when(is_focused, |el| {
+                el.shadow(vec![gpui::BoxShadow::new(
+                    px(0.0),
+                    px(0.0),
+                    rgba(tokens::focus_ring()).into(),
+                )
+                .spread_radius(px(tokens::focus_ring_width()))])
+            })
             .on_key_down(cx.listener(Self::key_down))
             .on_mouse_down(MouseButton::Left, cx.listener(Self::mouse_down))
             .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())

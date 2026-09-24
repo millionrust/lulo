@@ -29,6 +29,31 @@ impl TerminalView {
         )
     }
 
+    /// Behind another window Terminal draws the cursor as an outline in the
+    /// cursor colour instead of a filled block.
+    pub(super) fn render_inactive_cursor(&self) -> Option<Div> {
+        if self.window_active || !self.tabs[self.active].accepts_input() {
+            return None;
+        }
+        {
+            let term = self.tabs[self.active].term.lock().ok()?;
+            if term.grid().display_offset() != 0 || !term.mode().contains(TermMode::SHOW_CURSOR) {
+                return None;
+            }
+        }
+        let (row, column) = self.active_cursor_viewport_cell()?;
+        Some(
+            div()
+                .absolute()
+                .left(px(PAD_X + column as f32 * self.cell_w))
+                .top(px(PAD_TOP + row as f32 * self.line_h))
+                .w(px(self.cell_w))
+                .h(px(self.line_h))
+                .border_1()
+                .border_color(hsla(active().cursor)),
+        )
+    }
+
     pub(super) fn render_rows(&self, query: &str) -> Vec<gpui::AnyElement> {
         let Ok(term) = self.tabs[self.active].term.lock() else {
             return Vec::new();
@@ -93,7 +118,11 @@ impl TerminalView {
                 if flags.contains(Flags::DIM) {
                     foreground.a *= 0.65;
                 }
-                if show_cursor && line_index == cursor_line && column == cursor_column {
+                if show_cursor
+                    && self.window_active
+                    && line_index == cursor_line
+                    && column == cursor_column
+                {
                     // Terminal fills the block cursor with the profile's
                     // cursor colour (Basic dark: #9C9D9D, measured) and
                     // draws the character under it in the background colour.

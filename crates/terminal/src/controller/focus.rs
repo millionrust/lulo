@@ -46,10 +46,12 @@ impl TerminalView {
             return;
         }
         self.window_active = active;
-        let menu_closed =
-            !active && rmac_ui::ContextMenuState::dismiss(&mut self.menu_at, window, cx);
-        if self.report_active_focus(active) || menu_closed {
-            cx.notify();
+        if !active {
+            rmac_ui::ContextMenuState::dismiss(&mut self.menu_at, window, cx);
         }
+        // Failures land in `operation_error`, which this render shows.
+        self.report_active_focus(active);
+        // The cursor changes between a filled block and an outline.
+        cx.notify();
     }
 }

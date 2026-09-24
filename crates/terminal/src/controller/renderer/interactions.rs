@@ -304,6 +304,9 @@ impl TerminalView {
             .text_size(px(self.font_size))
             .v_flex()
             .children(rows)
+            .when_some(self.render_inactive_cursor(), |body, cursor| {
+                body.child(cursor)
+            })
             .when_some(ime_preedit, |body, preedit| body.child(preedit))
             .child(input_bridge)
     }

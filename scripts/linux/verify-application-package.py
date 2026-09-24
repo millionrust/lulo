@@ -92,6 +92,9 @@ SUPERSEDED_APPLICATIONS = {
     "org.gnome.Papers.desktop": "org.rmac.Preview",
     "org.gnome.Terminal.desktop": "org.rmac.Terminal",
     "org.gnome.Ptyxis.desktop": "org.rmac.Terminal",
+    "foot.desktop": "org.rmac.Terminal",
+    "footclient.desktop": "org.rmac.Terminal",
+    "foot-server.desktop": "org.rmac.Terminal",
     "org.gnome.clocks.desktop": "org.rmac.Clock",
     "org.gnome.Weather.desktop": "org.rmac.Weather",
 }

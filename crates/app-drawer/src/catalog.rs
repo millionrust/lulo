@@ -130,7 +130,7 @@ pub(crate) fn scan() -> (Vec<App>, Option<SharedString>) {
     #[cfg(not(target_os = "macos"))]
     let categories = catalog
         .iter()
-        .map(|application| categorize_desktop(&application.categories))
+        .map(|application| categorize_desktop(&application.id, &application.categories))
         .collect::<Vec<_>>();
 
     let apps = catalog

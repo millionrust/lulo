@@ -29,6 +29,9 @@ org.gnome.Evince.desktop=org.rmac.Preview
 org.gnome.Papers.desktop=org.rmac.Preview
 org.gnome.Terminal.desktop=org.rmac.Terminal
 org.gnome.Ptyxis.desktop=org.rmac.Terminal
+foot.desktop=org.rmac.Terminal
+footclient.desktop=org.rmac.Terminal
+foot-server.desktop=org.rmac.Terminal
 org.gnome.clocks.desktop=org.rmac.Clock
 org.gnome.Weather.desktop=org.rmac.Weather
 #
@@ -38,3 +41,13 @@ org.gnome.Weather.desktop=org.rmac.Weather
 # panel still reaches network shares, printers, and other controls ours does
 # not yet have, so hiding it would take away real functionality rather than a
 # duplicate.
+#
+# Also deliberately not listed: IBus Preferences
+# (org.freedesktop.IBus.Setup.desktop) and Sysprof (org.gnome.Sysprof.desktop).
+# Neither duplicates a shipped rmac app -- there is no rmac input-method
+# configurator or system profiler -- so hiding them here would remove real
+# functionality, not a duplicate. The way macOS keeps tools like this out of
+# Launchpad's main grid without removing them, the App Drawer instead files
+# both under its Utilities category (crates/app-drawer/src/catalog/category.rs)
+# rather than wherever their own freedesktop Categories= would otherwise put
+# them.

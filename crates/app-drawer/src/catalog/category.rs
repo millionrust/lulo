@@ -173,8 +173,28 @@ fn categorize(name: &str, path: &Path) -> Category {
     }
 }
 
+/// Non-rmac system helpers that Ubuntu ships and rmac does not replace --
+/// input-method setup tools, profilers, and similar developer/admin
+/// utilities -- filed under Utilities rather than left to the generic
+/// `Categories=` heuristic below, which would otherwise scatter them across
+/// System or Developer. This mirrors macOS keeping tools like this in a
+/// Utilities folder instead of the top-level Launchpad grid: still findable,
+/// not clutter next to the everyday apps. Not a hide list -- see
+/// `packaging/rmac-apps/superseded-apps.list` for entries actually removed
+/// from browsing because rmac ships a replacement.
 #[cfg(not(target_os = "macos"))]
-pub(super) fn categorize_desktop(categories: &[String]) -> Category {
+const UTILITIES_OVERRIDE: &[&str] = &[
+    // Keyboard input-method configuration; no rmac equivalent yet.
+    "org.freedesktop.IBus.Setup.desktop",
+    // System/application profiler; a developer diagnostic tool, not an IDE.
+    "org.gnome.Sysprof.desktop",
+];
+
+#[cfg(not(target_os = "macos"))]
+pub(super) fn categorize_desktop(desktop_id: &str, categories: &[String]) -> Category {
+    if UTILITIES_OVERRIDE.contains(&desktop_id) {
+        return Category::Utilities;
+    }
     let has = |names: &[&str]| {
         categories
             .iter()
@@ -196,5 +216,47 @@ pub(super) fn categorize_desktop(categories: &[String]) -> Category {
         Category::Utilities
     } else {
         Category::Other
+    }
+}
+
+#[cfg(all(test, not(target_os = "macos")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ibus_setup_and_sysprof_file_under_utilities_not_their_declared_categories() {
+        // IBus Preferences declares only Settings=, which the generic
+        // heuristic below would otherwise bucket as System.
+        assert!(
+            categorize_desktop(
+                "org.freedesktop.IBus.Setup.desktop",
+                &["Settings".to_string()]
+            ) == Category::Utilities
+        );
+        // Sysprof declares Development *and* Utility; the generic heuristic
+        // checks Development first and would otherwise call it Developer.
+        assert!(
+            categorize_desktop(
+                "org.gnome.Sysprof.desktop",
+                &[
+                    "GNOME".to_string(),
+                    "GTK".to_string(),
+                    "Development".to_string(),
+                    "Utility".to_string(),
+                ]
+            ) == Category::Utilities
+        );
+    }
+
+    #[test]
+    fn override_does_not_reach_apps_outside_the_curated_list() {
+        assert!(
+            categorize_desktop("org.gnome.Builder.desktop", &["Development".to_string()])
+                == Category::Developer
+        );
+        assert!(
+            categorize_desktop("org.gnome.Settings.desktop", &["Settings".to_string()])
+                == Category::System
+        );
     }
 }

@@ -40,6 +40,9 @@ pub(super) const DEFAULT_SUPERSEDED: &[(&str, &str)] = &[
     ("org.gnome.Papers.desktop", identity::PREVIEW),
     ("org.gnome.Terminal.desktop", identity::TERMINAL),
     ("org.gnome.Ptyxis.desktop", identity::TERMINAL),
+    ("foot.desktop", identity::TERMINAL),
+    ("footclient.desktop", identity::TERMINAL),
+    ("foot-server.desktop", identity::TERMINAL),
     ("org.gnome.clocks.desktop", identity::CLOCK),
     ("org.gnome.Weather.desktop", identity::WEATHER),
 ];
@@ -190,6 +193,23 @@ mod tests {
             assert!(
                 identity::ALL.contains(equivalent),
                 "{equivalent} is not a shipped rmac app identity"
+            );
+        }
+    }
+
+    /// Foot (and its client/server split) is a duplicate terminal emulator,
+    /// not a system utility with no rmac equivalent -- see the reference
+    /// install incident where all three showed up next to Terminal in the
+    /// App Drawer. Pinned here so DEFAULT_SUPERSEDED cannot silently drift
+    /// from `packaging/rmac-apps/superseded-apps.list` (kept in sync by a
+    /// packaging test in scripts/test_application_package.py).
+    #[test]
+    fn foot_terminal_variants_are_superseded_by_terminal() {
+        let map = default_superseded_map();
+        for foot_id in ["foot.desktop", "footclient.desktop", "foot-server.desktop"] {
+            assert_eq!(
+                map.get(foot_id).map(String::as_str),
+                Some(identity::TERMINAL)
             );
         }
     }

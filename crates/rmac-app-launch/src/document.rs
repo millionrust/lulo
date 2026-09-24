@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use crate::{AssociationError, ItemError, ItemOperation, OpenWithError, RecentDocumentError};
+use crate::{
+    AssociationError, CatalogError, ItemError, ItemOperation, OpenWithError, RecentDocumentError,
+};
 
 /// Open one local item through the user-mediated desktop boundary.
 ///
@@ -54,20 +56,37 @@ pub async fn file_association(
         .map_err(|_| AssociationError)
 }
 
+/// List every installed application, not filtered by declared file-type
+/// support. Backs "Choose Application…", which — like macOS's own Open With
+/// "Other…" browse — can force-open a file with an application that never
+/// claimed the type.
+pub async fn all_applications() -> Result<Vec<rmac_apps::Application>, CatalogError> {
+    blocking::unblock(rmac_apps::discover)
+        .await
+        .map_err(|_| CatalogError)
+}
+
 /// Revalidate and open one file with an exact compatible desktop application.
 ///
 /// The catalog authority still distinguishes a successfully retained default
 /// change from a later launch failure. All private command and path details are
-/// reduced before returning to application UI.
+/// reduced before returning to application UI. `force` bypasses the declared
+/// MIME-type check for an application chosen from the full catalog.
 pub async fn open_file_with(
     path: PathBuf,
     expected_mime_type: String,
     application_id: String,
     make_default: bool,
+    force: bool,
 ) -> Result<(), OpenWithError> {
     blocking::unblock(move || {
-        let result =
-            rmac_apps::open_file_with(&path, &expected_mime_type, &application_id, make_default);
+        let result = rmac_apps::open_file_with(
+            &path,
+            &expected_mime_type,
+            &application_id,
+            make_default,
+            force,
+        );
         if result.is_ok() {
             let _ = rmac_recent_documents::Store::from_environment()
                 .and_then(|store| store.record(&path));

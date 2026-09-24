@@ -86,14 +86,25 @@ pub(super) struct DeleteConfirmation {
     pub(super) empty_trash: bool,
 }
 
+/// "Choose Application…", browsing the full installed-application catalog —
+/// not just the ones that declare support for this file's type. It only
+/// appears once `association` has loaded with no handlers.
+#[derive(Clone)]
+pub(super) enum OpenWithBrowse {
+    Loading,
+    Ready(Vec<rmac_apps::Application>),
+}
+
 #[derive(Clone)]
 pub(super) struct OpenWithPicker {
     pub(super) path: PathBuf,
+    /// `None` until `rmac_app_launch::file_association` returns.
     pub(super) association: Option<rmac_apps::FileAssociation>,
     pub(super) selected: usize,
     pub(super) make_default: bool,
     pub(super) busy: bool,
     pub(super) error: Option<SharedString>,
+    pub(super) browse: Option<OpenWithBrowse>,
 }
 
 /// The floating Quick Look window this Files window opened.

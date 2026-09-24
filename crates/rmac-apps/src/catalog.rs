@@ -88,11 +88,18 @@ pub fn file_association(path: &Path) -> io::Result<FileAssociation> {
 /// Both the file MIME type and desktop catalog are re-read immediately before
 /// dispatch. `gio launch` interprets the trusted desktop entry and its field
 /// codes without involving a shell.
+///
+/// `force` skips the declared-MIME-type check, for a "Choose Application…"
+/// browse of the full catalog — the same override macOS's own Open With
+/// "Other…" browse allows when no application claims a type. The chosen
+/// application must still be a real, currently installed catalog entry;
+/// `force` never launches anything that wasn't discovered.
 pub fn open_file_with(
     path: &Path,
     expected_mime_type: &str,
     application_id: &str,
     make_default: bool,
+    force: bool,
 ) -> Result<(), OpenFileWithError> {
     #[cfg(target_os = "linux")]
     {
@@ -107,10 +114,11 @@ pub fn open_file_with(
             .into_iter()
             .find(|application| {
                 application.id == application_id
-                    && application
-                        .mime_types
-                        .iter()
-                        .any(|candidate| candidate == &current_mime_type)
+                    && (force
+                        || application
+                            .mime_types
+                            .iter()
+                            .any(|candidate| candidate == &current_mime_type))
             })
             .ok_or_else(|| {
                 io::Error::new(
@@ -156,7 +164,13 @@ pub fn open_file_with(
     }
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = (path, expected_mime_type, application_id, make_default);
+        let _ = (
+            path,
+            expected_mime_type,
+            application_id,
+            make_default,
+            force,
+        );
         Err(OpenFileWithError {
             default_changed: false,
             detail: "Open With is available in the supported Linux session".into(),

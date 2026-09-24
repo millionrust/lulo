@@ -76,6 +76,17 @@ impl fmt::Display for AssociationError {
 impl std::error::Error for AssociationError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CatalogError;
+
+impl fmt::Display for CatalogError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("the application catalog could not be loaded")
+    }
+}
+
+impl std::error::Error for CatalogError {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OpenWithError {
     /// The XDG default changed successfully before application startup failed.
     pub default_changed: bool,

@@ -381,17 +381,34 @@ impl FinderView {
         let mut options = Vec::new();
         let mut can_open = false;
         let mut selected_is_default = false;
-        if let Some(association) = &picker.association {
-            description = format!(
-                "Choose an application for “{name}” ({})",
-                association.mime_type
-            );
+        let mut option_count = 0usize;
+        let browsing = matches!(picker.browse, Some(OpenWithBrowse::Ready(_)));
+        if let Some(OpenWithBrowse::Ready(applications)) = &picker.browse {
+            description = format!("Choose an application to open “{name}” with");
+            can_open = !applications.is_empty();
+            option_count = applications.len();
+            let selected = picker.selected.min(option_count.saturating_sub(1));
+            options = applications
+                .iter()
+                .enumerate()
+                .map(|(index, application)| AccessibleDialogOption {
+                    stable_id: application.id.clone(),
+                    name: sanitize_dialog_name(&application.name),
+                    selected: index == selected,
+                    is_default: false,
+                })
+                .collect();
+        } else if let Some(association) = &picker.association {
             if association.handlers.is_empty() {
-                description
-                    .push_str(". No installed application advertises support for this file type.");
+                description = format!("There is no application set to open the document “{name}”.");
             } else {
+                description = format!(
+                    "Choose an application for “{name}” ({})",
+                    association.mime_type
+                );
                 can_open = true;
-                let selected = picker.selected.min(association.handlers.len() - 1);
+                option_count = association.handlers.len();
+                let selected = picker.selected.min(option_count - 1);
                 options = association
                     .handlers
                     .iter()
@@ -412,10 +429,15 @@ impl FinderView {
                     .collect();
             }
         }
+        let no_handlers = picker
+            .association
+            .as_ref()
+            .is_some_and(|association| association.handlers.is_empty());
         let checked = selected_is_default || picker.make_default;
         let busy = picker.busy;
+        let loading_catalog = matches!(picker.browse, Some(OpenWithBrowse::Loading));
         let mut actions = Vec::new();
-        if can_open {
+        if can_open && !browsing {
             actions.push(
                 dialog_action(
                     "open-with-default",
@@ -430,10 +452,23 @@ impl FinderView {
                 .disabled(selected_is_default || busy),
             );
         }
+        if no_handlers && picker.browse.is_none() {
+            actions.push(dialog_action(
+                "open-with-choose-application",
+                "Choose Application…",
+                DialogActionKind::Normal,
+            ));
+        }
         actions.extend([
             dialog_action(
                 "open-with-cancel",
-                if can_open { "Cancel" } else { "Close" },
+                if browsing || loading_catalog {
+                    "Back"
+                } else if can_open {
+                    "Cancel"
+                } else {
+                    "Close"
+                },
                 DialogActionKind::Normal,
             )
             .disabled(busy),
@@ -451,6 +486,10 @@ impl FinderView {
             .map(|error| assertive_status("open-with-error", error.as_ref()))
             .or_else(|| busy.then(|| polite_status("open-with-status", "Opening application…")))
             .or_else(|| {
+                loading_catalog
+                    .then(|| polite_status("open-with-status", "Loading the application catalog…"))
+            })
+            .or_else(|| {
                 picker
                     .association
                     .is_none()
@@ -463,11 +502,7 @@ impl FinderView {
             actions,
             options,
             initial_focus: if can_open {
-                DialogFocus::Option(
-                    picker
-                        .selected
-                        .min(picker.association.as_ref()?.handlers.len() - 1),
-                )
+                DialogFocus::Option(picker.selected.min(option_count.saturating_sub(1)))
             } else {
                 DialogFocus::Action(0)
             },

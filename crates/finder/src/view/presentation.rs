@@ -146,8 +146,13 @@ impl Render for FinderView {
                     return;
                 }
                 if this.open_with.is_some() {
+                    let browsing = this
+                        .open_with
+                        .as_ref()
+                        .is_some_and(|picker| picker.browse.is_some());
                     cx.stop_propagation();
                     match event.keystroke.key.as_str() {
+                        "escape" if browsing => this.cancel_choose_application(cx),
                         "escape" => this.close_open_with(cx),
                         "up" => this.move_open_with_selection(-1, cx),
                         "down" => this.move_open_with_selection(1, cx),

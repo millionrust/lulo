@@ -62,8 +62,8 @@ use gpui::{
 use gpui_component::{Icon, IconName, StyledExt as _};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use rmac_ui::{
-    Button, InputEvent, InputState, SearchField, Slider, SliderEvent, SliderState, TextField,
-    Toggle,
+    Button, InputEvent, InputState, SearchField, Slider, SliderEvent, SliderState, Spinner,
+    TextField, Toggle,
 };
 
 use crate::conflict::{

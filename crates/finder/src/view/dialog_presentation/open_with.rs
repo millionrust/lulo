@@ -12,33 +12,131 @@ impl FinderView {
             .map(|name| sanitize_dialog_name(&name.to_string_lossy()))
             .unwrap_or_else(|| "this file".into());
         let busy = picker.busy;
+        let browsing = picker.browse.is_some();
 
         let mut body = div().v_flex().gap_2().px_5().py_4();
         let mut can_open = false;
         let mut selected_is_default = false;
-        if let Some(association) = &picker.association {
-            body = body.child(
-                div()
-                    .text_size(rmac_ui::text_px(12.0))
-                    .text_color(secondary())
-                    .child(format!(
-                        "Choose an application for “{name}” ({})",
-                        association.mime_type
-                    )),
-            );
+
+        if let Some(browse) = &picker.browse {
+            match browse {
+                OpenWithBrowse::Loading => {
+                    body = body.child(
+                        div()
+                            .h(px(180.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                div()
+                                    .v_flex()
+                                    .items_center()
+                                    .gap_3()
+                                    .child(Spinner::new())
+                                    .child(
+                                        div()
+                                            .text_size(rmac_ui::text_px(13.0))
+                                            .text_color(secondary())
+                                            .child("Loading the application catalog…"),
+                                    ),
+                            ),
+                    );
+                }
+                OpenWithBrowse::Ready(applications) => {
+                    body = body.child(
+                        div()
+                            .text_size(rmac_ui::text_px(12.0))
+                            .text_color(secondary())
+                            .child(format!("Choose an application to open “{name}” with")),
+                    );
+                    if applications.is_empty() {
+                        body = body.child(
+                            div()
+                                .h(px(120.0))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_size(rmac_ui::text_px(13.0))
+                                .text_color(secondary())
+                                .child("No applications are installed."),
+                        );
+                    } else {
+                        can_open = true;
+                        let mut rows = Vec::with_capacity(applications.len());
+                        for (index, application) in applications.iter().enumerate() {
+                            let selected = index == picker.selected;
+                            let application_name = sanitize_dialog_name(&application.name);
+                            let row = Button::new(("open-with-browse", index), application_name)
+                                .selected(selected)
+                                .disabled(busy)
+                                .w_full()
+                                .h(px(34.0))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.choose_browse_application(index, cx)
+                                }));
+                            rows.push(if selected {
+                                row.primary().into_any_element()
+                            } else {
+                                row.ghost().into_any_element()
+                            });
+                        }
+                        body = body.child(
+                            div()
+                                .id("open-with-browse-list")
+                                .max_h(px(260.0))
+                                .overflow_y_scroll()
+                                .v_flex()
+                                .gap_0p5()
+                                .children(rows),
+                        );
+                        body = body.child(
+                            div()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .text_color(secondary())
+                                .child(
+                                    "This only opens the file once; it can't be set as the default \
+                                     application for this file type.",
+                                ),
+                        );
+                    }
+                }
+            }
+        } else if let Some(association) = &picker.association {
             if association.handlers.is_empty() {
                 body = body.child(
                     div()
-                        .h(px(120.0))
-                        .flex()
+                        .v_flex()
+                        .gap_3()
                         .items_center()
-                        .justify_center()
-                        .text_size(rmac_ui::text_px(13.0))
-                        .text_color(secondary())
-                        .child("No installed application advertises support for this file type."),
+                        .py_4()
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(13.0))
+                                .text_color(label())
+                                .text_center()
+                                .child(format!(
+                                    "There is no application set to open the document \
+                                     “{name}”."
+                                )),
+                        )
+                        .child(
+                            Button::new("open-with-choose-application", "Choose Application…")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.request_choose_application(cx)
+                                })),
+                        ),
                 );
             } else {
                 can_open = true;
+                body = body.child(
+                    div()
+                        .text_size(rmac_ui::text_px(12.0))
+                        .text_color(secondary())
+                        .child(format!(
+                            "Choose an application for “{name}” ({})",
+                            association.mime_type
+                        )),
+                );
                 let mut rows = Vec::with_capacity(association.handlers.len());
                 for (index, application) in association.handlers.iter().enumerate() {
                     let selected = index == picker.selected;
@@ -97,9 +195,19 @@ impl FinderView {
                     .flex()
                     .items_center()
                     .justify_center()
-                    .text_size(rmac_ui::text_px(13.0))
-                    .text_color(secondary())
-                    .child("Finding compatible applications…"),
+                    .child(
+                        div()
+                            .v_flex()
+                            .items_center()
+                            .gap_3()
+                            .child(Spinner::new())
+                            .child(
+                                div()
+                                    .text_size(rmac_ui::text_px(13.0))
+                                    .text_color(secondary())
+                                    .child("Finding compatible applications…"),
+                            ),
+                    ),
             );
         }
         if let Some(error) = &picker.error {
@@ -122,6 +230,13 @@ impl FinderView {
             );
         }
 
+        let cancel_label = if browsing {
+            "Back"
+        } else if can_open {
+            "Cancel"
+        } else {
+            "Close"
+        };
         let buttons = div()
             .h(px(54.0))
             .flex()
@@ -134,11 +249,21 @@ impl FinderView {
             .child(
                 rmac_ui::dialog_button(
                     "open-with-cancel",
-                    if can_open { "Cancel" } else { "Close" },
+                    cancel_label,
                     rmac_ui::DialogButtonKind::Normal,
                 )
                 .disabled(busy)
-                .on_click(cx.listener(|this, _, _, cx| this.close_open_with(cx))),
+                .on_click(cx.listener(|this, _, _, cx| {
+                    if this
+                        .open_with
+                        .as_ref()
+                        .is_some_and(|picker| picker.browse.is_some())
+                    {
+                        this.cancel_choose_application(cx);
+                    } else {
+                        this.close_open_with(cx);
+                    }
+                })),
             )
             .child(
                 rmac_ui::dialog_button(

@@ -12,12 +12,12 @@ mod termination;
 
 pub use application::launch;
 pub use document::{
-    file_association, open_document, open_file_with, open_item, record_recent_document,
-    reveal_application, reveal_item,
+    all_applications, file_association, open_document, open_file_with, open_item,
+    record_recent_document, reveal_application, reveal_item,
 };
 pub use model::{
-    AssociationError, Delivery, Error, ErrorKind, ItemError, ItemOperation, OpenWithError, Outcome,
-    RecentDocumentError,
+    AssociationError, CatalogError, Delivery, Error, ErrorKind, ItemError, ItemOperation,
+    OpenWithError, Outcome, RecentDocumentError,
 };
 pub use termination::{terminate_application, TerminationError, TerminationKind};
 

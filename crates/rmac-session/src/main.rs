@@ -357,9 +357,20 @@ mod notice {
             ),
         )?;
         let id: u32 = reply.body().deserialize()?;
+        // Only the server that answered Notify may answer the notice: any
+        // other session peer can emit a signal with the same path, interface
+        // and id.
+        let server = reply
+            .header()
+            .sender()
+            .map(|name| name.as_str().to_owned())
+            .ok_or_else(|| zbus::Error::Failure("the Notify reply has no sender".into()))?;
         for message in signals {
             let message = message?;
             let header = message.header();
+            if !signal_from(header.sender().map(|name| name.as_str()), &server) {
+                continue;
+            }
             let member = header.member().map(|name| name.as_str().to_owned());
             match member.as_deref() {
                 Some("ActionInvoked") => {
@@ -380,6 +391,21 @@ mod notice {
         Err(zbus::Error::Failure(
             "the notification server went away".into(),
         ))
+    }
+
+    /// Whether a signal came from the notification server's unique name.
+    fn signal_from(sender: Option<&str>, server: &str) -> bool {
+        sender == Some(server)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn only_the_answering_server_can_answer_the_safe_mode_notice() {
+            assert!(super::signal_from(Some(":1.42"), ":1.42"));
+            assert!(!super::signal_from(Some(":1.43"), ":1.42"));
+            assert!(!super::signal_from(None, ":1.42"));
+        }
     }
 
     fn ask_with_dialog(notice: &SafeModeNotice) -> Result<bool, String> {

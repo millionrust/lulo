@@ -247,6 +247,19 @@ binds {
     Ctrl+Down repeat=false hotkey-overlay-title="Application Windows" { spawn "/usr/libexec/rmac/rmac-mission-control" "app-windows"; }
     F11 repeat=false hotkey-overlay-title="Show Desktop" { spawn "/usr/libexec/rmac/rmac-mission-control" "show-desktop"; }
     Mod+Ctrl+F repeat=false hotkey-overlay-title="Full Screen" { fullscreen-window; }
+    // Window ▸ Move & Resize (WIN-01, macOS 26): the Mac reads these off
+    // Globe+Control, a chord no PC keyboard has (docs/decisions/0017-mac-
+    // keyboard.md leaves Globe/fn unmapped). rmac reads Globe as Super, so
+    // Fill would collide with ⌃⌘F Full Screen above; every other letter and
+    // the arrows are free, so only Fill also takes Shift. All six go to
+    // the same resident Mission Control service as Show Desktop above.
+    Mod+Ctrl+Shift+F repeat=false hotkey-overlay-title="Fill" { spawn "/usr/libexec/rmac/rmac-mission-control" "fill"; }
+    Mod+Ctrl+C repeat=false hotkey-overlay-title="Centre" { spawn "/usr/libexec/rmac/rmac-mission-control" "centre"; }
+    Mod+Ctrl+Left repeat=false hotkey-overlay-title="Left" { spawn "/usr/libexec/rmac/rmac-mission-control" "tile-left"; }
+    Mod+Ctrl+Right repeat=false hotkey-overlay-title="Right" { spawn "/usr/libexec/rmac/rmac-mission-control" "tile-right"; }
+    Mod+Ctrl+Up repeat=false hotkey-overlay-title="Top" { spawn "/usr/libexec/rmac/rmac-mission-control" "tile-top"; }
+    Mod+Ctrl+Down repeat=false hotkey-overlay-title="Bottom" { spawn "/usr/libexec/rmac/rmac-mission-control" "tile-bottom"; }
+    Mod+Ctrl+R repeat=false hotkey-overlay-title="Return to Previous Size" { spawn "/usr/libexec/rmac/rmac-mission-control" "restore-size"; }
     // Screenshots are the resident rmac-screenshot service
     // (docs/decisions/0010): ⇧⌘3 screen, ⇧⌘4 selection (Space: window),
     // ⇧⌘5 toolbar; adding ⌃ copies to the clipboard instead of saving.

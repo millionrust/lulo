@@ -32,6 +32,17 @@ pub enum Command {
     NextSpace,
     PreviousSpace,
     Cancel,
+    /// 🌐⌃F: fill the working area (Window ▸ Move & Resize, WIN-01).
+    Fill,
+    /// 🌐⌃C: centre the window at its current size.
+    Centre,
+    /// 🌐⌃ + arrow: the left, right, top or bottom half.
+    TileLeft,
+    TileRight,
+    TileTop,
+    TileBottom,
+    /// 🌐⌃R: put the window back where Fill, Centre or a half left it from.
+    RestoreSize,
 }
 
 impl Command {
@@ -44,6 +55,13 @@ impl Command {
             "next-space" => Self::NextSpace,
             "previous-space" => Self::PreviousSpace,
             "cancel" => Self::Cancel,
+            "fill" => Self::Fill,
+            "centre" => Self::Centre,
+            "tile-left" => Self::TileLeft,
+            "tile-right" => Self::TileRight,
+            "tile-top" => Self::TileTop,
+            "tile-bottom" => Self::TileBottom,
+            "restore-size" => Self::RestoreSize,
             _ => return None,
         })
     }
@@ -57,6 +75,13 @@ impl Command {
             Self::NextSpace => "next-space",
             Self::PreviousSpace => "previous-space",
             Self::Cancel => "cancel",
+            Self::Fill => "fill",
+            Self::Centre => "centre",
+            Self::TileLeft => "tile-left",
+            Self::TileRight => "tile-right",
+            Self::TileTop => "tile-top",
+            Self::TileBottom => "tile-bottom",
+            Self::RestoreSize => "restore-size",
         }
     }
 }
@@ -641,45 +666,6 @@ pub fn neighbour_space(snapshot: &Snapshot, forward: bool) -> Option<WorkspaceId
 }
 
 // ---------------------------------------------------------------------------
-// Show Desktop
-
-/// A shown desktop: the Space the windows are on, and the spare workspace
-/// being shown instead.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ShownDesktop {
-    pub output: OutputId,
-    pub from: WorkspaceId,
-    pub empty: WorkspaceId,
-}
-
-/// F11: what to show, or `None` when the current Space is already empty.
-pub fn show_desktop(snapshot: &Snapshot) -> Option<ShownDesktop> {
-    let output = focused_output(snapshot)?;
-    let from = active_workspace(snapshot, &output)?;
-    if windows_on(snapshot, from.id).is_empty() {
-        return None;
-    }
-    let empty = spare_workspace(snapshot, &output)?;
-    Some(ShownDesktop {
-        output,
-        from: from.id,
-        empty: empty.id,
-    })
-}
-
-/// F11 again: go back only if the user is still looking at the desktop.
-pub fn restore_desktop(snapshot: &Snapshot, shown: &ShownDesktop) -> Option<Action> {
-    let active = active_workspace(snapshot, &shown.output)?;
-    let from_exists = snapshot
-        .workspaces
-        .iter()
-        .any(|workspace| workspace.id == shown.from);
-    (active.id == shown.empty && from_exists).then_some(Action::FocusWorkspace {
-        workspace: shown.from,
-    })
-}
-
-// ---------------------------------------------------------------------------
 // Hot corners
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -881,6 +867,13 @@ mod tests {
             Command::NextSpace,
             Command::PreviousSpace,
             Command::Cancel,
+            Command::Fill,
+            Command::Centre,
+            Command::TileLeft,
+            Command::TileRight,
+            Command::TileTop,
+            Command::TileBottom,
+            Command::RestoreSize,
         ] {
             assert_eq!(Command::parse(command.as_str()), Some(command));
             assert!(command.as_str().len() <= 16);
@@ -1052,31 +1045,6 @@ mod tests {
         let snapshot = snapshot(Vec::new(), None);
         assert_eq!(neighbour_space(&snapshot, true), Some(WorkspaceId(3)));
         assert_eq!(neighbour_space(&snapshot, false), None);
-    }
-
-    #[test]
-    fn show_desktop_uses_the_spare_workspace_and_returns_only_from_it() {
-        let mut snapshot = snapshot(
-            vec![window(1, "zed", 1, Rect::new(0.0, 0.0, 9.0, 9.0), 1)],
-            None,
-        );
-        let shown = show_desktop(&snapshot).unwrap();
-        assert_eq!((shown.from, shown.empty), (WorkspaceId(1), WorkspaceId(4)));
-        assert_eq!(restore_desktop(&snapshot, &shown), None);
-        for workspace in &mut snapshot.workspaces {
-            workspace.active = workspace.id == WorkspaceId(4);
-        }
-        assert_eq!(
-            restore_desktop(&snapshot, &shown),
-            Some(Action::FocusWorkspace {
-                workspace: WorkspaceId(1)
-            })
-        );
-        snapshot.windows.clear();
-        for workspace in &mut snapshot.workspaces {
-            workspace.active = workspace.id == WorkspaceId(1);
-        }
-        assert_eq!(show_desktop(&snapshot), None);
     }
 
     #[test]

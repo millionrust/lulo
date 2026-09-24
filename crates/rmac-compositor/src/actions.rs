@@ -19,6 +19,7 @@ pub enum ActionKind {
     FillWindow,
     CenterWindow,
     TileWindow,
+    SetWindowFrame,
     MinimizeWindow,
     RestoreWindow,
     NameWorkspace,
@@ -227,6 +228,19 @@ pub enum Action {
         window: WindowId,
         region: TileRegion,
     },
+    /// Set `window`'s whole frame directly, as percentages of the output's
+    /// working area — the same space [`TileRegion::frame_percent`] measures,
+    /// but an arbitrary frame rather than one of its halves and quarters.
+    /// "Return to Previous Size" (Window ▸ Move & Resize, WIN-01) uses this
+    /// to put a window back exactly where Fill, Centre or a half left it
+    /// from.
+    SetWindowFrame {
+        window: WindowId,
+        x: Distance,
+        y: Distance,
+        width: Distance,
+        height: Distance,
+    },
     /// Move `window` to the hidden parking workspace.
     MinimizeWindow {
         window: WindowId,
@@ -277,6 +291,7 @@ impl Action {
             Self::FillWindow { .. } => ActionKind::FillWindow,
             Self::CenterWindow { .. } => ActionKind::CenterWindow,
             Self::TileWindow { .. } => ActionKind::TileWindow,
+            Self::SetWindowFrame { .. } => ActionKind::SetWindowFrame,
             Self::MinimizeWindow { .. } => ActionKind::MinimizeWindow,
             Self::RestoreWindow { .. } => ActionKind::RestoreWindow,
             Self::NameWorkspace { .. } => ActionKind::NameWorkspace,

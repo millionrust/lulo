@@ -2,6 +2,17 @@
 
 use super::notification::*;
 use super::*;
+use crate::fake::SystemAudioService;
+
+/// Runs the read-only half of the [`crate::fake::AudioService`] contract
+/// against the real PipeWire backend. `#[ignore]`d because it needs a
+/// running audio graph; run it deliberately on the reference laptop with
+/// `cargo test -p rmac-audio -- --ignored`.
+#[test]
+#[ignore = "needs a live PipeWire session; run on the reference laptop"]
+fn system_audio_service_snapshot_is_well_formed() {
+    contract::assert_audio_service_is_observable(&SystemAudioService);
+}
 
 #[test]
 fn original_notification_chime_is_bounded_well_formed_pcm() {

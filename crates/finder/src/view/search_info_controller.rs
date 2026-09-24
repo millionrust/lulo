@@ -194,7 +194,7 @@ impl FinderView {
         };
         let rows = |keys: &[&'static str], label_width: f32| {
             keys.iter()
-                .filter_map(|key| value_of(*key).map(|value| (*key, value)))
+                .filter_map(|key| value_of(key).map(|value| (*key, value)))
                 .map(|(key, value)| {
                     div()
                         .flex()

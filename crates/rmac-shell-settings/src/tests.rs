@@ -107,12 +107,12 @@ fn settings_round_trip_through_versioned_primary_and_last_good_files() {
 
 /// The same round trip as
 /// `settings_round_trip_through_versioned_primary_and_last_good_files`, but
-/// through `rmac_storage::InMemoryBackend` instead of the real filesystem —
+/// through `rmac_storage::fake::InMemoryBackend` instead of the real filesystem —
 /// the in-memory fake the store's `Backend` type parameter exists to allow,
 /// so app tests don't have to touch disk.
 #[test]
 fn settings_round_trip_through_an_in_memory_backend() {
-    use rmac_storage::InMemoryBackend;
+    use rmac_storage::fake::InMemoryBackend;
 
     let path = PathBuf::from("/state/shell.json");
     let store = ShellSettingsStore::with_backend(path, InMemoryBackend::new());

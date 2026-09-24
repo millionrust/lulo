@@ -92,7 +92,7 @@ impl AppDrawer {
                 crate::search::match_score(&query, &app.search_text).map(|score| (index, score))
             })
             .collect();
-        ranked.sort_by(|left, right| right.1.cmp(&left.1));
+        ranked.sort_by_key(|(_, score)| std::cmp::Reverse(*score));
         ranked.into_iter().map(|(index, _)| index).collect()
     }
 

@@ -402,6 +402,204 @@ fn normalise(query: &str) -> Vec<char> {
         .collect()
 }
 
+/// The word nearest `point` (unit coordinates, 0‥1, raw/unrotated page
+/// space) on `page`, and the character insertion index within it (0..=chars
+/// — the boundary before the first or after the last character counts too).
+/// Prefers a word on the same line as the point; failing that, the nearest
+/// line. `None` only when the page has no extracted words.
+pub fn hit_test(pages: &[TextPage], page: usize, point: (f32, f32)) -> Option<(usize, usize)> {
+    let words = &pages.get(page)?.words;
+    if words.is_empty() {
+        return None;
+    }
+    let (x, y) = point;
+    let same_line = |word: &Word| y >= word.rect.y0 && y <= word.rect.y1;
+    let mut candidates: Vec<usize> = (0..words.len()).filter(|&i| same_line(&words[i])).collect();
+    if candidates.is_empty() {
+        let nearest = (0..words.len()).min_by(|&a, &b| {
+            let da = (y - mid_y(&words[a])).abs();
+            let db = (y - mid_y(&words[b])).abs();
+            da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+        })?;
+        let band = words[nearest].rect;
+        candidates = (0..words.len())
+            .filter(|&i| words[i].rect.y0 < band.y1 && words[i].rect.y1 > band.y0)
+            .collect();
+    }
+    let index = *candidates.iter().min_by(|&&a, &&b| {
+        let da = horizontal_gap(&words[a].rect, x);
+        let db = horizontal_gap(&words[b].rect, x);
+        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+    })?;
+    let word = &words[index];
+    let width = (word.rect.x1 - word.rect.x0).max(1e-6);
+    let frac = ((x - word.rect.x0) / width).clamp(0.0, 1.0);
+    let chars = word.text.chars().count();
+    let char_index = (frac * chars as f32).round() as usize;
+    Some((index, char_index.min(chars)))
+}
+
+fn mid_y(word: &Word) -> f32 {
+    (word.rect.y0 + word.rect.y1) / 2.0
+}
+
+fn horizontal_gap(rect: &UnitRect, x: f32) -> f32 {
+    if x < rect.x0 {
+        rect.x0 - x
+    } else if x > rect.x1 {
+        x - rect.x1
+    } else {
+        0.0
+    }
+}
+
+/// The contiguous run of words sharing `word_index`'s line (its vertical
+/// band), for triple-click "select the line".
+pub fn line_bounds(page: &TextPage, word_index: usize) -> (usize, usize) {
+    let words = &page.words;
+    if words.is_empty() || word_index >= words.len() {
+        return (0, 0);
+    }
+    let band = words[word_index].rect;
+    let overlaps = |rect: &UnitRect| rect.y0 < band.y1 && rect.y1 > band.y0;
+    let mut first = word_index;
+    while first > 0 && overlaps(&words[first - 1].rect) {
+        first -= 1;
+    }
+    let mut last = word_index;
+    while last + 1 < words.len() && overlaps(&words[last + 1].rect) {
+        last += 1;
+    }
+    (first, last)
+}
+
+/// Highlight rectangles for one page's share of a selection, in raw unit
+/// coordinates. `from`/`to` are `(word, char)`; `None` means "from the start
+/// of the page" / "to the end of the page".
+pub fn selection_rects(
+    page: &TextPage,
+    from: Option<(usize, usize)>,
+    to: Option<(usize, usize)>,
+) -> Vec<UnitRect> {
+    if page.words.is_empty() {
+        return Vec::new();
+    }
+    let (from_word, from_char) = from.unwrap_or((0, 0));
+    let last_word = page.words.len() - 1;
+    let (to_word, to_char) = to.unwrap_or((last_word, page.words[last_word].text.chars().count()));
+    if from_word > to_word || from_word > last_word {
+        return Vec::new();
+    }
+    let to_word = to_word.min(last_word);
+    let mut rects = Vec::new();
+    for index in from_word..=to_word {
+        let word = &page.words[index];
+        let chars = word.text.chars().count().max(1);
+        let start = if index == from_word {
+            from_char.min(chars)
+        } else {
+            0
+        };
+        let end = if index == to_word {
+            to_char.min(chars)
+        } else {
+            chars
+        };
+        if end <= start {
+            continue;
+        }
+        let width = word.rect.x1 - word.rect.x0;
+        rects.push(UnitRect {
+            x0: word.rect.x0 + width * start as f32 / chars as f32,
+            x1: word.rect.x0 + width * end as f32 / chars as f32,
+            y0: word.rect.y0,
+            y1: word.rect.y1,
+        });
+    }
+    rects
+}
+
+/// The selected text from `(from_page, from_word, from_char)` to
+/// `(to_page, to_word, to_char)` inclusive, already in reading order. Words
+/// on the same line join with a space; a new line joins with `\n`.
+pub fn selected_text(
+    pages: &[TextPage],
+    from: (usize, usize, usize),
+    to: (usize, usize, usize),
+) -> String {
+    let (from_page, from_word, from_char) = from;
+    let (to_page, to_word, to_char) = to;
+    if from_page > to_page || from_page >= pages.len() {
+        return String::new();
+    }
+    let to_page = to_page.min(pages.len() - 1);
+    let mut out = String::new();
+    let mut previous: Option<UnitRect> = None;
+    for page_index in from_page..=to_page {
+        let page = &pages[page_index];
+        if page.words.is_empty() {
+            continue;
+        }
+        let last = page.words.len() - 1;
+        let word_from = if page_index == from_page {
+            from_word.min(last)
+        } else {
+            0
+        };
+        let word_to = if page_index == to_page {
+            to_word.min(last)
+        } else {
+            last
+        };
+        for index in word_from..=word_to {
+            let word = &page.words[index];
+            let chars: Vec<char> = word.text.chars().collect();
+            let start = if page_index == from_page && index == from_word {
+                from_char.min(chars.len())
+            } else {
+                0
+            };
+            let end = if page_index == to_page && index == word_to {
+                to_char.min(chars.len())
+            } else {
+                chars.len()
+            };
+            if end <= start {
+                continue;
+            }
+            let slice: String = chars[start..end].iter().collect();
+            if slice.is_empty() {
+                continue;
+            }
+            if let Some(previous) = previous {
+                let same_line = word.rect.y0 < previous.y1 && word.rect.y1 > previous.y0;
+                out.push(if same_line { ' ' } else { '\n' });
+            }
+            out.push_str(&slice);
+            previous = Some(word.rect);
+        }
+    }
+    out
+}
+
+/// Words that look like a clickable `http(s)://` link (rmac has no PDF
+/// `/Link` annotation reader, so this recognises literal URL text rather
+/// than following the document's own link destinations — see
+/// `crate::view`'s module notes).
+pub fn find_links(page: &TextPage) -> Vec<(usize, UnitRect, String)> {
+    page.words
+        .iter()
+        .enumerate()
+        .filter_map(|(index, word)| {
+            let trimmed = word
+                .text
+                .trim_end_matches(['.', ',', ';', ':', '!', '?', ')', ']', '}', '"', '\'']);
+            (trimmed.starts_with("http://") || trimmed.starts_with("https://"))
+                .then(|| (index, word.rect, trimmed.to_owned()))
+        })
+        .collect()
+}
+
 /// A user-facing explanation when a poppler tool cannot run.
 pub fn missing_tool_message(tool: &str) -> String {
     format!("Preview needs “{tool}” from poppler-utils to open PDF documents.")
@@ -560,5 +758,120 @@ Page    3 CropBox:     36.00    36.00   576.00   756.00\n";
         assert!((rect.x1 - word.x1).abs() < 1e-6);
         assert!(search(&pages, "  ").is_empty());
         assert!(search(&pages, "absent").is_empty());
+    }
+
+    fn two_line_page() -> TextPage {
+        TextPage {
+            words: vec![
+                Word {
+                    text: "Hello".into(),
+                    rect: UnitRect {
+                        x0: 0.0,
+                        y0: 0.0,
+                        x1: 0.2,
+                        y1: 0.05,
+                    },
+                },
+                Word {
+                    text: "world".into(),
+                    rect: UnitRect {
+                        x0: 0.25,
+                        y0: 0.0,
+                        x1: 0.45,
+                        y1: 0.05,
+                    },
+                },
+                Word {
+                    text: "Second".into(),
+                    rect: UnitRect {
+                        x0: 0.0,
+                        y0: 0.1,
+                        x1: 0.3,
+                        y1: 0.15,
+                    },
+                },
+                Word {
+                    text: "line".into(),
+                    rect: UnitRect {
+                        x0: 0.35,
+                        y0: 0.1,
+                        x1: 0.5,
+                        y1: 0.15,
+                    },
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn hit_test_prefers_the_same_line_then_the_nearest_word() {
+        let pages = [two_line_page()];
+        // Middle of "Hello": char index near 2-3.
+        let (word, char_index) = hit_test(&pages, 0, (0.1, 0.02)).unwrap();
+        assert_eq!(word, 0);
+        assert!((2..=3).contains(&char_index));
+        // Past the end of "line": clamps to its char count.
+        let (word, char_index) = hit_test(&pages, 0, (0.9, 0.12)).unwrap();
+        assert_eq!(word, 3);
+        assert_eq!(char_index, 4);
+        // Between the lines: falls to the nearer one.
+        let (word, _) = hit_test(&pages, 0, (0.0, 0.07)).unwrap();
+        assert!(word == 0 || word == 1);
+        assert!(hit_test(&[TextPage::default()], 0, (0.0, 0.0)).is_none());
+    }
+
+    #[test]
+    fn line_bounds_spans_the_contiguous_same_line_words() {
+        let page = two_line_page();
+        assert_eq!(line_bounds(&page, 0), (0, 1));
+        assert_eq!(line_bounds(&page, 1), (0, 1));
+        assert_eq!(line_bounds(&page, 2), (2, 3));
+    }
+
+    #[test]
+    fn selection_and_text_span_words_and_lines() {
+        let page = two_line_page();
+        // Mid "Hello" to mid "world": one rect per word, same line.
+        let rects = selection_rects(&page, Some((0, 2)), Some((1, 3)));
+        assert_eq!(rects.len(), 2);
+        assert!(rects[0].x0 > page.words[0].rect.x0);
+        assert!(rects[1].x1 < page.words[1].rect.x1);
+
+        let pages = [page];
+        let text = selected_text(&pages, (0, 0, 0), (0, 3, 4));
+        assert_eq!(text, "Hello world\nSecond line");
+        let partial = selected_text(&pages, (0, 1, 2), (0, 2, 3));
+        assert_eq!(partial, "rld\nSec");
+        assert_eq!(selected_text(&pages, (0, 5, 0), (0, 5, 0)), "");
+    }
+
+    #[test]
+    fn finds_plain_link_words_and_trims_trailing_punctuation() {
+        let page = TextPage {
+            words: vec![
+                Word {
+                    text: "(see".into(),
+                    rect: UnitRect {
+                        x0: 0.0,
+                        y0: 0.0,
+                        x1: 0.1,
+                        y1: 0.05,
+                    },
+                },
+                Word {
+                    text: "https://example.test/docs).".into(),
+                    rect: UnitRect {
+                        x0: 0.1,
+                        y0: 0.0,
+                        x1: 0.5,
+                        y1: 0.05,
+                    },
+                },
+            ],
+        };
+        let links = find_links(&page);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].0, 1);
+        assert_eq!(links[0].2, "https://example.test/docs");
     }
 }

@@ -42,6 +42,11 @@ impl Rotation {
         Self((self.0 + other.0) % 4)
     }
 
+    /// The rotation that undoes this one.
+    pub fn inverse(self) -> Self {
+        Self((4 - self.0) % 4)
+    }
+
     pub fn swaps_axes(self) -> bool {
         self.0 % 2 == 1
     }
@@ -174,6 +179,45 @@ pub fn scroll_to_page(pages: &[Rect], index: usize) -> f32 {
         .unwrap_or(0.0)
 }
 
+/// Which page a document-space point falls in, and that page's unit
+/// coordinates (0‥1, clamped) — the inverse of [`continuous`]'s layout, for
+/// hit-testing a click or drag. A point in the gap between pages resolves to
+/// the nearest page vertically, so a drag started or released just outside a
+/// page still lands somewhere sensible.
+pub fn point_to_page(pages: &[Rect], point: (f32, f32)) -> Option<(usize, (f32, f32))> {
+    if pages.is_empty() {
+        return None;
+    }
+    let (x, y) = point;
+    let index = pages
+        .iter()
+        .position(|page| y >= page.y && y <= page.bottom())
+        .unwrap_or_else(|| {
+            pages
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| {
+                    let da = (y - (a.y + a.height / 2.0)).abs();
+                    let db = (y - (b.y + b.height / 2.0)).abs();
+                    da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|(index, _)| index)
+                .unwrap_or(0)
+        });
+    let page = pages[index];
+    let unit_x = if page.width > 0.0 {
+        ((x - page.x) / page.width).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let unit_y = if page.height > 0.0 {
+        ((y - page.y) / page.height).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    Some((index, (unit_x, unit_y)))
+}
+
 /// Origin that centres content in the viewport on each axis where it is
 /// smaller, and pins it to the start where it overflows (and scrolls).
 pub fn centred_origin(content: (f32, f32), viewport: (f32, f32)) -> (f32, f32) {
@@ -290,6 +334,45 @@ mod tests {
             Rotation::from_degrees(90).plus(Rotation::from_degrees(270)),
             Rotation::default()
         );
+    }
+
+    #[test]
+    fn rotation_inverse_undoes_itself() {
+        for degrees in [0, 90, 180, 270] {
+            let rotation = Rotation::from_degrees(degrees);
+            assert_eq!(rotation.plus(rotation.inverse()), Rotation::default());
+            let rect = UnitRect {
+                x0: 0.1,
+                y0: 0.2,
+                x1: 0.3,
+                y1: 0.4,
+            };
+            let round_trip = rotation
+                .inverse()
+                .apply_unit_rect(rotation.apply_unit_rect(rect));
+            assert!((round_trip.x0 - rect.x0).abs() < 1e-6);
+            assert!((round_trip.y0 - rect.y0).abs() < 1e-6);
+            assert!((round_trip.x1 - rect.x1).abs() < 1e-6);
+            assert!((round_trip.y1 - rect.y1).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn point_to_page_finds_the_containing_or_nearest_page() {
+        let layout = continuous(&[(100.0, 100.0); 3], 1.0, 200.0);
+        // Inside the second page, near its left-top corner.
+        let (page, unit) = point_to_page(&layout.pages, (60.0, 140.0)).unwrap();
+        assert_eq!(page, 1);
+        assert!((unit.0 - 0.1).abs() < 1e-6);
+        assert!(unit.1 < 0.2);
+        // In the gap between pages 0 and 1: resolves to the nearer page.
+        let (page, _) = point_to_page(&layout.pages, (60.0, 118.0)).unwrap();
+        assert_eq!(page, 0);
+        // Off to the side: clamped into the page's unit range.
+        let (page, unit) = point_to_page(&layout.pages, (-50.0, 16.0)).unwrap();
+        assert_eq!(page, 0);
+        assert_eq!(unit.0, 0.0);
+        assert!(point_to_page(&[], (0.0, 0.0)).is_none());
     }
 
     #[test]

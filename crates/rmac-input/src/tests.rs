@@ -154,6 +154,42 @@ fn include_graph_is_recursive_positional_and_bounded() {
 }
 
 #[test]
+fn a_later_managed_touchpad_block_can_turn_off_a_packaged_default() {
+    // packaging/rmac-session/shell.kdl turns natural scrolling on by default,
+    // and the managed include is always the final node niri sees (see
+    // `main_with_managed_include`). Confirm the managed block, not the
+    // package default, governs once the user turns the setting off, and that
+    // an unrelated packaged setting (click-method) survives untouched
+    // because it is not part of the managed input surface.
+    let directory = test_directory("touchpad-override");
+    std::fs::create_dir_all(&directory).unwrap();
+    std::fs::write(
+        directory.join("shell.kdl"),
+        "input {\n    touchpad {\n        tap\n        click-method \"clickfinger\"\n        dwt\n        natural-scroll\n    }\n}\n",
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join(MANAGED_CONFIG_NAME),
+        format!("{MANAGED_HEADER}\ninput {{ touchpad {{}}; }}\n"),
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("config.kdl"),
+        format!("include \"shell.kdl\"\ninclude \"{MANAGED_CONFIG_NAME}\"\n"),
+    )
+    .unwrap();
+    let mut graph = GraphState::default();
+    traverse_config(&directory.join("config.kdl"), 0, &mut graph).unwrap();
+    // The managed touchpad block replaces the packaged one entirely (niri's
+    // non-merging positional sections), so the un-set natural-scroll flag
+    // wins and every other packaged touchpad setting reverts to niri's own
+    // defaults rather than surviving from shell.kdl.
+    assert!(!graph.effective.settings.touchpad.pointer.natural_scroll);
+    assert!(!graph.effective.settings.touchpad.tap_to_click);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn recursive_include_is_rejected() {
     let directory = test_directory("cycle");
     std::fs::create_dir_all(&directory).unwrap();

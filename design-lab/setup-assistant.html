@@ -44,8 +44,13 @@
   Backends (only real ones; anything else is omitted):
     Language & Region  systemd-localed SetLocale (polkit asks for the admin
                        password); lists are the installed locales
-    Keyboard           rmac-keyboard: the PC Keyboard switches from System
+    Keyboard           rmac-keyboard: ⌘ next to the space bar, from System
                        Settings (docs/decisions/0017-mac-keyboard.md)
+    Mac Shortcuts      the same rmac_keyboard::apply System Settings ›
+                       Keyboard calls for "Use Mac shortcuts in all apps"; a
+                       cancelled password or missing keyd only turns the
+                       toggle off and explains why, it never blocks setup
+                       (owner decision, docs/beta-gap-list.md gap B1)
     Wi-Fi              rmac-network (NetworkManager); the page is skipped when
                        the computer has no Wi-Fi or is already connected
     Your Account       AccountsService SetRealName / SetIconFile, which a user
@@ -94,6 +99,12 @@
   .key b{font-size:15px;font-weight:500;color:var(--label)}
   .key.space{width:190px}
   .key.cmd{outline:2px solid var(--accent)}
+  .mapwrap{display:flex;gap:28px;justify-content:center;margin:0 0 20px}
+  .mapitem{display:flex;flex-direction:column;align-items:center;gap:6px}
+  .mapkeys{display:flex;align-items:center;gap:8px}
+  .mapkeys .key{min-width:44px}
+  .maparrow{font-size:14px;color:var(--label-2)}
+  .mapname{font-size:11px;color:var(--label-2)}
   .field{height:28px;border-radius:7px;background:#181818;border:1px solid #3A3840;display:flex;align-items:center;padding:0 9px;font-size:13px}
   .faces{display:flex;gap:12px;justify-content:center;margin-top:16px}
   .face{width:56px;height:56px;border-radius:28px;background:linear-gradient(#A5ABB8,#848993);display:flex;align-items:center;
@@ -148,19 +159,41 @@
 <div class="win">
   <div class="hero" style="background:#8E8E93">⌨</div>
   <div class="title">Keyboard</div>
-  <div class="sub">rmac works like a Mac. On a PC keyboard it can put ⌘ Command next to the space bar and make ⌘C and ⌘V work in every app.</div>
+  <div class="sub">rmac works like a Mac. On a PC keyboard it can put ⌘ Command next to the space bar.</div>
   <div class="content">
     <div class="keys"><div class="key"><b>⌃</b>control</div><div class="key"><b>⌥</b>option</div><div class="key cmd"><b>⌘</b>command</div><div class="key space"></div><div class="key cmd"><b>⌘</b>command</div></div>
     <div class="well">
       <div class="r">Input source<span class="v">English (UK)</span></div>
       <div class="row2"><div class="t">⌘ Command next to the space bar<small>Alt works as ⌘ Command and the Windows key as ⌥ Option</small></div><div class="sw on"></div></div>
-      <div class="row2"><div class="t">Use Mac shortcuts in all apps<small>⌘C, ⌘V and the other ⌘ shortcuts work in apps made for PC keyboards</small></div><div class="sw"></div></div>
     </div>
   </div>
   <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="link">Set Up Later</span><span class="btn primary">Continue</span></div>
 </div>
 
-<div class="cap-label">4 · Wi-Fi</div>
+<div class="cap-label">4 · Mac Shortcuts</div>
+<div class="win">
+  <div class="hero" style="background:#8E8E93">⌨</div>
+  <div class="title">Mac Shortcuts</div>
+  <div class="sub">On a PC keyboard, the key next to the space bar works as ⌘ — in every app, not just Lulo OS apps.</div>
+  <div class="content">
+    <!-- Illustration: original drawing, not traced from Apple. Reuses the
+         same keycap look as the Keyboard step's mapping. S. -->
+    <div class="mapwrap">
+      <div class="mapitem"><div class="mapkeys"><div class="key">Ctrl</div><span class="maparrow">→</span><div class="key"><b>⌃</b></div></div><span class="mapname">Control</span></div>
+      <div class="mapitem"><div class="mapkeys"><div class="key">Alt</div><span class="maparrow">→</span><div class="key"><b>⌥</b></div></div><span class="mapname">Option</span></div>
+      <div class="mapitem"><div class="mapkeys"><div class="key">Win</div><span class="maparrow">→</span><div class="key"><b>⌘</b></div></div><span class="mapname">Command</span></div>
+    </div>
+    <div class="well">
+      <div class="row2"><div class="t">Use Mac shortcuts in all apps<small>⌘C, ⌘V and the other ⌘ shortcuts work in apps made for PC keyboards. Terminals keep ⌃C for interrupting.</small></div><div class="sw on"></div></div>
+    </div>
+    <!-- keyd missing, a foreign keyd.conf, or an unpackaged session: the
+         switch above is off and disabled, and this line explains why. S. -->
+    <!-- <div style="margin-top:10px;text-align:center;font-size:12px;color:var(--label-2)">Mac shortcuts in all apps need the keyd package. You can turn them on later in System Settings › Keyboard.</div> -->
+  </div>
+  <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="link">Set Up Later</span><span class="btn primary">Continue</span></div>
+</div>
+
+<div class="cap-label">5 · Wi-Fi</div>
 <div class="win">
   <div class="hero" style="background:#1372F9">📶</div>
   <div class="title">Choose a Wi-Fi Network</div>
@@ -174,7 +207,7 @@
   <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="link">Set Up Later</span><span class="btn primary">Continue</span></div>
 </div>
 
-<div class="cap-label">5 · Your Account</div>
+<div class="cap-label">6 · Your Account</div>
 <div class="win">
   <div class="hero" style="background:#8E8E93">👤</div>
   <div class="title">Your Account</div>
@@ -187,7 +220,7 @@
   <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="link">Set Up Later</span><span class="btn primary">Continue</span></div>
 </div>
 
-<div class="cap-label">6 · Appearance</div>
+<div class="cap-label">7 · Appearance</div>
 <div class="win">
   <div class="hero" style="background:#1C1C1E;border:1px solid #3A3840">◐</div>
   <div class="title">Choose Your Look</div>
@@ -202,7 +235,7 @@
   <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="link">Set Up Later</span><span class="btn primary">Continue</span></div>
 </div>
 
-<div class="cap-label">7 · The Dock and the Menu Bar</div>
+<div class="cap-label">8 · The Dock and the Menu Bar</div>
 <div class="win">
   <div class="hero" style="background:#FF9F0A">✦</div>
   <div class="title">Find Your Way Around</div>
@@ -215,7 +248,7 @@
   <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="btn primary">Continue</span></div>
 </div>
 
-<div class="cap-label">8 · Privacy</div>
+<div class="cap-label">9 · Privacy</div>
 <div class="win">
   <div class="hero" style="background:#1372F9">✋</div>
   <div class="title">Your Privacy</div>
@@ -228,7 +261,7 @@
   <div class="bar"><span class="btn">Back</span><span class="grow"></span><span class="btn primary">Continue</span></div>
 </div>
 
-<div class="cap-label">9 · Done</div>
+<div class="cap-label">10 · Done</div>
 <div class="win"><div class="glow"></div>
   <div class="hero" style="background:#30D158;top:150px">✓</div>
   <div class="title" style="top:230px">You’re All Set</div>

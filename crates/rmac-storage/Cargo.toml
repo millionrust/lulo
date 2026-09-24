@@ -5,6 +5,12 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[features]
+# Exposes `InMemoryBackend` and the shared `Backend` contract in `contract`
+# for other crates' tests, so a durable-store test doesn't have to touch
+# disk or redefine its own in-memory double.
+test-support = []
+
 [dependencies]
 libc.workspace = true
 sha2.workspace = true

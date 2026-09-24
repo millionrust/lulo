@@ -13,6 +13,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use sha2::{Digest as _, Sha256};
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod contract;
+#[cfg(any(test, feature = "test-support"))]
+pub mod fake;
 mod filesystem;
 mod model;
 mod read;

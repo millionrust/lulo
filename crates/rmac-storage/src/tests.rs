@@ -396,3 +396,16 @@ fn generic_failure_preserves_operation_path_and_kind() {
     assert_eq!(failure.error_kind, io::ErrorKind::PermissionDenied);
     assert!(failure.to_string().contains("save settings"));
 }
+
+/// The same [`contract::assert_backend_contract`] that
+/// `fake::tests::fake_satisfies_the_shared_backend_contract` runs against
+/// [`InMemoryBackend`], run here against the real host filesystem in a
+/// scratch directory. Unlike the network/Bluetooth live contracts, this
+/// one is safe to run unconditionally: it never touches anything but its
+/// own throwaway tempdir.
+#[test]
+fn host_filesystem_satisfies_the_shared_backend_contract() {
+    let root = temp_root("backend-contract");
+    contract::assert_backend_contract(&FileSystem, &root);
+    std::fs::remove_dir_all(&root).unwrap();
+}

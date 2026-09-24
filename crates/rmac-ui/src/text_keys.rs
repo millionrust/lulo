@@ -3,8 +3,9 @@
 //! gpui-component binds its Mac editing keys only when compiled for macOS. rmac
 //! maps ⌘ to Super on Linux, so the same bindings are installed there after the
 //! component defaults and take precedence over the PC set: ⌘C/⌘V/⌘Z edit,
-//! ⌥←/⌥→ move by word, ⌘←/⌘→ reach the line ends, and the Emacs keys ⌃A/⌃E
-//! move the caret instead of selecting everything.
+//! ⌥←/⌥→ move by word, ⌘←/⌘→ reach the line ends, and the Emacs keys
+//! (⌃A/⌃E/⌃K/⌃D/⌃H/⌃F/⌃B) edit as in Cocoa text fields instead of acting as
+//! PC shortcuts.
 
 use gpui::{App, KeyBinding};
 
@@ -40,6 +41,13 @@ fn bind(cx: &mut App) {
         KeyBinding::new("ctrl-a", MoveHome, CONTEXT),
         KeyBinding::new("cmd-left", MoveHome, CONTEXT),
         KeyBinding::new("ctrl-e", MoveEnd, CONTEXT),
+        // The rest of Cocoa's Emacs set: ⌃K deletes to the line's end, ⌃D
+        // and ⌃H delete forward and back, ⌃F and ⌃B move by a character.
+        KeyBinding::new("ctrl-k", DeleteToEndOfLine, CONTEXT),
+        KeyBinding::new("ctrl-d", Delete, CONTEXT),
+        KeyBinding::new("ctrl-h", Backspace, CONTEXT),
+        KeyBinding::new("ctrl-f", MoveRight, CONTEXT),
+        KeyBinding::new("ctrl-b", MoveLeft, CONTEXT),
         KeyBinding::new("cmd-right", MoveEnd, CONTEXT),
         KeyBinding::new("cmd-z", Undo, CONTEXT),
         KeyBinding::new("cmd-shift-z", Redo, CONTEXT),

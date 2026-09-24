@@ -35,12 +35,46 @@ guidance. `DesktopNames=rmac;niri` follows the
 
 ## Safe mode and recovery
 
-Before niri starts, the wrapper checks the existing
-`$XDG_STATE_HOME/rmac/session/safe-mode.json` marker. When present it uses
-`XDG_CURRENT_DESKTOP=niri`, so rmac portal selection and optional shell
-surfaces are not activated, then starts `rmac-safe-mode.target`. The secure
-lock coordinator and idle policy remain supervised as documented in
-`docs/session-supervisor.md`.
+Safe mode lasts one login, as on a Mac. Before niri starts, the wrapper runs
+`rmac-session-supervisor begin-login`, which consumes the
+`$XDG_STATE_HOME/rmac/session/safe-mode.json` marker: it is archived as
+`safe-mode.last.json` with the time it was consumed, and the next login starts
+normally. When the component that exhausted its restart budget has been
+rebuilt or reinstalled since (the marker records its executable's inode, size
+and modification time), the marker is archived and this login starts normally
+too. If the supervisor itself cannot run, the wrapper moves the marker aside
+itself, so a broken build cannot hold every login in safe mode.
+
+A safe login uses `XDG_CURRENT_DESKTOP=niri`, so rmac portal selection and
+optional shell surfaces are not activated, then starts `rmac-safe-mode.target`.
+The secure lock coordinator and idle policy remain supervised as documented in
+`docs/session-supervisor.md`. `rmac-safe-mode-notice.service` names the
+component that kept quitting and says the next login starts normally, with a
+Restart Normally action that logs out. The rmac notification authority does
+not run in safe mode, so the notice uses whatever notification server the
+plain niri session has, then `zenity`; with neither, the explanation is only
+in the journal (`journalctl --user -u rmac-safe-mode-notice.service`).
+
+To leave safe mode without logging out, run this from the safe session:
+
+```sh
+/usr/libexec/rmac/rmac-session-start --clear-safe-mode
+```
+
+It clears the marker, restores `NIRI_CONFIG` for the user manager, asks niri to
+load the rmac entry point (`niri msg action load-config-file --path`, niri
+26.04), stops the plain session's Waybar and starts the normal rmac target with
+the rmac desktop identity. If niri cannot switch its configuration live, the
+command says so and exits without starting the rmac target; the next login
+starts normally.
+
+One systemd user manager serves every login of a user. A `niri.service` or rmac
+target left running by an earlier login (for example one still closing, or left
+on another virtual terminal) would make `niri-session` exit at once, which
+looks like a login loop at the greeter. The wrapper stops that leftover desktop
+with a bounded ten-second wait before starting its own, and logs that it did.
+When another graphical login of the same user is still in the foreground of a
+seat, it refuses with a reason instead.
 
 Safe mode never changes the GDM session inventory. If rmac or niri cannot
 start, sign out or return to GDM and select the stock Ubuntu/GNOME Wayland
@@ -59,9 +93,10 @@ may place its isolated display include first and input include last in the
 entry point. The initial shell policy suppresses niri's default Waybar startup,
 provides the rmac session shortcuts and hardware volume/brightness keys, and
 opens Spotlight, Apps, Quick Settings, and Notification Center as sized
-floating surfaces rather than scrolling-layout application windows. Persistent
-safe mode removes `NIRI_CONFIG` before niri starts and remains independent of
-this shell policy.
+floating surfaces rather than scrolling-layout application windows. A safe
+login removes `NIRI_CONFIG` before niri starts and remains independent of this
+shell policy, but still refreshes the entry point so `--clear-safe-mode` can
+select it.
 
 ## Staging a native package payload
 

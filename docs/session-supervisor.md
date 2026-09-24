@@ -62,8 +62,9 @@ available. It imports only `WAYLAND_DISPLAY`, `DISPLAY`, `XAUTHORITY`, desktop
 and session identity, `XDG_RUNTIME_DIR`, the D-Bus address, and `NIRI_SOCKET`
 into the systemd user manager and D-Bus activation environment. It never
 imports the entire process environment, `PATH`, tokens, agent sockets, or
-arbitrary secrets. It then starts the normal target unless a persistent
-safe-mode marker exists.
+arbitrary secrets. It then starts the normal target, or the safe target when
+the package login wrapper passes `--safe-mode` (a development start with no
+wrapper consumes a pending marker itself, for that start only).
 
 For a normal rmac shell start, the command prepends `rmac` to
 `XDG_CURRENT_DESKTOP`, imports that exact value, starts the shell services, and
@@ -93,18 +94,44 @@ the failure is recorded in the health snapshot and the rest of the desktop
 keeps running, the way a crashed OSD or panel should never blank the screen.
 For an essential component, three observed restarts or systemd's
 `start-limit-hit` result atomically writes
-`$XDG_STATE_HOME/rmac/session/safe-mode.json`, stops the normal target, and
-starts `rmac-safe-mode.target`. Safe mode retains only the health supervisor in
-this foundation slice, preventing an endless graphical crash loop while
-preserving diagnostics. It remains active across session restarts until the
-user runs:
+`$XDG_STATE_HOME/rmac/session/safe-mode.json` (recording the failing
+executable's path, inode, size and modification time), stops the normal
+target, and starts `rmac-safe-mode.target`. Safe mode retains only the health
+supervisor, the lock services and `rmac-safe-mode-notice.service`, preventing
+an endless graphical crash loop while preserving diagnostics.
+
+Safe mode lasts one login. `rmac-session-supervisor begin-login`, run by the
+login wrapper (or by a development `rmac-session-start`), consumes the marker:
+it becomes `safe-mode.last.json` with the consumed time and outcome, and a safe
+login is also recorded in `$XDG_RUNTIME_DIR/rmac/safe-mode-login.json` so
+`status` and `diagnostics` still report it. The next login starts normally; if
+the same component exhausts its budget again, safe mode re-enters through the
+same path. A marker whose component executable has been replaced since is
+archived without entering safe mode, and an unreadable marker is archived
+rather than trusted.
+
+The notice unit explains which component kept quitting, and whether this login
+consumed the marker or the failure happened during the session (then the next
+login would be safe too unless the user restarts normally). Its Restart
+Normally action clears any pending marker and asks niri to quit, which logs
+out. It uses the session's notification server over D-Bus, then `zenity`;
+the explanation is always written to its journal.
+
+To leave safe mode without logging out, run from the safe session:
 
 ```sh
-~/.local/libexec/rmac/rmac-session-supervisor clear-safe-mode
+~/.local/bin/rmac-session-start --clear-safe-mode
 ```
 
-That command removes the marker, resets only the allowlisted component failure
-states, stops the safe target, and restarts the normal target.
+It runs `rmac-session-supervisor leave-safe-mode`, which removes the marker,
+resets only the allowlisted component failure states, sets `NIRI_CONFIG` in
+the user manager to the rmac entry point and asks niri to load it with
+`niri msg action load-config-file --path` (niri 26.04). The start command then
+imports the rmac desktop identity and starts the normal target, which stops the
+safe target. When niri cannot switch its configuration live, the command says
+that a new login is needed and starts nothing. From a TTY,
+`rmac-session-supervisor clear-safe-mode` performs the same switch and then
+starts the normal target directly.
 
 For privacy-safe diagnostics, last-known-good shell settings restoration, and
 same-user TTY steps, follow [Session recovery](session-recovery.md).
@@ -112,8 +139,12 @@ same-user TTY steps, follow [Session recovery](session-recovery.md).
 ## Health and logs
 
 The supervisor queries stable systemd properties for every component and
-atomically publishes `$XDG_RUNTIME_DIR/rmac/session-health.json` every five
-seconds. The snapshot records load/active/sub states, result, restart count,
+atomically publishes `$XDG_RUNTIME_DIR/rmac/session-health.json`. It does not
+poll: it subscribes to the user manager's `JobRemoved` D-Bus signal and
+refreshes the snapshot shortly after a job of an rmac component finishes
+(every start, stop, crash restart and failure has one). A 60-second reconcile
+covers a lost bus connection and toolkit appearance changes made outside
+System Settings. The snapshot records load/active/sub states, result, restart count,
 main PID, exit status, observation time, and safe-mode cause. Missing component
 binaries therefore remain distinguishable from crashed processes. Run
 `rmac-session-supervisor status` for the same JSON on demand.

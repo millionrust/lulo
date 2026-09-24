@@ -12,8 +12,10 @@ remove that recovery option.
 
 The packaged session uses a safe-mode marker after a bounded crash loop. Safe
 mode starts niri without rmac portal selection and optional shell surfaces,
-while retaining the supervised security boundary. Use it to repair
-configuration or export data. See
+while retaining the supervised security boundary. It lasts one login: a notice
+names the component that kept quitting, and the next login starts normally.
+Run `/usr/libexec/rmac/rmac-session-start --clear-safe-mode` to leave it
+without logging out. Use it to repair configuration or export data. See
 [Ubuntu session packaging](ubuntu-session-packaging.md#safe-mode-and-recovery)
 and [Session recovery](session-recovery.md).
 

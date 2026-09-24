@@ -48,7 +48,10 @@ the stock GNOME session while investigating.
 1. Press `Ctrl`+`Alt`+`F3` and sign in as the affected user.
 2. Run the `diagnostics` command above.
 3. Restore settings only when the report says `last-good-available`.
-4. Run `clear-safe-mode` only after the cause is repaired.
+4. Run `clear-safe-mode` only after the cause is repaired. It clears a pending
+   safe-mode marker and switches a running safe session back to the rmac
+   niri configuration and target; if niri cannot switch live it says so, and
+   the next login starts normally. Safe mode lasts one login in any case.
 5. Sign out of the TTY and return to GDM with `Ctrl`+`Alt`+`F1` or the virtual
    terminal used by the distribution.
 

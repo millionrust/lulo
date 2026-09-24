@@ -205,8 +205,8 @@ if ! grep -q 'scale=1' "$runtime_root/dock.ready" ||
 fi
 tree_json="$(swaymsg -t get_tree -r)"
 workspace_heights="$(jq -r '[.. | objects | select(.type? == "workspace" and .name? != "__i3_scratch") | .rect.height] | unique | sort | join(",")' <<<"$tree_json")"
-if [[ "$workspace_heights" != "272,632" ]]; then
-  echo "Dock did not reserve 88 logical pixels on every output; heights=$workspace_heights" >&2
+if [[ "$workspace_heights" != "271,631" ]]; then
+  echo "Dock did not reserve 89 logical pixels on every output; heights=$workspace_heights" >&2
   exit 1
 fi
 /usr/bin/python3 scripts/assert_dock_accessibility.py

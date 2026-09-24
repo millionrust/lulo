@@ -52,28 +52,103 @@ if [ ! -x /usr/libexec/rmac/rmac-session-start ]; then
 fi
 
 state_home=${XDG_STATE_HOME:-"${HOME}/.local/state"}
-if [ -f "${state_home}/rmac/session/safe-mode.json" ]; then
-    # Safe mode retains niri and the secure lock coordinator, but intentionally
-    # does not select rmac portal backends or optional shell surfaces.
-    XDG_CURRENT_DESKTOP=niri
-    XDG_SESSION_DESKTOP=niri
-    safe_mode=true
-    unset NIRI_CONFIG
-    /usr/bin/systemctl --user unset-environment NIRI_CONFIG \
-        >/dev/null 2>&1 || :
-else
-    XDG_CURRENT_DESKTOP=rmac:niri
-    XDG_SESSION_DESKTOP=rmac
+safe_mode_marker=${state_home}/rmac/session/safe-mode.json
+supervisor=/usr/libexec/rmac/rmac-session-supervisor
+desktop_units="niri.service rmac-session.target rmac-safe-mode.target"
 
-    # The rmac login has its own user-writable niri authority. Its small entry
-    # point includes package-owned shell policy, so upgrades can improve the
-    # desktop without replacing display/input choices saved by System Settings.
+# One systemd user manager serves every login of this user. A desktop left
+# running by an earlier login (a session that is closing, or one left behind
+# on another VT) makes niri-session refuse to start, which looks like a login
+# loop from the greeter. Stop that leftover desktop; refuse, with a reason,
+# only when another graphical login is still in the foreground of a seat.
+stop_leftover_desktop()
+{
+    # shellcheck disable=SC2086
+    if ! /usr/bin/systemctl --user --quiet is-active ${desktop_units}; then
+        return 0
+    fi
+    sessions=$(/usr/bin/loginctl show-user "$(/usr/bin/id -u)" \
+        --property=Sessions --value 2>/dev/null) || sessions=
+    for other in ${sessions}; do
+        case ${other} in
+            ''|*[!A-Za-z0-9]*) continue ;;
+        esac
+        [ "${other}" != "${XDG_SESSION_ID-}" ] || continue
+        other_type=$(/usr/bin/loginctl show-session "${other}" \
+            --property=Type --value 2>/dev/null) || continue
+        case ${other_type} in
+            wayland|x11) ;;
+            *) continue ;;
+        esac
+        other_state=$(/usr/bin/loginctl show-session "${other}" \
+            --property=State --value 2>/dev/null) || continue
+        if [ "${other_state}" = active ]; then
+            other_seat=$(/usr/bin/loginctl show-session "${other}" \
+                --property=Seat --value 2>/dev/null) || other_seat=
+            echo "rmac cannot start: you are still logged in to another desktop" \
+                "(session ${other}${other_seat:+ on ${other_seat}})." \
+                "Log out of it, then log in again." >&2
+            return 1
+        fi
+    done
+    echo "rmac is stopping a desktop left running by an earlier login" >&2
+    # shellcheck disable=SC2086
+    /usr/bin/systemctl --user stop --no-block \
+        rmac-session.target rmac-safe-mode.target \
+        rmac-idle-lock.service rmac-lock-coordinator.service \
+        rmac-session-supervisor.service niri.service >/dev/null 2>&1 || :
+    attempt=0
+    while [ "${attempt}" -lt 100 ]; do
+        # shellcheck disable=SC2086
+        if ! /usr/bin/systemctl --user --quiet is-active ${desktop_units}; then
+            /usr/bin/systemctl --user reset-failed niri.service \
+                >/dev/null 2>&1 || :
+            return 0
+        fi
+        /usr/bin/sleep 0.1
+        attempt=$((attempt + 1))
+    done
+    echo "rmac cannot start: the desktop left by an earlier login did not stop" >&2
+    return 1
+}
+
+if ! stop_leftover_desktop; then
+    exit 1
+fi
+
+# Safe mode lasts one login, like a Mac's. The supervisor consumes the marker
+# (keeping it as safe-mode.last.json) and skips it outright when the failing
+# component has been rebuilt since. When the supervisor itself cannot run,
+# still consume the marker here so a broken build cannot trap every login.
+login_mode=
+if [ -x "${supervisor}" ]; then
+    login_mode=$("${supervisor}" begin-login) || login_mode=
+fi
+case ${login_mode} in
+    normal|safe) ;;
+    *)
+        login_mode=normal
+        if [ -e "${safe_mode_marker}" ] || [ -L "${safe_mode_marker}" ]; then
+            login_mode=safe
+            if ! /usr/bin/mv -f "${safe_mode_marker}" \
+                "${state_home}/rmac/session/safe-mode.last.json"; then
+                echo "rmac could not clear safe mode for the next login" >&2
+            fi
+        fi
+        ;;
+esac
+
+# The rmac login has its own user-writable niri authority. Its small entry
+# point includes package-owned shell policy, so upgrades can improve the
+# desktop without replacing display/input choices saved by System Settings.
+prepare_rmac_config()
+{
     config_home=${XDG_CONFIG_HOME:-"${HOME}/.config"}
     case ${config_home} in
         /*) ;;
         *)
             echo "the rmac config home must be an absolute path" >&2
-            exit 1
+            return 1
             ;;
     esac
     packaged_config=/usr/share/rmac/niri/config.kdl
@@ -82,38 +157,62 @@ else
     rmac_session_config=${config_home}/rmac/niri/session.kdl
     if [ ! -f "${packaged_config}" ] || [ -L "${packaged_config}" ]; then
         echo "the packaged rmac niri configuration is unavailable" >&2
-        exit 1
+        return 1
     fi
-    /usr/bin/install -d -m 0700 "${config_home}/rmac/niri"
+    /usr/bin/install -d -m 0700 "${config_home}/rmac/niri" || return 1
     if [ ! -e "${rmac_config}" ]; then
-        /usr/bin/install -m 0600 "${packaged_config}" "${rmac_config}"
+        /usr/bin/install -m 0600 "${packaged_config}" "${rmac_config}" || return 1
     fi
     if [ ! -f "${rmac_config}" ] || [ -L "${rmac_config}" ]; then
         echo "the rmac niri configuration is not a regular file" >&2
-        exit 1
+        return 1
     fi
     if [ -e "${rmac_shortcuts}" ] &&
         { [ ! -f "${rmac_shortcuts}" ] || [ -L "${rmac_shortcuts}" ]; }; then
         echo "the generated rmac shortcut configuration is not a regular file" >&2
-        exit 1
+        return 1
     fi
     # Clear a stale fallback before niri starts. The shortcut broker atomically
     # writes either the portal-owned empty mode or the fallback mode afterward.
-    /usr/bin/install -m 0600 /dev/null "${rmac_shortcuts}"
+    /usr/bin/install -m 0600 /dev/null "${rmac_shortcuts}" || return 1
     rmac_session_temporary=${rmac_session_config}.new.$$
     if [ -e "${rmac_session_temporary}" ] || [ -L "${rmac_session_temporary}" ]; then
         echo "the temporary rmac session configuration already exists" >&2
-        exit 1
+        return 1
     fi
-    /usr/bin/install -m 0600 /dev/null "${rmac_session_temporary}"
+    /usr/bin/install -m 0600 /dev/null "${rmac_session_temporary}" || return 1
     if ! printf '%s\n' \
         'include "config.kdl"' \
         'include "shortcuts-generated.kdl"' \
         >"${rmac_session_temporary}"; then
         echo "could not write the generated rmac session configuration" >&2
-        exit 1
+        return 1
     fi
     /usr/bin/mv -f "${rmac_session_temporary}" "${rmac_session_config}"
+}
+
+if [ "${login_mode}" = safe ]; then
+    echo "rmac safe mode: an rmac component kept quitting, so this login runs" \
+        "without the rmac shell. The next login starts normally." >&2
+    # Safe mode retains niri and the secure lock coordinator, but intentionally
+    # does not select rmac portal backends or optional shell surfaces. The rmac
+    # entry point is still kept current so `rmac-session-start
+    # --clear-safe-mode` can switch niri to it without logging out.
+    XDG_CURRENT_DESKTOP=niri
+    XDG_SESSION_DESKTOP=niri
+    safe_mode=true
+    if ! prepare_rmac_config; then
+        echo "leaving this safe mode will need a new login" >&2
+    fi
+    unset NIRI_CONFIG
+    /usr/bin/systemctl --user unset-environment NIRI_CONFIG \
+        >/dev/null 2>&1 || :
+else
+    XDG_CURRENT_DESKTOP=rmac:niri
+    XDG_SESSION_DESKTOP=rmac
+    if ! prepare_rmac_config; then
+        exit 1
+    fi
     NIRI_CONFIG=${rmac_session_config}
     export NIRI_CONFIG
 fi
@@ -238,7 +337,12 @@ if [ "${safe_mode}" = false ]; then
     /usr/bin/systemctl --user stop waybar.service >/dev/null 2>&1 || :
 fi
 
-if ! /usr/libexec/rmac/rmac-session-start --system-package; then
+if [ "${safe_mode}" = true ]; then
+    set -- --system-package --safe-mode
+else
+    set -- --system-package
+fi
+if ! /usr/libexec/rmac/rmac-session-start "$@"; then
     echo "rmac session services did not start" >&2
     # The start command can fail after activating one target, so always attempt
     # a bounded namespace-only cleanup before returning to GDM.

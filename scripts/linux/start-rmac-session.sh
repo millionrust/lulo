@@ -1,14 +1,41 @@
 #!/bin/sh
 set -eu
 
+usage()
+{
+    echo "usage: rmac-session-start [--system-package] [--safe-mode | --clear-safe-mode]" >&2
+    exit 2
+}
+
+# --safe-mode: the package login wrapper already consumed the safe-mode marker
+#   for this login and chose safe mode.
+# --clear-safe-mode: leave safe mode now, without logging out. Clears the
+#   marker, points niri back at the rmac configuration and starts the normal
+#   rmac session. If niri cannot switch its configuration live, it says so and
+#   the next login starts normally.
+system_package=false
+safe_mode_requested=false
+clear_safe_mode=false
+for argument do
+    case ${argument} in
+        --system-package) system_package=true ;;
+        --safe-mode) safe_mode_requested=true ;;
+        --clear-safe-mode) clear_safe_mode=true ;;
+        *) usage ;;
+    esac
+done
+if [ "${safe_mode_requested}" = true ] && [ "${clear_safe_mode}" = true ]; then
+    usage
+fi
+set --
+
 # The development installer creates these files directly. A native package
 # keeps immutable defaults under /usr and provisions only missing user-owned
 # copies on first session start. Never replace a user's existing policy.
-case ${1-} in
-    "")
+case ${system_package} in
+    false)
         ;;
-    --system-package)
-        shift
+    true)
         defaults_dir=/usr/share/rmac/session
         config_home=${XDG_CONFIG_HOME:-"${HOME}/.config"}
         if [ ! -f "${defaults_dir}/swaylock.conf" ] ||
@@ -30,20 +57,48 @@ case ${1-} in
                 "${config_home}/rmac/lock-policy.json"
         fi
         ;;
-    *)
-        echo "usage: rmac-session-start [--system-package]" >&2
-        exit 2
-        ;;
 esac
-if [ "$#" -ne 0 ]; then
-    echo "usage: rmac-session-start [--system-package]" >&2
-    exit 2
+
+supervisor=${HOME}/.local/libexec/rmac/rmac-session-supervisor
+if [ "${system_package}" = true ] || [ ! -x "${supervisor}" ]; then
+    supervisor=/usr/libexec/rmac/rmac-session-supervisor
+fi
+state_home=${XDG_STATE_HOME:-"${HOME}/.local/state"}
+safe_mode_marker=${state_home}/rmac/session/safe-mode.json
+normal_session=true
+if [ "${clear_safe_mode}" = true ]; then
+    if [ ! -x "${supervisor}" ]; then
+        echo "rmac-session-supervisor is not installed" >&2
+        exit 1
+    fi
+    "${supervisor}" leave-safe-mode
+    # The wrapper gave the safe login niri's own identity; this is rmac again.
+    XDG_SESSION_DESKTOP=rmac
+    export XDG_SESSION_DESKTOP
+elif [ "${safe_mode_requested}" = true ]; then
+    normal_session=false
+elif [ "${system_package}" = false ] &&
+    { [ -e "${safe_mode_marker}" ] || [ -L "${safe_mode_marker}" ]; }; then
+    # A development session has no login wrapper, so the marker is consumed
+    # here: safe mode lasts this start only.
+    login_mode=
+    if [ -x "${supervisor}" ]; then
+        login_mode=$("${supervisor}" begin-login) || login_mode=
+    fi
+    case ${login_mode} in
+        normal) ;;
+        safe) normal_session=false ;;
+        *)
+            normal_session=false
+            /usr/bin/mv -f "${safe_mode_marker}" \
+                "${state_home}/rmac/session/safe-mode.last.json" ||
+                echo "rmac could not clear safe mode for the next start" >&2
+            ;;
+    esac
 fi
 
 # Import only graphical-session routing values. Never copy the whole login
 # environment because it can contain credentials and application secrets.
-state_home=${XDG_STATE_HOME:-"${HOME}/.local/state"}
-normal_session=true
 graphical_invocation=false
 case ${XDG_SESSION_TYPE:-} in
     wayland)
@@ -53,9 +108,7 @@ case ${XDG_SESSION_TYPE:-} in
         [ -n "${DISPLAY:-}" ] && graphical_invocation=true
         ;;
 esac
-if [ -f "${state_home}/rmac/session/safe-mode.json" ]; then
-    normal_session=false
-elif [ "${graphical_invocation}" = true ]; then
+if [ "${normal_session}" = true ] && [ "${graphical_invocation}" = true ]; then
     case ":${XDG_CURRENT_DESKTOP:-}:" in
         *:rmac:*) ;;
         ::) XDG_CURRENT_DESKTOP=rmac ;;
@@ -110,6 +163,11 @@ fi
 if [ "${normal_session}" = false ]; then
     /usr/bin/systemctl --user start rmac-safe-mode.target
 else
+    if [ "${clear_safe_mode}" = true ]; then
+        # As the login wrapper does for a normal login: rmac owns the only
+        # menu bar, so stop the bar the plain niri session may have started.
+        /usr/bin/systemctl --user stop waybar.service >/dev/null 2>&1 || :
+    fi
     /usr/bin/systemctl --user start rmac-session.target
     if [ -x /usr/libexec/rmac/rmac-sound ]; then
         /usr/libexec/rmac/rmac-sound login >/dev/null 2>&1 &

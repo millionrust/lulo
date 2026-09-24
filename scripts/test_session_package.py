@@ -325,12 +325,17 @@ class SessionPackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             add_wrapper_config_fixture(root)
-            write_program(root / "usr/bin/niri-session", "/bin/sleep 0.2\n")
+            write_program(
+                root / "usr/bin/niri-session",
+                ': >"$RMAC_TEST_ROOT/niri-running"\n'
+                "/bin/sleep 0.8\n"
+                'rm -f "$RMAC_TEST_ROOT/niri-running"\n',
+            )
             write_program(
                 root / "usr/bin/systemctl",
                 'printf "%s\\n" "$*" >>"$RMAC_TEST_SYSTEMCTL"\n'
                 'case "$*" in\n'
-                '  *"is-active niri.service"*) exit 0 ;;\n'
+                '  *"is-active"*) [ -e "$RMAC_TEST_ROOT/niri-running" ] ;;\n'
                 '  *"show-environment"*)\n'
                 '    echo "XDG_CURRENT_DESKTOP=niri"\n'
                 '    echo "XDG_SESSION_DESKTOP=niri"\n'
@@ -368,6 +373,7 @@ class SessionPackageTests(unittest.TestCase):
                     "XDG_RUNTIME_DIR": str(root / "runtime"),
                     "RMAC_TEST_CAPTURE": str(capture),
                     "RMAC_TEST_SYSTEMCTL": str(systemctl_capture),
+                    "RMAC_TEST_ROOT": str(root),
                 }
             )
             result = subprocess.run(
@@ -410,9 +416,12 @@ class SessionPackageTests(unittest.TestCase):
             ):
                 self.assertIn(unit, cleanup)
 
+            # Without a runnable supervisor the wrapper still consumes the
+            # marker itself: safe mode lasts exactly one login.
             marker = root / "state/rmac/session/safe-mode.json"
             marker.parent.mkdir(parents=True)
             marker.write_text("{}\n", encoding="utf-8")
+            session_config.unlink()
             capture = root / "safe"
             environment["RMAC_TEST_CAPTURE"] = str(capture)
             result = subprocess.run(
@@ -427,8 +436,176 @@ class SessionPackageTests(unittest.TestCase):
             self.assertEqual(
                 capture.read_text(encoding="utf-8"),
                 f"niri|niri||wayland-9|{root}/runtime/niri.wayland-9.42.sock|"
+                "--system-package --safe-mode\n",
+            )
+            self.assertIn("next login starts normally", result.stderr)
+            self.assertFalse(marker.exists())
+            self.assertEqual(
+                (marker.parent / "safe-mode.last.json").read_text(encoding="utf-8"),
+                "{}\n",
+            )
+            # Safe mode keeps the rmac entry point ready for --clear-safe-mode.
+            self.assertEqual(
+                session_config.read_text(encoding="utf-8"),
+                'include "config.kdl"\ninclude "shortcuts-generated.kdl"\n',
+            )
+
+            capture = root / "after-safe"
+            environment["RMAC_TEST_CAPTURE"] = str(capture)
+            result = subprocess.run(
+                [str(wrapper)],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(
+                capture.read_text(encoding="utf-8").startswith("rmac:niri|rmac|"),
+                "the login after a safe login must start normally",
+            )
+
+            # The supervisor decides when it can run: a rebuilt component
+            # skips the marker, and a safe decision is passed through.
+            supervisor = root / "usr/libexec/rmac/rmac-session-supervisor"
+            for decision, expected in (
+                ("normal", "rmac:niri|rmac|"),
+                ("safe", "niri|niri||"),
+            ):
+                write_program(
+                    supervisor,
+                    '[ "$*" = begin-login ] || exit 9\n'
+                    f'rm -f "{marker}"\n'
+                    f"echo {decision}\n",
+                )
+                marker.write_text("{}\n", encoding="utf-8")
+                capture = root / f"supervised-{decision}"
+                environment["RMAC_TEST_CAPTURE"] = str(capture)
+                result = subprocess.run(
+                    [str(wrapper)],
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(
+                    capture.read_text(encoding="utf-8").startswith(expected),
+                    decision,
+                )
+                self.assertFalse(marker.exists())
+
+    def leftover_desktop_fixture(self, root: Path, other_state: str) -> dict[str, str]:
+        add_wrapper_config_fixture(root)
+        write_program(
+            root / "usr/bin/niri-session",
+            ': >"$RMAC_TEST_ROOT/niri-running"\n'
+            "/bin/sleep 0.8\n"
+            'rm -f "$RMAC_TEST_ROOT/niri-running"\n',
+        )
+        # An earlier login's niri and rmac units still run in the shared
+        # user manager until something stops them.
+        (root / "leftover").write_text("", encoding="utf-8")
+        write_program(
+            root / "usr/bin/systemctl",
+            'printf "%s\\n" "$*" >>"$RMAC_TEST_SYSTEMCTL"\n'
+            'case "$*" in\n'
+            '  *"stop --no-block"*) rm -f "$RMAC_TEST_ROOT/leftover" ;;\n'
+            '  *"is-active"*)\n'
+            '    [ -e "$RMAC_TEST_ROOT/leftover" ] ||\n'
+            '      [ -e "$RMAC_TEST_ROOT/niri-running" ] ;;\n'
+            '  *"show-environment"*)\n'
+            '    echo "XDG_SESSION_TYPE=wayland"\n'
+            '    [ -z "${NIRI_CONFIG-}" ] || echo "NIRI_CONFIG=$NIRI_CONFIG"\n'
+            '    echo "WAYLAND_DISPLAY=wayland-9"\n'
+            '    echo "NIRI_SOCKET=$XDG_RUNTIME_DIR/niri.wayland-9.42.sock"\n'
+            '    exit 0 ;;\n'
+            "  *) exit 0 ;;\n"
+            "esac\n",
+        )
+        write_program(
+            root / "usr/bin/loginctl",
+            'printf "%s\\n" "$*" >>"$RMAC_TEST_LOGINCTL"\n'
+            'case "$*" in\n'
+            '  "show-user 1000 --property=Sessions --value") echo "2 7" ;;\n'
+            '  "show-session 2 --property=Type --value") echo wayland ;;\n'
+            f'  "show-session 2 --property=State --value") echo {other_state} ;;\n'
+            '  "show-session 2 --property=Seat --value") echo seat0 ;;\n'
+            "  *) exit 1 ;;\n"
+            "esac\n",
+        )
+        write_program(root / "usr/bin/id", '[ "$*" = -u ] && echo 1000\n')
+        for executable in ("awk", "sleep"):
+            target = shutil.which(executable)
+            assert target is not None
+            write_program(root / "usr/bin" / executable, f'exec "{target}" "$@"\n')
+        write_program(
+            root / "usr/libexec/rmac/rmac-session-start",
+            'printf "%s\\n" "$*" >"$RMAC_TEST_CAPTURE"\n',
+        )
+        return {
+            **os.environ,
+            "HOME": str(root / "home"),
+            "XDG_STATE_HOME": str(root / "state"),
+            "XDG_RUNTIME_DIR": str(root / "runtime"),
+            "XDG_SESSION_ID": "7",
+            "RMAC_TEST_ROOT": str(root),
+            "RMAC_TEST_CAPTURE": str(root / "started"),
+            "RMAC_TEST_SYSTEMCTL": str(root / "systemctl.log"),
+            "RMAC_TEST_LOGINCTL": str(root / "loginctl.log"),
+        }
+
+    def test_session_wrapper_stops_a_desktop_left_by_an_earlier_login(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = self.leftover_desktop_fixture(root, "closing")
+            result = subprocess.run(
+                [str(rendered_session_wrapper(root))],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("left running by an earlier login", result.stderr)
+            calls = (root / "systemctl.log").read_text(encoding="utf-8")
+            stop = next(
+                line for line in calls.splitlines() if "stop --no-block" in line
+            )
+            for unit in ("niri.service", "rmac-session.target", "rmac-safe-mode.target"):
+                self.assertIn(unit, stop)
+            self.assertIn("reset-failed niri.service", calls)
+            # Cleanup happens before this login's compositor starts.
+            self.assertLess(
+                calls.index("stop --no-block"), calls.index("show-environment")
+            )
+            self.assertEqual(
+                (root / "started").read_text(encoding="utf-8"),
                 "--system-package\n",
             )
+
+    def test_session_wrapper_refuses_while_another_desktop_is_in_the_foreground(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = self.leftover_desktop_fixture(root, "active")
+            result = subprocess.run(
+                [str(rendered_session_wrapper(root))],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("still logged in to another desktop", result.stderr)
+            self.assertIn("session 2 on seat0", result.stderr)
+            calls = (root / "systemctl.log").read_text(encoding="utf-8")
+            self.assertNotIn("stop", calls)
+            self.assertFalse((root / "started").exists())
+            self.assertTrue((root / "leftover").exists())
 
     def test_session_wrapper_rejects_clean_exit_before_readiness(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -557,12 +734,10 @@ class SessionPackageTests(unittest.TestCase):
                 )
             )
 
-            marker = root / "state/rmac/session/safe-mode.json"
-            marker.parent.mkdir(parents=True)
-            marker.write_text("{}\n", encoding="utf-8")
+            # The login wrapper consumed the marker and chose safe mode.
             log.write_text("", encoding="utf-8")
             result = subprocess.run(
-                [str(script), "--system-package"],
+                [str(script), "--system-package", "--safe-mode"],
                 env=environment,
                 check=False,
                 capture_output=True,
@@ -579,6 +754,130 @@ class SessionPackageTests(unittest.TestCase):
                 )
             )
             self.assertFalse(any("try-restart" in line for line in lines))
+
+            # A marker the wrapper already consumed is not re-read here.
+            marker = root / "state/rmac/session/safe-mode.json"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("{}\n", encoding="utf-8")
+            log.write_text("", encoding="utf-8")
+            result = subprocess.run(
+                [str(script), "--system-package"],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lines = log.read_text(encoding="utf-8").splitlines()
+            self.assertTrue(any("start rmac-session.target" in line for line in lines))
+
+            result = subprocess.run(
+                [str(script), "--safe-mode", "--clear-safe-mode"],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("--clear-safe-mode", result.stderr)
+
+    def start_script_fixture(self, root: Path) -> tuple[Path, dict[str, str]]:
+        write_program(
+            root / "usr/bin/systemctl",
+            'printf "%s|%s\\n" "$XDG_CURRENT_DESKTOP" "$*" >>"$RMAC_TEST_LOG"\n',
+        )
+        write_program(root / "usr/bin/dbus-update-activation-environment", "exit 0\n")
+        mv = shutil.which("mv")
+        assert mv is not None
+        write_program(root / "usr/bin/mv", f'exec "{mv}" "$@"\n')
+        environment = {
+            **os.environ,
+            "HOME": str(root / "home"),
+            "PATH": "/usr/bin:/bin",
+            "XDG_CONFIG_HOME": str(root / "config"),
+            "XDG_STATE_HOME": str(root / "state"),
+            "XDG_CURRENT_DESKTOP": "niri",
+            "XDG_SESSION_DESKTOP": "niri",
+            "XDG_SESSION_TYPE": "wayland",
+            "WAYLAND_DISPLAY": "wayland-1",
+            "RMAC_TEST_LOG": str(root / "systemctl.log"),
+        }
+        return rendered_start_script(root), environment
+
+    def test_development_start_consumes_safe_mode_for_one_start(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script, environment = self.start_script_fixture(root)
+            log = root / "systemctl.log"
+            marker = root / "state/rmac/session/safe-mode.json"
+            marker.parent.mkdir(parents=True)
+            marker.write_text("{}\n", encoding="utf-8")
+            for expected in ("start rmac-safe-mode.target", "start rmac-session.target"):
+                log.write_text("", encoding="utf-8")
+                result = subprocess.run(
+                    [str(script)],
+                    env=environment,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(expected, log.read_text(encoding="utf-8"))
+                self.assertFalse(marker.exists())
+            self.assertTrue((marker.parent / "safe-mode.last.json").exists())
+
+    def test_clear_safe_mode_restores_the_rmac_session_without_logging_out(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            script, environment = self.start_script_fixture(root)
+            calls = root / "supervisor.log"
+            write_program(
+                root / "usr/libexec/rmac/rmac-session-supervisor",
+                f'printf "%s\\n" "$*" >>"{calls}"\n',
+            )
+            log = root / "systemctl.log"
+            result = subprocess.run(
+                [str(script), "--clear-safe-mode"],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(calls.read_text(encoding="utf-8"), "leave-safe-mode\n")
+            lines = log.read_text(encoding="utf-8").splitlines()
+            imports = next(line for line in lines if "import-environment" in line)
+            self.assertTrue(imports.startswith("rmac:niri|"))
+            self.assertIn("XDG_SESSION_DESKTOP", imports)
+            self.assertIn("rmac:niri|--user stop waybar.service", lines)
+            self.assertTrue(
+                any(line.endswith("--user start rmac-session.target") for line in lines)
+            )
+            self.assertTrue(any("try-restart xdg-desktop-portal" in line for line in lines))
+
+            # When niri cannot switch configuration live the supervisor says
+            # so, and the normal target is not started half-configured.
+            write_program(
+                root / "usr/libexec/rmac/rmac-session-supervisor",
+                'echo "Safe mode is cleared, but niri could not switch. '
+                'Log out and back in to start normally." >&2\nexit 1\n',
+            )
+            log.write_text("", encoding="utf-8")
+            result = subprocess.run(
+                [str(script), "--clear-safe-mode"],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Log out and back in", result.stderr)
+            self.assertNotIn("start rmac-session.target", log.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

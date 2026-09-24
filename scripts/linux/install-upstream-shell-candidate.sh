@@ -261,10 +261,12 @@ if systemctl --user is-active --quiet rmac-session.target; then
   echo "Restarted the seven shell surfaces in the active rmac session."
 else
   state_home="${XDG_STATE_HOME:-${HOME}/.local/state}"
-  if [[ -f "$state_home/rmac/session/safe-mode.json" ]]; then
-    echo "A previous component failure has kept rmac in safe mode."
+  if [[ -f "$state_home/rmac/session/safe-mode.json" ]] \
+    || systemctl --user is-active --quiet rmac-safe-mode.target; then
+    echo "rmac is in safe mode because a component kept quitting."
+    echo "Safe mode lasts one login, and a component replaced since it failed skips it."
     echo "Review: ~/.local/libexec/rmac/rmac-session-supervisor diagnostics"
-    echo "Recover: ~/.local/libexec/rmac/rmac-session-supervisor clear-safe-mode"
+    echo "Leave safe mode now: ~/.local/bin/rmac-session-start --clear-safe-mode"
   else
     echo "The rmac session is not active; start it from niri with ~/.local/bin/rmac-session-start."
   fi

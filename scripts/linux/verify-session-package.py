@@ -268,8 +268,9 @@ def verify_tree(root: Path, *, exact_tree: bool = True) -> None:
         expected_hash = entry.get("sha256")
         if (
             not isinstance(expected_mode, str)
-            or len(expected_mode) != 4
-            or any(character not in "01234567" for character in expected_mode)
+            # Only plain data and executables: never setuid, setgid,
+            # sticky or world-writable, even if the tree matches.
+            or expected_mode not in {"0644", "0755"}
             or not isinstance(expected_hash, str)
             or len(expected_hash) != 64
             or any(character not in "0123456789abcdef" for character in expected_hash)

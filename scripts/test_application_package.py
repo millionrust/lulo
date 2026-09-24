@@ -110,6 +110,21 @@ class ApplicationPackageTests(unittest.TestCase):
                         for mime in filter(None, line[9:].split(";")):
                             self.assertEqual(defaults.get(mime), f"{identity}.desktop")
 
+    def test_manifest_cannot_claim_a_privileged_mode(self):
+        for mode in ("4755", "2755", "1755", "0666", "0777"):
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as temporary:
+                root = self.stage(Path(temporary))
+                manifest_path = root / verify_package.MANIFEST
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                entry = manifest["files"][0]
+                entry["mode"] = mode
+                (root / entry["path"].lstrip("/")).chmod(int(mode, 8))
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaisesRegex(
+                    verify_package.VerificationError, "manifest metadata is invalid"
+                ):
+                    verify_package.verify_tree(root, exact_tree=False)
+
     def test_refuses_live_root_relative_and_nonempty_destinations(self):
         with self.assertRaises(stage_package.PackageError):
             stage_package.stage(Path("/"))

@@ -274,6 +274,22 @@ class SessionPackageTests(unittest.TestCase):
             ):
                 verify_package.verify_tree(root)
 
+    def test_manifest_cannot_claim_a_privileged_mode(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.stage(Path(temporary))
+            manifest_path = root / verify_package.MANIFEST
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            entry = next(
+                item for item in manifest["files"] if item["mode"] == "0755"
+            )
+            entry["mode"] = "4755"
+            (root / entry["path"].lstrip("/")).chmod(0o4755)
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(
+                verify_package.VerificationError, "manifest metadata is invalid"
+            ):
+                verify_package.verify_tree(root)
+
     def test_installed_gate_requires_runtimes_and_separate_gnome_recovery(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = self.stage(Path(temporary))

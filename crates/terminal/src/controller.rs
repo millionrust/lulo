@@ -153,7 +153,7 @@ struct Style {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PendingClose {
     Tab { session_id: u64 },
-    Window { foreground_sessions: usize },
+    Window,
 }
 
 /// Debounces the visible-grid accessibility projection so a fast-scrolling

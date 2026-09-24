@@ -806,6 +806,15 @@ impl Session {
         Ok(true)
     }
 
+    /// The name of the program running in the foreground, when there is one
+    /// (a job, not the idle shell) — what Terminal lists before it closes.
+    pub(super) fn foreground_job_name(&self) -> Option<String> {
+        if !self.has_foreground_job() {
+            return None;
+        }
+        self.job_state.label()
+    }
+
     pub(super) fn has_foreground_job(&self) -> bool {
         let may_be_running = self.lifecycle().may_be_running();
         #[cfg(unix)]

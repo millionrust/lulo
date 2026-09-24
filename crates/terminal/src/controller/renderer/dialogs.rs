@@ -10,26 +10,29 @@ impl TerminalView {
         use rmac_ui::DialogButtonKind::{Destructive, Normal};
 
         let pending = self.pending_close?;
-        let (title, message, confirm_label): (&str, String, &str) = match pending {
-            PendingClose::Tab { .. } => (
-                "Close this terminal tab?",
-                "A foreground process group is still using this terminal. Closing sends hangup to that group and its shell, then removes the tab.".into(),
-                "Close Tab",
+        // Terminal's wording (macOS 26): the question names the tab or the
+        // window, and the message lists the programs that will be stopped.
+        let (title, scope, names) = match pending {
+            PendingClose::Tab { session_id } => (
+                "Do you want to terminate running processes in this tab?",
+                "tab",
+                self.tabs
+                    .iter()
+                    .filter(|session| session.id == session_id)
+                    .filter_map(Session::foreground_job_name)
+                    .collect::<Vec<_>>(),
             ),
-            PendingClose::Window {
-                foreground_sessions,
-            } => (
-                "Close this Terminal window?",
-                if foreground_sessions == 1 {
-                    "One tab has an active foreground process group. Closing sends hangup to active groups and shells, then removes the window.".into()
-                } else {
-                    format!(
-                        "{foreground_sessions} tabs have active foreground process groups. Closing sends hangup to active groups and shells, then removes the window."
-                    )
-                },
-                "Close Window",
+            PendingClose::Window => (
+                "Do you want to terminate running processes in this window?",
+                "window",
+                self.tabs
+                    .iter()
+                    .filter_map(Session::foreground_job_name)
+                    .collect::<Vec<_>>(),
             ),
         };
+        let message = running_processes_message(scope, &names);
+        let confirm_label = "Terminate";
         Some(rmac_ui::alert(
             title,
             message,
@@ -75,5 +78,40 @@ impl TerminalView {
                     .into_any_element(),
             ],
         ))
+    }
+}
+
+/// "Closing this window will terminate the running processes: vim, top."
+fn running_processes_message(scope: &str, names: &[String]) -> String {
+    let mut unique: Vec<&str> = Vec::with_capacity(names.len());
+    for name in names {
+        if !unique.contains(&name.as_str()) {
+            unique.push(name);
+        }
+    }
+    if unique.is_empty() {
+        format!("Closing this {scope} will terminate the running processes.")
+    } else {
+        format!(
+            "Closing this {scope} will terminate the running processes: {}.",
+            unique.join(", ")
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::running_processes_message;
+
+    #[test]
+    fn the_close_review_names_each_running_program_once() {
+        assert_eq!(
+            running_processes_message("window", &["vim".into(), "top".into(), "vim".into()]),
+            "Closing this window will terminate the running processes: vim, top."
+        );
+        assert_eq!(
+            running_processes_message("tab", &[]),
+            "Closing this tab will terminate the running processes."
+        );
     }
 }

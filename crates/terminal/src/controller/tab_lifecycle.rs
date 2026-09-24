@@ -148,12 +148,7 @@ impl TerminalView {
         if self.pending_close.is_some() {
             return;
         }
-        let foreground_sessions = self
-            .tabs
-            .iter()
-            .filter(|session| session.has_foreground_job())
-            .count();
-        if foreground_sessions == 0 {
+        if !self.tabs.iter().any(Session::has_foreground_job) {
             if self.terminate_all().is_err() {
                 self.operation_error =
                     Some("Terminal could not terminate every shell safely.".into());
@@ -163,9 +158,7 @@ impl TerminalView {
             window.remove_window();
             return;
         }
-        self.pending_close = Some(PendingClose::Window {
-            foreground_sessions,
-        });
+        self.pending_close = Some(PendingClose::Window);
         self.capture_active_search_query(cx);
         self.tabs[self.active].ui.search_open = false;
         self.picker_open = false;
@@ -213,7 +206,7 @@ impl TerminalView {
                 self.remove_tab(session_id, window, cx);
                 window.focus(&self.focus, cx);
             }
-            PendingClose::Window { .. } => {
+            PendingClose::Window => {
                 if self.terminate_all().is_err() {
                     self.operation_error =
                         Some("Terminal could not terminate every shell safely.".into());

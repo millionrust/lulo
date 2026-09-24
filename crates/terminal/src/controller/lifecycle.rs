@@ -87,7 +87,30 @@ impl TerminalView {
                 CycleProfile,
                 Some("Terminal"),
             ),
+            // Terminal › Settings… opens the profiles; here that is the
+            // profile picker.
+            KeyBinding::new(
+                rmac_ui::shortcuts::SETTINGS.keystroke,
+                ShowProfiles,
+                Some("Terminal"),
+            ),
         ]);
+
+        // A close request from outside the window — the Dock's or the menu
+        // bar's Quit, ⌘Q, ⌘Tab's Q, or logging out — asks the same question
+        // as the red button before it stops running programs, as Terminal
+        // does. The view removes the window itself once it may close, so the
+        // compositor's request is always declined here.
+        let view = cx.weak_entity();
+        window.on_window_should_close(cx, move |window, cx| {
+            view.update(cx, |this, cx| {
+                this.request_close_window(window, cx);
+                if this.pending_close.is_some() {
+                    window.activate_window();
+                }
+            })
+            .is_err()
+        });
 
         let focus = cx.focus_handle();
         window.focus(&focus, cx);

@@ -40,6 +40,12 @@ pub(super) fn text_background() -> gpui::Hsla {
 
 impl Render for EditorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Text Editor's document is loaded before its window is even created
+        // (see open_editor_window), so its first frame already is the real
+        // content the performance harness should time launch-to-interactive
+        // against. Safe to call every render; only the first call writes the
+        // benchmark marker.
+        rmac_ui::mark_content_ready(window);
         let layout = super::responsive_layout::editor_layout(f32::from(window.bounds().size.width));
         let filename = self.filename();
         let subject = if self.dirty {

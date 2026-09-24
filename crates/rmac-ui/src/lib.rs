@@ -40,7 +40,8 @@ pub use feedback::{
 };
 pub use gpui_component::{ActiveTheme, StyledExt};
 pub use runtime::{
-    init_application, install_app_menu, prepare_surface_window, shell_surface_root, text_px,
+    defer_content_ready, init_application, install_app_menu, mark_content_ready,
+    prepare_surface_window, shell_surface_root, text_px,
 };
 pub use window::*;
 

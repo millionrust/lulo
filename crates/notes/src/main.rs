@@ -241,8 +241,8 @@ impl NotesView {
 }
 
 impl Render for NotesView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.render_root(None, cx)
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.render_root(None, window, cx)
     }
 }
 
@@ -280,6 +280,13 @@ fn pending_message(reason: PendingReason) -> String {
 }
 
 fn main() {
+    // Notes' first frame is a cheap "Opening Notes…" placeholder while the
+    // library worker starts (see SessionPhase::Starting); the performance
+    // harness must time launch-to-interactive against the frame that shows
+    // the real library list and selected note, not that placeholder. See
+    // render_root's Ready/Maintenance/Pending/Stopped arm, which calls
+    // rmac_ui::mark_content_ready.
+    rmac_ui::defer_content_ready();
     rmac_ui::boot_app(
         rmac_ui::app_id::NOTES,
         "Notes",

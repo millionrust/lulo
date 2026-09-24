@@ -4,6 +4,7 @@ impl NotesView {
     pub(super) fn render_root(
         &mut self,
         leading_dialog: Option<AnyElement>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let content = match self.session.phase() {
@@ -35,23 +36,32 @@ impl NotesView {
             SessionPhase::Ready
             | SessionPhase::Maintenance { .. }
             | SessionPhase::Pending { .. }
-            | SessionPhase::Stopped => div()
-                .size_full()
-                .v_flex()
-                .child(self.render_toolbar(cx))
-                .when_some(self.render_status_banner(cx), |element, banner| {
-                    element.child(banner)
-                })
-                .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .min_h(px(0.0))
-                        .child(self.render_sidebar(cx))
-                        .child(self.render_note_list(cx))
-                        .child(div().flex_1().min_w(px(0.0)).child(self.render_editor(cx))),
-                )
-                .into_any_element(),
+            | SessionPhase::Stopped => {
+                // This is the frame the performance harness must time
+                // launch-to-interactive against: the library list and the
+                // selected note (if any) are both on screen, not the
+                // "Opening Notes…" placeholder above. Safe to call every
+                // render; only the first call after main()'s
+                // defer_content_ready() writes the benchmark marker.
+                rmac_ui::mark_content_ready(window);
+                div()
+                    .size_full()
+                    .v_flex()
+                    .child(self.render_toolbar(cx))
+                    .when_some(self.render_status_banner(cx), |element, banner| {
+                        element.child(banner)
+                    })
+                    .child(
+                        div()
+                            .flex_1()
+                            .flex()
+                            .min_h(px(0.0))
+                            .child(self.render_sidebar(cx))
+                            .child(self.render_note_list(cx))
+                            .child(div().flex_1().min_w(px(0.0)).child(self.render_editor(cx))),
+                    )
+                    .into_any_element()
+            }
         };
         let folder_dialog = self.render_folder_dialog(cx);
         let purge_dialog = self.render_purge_dialog(cx);

@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{env, fs};
 
 use gpui::{px, AnyView, App, AppContext as _, Context, SharedString, Styled as _, Window};
@@ -5,6 +6,17 @@ use gpui::{px, AnyView, App, AppContext as _, Context, SharedString, Styled as _
 use crate::{components, text_keys, theme};
 
 const BENCHMARK_READY_FILE_ENV: &str = "RMAC_BENCHMARK_READY_FILE";
+
+/// Set by [`defer_content_ready`]: while true, the generic first-frame
+/// benchmark marker (written from every `prepare_surface_window` call) stays
+/// silent, so only an explicit [`mark_content_ready`] call from the app can
+/// write the benchmark-ready file. Each rmac shell process hosts at most one
+/// benchmarked app window, so a single process-wide flag is enough.
+static DEFER_CONTENT_READY: AtomicBool = AtomicBool::new(false);
+/// Guards the benchmark-ready file so only the first qualifying frame writes
+/// it, whichever of `mark_benchmark_first_frame` / `mark_content_ready` gets
+/// there first.
+static CONTENT_READY_WRITTEN: AtomicBool = AtomicBool::new(false);
 const COLOR_SCHEME_ENV: &str = "RMAC_COLOR_SCHEME";
 // GPUI defaults to a web-style 16 px rem. macOS desktop body copy is 13 px;
 // keeping 16 here made every unqualified component label look oversized even
@@ -227,11 +239,54 @@ pub fn text_px(base: f32) -> gpui::Pixels {
     px(base * theme::current().text_scale.factor())
 }
 
-/// Writes an opt-in marker after the window completes its first frame.
+/// Opt in to explicit content-readiness signalling for the performance
+/// harness. Call this once, before creating the app's first window, from an
+/// app whose first GPUI frame does not yet show its real content (for
+/// example, Notes paints a "Starting" placeholder before its library worker
+/// replies). Until the app calls [`mark_content_ready`], the generic
+/// first-frame marker written by every `prepare_surface_window` call stays
+/// silent, so the benchmark harness times launch-to-interactive rather than
+/// launch-to-first-frame.
+///
+/// Apps that never call this (including the fallback for any app that
+/// forgets to) keep the original behavior: the harness treats the first
+/// frame as "ready", which is correct for an app whose first frame already
+/// is its real content (for example, Text Editor's document is loaded
+/// before its window is created).
+pub fn defer_content_ready() {
+    DEFER_CONTENT_READY.store(true, Ordering::SeqCst);
+}
+
+/// Marks that this window's *real* content — not a loading placeholder — is
+/// on screen. Safe to call on every render pass: only the first call after
+/// [`defer_content_ready`] writes the benchmark-ready file, and calls before
+/// `defer_content_ready` runs (or from apps that never call it) are no-ops
+/// beyond the generic first-frame marker already covering them.
+pub fn mark_content_ready(window: &Window) {
+    write_benchmark_marker_once(window);
+}
+
+/// Writes an opt-in marker after the window completes its first frame,
+/// unless the app has deferred that signal to an explicit
+/// [`mark_content_ready`] call.
 ///
 /// The performance harness sets the environment variable. Normal application
 /// launches do not set it and perform no filesystem I/O.
 fn mark_benchmark_first_frame(window: &Window) {
+    if DEFER_CONTENT_READY.load(Ordering::SeqCst) {
+        return;
+    }
+    write_benchmark_marker_once(window);
+}
+
+/// Writes the benchmark-ready file the first time this is called for the
+/// process, scheduled after the current frame finishes presenting. Later
+/// calls (from either the generic first-frame path or an app's explicit
+/// [`mark_content_ready`]) are no-ops.
+fn write_benchmark_marker_once(window: &Window) {
+    if CONTENT_READY_WRITTEN.swap(true, Ordering::SeqCst) {
+        return;
+    }
     let Some(path) = env::var_os(BENCHMARK_READY_FILE_ENV) else {
         return;
     };

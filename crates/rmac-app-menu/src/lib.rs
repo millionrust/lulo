@@ -1,7 +1,6 @@
 //! Bounded first-party application menu export for the rmac menu bar.
 
 use std::collections::BTreeSet;
-use std::future;
 use std::sync::Mutex;
 
 use zbus::connection::Builder;
@@ -573,7 +572,8 @@ impl InstanceInterface {
     }
 }
 
-/// Own the application-specific menu endpoint until the application exits.
+/// Publish the application-specific menu endpoint. It stays on the bus until
+/// the process exits; `Ok` means the name is owned and the menus are served.
 pub async fn serve(
     app_id: &str,
     menus: Vec<Menu>,
@@ -622,12 +622,29 @@ async fn serve_endpoint(
             .serve_at(OBJECT_PATH, InstanceInterface { windows })
             .map_err(bus_error("export the app instance object"))?;
     }
-    let _connection = builder
+    let connection = builder
         .build()
         .await
         .map_err(bus_error("publish the menu"))?;
-    future::pending::<()>().await;
+    keep_for_process(connection);
     Ok(())
+}
+
+/// Published endpoints, kept for the life of the process.
+static ENDPOINTS: Mutex<Vec<Connection>> = Mutex::new(Vec::new());
+
+/// Keep `connection` -- and the names it owns -- until the process exits.
+///
+/// Parking it in a task that awaits a never-ready future is not enough: such
+/// a future registers no waker, and once the executor drops its last waker a
+/// detached task is cancelled, which closed the connection and released the
+/// menu name a few milliseconds after it was acquired (about one launch in
+/// three on the reference laptop).
+fn keep_for_process(connection: Connection) {
+    ENDPOINTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(connection);
 }
 
 /// Ask this app's running process, if there is one, to open a window for

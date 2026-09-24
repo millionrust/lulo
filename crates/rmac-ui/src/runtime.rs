@@ -240,8 +240,10 @@ fn install_app_endpoint(
                     }
                     None => rmac_app_menu::serve(app_id, menus, activation_tx).await,
                 };
+                // `Ok` means the menu name is owned; the endpoint then lives
+                // until the process exits.
                 if let Err(error) = served {
-                    eprintln!("{app_id} menu export stopped: {error}");
+                    eprintln!("{app_id}: the menu bar cannot show this app's menus: {error}");
                 }
             })
             .detach();

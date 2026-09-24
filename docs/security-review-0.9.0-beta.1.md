@@ -7,12 +7,13 @@ This is the I6 security and privacy review
 as [security-review-0.9.0-beta.1.json](security-review-0.9.0-beta.1.json).
 
 **Gate status: Fail.** The source review is done: every one of the 10 domains
-was read, 9 findings were fixed with regression tests, and nothing Critical
-is open. Three things still block the gate:
+was read, 9 findings were fixed during the review and 14 more after it (the
+tables below give each fix's commit), with regression tests wherever code changed, and nothing
+Critical or High is open. Three things still block the gate:
 
-- 18 findings are still open. None is Critical, one is High, and that High
-  affects only development installs, not the `.deb`.
-- 34 checks need native execution on real stations.
+- 4 findings are still open, one Medium and three Low (two of those only
+  partly fixed). SR-12 is latent while APT publishing is gated off.
+- 27 checks need native execution on real stations.
 - None of the three Beta H8 stations has been run. `amd64-nvidia-desktop`
   does not exist yet.
 
@@ -28,7 +29,12 @@ python3 scripts/verify-security-review.py \
 ## Scope and method
 
 - **Reviewed tree:** `dev` at 5bea40ca, plus the fix commits listed below. The
-  JSON's `revision` is the last fix commit.
+  JSON's `revision` is the last fix commit (`21c1234e`, before this record was
+  updated). The post-review fixes were checked with the repository's Python
+  suites and `rustfmt`, with `rustc` unit-test builds of the changed pure
+  modules on macOS, and with Linux-configuration type checks of
+  `rmac-keyboard`, `rmac-network` and `rmac-bluetooth` against local rlibs. No
+  cargo build ran; the coordinator's Linux build is still owed.
 - **Method:** source-only review with `file:line` evidence. There was no
   cargo build, no station run and no adversarial execution on Ubuntu 26.04.
   The review includes the crates, packaging, maintainer scripts, install and
@@ -44,7 +50,7 @@ python3 scripts/verify-security-review.py \
   native or station evidence, or has an open finding. `pass` never claims
   native proof. `stations` all remain `pending`.
 
-Of the 80 checks, 46 are `pass` and 34 are `pending`.
+Of the 80 checks, 53 are `pass` and 27 are `pending`.
 
 ## Findings fixed in this review
 
@@ -62,32 +68,50 @@ Of the 80 checks, 46 are `pass` and 34 are `pending`.
 
 Also fixed, not a security finding: `install.sh --from-release` could not
 find Beta packages. The Debian version is `0.9.0~beta.1`, which the asset
-regex rejected; it now accepts `~` (`install.sh:191`, with tests). **Check on
-the first real release:** GitHub may rename `~` in uploaded asset names. If it
-does, the names in `SHA256SUMS` will not match the download URLs.
+regex rejected; it now accepts `~` (`install.sh:191`, with tests). GitHub
+stores `~` in an uploaded asset's name as `.`, so `release.yml` renames `~` to
+`.` before it writes `SHA256SUMS`, attests and uploads, and `install.sh`
+accepts the stored names (dev `b31c3e2c` and earlier; tests `f7d482f3`:
+`test_uploaded_asset_names_match_sha256sums_after_github_renames_tildes`,
+`test_finds_a_beta_package_under_the_name_github_stores`).
+
+## Findings fixed after the review
+
+| ID | Severity | Boundary | Fix | Commit |
+|---|---|---|---|---|
+| SR-10 | High (development installs) | lock-boundary | `install-session-units.sh` builds and installs `rmac-lock-provider` (`--features rmac-lock-provider-linux/provider`), keeps `rmac-lock-fallback.service`, and refuses to build or install anything while `/etc/pam.d/rmac-lock` is missing, printing the `sudo install` command. It re-checks that the provider, locker and both units are installed. Tests: `DevelopmentInstallLockTests` in `scripts/test_session_package.py`. | `57d61973` |
+| SR-11 | Medium | notifications | Live notifications are capped at 100 and 4 MiB of payload per sender and 1024 and 32 MiB overall. A post past a cap closes the sender's (or, globally, anyone's) oldest non-urgent, non-persistent notification, hidden banners first, and reports it as an expiry (legacy `NotificationClosed` reason 1). When only urgent or persistent notifications could make room, the post fails with `LimitsExceeded`. A live entry whose banner is gone is released when history drops it. Tests: seven reducer tests in `crates/rmac-notifications/src/tests.rs`. | `5b8a0824` |
+| SR-13 | Medium | dbus-polkit | Verified against keyd 2.5.0's source (Debian 2.5.0-5 does not patch it). The daemon runs as root, the socket is mode 0660 for group `keyd`, there is no peer check, `bind` accepts `command()` bindings that run `/bin/sh -c` as root, and `input`/`macro` inject keystrokes. So the group is root. No session is added to `keyd` any more, and the helper removes a leftover membership. The follower names one of three profiles on `/run/rmac-mac-keyboard.socket`. A socket-activated `DynamicUser` relay that holds only the `keyd` group (no capabilities, AF_UNIX only) accepts exactly `native`, `pc-app` or `terminal` and applies rmac's generated bindings, which a test proves never contain `command(`. See [ADR 0017](decisions/0017-mac-keyboard.md), "Revision". Tests: `parse_relay_request`, `no_profile_binding_can_run_a_command`, `MacKeyboardRelayTests`. | `27a1e644` |
+| SR-14 | Low | updates | `rmac.pref` adds `Package: *` / `Pin: release o=rmac` / `Pin-Priority: -1`. The verifier, the `install.sh` heredoc and `docs/install.md` all match. Test: `test_the_rmac_origin_cannot_replace_other_packages`. | `ff3653cf`, `c27dd2e1` |
+| SR-16 | Low | packages | Every `ci.yml` action is pinned by a commit SHA, each checked against its tag through the GitHub API. `ci-quality.yml` pinned cargo-deny-action "v2.1.1" to the annotated tag object's SHA, not the commit; it now uses the commit (`3c634983`). The pin tests cover every workflow, and one label must map to one SHA. | `81f8f770` |
+| SR-19 | Low | file-operations | The poppler tools run through `preview::bounded::run`: 60-second deadline, 256 MiB stdout cap, 16 KiB stderr, and the tool is killed and reaped on either. Tests in `crates/preview/src/bounded.rs`. | `abcd747c` |
+| SR-20 | Low | desktop-entry-execution | `Path=` is used only when absolute (`platform::working_directory`). Test: `only_an_absolute_desktop_entry_path_becomes_the_working_directory`. | `cc492231` |
+| SR-21 | Low | file-operations | The copy source is opened with `O_NOFOLLOW` and `O_NONBLOCK`, must be a regular file, and the mode comes from the opened file. Test: `copy_sources_are_opened_without_following_a_swapped_in_link`. | `1f5c7937` |
+| SR-22 | Low | dbus-polkit | The Wi-Fi secret agent and the BlueZ pairing agent resolve the service's unique name at registration and reject every call from any other sender. An agent that never learned the name rejects all calls. Tests: `only_networkmanager_s_unique_name_is_a_valid_caller`, `only_bluez_s_unique_name_is_a_valid_caller`. | `ab1f31a3`, `90edb436` |
+| SR-23 | Low | dbus-polkit | The safe-mode notice accepts `ActionInvoked` and `NotificationClosed` only from the unique name that answered `Notify`. | `70fa34ef` |
+| SR-24 | Low | dbus-polkit | `OpenUri` accepts only a `file:///` URI of at most 8 KiB whose decoded path is absolute, has no `..` or NUL, has a playable extension and is an existing regular file. The playlist holds at most 10,000 items. Tests in `crates/player/src/playlist.rs`. | `855b68df` |
+| SR-25 | Low | dbus-polkit | The notification, clipboard, Focus, FileChooser and Wallpaper portal service connections and both system-bus agents set a 5-second `method_timeout`. Guard: `test_service_connections_bound_outgoing_calls`. | `4ee32bd5` |
+| SR-26 | Low | dbus-polkit | pkexec 127 is reported as "not authorised" and 126 as "cancelled" (`rmac_keyboard::command_failure`). Test: `pkexec_denial_is_not_reported_as_cancellation`. | `1ef3b352` |
+| SR-27 | Low (documentation) | lock-boundary | `secure-lock-recovery.md` and `secure-lock.md` describe `rmac-lock-provider`, its watchdog and start limit, and the `OnFailure=` swaylock fallback, including how to restart the fallback from a TTY. Station proof is still owed (`tty-recovery-proven` stays pending). | `21c1234e` |
+
+Partly fixed; the rest stays open below:
+
+- **SR-17** (`072ccc09`): when `gh` is installed, the attestation is mandatory
+  and must be signed by `millionrust/lulo/.github/workflows/release.yml`
+  (`--signer-workflow`). Without `gh`, `install.sh` now says what it did not
+  check. Tests: `InstallReleaseAttestationTests`.
+- **SR-18** (`e16f8d5c`): the application and session package verifiers accept
+  only the modes `0644` and `0755`. Tests:
+  `test_manifest_cannot_claim_a_privileged_mode` (both packages).
 
 ## Open findings
 
 | ID | Severity | Boundary | Evidence | Exploit scenario | Recommended fix |
 |---|---|---|---|---|---|
-| SR-10 | High (development installs only; the `.deb` is not affected) | lock-boundary | `scripts/linux/install-session-units.sh:46-59` never builds `rmac-lock-provider`, and `:92` deletes both it and `rmac-lock-fallback.service`. Nothing installs `/etc/pam.d/rmac-lock`. | On a machine set up this way, including the reference laptop's development install, the installed `rmac-lock.service` cannot lock. Before SR-02 it failed silently. Now it fails visibly, but logind still suspends after `InhibitDelayMaxSec`, so the session resumes unlocked. | Build `-p rmac-lock-provider-linux --features rmac-lock-provider-linux/provider --bin rmac-lock-provider`. Stop deleting the provider and the fallback unit. Refuse to finish (or print a clear instruction) until `/etc/pam.d/rmac-lock` is installed. Evidence of this state on the laptop invalidates any lock result taken there. |
-| SR-11 | Medium | notifications | `crates/rmac-notifications/src/reducer.rs:68`: `active.insert` has no cap. `expire_one` keeps history-backed entries in `active`, and history eviction (500) never prunes `active`. `post_event` scans `active` linearly. | Any Flatpak app can call the Notification portal's `AddNotification` with ever-new ids, each up to about 16 KiB of body plus 8×16 KiB of targets. This exhausts memory and CPU in rmac-notifications and takes down banners and the Center. | Cap `active` overall (for example 1024) and per app (for example 100). Evict the oldest non-visible entry of that app, or reject. Prune `active` when history evicts an entry. Needs reducer tests. |
-| SR-12 | Medium (latent: APT publishing is gated off) | updates | `.github/workflows/release.yml:518` and `rollout.yml:67` both run `wget --mirror https://millionrust.github.io/lulo/ \|\| true`. Pages has no directory listings, so the mirror is always empty. `publish-apt-snapshot.py` then sees no current repository. | The "Date/snapshot must increase" check (`publish-apt-snapshot.py:1186-1190`) never runs, and retained snapshots, by-hash indices and old pool objects are dropped on each deploy. Re-running an old tag republishes older packages with a fresh date, and rollback evidence disappears. | Keep the publisher's state (`.rmac-publisher/state.json` plus the pool) somewhere authoritative, such as a Pages branch or a release asset. Fail closed when it can't be fetched, unless an explicit first-publish variable is set. |
-| SR-13 | Medium (needs verification) | dbus-polkit | `crates/rmac-keyboard/src/system.rs:113-114` adds the requesting user to group `keyd` (ADR 0017). The group grants access to keyd's IPC socket. | Every process of that user, not only the rmac follower, can use keyd's IPC. That covers at least `bind`, and depending on the keyd version also text input and `command()` actions. At minimum this is global keystroke injection that goes around Wayland's client isolation and reaches whatever surface or VT is active. If keyd 2.5.0 accepts `command()` over IPC from non-root users, it is a root escalation. The membership is also never removed when the feature is turned off. | Verify keyd 2.5.0's IPC restrictions on the station. If `command()` or `input` are open to the group, run the follower as a dedicated system user, or through a root helper that accepts only the enumerated profile names. Remove the group membership on opt-out. |
-| SR-14 | Low | updates | `packaging/apt/rmac.pref:1-3` only sets rmac's three packages to 500. `docs/update-trust.md` claims it stops the repository replacing other Ubuntu packages. | Whoever holds a valid signing key could ship a higher-versioned `sudo` or `openssh-server` from the rmac origin. The same key can already ship a malicious `rmac-session`, so the added risk is small, but the documented control does not exist. | Add `Package: *` / `Pin: origin "millionrust.github.io"` / `Pin-Priority: -1`. Update `verify-update-trust.py` `EXPECTED_PREFERENCES` and the `install.sh` heredoc to match. |
-| SR-15 | Low | packages | There is no `--remap-path-prefix`. Panic locations keep `$CARGO_HOME/…` and `../crates/*` absolute paths (`Cargo.toml:162-167` strips symbols only). | Local and reference-PC builds embed `/home/<user>/…`. `check-native-reproducibility.sh` builds twice on one host, so it cannot catch this. | Remap `$CARGO_HOME` and the repository root in `build-native-inputs.sh`, and scan packaged binaries for `/home/` and `/Users/`. |
-| SR-16 | Low | packages | `.github/workflows/ci.yml` pins `actions/checkout@v4`, `actions/cache@v4` and `cargo-deny-action@v2.0.20` by tag. The same "v2.1.1" label maps to two different SHAs in `ci-quality.yml:104` and `release.yml:45`. | A moved tag would run code in CI (`contents: read`, no secrets) and could poison caches. | Pin by SHA, after checking each SHA against its tag online. |
-| SR-17 | Low | packages | `install.sh:239-243`: without `gh`, `--from-release` checks only `SHA256SUMS`, which is fetched from the same release. | Authenticity then rests on HTTPS and GitHub account security, although the comment says otherwise. | Require `gh attestation verify` (optionally with `--signer-workflow`) unless `--allow-unattested` is passed, and reword the comment. |
-| SR-18 | Low | packages | rustup is installed by `curl \| sh`, the `ubuntu:26.04` container is pinned by tag, and `cargo install` is pinned by version only (`release.yml:125,231,281`). The publisher checks InRelease against the keyring exported from the signing secret, not the packaged keyring (`release.yml:539-551`). The manifest mode check accepts any `[0-7]{4}` (`verify-*-package.py`). | Supply-chain drift. A wrong subkey causes an outage, which fails closed. A setuid mode in the manifest would pass verification. | Pin by digest or hash. Pass `--keyring` from `keyring/*.deb`. Allow only `0644` and `0755` in manifests. |
-| SR-19 | Low | file-operations | `crates/preview/src/render.rs:193-200` runs the poppler tools with `.output()`, with no timeout and no output cap. | A crafted PDF can hang Preview or consume a lot of memory (denial of service only). | Reuse the thumbnail runner (`rmac-thumbnails/src/media.rs:176-260`). |
-| SR-20 | Low | desktop-entry-execution | `crates/rmac-apps/src/platform.rs:229-233,246-249` accept a relative `Path=`, which is resolved against the launcher's own working directory. | Robustness and contract only. There is no shell, and argv boundaries hold. | Keep `Path=` only if it is absolute (`Path::is_absolute`). |
-| SR-21 | Low | file-operations | `crates/finder/src/file_ops.rs:307-322` checks with `symlink_metadata`, then calls `File::open`, which follows symlinks. | In a shared writable source folder such as `/tmp`, a symlink swapped in between the two calls copies a victim-readable file into a destination the attacker can read. | Open with `O_NOFOLLOW` and take the type and mode from the opened file. |
-| SR-22 | Low | dbus-polkit | `crates/rmac-network/src/secret_agent.rs:69-150` and `crates/rmac-bluetooth/src/pairing_agent.rs:437-530` never compare the caller with the owner of `org.freedesktop.NetworkManager` or `org.bluez`. | Only reachable under a permissive system-bus policy; stock policy lets only root send these. Another user could then claim a Wi-Fi secret that was just typed, or show fake pairing prompts. | Compare `header.sender()` with `GetNameOwner`, as the portal backends already do. |
-| SR-23 | Low | dbus-polkit | `crates/rmac-session/src/main.rs:333-376`: the safe-mode notice's `ActionInvoked` match rule has no sender. | Any session peer can answer the safe-mode prompt for the user. | Accept only the unique name that answered `Notify`. |
-| SR-24 | Low | dbus-polkit | `crates/player/src/mpris.rs:163-165` and `view.rs:181-190`: `OpenUri` has no length cap, no playlist cap and no path validation. | A Flatpak app with MPRIS talk access can learn whether any host file exists and read its tags, and can grow the playlist without limit. | Cap URI length and playlist size, and require an absolute, existing `file:` path with no host. |
-| SR-25 | Low | dbus-polkit | Only `crates/rmac-app-menu/src/lib.rs:619` sets `method_timeout`. The notifications `ActivateAction` and Center `Invoke` calls go to app-controlled names with no timeout. | A peer that never replies keeps calls pending. | Set a 5-second `method_timeout` on each service connection builder. |
-| SR-26 | Low | dbus-polkit | `crates/rmac-keyboard/src/system.rs:244-247` maps pkexec exit 126 (dismissed) and 127 (not authorised) both to "authentication was cancelled". | A denial is reported to the user as a cancellation (contract `denial-and-cancel-distinct`). | Report 127 as "not authorised". |
-| SR-27 | Low (documentation) | lock-boundary | `docs/secure-lock-recovery.md:9-11,40-42` and `docs/secure-lock.md:13-27` still describe `rmac-lock.service` as swaylock. | The TTY recovery runbook does not match the installed unit (`tty-recovery-proven`). | Rewrite the runbook for `rmac-lock-provider` plus the fallback unit, then prove it on a station. |
+| SR-12 | Medium (latent: APT publishing is gated off) | updates | `.github/workflows/release.yml` and `rollout.yml` both run `wget --mirror https://millionrust.github.io/lulo/ \|\| true`. Pages has no directory listings, so the mirror is always empty. `publish-apt-snapshot.py` then sees no current repository. | The "Date/snapshot must increase" check (`publish-apt-snapshot.py:1186-1190`) never runs, and retained snapshots, by-hash indices and old pool objects are dropped on each deploy. Re-running an old tag republishes older packages with a fresh date, and rollback evidence disappears. | Keep the publisher's state (`.rmac-publisher/state.json` plus the pool) somewhere authoritative, such as a Pages branch or a release asset. Fail closed when it can't be fetched, unless an explicit first-publish variable is set. Not done here: it needs a decision on where the state lives. |
+| SR-15 | Low | packages | There is no `--remap-path-prefix`. Panic locations keep `$CARGO_HOME/…` and `../crates/*` absolute paths (`Cargo.toml:162-167` strips symbols only). | Local and reference-PC builds embed `/home/<user>/…`. `check-native-reproducibility.sh` builds twice on one host, so it cannot catch this. | Remap `$CARGO_HOME` and the repository root in `build-native-inputs.sh`, and scan packaged binaries for `/home/` and `/Users/`. Not done here: it changes every release binary and needs a build to verify. |
+| SR-17 | Low (partly fixed) | packages | Without `gh`, `install.sh --from-release` still checks only `SHA256SUMS`, which comes from the same release. It now says so. | Authenticity then rests on HTTPS and GitHub account security. | Require `gh attestation verify` unless an explicit `--allow-unattested` is passed. That changes the documented install path, so it is left for a decision. |
+| SR-18 | Low (partly fixed) | packages | rustup is installed by `curl \| sh`, the `ubuntu:26.04` container is pinned by tag, and `cargo install` is pinned by version only (`release.yml`). The publisher checks InRelease against the keyring exported from the signing secret, not the packaged keyring. | Supply-chain drift. A wrong subkey causes an outage, which fails closed. | Pin by digest or hash. Pass `--keyring` from `keyring/*.deb`. (The manifest mode check is fixed.) |
 
 **Informational, no severity:**
 
@@ -118,19 +142,19 @@ Legend:
 | launch-diagnostics-redacted | pass | `crates/rmac-app-launch/src/application.rs` returns kinds only |
 | no-shell-interpolation | pass | only two `sh -c` uses in the tree, both constant scripts with positional arguments (`crates/rmac-clipboard-linux/src/wayland.rs:25,47`, `shell/compat/gpui_linux/src/linux/platform.rs:305-321`) |
 | terminal-wrapper-argument-boundary | pending (native) | rmac keeps argv after `-e` intact (`catalog.rs:283-318`); whether the terminal re-parses it depends on `x-terminal-emulator` |
-| working-directory-validated | pending (SR-20) | |
+| working-directory-validated | pass | only an absolute `Path=` becomes the working directory (`crates/rmac-apps/src/platform.rs` `working_directory`); SR-20 fixed |
 
 ### dbus-polkit
 | Check | Verdict | Evidence |
 |---|---|---|
 | broadcasts-contain-no-secrets | pass | the Center, Clipboard and LockScreen `Changed` signals carry counts or policy only; Clipboard history skips password-manager offers (`crates/rmac-clipboard-linux/src/service.rs:254-259`) |
-| bounded-call-time-and-output | pending (SR-25) | nmcli and helper output is bounded (`crates/rmac-network/src/vpn_import.rs:343-356`, `crates/rmac-privacy-linux/src/security.rs:33-80`) |
-| denial-and-cancel-distinct | pending (SR-26) | |
+| bounded-call-time-and-output | pass | nmcli and helper output is bounded (`crates/rmac-network/src/vpn_import.rs:343-356`, `crates/rmac-privacy-linux/src/security.rs:33-80`); service and agent connections set a 5-second `method_timeout` (SR-25 fixed) |
+| denial-and-cancel-distinct | pass | pkexec 126 is "cancelled", 127 is "not authorised" (`rmac_keyboard::command_failure`); SR-26 fixed |
 | interactive-authorization-only-from-user-action | pending (native) | `interactive=true` is set on SetStaticHostname, SetTimezone, SetLocale and PackageKit install (`crates/rmac-system-info/src/host.rs:182`, `crates/rmac-time-linux/src/system.rs:79`, `crates/rmac-locale-linux/src/system.rs:281`, `rmac-updates-linux` `transaction.rs:217`); not every System Settings call site was traced back to a user action |
 | mutation-requires-authoritative-readback | pending (native) | hostname verified after the write (`rmac-system-info` `verify_static_hostname`), VPN edits re-read (`vpn_editor.rs:300-317`), updates re-snapshot; Sharing and systemd unit changes need station proof |
 | no-credential-collection | pass | admin credentials only through polkit agents; the keyboard helper takes enumerated flags only (`crates/rmac-keyboard/src/helper.rs:24-48`); Wi-Fi secrets are zeroized with redacted Debug (`crates/rmac-network/src/model.rs:191-260`) |
-| system-bus-callers-treated-untrusted | pending (SR-22) | |
-| unique-owner-revalidated | pending (SR-23) | the portal backends compare the caller with the owner of `org.freedesktop.portal.Desktop` (`crates/rmac-file-chooser/src/dbus.rs:245-266`) |
+| system-bus-callers-treated-untrusted | pass | the NetworkManager secret agent and BlueZ pairing agent accept calls only from the service's unique name, resolved at registration; SR-22 fixed |
+| unique-owner-revalidated | pass | the portal backends compare the caller with the owner of `org.freedesktop.portal.Desktop` (`crates/rmac-file-chooser/src/dbus.rs:245-266`); the safe-mode notice accepts answers only from the server that answered `Notify` (SR-23 fixed) |
 
 ### portals
 | Check | Verdict | Evidence |
@@ -151,7 +175,7 @@ Legend:
 | conflict-refuses-stale-overwrite | pass | `RENAME_NOREPLACE` (`file_ops.rs:499-511`, `crates/rmac-archive/src/staging.rs:101`) |
 | mount-disappearance-recovers | pending (native) | |
 | private-path-diagnostics-redacted | pass | Trash errors leave out storage paths (test at `file_ops.rs:1784`) |
-| symlink-and-root-boundaries-enforced | pending (SR-21) | SR-03 fixed; copy recreates links rather than following them; `.trashinfo` decoding rejects NUL, absolute paths and `..` (`trash_store.rs:903-968,1072-1085`) |
+| symlink-and-root-boundaries-enforced | pass | SR-03 and SR-21 fixed; the copy source is opened with `O_NOFOLLOW`; copy recreates links rather than following them; `.trashinfo` decoding rejects NUL, absolute paths and `..` (`trash_store.rs:903-968,1072-1085`) |
 | trash-and-destructive-actions-confirmed | pass | `crates/finder/src/view/permanent_delete_controller.rs:51-88` |
 | untrusted-content-never-executed | pending (native) | Files never executes anything itself; opening goes through the OpenURI portal or `xdg-open` (`crates/rmac-portal/src/open.rs:41-52`); handler behaviour for `.desktop` files and executables needs station proof |
 
@@ -162,10 +186,10 @@ Legend:
 | mfa-conversation-bounded | pass | 1..=32 messages of at most 512 B each; responses at most 512 B with no NUL (`src/pam/callback.rs:11-12,68,84,166-169,229-246`); one prompt at a time (`pam_broker.rs:27,338-349`) |
 | no-password-or-keycode-logging | pass | only fixed-string `eprintln!`; every secret-bearing type has a redacted Debug (`secret.rs:88,113`, `keyboard.rs:29,69`, `pam_conversation.rs:39,78`, `pam_broker.rs:197`) |
 | pam-is-sole-unlock-authority | pass | `UnlockAuthorization` is minted only on success (`crates/rmac-lock-provider/src/model.rs:82-85`, `provider.rs:127-135`); requires `pam_authenticate(PAM_DISALLOW_NULL_AUTHOK)`, then `acct_mgmt`, then `pam_end` (`src/pam/transaction.rs:129-173`); no D-Bus, env or timer unlock; `pam/rmac-lock` includes `common-auth` and `common-account` only |
-| provider-crash-fails-closed | pending (SR-10, native) | SR-02 and SR-09 fixed; only an authenticated unlock exits 0 (`development_process.rs:67-87`); watchdog SIGKILL and restart |
+| provider-crash-fails-closed | pending (native) | SR-02, SR-09 and SR-10 fixed; only an authenticated unlock exits 0 (`development_process.rs:67-87`); watchdog SIGKILL and restart |
 | secret-lifetime-and-zeroization-reviewed | pass | fixed-capacity `SecretInput`, zeroized on edit and drop (`secret.rs:13-80`); a single calloc copy for libpam, wiped with `explicit_bzero` (`pam/callback.rs:67-79,113-135`); no `CString` of the secret; cores disabled (SR-09) |
 | suspend-waits-for-lock-readiness | pending (native) | sleep delay inhibitor released only after a successful start (`crates/rmac-shortcuts/src/lock.rs:326-334,357-365`); SR-02 fixed |
-| tty-recovery-proven | pending (SR-27, native) | |
+| tty-recovery-proven | pending (native) | the runbook matches the installed units (SR-27 fixed); needs station proof |
 | wrong-password-and-cancel-remain-locked | pass | failure and cancel return to `Locked` (`provider.rs:136-148`); the cancelled worker is drained (`runtime.rs:293-317`) |
 
 ### notifications
@@ -174,7 +198,7 @@ Legend:
 | action-target-bound-to-notification | pass | owner checked on replace and withdraw (`crates/rmac-notifications/src/reducer.rs:36,85`); document-open requires a portal source and a matching app (`crates/rmac-notifications-linux/src/service.rs:1362-1400`) |
 | diagnostics-redacted | pending (native) | not traced end to end in this pass |
 | focus-suppression-authoritative | pending (native) | not traced in this pass |
-| history-and-payload-bounded | pending (SR-11) | payload limits (`crates/rmac-notifications/src/lib.rs:20-29`); history 500 records, 100 per app, 8 MiB |
+| history-and-payload-bounded | pass | payload limits (`crates/rmac-notifications/src/lib.rs:20-29`); history 500 records, 100 per app, 8 MiB; live notifications 100 and 4 MiB per sender, 1024 and 32 MiB overall (SR-11 fixed) |
 | lock-screen-content-redacted | pending (native) | the policy defaults to `Hide`, but no lock-screen client renders notifications yet |
 | markup-treated-as-untrusted | pass | legacy body is plain text; portal markup is reduced to inert text, capped at 64 KiB (`decode.rs:29-31,196-270`); image paths are ignored and portal media accepted only as sealed memfds (`media.rs:749-790`) |
 | sender-attribution-not-invented | pass | identity is the unique bus name; the claimed `app_name` is ignored (`origin.rs:1-10`) |
@@ -199,7 +223,7 @@ Legend:
 | license-inventory-complete | pending (native) | Rust dependencies are covered; non-Rust assets are not established |
 | native-and-sandbox-boundaries-explicit | pass | Flatpak `finish-args` are `--socket=wayland --device=dri` only; maintainer scripts touch only `/etc/keyd/rmac.conf` (`packaging/rmac-session/debian/postinst`, `postrm`) |
 | rollback-and-uninstall-tested | pending (native) | |
-| signature-and-origin-claims-bounded | pending (SR-14, SR-17) | |
+| signature-and-origin-claims-bounded | pending (SR-17) | SR-14 fixed; with `gh` the release attestation is mandatory and workflow-bound |
 | unpackaged-executables-rejected | pass | `verify-native-packages.py:430-436`; no setuid in source |
 
 ### updates
@@ -239,13 +263,11 @@ and `Debug` derive, plus journal inspection on a station, is still required:
 - **Security gate: Fail.** The gate is never waived. It passes only when
   `open_findings` is empty, all 80 checks are `pass`, and the three Beta
   stations have run.
-- **Nothing Critical is open, and nothing open affects the `.deb`-installed
-  lock screen.** The one open High (SR-10) breaks locking on development
-  installs, which the reference laptop uses. Fix it before any lock evidence
-  is taken there.
-- **Worth fixing before a public early-access build:**
-  - SR-11: any Flatpak app can exhaust memory in the notification daemon.
-  - SR-13: verify the keyd group's IPC reach on Ubuntu 26.04's keyd 2.5.0
-    before shipping "Use Mac shortcuts in all apps" as an option.
-- **SR-12 and SR-14** must be fixed before the signed APT repository is
-  switched on. They do not block the GitHub-Release Beta.
+- **Nothing Critical or High is open.** SR-10 is fixed, but a development
+  install made before it may still lack the provider or its PAM service; rerun
+  `install-session-units.sh` before taking lock evidence there.
+- **SR-13 changed a privileged boundary.** The keyd relay needs a station
+  check: Mac shortcuts switch per app without the user in `keyd`, and a
+  request other than the three profile names is refused.
+- **SR-12** must be fixed before the signed APT repository is switched on. It
+  does not block the GitHub-Release Beta.

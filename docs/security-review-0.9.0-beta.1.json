@@ -8,24 +8,10 @@
   "hardware_manifest_sha256": "ab5a80a837594775e442c9a7d966ae0abf27e2e14ae4f2807303a30669f20b40",
   "journey_manifest_sha256": "6c3867951d1bdaf5742eb53c4a89e9409dc56510227bdf5acee2d57eb6acf264",
   "open_findings": [
-    "SR-10 high lock-boundary: development install never installs the lock provider or its PAM service",
-    "SR-11 medium notifications: live notification map has no count bound (sandboxed-app memory exhaustion)",
     "SR-12 medium updates: CI mirror of the live APT repository is always empty (monotonic, retention and immutability checks bypassed)",
-    "SR-13 medium dbus-polkit: keyd group membership gives every same-user process keyd's IPC (verify keyd 2.5.0 input/command scope)",
-    "SR-14 low updates: rmac.pref does not lower other packages from the rmac origin",
     "SR-15 low packages: build-host paths embedded in shipped binaries",
-    "SR-16 low packages: ci.yml actions pinned by tag, not commit",
-    "SR-17 low packages: install.sh --from-release authenticity rests on HTTPS when gh is absent",
-    "SR-18 low packages: release hardening (unpinned rustup/container/cargo-install inputs; publisher keyring source; manifest mode check)",
-    "SR-19 low file-operations: Preview runs poppler tools without timeout or output cap",
-    "SR-20 low desktop-entry-execution: relative desktop-entry Path= accepted",
-    "SR-21 low file-operations: copy opens the source without O_NOFOLLOW after an lstat check",
-    "SR-22 low dbus-polkit: NetworkManager secret agent and BlueZ pairing agent do not check the caller",
-    "SR-23 low dbus-polkit: safe-mode notice accepts ActionInvoked from any sender",
-    "SR-24 low dbus-polkit: MPRIS OpenUri unbounded and unvalidated",
-    "SR-25 low dbus-polkit: no method-call timeouts on outgoing D-Bus calls",
-    "SR-26 low dbus-polkit: keyboard helper reports polkit denial as cancellation",
-    "SR-27 low lock-boundary: recovery runbook describes the old swaylock unit"
+    "SR-17 low packages: install.sh --from-release authenticity rests on HTTPS when gh is absent (attestation is mandatory and workflow-bound when gh is present)",
+    "SR-18 low packages: release hardening (unpinned rustup/container/cargo-install inputs; publisher keyring source); manifest mode check fixed"
   ],
   "results": [
     {
@@ -61,7 +47,7 @@
     {
       "check": "working-directory-validated",
       "domain": "desktop-entry-execution",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "broadcasts-contain-no-secrets",
@@ -71,12 +57,12 @@
     {
       "check": "bounded-call-time-and-output",
       "domain": "dbus-polkit",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "denial-and-cancel-distinct",
       "domain": "dbus-polkit",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "interactive-authorization-only-from-user-action",
@@ -96,12 +82,12 @@
     {
       "check": "system-bus-callers-treated-untrusted",
       "domain": "dbus-polkit",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "unique-owner-revalidated",
       "domain": "dbus-polkit",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "backend-routing-verified",
@@ -166,7 +152,7 @@
     {
       "check": "symlink-and-root-boundaries-enforced",
       "domain": "file-operations",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "trash-and-destructive-actions-confirmed",
@@ -241,7 +227,7 @@
     {
       "check": "history-and-payload-bounded",
       "domain": "notifications",
-      "status": "pending"
+      "status": "pass"
     },
     {
       "check": "lock-screen-content-redacted",
@@ -429,7 +415,7 @@
       "status": "pending"
     }
   ],
-  "revision": "67929505bf3ae88d23cbb927c2c9a3dc18750822",
+  "revision": "21c1234e8f219de5799a61226284f2c93fbae1e9",
   "stations": [
     {
       "id": "amd64-intel-laptop",

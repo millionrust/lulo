@@ -95,14 +95,58 @@
                    (battery omitted); Disk data read/written per second;
                    Network data received/sent + rates.
 
-  NOTES (S — the owner's Notes holds private data and was not opened; every
-  number is from platform knowledge and marked S)
-    window 1000 × 640 S, 52 toolbar S; sidebar 210 S (section "On My Mac"
-    11 bold secondary, rows 28, yellow folder glyph, count right);
-    list 300 S (date section headers 13 bold, rows title 13 bold + date 12 +
-    snippet 12 secondary, hairlines inset 12, selected row notes-yellow);
-    editor: centred date 12 secondary, title 24 bold, body 14/20,
-    checklists as 18 circles (filled yellow with a check when done).
+  NOTES (M, measured 2026-09-24 on 26.2 dark in a new folder holding one
+  dummy note, both deleted afterwards; the owner's window was 1470 × 832 and
+  its column split is the owner's, so the column widths are M for that window;
+  captures stay in the agent scratchpad, never committed)
+    window         52 unified toolbar with NO base line: the toolbar is
+                   transparent over each column (list tint over the list,
+                   #1E1E1E over the editor). Frame tint #1F202C.
+    sidebar        floating panel x 8 → 221 (213 wide), y 8 → bottom − 8.5,
+                   radius 19 (S: Finder's), fill #1D1E2A (black ~10 % over the
+                   tint), 1 pt rim #404665. Traffic-light centres 26/49/72,
+                   y 26; sidebar toggle glyph centred x 114 (20 wide) —
+                   rmac has no collapsible sidebar, so it is omitted.
+                   Rows 32 pitch; selection x 19 → 209.5 (inset 11), radius
+                   8, white 6 % (#2A2B33 over #1C1D25); folder glyph 18.5 ×
+                   15 outline, centre x 33 (row + 14), #FFCE40; label 13 at
+                   row + 29.5, baseline row + 21, selected label #F2BB4B
+                   (unselected: primary text, S); count right-aligned 8 in
+                   from the selection, #5F5F65 (S unselected #8E8E93).
+                   Section header 19 tall, 11 bold, x panel + 16.5, #5D5E67.
+    list           x 221 → 567 (346), fill #21222D; 1 pt #000000 rule at 567.
+      toolbar      folder name 13 bold #E9E9EA at x 242 (list + 21),
+                   baseline 24; count ("1 note") 11 #909096 baseline 38.
+                   View Options "⋯" = 36 circle at x 523 (right edge 8 from
+                   the rule), y 8, fill white 3 %, rim white 14 %.
+      section      header row 40 from y 62 (list starts 52, 10 top pad):
+                   "Today" 15 bold #DDDDDF at x 237.5 (list + 16.5),
+                   baseline 77.5; 1 pt rule white 10 % at y 91, full width.
+      row          56 pitch; selection inset 10 (x 231 → 557), 55 tall,
+                   radius 8; title 13 bold at x 257 (list + 36) baseline
+                   row + 25; second line 12 at the same x, baseline row + 40:
+                   time then 9 pt gap then the preview.
+                   List not focused: fill #464646, title/time #E3E3E3,
+                   preview #ACACAC. List focused: fill #99833F, title/time
+                   #EFECE2, preview #D1C7A8. Unselected rows (S): primary
+                   title, secondary preview, rule inset from the text.
+    editor         fill #1E1E1E.
+      toolbar      compose 36 circle at editor + 8.5; format capsule 155 ×
+                   36 (Aa, checklist, table, attachment — 38 buttons);
+                   share capsule 80 × 36 (share, ⋯); search capsule 326 ×
+                   36, right margin 8, 15.5 after the share capsule. The
+                   format capsule floats centred between compose and share.
+                   Capsules: fill white 2 % (#232323), 1 pt rim white 14 %
+                   top / 9 % sides; glyphs #E9E9E9.
+                   rmac: compose; checklist + add photo (no rich text or
+                   tables); ⋯ holds pin, move, delete, Markdown preview,
+                   import and export; search.
+      date         12 #808080, centred on the editor, baseline 20 below the
+                   toolbar ("24 September 2026 at 10:04 AM").
+      title        Notes' Title style on the first line: 20 bold #DCDCDD,
+                   ink x editor + 23, baseline 51.5 below the toolbar.
+      body         13 #DCDCDC, line pitch 17, first baseline 17.5 below the
+                   title's; caret #F2BB4B. No word count, no footer.
 -->
 <style>
   body{margin:0;background:#151518;font-family:Inter,-apple-system,sans-serif;color:#E8E8EA}
@@ -167,30 +211,40 @@
   .gt{position:absolute;left:12px;right:12px;top:4px;height:18px;border-bottom:1px solid #A6A6A6;
       text-align:center;font:700 10px/18px Inter,-apple-system,sans-serif;color:#9E9FA3;letter-spacing:.3px}
   .graph{position:absolute;left:3px;right:3px;bottom:2px;height:40px}
-  /* Notes (S) */
-  .ns-side{position:absolute;left:8px;top:8px;bottom:8px;width:202px;border-radius:18px;background:rgba(255,255,255,.06)}
-  .ns-h{font:700 11px/20px Inter,-apple-system,sans-serif;color:#8E8F95;padding:60px 14px 2px}
-  .ns-row{height:28px;margin:0 8px;border-radius:8px;display:flex;align-items:center;gap:8px;padding:0 8px;font:13px Inter,-apple-system,sans-serif}
-  .ns-row.on{background:rgba(255,255,255,.12)}
-  .ns-row .f{width:16px;height:12px;border-radius:2px;border:1.5px solid #FFD60A;box-sizing:border-box}
-  .ns-row .n{margin-left:auto;color:#8E8F95;font-size:12px}
-  .ns-list{position:absolute;left:218px;top:52px;bottom:0;width:300px;border-right:1px solid rgba(255,255,255,.08)}
-  .ns-sec{font:700 13px/28px Inter,-apple-system,sans-serif;padding:4px 20px 0}
-  .ns-note{margin:0 10px;padding:8px 10px;border-radius:8px;border-bottom:1px solid rgba(255,255,255,.08)}
-  .ns-note.on{background:#A68A00;border-color:transparent}
-  .ns-note b{display:block;font:700 13px/17px Inter,-apple-system,sans-serif}
-  .ns-note i{font:12px/16px Inter,-apple-system,sans-serif;font-style:normal;color:#8E8F95}
-  .ns-note i em{font-style:normal;color:#E8E8EA;margin-right:6px}
-  .ns-ed{position:absolute;left:519px;right:0;top:52px;bottom:0;background:#1E1E1E;padding:0 44px}
-  .ns-date{text-align:center;font:12px/32px Inter,-apple-system,sans-serif;color:#8E8F95}
-  .ns-title{font:700 24px/30px Inter,-apple-system,sans-serif}
-  .ns-body{font:14px/20px Inter,-apple-system,sans-serif;margin-top:6px}
-  .chk{display:flex;align-items:center;gap:8px;margin:4px 0}
-  .chk i{width:18px;height:18px;border-radius:9px;box-shadow:inset 0 0 0 1.5px #6E6E73;flex:none}
-  .chk i.done{background:#FFD60A;box-shadow:none;position:relative}
-  .chk i.done:after{content:"✓";position:absolute;left:4px;top:0;font:700 12px/18px Inter,-apple-system,sans-serif;color:#1E1E1E}
-  .chk span.done{color:#8E8F95}
-  .ns-tb .cap{color:#E8E9EA}
+  /* Notes (M) */
+  .ns{background:#1F202C}
+  .ns-side{position:absolute;left:8px;top:8px;bottom:8.5px;width:211px;border-radius:19px;background:#1D1E2A;border:1px solid #404665}
+  .ns-h{position:absolute;left:16.5px;font:700 11px/19px Inter,-apple-system,sans-serif;color:#5D5E67}
+  .ns-row{position:absolute;left:10px;right:10px;height:32px;border-radius:8px;font:13px/32px Inter,-apple-system,sans-serif;color:#E8E8EA}
+  .ns-row.on{background:rgba(255,255,255,.06);color:#F2BB4B}
+  .ns-row .f{position:absolute;left:5px;top:8.5px;width:18.5px;height:15px;box-sizing:border-box;border:1.5px solid #FFCE40;border-radius:3px}
+  .ns-row .l{position:absolute;left:29.5px}
+  .ns-row .n{position:absolute;right:8px;color:#8E8E93}
+  .ns-row.on .n{color:#5F5F65}
+  .ns-list{position:absolute;left:221px;top:0;bottom:0;width:346px;background:#21222D;border-right:1px solid #000}
+  .ns-lt{position:absolute;left:21px;top:11px;font:700 13px/17px Inter,-apple-system,sans-serif;color:#E9E9EA}
+  .ns-ls{position:absolute;left:21px;top:28px;font:11px/13px Inter,-apple-system,sans-serif;color:#909096}
+  .ns-more{position:absolute;right:8px;top:8px;width:36px;height:36px;border-radius:18px;box-sizing:border-box;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.14);display:flex;align-items:center;justify-content:center;color:#E9E9E9;font:700 15px Inter,-apple-system,sans-serif}
+  .ns-sec{position:absolute;left:0;right:0;top:62px;height:40px}
+  .ns-sec b{position:absolute;left:16.5px;top:3px;font:700 15px/18px Inter,-apple-system,sans-serif;color:#DDDDDF}
+  .ns-sec i{position:absolute;left:0;right:0;top:29px;height:1px;background:rgba(255,255,255,.10)}
+  .ns-note{position:absolute;left:10px;right:10px;height:55px;border-radius:8px}
+  .ns-note.on{background:#99833F}
+  .ns-note.dim{background:#464646}
+  .ns-note b{position:absolute;left:26px;top:11px;font:700 13px/17px Inter,-apple-system,sans-serif;color:#E8E8EA}
+  .ns-note i{position:absolute;left:26px;top:28px;right:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:12px/15px Inter,-apple-system,sans-serif;font-style:normal;color:#8E8E93}
+  .ns-note i em{font-style:normal;color:#E8E8EA;margin-right:9px}
+  .ns-note.on b,.ns-note.on i em{color:#EFECE2}.ns-note.on i{color:#D1C7A8}
+  .ns-note.dim b,.ns-note.dim i em{color:#E3E3E3}.ns-note.dim i{color:#ACACAC}
+  .ns-note.rule:after{content:"";position:absolute;left:26px;right:0;bottom:-1px;height:1px;background:rgba(255,255,255,.08)}
+  .ns-ed{position:absolute;left:568px;right:0;top:0;bottom:0;background:#1E1E1E}
+  .ns-cap{position:absolute;top:8px;height:36px;border-radius:18px;box-sizing:border-box;background:rgba(255,255,255,.02);
+          border:1px solid rgba(255,255,255,.09);border-top-color:rgba(255,255,255,.14);display:flex;align-items:center;padding:0 1px;color:#E9E9E9}
+  .ns-cap span{width:38px;display:flex;justify-content:center;font-size:15px}
+  .ns-date{position:absolute;left:0;right:0;top:61px;text-align:center;font:12px/15px Inter,-apple-system,sans-serif;color:#808080}
+  .ns-title{position:absolute;left:22px;right:22px;top:84px;font:700 20px/24px Inter,-apple-system,sans-serif;color:#DCDCDD}
+  .ns-body{position:absolute;left:22px;right:22px;top:108px;font:13px/17px Inter,-apple-system,sans-serif;color:#DCDCDC}
+  .ns-caret{display:inline-block;width:1.5px;height:16px;background:#F2BB4B;vertical-align:-3px}
 </style>
 </head>
 <body>
@@ -293,35 +347,33 @@ Wide line: WWWWWWWWWW iiiiiiiiii 0123456789</div>
   </div>
 </div>
 
-<h2>Notes (S — described, not captured)</h2>
-<div class="win r27 tb52 ns-tb" style="width:1000px;height:640px;background:#1E1E1E">
+<h2>Notes — 1080 × 720, one folder, list focused (M; column widths from the owner's split)</h2>
+<div class="win r27 ns" style="width:1080px;height:720px">
   <div class="ns-side">
-    <div class="ns-h">On My Mac</div>
-    <div class="ns-row on"><span class="f"></span>Notes<span class="n">12</span></div>
-    <div class="ns-row"><span class="f"></span>Ideas<span class="n">3</span></div>
-    <div class="ns-row"><span class="f" style="border-color:#8E8F95"></span>Recently Deleted<span class="n">1</span></div>
+    <div class="ns-h" style="top:57px">On My Computer</div>
+    <div class="ns-row" style="top:76px"><span class="f"></span><span class="l">All Notes</span><span class="n">3</span></div>
+    <div class="ns-row on" style="top:108px"><span class="f"></span><span class="l">Lulo layout test</span><span class="n">1</span></div>
+    <div class="ns-row" style="top:148px"><span class="f" style="border-color:#8E8E93"></span><span class="l">Recently Deleted</span><span class="n">0</span></div>
   </div>
-  <div class="tl"><i class="c"><b></b></i><i class="m"><b></b></i><i class="z"><b></b></i></div>
-  <div class="cap" style="left:228px;width:70px"><span class="ic">↕</span><span class="ic">🗑</span></div>
-  <div class="cap" style="left:470px;width:40px"><span class="ic">✎</span></div>
-  <div class="cap" style="left:530px;width:105px"><span class="ic">☑</span><span class="ic">▣</span><span class="ic">⌘</span></div>
-  <div class="srch" style="width:200px;border-radius:19px;justify-content:flex-start;padding-left:12px;box-sizing:border-box;color:#8E8F95">⌕ Search</div>
+  <div class="tl" style="left:18px;top:18px"><i class="c"><b></b></i><i class="m"><b></b></i><i class="z"><b></b></i></div>
   <div class="ns-list">
-    <div class="ns-sec">Today</div>
-    <div class="ns-note on"><b>Shopping</b><i><em>5:14 PM</em>Milk, bread</i></div>
-    <div class="ns-note"><b>Meeting notes</b><i><em>11:02 AM</em>Agenda for Friday</i></div>
-    <div class="ns-sec">Previous 7 Days</div>
-    <div class="ns-note"><b>Books</b><i><em>Monday</em>The Left Hand of Darkness</i></div>
+    <div class="ns-lt">Lulo layout test</div><div class="ns-ls">3 notes</div>
+    <div class="ns-more">···</div>
+    <div class="ns-sec"><b>Today</b><i></i></div>
+    <div class="ns-note on" style="top:102.5px"><b>Lulo layout test</b><i><em>10:04 AM</em>A dummy note for measuring the layout.</i></div>
+    <div class="ns-note rule" style="top:158.5px"><b>Shopping</b><i><em>9:12 AM</em>Milk, bread</i></div>
+    <div class="ns-note" style="top:214.5px"><b>Books</b><i><em>8:40 AM</em>The Left Hand of Darkness</i></div>
   </div>
   <div class="ns-ed">
-    <div class="ns-date">23 September 2026 at 5:14 PM</div>
-    <div class="ns-title">Shopping</div>
-    <div class="ns-body">
-      <div class="chk"><i class="done"></i><span class="done">Milk</span></div>
-      <div class="chk"><i></i><span>Bread</span></div>
-      <div class="chk"><i></i><span>Coffee</span></div>
-    </div>
+    <div class="ns-cap" style="left:8.5px;width:36px;padding:0;justify-content:center">✎</div>
+    <div class="ns-cap" style="left:190px;width:80px"><span>☑</span><span>📎</span></div>
+    <div class="ns-cap" style="left:290px;width:44px;justify-content:center">···</div>
+    <div class="ns-cap" style="left:349.5px;width:155px;padding-left:12px;color:#8E8E93;font:13px Inter,-apple-system,sans-serif">⌕&nbsp; Search</div>
+    <div class="ns-date">24 September 2026 at 10:04 AM</div>
+    <div class="ns-title">Lulo layout test</div>
+    <div class="ns-body">A dummy note for measuring the layout.<br>Second body line.<span class="ns-caret"></span></div>
   </div>
+</div>
 </div>
 </div>
 </body>

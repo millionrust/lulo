@@ -630,6 +630,12 @@ impl FinderView {
             }
         }
 
+        // Finished searches only: while a ranked search runs, the list is
+        // empty and its summary reads "Searching…".
+        let no_matching_items = visible_count == 0
+            && matches!(self.view, ViewMode::List | ViewMode::Icon)
+            && self.search_cancel.is_none()
+            && (self.search_summary.is_some() || !q.trim().is_empty());
         let content = if self.trash_view && self.entries.is_empty() {
             let empty_title = format!("{} is Empty", self.file_words.bin());
             let empty_message =
@@ -642,6 +648,21 @@ impl FinderView {
                 .items_center()
                 .justify_center()
                 .child(rmac_ui::EmptyState::new(empty_title).message(empty_message))
+                .into_any_element()
+        } else if no_matching_items {
+            // As Gallery does: a search that found nothing says so, rather
+            // than leaving an empty list.
+            div()
+                .id("search-empty")
+                .flex_1()
+                .min_h(px(0.0))
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    rmac_ui::EmptyState::new("No Matching Items")
+                        .message("Try a different search."),
+                )
                 .into_any_element()
         } else {
             match self.view {

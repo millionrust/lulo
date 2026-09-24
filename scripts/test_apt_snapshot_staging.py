@@ -234,7 +234,15 @@ class StageAptSnapshotTests(unittest.TestCase):
             self.assertEqual(publication.signers, (signer,))
             repository = root / "repository"
             repository.mkdir()
-            publisher.promote(output, repository, keyring, publication, retain=3)
+            publisher.promote(
+                output,
+                repository,
+                keyring,
+                publication,
+                retain=3,
+                # A tiny fixture: don't hold it to the host disk's 15 GiB floor.
+                free_bytes=lambda _path: 1 << 50,
+            )
             self.assertTrue((repository / publisher.INRELEASE_PATH).is_file())
 
 

@@ -224,6 +224,9 @@ impl Render for Settings {
                 }
                 window.remove_window();
             }))
+            .on_action(cx.listener(|_, _: &Minimize, _, cx| {
+                rmac_ui::minimize_focused_window(cx);
+            }))
             .bg(pane_bg())
             .text_color(label())
             .when(layout.sidebar_visible, |root| {

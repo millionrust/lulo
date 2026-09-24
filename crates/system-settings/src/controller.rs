@@ -167,7 +167,8 @@ actions!(
         GoForward,
         SelectAlert,
         SelectErrorAlert,
-        SelectNotificationAlert
+        SelectNotificationAlert,
+        Minimize
     ]
 );
 
@@ -309,6 +310,9 @@ pub(crate) fn run() {
                 // just need to close it -- reuse the same guarded handler
                 // (it already declines to close mid-VPN-import, etc.).
                 KeyBinding::new("cmd-q", rmac_ui::RequestClose, Some("SystemSettings")),
+                // ⌘M minimizes the window, the same as the yellow traffic
+                // light.
+                KeyBinding::new("cmd-m", Minimize, Some("SystemSettings")),
             ]);
             Settings::new(window, cx)
         },

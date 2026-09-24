@@ -39,6 +39,7 @@ rmac-places = { version = "=0.9.0-beta.1", path = "../crates/rmac-places" }
 rmac-places-system = { version = "=0.9.0-beta.1", path = "../crates/rmac-places-system" }
 rmac-power = { version = "=0.9.0-beta.1", path = "../crates/rmac-power" }
 rmac-recent-documents = { version = "=0.9.0-beta.1", path = "../crates/rmac-recent-documents" }
+rmac-process = { version = "=0.9.0-beta.1", path = "../crates/rmac-process" }
 rmac-screen-reader = { version = "=0.9.0-beta.1", path = "../crates/rmac-screen-reader" }
 rmac-search = { version = "=0.9.0-beta.1", path = "../crates/rmac-search" }
 rmac-osd = { version = "=0.9.0-beta.1", path = "../crates/rmac-osd" }
@@ -47,6 +48,7 @@ rmac-shell-layer = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-layer"
 rmac-shell-runtime = { version = "=0.9.0-beta.1", path = "../crates/rmac-shell-runtime" }
 rmac-shell-settings = { version = "=0.9.0-beta.1", path = "../crates/rmac-shell-settings" }
 rmac-shell-status = { version = "=0.9.0-beta.1", path = "../crates/rmac-shell-status" }
+rmac-shortcuts = { version = "=0.9.0-beta.1", path = "../crates/rmac-shortcuts" }
 rmac-sound = { version = "=0.9.0-beta.1", path = "../crates/rmac-sound" }
 rmac-shell-ui = { version = "=0.9.0-beta.1", path = "crates/rmac-shell-ui" }
 rmac-theme = { version = "=0.9.0-beta.1", path = "../crates/rmac-theme" }

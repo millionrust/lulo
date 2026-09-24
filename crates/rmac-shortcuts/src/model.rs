@@ -29,7 +29,13 @@ pub fn default_shortcuts() -> Vec<ShortcutSpec> {
 pub fn known_action(id: &ShortcutId) -> bool {
     matches!(
         id.0.as_str(),
-        "launcher" | "app-drawer" | "notification-center" | "quick-settings" | "lock"
+        "launcher"
+            | "app-drawer"
+            | "notification-center"
+            | "quick-settings"
+            | "lock"
+            | "power-key"
+            | "shutdown-dialog"
     )
 }
 

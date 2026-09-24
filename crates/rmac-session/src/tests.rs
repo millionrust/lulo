@@ -723,6 +723,20 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
         }));
     }
     assert!(!shell.contains("toggle-overview"));
+    // The power button goes to the lock coordinator, which holds logind's
+    // handle-power-key inhibitor (docs/decisions/0020). niri's own handling
+    // is off, so its hardcoded suspend-on-press never runs first.
+    let input = shell
+        .split_once("input {")
+        .and_then(|(_, rest)| rest.split_once("\n}\n"))
+        .map(|(input, _)| input)
+        .expect("shell input block");
+    assert!(input
+        .lines()
+        .any(|line| line.trim() == "disable-power-key-handling"));
+    assert!(shell.contains(
+        "XF86PowerOff repeat=false allow-when-locked=true hotkey-overlay-title=null { spawn \"/usr/libexec/rmac/rmac-shortcut-dispatch\" \"power-key\"; }"
+    ));
     assert!(fallback.contains("Mod+Space repeat=false"));
     assert!(fallback.contains("Mod+Ctrl+Q repeat=false allow-when-locked=true"));
     assert_eq!(fallback.matches("{ spawn ").count(), 2);

@@ -20,7 +20,7 @@ pub(crate) fn bounded_command_output(command: &mut Command) -> io::Result<Comman
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = command.spawn()?;
+    let mut child = rmac_process::bind_to_parent(command).spawn()?;
     let stdout = child
         .stdout
         .take()

@@ -1,11 +1,9 @@
 [package]
-name = "rmac-screen-reader"
+name = "rmac-process"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
-[dependencies]
-async-channel.workspace = true
+[target.'cfg(unix)'.dependencies]
 libc.workspace = true
-rmac-process.workspace = true

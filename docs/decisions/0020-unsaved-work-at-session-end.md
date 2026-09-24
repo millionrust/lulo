@@ -4,7 +4,10 @@
 - **Scope:** `crates/rmac-ui/src/session.rs` and `session/`, `crates/rmac-app-menu/src/unsaved.rs`,
   `shell/bins/rmac-menubar/src/session_guard.rs` and `unsaved_guard.rs`, Text Editor's recovery
   (`crates/text-editor/src/recovery.rs`, `view/document_state.rs`), and Notes' quit path
-  (`crates/notes/src/startup_controller.rs`, `crates/rmac-notes-runtime/src/worker.rs`).
+  (`crates/notes/src/startup_controller.rs`, `crates/rmac-notes-runtime/src/worker.rs`). Item 7
+  adds the power button: `crates/rmac-shortcuts/src/power_key.rs` and `lock.rs`, the
+  `XF86PowerOff` bind in `packaging/rmac-session/shell.kdl`, and the menu bar's dialog
+  (`menu_model::system_confirmation`).
 - **Closes:** beta gap B9.
 
 ## The question
@@ -92,13 +95,47 @@ the work already being on disk.
      and hide the draft forever.
    - On Linux, a live owner now also has to run the same program, compared through
      `/proc/<pid>/comm`.
+7. **The power button sleeps; it never powers off by itself** (amended 2026-09-24, audit
+   finding PWR-01). logind's Ubuntu default is `HandlePowerKey=poweroff`, so one short press
+   used to end the session at once and take unsaved work with it. The Mac sleeps (and so locks)
+   on a short press and shows "Are you sure you want to shut down your computer now?" with
+   Restart / Sleep / Cancel / Shut Down on a long press.
+   - Lulo OS does what GNOME does. While the session runs, the lock coordinator
+     (`rmac-lock-coordinator`, `crates/rmac-shortcuts/src/lock.rs`) holds a logind
+     `handle-power-key` **block** inhibitor and handles the key itself. It blocks only logind's
+     reaction to the key. `systemctl poweroff`, the menu bar's Shut Down, UPower's critical
+     action and a lid close still work, so item 5 stands.
+   - niri is the only process that sees the key. `shell.kdl` turns off niri's own handling
+     (`disable-power-key-handling`, which would suspend without locking and never show the
+     dialog) and binds `XF86PowerOff` to `rmac-shortcut-dispatch power-key`. The coordinator
+     listens on that dispatch socket. It binds the socket *before* it takes the inhibitor, and
+     drops the inhibitor if the listener fails, so a press is never swallowed.
+   - A single press locks the session, waits for the lock screen, and then calls logind's
+     `Suspend`. The pre-sleep delay inhibitors above then preserve unsaved work as for any
+     sleep. On the lock screen a press sleeps at once.
+   - An x86 laptop's ACPI power button reports press and release together, so a long press
+     cannot be detected. Holding it for about four seconds is the firmware's forced power-off,
+     which no software sees. A **second press within 0.8 s** therefore stands in for the long
+     press. The coordinator asks the menu bar, through the `shutdown-dialog` dispatch socket,
+     for the dialog, which opens where the system menu opens. Its Restart and Shut Down run the
+     same `quit_all_then` path as the menu items, so every window gets its Save alert first.
+     The Mac's 60-second automatic shutdown is left out.
+   - Presses in the 2 s after a wake are ignored. Many laptops deliver the press that woke them
+     once they resume, and it would otherwise send the computer straight back to sleep.
+   - Nothing changes logind's configuration. No `logind.conf` drop-in is shipped, so the Ubuntu
+     / GNOME session keeps its own behaviour. While the coordinator is not running (before it
+     starts, or during a 1 s restart), the button does what logind is configured to do.
+   - logind honours a block inhibitor only while its session is the active one. After a switch
+     to another VT or to the greeter, the button follows logind's own setting again.
 
 ## How each path is covered
 
 | Path | What keeps the work |
 |---|---|
 | Menu bar Log Out / Restart / Shut Down | Each window's close guard (Save alert). Unchanged. |
-| `systemctl poweroff` / `reboot`, logind `PowerOff` from any tool, the power button | Delay inhibitor, then `Preserve`, then every window is asked to close. Afterwards systemd's SIGTERM quits each app through its hooks. |
+| `systemctl poweroff` / `reboot`, logind `PowerOff` from any tool | Delay inhibitor, then `Preserve`, then every window is asked to close. Afterwards systemd's SIGTERM quits each app through its hooks. |
+| The power button, one press | Never a shutdown: the lock coordinator's `handle-power-key` block inhibitor, then lock, then sleep (item 7). |
+| The power button, a second press within 0.8 s | The Restart / Sleep / Cancel / Shut Down dialog. Restart and Shut Down ask every window to close, as the menu items do. |
 | Lid close, `systemctl suspend`, idle suspend | Delay inhibitor, then `Preserve`. |
 | UPower critical battery (power-off or hibernate) | Same as shutdown or sleep. |
 | niri exits | Expected, but not yet verified: the calloop run returns an error when the Wayland connection drops, and GPUI then runs the quit hooks. The session stop that follows sends SIGTERM. |
@@ -114,9 +151,11 @@ the work already being on disk.
   last half second.
 - **Hard kills** (SIGKILL, OOM, power loss) lose whatever the debounce had not yet written. That
   is at most 2 s of Text Editor typing.
-- **The power button** follows logind's `HandlePowerKey`, which is `poweroff` on Ubuntu. It does
-  not show the Mac's "Restart / Sleep / Shut Down" dialog. That dialog is a separate gap and
-  would need a `handle-power-key` block inhibitor held by the menu bar.
+- **The power button has no long press.** The hardware cannot report one, so a quick second
+  press opens the Mac's long-press dialog instead (item 7). The dialog opens under the menu bar
+  on the first display, not centred on the screen as on the Mac. While the lock coordinator is
+  down, or the session is not the active one, the button follows logind's `HandlePowerKey`,
+  which is `poweroff` on Ubuntu.
 - **The close requests on a forced shutdown** are a courtesy. A Save alert that appears cannot be
   answered before logind continues. The draft is already on disk, and the next launch offers it
   back.
@@ -146,3 +185,10 @@ Run each check once, with the journey lock held:
    the last keystroke.
 5. Type into Text Editor, run `kill -TERM <pid>`, and reopen it. It should offer to restore the
    draft.
+6. Run `systemd-inhibit --list`. It should show `Lulo OS … rmac-lock-coord handle-power-key …
+   block`, and no `niri … handle-power-key` entry. (polkit allows this inhibitor only to local
+   sessions; a user service such as the coordinator qualifies, an SSH shell does not. The
+   ignored test `power_key_inhibitor_is_a_block_on_handle_power_key`, run through
+   `systemd-run --user`, showed the Lulo OS entry on the reference laptop on 2026-09-25.) Only the owner presses the power button: one
+   press should lock and then sleep; two quick presses should show the dialog; neither should
+   power off.

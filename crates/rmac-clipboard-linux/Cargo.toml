@@ -16,6 +16,7 @@ async-io.workspace = true
 blocking.workspace = true
 futures-util.workspace = true
 rmac-clipboard.workspace = true
+rmac-process.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 zbus.workspace = true

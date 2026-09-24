@@ -48,7 +48,10 @@
     title row           title 13 semibold white 0.92, line 16; time 12
                         regular white 0.55, right aligned on the title row,
                         8 gap to the title ("now", "5m ago", "2h ago",
-                        "Yesterday", weekday, date)
+                        "Yesterday, 1:45 PM", weekday and time, date; the
+                        clock follows the locale's 12/24-hour setting).
+                        S: the day forms come from the 2026-09-24 audit,
+                        not a capture
     body                13 regular white 0.86, line 16; 4 lines in the
                         Center, 2 in a banner
     app name            not shown on a single card (macOS drops the header);
@@ -235,7 +238,7 @@
     <div class="card">
       <img class="icon" src="../assets/icons/files.svg">
       <div class="text">
-        <div class="row"><span class="title">Disk ejected</span><span class="time">Yesterday</span></div>
+        <div class="row"><span class="title">Disk ejected</span><span class="time">Yesterday, 1:45 PM</span></div>
         <div class="body">Placeholder body text.</div>
       </div>
     </div>

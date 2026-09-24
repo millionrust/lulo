@@ -105,8 +105,12 @@ impl HistoryAuthority {
                 } if outcome.delivery.history => {
                     if let Some(notification) = notification {
                         center.upsert(notification.as_ref().clone());
-                        self.origins
+                        // History keeps the arrival time and sender with the
+                        // record, so both survive a restart.
+                        let origin = self
+                            .origins
                             .posted(notification.id, crate::origin::unix_ms_now());
+                        center.set_label(notification.id, origin);
                         true
                     } else {
                         false
@@ -268,23 +272,51 @@ impl HistoryAuthority {
 
     /// Display-only arrival time and sending application of each record.
     fn origins(&self) -> Vec<crate::origin::WireOrigin> {
-        self.origins.wire(&self.ids())
+        let center = self
+            .center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        center
+            .history()
+            .iter()
+            .filter_map(|record| {
+                let origin = center
+                    .label(record.id)
+                    .cloned()
+                    .or_else(|| self.origins.get(record.id))?;
+                Some(crate::origin::to_wire(record.id, &origin))
+            })
+            .take(crate::origin::MAX_WIRE_ORIGINS)
+            .collect()
     }
 
     /// Display-only sending application of one notification, which the
-    /// banner host uses to show the same name and icon as the Center.
+    /// banner host uses to show the same name, icon and time as the Center.
     pub fn origin(&self, id: NotificationId) -> Option<crate::origin::Origin> {
-        self.origins.get(id)
+        let stored = self
+            .center
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .label(id)
+            .cloned();
+        stored.or_else(|| self.origins.get(id))
     }
 
-    /// Labels a legacy notification with the process that sent it.
+    /// Labels a legacy notification with the process that sent it and what
+    /// it said about itself.
     fn annotate_sender(
         &self,
         id: NotificationId,
         (desktop_id, executable): (Option<String>, Option<String>),
+        hints: crate::origin::SenderHints,
     ) {
-        self.origins
-            .sender(id, desktop_id, executable, crate::origin::unix_ms_now());
+        self.origins.sender(
+            id,
+            desktop_id,
+            executable,
+            hints,
+            crate::origin::unix_ms_now(),
+        );
     }
 
     pub fn indicator(&self) -> rmac_notifications::Indicator {
@@ -754,6 +786,32 @@ impl SharedCore {
     }
 }
 
+/// What a legacy `Notify` call says about its sender: the `desktop-entry`
+/// hint, `app_name`, and its icon (`image-path`, or the older `image_path`,
+/// else `app_icon`). These only label the card; they are taken out of the
+/// hints so the notification decoder never sees them. A hint of the wrong
+/// type is ignored.
+fn sender_hints(
+    app_name: String,
+    app_icon: String,
+    hints: &mut HashMap<String, OwnedValue>,
+) -> crate::origin::SenderHints {
+    let mut take = |key: &str| {
+        hints
+            .remove(key)
+            .and_then(|value| String::try_from(value).ok())
+            .filter(|value| !value.trim().is_empty())
+    };
+    let desktop_entry = take("desktop-entry");
+    let image = take("image-path").or_else(|| take("image_path"));
+    let known = |value: String| Some(value).filter(|value| !value.trim().is_empty());
+    crate::origin::SenderHints {
+        desktop_entry,
+        app_name: known(app_name),
+        icon: image.or_else(|| known(app_icon)),
+    }
+}
+
 fn monotonic_time(started: Instant) -> Time {
     Time(started.elapsed().as_millis().try_into().unwrap_or(u64::MAX))
 }
@@ -777,19 +835,24 @@ impl LegacyInterface {
     #[allow(clippy::too_many_arguments)]
     async fn notify(
         &self,
-        _app_name: String,
+        app_name: String,
         replaces_id: u32,
-        _app_icon: String,
+        app_icon: String,
         summary: String,
         body: String,
         actions: Vec<String>,
-        hints: HashMap<String, OwnedValue>,
+        mut hints: HashMap<String, OwnedValue>,
         expire_timeout: i32,
         #[zbus(header)] header: Header<'_>,
         #[zbus(connection)] connection: &Connection,
     ) -> fdo::Result<u32> {
         let sender = authenticated_sender(&header)?;
         let origin = crate::origin::sender_origin(connection, &sender).await;
+        let mut sender_hints = sender_hints(app_name, app_icon, &mut hints);
+        if let Some(icon) = sender_hints.icon.take() {
+            sender_hints.icon =
+                blocking::unblock(move || crate::origin::resolve_icon_hint(&icon)).await;
+        }
         let request = super::freedesktop(
             sender,
             replaces_id,
@@ -805,7 +868,8 @@ impl LegacyInterface {
             .core
             .post_event(request, policy)
             .map_err(domain_error)?;
-        self.history.annotate_sender(outcome.id, origin);
+        self.history
+            .annotate_sender(outcome.id, origin, sender_hints);
         publish_evictions(&self.events, connection, evictions).await?;
         publish(
             &self.events,
@@ -2043,5 +2107,45 @@ mod tests {
             !format!("{:?}", ActionSelection::Named("secret-action".into()))
                 .contains("secret-action")
         );
+    }
+
+    #[test]
+    fn a_legacy_sender_names_its_app_and_icon_through_hints() {
+        let text = |value: &str| OwnedValue::from(Str::from(value.to_owned()));
+        let mut hints = HashMap::from([
+            ("desktop-entry".to_owned(), text("org.rmac.TextEditor")),
+            ("image-path".to_owned(), text("org.rmac.TextEditor")),
+            (
+                "urgency".to_owned(),
+                OwnedValue::try_from(Value::from(1_u8)).unwrap(),
+            ),
+        ]);
+        let sender = sender_hints("Text Editor".into(), "ignored-icon".into(), &mut hints);
+        assert_eq!(sender.desktop_entry.as_deref(), Some("org.rmac.TextEditor"));
+        assert_eq!(sender.app_name.as_deref(), Some("Text Editor"));
+        // image-path wins over app_icon.
+        assert_eq!(sender.icon.as_deref(), Some("org.rmac.TextEditor"));
+        // Display hints are taken out; the rest reach the decoder.
+        assert!(!hints.contains_key("desktop-entry"));
+        assert!(!hints.contains_key("image-path"));
+        assert!(hints.contains_key("urgency"));
+
+        let mut hints = HashMap::from([
+            (
+                "desktop-entry".to_owned(),
+                OwnedValue::try_from(Value::from(7_u32)).unwrap(),
+            ),
+            ("image_path".to_owned(), text("/usr/share/icons/tool.png")),
+        ]);
+        let sender = sender_hints(String::new(), "tool".into(), &mut hints);
+        // A hint of the wrong type is ignored, and the deprecated
+        // image_path still counts.
+        assert_eq!(sender.desktop_entry, None);
+        assert_eq!(sender.app_name, None);
+        assert_eq!(sender.icon.as_deref(), Some("/usr/share/icons/tool.png"));
+
+        let sender = sender_hints(" ".into(), "dialog-information".into(), &mut HashMap::new());
+        assert_eq!(sender.app_name, None);
+        assert_eq!(sender.icon.as_deref(), Some("dialog-information"));
     }
 }

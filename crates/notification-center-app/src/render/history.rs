@@ -48,6 +48,7 @@ pub(super) mod card {
 pub(super) struct Clock {
     pub(super) now_ms: u64,
     pub(super) offset_seconds: i32,
+    pub(super) hour_cycle: rmac_locale::HourCycle,
 }
 
 impl Clock {
@@ -55,6 +56,7 @@ impl Clock {
         Self {
             now_ms: rmac_notifications_linux::origin::unix_ms_now(),
             offset_seconds: chrono::Local::now().offset().local_minus_utc(),
+            hour_cycle: crate::model::hour_cycle(),
         }
     }
 }
@@ -159,10 +161,9 @@ impl NotificationCenterView {
         cx: &Context<Self>,
     ) -> AnyElement {
         let hovered = self.hovered.as_deref() == Some(hover_key.as_str());
-        let time = record
-            .origin
-            .posted_unix_ms
-            .map(|posted| relative_time(posted, clock.now_ms, clock.offset_seconds));
+        let time = record.origin.posted_unix_ms.map(|posted| {
+            relative_time(posted, clock.now_ms, clock.offset_seconds, clock.hour_cycle)
+        });
         let title = if record.content.title().is_empty() {
             identity.name.to_string()
         } else {

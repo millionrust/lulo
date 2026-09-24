@@ -43,16 +43,18 @@ pub fn parse_state(line: &str) -> Option<Change> {
 /// Forward clipboard changes until the receiver closes (`Ok`) or wl-paste
 /// stops (`Err`, so the caller can restart it). Blocking.
 pub fn watch_blocking(sender: &async_channel::Sender<Change>) -> Result<(), Error> {
-    let mut child = Command::new(WL_PASTE)
-        .args(["--watch", "sh", "-c", WATCH_SCRIPT])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|_| Error::Clipboard)?;
+    // Bound to this watcher thread: wl-paste stops with the service instead
+    // of watching the clipboard for nobody, and inherits none of its stray
+    // descriptors. Dropping the child kills and reaps it.
+    let mut child = rmac_process::spawn_bound(
+        Command::new(WL_PASTE)
+            .args(["--watch", "sh", "-c", WATCH_SCRIPT])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null()),
+    )
+    .map_err(|_| Error::Clipboard)?;
     let Some(stdout) = child.stdout.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
         return Err(Error::Clipboard);
     };
     let mut result = Err(Error::Clipboard);
@@ -67,8 +69,7 @@ pub fn watch_blocking(sender: &async_channel::Sender<Change>) -> Result<(), Erro
             }
         }
     }
-    let _ = child.kill();
-    let _ = child.wait();
+    drop(child);
     result
 }
 

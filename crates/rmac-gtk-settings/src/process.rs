@@ -6,8 +6,11 @@ use std::time::Instant;
 use crate::api::{CommandOutput, COMMAND_TIMEOUT, MAX_COMMAND_OUTPUT_BYTES, PROCESS_POLL_INTERVAL};
 
 pub(crate) fn bounded_command_output(command: &mut Command) -> io::Result<CommandOutput> {
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = command.spawn()?;
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = rmac_process::bind_to_parent(command).spawn()?;
     let stdout = child
         .stdout
         .take()

@@ -19,6 +19,13 @@ input {
         repeat-delay 225
         repeat-rate 11
     }
+    // The power button belongs to the Lulo OS lock coordinator, which holds
+    // logind's handle-power-key inhibitor while the session runs (the way
+    // GNOME does) and gets each press through the XF86PowerOff bind below.
+    // One press locks and sleeps; a second press within a moment shows
+    // Restart / Sleep / Shut Down (docs/decisions/0020). niri's own handling
+    // would suspend without locking first and never show the dialog.
+    disable-power-key-handling
 }
 
 layout {
@@ -261,6 +268,8 @@ binds {
     XF86AudioStop allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-media" "stop"; }
     XF86MonBrightnessUp allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-up"; }
     XF86MonBrightnessDown allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-down"; }
+    // Allowed while locked: a press on the lock screen sleeps at once.
+    XF86PowerOff repeat=false allow-when-locked=true hotkey-overlay-title=null { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "power-key"; }
     // ⌘F5, as on the Mac, toggles the screen reader (Accessibility >
     // Screen Reader; docs/accessibility.md). Allowed while locked, like the
     // Mac's login window, since a screen-reader user may need it before

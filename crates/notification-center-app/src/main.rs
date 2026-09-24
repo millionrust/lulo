@@ -233,6 +233,10 @@ fn main() {
         .with_assets(rmac_ui::layered_assets(WidgetAssets))
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
+            // Card times follow the locale's 12- or 24-hour clock.
+            cx.background_executor()
+                .spawn(blocking::unblock(model::load_hour_cycle))
+                .detach();
             cx.set_global(NotificationCenterService {
                 active: None,
                 next_token: 0,

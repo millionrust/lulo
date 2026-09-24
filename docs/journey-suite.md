@@ -601,3 +601,91 @@ read back needs a manual Orca pass, not just this script.
 `scripts/test_journey_notes.py` unit-tests the script's own pure logic
 (`python3 -m pytest scripts/test_journey_notes.py`, no live session
 required) and does not exercise the live AT-SPI/niri orchestration.
+
+### Journey 6 — System Monitor's process table (fix landed this session)
+
+Journey 6 ("Inspect resource use and safely stop a process, with
+confirmation"; `crates/activity-monitor`, binary `rmac-system-monitor`) has
+its own live acceptance script, `scripts/linux/run-journey-monitor.py`,
+developed on a sibling branch; this branch's own history does not yet include
+it, so it is referenced here by name rather than reproduced. That script's
+last real run found System Monitor's process table entirely unreachable over
+AT-SPI (a live tree dump found no table, row, or cell for any process, and a
+search field exposing neither `Text` nor `EditableText`), for exactly the
+pattern this suite already documented twice — Terminal's orphaned
+`accessibility.rs` (journey 3) and Notes' absent note-row semantics (journey
+4): `crates/activity-monitor/src/accessibility.rs` fully implemented and
+unit-tested `project_process_table`, `project_process_action_dialog`, and
+`project_live_feedback` (accessibility.rs:149–306), but nothing in
+`process_table.rs`/`view.rs` called any of it. Unlike Terminal/Notes, the
+root cause here was not that the module was uncompiled — it was that
+`gpui_component::table::{TableState, TableDelegate}` (the virtualized table
+API `ProcessTableDelegate` implements, distinct from the same crate's
+declarative `Table`/`TableRow`/`TableCell` builder that
+`docs/accessibility-audit.md`'s "Table" row describes as Pass) sets **no**
+AT-SPI role anywhere on its own: the container, header, rows, and cells are
+entirely the `TableDelegate` implementation's responsibility, and
+`ProcessTableDelegate`'s `render_tr`/`render_td` were plain, roleless
+`div()`s.
+
+This session wired the existing projection into the live table rather than
+building a new one:
+
+* `ProcessTableDelegate` now caches a `ProcessTableAccessibilitySnapshot`
+  (`accessible`), recomputed by `refresh_accessible()` on every data
+  refresh/filter/sort/column-visibility change (`apply_view`) and on every
+  selection change (`set_selected_pid`, now the only place `selected_pid` is
+  written) — bounded by the same 300-row/11-column limits
+  `project_process_table` already enforces, and never recomputed from a
+  per-frame render path.
+* Each row (`render_tr`) is `Role::Row` with `aria_selected` and an
+  `aria_label` combining the process name, PID, %CPU, and memory;
+  `AccessibleAction::Click`/`Focus` select the row through the same
+  `set_selected_pid` + `set_selected_row` path the mouse handlers use (the
+  mouse handlers were refactored to share it too, in a new `select_row`
+  helper).
+* The header row and cells (`render_header`/`render_th`) get `Role::Row` /
+  `Role::ColumnHeader` with the column's display name; the table's own
+  container (`view/render.rs`) gets `Role::Table`, an `aria_label`, and
+  `aria_row_count`/`aria_column_count`.
+* The toolbar search field (`view/render/chrome.rs`) is wrapped the way
+  `crates/launcher-app`'s Spotlight query field already is:
+  `Role::TextInput`, `aria_label("Search")`, `aria_value` mirroring the live
+  query, and `AccessibleAction::SetValue`/`ReplaceSelectedText` routed to a
+  new `MonitorView::set_search_from_assistive_technology`.
+* The five toolbar tabs (CPU/Memory/Energy/Disk/Network) get `Role::Tab` +
+  `aria_label` + `aria_selected`.
+* The Quit/Inspect/Columns toolbar buttons are icon-only, so
+  `gpui_component::button::Button`'s `aria_label` — settable only via
+  `.label()`, which would also draw visible text — could not name them
+  directly; they get an outer accessible wrapper (`accessible_icon_button`)
+  carrying the name and an `AccessibleAction::Click` that runs the identical
+  state change the existing mouse `on_click` already runs. Quit/Inspect
+  already no-op when nothing is selected, so no separate "disabled" signal
+  was added beyond the inner button's existing focus/click gating.
+* The process-ended/failed banner now gets `Role::Alert` with a combined
+  title+message `aria_label`, matching `rmac-ui`'s `Toast`. The confirmation
+  dialog already had `Role::AlertDialog` and named buttons via `rmac_ui::alert`
+  (`docs/accessibility-audit.md`'s "Fixes applied" #4); its logic — what
+  Quit/Force Quit act on, and the confirmation requirement — was not touched.
+
+**Left as a Gap, not fixed here**: individual table cells (`render_td`)
+carry no `Role::Cell`; the outer wrapper around the three icon-only toolbar
+buttons necessarily nests a second, unnamed `Role::Button` node (the inner
+button's own) inside the named wrapper, which an AT client may present as
+two adjacent button-shaped entries instead of one; and the column-chooser
+popover's checkbox-like rows are unchanged.
+
+None of this was live-verified with AT-SPI or Orca in this session — no
+laptop access was used or needed for a code-level wiring fix. The
+coordinator should re-run `scripts/linux/run-journey-monitor.py` against a
+laptop build containing this change: its `check_quit_controls_exist` and row
+introspection should now find a real `Role::Table`/`Role::Row` tree instead
+of the previously reported empty one, and the search field should report a
+real `Role::TextInput`. The script's own safety behavior — never invoking
+Quit/Force Quit unless it can independently confirm its own disposable
+process is selected — is unchanged by this fix and should still hold: the
+`AccessibleAction::Click` this session added lets the script select a row by
+PID and observe `aria_selected` flip, but the script's existing caution
+about a shared laptop session choosing what to click is a script-side
+decision this fix does not alter.

@@ -233,3 +233,40 @@ that build their own rows directly on `div()` rather than through
 describes, so both were fixable without any upstream change — see
 `docs/journey-suite.md`'s journey 3/4 sections for what changed and what a
 live re-run still needs to confirm.
+
+## A second `Table` gap: `gpui_component::table::{TableState, TableDelegate}`
+
+The "Table" row above (`controls.rs:1574`) is Pass because it describes
+`gpui_component`'s *declarative* `Table`/`TableRow`/`TableCell` builder
+(`table/table.rs`), which does set `Role::Table`/`Role::Row`/
+`Role::ColumnHeader`/`Role::Cell` on its own elements. `gpui_component` ships
+a **second**, unrelated table API in the same module —
+`table::{TableState, TableDelegate}`, the virtualized/data-driven table
+`rmac_ui::Table<D: TableDelegate>` also wraps — and that one sets **no**
+AT-SPI role anywhere in its own code (`table/state.rs`, `table/delegate.rs`,
+`table/data_table.rs`: zero `role(`/`aria_` calls). Its default
+`render_tr`/`render_th`/`render_header` are plain, roleless `div()`s, and the
+framework renders the `TableDelegate` implementation's own returned element
+directly as the row/header/cell — there is no wrapping role applied on top.
+This is fixable entirely from the `TableDelegate` implementation (the trait
+methods return ordinary `gpui::Div`s the implementor already owns), unlike
+the `Button`-wrapping gaps above — it is a **Gap**, not **Blocked** — but
+every current `TableDelegate` implementation needs its own fix; none of this
+is inherited by using `rmac_ui::Table` instead of the raw types.
+
+`crates/activity-monitor`'s `ProcessTableDelegate` (System Monitor's process
+table) hit exactly this: journey 6 of `docs/journey-suite.md` found its live
+AT-SPI tree had no table, row, or cell for any process at all. That crate's
+own `accessibility.rs` already had a complete, unit-tested projection
+(`project_process_table`) that nothing called. This was fixed in the same
+session as this note — see `docs/journey-suite.md`'s "Journey 6" section for
+the full list of changes (row `Role::Row`/`aria_label`/`aria_selected` plus
+`AccessibleAction::Click`/`Focus`, header `Role::ColumnHeader`, the table
+container's `Role::Table`, the search field's `Role::TextInput` wrap, tab
+`Role::Tab`, and an outer-wrapper naming pattern for icon-only toolbar
+buttons that reuses the same `Button`-can't-set-`aria_label`-without-a-
+visible-label limitation documented above). Left unfixed there, and worth
+folding into whichever future pass picks up the `Gap`s above: per-cell
+`Role::Cell`, and the column-chooser popover's checkbox-like rows (the same
+`ListRow`-shaped gap already tracked in the "List/ListRow" row of the table
+above).

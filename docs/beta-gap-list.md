@@ -34,7 +34,7 @@ them something that is not true.
 | B6 | ⌘Q, ⌘H, ⌥⌘H and ⌘M did nothing in most Lulo OS apps. The app menu showed these shortcuts, but only System Settings and System Monitor had them bound. | **Fixed** `406f79a6`, `04055a24` | — | `crates/rmac-ui/src/components.rs`, `chrome.rs`, `shortcuts.rs` |
 | B7 | The Log Out item showed a ⇧⌘Q hint, but nothing was bound to it. | **Fixed** (hint removed) `70a00336`. The shortcut itself is still missing; see S6. | — | `shell/bins/rmac-menubar/src/main.rs` |
 | B8 | Double-clicking a PDF, picture or text file opened whichever installed app claimed the type first. The packaged defaults covered only archives and media. | **Fixed** `11d3d5c3` | — | `packaging/rmac-apps/rmac-mimeapps.list`, `scripts/linux/verify-application-package.py` |
-| B9 | Unsaved work is not protected when the session ends some other way (`systemctl poweroff` from a terminal, a logind-initiated shutdown, OOM). Apps have no SIGTERM handler, and none takes a logind `shutdown` delay inhibitor while a document is dirty. Text Editor's recovery file is written after a 2 s debounce, so up to 2 s of typing can be lost. | Missing | M | `crates/text-editor/src/view/document_state.rs` (flush on SIGTERM), a logind `Inhibit("shutdown", …, "delay")` held while dirty |
+| B9 | Unsaved work is not protected when the session ends some other way (`systemctl poweroff` from a terminal, a logind-initiated shutdown, OOM). Apps have no SIGTERM handler, and none takes a logind `shutdown` delay inhibitor while a document is dirty. Text Editor's recovery file is written after a 2 s debounce, so up to 2 s of typing can be lost. | **Fixed** `66de7494`…`787392b6`, pending the laptop checks in [ADR 0020](decisions/0020-unsaved-work-at-session-end.md). Apps quit through their save hooks on SIGTERM. The menu bar holds a logind delay inhibitor while any app has unsaved work, and asks each one to write its drafts before a shutdown or sleep. SIGKILL and OOM still lose up to 2 s. | M | — |
 
 ### Should fix before Beta
 
@@ -179,7 +179,7 @@ installs the Mac keys on Linux.
 | Wi-Fi password and enterprise join; Bluetooth pairing with a passkey | Works | `controller/wifi/credentials.rs`, `crates/rmac-bluetooth/src/pairing_agent.rs` |
 | Hidden Wi-Fi network | Missing | S10 |
 | Printing | Partial | S7 |
-| Log out, shut down or restart with unsaved work | **Fixed** (menu path); Missing (forced path) | B2, B3, B9 |
+| Log out, shut down or restart with unsaved work | **Fixed** (menu path); **Fixed** (forced path, pending laptop check) | B2, B3, B9 |
 
 ## 3. What changed on this branch
 
@@ -196,6 +196,11 @@ installs the Mac keys on Linux.
 | `70a00336` | The dead ⇧⌘Q hint is removed | none |
 | `275f87e1` | ⌃K/⌃D/⌃H/⌃F/⌃B in text fields | none |
 | `acf66602` | System Settings… and Force Quit… focus the open window | `menu_model.rs` `system_apps_come_forward_…` |
+| `66de7494` | Apps can publish unsaved work on the session bus (`org.rmac.UnsavedWork.p<pid>`) | `rmac-app-menu` `unsaved::tests` |
+| `848be7ad` | rmac-ui apps quit through their hooks on SIGTERM, SIGHUP and SIGINT, and report unsaved work | `session/signals.rs`, `session/unsaved_set.rs` (run standalone with `rustc --test`) |
+| `f6dfd23f` | Text Editor writes its draft at once when the session ends, and finds it after a reboot | `recovery.rs` `an_older_autosave_never_…`, `a_draft_flushed_before_a_forced_exit_…`, `a_reused_process_id_…` |
+| `159f4208` | Notes commits the newest edit before it quits | `worker.rs` `a_quitting_client_can_wait_…` |
+| `787392b6` | The menu bar holds a logind delay inhibitor while apps have unsaved work | `session_guard.rs` (run standalone with `rustc --test`) |
 
 To check on the laptop, one at a time:
 
@@ -214,3 +219,6 @@ To check on the laptop, one at a time:
    `org.rmac.Preview.desktop`.
 7. Low battery: unplug and drain to 10%, or watch
    `busctl --user monitor org.freedesktop.Notifications`.
+8. Unsaved work on a forced end: run the five checks at the end of
+   [ADR 0020](decisions/0020-unsaved-work-at-session-end.md). Start with
+   `systemctl poweroff` 1 s after typing into a Text Editor document.

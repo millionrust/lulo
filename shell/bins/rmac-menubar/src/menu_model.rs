@@ -773,7 +773,7 @@ pub struct ConfirmationButton {
     pub default: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Confirmation {
     pub title: &'static str,
     pub detail: &'static str,

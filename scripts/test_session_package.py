@@ -155,6 +155,23 @@ class SessionPackageTests(unittest.TestCase):
                     sound.setpos(sound.getnframes() - 1)
                     self.assertEqual(sound.readframes(1), b"\0\0")
 
+            wallpapers = root / "usr/share/rmac/wallpapers"
+            self.assertEqual(
+                sorted(path.name for path in wallpapers.iterdir()),
+                sorted(verify_package._WALLPAPER_FILES),
+            )
+            for name in verify_package._WALLPAPER_FILES:
+                data = (wallpapers / name).read_bytes()
+                # Every wallpaper is a JPEG within the per-image size budget.
+                self.assertTrue(data.startswith(b"\xff\xd8\xff"), name)
+                self.assertLess(len(data), 3 * 1024 * 1024, name)
+            # Each built-in pairs a light and a dark image at every size.
+            for name in verify_package._WALLPAPER_FILES:
+                if "-light-" in name:
+                    self.assertTrue(
+                        (wallpapers / name.replace("-light-", "-dark-")).is_file()
+                    )
+
             wrapper = root / "usr/libexec/rmac/rmac-wayland-session"
             self.assertEqual(stat.S_IMODE(wrapper.stat().st_mode), 0o755)
             unit = (

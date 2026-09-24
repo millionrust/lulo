@@ -27,6 +27,21 @@ _DESKTOP_OVERRIDE = Path(
     "usr/share/glib-2.0/schemas/91_rmac-desktop.gschema.override"
 )
 _DOCK_SPECIAL_ICONS = ("application.svg", "trash-empty.svg", "trash-full.svg")
+# Original Lulo wallpapers: light and dark artwork per packaged size plus a
+# Settings thumbnail (scripts/build-wallpapers.py, rmac-wallpaper).
+_WALLPAPER_FILES = tuple(
+    f"{identifier}-{appearance}-{size}.jpg"
+    for identifier in (
+        "lulo",
+        "lulo-grove",
+        "lulo-ember",
+        "lulo-dusk",
+        "lulo-mist",
+        "lulo-nocturne",
+    )
+    for appearance in ("light", "dark")
+    for size in ("3840x2160", "2560x1600", "1920x1080", "thumbnail")
+)
 _SOUND_FILES = (
     "alert.wav",
     "drag-drop.wav",
@@ -142,6 +157,8 @@ EXPECTED_PATHS = {
     Path("usr/share/rmac/dock/icons") / name for name in _DOCK_SPECIAL_ICONS
 } | {
     Path("usr/share/rmac/sounds") / name for name in _SOUND_FILES
+} | {
+    Path("usr/share/rmac/wallpapers") / name for name in _WALLPAPER_FILES
 }
 
 

@@ -19,20 +19,22 @@ PACKAGE_FORMAT = 1
 DEVELOPMENT_LIBEXEC = "%h/.local/libexec/rmac"
 SYSTEM_LIBEXEC = "/usr/libexec/rmac"
 MAX_SOURCE_BYTES = 1024 * 1024
+# Each packaged wallpaper image stays under this budget.
+MAX_WALLPAPER_BYTES = 3 * 1024 * 1024
 
 
 class PackageError(RuntimeError):
     """A path-safe package assembly failure."""
 
 
-def _read_regular(path: Path) -> bytes:
+def _read_regular(path: Path, maximum: int = MAX_SOURCE_BYTES) -> bytes:
     try:
         metadata = path.lstat()
     except OSError as error:
         raise PackageError(f"required package source is unavailable: {path.name}") from error
     if not stat.S_ISREG(metadata.st_mode) or path.is_symlink():
         raise PackageError(f"required package source is not a regular file: {path.name}")
-    if metadata.st_size > MAX_SOURCE_BYTES:
+    if metadata.st_size > maximum:
         raise PackageError(f"required package source is too large: {path.name}")
     try:
         value = path.read_bytes()
@@ -93,6 +95,27 @@ def theme_sources(theme: Path) -> list[Path]:
     if not sources:
         raise PackageError("the rmac GTK theme is empty")
     return sorted(sources)
+
+
+WALLPAPER_IDS = (
+    "lulo",
+    "lulo-grove",
+    "lulo-ember",
+    "lulo-dusk",
+    "lulo-mist",
+    "lulo-nocturne",
+)
+WALLPAPER_SIZES = ("3840x2160", "2560x1600", "1920x1080", "thumbnail")
+
+
+def wallpaper_inventory() -> list[str]:
+    """Exact packaged wallpaper file names, shared with the package verifier."""
+    return [
+        f"{identifier}-{appearance}-{size}.jpg"
+        for identifier in WALLPAPER_IDS
+        for appearance in ("light", "dark")
+        for size in WALLPAPER_SIZES
+    ]
 
 
 def package_files() -> dict[str, tuple[bytes, int]]:
@@ -268,6 +291,22 @@ def package_files() -> dict[str, tuple[bytes, int]]:
         source = sounds / name
         destination = f"usr/share/rmac/sounds/{name}"
         files[destination] = (_read_regular(source), 0o644)
+    # Original Lulo wallpapers (scripts/build-wallpapers.py): every built-in
+    # has light and dark artwork at each packaged size plus a Settings
+    # thumbnail. rmac-wallpaper resolves them under /usr/share/rmac/wallpapers.
+    wallpapers = package / "wallpapers"
+    expected_wallpapers = set(wallpaper_inventory())
+    actual_wallpapers = {path.name for path in wallpapers.iterdir()} if wallpapers.is_dir() else set()
+    if actual_wallpapers != expected_wallpapers:
+        raise PackageError(
+            "wallpaper source inventory is not exact; run scripts/build-wallpapers.py"
+        )
+    for name in sorted(expected_wallpapers):
+        destination = f"usr/share/rmac/wallpapers/{name}"
+        files[destination] = (
+            _read_regular(wallpapers / name, MAX_WALLPAPER_BYTES),
+            0o644,
+        )
     # Dock special-item artwork must be available independently of the source
     # tree used to compile the installed binary.
     dock_icons = REPO_ROOT / "crates" / "rmac-dock" / "assets" / "icons"

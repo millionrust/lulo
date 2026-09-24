@@ -13,6 +13,6 @@ fn main() -> ExitCode {
 
 #[cfg(not(target_os = "linux"))]
 fn main() -> ExitCode {
-    eprintln!("the rmac lock provider is available only on Linux");
+    eprintln!("the Lulo OS lock provider is available only on Linux");
     ExitCode::FAILURE
 }

@@ -16,8 +16,13 @@ pub struct ShortcutSpec {
 
 pub fn default_shortcuts() -> Vec<ShortcutSpec> {
     vec![
-        shortcut("launcher", "Open rmac launcher", "LOGO+space", "Mod+Space"),
-        shortcut("lock", "Lock the rmac session", "LOGO+CTRL+q", "Mod+Ctrl+Q"),
+        shortcut("launcher", "Open Spotlight", "LOGO+space", "Mod+Space"),
+        shortcut(
+            "lock",
+            "Lock the Lulo OS session",
+            "LOGO+CTRL+q",
+            "Mod+Ctrl+Q",
+        ),
     ]
 }
 

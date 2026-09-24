@@ -308,7 +308,7 @@ pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
     let _settings = crate::lock_settings::serve(policy_path)
         .await
         .map_err(|_| Error::failed(Operation::ServeSettings))?;
-    notify_systemd("rmac lock coordinator is ready")?;
+    notify_systemd("Lulo OS lock coordinator is ready")?;
     futures_util::pin_mut!(lock_requests, sleep_changes);
 
     loop {
@@ -360,7 +360,7 @@ async fn acquire_sleep_inhibitor(
     manager: &LoginManagerProxy<'_>,
 ) -> Result<zbus::zvariant::OwnedFd, Error> {
     manager
-        .inhibit("sleep", "rmac", "lock the session before sleep", "delay")
+        .inhibit("sleep", "Lulo OS", "lock the session before sleep", "delay")
         .await
         .map_err(|_| Error::failed(Operation::InhibitSleep))
 }
@@ -467,7 +467,7 @@ fn wait_for_ready(locker: &mut Child) -> Result<bool, Error> {
 
 #[cfg(target_os = "linux")]
 fn notify_ready() -> Result<(), Error> {
-    notify_systemd("rmac session is securely locked")
+    notify_systemd("Lulo OS session is securely locked")
 }
 
 #[cfg(target_os = "linux")]

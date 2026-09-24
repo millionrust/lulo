@@ -331,7 +331,7 @@ fn validate_component_unit(unit: &str, path: &Path) -> Result<(), Error> {
         Err(Failure::message(
             Operation::ParseSystemctl,
             path,
-            format!("unrecognized rmac component unit {unit}"),
+            format!("unrecognized Lulo OS component unit {unit}"),
         ))
     }
 }

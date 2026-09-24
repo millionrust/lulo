@@ -194,7 +194,7 @@ fn notify_ready() -> Result<(), Error> {
         .args([
             "--ready",
             "--pid=parent",
-            "--status=rmac custom lock provider is securely locked",
+            "--status=Lulo OS custom lock provider is securely locked",
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -285,7 +285,7 @@ impl Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("rmac custom lock provider failed")
+        formatter.write_str("Lulo OS custom lock provider failed")
     }
 }
 
@@ -299,7 +299,7 @@ mod tests {
     fn errors_do_not_expose_session_or_username_data() {
         let error = Error::new(Operation::ResolveSession);
         assert_eq!(error.operation(), Operation::ResolveSession);
-        assert_eq!(error.to_string(), "rmac custom lock provider failed");
+        assert_eq!(error.to_string(), "Lulo OS custom lock provider failed");
         assert!(!format!("{error:?}").contains("XDG_SESSION_ID"));
     }
 

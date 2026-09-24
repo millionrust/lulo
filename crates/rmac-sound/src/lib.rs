@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -14,7 +15,9 @@ use std::time::{Duration, Instant};
 
 const RATE_LIMIT: Duration = Duration::from_millis(50);
 const MAX_CONCURRENT: usize = 8;
+#[cfg(target_os = "linux")]
 const MAX_SOUND_BYTES: u64 = 2 * 1024 * 1024;
+#[cfg(target_os = "linux")]
 const DEFAULT_SOUND_ROOT: &str = "/usr/share/rmac/sounds";
 const SETTINGS_FILE: &str = "rmac/sound.json";
 
@@ -339,12 +342,14 @@ fn focus_active() -> bool {
     false
 }
 
+#[cfg(target_os = "linux")]
 fn sound_root() -> PathBuf {
     std::env::var_os("RMAC_SOUND_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(DEFAULT_SOUND_ROOT))
 }
 
+#[cfg(target_os = "linux")]
 fn reviewed_sound_path(cue: Cue) -> Option<PathBuf> {
     let path = sound_root().join(cue.file_name());
     let metadata = std::fs::symlink_metadata(&path).ok()?;

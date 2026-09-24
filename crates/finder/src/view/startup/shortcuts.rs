@@ -1,6 +1,11 @@
 use super::*;
 
 pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
+    // Every Files window shares one process and one keymap; bind once.
+    static BOUND: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if BOUND.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     // Keyboard shortcuts → actions (handled on the focused list).
     cx.bind_keys([
         KeyBinding::new(

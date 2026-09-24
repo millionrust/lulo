@@ -347,13 +347,18 @@ struct FinderView {
     spring: SpringLoading,
 }
 
-pub(crate) fn run(destination: crate::StartupDestination) {
-    rmac_ui::boot_unified_app_with_assets(
+pub(crate) fn run(arguments: Vec<String>) {
+    rmac_ui::boot_unified_app_instance_with_assets(
         rmac_ui::app_id::FILES,
         CombinedAssets,
         finder_style::WINDOW_WIDTH,
         finder_style::WINDOW_HEIGHT,
-        move |window, cx| {
+        arguments,
+        |arguments, window, cx| {
+            // Another launch's arguments were checked in that process; a
+            // folder that has since gone away opens the default window.
+            let destination =
+                crate::StartupDestination::parse(arguments.iter().cloned()).unwrap_or_default();
             let mut finder = FinderView::new(window, cx);
             match destination {
                 crate::StartupDestination::Default => {}

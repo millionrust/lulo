@@ -13,18 +13,19 @@ mod view;
 mod watchers;
 
 fn main() {
-    let destination = match StartupDestination::parse(std::env::args().skip(1)) {
-        Ok(destination) => destination,
-        Err(message) => {
-            eprintln!("{message}");
-            std::process::exit(2);
-        }
-    };
-    view::run(destination);
+    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    if let Err(message) = StartupDestination::parse(arguments.iter().cloned()) {
+        eprintln!("{message}");
+        std::process::exit(2);
+    }
+    // One Files process owns every Files window; a later launch passes its
+    // arguments to the running process instead of starting another.
+    view::run(arguments);
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 enum StartupDestination {
+    #[default]
     Default,
     Trash,
     Directory(std::path::PathBuf),

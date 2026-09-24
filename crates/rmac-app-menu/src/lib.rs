@@ -10,12 +10,19 @@ use zbus::{interface, Connection, Proxy};
 
 pub const OBJECT_PATH: &str = "/org/rmac/AppMenu1";
 pub const INTERFACE_NAME: &str = "org.rmac.AppMenu1";
+/// Served beside the menu by apps that run as one process with many
+/// windows: a second launch asks the running process for a new window.
+pub const INSTANCE_INTERFACE_NAME: &str = "org.rmac.AppInstance1";
 const MAX_MENUS: usize = 8;
 const MAX_ITEMS_PER_MENU: usize = 32;
 const MAX_LABEL_BYTES: usize = 64;
 const MAX_ACTION_BYTES: usize = 96;
 const MAX_SHORTCUT_BYTES: usize = 32;
 const ACTIVATION_CAPACITY: usize = 16;
+const WINDOW_REQUEST_CAPACITY: usize = 4;
+const MAX_WINDOW_ARGUMENTS: usize = 8;
+const MAX_WINDOW_ARGUMENT_BYTES: usize = 4096;
+const INSTANCE_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub type WireItem = (String, String, String, bool, bool);
 pub type WireMenu = (String, Vec<WireItem>);
@@ -487,11 +494,56 @@ impl MenuInterface {
     }
 }
 
+#[derive(Clone)]
+struct InstanceInterface {
+    windows: async_channel::Sender<Vec<String>>,
+}
+
+#[interface(name = "org.rmac.AppInstance1")]
+impl InstanceInterface {
+    fn open_window(
+        &self,
+        arguments: Vec<String>,
+        #[zbus(header)] header: Header<'_>,
+    ) -> fdo::Result<()> {
+        authenticated_sender(&header)?;
+        if !valid_window_arguments(&arguments) {
+            return Err(fdo::Error::InvalidArgs(
+                "window arguments are invalid".into(),
+            ));
+        }
+        self.windows
+            .try_send(arguments)
+            .map_err(|_| fdo::Error::Failed("new-window queue is unavailable".into()))
+    }
+}
+
 /// Own the application-specific menu endpoint until the application exits.
 pub async fn serve(
     app_id: &str,
     menus: Vec<Menu>,
     activation: async_channel::Sender<String>,
+) -> Result<(), Error> {
+    serve_endpoint(app_id, menus, activation, None).await
+}
+
+/// [`serve`] for an app that keeps every window in one process: the same
+/// bus name also accepts `OpenWindow` requests from later launches, which
+/// arrive on `windows` as the launch's command-line arguments.
+pub async fn serve_instance(
+    app_id: &str,
+    menus: Vec<Menu>,
+    activation: async_channel::Sender<String>,
+    windows: async_channel::Sender<Vec<String>>,
+) -> Result<(), Error> {
+    serve_endpoint(app_id, menus, activation, Some(windows)).await
+}
+
+async fn serve_endpoint(
+    app_id: &str,
+    menus: Vec<Menu>,
+    activation: async_channel::Sender<String>,
+    windows: Option<async_channel::Sender<Vec<String>>>,
 ) -> Result<(), Error> {
     let name = bus_name(app_id).ok_or(Error::Unsupported)?;
     validate_menus(&menus)?;
@@ -504,17 +556,62 @@ pub async fn serve(
         allowed,
         activation,
     };
-    let _connection = Builder::session()
+    let mut builder = Builder::session()
         .map_err(|_| Error::Bus)?
         .name(name)
         .map_err(|_| Error::Bus)?
         .serve_at(OBJECT_PATH, interface)
+        .map_err(|_| Error::Bus)?;
+    if let Some(windows) = windows {
+        builder = builder
+            .serve_at(OBJECT_PATH, InstanceInterface { windows })
+            .map_err(|_| Error::Bus)?;
+    }
+    let _connection = builder.build().await.map_err(|_| Error::Bus)?;
+    future::pending::<()>().await;
+    Ok(())
+}
+
+/// Ask this app's running process, if there is one, to open a window for
+/// `arguments`. `Ok(true)` means it did and this launch should exit;
+/// `Ok(false)` means no process owns the app's name, so this launch becomes
+/// the running process. An error means one exists but did not answer.
+pub async fn open_window_in_running_instance(
+    app_id: &str,
+    arguments: &[String],
+) -> Result<bool, Error> {
+    let name = bus_name(app_id).ok_or(Error::Unsupported)?;
+    if !valid_window_arguments(arguments) {
+        return Err(Error::Protocol);
+    }
+    let connection = Builder::session()
         .map_err(|_| Error::Bus)?
+        .method_timeout(INSTANCE_CALL_TIMEOUT)
         .build()
         .await
         .map_err(|_| Error::Bus)?;
-    future::pending::<()>().await;
-    Ok(())
+    let bus = fdo::DBusProxy::new(&connection)
+        .await
+        .map_err(|_| Error::Bus)?;
+    let bus_name = zbus::names::BusName::try_from(name).map_err(|_| Error::Protocol)?;
+    if !bus.name_has_owner(bus_name).await.map_err(|_| Error::Bus)? {
+        return Ok(false);
+    }
+    let proxy = Proxy::new(&connection, name, OBJECT_PATH, INSTANCE_INTERFACE_NAME)
+        .await
+        .map_err(|_| Error::Bus)?;
+    proxy
+        .call::<_, _, ()>("OpenWindow", &(arguments.to_vec(),))
+        .await
+        .map_err(|_| Error::Bus)?;
+    Ok(true)
+}
+
+fn valid_window_arguments(arguments: &[String]) -> bool {
+    arguments.len() <= MAX_WINDOW_ARGUMENTS
+        && arguments
+            .iter()
+            .all(|argument| argument.len() <= MAX_WINDOW_ARGUMENT_BYTES && !argument.contains('\0'))
 }
 
 pub async fn fetch(app_id: &str) -> Result<Vec<Menu>, Error> {
@@ -660,6 +757,13 @@ pub fn activation_channel() -> (
     async_channel::Receiver<String>,
 ) {
     async_channel::bounded(ACTIVATION_CAPACITY)
+}
+
+pub fn window_request_channel() -> (
+    async_channel::Sender<Vec<String>>,
+    async_channel::Receiver<Vec<String>>,
+) {
+    async_channel::bounded(WINDOW_REQUEST_CAPACITY)
 }
 
 #[cfg(test)]
@@ -909,6 +1013,23 @@ mod tests {
         .unwrap();
         assert_eq!(menus[0].items[0].label, "Move to Bin");
         assert_eq!(menus[1].items[0].label, "Bin");
+    }
+
+    #[test]
+    fn window_requests_are_bounded() {
+        assert!(valid_window_arguments(&[]));
+        assert!(valid_window_arguments(&[
+            "--path".to_owned(),
+            "/home/user/Documents".to_owned()
+        ]));
+        assert!(!valid_window_arguments(&vec![
+            String::new();
+            MAX_WINDOW_ARGUMENTS + 1
+        ]));
+        assert!(!valid_window_arguments(&[
+            "x".repeat(MAX_WINDOW_ARGUMENT_BYTES + 1)
+        ]));
+        assert!(!valid_window_arguments(&["a\0b".to_owned()]));
     }
 
     #[test]

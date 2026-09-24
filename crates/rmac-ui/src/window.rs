@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -450,6 +451,82 @@ pub fn boot_unified_app_with_assets<A, V, F>(
             .expect("failed to open window");
             cx.activate(true);
         });
+}
+
+/// [`boot_unified_app_with_assets`] for an app that keeps every window in
+/// one process, as a macOS app does. If the app is already running, this
+/// launch hands `arguments` to it over D-Bus, the running process opens a
+/// new window for them, and this function returns without starting GPUI.
+/// Otherwise it opens the first window for `arguments` and serves later
+/// launches' requests with `build` too.
+pub fn boot_unified_app_instance_with_assets<A, V, F>(
+    app_id: &'static str,
+    assets: A,
+    width: f32,
+    height: f32,
+    arguments: Vec<String>,
+    build: F,
+) where
+    A: gpui::AssetSource,
+    V: Render + 'static,
+    F: Fn(&[String], &mut Window, &mut Context<V>) -> V + 'static,
+{
+    #[cfg(target_os = "linux")]
+    match async_io::block_on(rmac_app_menu::open_window_in_running_instance(
+        app_id, &arguments,
+    )) {
+        Ok(true) => return,
+        Ok(false) => {}
+        // A process owns the name but did not answer: start normally, as
+        // before single-instance hand-off existed, rather than show nothing.
+        Err(error) => eprintln!("{app_id} could not reach its running process: {error}"),
+    }
+    let build = Rc::new(build);
+    crate::application()
+        .with_assets(assets)
+        .run(move |cx: &mut App| {
+            init_application(cx);
+            let requested = build.clone();
+            crate::runtime::install_app_instance(
+                app_id,
+                move |arguments, cx| {
+                    if let Err(error) =
+                        open_unified_window(app_id, width, height, arguments, requested.clone(), cx)
+                    {
+                        eprintln!("{app_id} could not open a new window: {error}");
+                    }
+                },
+                cx,
+            );
+            open_unified_window(app_id, width, height, arguments, build, cx)
+                .expect("failed to open window");
+            cx.activate(true);
+        });
+}
+
+fn open_unified_window<V, F>(
+    app_id: &'static str,
+    width: f32,
+    height: f32,
+    arguments: Vec<String>,
+    build: Rc<F>,
+    cx: &mut App,
+) -> gpui::Result<()>
+where
+    V: Render + 'static,
+    F: Fn(&[String], &mut Window, &mut Context<V>) -> V + 'static,
+{
+    let options = window_options_unified_for_app(app_id, width, height, cx);
+    cx.open_window(options, move |window, cx| {
+        prepare_surface_window(window, cx);
+        fit_to_display_after_first_frame(window, cx);
+        let view = cx.new(|cx| {
+            observe_window_state(app_id, window, cx);
+            build(&arguments, window, cx)
+        });
+        cx.new(|cx| Root::new(view, window, cx))
+    })?;
+    Ok(())
 }
 
 /// Boot a single-window rmac app. Inits gpui-component, opens a chromed window,

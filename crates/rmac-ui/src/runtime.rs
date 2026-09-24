@@ -185,15 +185,53 @@ fn initial_host_appearance_from(value: &str) -> Option<rmac_appearance::Snapshot
 /// from the desktop menu bar into the app's key window (see
 /// [`crate::register_menu_target`]).
 pub fn install_app_menu(app_id: &'static str, cx: &mut App) {
+    install_app_endpoint(app_id, None, cx);
+}
+
+/// [`install_app_menu`] for an app whose windows share one process: later
+/// launches hand their arguments to `open_window` here instead of starting a
+/// second process that could not own the app's menu name.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn install_app_instance(
+    app_id: &'static str,
+    open_window: impl Fn(Vec<String>, &mut App) + 'static,
+    cx: &mut App,
+) {
+    install_app_endpoint(app_id, Some(Box::new(open_window)), cx);
+}
+
+type OpenWindowRequest = Box<dyn Fn(Vec<String>, &mut App)>;
+
+fn install_app_endpoint(
+    app_id: &'static str,
+    open_window: Option<OpenWindowRequest>,
+    cx: &mut App,
+) {
     #[cfg(target_os = "linux")]
     {
         let Some(menus) = rmac_app_menu::definition(app_id, cx.all_action_names()) else {
             return;
         };
         let (activation_tx, activation_rx) = rmac_app_menu::activation_channel();
+        let windows = open_window.map(|open_window| {
+            let (window_tx, window_rx) = rmac_app_menu::window_request_channel();
+            cx.spawn(async move |cx| {
+                while let Ok(arguments) = window_rx.recv().await {
+                    cx.update(|cx| open_window(arguments, cx));
+                }
+            })
+            .detach();
+            window_tx
+        });
         cx.background_executor()
             .spawn(async move {
-                if let Err(error) = rmac_app_menu::serve(app_id, menus, activation_tx).await {
+                let served = match windows {
+                    Some(windows) => {
+                        rmac_app_menu::serve_instance(app_id, menus, activation_tx, windows).await
+                    }
+                    None => rmac_app_menu::serve(app_id, menus, activation_tx).await,
+                };
+                if let Err(error) = served {
                     eprintln!("{app_id} menu export stopped: {error}");
                 }
             })
@@ -209,7 +247,7 @@ pub fn install_app_menu(app_id: &'static str, cx: &mut App) {
         .detach();
     }
     #[cfg(not(target_os = "linux"))]
-    let _ = (app_id, cx);
+    let _ = (app_id, open_window, cx);
 }
 
 /// Apply the current shared theme and text scale before an on-demand shell

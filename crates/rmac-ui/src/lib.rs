@@ -10,6 +10,7 @@ mod controls;
 mod feedback;
 pub mod gallery;
 pub mod mac;
+mod menu_target;
 mod runtime;
 pub mod scroll;
 pub mod shortcuts;
@@ -39,6 +40,7 @@ pub use feedback::{
     ToastKind, Tooltip,
 };
 pub use gpui_component::{ActiveTheme, StyledExt};
+pub use menu_target::register_menu_target;
 pub use runtime::{
     defer_content_ready, init_application, install_app_menu, mark_content_ready,
     prepare_surface_window, shell_surface_root, text_px,

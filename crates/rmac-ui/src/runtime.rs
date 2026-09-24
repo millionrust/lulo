@@ -182,7 +182,8 @@ fn initial_host_appearance_from(value: &str) -> Option<rmac_appearance::Snapshot
 }
 
 /// Publish this first-party app's registered commands and route activations
-/// from the desktop menu bar into the currently active GPUI window.
+/// from the desktop menu bar into the app's key window (see
+/// [`crate::register_menu_target`]).
 pub fn install_app_menu(app_id: &'static str, cx: &mut App) {
     #[cfg(target_os = "linux")]
     {
@@ -200,7 +201,7 @@ pub fn install_app_menu(app_id: &'static str, cx: &mut App) {
         cx.spawn(async move |cx| {
             while let Ok(action_name) = activation_rx.recv().await {
                 let _ = cx.update(|cx| match cx.build_action(&action_name, None) {
-                    Ok(action) => cx.dispatch_action(action.as_ref()),
+                    Ok(action) => crate::menu_target::dispatch_menu_action(action, cx),
                     Err(error) => eprintln!("ignored unavailable {app_id} menu action: {error}"),
                 });
             }

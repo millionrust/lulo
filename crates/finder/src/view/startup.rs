@@ -156,6 +156,9 @@ impl FinderView {
 
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
+        // Top-bar menu commands reach this window's file view even after the
+        // top bar took keyboard focus or nothing in the window is focused.
+        rmac_ui::register_menu_target(window, &focus, cx);
         cx.observe_window_activation(window, |this, window, cx| {
             // Another app may have copied files while this window was in
             // the background.

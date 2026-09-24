@@ -792,6 +792,43 @@ pub fn low_battery_copy(level: u8, percentage: u8) -> (String, String) {
     }
 }
 
+// ---- System Settings… and Force Quit… ----
+
+/// What choosing System Settings… or Force Quit… does. Like the Mac, a
+/// second choice brings the open window forward instead of opening another.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum OpenOrFocus {
+    /// No window yet: start the app.
+    Launch,
+    /// Raise this visible window, the app's most recently focused one.
+    Focus(rmac_compositor::WindowId),
+    /// Every window is hidden: bring them back.
+    Restore(Vec<rmac_compositor::WindowId>),
+}
+
+pub fn open_or_focus(snapshot: &rmac_compositor::Snapshot, app_id: &str) -> OpenOrFocus {
+    let windows = snapshot
+        .windows
+        .iter()
+        .filter(|window| window.app_id.as_deref() == Some(app_id))
+        .collect::<Vec<_>>();
+    let recency = |window: &&rmac_compositor::Window| {
+        window
+            .focus_timestamp
+            .map(|stamp| (stamp.seconds, stamp.nanoseconds))
+    };
+    let visible = windows
+        .iter()
+        .copied()
+        .filter(|window| !rmac_compositor::window_is_parked(snapshot, window))
+        .max_by_key(recency);
+    match visible {
+        Some(window) => OpenOrFocus::Focus(window.id),
+        None if windows.is_empty() => OpenOrFocus::Launch,
+        None => OpenOrFocus::Restore(windows.iter().map(|window| window.id).collect()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1500,5 +1537,60 @@ mod tests {
         assert!(low_battery_copy(5, 4)
             .1
             .starts_with("4% of battery remains."));
+    }
+
+    #[test]
+    fn system_apps_come_forward_instead_of_opening_twice() {
+        use rmac_compositor::{Snapshot, Timestamp, Window, WindowId, Workspace, WorkspaceId};
+
+        let workspace = |id: u64, name: &str| Workspace {
+            id: WorkspaceId(id),
+            index: id as u8,
+            name: Some(name.into()),
+            output: None,
+            urgent: false,
+            active: id == 1,
+            focused: id == 1,
+            active_window: None,
+        };
+        let window = |id: u64, app: &str, workspace: u64, seconds: u64| Window {
+            id: WindowId(id),
+            title: None,
+            app_id: Some(app.into()),
+            pid: None,
+            workspace: Some(WorkspaceId(workspace)),
+            focused: false,
+            floating: true,
+            urgent: false,
+            focus_timestamp: Some(Timestamp {
+                seconds,
+                nanoseconds: 0,
+            }),
+            layout: Default::default(),
+        };
+        let settings = rmac_apps::identity::SYSTEM_SETTINGS;
+        let mut snapshot = Snapshot {
+            workspaces: vec![
+                workspace(1, "Desktop"),
+                workspace(2, rmac_compositor::PARKING_WORKSPACE),
+            ],
+            windows: vec![window(1, "firefox", 1, 50)],
+            ..Snapshot::default()
+        };
+        assert_eq!(open_or_focus(&snapshot, settings), OpenOrFocus::Launch);
+
+        snapshot.windows.push(window(2, settings, 2, 10));
+        snapshot.windows.push(window(3, settings, 2, 20));
+        assert_eq!(
+            open_or_focus(&snapshot, settings),
+            OpenOrFocus::Restore(vec![WindowId(2), WindowId(3)])
+        );
+
+        snapshot.windows.push(window(4, settings, 1, 5));
+        snapshot.windows.push(window(5, settings, 1, 30));
+        assert_eq!(
+            open_or_focus(&snapshot, settings),
+            OpenOrFocus::Focus(WindowId(5))
+        );
     }
 }

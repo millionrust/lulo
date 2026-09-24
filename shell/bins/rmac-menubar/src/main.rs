@@ -2863,16 +2863,61 @@ mod linux_wayland {
             "system::about" => {
                 spawn_command("/usr/bin/rmac-system-settings", &["--pane", "about"], cx)
             }
-            "system::settings" => spawn_command("/usr/bin/rmac-system-settings", &[], cx),
+            "system::settings" => open_or_focus_app(
+                rmac_apps::identity::SYSTEM_SETTINGS,
+                "/usr/bin/rmac-system-settings",
+                cx,
+            ),
             "system::software-center" => {
                 spawn_command("gtk-launch", &["snap-store_snap-store"], cx)
             }
-            "system::force-quit" => spawn_command("/usr/bin/rmac-system-monitor", &[], cx),
+            "system::force-quit" => open_or_focus_app(
+                rmac_apps::identity::SYSTEM_MONITOR,
+                "/usr/bin/rmac-system-monitor",
+                cx,
+            ),
             "system::sleep" => spawn_command("systemctl", &["suspend"], cx),
             "system::restart" | "system::shutdown" | "system::logout" => quit_all_then(action, cx),
             "system::lock" => dispatch_shortcut("lock", cx),
             _ => eprintln!("unknown rmac system menu action: {action}"),
         }
+    }
+
+    /// Bring `app_id`'s window forward if it has one, or start `program`.
+    fn open_or_focus_app(app_id: &'static str, program: &'static str, cx: &mut App) {
+        cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+            let plan = match rmac_compositor_niri::snapshot().await {
+                Ok(snapshot) => menu_model::open_or_focus(&snapshot, app_id),
+                Err(error) => {
+                    eprintln!("could not read windows before opening {app_id}: {error:?}");
+                    menu_model::OpenOrFocus::Launch
+                }
+            };
+            let actions = match plan {
+                menu_model::OpenOrFocus::Launch => Vec::new(),
+                menu_model::OpenOrFocus::Focus(window) => {
+                    vec![rmac_compositor::Action::FocusWindow { window }]
+                }
+                menu_model::OpenOrFocus::Restore(windows) => {
+                    let mut store = rmac_compositor::ParkingStore::load_default();
+                    let actions = store.restore_actions(&windows);
+                    if let Err(error) = store.save_default() {
+                        eprintln!("could not save the parking set: {error}");
+                    }
+                    actions
+                }
+            };
+            if actions.is_empty() {
+                cx.update(|cx| spawn_command(program, &[], cx));
+                return;
+            }
+            for action in &actions {
+                if let Err(error) = rmac_compositor_niri::execute_action(action).await {
+                    eprintln!("could not bring {app_id} forward: {error:?}");
+                }
+            }
+        })
+        .detach();
     }
 
     /// Log Out, Restart and Shut Down first ask every window to close, as

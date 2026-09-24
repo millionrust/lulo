@@ -17,6 +17,7 @@ use gpui_component::{
     input::Input as ComponentInput,
     menu::{DropdownMenu as _, PopupMenu},
     popover::Popover,
+    scroll::ScrollableElement as _,
     slider::Slider as ComponentSlider,
     table::DataTable as ComponentTable,
     tooltip::Tooltip as ComponentTooltip,
@@ -1437,6 +1438,15 @@ pub struct TextField {
     tab_index: isize,
     error: Option<SharedString>,
     style: StyleRefinement,
+}
+
+/// Overlay the shared vertical scroll bar for the [`gpui::UniformList`]
+/// tracked by `handle` on `container`, its (relatively positioned) parent.
+pub fn uniform_list_scrollbar(
+    container: gpui::Div,
+    handle: &gpui::UniformListScrollHandle,
+) -> gpui::Div {
+    container.relative().vertical_scrollbar(handle)
 }
 
 impl TextField {

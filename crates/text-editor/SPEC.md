@@ -104,6 +104,18 @@ for subsequent changes. It must never describe this as a transactional lock.
 ## Document contract
 
 - Maximum supported document size is explicit and bounded before decoding.
+- Large documents stay within a small multiple of their size: loading keeps
+  the exact original bytes plus one decoded copy, the dirty baseline is a
+  shared rope snapshot, and derived values (the accessible value) are cached
+  per edit rather than rebuilt per frame.
+- A document whose longest line exceeds 64 KiB opens read-only in a view that
+  wraps by character and lays out only the rows on screen, with a banner that
+  says so; Find, Save As, printing, format changes, and recovery still work.
+  The editable view (gpui-component's input) lays out every wrapped row of a
+  visible line each frame, so journey 5's 24 MB single-line fixture otherwise
+  peaks near 1.9 GB and keeps a core busy. Measured on the reference laptop,
+  `scripts/linux/check-text-editor-large-file.py` opens 24 MiB documents of
+  short lines and of one line and fails above a 320 MiB peak.
 - Supported writable encodings are UTF-8, UTF-8 with BOM, UTF-16 little-endian
   with BOM, and UTF-16 big-endian with BOM. Invalid Unicode and unsupported
   byte-oriented encodings fail without lossy replacement characters.

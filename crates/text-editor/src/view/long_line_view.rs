@@ -126,34 +126,38 @@ impl EditorView {
                     .text_color(mac::text_secondary())
                     .child(banner),
             )
-            .child(
-                uniform_list("long-line-rows", rows.len(), move |range, _window, _cx| {
-                    range
-                        .map(|row| {
-                            let bytes = long_lines::row_range(&text, &rows, row);
-                            let line: SharedString = text[bytes.clone()].to_string().into();
-                            let runs = row_runs(
-                                &line,
-                                bytes.start,
-                                highlight.clone(),
-                                &text_font,
-                                text_color,
-                                match_background,
-                            );
-                            div()
-                                .h(px(line_height))
-                                .px(px(inset_x))
-                                .whitespace_nowrap()
-                                .overflow_hidden()
-                                .child(StyledText::new(line).with_runs(runs))
-                        })
-                        .collect()
-                })
-                .track_scroll(&document.scroll)
-                .flex_1()
-                .text_size(px(font_size))
-                .line_height(px(line_height)),
-            )
+            .child(rmac_ui::uniform_list_scrollbar(
+                div().flex_1().min_h(px(0.0)).flex().flex_col().child(
+                    uniform_list("long-line-rows", rows.len(), move |range, _window, _cx| {
+                        range
+                            .map(|row| {
+                                let bytes = long_lines::row_range(&text, &rows, row);
+                                let line: SharedString = text[bytes.clone()].to_string().into();
+                                let runs = row_runs(
+                                    &line,
+                                    bytes.start,
+                                    highlight.clone(),
+                                    &text_font,
+                                    text_color,
+                                    match_background,
+                                );
+                                div()
+                                    .h(px(line_height))
+                                    .px(px(inset_x))
+                                    .font_family(font_family)
+                                    .text_size(px(font_size))
+                                    .line_height(px(line_height))
+                                    .whitespace_nowrap()
+                                    .overflow_hidden()
+                                    .child(StyledText::new(line).with_runs(runs))
+                            })
+                            .collect()
+                    })
+                    .track_scroll(&document.scroll)
+                    .flex_1(),
+                ),
+                &document.scroll,
+            ))
             .into_any_element()
     }
 }

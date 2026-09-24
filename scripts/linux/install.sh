@@ -4,6 +4,16 @@
 # Usage:
 #   curl -fsSL https://millionrust.github.io/lulo/install.sh | sh
 #
+#   # Beta path, before the signed APT repository exists: install the two
+#   # .debs straight from a tagged GitHub Release, verified by SHA256SUMS
+#   # (and, when `gh` is installed, its build-provenance attestation).
+#   sh install.sh --from-release vX.Y.Z
+#
+#   # Or from a directory you already downloaded/verified yourself (for
+#   # example scp'd from a build host, or produced by build-native-inputs.sh
+#   # + check-native-reproducibility.sh):
+#   sh install.sh --from-dir /absolute/path/to/native-package-set
+#
 # This script only ever adds packages; it never removes Ubuntu/GNOME and
 # never touches the GNOME session (no session-default change, no GDM
 # restart). See docs/install.md for the equivalent manual steps and
@@ -33,9 +43,30 @@ RMAC_KEYRING_URL="${RMAC_REPOSITORY_URI}rmac-archive-keyring-latest.deb"
 # the README, docs/install.md, and the GitHub Release notes.
 RMAC_ARCHIVE_KEYRING_FINGERPRINT="TODO_REPLACE_WITH_THE_REAL_ARCHIVE_FINGERPRINT"
 
+# The GitHub repository that `--from-release` downloads .debs from, and that
+# `gh attestation verify` checks build provenance against.
+RMAC_GITHUB_REPOSITORY="millionrust/lulo"
+
 fail() {
     echo "install.sh: $*" >&2
     exit 1
+}
+
+usage() {
+    cat >&2 <<'EOF'
+usage: install.sh [--from-release TAG | --from-dir DIRECTORY]
+
+  (no argument)        Install from the signed rmac APT repository. Not
+                        available yet; see docs/install.md.
+  --from-release TAG   Download rmac-apps and rmac-session for this
+                        machine's architecture from the named GitHub
+                        Release tag (e.g. v0.5.0), verify them against the
+                        release's SHA256SUMS (and its build-provenance
+                        attestation when `gh` is installed), then install
+                        them with apt.
+  --from-dir DIRECTORY Install from .deb files and a SHA256SUMS you already
+                        have locally, skipping the download.
+EOF
 }
 
 require_command() {
@@ -130,13 +161,163 @@ install_session() {
         || fail "installing rmac-session failed"
 }
 
+# Find the single filename in a SHA256SUMS listing for one package and this
+# machine's architecture (e.g. "rmac-apps" -> "rmac-apps_1.2.3-4_amd64.deb").
+# Fails loudly if there is not exactly one match, rather than guess.
+release_asset_name() {
+    sums_file="$1"
+    package="$2"
+    pattern="^${package}_[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]+_${architecture}\\.deb\$"
+    matches="$(awk '{print $NF}' "$sums_file" | grep -E "$pattern" || true)"
+    count="$(printf '%s\n' "$matches" | grep -c . || true)"
+    [ "$count" -eq 1 ] \
+        || fail "SHA256SUMS did not list exactly one $package package for $architecture (found $count)"
+    printf '%s' "$matches"
+}
+
+# Download rmac-apps and rmac-session for this architecture from a tagged
+# GitHub Release, verify them against that release's SHA256SUMS, and -- when
+# `gh` is installed -- verify actions/attest-build-provenance attestations
+# too (see .github/workflows/release.yml "attach-release"). HTTPS transport
+# is never treated as authentication on its own; the checksum (and, when
+# available, the attestation) is what is actually trusted, matching the
+# APT-repository path's stance in docs/update-trust.md.
+download_release_packages() {
+    tag="$1"
+    [ -n "$tag" ] || fail "--from-release requires a release tag, e.g. v0.5.0"
+    require_command curl
+
+    work_dir="$(mktemp -d)"
+    trap 'rm -rf "$work_dir"' EXIT
+
+    base_url="https://github.com/${RMAC_GITHUB_REPOSITORY}/releases/download/${tag}"
+
+    curl -fsSL --proto '=https' --tlsv1.2 -o "$work_dir/SHA256SUMS" \
+        "$base_url/SHA256SUMS" \
+        || fail "could not download SHA256SUMS for release $tag"
+
+    apps_name="$(release_asset_name "$work_dir/SHA256SUMS" rmac-apps)"
+    session_name="$(release_asset_name "$work_dir/SHA256SUMS" rmac-session)"
+
+    for name in "$apps_name" "$session_name"; do
+        curl -fsSL --proto '=https' --tlsv1.2 -o "$work_dir/$name" \
+            "$base_url/$name" \
+            || fail "could not download $name from release $tag"
+    done
+
+    verify_local_package_directory "$work_dir"
+
+    if command -v gh >/dev/null 2>&1; then
+        for name in "$apps_name" "$session_name"; do
+            gh attestation verify "$work_dir/$name" --repo "$RMAC_GITHUB_REPOSITORY" \
+                || fail "build provenance attestation did not verify for $name"
+        done
+    else
+        echo "install.sh: 'gh' is not installed; skipping the optional build-provenance attestation check (SHA256SUMS was still verified)" >&2
+    fi
+
+    printf '%s' "$work_dir"
+}
+
+# Verify the SHA256SUMS entries for exactly the rmac-apps and rmac-session
+# packages present in DIRECTORY, and record their paths in $apps_deb /
+# $session_deb. Never trusts a directory's SHA256SUMS blindly: only the two
+# lines that name our own packages for this architecture are checked, so an
+# incomplete local copy (missing the SBOM or the other architecture) is not
+# treated as a verification failure.
+verify_local_package_directory() {
+    directory="$1"
+    [ -n "$directory" ] || fail "a package directory is required"
+    [ -d "$directory" ] && [ ! -L "$directory" ] \
+        || fail "$directory must be an existing, non-symlinked directory"
+    [ -f "$directory/SHA256SUMS" ] \
+        || fail "$directory does not contain a SHA256SUMS file"
+    require_command sha256sum
+
+    apps_name="$(release_asset_name "$directory/SHA256SUMS" rmac-apps)"
+    session_name="$(release_asset_name "$directory/SHA256SUMS" rmac-session)"
+
+    # No temporary file (and so no EXIT trap) here on purpose: this function
+    # can run inside download_release_packages, which already owns the EXIT
+    # trap for its own work directory, and a second `trap ... EXIT` in the
+    # same shell would silently replace (not stack with) the first one.
+    selected_count="$(grep -cE "  (${apps_name}|${session_name})\$" "$directory/SHA256SUMS" || true)"
+    [ "$selected_count" -eq 2 ] \
+        || fail "SHA256SUMS did not list exactly one line for each of $apps_name and $session_name"
+    (cd "$directory" && grep -E "  (${apps_name}|${session_name})\$" SHA256SUMS | sha256sum -c -) \
+        || fail "downloaded/local package checksums did not match SHA256SUMS"
+
+    apps_deb="$directory/$apps_name"
+    session_deb="$directory/$session_name"
+}
+
+# Install an already-checksum-verified rmac-apps/rmac-session pair with apt,
+# so missing Depends (keyd, niri, wl-clipboard, ...) still resolve from the
+# machine's normal Ubuntu archive. This never touches the APT repository
+# configuration: nothing here writes a sources.list.d/preferences.d entry,
+# so uninstall.sh's repository cleanup is simply a no-op for this path.
+install_local_packages() {
+    directory="$1"
+    verify_local_package_directory "$directory"
+    sudo apt-get install --yes -- "$apps_deb" "$session_deb" \
+        || fail "installing rmac-apps and rmac-session from $directory failed"
+}
+
 main() {
+    mode="repo"
+    release_tag=""
+    local_dir=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --from-release)
+                shift
+                [ $# -gt 0 ] || fail "--from-release requires a release tag"
+                mode="release"
+                release_tag="$1"
+                ;;
+            --from-dir)
+                shift
+                [ $# -gt 0 ] || fail "--from-dir requires a directory path"
+                mode="dir"
+                local_dir="$1"
+                ;;
+            -h | --help)
+                usage
+                return 0
+                ;;
+            *)
+                usage
+                fail "unrecognized argument: $1"
+                ;;
+        esac
+        shift
+    done
+
     check_not_root
-    check_placeholder_fingerprint_was_replaced
-    check_platform
-    download_and_verify_keyring
-    install_keyring_and_repository
-    install_session
+
+    case "$mode" in
+        repo)
+            # Unchanged from the original bootstrap: the placeholder
+            # fingerprint check runs before check_platform on purpose, so a
+            # not-yet-released rmac refuses for the right reason even on a
+            # machine that also is not Ubuntu 26.04.
+            check_placeholder_fingerprint_was_replaced
+            check_platform
+            download_and_verify_keyring
+            install_keyring_and_repository
+            install_session
+            ;;
+        release)
+            check_platform
+            package_dir="$(download_release_packages "$release_tag")"
+            install_local_packages "$package_dir"
+            ;;
+        dir)
+            check_platform
+            install_local_packages "$local_dir"
+            ;;
+    esac
+
     echo
     echo "rmac is installed alongside Ubuntu/GNOME. Nothing about your current"
     echo "session changed."

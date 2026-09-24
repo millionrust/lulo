@@ -118,6 +118,41 @@ class InstallScriptBehaviorTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("not been published", result.stderr)
 
+    def test_from_release_requires_a_tag_argument(self):
+        # Argument validation happens before check_not_root/check_platform,
+        # so this is exercised without any stubbing on any host.
+        result = subprocess.run(
+            ["/bin/sh", str(INSTALL), "--from-release"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--from-release requires a release tag", result.stderr)
+
+    def test_from_dir_requires_a_directory_argument(self):
+        result = subprocess.run(
+            ["/bin/sh", str(INSTALL), "--from-dir"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--from-dir requires a directory path", result.stderr)
+
+    def test_rejects_an_unrecognized_argument(self):
+        result = subprocess.run(
+            ["/bin/sh", str(INSTALL), "--bogus"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unrecognized argument", result.stderr)
+
     def test_refuses_on_a_machine_that_is_not_ubuntu_26_04(self):
         # install.sh reads the real /etc/os-release rather than an
         # injectable path (it is meant to run unmodified on the target
@@ -136,6 +171,29 @@ class InstallScriptBehaviorTests(unittest.TestCase):
             patched.write_text(text, encoding="utf-8")
             result = _run(patched, bin_dir)
             self.assertNotEqual(result.returncode, 0)
+
+
+class UninstallScriptBehaviorTests(unittest.TestCase):
+    def test_runs_cleanly_when_no_rmac_packages_are_known_to_dpkg(self):
+        # On a machine where dpkg/systemctl are unavailable (this development
+        # machine) or simply report nothing installed, uninstall.sh must
+        # still finish cleanly rather than let a single unknown package name
+        # abort the whole apt-get purge invocation.
+        with tempfile.TemporaryDirectory() as temporary:
+            bin_dir = Path(temporary)
+            _stub_id(bin_dir, "1000")
+            _stub_sudo(bin_dir)
+            result = _run(UNINSTALL, bin_dir)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("rmac has been removed", result.stdout)
+
+    def test_refuses_to_run_as_root(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bin_dir = Path(temporary)
+            _stub_id(bin_dir, "0")
+            result = _run(UNINSTALL, bin_dir)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("root", result.stderr)
 
 
 if __name__ == "__main__":

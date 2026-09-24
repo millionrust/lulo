@@ -86,7 +86,7 @@ impl NotesView {
         });
         Some(
             div()
-                .mx(px(44.0))
+                .mx(px(EDITOR_INSET))
                 .mb_2()
                 .h(px(174.0))
                 .flex_none()
@@ -139,8 +139,6 @@ impl NotesView {
         };
         let editable =
             self.is_interactive_ready() && !note.deleted && !self.markdown_preview_visible;
-        let words = self.body.read(cx).value().split_whitespace().count();
-        let characters = self.body.read(cx).value().chars().count();
         let attachments = self.render_attachments(note, cx);
         let body_value = self.body.read(cx).value().to_string();
         let body = if self.markdown_preview_visible {
@@ -158,77 +156,41 @@ impl NotesView {
                 )
                 .flex_1()
                 .min_h(px(0.0))
-                .px(px(44.0))
-                .pt_2()
+                .px(px(EDITOR_INSET))
                 .pb_4()
-                .text_size(px(14.0))
-                .line_height(px(20.0))
-                .text_color(mac::text())
+                .text_size(rmac_ui::text_px(BODY_SIZE))
+                .line_height(px(BODY_LINE))
+                .text_color(editor_text())
                 .child(
                     TextField::new(&self.body)
                         .h_full()
                         .appearance(false)
-                        .disabled(!editable),
+                        .disabled(!editable)
+                        .text_size(rmac_ui::text_px(BODY_SIZE))
+                        .line_height(px(BODY_LINE))
+                        .px_0()
+                        .py_0(),
                 )
                 .into_any_element()
         };
+        // macOS 26 Notes: the edit date centred 8 below the toolbar, then the
+        // title in Notes' Title style and the body directly beneath it. Tags
+        // (a rmac field; Notes keeps #tags inline) sit at the foot.
         div()
             .size_full()
             .v_flex()
-            .bg(mac::window())
+            .bg(editor_fill())
             .child(
                 div()
-                    .pt_3()
-                    .pb_1()
+                    .pt(px(DATE_TOP))
+                    .h(px(DATE_TOP + DATE_LINE))
+                    .flex_none()
                     .flex()
-                    .items_center()
-                    .px(px(44.0))
-                    .text_size(rmac_ui::text_px(12.0))
-                    .text_color(mac::text_secondary())
-                    // Notes centres the note's full edit date above the text.
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .flex_none()
-                            .child(full_date_label(note.modified_unix_ms)),
-                    )
-                    .child(
-                        div()
-                            .flex_1()
-                            .flex()
-                            .justify_end()
-                            .items_center()
-                            .gap_1()
-                            .child(
-                                Button::new("edit-markdown", "Edit")
-                                    .xsmall()
-                                    .selected(!self.markdown_preview_visible)
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        if this.markdown_preview_visible {
-                                            this.toggle_markdown_preview(cx)
-                                        }
-                                    })),
-                            )
-                            .child(
-                                Button::new("preview-markdown", "Preview")
-                                    .xsmall()
-                                    .selected(self.markdown_preview_visible)
-                                    .busy(matches!(
-                                        self.markdown_preview.state(),
-                                        MarkdownPreviewState::Loading { .. }
-                                    ))
-                                    .disabled(
-                                        !self.markdown_preview_visible
-                                            && (!self.is_interactive_ready()
-                                                || self.latest_local_generation.is_some()),
-                                    )
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        if !this.markdown_preview_visible {
-                                            this.toggle_markdown_preview(cx)
-                                        }
-                                    })),
-                            ),
-                    ),
+                    .justify_center()
+                    .text_size(rmac_ui::text_px(DATE_SIZE))
+                    .line_height(px(DATE_LINE))
+                    .text_color(editor_date())
+                    .child(full_date_label(note.modified_unix_ms)),
             )
             .child(
                 div()
@@ -244,18 +206,28 @@ impl NotesView {
                         AccessibleAction::ReplaceSelectedText,
                         self.assistive_title_listener(cx),
                     )
-                    .px(px(44.0))
-                    .pt_1()
-                    .text_size(px(24.0))
-                    .line_height(px(30.0))
+                    .flex_none()
+                    .px(px(EDITOR_INSET))
+                    .pt(px(TITLE_TOP))
+                    .text_size(rmac_ui::text_px(TITLE_SIZE))
+                    .line_height(px(TITLE_LINE))
                     .font_weight(mac::BOLD)
-                    .text_color(mac::text())
+                    .text_color(editor_text())
                     .child(
                         TextField::new(&self.title)
                             .appearance(false)
-                            .disabled(!editable),
+                            .disabled(!editable)
+                            .text_size(rmac_ui::text_px(TITLE_SIZE))
+                            .line_height(px(TITLE_LINE))
+                            .h(px(TITLE_LINE))
+                            .px_0()
+                            .py_0(),
                     ),
             )
+            .when_some(attachments, |element, attachments| {
+                element.child(attachments)
+            })
+            .child(body)
             .child(
                 div()
                     .id("notes-tags")
@@ -267,46 +239,26 @@ impl NotesView {
                         AccessibleAction::ReplaceSelectedText,
                         self.assistive_tags_listener(cx),
                     )
-                    .mx(px(44.0))
-                    .mt_1()
-                    .mb_2()
-                    .h(px(28.0))
+                    .flex_none()
+                    .h(px(30.0))
+                    .mx(px(EDITOR_INSET))
                     .flex()
                     .items_center()
                     .gap_1()
-                    .px_2()
-                    .rounded(px(rmac_ui::mac::radius_segmented()))
-                    .bg(mac::control_fill())
-                    .text_size(rmac_ui::text_px(12.0))
-                    .text_color(mac::notes_accent())
-                    .child("#")
-                    .child(
-                        TextField::new(&self.tags)
-                            .appearance(false)
-                            .cleanable(true)
-                            .small()
-                            .disabled(!editable),
-                    ),
-            )
-            .when_some(attachments, |element, attachments| {
-                element.child(attachments)
-            })
-            .child(body)
-            .child(
-                div()
-                    .h(px(24.0))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .gap_2()
                     .border_t_1()
-                    .border_color(mac::separator())
-                    .text_size(rmac_ui::text_px(11.0))
-                    .text_color(mac::text_tertiary())
-                    .child(format!("{words} words"))
-                    .child("•")
-                    .child(format!("{characters} characters")),
+                    .border_color(row_rule())
+                    .text_size(rmac_ui::text_px(12.0))
+                    .text_color(mac::text_secondary())
+                    .child(div().text_color(sidebar_selected_text()).child("#"))
+                    .child(
+                        div().flex_1().min_w(px(0.0)).child(
+                            TextField::new(&self.tags)
+                                .appearance(false)
+                                .cleanable(true)
+                                .small()
+                                .disabled(!editable),
+                        ),
+                    ),
             )
             .into_any_element()
     }

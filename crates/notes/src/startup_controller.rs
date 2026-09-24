@@ -30,7 +30,7 @@ impl NotesView {
         let search_query = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         let folder_name_input = cx.new(|cx| InputState::new(window, cx).placeholder("Folder Name"));
         let title = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
-        let tags = cx.new(|cx| InputState::new(window, cx).placeholder("Tags"));
+        let tags = cx.new(|cx| InputState::new(window, cx).placeholder("Add Tags"));
         let body = rmac_editor::multiline("Note", window, cx);
         cx.subscribe(&title, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {

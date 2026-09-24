@@ -7,10 +7,12 @@
 mod dialog_presentation;
 mod edit_recovery_controller;
 mod editor_presentation;
+mod glyphs;
 mod input_support;
 mod library_actions;
 mod markdown_presentation;
 mod note_navigation;
+mod notes_style;
 mod presentation;
 mod preview_controller;
 mod recovery_presentation;
@@ -36,7 +38,7 @@ use gpui::{
     KeyBinding, ObjectFit, ParentElement, Render, RenderImage, Role, SharedString, Stateful,
     StatefulInteractiveElement as _, Styled, StyledImage as _, Window,
 };
-use gpui_component::{Icon, IconName, Sizable as _, Size, StyledExt as _};
+use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_editor::InputState;
 use rmac_notes_runtime::{
     ActionRequest, ActionResult, BundleImportAcceptRequest, BundleImportReviewRequest,
@@ -60,13 +62,15 @@ use rmac_notes_store::{
 };
 use rmac_ui::{mac, Button, InputEvent, TextField};
 
+use glyphs::glyph;
 use input_support::{
     display_title, now_unix_ms, parse_tags, safe_export_stem, take_counter, unique_folder_name,
 };
 use markdown_presentation::render_markdown_document;
+use notes_style::*;
 use presentation::{
     attachment_match_row, centered_state, date_label, date_section, folder_row,
-    format_storage_bytes, full_date_label, styled_search_fragment, tag_pill,
+    format_storage_bytes, full_date_label, styled_search_fragment_in, tag_pill,
 };
 use search_highlight::{
     matched_search_fragment, plain_search_fragment, MAX_SEARCH_DETAIL_FRAGMENT_CHARS,
@@ -74,9 +78,6 @@ use search_highlight::{
 };
 use view_model::*;
 use worker_bridge::PreviewBridgeEvent;
-
-const FOLDERS_W: f32 = 210.0;
-const LIST_W: f32 = 310.0;
 
 actions!(
     notes,
@@ -92,7 +93,14 @@ actions!(
         ExportNotes,
         RenameSelectedFolder,
         DeleteSelectedFolder,
-        InsertChecklist
+        InsertChecklist,
+        MoveSelectedNote,
+        DeleteNotePermanently,
+        EmptyRecentlyDeleted,
+        ToggleMarkdownPreview,
+        ImportNote,
+        ImportNotesBundle,
+        AddPhoto
     ]
 );
 
@@ -146,6 +154,9 @@ struct NotesView {
     preview_shutdown_requested: bool,
     markdown_preview_shutdown_requested: bool,
     closing: bool,
+    /// A press on a toolbar's empty area, turned into a window move by the
+    /// next pointer motion (as in Files).
+    dragging: bool,
 }
 
 impl NotesView {
@@ -201,6 +212,7 @@ impl NotesView {
             preview_shutdown_requested: false,
             markdown_preview_shutdown_requested: false,
             closing: false,
+            dragging: false,
         };
 
         view.start_workers(window, cx);
@@ -306,8 +318,9 @@ fn main() {
     // render_root's Ready/Maintenance/Pending/Stopped arm, which calls
     // rmac_ui::mark_content_ready.
     rmac_ui::defer_content_ready();
-    rmac_ui::boot_app(
+    rmac_ui::boot_app_with_assets(
         rmac_ui::app_id::NOTES,
+        rmac_ui::layered_assets(glyphs::NotesAssets),
         "Notes",
         1080.0,
         720.0,

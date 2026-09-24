@@ -3,6 +3,7 @@
 use std::time::{Duration, SystemTime};
 
 use chrono::{DateTime, Datelike, Local, Timelike};
+use gpui::Hsla;
 use gpui::{
     div, font, prelude::FluentBuilder as _, px, AnyElement, Div, InteractiveElement as _,
     IntoElement, ParentElement, Role, SharedString, Stateful, StatefulInteractiveElement as _,
@@ -10,6 +11,13 @@ use gpui::{
 };
 use gpui_component::{Icon, IconName, Sizable as _, Size};
 use rmac_ui::{mac, StyledExt as _};
+
+use super::glyphs::glyph;
+use super::notes_style::{
+    folder_glyph, sidebar_count, sidebar_selected_count, sidebar_selected_text, sidebar_selection,
+    sidebar_text, SIDEBAR_COUNT_RIGHT, SIDEBAR_GLYPH, SIDEBAR_GLYPH_CENTRE, SIDEBAR_ROW_HEIGHT,
+    SIDEBAR_ROW_RADIUS, SIDEBAR_TEXT_X,
+};
 
 use super::search_highlight::SearchTextFragment;
 
@@ -46,10 +54,13 @@ pub(super) fn centered_state(
         .into_any_element()
 }
 
+/// A folder in the sidebar: 32 pt row, the selection inset 11 from the
+/// panel with radius 8, a yellow outline glyph centred 14 in, the name at
+/// 29.5 (yellow while selected) and the note count 8 from the right.
 pub(super) fn folder_row(
     id: impl Into<gpui::ElementId>,
     label: impl Into<SharedString>,
-    icon: IconName,
+    glyph_path: &'static str,
     count: usize,
     selected: bool,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
@@ -68,34 +79,54 @@ pub(super) fn folder_row(
         .role(Role::ListItem)
         .aria_label(accessible_label)
         .aria_selected(selected)
-        .flex()
-        .items_center()
-        .gap_2()
-        .h(px(mac::sidebar_row_height()))
-        .px_2()
-        .rounded(px(rmac_ui::mac::radius_menu_item()))
+        .h(px(SIDEBAR_ROW_HEIGHT))
+        .flex_none()
+        .relative()
+        .rounded(px(SIDEBAR_ROW_RADIUS))
         .when(selected, |element: Stateful<Div>| {
-            element.bg(mac::sidebar_selection())
+            element.bg(sidebar_selection())
         })
         .when(!selected, |element: Stateful<Div>| {
             element.hover(|hover| hover.bg(mac::hover()))
         })
         .child(
-            Icon::new(icon)
-                .text_color(mac::notes_accent())
-                .with_size(Size::Small),
+            div()
+                .absolute()
+                .left(px(SIDEBAR_GLYPH_CENTRE - SIDEBAR_GLYPH / 2.0))
+                .top(px((SIDEBAR_ROW_HEIGHT - SIDEBAR_GLYPH) / 2.0))
+                .child(glyph(glyph_path, SIDEBAR_GLYPH, folder_glyph())),
         )
         .child(
             div()
-                .flex_1()
-                .truncate()
+                .absolute()
+                .left(px(SIDEBAR_TEXT_X))
+                .right(px(SIDEBAR_COUNT_RIGHT + 28.0))
+                .top_0()
+                .bottom_0()
+                .flex()
+                .items_center()
                 .text_size(rmac_ui::text_px(13.0))
-                .child(label.clone()),
+                .text_color(if selected {
+                    sidebar_selected_text()
+                } else {
+                    sidebar_text()
+                })
+                .child(div().truncate().child(label.clone())),
         )
         .child(
             div()
-                .text_size(rmac_ui::text_px(12.0))
-                .text_color(mac::text_tertiary())
+                .absolute()
+                .right(px(SIDEBAR_COUNT_RIGHT))
+                .top_0()
+                .bottom_0()
+                .flex()
+                .items_center()
+                .text_size(rmac_ui::text_px(13.0))
+                .text_color(if selected {
+                    sidebar_selected_count()
+                } else {
+                    sidebar_count()
+                })
                 .child(count.to_string()),
         )
         .on_click(on_click)
@@ -213,15 +244,24 @@ pub(super) fn styled_search_fragment(
     secondary: bool,
     bold: bool,
 ) -> StyledText {
-    let mut text_font = font(rmac_ui::UI_FONT);
-    if bold {
-        text_font = text_font.bold();
-    }
     let base_color = if secondary {
         mac::text_secondary()
     } else {
         mac::text()
     };
+    styled_search_fragment_in(fragment, base_color, bold)
+}
+
+/// A search fragment drawn in `base_color`, its match highlighted.
+pub(super) fn styled_search_fragment_in(
+    fragment: SearchTextFragment,
+    base_color: Hsla,
+    bold: bool,
+) -> StyledText {
+    let mut text_font = font(rmac_ui::UI_FONT);
+    if bold {
+        text_font = text_font.bold();
+    }
     let text_len = fragment.text().len();
     let mut runs = Vec::with_capacity(3);
     let mut push_run = |len: usize, highlighted: bool| {

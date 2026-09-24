@@ -22,31 +22,31 @@ impl NotesView {
         });
         let current = self.session.folder_selection();
         let has_selected_folder = matches!(current, FolderSelection::Folder(_));
-        let mut sidebar = div()
+        let mut rows = div()
             .id("notes-folders")
             .role(Role::List)
             .aria_label("Folders")
-            .w(px(FOLDERS_W))
-            .h_full()
-            .flex_shrink_0()
+            .flex_1()
+            .min_h(px(0.0))
+            .overflow_y_scroll()
             .v_flex()
-            .pt_3()
-            .px_2()
-            .bg(mac::sidebar())
-            .border_r_1()
-            .border_color(mac::separator())
+            // Rows sit 11 in from the panel's outer edges (1 pt of that is
+            // the panel's rim).
+            .px(px(SIDEBAR_ROW_INSET - 1.0))
+            .pb(px(SIDEBAR_ROW_INSET))
             .child(
                 div()
+                    .h(px(SIDEBAR_SECTION_HEIGHT))
+                    .mt(px(4.0))
                     .flex()
                     .items_center()
                     .justify_between()
-                    .px_2()
-                    .pb_1()
+                    .pl(px(SIDEBAR_SECTION_TEXT_X - SIDEBAR_ROW_INSET))
                     .child(
                         div()
                             .text_size(rmac_ui::text_px(11.0))
                             .font_weight(mac::BOLD)
-                            .text_color(mac::text_secondary())
+                            .text_color(sidebar_section_text())
                             .child("On My Computer"),
                     )
                     .child(
@@ -59,6 +59,7 @@ impl NotesView {
                                     .icon(IconName::Ellipsis)
                                     .ghost()
                                     .with_size(Size::XSmall)
+                                    .text_color(sidebar_section_text())
                                     .disabled(!self.is_interactive_ready() || !has_selected_folder)
                                     .tooltip("Folder Actions")
                                     .dropdown_menu(|menu, _, _| {
@@ -71,6 +72,7 @@ impl NotesView {
                                     .icon(IconName::Plus)
                                     .ghost()
                                     .with_size(Size::XSmall)
+                                    .text_color(sidebar_section_text())
                                     .disabled(!self.is_interactive_ready())
                                     .tooltip("New Folder")
                                     .on_click(cx.listener(|this, _, _, cx| this.create_folder(cx))),
@@ -80,7 +82,7 @@ impl NotesView {
             .child(folder_row(
                 "all-notes",
                 "All Notes",
-                IconName::Folder,
+                glyphs::FOLDER,
                 all_count,
                 current == FolderSelection::All,
                 cx.listener(|this, _, window, cx| {
@@ -90,10 +92,10 @@ impl NotesView {
 
         for folder in self.session.folders() {
             let folder_id = folder.id;
-            sidebar = sidebar.child(folder_row(
+            rows = rows.child(folder_row(
                 ("folder", folder_id.get()),
                 folder.name.clone(),
-                IconName::Folder,
+                glyphs::FOLDER,
                 self.session.folder_count(folder_id),
                 current == FolderSelection::Folder(folder_id),
                 cx.listener(move |this, _, window, cx| {
@@ -102,22 +104,70 @@ impl NotesView {
             ));
         }
 
-        sidebar.child(div().mt_2().child(folder_row(
+        rows = rows.child(folder_row(
             "trash-notes",
             "Recently Deleted",
-            IconName::Delete,
+            glyphs::TRASH,
             trash_count,
             current == FolderSelection::Trash,
             cx.listener(|this, _, window, cx| {
                 this.select_folder(FolderSelection::Trash, window, cx)
             }),
-        )))
+        ));
+
+        // The traffic lights live inside the floating panel (window-relative
+        // centres 26 / 49 / 72, y 26), so place the cluster by its centre.
+        let traffic_left =
+            TRAFFIC_LIGHT_FIRST_CENTRE - mac::traffic_light_hit_width() / 2.0 - SIDEBAR_INSET;
+        let traffic_top =
+            TRAFFIC_LIGHT_FIRST_CENTRE - mac::traffic_light_hit_height() / 2.0 - SIDEBAR_INSET;
+        let titlebar = self.toolbar_drag(
+            div()
+                .id("notes-sidebar-titlebar")
+                .h(px(TOOLBAR_HEIGHT - SIDEBAR_INSET))
+                .flex_none()
+                .relative()
+                .child(
+                    div()
+                        .absolute()
+                        .left(px(traffic_left - 1.0))
+                        .top(px(traffic_top - 1.0))
+                        .child(rmac_ui::traffic_lights()),
+                ),
+            cx,
+        );
+
+        div()
+            .w(px(SIDEBAR_WIDTH))
+            .h_full()
+            .flex_shrink_0()
+            .relative()
+            .child(
+                div()
+                    .id("notes-sidebar-panel")
+                    .absolute()
+                    .left(px(SIDEBAR_INSET))
+                    .top(px(SIDEBAR_INSET))
+                    .bottom(px(SIDEBAR_BOTTOM_INSET))
+                    .right_0()
+                    .v_flex()
+                    .rounded(px(SIDEBAR_RADIUS))
+                    .bg(sidebar_panel())
+                    .border_1()
+                    .border_color(sidebar_panel_edge())
+                    .overflow_hidden()
+                    .child(titlebar)
+                    .child(rows),
+            )
     }
 
-    pub(super) fn render_note_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_note_list(
+        &self,
+        list_focused: bool,
+        _window: &Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let search_active = !self.search_query.read(cx).value().trim().is_empty();
-        let in_trash =
-            self.session.folder_selection() == rmac_notes_runtime::FolderSelection::Trash;
         let selected = if search_active {
             self.search.selected()
         } else {
@@ -161,25 +211,60 @@ impl NotesView {
             .is_some_and(|snapshot| snapshot.sort_order == SortOrder::Created);
         let mut current_section: Option<SharedString> = None;
         let mut items = Vec::<AnyElement>::new();
-        for (note, search_hit) in notes {
-            if sectioned {
-                let section: SharedString = if note.pinned {
+        let section_of = |note: &NoteRecord| -> Option<SharedString> {
+            sectioned.then(|| {
+                if note.pinned {
                     "Pinned".into()
                 } else if sort_by_created {
                     date_section(note.created_unix_ms)
                 } else {
                     date_section(note.modified_unix_ms)
-                };
+                }
+            })
+        };
+        let sections = notes
+            .iter()
+            .map(|(note, _)| section_of(note))
+            .collect::<Vec<_>>();
+        let selected_flags = notes
+            .iter()
+            .map(|(note, _)| selected == Some(note.id))
+            .collect::<Vec<_>>();
+        for (index, (note, search_hit)) in notes.into_iter().enumerate() {
+            let next_selected = selected_flags.get(index + 1).copied();
+            // The last row of a section (or of the list) has no rule.
+            let is_last = sections
+                .get(index + 1)
+                .is_none_or(|next| *next != sections[index]);
+            if let Some(section) = sections[index].clone() {
                 if current_section.as_ref() != Some(&section) {
+                    // A 40 pt section row: the name 15 bold at x 16.5, then a
+                    // full-width rule 29 below the row's top.
                     items.push(
                         div()
-                            .px(px(20.0))
-                            .pt_3()
-                            .pb_1()
-                            .text_size(rmac_ui::text_px(13.0))
-                            .font_weight(mac::BOLD)
-                            .text_color(mac::text())
-                            .child(section.clone())
+                            .h(px(SECTION_HEIGHT))
+                            .flex_none()
+                            .relative()
+                            .child(
+                                div()
+                                    .absolute()
+                                    .left(px(SECTION_TEXT_X))
+                                    .top(px(1.0))
+                                    .text_size(rmac_ui::text_px(15.0))
+                                    .line_height(px(18.0))
+                                    .font_weight(mac::BOLD)
+                                    .text_color(section_text())
+                                    .child(section.clone()),
+                            )
+                            .child(
+                                div()
+                                    .absolute()
+                                    .left_0()
+                                    .right_0()
+                                    .top(px(SECTION_RULE_Y))
+                                    .h(px(1.0))
+                                    .bg(section_rule()),
+                            )
                             .into_any_element(),
                     );
                     current_section = Some(section);
@@ -290,94 +375,76 @@ impl NotesView {
             accessible_label.push_str(&date_label(note.modified_unix_ms));
             accessible_label.push_str(", ");
             accessible_label.push_str(body_fragment.text());
+            let title_colour = if is_selected {
+                selection_text(list_focused)
+            } else {
+                mac::text()
+            };
+            let preview_colour = if is_selected {
+                selection_preview(list_focused)
+            } else {
+                mac::text_secondary()
+            };
+            // Hairlines separate unselected neighbours, inset from the text.
+            let rule = !is_selected && next_selected != Some(true) && !is_last;
             items.push(
                 div()
                     .id(("note", note.id.get()))
                     .role(Role::ListItem)
                     .aria_label(accessible_label)
                     .aria_selected(is_selected)
-                    .mx(px(10.0))
-                    .px(px(10.0))
-                    .py(px(8.0))
-                    .rounded(px(rmac_ui::mac::radius_control()))
-                    // Notes selects in its dimmed yellow (S) and separates
-                    // the other rows with inset hairlines.
-                    .when(is_selected, |element: Stateful<Div>| {
-                        element.bg(mac::notes_accent().opacity(0.62))
-                    })
-                    .when(!is_selected, |element: Stateful<Div>| {
-                        element
-                            .border_b_1()
-                            .border_color(mac::separator())
-                            .hover(|hover| hover.bg(mac::hover()))
-                    })
+                    .px(px(NOTE_ROW_INSET))
+                    .py(px(0.5))
+                    .relative()
                     .child(
                         div()
+                            .min_h(px(NOTE_ROW_HEIGHT - 1.0))
+                            .pl(px(NOTE_TEXT_X))
+                            .pr(px(12.0))
+                            .pt(px(11.25))
+                            .pb(px(8.0))
+                            .rounded(px(NOTE_ROW_RADIUS))
+                            .when(is_selected, |element| {
+                                element.bg(selection_fill(list_focused))
+                            })
                             .v_flex()
-                            .gap_0p5()
                             .child(
                                 div()
-                                    .flex()
-                                    .items_center()
-                                    .gap_1()
-                                    .when(note.pinned, |element| {
-                                        element.child(
-                                            Icon::new(IconName::Star)
-                                                .text_color(if is_selected {
-                                                    mac::on_accent()
-                                                } else {
-                                                    mac::notes_accent()
-                                                })
-                                                .with_size(Size::XSmall),
-                                        )
-                                    })
-                                    .child(
-                                        div()
-                                            .flex_1()
-                                            .text_size(rmac_ui::text_px(13.0))
-                                            .font_weight(mac::BOLD)
-                                            .text_color(if is_selected {
-                                                mac::on_accent()
-                                            } else {
-                                                mac::text()
-                                            })
-                                            .truncate()
-                                            .child(styled_search_fragment(
-                                                title_fragment,
-                                                false,
-                                                true,
-                                            )),
-                                    ),
+                                    .h(px(17.0))
+                                    .text_size(rmac_ui::text_px(13.0))
+                                    .line_height(px(17.0))
+                                    .font_weight(mac::BOLD)
+                                    .text_color(title_colour)
+                                    .truncate()
+                                    .child(styled_search_fragment_in(
+                                        title_fragment,
+                                        title_colour,
+                                        true,
+                                    )),
                             )
                             .child(
                                 div()
+                                    .h(px(15.0))
                                     .flex()
                                     .items_center()
-                                    .gap_1p5()
+                                    .gap(px(NOTE_TIME_GAP))
+                                    .text_size(rmac_ui::text_px(12.0))
+                                    .line_height(px(15.0))
                                     .child(
                                         div()
-                                            .text_size(rmac_ui::text_px(12.0))
-                                            .font_weight(mac::MEDIUM)
-                                            .text_color(if is_selected {
-                                                mac::on_accent()
-                                            } else {
-                                                mac::text()
-                                            })
+                                            .flex_none()
+                                            .text_color(title_colour)
                                             .child(date_label(note.modified_unix_ms)),
                                     )
                                     .child(
                                         div()
                                             .flex_1()
-                                            .text_size(rmac_ui::text_px(12.0))
-                                            .text_color(if is_selected {
-                                                mac::on_accent().opacity(0.82)
-                                            } else {
-                                                mac::text_secondary()
-                                            })
+                                            .min_w(px(0.0))
+                                            .text_color(preview_colour)
                                             .truncate()
-                                            .child(styled_search_fragment(
+                                            .child(styled_search_fragment_in(
                                                 body_fragment,
-                                                true,
+                                                preview_colour,
                                                 false,
                                             )),
                                     ),
@@ -388,7 +455,7 @@ impl NotesView {
                                         .flex()
                                         .flex_wrap()
                                         .gap_1()
-                                        .pt_0p5()
+                                        .pt_1()
                                         .children(tags.into_iter().map(tag_pill)),
                                 )
                             })
@@ -407,7 +474,22 @@ impl NotesView {
                                 )
                             }),
                     )
+                    .when(rule, |element| {
+                        element.child(
+                            div()
+                                .absolute()
+                                .left(px(NOTE_ROW_INSET + NOTE_TEXT_X))
+                                .right(px(NOTE_ROW_INSET))
+                                .bottom_0()
+                                .h(px(1.0))
+                                .bg(row_rule()),
+                        )
+                    })
                     .on_click(cx.listener(move |this, _, window, cx| {
+                        // Clicking a note gives the list the keyboard, as on
+                        // the Mac: the selection turns yellow until the
+                        // editor takes focus again.
+                        window.focus(&this.focus, cx);
                         if search_active {
                             this.select_search_result(note_id, window, cx)
                         } else {
@@ -444,60 +526,51 @@ impl NotesView {
                     .into_any_element(),
             );
         }
+        let (title, subtitle): (SharedString, SharedString) = if search_active {
+            (
+                "Search".into(),
+                format!(
+                    "{note_count} {}",
+                    if note_count == 1 { "result" } else { "results" }
+                )
+                .into(),
+            )
+        } else {
+            let title: SharedString = match self.session.folder_selection() {
+                rmac_notes_runtime::FolderSelection::All => "All Notes".into(),
+                rmac_notes_runtime::FolderSelection::Trash => "Recently Deleted".into(),
+                rmac_notes_runtime::FolderSelection::Folder(folder_id) => self
+                    .session
+                    .folders()
+                    .iter()
+                    .find(|folder| folder.id == folder_id)
+                    .map(|folder| SharedString::from(folder.name.clone()))
+                    .unwrap_or_else(|| "Notes".into()),
+            };
+            let subtitle = match note_count {
+                0 => "No notes".to_string(),
+                1 => "1 note".to_string(),
+                count => format!("{count} notes"),
+            };
+            (title, subtitle.into())
+        };
         div()
-            .w(px(LIST_W))
+            .w(px(LIST_WIDTH))
             .h_full()
             .flex_shrink_0()
             .v_flex()
-            .bg(mac::list())
-            .border_r_1()
-            .border_color(mac::separator())
-            .child(
-                div()
-                    .h(px(42.0))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .px_4()
-                    .child(
-                        div()
-                            .text_size(rmac_ui::text_px(13.0))
-                            .font_weight(mac::SEMIBOLD)
-                            .text_color(mac::text_secondary())
-                            .child(format!(
-                                "{note_count} {}",
-                                if search_active {
-                                    if note_count == 1 {
-                                        "Result"
-                                    } else {
-                                        "Results"
-                                    }
-                                } else if note_count == 1 {
-                                    "Note"
-                                } else {
-                                    "Notes"
-                                }
-                            )),
-                    )
-                    .when(!search_active && in_trash && note_count != 0, |element| {
-                        element.child(
-                            Button::new("empty-trash", "Empty")
-                                .destructive()
-                                .xsmall()
-                                .disabled(!self.is_interactive_ready())
-                                .tooltip("Empty Recently Deleted…")
-                                .on_click(cx.listener(|this, _, _, cx| this.begin_empty_trash(cx))),
-                        )
-                    }),
-            )
+            .bg(list_fill())
+            .child(self.render_list_toolbar(title, subtitle, cx))
             .child(
                 div()
                     .id("notes-scroll")
                     .role(Role::List)
                     .aria_label(if search_active { "Results" } else { "Notes" })
                     .flex_1()
+                    .min_h(px(0.0))
                     .overflow_y_scroll()
-                    .py_1()
+                    .pt(px(LIST_TOP_PADDING))
+                    .pb(px(8.0))
                     .children(items),
             )
             .when(

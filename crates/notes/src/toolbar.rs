@@ -1,254 +1,323 @@
 //! Notes toolbar projection and interaction wiring.
+//!
+//! macOS 26 Notes splits its 52 pt toolbar by column (design-lab/apps.html):
+//! the folder name and View Options sit above the note list, and the editor
+//! column carries compose, a centred format capsule, a ⋯ capsule and search.
 
 use super::*;
 
+/// A Tahoe toolbar capsule: 36 tall, full radius, a faint fill and edge.
+pub(super) fn capsule(id: &'static str) -> Stateful<Div> {
+    div()
+        .id(id)
+        .h(px(CAPSULE_HEIGHT))
+        .flex_none()
+        .flex()
+        .items_center()
+        .px(px(0.5))
+        .rounded(px(CAPSULE_HEIGHT / 2.0))
+        .bg(capsule_fill())
+        .border_1()
+        .border_color(capsule_edge())
+}
+
+/// A glyph button inside a capsule (38 × 34), or a free 36 circle.
+pub(super) fn glyph_button(
+    id: &'static str,
+    path: &'static str,
+    width: f32,
+    tooltip: &'static str,
+) -> Button {
+    Button::new(id, "")
+        .ghost()
+        .icon(Icon::empty().path(path))
+        .with_size(Size::Size(px(TOOLBAR_GLYPH / 0.75)))
+        .tooltip(tooltip)
+        .w(px(width))
+        .h(px(CAPSULE_HEIGHT - 2.0))
+        .rounded(px(CAPSULE_HEIGHT / 2.0))
+        .text_color(toolbar_glyph())
+}
+
 impl NotesView {
-    pub(super) fn render_toolbar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// Pointer handlers that turn a press-and-drag on a toolbar's empty area
+    /// into a window move.
+    pub(super) fn toolbar_drag(
+        &self,
+        element: Stateful<Div>,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        element
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|this, _, _, _| this.dragging = true),
+            )
+            .on_mouse_up(
+                gpui::MouseButton::Left,
+                cx.listener(|this, _, _, _| this.dragging = false),
+            )
+            .on_mouse_move(cx.listener(|this, _, window, _| {
+                if this.dragging {
+                    this.dragging = false;
+                    window.start_window_move();
+                }
+            }))
+    }
+
+    /// The editor column's toolbar.
+    pub(super) fn render_toolbar(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let ready = self.is_interactive_ready();
         let selected = self.session.selected_note();
         let deleted = selected.is_some_and(|note| note.deleted);
         let pinned = selected.is_some_and(|note| note.pinned);
+        let has_note = selected.is_some();
         let note_save_pending = self.latest_local_generation.is_some();
         let attachment_busy = self.attachment_chooser_open || self.attachment_action_pending();
-        let note_import_busy = self.note_import_chooser_open
-            || self.note_import_request_id.is_some()
-            || self.markdown_import_action_request_id.is_some();
-        let export_busy = self.export_chooser_open || self.export_request_id.is_some();
-        let bundle_import_busy = self.bundle_chooser_open
-            || self.bundle_review_request_id.is_some()
-            || self.bundle_action_request_id.is_some();
+        let preview_visible = self.markdown_preview_visible;
+        // The search field narrows with the editor column, up to the Mac's
+        // 326 pt at full width.
+        let editor_width = f32::from(rmac_ui::window_content_size(window).width)
+            - SIDEBAR_WIDTH
+            - LIST_WIDTH
+            - 1.0;
+        let search_width = (editor_width - 280.0).clamp(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH);
+
+        let compose = glyph_button("compose", glyphs::COMPOSE, CAPSULE_HEIGHT, "New Note")
+            .disabled(!ready)
+            .bg(capsule_fill())
+            .border_1()
+            .border_color(capsule_edge())
+            .h(px(CAPSULE_HEIGHT))
+            .on_click(cx.listener(|this, _, _, cx| this.create_note(cx)));
+
+        let format = capsule("format-capsule")
+            .child(
+                glyph_button(
+                    "checklist",
+                    glyphs::CHECKLIST,
+                    CAPSULE_BUTTON_WIDTH,
+                    "Checklist",
+                )
+                .disabled(!ready || deleted || !has_note || preview_visible)
+                .on_click(cx.listener(|this, _, window, cx| this.insert_checklist(window, cx))),
+            )
+            .child(
+                glyph_button(
+                    "add-image",
+                    glyphs::ATTACH,
+                    CAPSULE_BUTTON_WIDTH,
+                    "Add Photo…",
+                )
+                .busy(attachment_busy)
+                .disabled(!ready || deleted || !has_note || note_save_pending)
+                .on_click(cx.listener(|this, _, _, cx| this.choose_image_attachment(cx))),
+            );
+
+        let more = capsule("note-capsule")
+            .child(
+                glyph_button(
+                    "move-note",
+                    glyphs::FOLDER,
+                    CAPSULE_BUTTON_WIDTH,
+                    "Move Note…",
+                )
+                .disabled(!ready || deleted || !has_note)
+                .on_click(cx.listener(|this, _, _, cx| this.begin_move_note(cx))),
+            )
+            .child(
+                glyph_button("note-more", glyphs::MORE, CAPSULE_BUTTON_WIDTH, "More")
+                    .disabled(!ready || !has_note)
+                    .dropdown_menu(move |menu, _, _| {
+                        let menu = if deleted {
+                            menu.menu("Recover Note", Box::new(TrashOrRestore))
+                                .menu("Delete Permanently…", Box::new(DeleteNotePermanently))
+                        } else {
+                            menu.menu(
+                                if pinned { "Unpin Note" } else { "Pin Note" },
+                                Box::new(TogglePin),
+                            )
+                            .menu("Move Note…", Box::new(MoveSelectedNote))
+                            .menu("Delete", Box::new(TrashOrRestore))
+                            .separator()
+                            .menu("Add Photo…", Box::new(AddPhoto))
+                        };
+                        menu.separator().menu(
+                            if preview_visible {
+                                "Edit Note"
+                            } else {
+                                "Show Markdown Preview"
+                            },
+                            Box::new(ToggleMarkdownPreview),
+                        )
+                    }),
+            );
+
+        let search = div()
+            .id("notes-search")
+            .role(Role::SearchInput)
+            .aria_label("Search")
+            .aria_value(self.search_query.read(cx).value().to_string())
+            .on_a11y_action(
+                AccessibleAction::SetValue,
+                self.assistive_search_listener(cx),
+            )
+            .on_a11y_action(
+                AccessibleAction::ReplaceSelectedText,
+                self.assistive_search_listener(cx),
+            )
+            .w(px(search_width))
+            .h(px(CAPSULE_HEIGHT))
+            .flex_none()
+            .flex()
+            .items_center()
+            .gap(px(4.0))
+            .pl(px(12.0))
+            .pr(px(6.0))
+            .rounded(px(CAPSULE_HEIGHT / 2.0))
+            .bg(capsule_fill())
+            .border_1()
+            .border_color(capsule_edge())
+            .text_size(rmac_ui::text_px(13.0))
+            .child(glyph(glyphs::SEARCH, 15.0, search_placeholder()))
+            .child(
+                div().flex_1().min_w(px(0.0)).child(
+                    TextField::new(&self.search_query)
+                        .appearance(false)
+                        .cleanable(true)
+                        .small()
+                        .disabled(self.session.snapshot().is_none()),
+                ),
+            );
+
+        let bar = div()
+            .id("notes-editor-toolbar")
+            .role(Role::Toolbar)
+            .aria_label("Toolbar")
+            .h(px(TOOLBAR_HEIGHT))
+            .w_full()
+            .flex_none()
+            .flex()
+            .items_center()
+            .pl(px(COMPOSE_LEFT))
+            .pr(px(TRAILING_MARGIN))
+            .child(compose)
+            .child(div().flex_1().min_w(px(8.0)))
+            .child(format)
+            .child(div().flex_1().min_w(px(8.0)))
+            .child(more)
+            .child(div().w(px(SEARCH_GAP)).flex_none())
+            .child(search);
+        self.toolbar_drag(bar, cx)
+    }
+
+    /// The note list's part of the toolbar: the folder's name and note
+    /// count, and View Options (sort, import, export).
+    pub(super) fn render_list_toolbar(
+        &self,
+        title: SharedString,
+        subtitle: SharedString,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let ready = self.is_interactive_ready();
+        let note_save_pending = self.latest_local_generation.is_some();
+        let has_library = self.session.snapshot().is_some();
+        let in_trash =
+            self.session.folder_selection() == rmac_notes_runtime::FolderSelection::Trash;
+        let trash_has_notes = in_trash && !self.session.visible_notes().is_empty();
         let sort_order = self
             .session
             .snapshot()
             .map(|snapshot| snapshot.sort_order)
             .unwrap_or(SortOrder::Edited);
-        let row = div()
-            .size_full()
-            .flex()
-            .items_center()
-            .child(div().w(px(FOLDERS_W - 76.0)))
+        let bar = div()
+            .id("notes-list-toolbar")
+            .h(px(TOOLBAR_HEIGHT))
+            .w_full()
+            .flex_none()
+            .relative()
             .child(
                 div()
-                    .w(px(LIST_W))
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .gap_1()
-                    .pr_3()
+                    .absolute()
+                    .left(px(LIST_TITLE_X))
+                    .top(px(10.75))
+                    .right(px(LIST_MORE_RIGHT + CAPSULE_HEIGHT + 8.0))
+                    .v_flex()
                     .child(
-                        Button::new("sort", "")
-                            .icon(IconName::SortDescending)
-                            .ghost()
-                            .with_size(Size::Medium)
-                            .disabled(!ready)
-                            .tooltip("Sort Notes")
-                            .dropdown_menu(move |menu, _, _| {
-                                menu.menu_with_check(
-                                    "Date Edited",
-                                    sort_order == SortOrder::Edited,
-                                    Box::new(SortByEdited),
-                                )
-                                .menu_with_check(
-                                    "Date Created",
-                                    sort_order == SortOrder::Created,
-                                    Box::new(SortByCreated),
-                                )
-                                .menu_with_check(
-                                    "Title",
-                                    sort_order == SortOrder::Title,
-                                    Box::new(SortByTitle),
-                                )
-                            }),
+                        div()
+                            .h(px(17.0))
+                            .text_size(rmac_ui::text_px(13.0))
+                            .line_height(px(17.0))
+                            .font_weight(mac::BOLD)
+                            .text_color(list_title())
+                            .truncate()
+                            .child(title),
                     )
                     .child(
-                        Button::new("import-note", "")
-                            .icon(IconName::File)
-                            .ghost()
-                            .with_size(Size::Medium)
-                            .busy(note_import_busy)
-                            .disabled(!ready)
-                            .tooltip(if note_import_busy {
-                                "Importing Note…"
-                            } else {
-                                "Import Note…"
-                            })
-                            .on_click(
-                                cx.listener(|this, _, _, cx| this.choose_text_note_import(cx)),
-                            ),
-                    )
-                    .child(
-                        Button::new("import-bundle", "")
-                            .icon(IconName::FolderOpen)
-                            .ghost()
-                            .with_size(Size::Medium)
-                            .busy(bundle_import_busy)
-                            .disabled(!ready || note_save_pending)
-                            .tooltip(if bundle_import_busy {
-                                "Importing Notes Bundle…"
-                            } else if note_save_pending {
-                                "Saving Note…"
-                            } else {
-                                "Import Notes Bundle…"
-                            })
-                            .on_click(cx.listener(|this, _, _, cx| this.choose_bundle_import(cx))),
-                    )
-                    .child(
-                        Button::new("compose", "")
-                            .icon(IconName::Plus)
-                            .ghost()
-                            .with_size(Size::Medium)
-                            .disabled(!ready)
-                            .tooltip("New Note")
-                            .on_click(cx.listener(|this, _, _, cx| this.create_note(cx))),
+                        div()
+                            .h(px(13.0))
+                            .text_size(rmac_ui::text_px(11.0))
+                            .line_height(px(13.0))
+                            .text_color(list_subtitle())
+                            .truncate()
+                            .child(subtitle),
                     ),
             )
             .child(
                 div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .gap_1()
-                    .pr_4()
+                    .absolute()
+                    .right(px(LIST_MORE_RIGHT))
+                    .top(px(CAPSULE_TOP))
                     .child(
-                        div()
-                            .id("notes-search")
-                            .role(Role::SearchInput)
-                            .aria_label("Search")
-                            .aria_value(self.search_query.read(cx).value().to_string())
-                            .on_a11y_action(
-                                AccessibleAction::SetValue,
-                                self.assistive_search_listener(cx),
-                            )
-                            .on_a11y_action(
-                                AccessibleAction::ReplaceSelectedText,
-                                self.assistive_search_listener(cx),
-                            )
-                            .w(px(220.0))
-                            .h(px(28.0))
-                            .flex()
-                            .items_center()
-                            .gap_1()
-                            .px_2()
-                            .rounded(px(rmac_ui::mac::radius_segmented()))
-                            .bg(mac::control_fill())
-                            .child(
-                                Icon::new(IconName::Search)
-                                    .with_size(Size::XSmall)
-                                    .text_color(mac::text_tertiary()),
-                            )
-                            .child(
-                                TextField::new(&self.search_query)
-                                    .appearance(false)
-                                    .cleanable(true)
-                                    .small()
-                                    .disabled(self.session.snapshot().is_none()),
-                            ),
-                    )
-                    .child(
-                        Button::new("export-notes", "")
-                            .icon(IconName::ExternalLink)
-                            .ghost()
-                            .with_size(Size::Medium)
-                            .busy(export_busy)
-                            .disabled(
-                                !ready || self.session.snapshot().is_none() || note_save_pending,
-                            )
-                            .tooltip(if export_busy {
-                                "Exporting Notes…"
-                            } else if note_save_pending {
-                                "Saving Note…"
-                            } else {
-                                "Export…"
-                            })
-                            .on_click(cx.listener(|this, _, _, cx| this.begin_export(cx))),
-                    )
-                    .child(
-                        Button::new("checklist", "")
-                            .icon(IconName::CircleCheck)
-                            .ghost()
-                            .with_size(Size::Medium)
-                            .disabled(
-                                !ready
-                                    || deleted
-                                    || selected.is_none()
-                                    || self.markdown_preview_visible,
-                            )
-                            .tooltip("Checklist")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| {
-                                    this.insert_checklist(window, cx)
-                                }),
-                            ),
-                    )
-                    .child(
-                        Button::new("add-image", "")
-                            .icon(IconName::GalleryVerticalEnd)
-                            .ghost()
-                            .with_size(Size::Medium)
-                            .busy(attachment_busy)
-                            .disabled(!ready || deleted || selected.is_none() || note_save_pending)
-                            .tooltip(if attachment_busy {
-                                "Updating Attachments…"
-                            } else if note_save_pending {
-                                "Saving Note…"
-                            } else {
-                                "Add Photo…"
-                            })
-                            .on_click(
-                                cx.listener(|this, _, _, cx| this.choose_image_attachment(cx)),
-                            ),
-                    )
-                    .child(
-                        Button::new("move-note", "")
-                            .icon(IconName::Folder)
-                            .ghost()
-                            .with_size(Size::Medium)
-                            .disabled(!ready || deleted || selected.is_none())
-                            .tooltip("Move Note…")
-                            .on_click(cx.listener(|this, _, _, cx| this.begin_move_note(cx))),
-                    )
-                    .child(
-                        Button::new("pin", "")
-                            .icon(IconName::Star)
-                            .ghost()
-                            .selected(pinned)
-                            .with_size(Size::Medium)
-                            .disabled(!ready || deleted || selected.is_none())
-                            .tooltip(if pinned { "Unpin Note" } else { "Pin Note" })
-                            .on_click(cx.listener(|this, _, _, cx| this.toggle_pin(cx))),
-                    )
-                    .child(
-                        Button::new("trash", "")
-                            .icon(if deleted {
-                                IconName::ArrowUp
-                            } else {
-                                IconName::Delete
-                            })
-                            .ghost()
-                            .with_size(Size::Medium)
-                            .disabled(!ready || selected.is_none())
-                            .tooltip(if deleted {
-                                "Restore Note"
-                            } else {
-                                "Move to Trash"
-                            })
-                            .on_click(cx.listener(|this, _, _, cx| this.trash_or_restore(cx))),
-                    )
-                    .when(deleted, |element| {
-                        element.child(
-                            Button::new("delete-permanently", "")
-                                .icon(IconName::Delete)
-                                .destructive()
-                                .with_size(Size::Medium)
-                                .disabled(!ready)
-                                .tooltip("Delete Note Permanently…")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.begin_permanent_note_delete(cx)
-                                })),
-                        )
-                    }),
+                        glyph_button("view-options", glyphs::MORE, CAPSULE_HEIGHT, "View Options")
+                            .h(px(CAPSULE_HEIGHT))
+                            .bg(capsule_fill())
+                            .border_1()
+                            .border_color(capsule_edge())
+                            .disabled(!ready)
+                            .dropdown_menu(move |menu, _, _| {
+                                let menu = menu
+                                    .menu_with_check(
+                                        "Sort by Date Edited",
+                                        sort_order == SortOrder::Edited,
+                                        Box::new(SortByEdited),
+                                    )
+                                    .menu_with_check(
+                                        "Sort by Date Created",
+                                        sort_order == SortOrder::Created,
+                                        Box::new(SortByCreated),
+                                    )
+                                    .menu_with_check(
+                                        "Sort by Title",
+                                        sort_order == SortOrder::Title,
+                                        Box::new(SortByTitle),
+                                    )
+                                    .separator()
+                                    .menu("Import Note…", Box::new(ImportNote));
+                                let menu = if note_save_pending {
+                                    menu
+                                } else {
+                                    menu.menu("Import Notes Bundle…", Box::new(ImportNotesBundle))
+                                };
+                                let menu = if has_library && !note_save_pending {
+                                    menu.menu("Export Notes…", Box::new(ExportNotes))
+                                } else {
+                                    menu
+                                };
+                                if trash_has_notes {
+                                    menu.separator().menu(
+                                        "Empty Recently Deleted…",
+                                        Box::new(EmptyRecentlyDeleted),
+                                    )
+                                } else {
+                                    menu
+                                }
+                            }),
+                    ),
             );
-        rmac_ui::toolbar(row)
+        self.toolbar_drag(bar, cx)
     }
 }

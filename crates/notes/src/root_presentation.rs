@@ -44,21 +44,29 @@ impl NotesView {
                 // render; only the first call after main()'s
                 // defer_content_ready() writes the benchmark marker.
                 rmac_ui::mark_content_ready(window);
+                // Notes on macOS 26: a floating folder panel, the note list
+                // and the editor, each with its own part of the 52 pt toolbar
+                // (design-lab/apps.html).
+                let list_focused = self.focus.is_focused(window);
                 div()
                     .size_full()
-                    .v_flex()
-                    .child(self.render_toolbar(cx))
-                    .when_some(self.render_status_banner(cx), |element, banner| {
-                        element.child(banner)
-                    })
+                    .flex()
+                    .bg(window_frame())
+                    .child(self.render_sidebar(cx))
+                    .child(self.render_note_list(list_focused, window, cx))
+                    .child(div().w(px(1.0)).h_full().flex_none().bg(column_rule()))
                     .child(
                         div()
                             .flex_1()
-                            .flex()
-                            .min_h(px(0.0))
-                            .child(self.render_sidebar(cx))
-                            .child(self.render_note_list(cx))
-                            .child(div().flex_1().min_w(px(0.0)).child(self.render_editor(cx))),
+                            .min_w(px(0.0))
+                            .h_full()
+                            .v_flex()
+                            .bg(editor_fill())
+                            .child(self.render_toolbar(window, cx))
+                            .when_some(self.render_status_banner(cx), |element, banner| {
+                                element.child(banner)
+                            })
+                            .child(div().flex_1().min_h(px(0.0)).child(self.render_editor(cx))),
                     )
                     .into_any_element()
             }
@@ -100,6 +108,21 @@ impl NotesView {
             .on_action(
                 cx.listener(|this, _: &DeleteSelectedFolder, _, cx| this.begin_folder_delete(cx)),
             )
+            .on_action(cx.listener(|this, _: &MoveSelectedNote, _, cx| this.begin_move_note(cx)))
+            .on_action(cx.listener(|this, _: &DeleteNotePermanently, _, cx| {
+                this.begin_permanent_note_delete(cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &EmptyRecentlyDeleted, _, cx| this.begin_empty_trash(cx)),
+            )
+            .on_action(cx.listener(|this, _: &ToggleMarkdownPreview, _, cx| {
+                this.toggle_markdown_preview(cx)
+            }))
+            .on_action(cx.listener(|this, _: &ImportNote, _, cx| this.choose_text_note_import(cx)))
+            .on_action(
+                cx.listener(|this, _: &ImportNotesBundle, _, cx| this.choose_bundle_import(cx)),
+            )
+            .on_action(cx.listener(|this, _: &AddPhoto, _, cx| this.choose_image_attachment(cx)))
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
                 this.request_close(window, cx)
             }))

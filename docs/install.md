@@ -130,8 +130,10 @@ is still on the todo list and not implemented yet.
 ## Install from a GitHub Release (the Beta path)
 
 Until the signed APT repository above exists, a tagged release still
-publishes `rmac-apps` and `rmac-session` `.deb` files, a `SHA256SUMS`, an
-SBOM, and a build-provenance attestation to its GitHub Release page (see
+publishes `rmac-apps` and `rmac-session` `.deb` files, Lulo OS's own
+`niri` and `xwayland-satellite` `.deb` files with their source packages, a
+`SHA256SUMS`, SBOMs, and a build-provenance attestation to its GitHub
+Release page (see
 [Release process](release-process.md) "What exists today"). `install.sh`
 and `uninstall.sh` can use that release directly, on a disposable Ubuntu
 26.04 amd64 or arm64 machine, without ever touching APT repository
@@ -142,13 +144,18 @@ curl -fsSL -O https://raw.githubusercontent.com/millionrust/lulo/main/scripts/li
 sh install.sh --from-release vX.Y.Z
 ```
 
-This downloads `rmac-apps_*_<arch>.deb`, `rmac-session_*_<arch>.deb`, and
-`SHA256SUMS` from that release tag, verifies the two package files against
-`SHA256SUMS`, verifies `gh attestation verify`'s build-provenance check for
-each (skipped with a note if `gh` is not installed -- this is a defense in
-depth on top of the checksum check, not a replacement for it), then runs
-`sudo apt-get install` on the two local files so their `Depends` still
-resolve from the machine's ordinary Ubuntu archive. If you already
+This downloads `rmac-apps_*_<arch>.deb`, `rmac-session_*_<arch>.deb`,
+`niri_*_<arch>.deb`, `xwayland-satellite_*_<arch>.deb`, and `SHA256SUMS`
+from that release tag, verifies the package files against `SHA256SUMS`,
+verifies `gh attestation verify`'s build-provenance check for each (skipped
+with a note if `gh` is not installed -- this is a defense in depth on top of
+the checksum check, not a replacement for it), then runs `sudo apt-get
+install` on the local files so their remaining `Depends` still resolve from
+the machine's ordinary Ubuntu archive. If a newer `niri` or
+`xwayland-satellite` is already installed (for example the danklinux PPA's
+`26.04ppa3`), it is kept -- it already satisfies `rmac-session` -- and the
+script prints the `apt-get install --allow-downgrades` command that switches
+to the Lulo OS build. If you already
 downloaded or copied the `.deb` files and `SHA256SUMS` yourself (for
 example with `gh release download`, or from `build-native-inputs.sh` +
 `check-native-reproducibility.sh`'s output), skip the download instead:
@@ -170,17 +177,18 @@ dpkg actually knows about (a `--from-release`/`--from-dir` install never
 registers `rmac-archive-keyring` at all, since it never adds the rmac APT
 repository) and removes the repository configuration files if present.
 
-> **Known packaging gap:** `rmac-session`'s `Depends` includes `niri`, which
-> is not currently packaged in the Ubuntu archive for `resolute` (26.04) or
-> any other Ubuntu release (checked against packages.ubuntu.com); the same
-> is true of `xwayland-satellite`. Until niri is available from the archive,
-> a third-party PPA, or rmac's own `rmac-wm` fork (ADR 0008, Track B) is
-> packaged and added as a dependency, `apt-get install` of `rmac-session`
-> will fail to resolve dependencies through either install path above on a
-> stock Ubuntu 26.04 machine. Install niri from wherever you are sourcing it
-> for development *before* running `install.sh`, so apt sees it as already
-> satisfied; do not remove it as part of `uninstall.sh`, since Ubuntu/GNOME
-> never depended on it and it may be needed again.
+> **niri and xwayland-satellite:** neither is in the Ubuntu archive for
+> `resolute` (26.04), so Lulo OS ships its own builds of the exact releases
+> rmac is tested against (niri 26.04, xwayland-satellite 0.8.2) in every
+> GitHub Release, and `install.sh` installs them together with rmac.
+> `rmac-session` depends on `niri (>= 26.04)` and
+> `xwayland-satellite (>= 0.8.2)`, so a PPA or a future official Ubuntu
+> package satisfies it equally; see [Release process](release-process.md)
+> "Third-party packages: niri and xwayland-satellite". A `--from-dir` set
+> without them only works if apt can find them elsewhere. `uninstall.sh`
+> leaves them installed (Ubuntu/GNOME never depended on them); remove them
+> with `sudo apt-get purge niri xwayland-satellite` if nothing else needs
+> them.
 
 For a full manual pass on a disposable VM (install, first login, upgrade,
 uninstall, and confirming Ubuntu/GNOME survives), follow

@@ -1,7 +1,8 @@
 # Beta release checklist — 0.9.0-beta.1
 
 This is the release-blocking list for shipping **0.9.0-beta.1** as a GitHub
-Release: `.deb` packages (`rmac-apps`, `rmac-session`, and the keyring
+Release: `.deb` packages (`rmac-apps`, `rmac-session`, Lulo OS's `niri`
+and `xwayland-satellite` builds with their source packages, and the keyring
 package when a signing key exists) plus `SHA256SUMS`, an SBOM, build
 provenance, and a manual install guide. The signed APT repository comes
 after this Beta (it needs the owner's signing-key decision and a real Debian

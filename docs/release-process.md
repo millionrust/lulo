@@ -15,11 +15,16 @@ Tagging `vX.Y.Z` always:
 - builds the same on arm64 **only if** the `RMAC_HAS_ARM64_RUNNER`
   repository variable is `true` (nothing is configured today, so this job
   is skipped, not failed);
+- builds Lulo OS's `niri` and `xwayland-satellite` packages, their complete
+  source packages, and their SBOMs (see "Third-party packages: niri and
+  xwayland-satellite" below);
 - generates an SBOM with `cargo-cyclonedx` (version pinned in
   `release.yml`'s `RMAC_CARGO_CYCLONEDX_VERSION`);
 - attests build provenance with `actions/attest-build-provenance`; and
-- attaches the `.deb` files, `SHA256SUMS`, and the SBOM to the GitHub
-  Release, creating it if needed.
+- attaches the `.deb` files, the niri/xwayland-satellite source packages,
+  `SHA256SUMS`, and the SBOMs to the GitHub Release, creating it if
+  needed. Any `~` in a file name (rmac's pre-release versions) becomes `.`
+  first, because GitHub rewrites it in asset names.
 
 None of that needs a secret. That release bundle is also what
 `scripts/linux/install.sh --from-release <tag>` and `--from-dir` install
@@ -89,6 +94,165 @@ cannot read secrets).
    `[self-hosted, linux, arm64]` runner and set
    `RMAC_HAS_ARM64_RUNNER = true`.
 
+## Third-party packages: niri and xwayland-satellite
+
+`rmac-session` needs niri and xwayland-satellite, and neither is in the
+Ubuntu 26.04 archive (the reference laptop got them from the third-party
+`avengemedia/danklinux` PPA: `niri 26.04ppa3`, `xwayland-satellite
+0.8.2ppa1`). So Lulo OS builds and ships the exact releases rmac is tested
+against, unmodified, in every GitHub Release.
+
+### What is pinned
+
+`packaging/third-party/upstreams.json` pins each upstream release by tag,
+commit, and tarball SHA-256, and (once recorded) the SHA-256 of the
+`cargo vendor` tarball:
+
+| Package | Tag | Commit | Upstream tarball SHA-256 | Licence |
+|---|---|---|---|---|
+| niri | `v26.04` | `8ed0da44d974c32c6877d2f4630c314da0717ecb` | `134c602d8e0d53413a52d6cd58f9ce7e79a07d03288ee0a51ba1abd5db1b1ad9` | GPL-3.0-or-later |
+| xwayland-satellite | `v0.8.2` | `8d135d3b2854b30fd01ea6cd6c27e523dd50a839` | `cb50bb6948582d5ec3aa511d2d66ad622989bb14bef94e3bb81bae8b64c120b1` | MPL-2.0 (embeds Open Sans, OFL-1.1) |
+
+The tarballs are GitHub's `archive/refs/tags/<tag>.tar.gz`; the build also
+checks the commit that GitHub records inside each tarball (`git
+get-tar-commit-id`). niri's repository moved from `YaLTeR/niri` to
+`niri-wm/niri`; the pin uses the new home.
+
+### Package names and versions (the choice, and why)
+
+The packages keep the upstream names, `niri` and `xwayland-satellite`, with
+the Debian revision `0luloN`: `niri 26.04-0lulo1`, `xwayland-satellite
+0.8.2-0lulo1`. `rmac-session` depends on `niri (>= 26.04)` and
+`xwayland-satellite (>= 0.8.2)`. Under dpkg's ordering:
+
+- `26.04 < 26.04-0lulo1`, so our build satisfies `rmac-session`;
+- `26.04-0lulo1 < 26.04ppa3`, so on a machine that already has the PPA,
+  apt keeps the PPA build (no forced downgrade; it satisfies
+  `rmac-session` too). `install.sh` detects this, keeps it, and prints the
+  `apt-get install --allow-downgrades` command for anyone who wants to
+  switch;
+- `26.04-0lulo1 < 26.04-1`, `< 26.04-0ubuntu1`, and `< 26.04-0.1`, so a
+  future official Debian or Ubuntu package upgrades over ours cleanly, with
+  no `Conflicts`/`Replaces` dance and no leftover `lulo-*` package;
+- the next Lulo build of a newer upstream (`26.08-0lulo1`) sorts above
+  `26.04ppa3`, so PPA users move onto it by an ordinary upgrade (unless the
+  PPA has meanwhile published its own, higher `26.08ppaN`).
+
+A renamed package (`lulo-niri` with `Provides`/`Conflicts: niri`) was
+rejected: both install `/usr/bin/niri`, so it must conflict with the PPA
+package and with any future official one, and apt would never replace it
+with the official package on its own. A `~lulo1` suffix was rejected too:
+`26.04-0~lulo1` sorts *below* `26.04`, so it would need a `(>= 26.04~)`
+relation, and GitHub rewrites `~` in Release asset names.
+`scripts/test_third_party_packages.py` asserts every ordering above.
+
+### What the packages install
+
+`niri` installs what upstream's own packaging does (and the PPA package
+does): `/usr/bin/niri`, `/usr/bin/niri-session`, the `niri.service` and
+`niri-shutdown.target` user units, `niri.desktop`, `niri-portals.conf`, and
+bash/fish/zsh completions. rmac relies on `niri-session` (which
+`rmac-wayland-session` runs as `/usr/bin/niri-session -l`), `niri.service`,
+and `niri-shutdown.target` (which `niri-session` starts on exit).
+`niri --version` reports `26.04 (8ed0da4)`. `xwayland-satellite` installs
+the binary and its man page; niri starts it on demand. `Depends` come from
+`dpkg-shlibdeps`, plus the libraries niri opens with `dlopen`
+(`libegl1`, `libegl-mesa0`, `libwayland-server0`) and `xwayland`.
+
+### How it is built
+
+`scripts/linux/build-niri-packages.sh`, both in CI and on the laptop:
+
+1. downloads each tarball and refuses it unless its SHA-256 and embedded
+   commit match the pin;
+2. runs `cargo vendor --locked` (the only networked step) and packs
+   `vendor/` into a deterministic `<name>_<version>.orig-vendor.tar.xz`
+   (sorted, fixed mtime/owner, single-threaded xz). Once
+   `vendor_sha256` is recorded in `upstreams.json`, a different vendor
+   tarball stops the build;
+3. adds `packaging/third-party/<name>/debian` and a generated
+   `debian/dependency-licenses.txt` (every vendored crate's licence and
+   notice files; installed as `/usr/share/doc/<name>/LICENSE.dependencies`)
+   and runs `dpkg-buildpackage -us -uc -sa`. `debian/rules` is hand-written
+   (dpkg-dev only, no debhelper) and compiles with `cargo build --frozen`
+   against the vendored sources, the repository's pinned Rust 1.95.0,
+   `--remap-path-prefix`, and `SOURCE_DATE_EPOCH` from `debian/changelog`;
+4. writes a CycloneDX SBOM per package and architecture
+   (`<name>_<version>_<arch>.cdx.json`: every `Cargo.lock` entry, the
+   upstream commit and tarball hash, the vendor tarball hash, and the hash
+   of every produced file) and a `SHA256SUMS`.
+
+The source package (`.dsc`, `.orig.tar.gz`, `.orig-vendor.tar.xz`,
+`.debian.tar.xz`) plus `.buildinfo` and `.changes` is the complete
+corresponding source for each binary. It is the GPL-3.0 and MPL-2.0 source
+offer, published beside the binaries in the same Release, as
+`update-trust.md` "Source and license obligations" requires; `dpkg-source
+-x <name>_<version>.dsc` reproduces the build tree.
+
+In `release.yml`, `build-third-party-amd64` runs the script in the same
+`ubuntu:26.04` container and non-root `builder` pattern as `build-amd64`
+(`--build-deps system`, with the Build-Depends installed by apt), and
+`attach-release` does not publish until it succeeds. `build-third-party-arm64`
+is gated on `RMAC_HAS_ARM64_RUNNER` like `build-arm64`; the source package
+is published once, from amd64.
+
+### Building them on the reference laptop
+
+No sudo and no Docker. Uses the existing `~/.cargo` toolchain, one work
+directory (`~/rmac-niri-build`, with a single reused cargo target
+directory inside it), and refuses to start with under 25 GiB free. The
+laptop lacks the `-dev` packages, so the script's `user-sysroot` mode
+fetches them with `apt-get download` (no root) and unpacks them under
+`~/rmac-niri-build/sysroot` (about 50 MiB). Run it when nothing else is
+compiling:
+
+```sh
+cd ~/<an up-to-date checkout of this branch>
+df -h /home
+bash scripts/linux/build-niri-packages.sh --jobs 2
+```
+
+It prints the output directory (`~/rmac-niri-build/packages-<timestamp>`)
+and each vendor tarball's SHA-256. Expect a long first build (niri uses
+thin LTO; 2 jobs keep the 6.7 GB machine out of swap). Then:
+
+- record the two printed vendor SHA-256 values as `vendor_sha256` in
+  `packaging/third-party/upstreams.json` and commit them, so CI must
+  reproduce the same vendored sources;
+- inspect without installing: `dpkg-deb -I` and `dpkg-deb -c` on each
+  `.deb` (check `Depends`, the file list above, and that nothing lands
+  outside `/usr`), `lintian` if available;
+- to try one, it is `sudo apt-get install --allow-downgrades
+  ./niri_26.04-0lulo1_amd64.deb ./xwayland-satellite_0.8.2-0lulo1_amd64.deb`
+  (the PPA build is newer), and `sudo apt-get install niri=26.04ppa3
+  xwayland-satellite=0.8.2ppa1` goes back. Both need the owner's sudo.
+
+To combine them with a native rmac package set for `install.sh --from-dir`,
+copy both directories' `.deb` files into one directory and run `sha256sum
+-- *.deb > SHA256SUMS` there.
+
+### Updating to a new upstream release
+
+Change the tag, commit, tarball URL/SHA-256, directory, and
+`upstream_version` in `upstreams.json`; set `vendor_sha256` to `null`; add a
+`debian/changelog` entry (`<version>-0lulo1`); update
+`UPSTREAM_SHORT_COMMIT` in niri's `debian/rules` and the file list if
+upstream's packaging changed; raise the floors in
+`native_package_contract.py`; run the laptop build, record the vendor hash,
+and re-run the tests. A rebuild of the same upstream bumps `0luloN`.
+
+### Known gaps
+
+- **Not yet built anywhere.** Neither the CI job nor the laptop path has
+  run; expect to debug the first run (in particular the laptop's
+  user-sysroot pkg-config rewrite and `bindgen`'s view of it).
+- **Reproducibility is designed for, not proven.** Unlike rmac's own
+  packages there is no second independent build compared byte for byte.
+- **The signed APT repository does not carry them yet.**
+  `stage-apt-snapshot.py` only knows `rmac` and `rmac-archive-keyring`
+  sources; it must learn these two before `apt-repository` is enabled.
+- **arm64** needs the same self-hosted runner as rmac's arm64 packages.
+
 ## Runner decisions
 
 **amd64**: built inside a real `ubuntu:26.04` container on a
@@ -122,9 +286,11 @@ do not, since a two-architecture APT repository needs both.
    for the `apt-signing` environment's required reviewer approval --
    approve it from the run's page only after checking the staged snapshot
    looks right.
-4. Once `attach-release` finishes, check the Release page: `.deb` files,
-   `SHA256SUMS`, the SBOM, and a provenance attestation should all be
-   attached.
+4. Once `attach-release` finishes, check the Release page: `.deb` files
+   (including `niri` and `xwayland-satellite`), their `.dsc`,
+   `.orig.tar.gz`, `.orig-vendor.tar.xz`, `.debian.tar.xz`, `.buildinfo`,
+   and `.changes`, `SHA256SUMS`, the SBOMs, and a provenance attestation
+   should all be attached.
 
 ## Tagging a pre-release (Alpha/Beta/RC)
 

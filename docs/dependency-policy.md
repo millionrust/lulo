@@ -79,6 +79,19 @@ Duplicate direct workspace declarations are denied. This prevents new rmac
 manifest drift while leaving existing third-party convergence to normal,
 reviewed upgrades.
 
+## Third-party programs shipped beside rmac
+
+niri (GPL-3.0-or-later) and xwayland-satellite (MPL-2.0) are separate
+programs that Lulo OS packages because Ubuntu 26.04 does not; rmac talks to
+niri only over its IPC socket (ADR 0008), so neither enters rmac's Cargo
+graph and this policy's licence allowlist does not apply to them. Their
+upstream releases are pinned by tag, commit, tarball SHA-256, and vendor
+tarball SHA-256 in `packaging/third-party/upstreams.json`, their vendored
+crates' licences ship as `LICENSE.dependencies` in each package, and each
+Release carries their complete source packages. See
+[Release process](release-process.md) "Third-party packages: niri and
+xwayland-satellite".
+
 ## Separately locked Linux shell graph
 
 `shell` remains outside the product workspace because

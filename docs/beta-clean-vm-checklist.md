@@ -23,22 +23,14 @@ on a machine with data you care about.
 - At least 25 GiB free in the VM (`df -h /`); stop if it drops below 15 GiB
   at any point (matches `packaging/native/lifecycle.json`
   `minimum_free_gib`).
-- **niri is not currently installable from the Ubuntu archive.** As of this
-  writing, `resolute` has no package literally named `niri` (only
-  `niri-companion` and `librust-niri-ipc-dev`, unrelated to the compositor
-  itself), and `xwayland-satellite` is not packaged for any Ubuntu release
-  either (checked against packages.ubuntu.com). `rmac-session`'s `Depends`
-  on `niri` means `apt-get install` of `rmac-session` will fail dependency
-  resolution on a stock VM until one of these is true:
-  - niri lands in the Ubuntu archive or a trusted PPA you add to the VM
-    before installing rmac, or
-  - rmac's own `rmac-wm` fork (ADR 0008, Track B) is packaged and declared
-    as the dependency instead.
-  Check `docs/install.md` and `docs/decisions/0008-window-layer-strategy.md`
-  for the current state before starting a run; if this is still unresolved,
-  install niri manually in the VM first (however you are sourcing it for
-  development) so apt sees the dependency as already satisfied, and note
-  that in your report -- it is a real packaging gap, not a VM-setup mistake.
+- **niri and xwayland-satellite come from the same Release.** Neither is in
+  the Ubuntu 26.04 archive, so every Release (and every `--from-dir` set
+  assembled from `build-niri-packages.sh` output) carries Lulo OS's own
+  `niri_26.04-0luloN` and `xwayland-satellite_0.8.2-0luloN` packages, and
+  `install.sh` installs them with rmac. Do **not** add the danklinux PPA to
+  a clean VM: the point of this run is to prove the Release alone is
+  enough. (On a machine that already has the PPA's newer `26.04ppa3`,
+  `install.sh` keeps it and says so; that is expected, not a failure.)
 - Two package sets to test an upgrade: a "baseline" (older) and a
   "candidate" (newer) `rmac-apps`/`rmac-session` `.deb` pair, either from two
   tagged GitHub Releases or from two local `build-native-inputs.sh` +
@@ -63,8 +55,12 @@ check succeeded (dpkg status lines, `df -h`, etc.) alongside the screenshot.
      Ubuntu/GNOME...").
    - Pass: exit 0; `dpkg-query -W -f='${Status}\t${Version}' rmac-apps
      rmac-session` shows `install ok installed` at the baseline version for
-     both; Ubuntu/GNOME's own session entry is still present and unmodified
-     (`ls /usr/share/wayland-sessions/`, still has GNOME's `.desktop`).
+     both; `dpkg-query -W -f='${Status}\t${Version}\n' niri
+     xwayland-satellite` shows both installed at a `-0luloN` version;
+     `niri --version` prints `26.04 (8ed0da4)`; Ubuntu/GNOME's own session
+     entry is still present and unmodified (`ls
+     /usr/share/wayland-sessions/`, still has GNOME's `.desktop`; niri's own
+     `niri.desktop` is expected beside it).
 
 2. **First login** — log out, and at GDM choose **Lulo OS**, not Ubuntu.
    - Screenshot: the GDM session picker showing both Lulo OS and Ubuntu, and
@@ -90,7 +86,9 @@ check succeeded (dpkg status lines, `df -h`, etc.) alongside the screenshot.
    - Pass: exit 0; `dpkg-query -W rmac-apps rmac-session rmac-archive-keyring`
      reports none of the three as installed (missing or `config-files` is
      fine, `install ok installed` is not); `/etc/apt/sources.list.d/rmac.sources`
-     and `/etc/apt/preferences.d/rmac.pref` are gone.
+     and `/etc/apt/preferences.d/rmac.pref` are gone. `niri` and
+     `xwayland-satellite` stay installed by design; `sudo apt-get purge niri
+     xwayland-satellite` must then also succeed and leave GNOME working.
 
 5. **Confirm the stock session is intact** — log out fully, and at GDM
    confirm **Lulo OS is no longer offered** and **Ubuntu/GNOME still is**;
@@ -113,7 +111,7 @@ check succeeded (dpkg status lines, `df -h`, etc.) alongside the screenshot.
 ## Reporting the run
 
 Report, per step: pass/fail, the exact commands run, package versions
-involved, and anything that needed a workaround (especially the niri/
-xwayland-satellite gap above, if it was hit). Keep screenshots and raw
+involved, and anything that needed a workaround (for example if apt could not
+resolve a `niri` or `xwayland-satellite` runtime dependency). Keep screenshots and raw
 terminal logs in your own evidence directory (never committed); summarize
 findings in prose for the coordinator.

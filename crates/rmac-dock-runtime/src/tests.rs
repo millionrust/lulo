@@ -301,7 +301,7 @@ fn place_changes_rebuild_special_items_and_failures_keep_last_known_good() {
     let mut coordinator = Coordinator::default();
     coordinator.apply_places(Ok(places_report("/home/alex/Downloads", 2)));
     let before = coordinator.snapshot();
-    assert_eq!(before.model.special_items[2].item_count, Some(2));
+    assert_eq!(before.model.special_items[0].item_count, Some(2));
 
     coordinator.apply_places(Err("/home/alex/private trash failed".into()));
     let failed = coordinator.snapshot();
@@ -315,7 +315,7 @@ fn place_changes_rebuild_special_items_and_failures_keep_last_known_good() {
 
     coordinator.apply_places(Ok(places_report("/home/alex/Transfers", 0)));
     let refreshed = coordinator.snapshot();
-    assert_eq!(refreshed.model.special_items[2].item_count, Some(0));
+    assert_eq!(refreshed.model.special_items[0].item_count, Some(0));
     assert_ne!(refreshed.model.special_items, before.model.special_items);
     assert!(publication(Some(&before), refreshed).visible);
 }

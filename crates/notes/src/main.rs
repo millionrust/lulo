@@ -204,6 +204,25 @@ impl NotesView {
         };
 
         view.start_workers(window, cx);
+
+        // The Dock's or the menu bar's Quit, ⌘Q, ⌘Tab's Q and logging out
+        // close the window through the compositor; route them through the
+        // same review as ⌘W so a pending change or a running import is never
+        // cut off. The view removes the window itself once it may close.
+        let this = cx.weak_entity();
+        window.on_window_should_close(cx, move |window, cx| {
+            this.update(cx, |view, cx| {
+                if view.closing {
+                    return true;
+                }
+                view.request_close(window, cx);
+                if !view.closing {
+                    window.activate_window();
+                }
+                false
+            })
+            .unwrap_or(true)
+        });
         view
     }
 

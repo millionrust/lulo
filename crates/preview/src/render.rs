@@ -205,7 +205,7 @@ fn run(tool: &str, args: Vec<std::ffi::OsString>) -> Result<Vec<u8>, String> {
         let detail = String::from_utf8_lossy(&output.stderr);
         let detail = detail.lines().next().unwrap_or("").trim();
         return Err(if detail.contains("Incorrect password") {
-            "This PDF is password-protected. rmac Preview can’t unlock PDFs yet.".to_owned()
+            "This PDF is password-protected. Preview can’t unlock PDFs yet.".to_owned()
         } else if detail.is_empty() {
             format!("{tool} failed ({})", output.status)
         } else {

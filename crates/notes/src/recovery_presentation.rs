@@ -26,7 +26,7 @@ impl NotesView {
                         div()
                             .text_size(rmac_ui::text_px(20.0))
                             .font_weight(mac::BOLD)
-                            .child("Bring your existing notes into rmac Notes?"),
+                            .child("Bring your existing notes into Notes?"),
                     )
                     .child(
                         div()

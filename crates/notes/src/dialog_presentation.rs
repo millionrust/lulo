@@ -133,7 +133,7 @@ impl NotesView {
             ExportDialog::Complete(outcome) => {
                 let format = match outcome.format {
                     ExportFormat::Markdown => "Markdown file",
-                    ExportFormat::RmacBundle => "rmac Notes bundle",
+                    ExportFormat::RmacBundle => "Notes bundle",
                 };
                 Some(
                     rmac_ui::alert(
@@ -274,7 +274,7 @@ impl NotesView {
                                 .text_size(rmac_ui::text_px(11.0))
                                 .text_color(mac::text_tertiary())
                                 .child(
-                                    "Use an rmac Notes bundle for folders, the library, or notes with attachments.",
+                                    "Use a Notes bundle for folders, the library, or notes with attachments.",
                                 ),
                         )
                     })

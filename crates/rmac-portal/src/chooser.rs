@@ -332,7 +332,7 @@ pub async fn choose_notes_bundle() -> Result<Option<PathBuf>, Error> {
             .accept_label("Review")
             .modal(true)
             .filter(
-                FileFilter::new("rmac Notes bundles")
+                FileFilter::new("Notes bundles")
                     .mimetype("application/octet-stream")
                     .glob("*.rmacnotes"),
             )
@@ -379,7 +379,7 @@ pub async fn choose_notes_export_destination(
             NotesExportFormat::Markdown => FileFilter::new("Markdown")
                 .mimetype("text/markdown")
                 .glob("*.md"),
-            NotesExportFormat::Bundle => FileFilter::new("rmac Notes bundles")
+            NotesExportFormat::Bundle => FileFilter::new("Notes bundles")
                 .mimetype("application/octet-stream")
                 .glob("*.rmacnotes"),
         };

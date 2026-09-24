@@ -88,9 +88,7 @@ impl fmt::Display for ExportError {
             Self::DeletedFolder => "The Notes folder selected for export is deleted",
             Self::CollectionLimit => "The Notes export exceeds a checked size limit",
             Self::MarkdownRequiresSingleNote => "Markdown export requires one selected note",
-            Self::MarkdownHasAttachments => {
-                "Use an rmac Notes bundle to export a note with attachments"
-            }
+            Self::MarkdownHasAttachments => "Use a Notes bundle to export a note with attachments",
         })
     }
 }

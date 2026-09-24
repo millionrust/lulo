@@ -27,7 +27,7 @@ const ONE_DARK: [u32; 16] = [
 /// Stable built-in profiles. Index zero is the rmac default.
 pub(crate) static PROFILES: &[Profile] = &[
     Profile {
-        name: "rmac Dark",
+        name: "Lulo OS Dark",
         bg: 0x1e1e1e,
         fg: 0xd4d4d4,
         cursor: 0xd4d4d4,

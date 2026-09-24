@@ -834,8 +834,8 @@ impl LegacyInterface {
 
     async fn get_server_information(&self) -> (String, String, String, String) {
         (
-            "rmac Notifications".into(),
-            "rmac".into(),
+            "Lulo OS Notifications".into(),
+            "Lulo OS".into(),
             env!("CARGO_PKG_VERSION").into(),
             "1.3".into(),
         )

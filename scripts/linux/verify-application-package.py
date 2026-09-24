@@ -418,6 +418,10 @@ def _verify_desktop(root: Path, identity: str, specification: dict[str, object])
         "org.rmac.Player",
     ):
         expected_exec += " %F"
+    elif identity == "org.rmac.Files":
+        # The session's folder handler: folders and file:// URIs, one window
+        # each, as Finder opens them.
+        expected_exec += " %U"
     required = {
         "Version": "1.5",
         "Type": "Application",
@@ -469,6 +473,11 @@ def _verify_desktop(root: Path, identity: str, specification: dict[str, object])
             raise VerificationError("Archive Utility MIME declarations are invalid")
         if "Actions" in entry:
             raise VerificationError("Archive Utility action inventory is invalid")
+    elif identity == "org.rmac.Files":
+        if entry.get("MimeType") != "inode/directory;":
+            raise VerificationError("Files MIME declarations are invalid")
+        if "Actions" in entry:
+            raise VerificationError("Files action inventory is invalid")
     elif any(key in entry for key in ("MimeType", "Actions")) or "%" in entry["Exec"]:
         raise VerificationError(f"desktop entry claims unsupported activation: {identity}")
 

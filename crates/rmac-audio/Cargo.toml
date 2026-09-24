@@ -12,6 +12,7 @@ test-support = []
 
 [dependencies]
 async-channel.workspace = true
+rmac-process.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

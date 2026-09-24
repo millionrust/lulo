@@ -4,12 +4,16 @@ use std::process::{Command, Stdio};
 use crate::api::{command_error, Error, WatchEvent, SCHEMA, SCREEN_READER_KEY};
 
 pub(crate) fn monitor_once(sender: &async_channel::Sender<WatchEvent>) -> Result<(), Error> {
-    let mut child = Command::new("gsettings")
-        .args(["monitor", SCHEMA, SCREEN_READER_KEY])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| command_error("watch the screen-reader setting", error))?;
+    // Bound to this watcher thread, so the monitor never outlives the app
+    // (audit finding SES-01) and inherits none of its stray descriptors.
+    let mut child = rmac_process::spawn_bound(
+        Command::new("gsettings")
+            .args(["monitor", SCHEMA, SCREEN_READER_KEY])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null()),
+    )
+    .map_err(|error| command_error("watch the screen-reader setting", error))?;
     let mut stdout = child.stdout.take().ok_or_else(|| {
         Error::new(
             "watch the screen-reader setting",
@@ -28,15 +32,13 @@ pub(crate) fn monitor_once(sender: &async_channel::Sender<WatchEvent>) -> Result
                 if let Err(async_channel::TrySendError::Closed(_)) =
                     sender.try_send(WatchEvent::Changed)
                 {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    // Dropping the child kills and reaps it.
                     return Ok(());
                 }
             }
         }
     }
-    let _ = child.kill();
-    let _ = child.wait();
+    drop(child);
     if sender.is_closed() {
         return Ok(());
     }

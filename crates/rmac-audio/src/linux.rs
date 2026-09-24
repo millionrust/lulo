@@ -42,14 +42,18 @@ pub(super) async fn watch_once(
     // changed on every later state change. Only changes to the objects a
     // snapshot reads trigger a re-read; `pw-dump` clients (every snapshot
     // is one) coming and going do not, or watchers would feed each other.
-    let mut command = async_process::Command::new("pw-dump");
-    command
+    let mut monitor = std::process::Command::new("pw-dump");
+    monitor
         .arg("--monitor")
         .arg("--no-colors")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true);
+        .stderr(Stdio::null());
+    // `kill_on_drop` covers a watcher that stops; binding covers a process
+    // that exits without dropping it, so the monitor never outlives it.
+    rmac_process::bind_to_parent(&mut monitor);
+    let mut command = async_process::Command::from(monitor);
+    command.kill_on_drop(true);
     let mut child = command
         .spawn()
         .map_err(|error| Error::new("start the PipeWire monitor", error.to_string()))?;

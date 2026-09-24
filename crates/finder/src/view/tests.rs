@@ -1,5 +1,7 @@
 use super::*;
 use crate::file_ops::copy_item;
+use crate::view::selection_controller::pathname_clipboard_text;
+use crate::view::sidebar_favourites::{dedupe_absolute_directories, extra_favourite_place};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 struct TestDirectory(PathBuf);
@@ -355,7 +357,7 @@ fn column_vertical_target_moves_within_the_column_and_clamps_at_the_ends() {
     );
 
     // An empty column has no target at all.
-    assert_eq!(column_vertical_target(&[], None, 1), None);
+    assert!(column_vertical_target(&[], None, 1).is_none());
 }
 
 #[test]

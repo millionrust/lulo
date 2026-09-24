@@ -55,7 +55,7 @@ pub(super) fn load_sidebar_favourites() -> Vec<PathBuf> {
 /// what a load reads back is always a save's own output already put through
 /// this, so this is also the round-trip contract [`save_sidebar_favourites`]
 /// relies on.
-fn dedupe_absolute_directories(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+pub(super) fn dedupe_absolute_directories(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut seen = BTreeSet::new();
     paths
         .into_iter()

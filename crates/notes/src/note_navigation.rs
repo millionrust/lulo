@@ -7,11 +7,18 @@ impl NotesView {
         use rmac_notes_runtime::FolderSelection;
 
         let snapshot = self.session.snapshot();
-        let all_count = snapshot.map_or(0, |snapshot| {
-            snapshot.notes.iter().filter(|note| !note.deleted).count()
-        });
-        let trash_count = snapshot.map_or(0, |snapshot| {
-            snapshot.notes.iter().filter(|note| note.deleted).count()
+        // A single pass over every note, rather than two separate `.filter()`
+        // scans: cheap while the library is small, but this sidebar count
+        // recomputes on every render (not just first paint), so it should
+        // not cost twice what it needs to as a real library grows.
+        let (all_count, trash_count) = snapshot.map_or((0, 0), |snapshot| {
+            snapshot.notes.iter().fold((0, 0), |(all, trash), note| {
+                if note.deleted {
+                    (all, trash + 1)
+                } else {
+                    (all + 1, trash)
+                }
+            })
         });
         let current = self.session.folder_selection();
         let has_selected_folder = matches!(current, FolderSelection::Folder(_));

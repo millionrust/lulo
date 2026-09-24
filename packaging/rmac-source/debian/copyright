@@ -1,0 +1,54 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: rmac (Lulo OS)
+Source: https://github.com/millionrust/lulo
+Comment:
+ This source package is made from one exact commit of the repository, named
+ in debian/changelog and debian/rmac-revision: rmac_*.orig.tar.xz is the
+ `git archive` export of that commit, and rmac_*.orig-vendor.tar.xz holds the
+ Rust crates that `cargo vendor --locked` fetched for the commit's two
+ Cargo.lock files (Cargo.lock and shell/Cargo.lock). It builds the rmac-apps
+ and rmac-session binary packages.
+ .
+ The binaries statically link the Rust crates in vendor/. Every vendored
+ crate's declared licence and its licence and notice files are reproduced in
+ debian/dependency-licenses.txt, generated from vendor/ when the source
+ package is made. Some vendored crates only build for other platforms and
+ are not linked in. The repository's dependency policy (deny.toml,
+ shell/deny.toml) lists the licences a dependency may use.
+ .
+ The rmac-apps and rmac-session binary packages carry the MIT licence below as
+ /usr/share/doc/<package>/copyright; rmac-apps also carries LICENSES.md, the
+ inventory of its original desktop metadata and artwork.
+
+Files: *
+Copyright: 2026 rmac contributors
+License: MIT
+
+Files: vendor/*
+Copyright: the authors of each vendored crate; see debian/dependency-licenses.txt
+License: various
+ See debian/dependency-licenses.txt for each vendored crate's licence
+ expression and full licence and notice texts.
+
+Files: debian/*
+Copyright: 2026 rmac contributors
+License: MIT
+
+License: MIT
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of this software and associated documentation files (the "Software"), to deal
+ in the Software without restriction, including without limitation the rights
+ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ copies of the Software, and to permit persons to whom the Software is
+ furnished to do so, subject to the following conditions:
+ .
+ The above copyright notice and this permission notice shall be included in all
+ copies or substantial portions of the Software.
+ .
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ SOFTWARE.

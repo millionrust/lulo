@@ -1,0 +1,90 @@
+#!/usr/bin/make -f
+# SPDX-License-Identifier: MIT
+#
+# The rmac source package: builds rmac-apps and rmac-session with the same
+# release procedure as .github/workflows/release.yml (build-native-inputs.sh,
+# then build-native-packages.py), but offline, from the vendored crates.
+# Hand-written so it needs only dpkg-dev (no debhelper) and the pinned Rust
+# toolchain; scripts/linux/build-rmac-source-package.sh stages this directory
+# into the `git archive` tree next to the `cargo vendor` tarball.
+#
+# Recipes start with ">" instead of a tab (.RECIPEPREFIX, GNU make >= 3.82).
+
+.RECIPEPREFIX = >
+SHELL := /bin/sh
+
+DEB_VERSION := $(shell dpkg-parsechangelog -SVersion)
+DEB_HOST_ARCH ?= $(shell dpkg-architecture -qDEB_HOST_ARCH)
+SOURCE_DATE_EPOCH ?= $(shell dpkg-parsechangelog -STimestamp)
+export SOURCE_DATE_EPOCH
+
+# The toolchain rust-toolchain.toml pins. Naming it explicitly keeps rustup
+# from trying to add that file's clippy and rustfmt components, which the
+# build does not use and an offline machine cannot download.
+RUSTUP_TOOLCHAIN ?= $(shell sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' rust-toolchain.toml)
+export RUSTUP_TOOLCHAIN
+
+# Offline: cargo reads only the vendored sources (debian/cargo-home/config.toml,
+# made from vendor/.lulo-cargo-config.toml) and never touches the network.
+LULO_CARGO_HOME := $(CURDIR)/debian/cargo-home
+export CARGO_HOME := $(LULO_CARGO_HOME)
+export CARGO_NET_OFFLINE := true
+export CARGO_INCREMENTAL := 0
+# Nothing in the build may find a git repository above the unpacked source.
+export GIT_CEILING_DIRECTORIES := $(abspath $(CURDIR)/..)
+# Build paths vary between rebuilds; keep them out of the binaries. rustc
+# applies the last matching prefix, so the cargo home (inside debian/) wins.
+export RUSTFLAGS := --remap-path-prefix=$(CURDIR)=/usr/src/rmac --remap-path-prefix=$(LULO_CARGO_HOME)=/usr/src/cargo-home
+export PYTHONDONTWRITEBYTECODE := 1
+# dpkg-buildpackage exports Debian's hardening flags; the release build does
+# not use them, and the cc-built C code must compile the same way here.
+unexport CFLAGS CPPFLAGS CXXFLAGS LDFLAGS OBJCFLAGS OBJCXXFLAGS FFLAGS FCFLAGS
+
+NATIVE_INPUTS := $(CURDIR)/debian/native-inputs
+NATIVE_PACKAGES := $(CURDIR)/debian/native-packages
+APPS_DEB := rmac-apps_$(DEB_VERSION)_$(DEB_HOST_ARCH).deb
+SESSION_DEB := rmac-session_$(DEB_VERSION)_$(DEB_HOST_ARCH).deb
+
+.PHONY: build build-arch build-indep binary binary-arch binary-indep clean
+
+build: build-arch build-indep
+
+build-indep:
+
+build-arch: debian/stamp-build
+
+debian/stamp-build:
+> test -f vendor/.lulo-cargo-config.toml
+> test -n "$(RUSTUP_TOOLCHAIN)"
+> rm -rf "$(LULO_CARGO_HOME)" "$(NATIVE_INPUTS)" "$(NATIVE_PACKAGES)"
+> mkdir -p "$(LULO_CARGO_HOME)"
+> python3 scripts/linux/rmac_source_package.py cargo-config \
+>   --input vendor/.lulo-cargo-config.toml \
+>   --vendor-dir "$(CURDIR)/vendor" \
+>   --output "$(LULO_CARGO_HOME)/config.toml"
+> bash scripts/linux/build-native-inputs.sh --output "$(NATIVE_INPUTS)"
+> python3 scripts/linux/build-native-packages.py \
+>   --binary-dir "$(NATIVE_INPUTS)" \
+>   --output "$(NATIVE_PACKAGES)" \
+>   --architecture "$(DEB_HOST_ARCH)" \
+>   --source-date-epoch "$(SOURCE_DATE_EPOCH)"
+> touch $@
+
+binary: binary-arch binary-indep
+
+binary-indep:
+
+# build-native-packages.py already assembled and verified both packages; hand
+# them to dpkg-genchanges exactly as built.
+binary-arch: build-arch
+> test -f "$(NATIVE_PACKAGES)/$(APPS_DEB)"
+> test -f "$(NATIVE_PACKAGES)/$(SESSION_DEB)"
+> install -m 0644 "$(NATIVE_PACKAGES)/$(APPS_DEB)" ../$(APPS_DEB)
+> install -m 0644 "$(NATIVE_PACKAGES)/$(SESSION_DEB)" ../$(SESSION_DEB)
+> dpkg-distaddfile $(APPS_DEB) utils optional
+> dpkg-distaddfile $(SESSION_DEB) x11 optional
+
+clean:
+> rm -rf target shell/target "$(LULO_CARGO_HOME)" "$(NATIVE_INPUTS)" "$(NATIVE_PACKAGES)"
+> rm -rf debian/.rmac-native-inputs.* debian/.native-packages.work.*
+> rm -f debian/stamp-build debian/files debian/*.substvars

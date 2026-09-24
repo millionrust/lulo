@@ -1,0 +1,44 @@
+Source: rmac
+Section: x11
+Priority: optional
+Maintainer: Jacob Samas <samasjacob@icloud.com>
+Rules-Requires-Root: no
+# The same libraries and tools release.yml's build-amd64 job installs. There
+# is deliberately no rustc or cargo here: like the niri packages, the build
+# uses the rustup toolchain pinned in rust-toolchain.toml (1.95.0), which the
+# Ubuntu archive does not carry. dpkg-checkbuilddeps cannot see it, so
+# scripts/linux/build-rmac-source-package.sh checks for cargo itself.
+Build-Depends: clang,
+               dpkg-dev,
+               libfontconfig1-dev,
+               libfreetype-dev,
+               libssl-dev,
+               libvulkan-dev,
+               libwayland-dev,
+               libx11-xcb-dev,
+               libxcb-render0-dev,
+               libxcb-shape0-dev,
+               libxcb-xfixes0-dev,
+               libxcb1-dev,
+               libxkbcommon-dev,
+               libxkbcommon-x11-dev,
+               pkg-config,
+               python3,
+               xz-utils
+Standards-Version: 4.7.2
+Homepage: https://github.com/millionrust/lulo
+
+Package: rmac-apps
+Section: utils
+Architecture: amd64 arm64
+Description: macOS-inspired applications for the rmac Linux desktop
+ Provides Files, Terminal, Notes, Text Editor, System Monitor, Calculator,
+ Preview, Archive Utility, Clock, Apps, and Settings with their original rmac
+ desktop metadata and assets.
+
+Package: rmac-session
+Architecture: amd64 arm64
+Description: niri-based rmac Wayland desktop session
+ Provides the supervised rmac shell services, GDM session entry, portal
+ selection, secure-lock integration, and immutable session defaults while
+ retaining stock GNOME as the recovery session.

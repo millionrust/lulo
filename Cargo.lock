@@ -6602,6 +6602,7 @@ name = "rmac-terminal"
 version = "0.9.0-beta.1"
 dependencies = [
  "alacritty_terminal",
+ "anyhow",
  "async-channel",
  "gpui",
  "gpui-component",

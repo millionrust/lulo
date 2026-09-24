@@ -16,6 +16,9 @@ gpui-component.workspace = true
 rmac-ui.workspace = true
 rmac-portal.workspace = true
 alacritty_terminal = "0.25"
+# Already resolved transitively through portable-pty; named directly only to
+# downcast its shell-spawn failures back to the original `io::Error` kind.
+anyhow = "1"
 portable-pty = "0.9"
 rmac-storage.workspace = true
 unicode-width = "=0.2.2"

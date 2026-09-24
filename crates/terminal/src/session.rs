@@ -108,6 +108,24 @@ fn shell_program(configured: Option<String>) -> String {
         .unwrap_or_else(|| "/bin/sh".to_string())
 }
 
+/// `portable_pty::SlavePty::spawn_command` reports every failure through
+/// `anyhow`, but on Unix it's always `std::process::Command::spawn`'s own
+/// `io::Error` underneath (exec failures are reported back to the parent
+/// synchronously, before `spawn` returns) — never a rendered CLI message.
+/// Recovering the original `io::ErrorKind` here tells "the shell doesn't
+/// exist" apart from "this account can't run it" honestly, instead of one
+/// generic message for both.
+fn classify_shell_start_failure(error: &anyhow::Error) -> SessionStartError {
+    match error
+        .downcast_ref::<std::io::Error>()
+        .map(std::io::Error::kind)
+    {
+        Some(std::io::ErrorKind::NotFound) => SessionStartError::ShellNotFound,
+        Some(std::io::ErrorKind::PermissionDenied) => SessionStartError::ShellPermissionDenied,
+        _ => SessionStartError::StartShell,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum SessionLifecycle {
     Running,
@@ -116,7 +134,7 @@ enum SessionLifecycle {
         signal: Option<String>,
     },
     WaitFailed,
-    StartFailed,
+    StartFailed(SessionStartError),
 }
 
 impl SessionLifecycle {
@@ -143,7 +161,7 @@ impl SessionLifecycle {
                 Some(format!("The shell exited with status {exit_code}."))
             }
             Self::WaitFailed => Some("Terminal could not observe the shell's exit status.".into()),
-            Self::StartFailed => Some("Terminal could not start the configured shell.".into()),
+            Self::StartFailed(error) => Some(error.to_string()),
         }
     }
 
@@ -151,7 +169,7 @@ impl SessionLifecycle {
         match self {
             Self::Running => None,
             Self::Exited { .. } => Some("Exited"),
-            Self::WaitFailed | Self::StartFailed => Some("Unavailable"),
+            Self::WaitFailed | Self::StartFailed(_) => Some("Unavailable"),
         }
     }
 }
@@ -159,6 +177,11 @@ impl SessionLifecycle {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SessionStartError {
     OpenPty,
+    /// The configured shell's executable does not exist (or isn't on `PATH`).
+    ShellNotFound,
+    /// The configured shell exists but this account can't execute it.
+    ShellPermissionDenied,
+    /// Any other shell-spawn failure `io::ErrorKind` doesn't distinguish.
     StartShell,
     OpenReader,
     OpenWriter,
@@ -170,7 +193,18 @@ impl std::fmt::Display for SessionStartError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(match self {
             Self::OpenPty => "Terminal could not create a private terminal session.",
-            Self::StartShell => "Terminal could not start the configured shell.",
+            Self::ShellNotFound => {
+                "Terminal could not find the configured shell. Choose a different shell in \
+                 Terminal › Settings…"
+            }
+            Self::ShellPermissionDenied => {
+                "Terminal doesn't have permission to run the configured shell. Choose a \
+                 different shell in Terminal › Settings…"
+            }
+            Self::StartShell => {
+                "Terminal could not start the configured shell. Choose a different shell in \
+                 Terminal › Settings…"
+            }
             Self::OpenReader => "Terminal could not receive output from the shell.",
             Self::OpenWriter => "Terminal could not send input to the shell.",
             Self::StartReaderWorker | Self::StartWaiterWorker => {
@@ -570,7 +604,7 @@ impl Session {
         let child = pair
             .slave
             .spawn_command(command)
-            .map_err(|_| SessionStartError::StartShell)?;
+            .map_err(|error| classify_shell_start_failure(&error))?;
         let shell_pid = child.process_id();
         let mut killer = child.clone_killer();
         drop(pair.slave);
@@ -655,7 +689,7 @@ impl Session {
             master: None,
             shell_pid: None,
             killer: None,
-            lifecycle: Arc::new(Mutex::new(SessionLifecycle::StartFailed)),
+            lifecycle: Arc::new(Mutex::new(SessionLifecycle::StartFailed(error))),
         }
     }
 
@@ -1029,7 +1063,7 @@ mod tests {
     fn child_exit_states_are_truthful_and_private_safe() {
         assert_eq!(SessionLifecycle::Running.status_message(), None);
         assert!(SessionLifecycle::WaitFailed.may_be_running());
-        assert!(!SessionLifecycle::StartFailed.may_be_running());
+        assert!(!SessionLifecycle::StartFailed(SessionStartError::StartShell).may_be_running());
         assert_eq!(
             SessionLifecycle::Exited {
                 exit_code: 0,
@@ -1074,6 +1108,55 @@ mod tests {
         assert_eq!(
             lifecycle_after_wait(Err(std::io::Error::other("private diagnostic"))),
             SessionLifecycle::WaitFailed
+        );
+    }
+
+    #[test]
+    fn shell_start_failure_is_classified_by_io_error_kind() {
+        let not_found = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::NotFound));
+        assert_eq!(
+            classify_shell_start_failure(&not_found),
+            SessionStartError::ShellNotFound
+        );
+
+        let denied = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+        assert_eq!(
+            classify_shell_start_failure(&denied),
+            SessionStartError::ShellPermissionDenied
+        );
+
+        // Any other io::ErrorKind falls back to the generic message rather
+        // than a false "not found" or "permission denied" claim.
+        let other = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::Other));
+        assert_eq!(
+            classify_shell_start_failure(&other),
+            SessionStartError::StartShell
+        );
+
+        // A failure that isn't an io::Error at all (e.g. from a non-Unix
+        // portable_pty backend) also falls back, instead of panicking.
+        let not_io = anyhow::anyhow!("private diagnostic");
+        assert_eq!(
+            classify_shell_start_failure(&not_io),
+            SessionStartError::StartShell
+        );
+    }
+
+    #[test]
+    fn shell_start_error_messages_name_the_cause_and_a_recovery_path() {
+        assert_eq!(
+            SessionStartError::ShellNotFound.to_string(),
+            "Terminal could not find the configured shell. Choose a different shell in \
+             Terminal › Settings…"
+        );
+        assert_eq!(
+            SessionStartError::ShellPermissionDenied.to_string(),
+            "Terminal doesn't have permission to run the configured shell. Choose a different \
+             shell in Terminal › Settings…"
+        );
+        assert_eq!(
+            SessionLifecycle::StartFailed(SessionStartError::ShellNotFound).status_message(),
+            Some(SessionStartError::ShellNotFound.to_string())
         );
     }
 

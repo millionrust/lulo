@@ -5400,6 +5400,9 @@ dependencies = [
  "rmac-compositor-niri",
  "rmac-portal",
  "rmac-recent-documents",
+ "rmac-storage",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5703,15 +5706,13 @@ dependencies = [
  "gpui-component-assets",
  "libc",
  "notify",
- "objc2 0.6.4",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.3.2",
  "rmac-app-launch",
  "rmac-appearance",
  "rmac-apps",
  "rmac-archive",
  "rmac-locale",
  "rmac-mounts",
+ "rmac-pasteboard",
  "rmac-quick-look",
  "rmac-search",
  "rmac-sound",
@@ -6133,6 +6134,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-pasteboard"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-channel",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
 name = "rmac-places"
 version = "0.9.0-beta.1"
 
@@ -6260,6 +6271,7 @@ dependencies = [
  "chrono",
  "gpui",
  "gpui-component",
+ "gpui-component-assets",
  "libc",
  "rmac-app-launch",
  "rmac-apps",

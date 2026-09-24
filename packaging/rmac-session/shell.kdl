@@ -71,10 +71,11 @@ animations {
         duration-ms 200
         curve "cubic-bezier" 0.55 0.06 0.68 0.19
     }
-    // Moving/resizing a window eases rather than jumps (§D.3).
+    // Moving a window follows the Mac's critically damped spring (measured on
+    // the click-wallpaper reveal: stiffness about 272, settling in 0.55 s;
+    // design-lab/reveal-desktop.html).
     window-movement {
-        duration-ms 300
-        curve "ease-out-cubic"
+        spring damping-ratio=1.0 stiffness=272 epsilon=0.0001
     }
     window-resize {
         duration-ms 300

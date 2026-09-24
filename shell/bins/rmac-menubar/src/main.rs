@@ -1,5 +1,9 @@
 #[cfg_attr(not(all(target_os = "linux", feature = "wayland")), allow(dead_code))]
 mod menu_model;
+#[cfg_attr(not(all(target_os = "linux", feature = "wayland")), allow(dead_code))]
+mod session_guard;
+#[cfg(all(target_os = "linux", feature = "wayland"))]
+mod unsaved_guard;
 
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod linux_wayland {
@@ -3325,6 +3329,7 @@ mod linux_wayland {
         app.run(|cx: &mut App| {
             rmac_shell_ui::tokens::install_appearance_watch(cx);
             let status = start_status(cx);
+            crate::unsaved_guard::start(cx);
             let (backdrop_tx, backdrop_rx) = async_channel::bounded(16);
             cx.spawn(async move |cx| {
                 let mut tracker = MenuBackdropTracker::default();

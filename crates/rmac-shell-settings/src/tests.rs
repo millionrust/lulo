@@ -105,6 +105,24 @@ fn settings_round_trip_through_versioned_primary_and_last_good_files() {
     std::fs::remove_dir_all(root).unwrap();
 }
 
+/// The same round trip as
+/// `settings_round_trip_through_versioned_primary_and_last_good_files`, but
+/// through `rmac_storage::InMemoryBackend` instead of the real filesystem —
+/// the in-memory fake the store's `Backend` type parameter exists to allow,
+/// so app tests don't have to touch disk.
+#[test]
+fn settings_round_trip_through_an_in_memory_backend() {
+    use rmac_storage::InMemoryBackend;
+
+    let path = PathBuf::from("/state/shell.json");
+    let store = ShellSettingsStore::with_backend(path, InMemoryBackend::new());
+    let expected = settings();
+
+    store.save(&expected).unwrap();
+    assert_eq!(store.load().unwrap().settings, expected);
+    assert_eq!(store.recovery_state(), RecoveryState::Current);
+}
+
 #[test]
 fn v1_is_migrated_and_rewritten_without_losing_user_choices() {
     let (root, store) = test_store("migration");

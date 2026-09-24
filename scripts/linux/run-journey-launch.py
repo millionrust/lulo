@@ -63,8 +63,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -91,6 +93,18 @@ FOCUS_TIMEOUT_S = 3.0
 ATSPI_FIND_TIMEOUT_S = 5.0
 CLOSE_TIMEOUT_S = 5.0
 POLL_INTERVAL_S = 0.05
+
+# todo.md's "warm launch to interactive" budget is about real content on
+# screen, not the compositor mapping the window. rmac-ui's
+# RMAC_BENCHMARK_READY_FILE marker (see crates/rmac-ui/src/runtime.rs's
+# mark_content_ready, and scripts/measure-baseline.py which uses the same
+# env var) now fires on that signal for apps that call it explicitly, and
+# falls back to the app's first frame for apps that never do. Polled tighter
+# than the niri-window poll above so it does not add its own coarse jitter to
+# a budget this narrow.
+BENCHMARK_READY_FILE_ENV = "RMAC_BENCHMARK_READY_FILE"
+INTERACTIVE_READY_TIMEOUT_S = 8.0
+INTERACTIVE_POLL_INTERVAL_S = 0.005
 
 # todo.md "Performance budgets": warm launch-to-interactive, p95 <= 500 ms for
 # simple apps, <= 900 ms for Files/Terminal. Both journey apps below are
@@ -172,18 +186,90 @@ def find_window_by_app_id(
     return None
 
 
-def evaluate_budget(elapsed_ms: float, budget_ms: float) -> dict[str, Any]:
+def evaluate_launch_performance(
+    mapped_ms: float, interactive_ms: Optional[float], budget_ms: float
+) -> dict[str, Any]:
+    """Report both launch-timing signals against todo.md's warm
+    launch-to-interactive budget.
+
+    ``mapped_ms`` is when niri reports the window as present (the compositor
+    mapped it -- what this script measured before, and still worth reporting
+    since it is what a Dock/Spotlight-launched app can still give us).
+    ``interactive_ms`` is when the app's own RMAC_BENCHMARK_READY_FILE marker
+    fired -- real content on screen, which is what the budget is actually
+    about -- or ``None`` when it could not be measured (see
+    ``ready_file_spawn_command``'s docstring for when that happens).
+
+    ``within_budget`` is evaluated against ``interactive_ms`` whenever it is
+    available: a window that is mapped but still showing a loading
+    placeholder is not "launched" from a user's perspective. Only when
+    ``interactive_ms`` is unavailable does this fall back to ``mapped_ms``,
+    so a Dock/Spotlight launch (which this script cannot instrument) still
+    gets a budget verdict instead of none at all.
+    """
+
+    interactive_available = interactive_ms is not None
+    decisive_ms = interactive_ms if interactive_available else mapped_ms
     return {
-        "elapsed_ms": round(elapsed_ms, 1),
+        "mapped_ms": round(mapped_ms, 1),
+        "interactive_ms": round(interactive_ms, 1) if interactive_available else None,
         "budget_ms": budget_ms,
-        "within_budget": elapsed_ms <= budget_ms,
+        "within_budget": decisive_ms <= budget_ms,
     }
+
+
+def ready_file_spawn_command(executable: str, ready_file: Path) -> list[str]:
+    """Build the argv niri should spawn to run ``executable`` with the
+    interactive-readiness marker env var pointed at ``ready_file``, so
+    ``wait_for_ready_file`` can measure launch-to-interactive.
+
+    Only available when this script itself spawns the process (the
+    "fallback_spawn" launch method): a real Dock or Spotlight activation goes
+    through the desktop's own activation path, which this script does not
+    control the environment of, so interactive timing is unavailable for an
+    "accessible_ui" launch and the caller must say so rather than guess.
+
+    Uses ``env`` because niri's ``action spawn`` execs argv directly with no
+    shell to expand an inline assignment.
+    """
+
+    return ["env", f"{BENCHMARK_READY_FILE_ENV}={ready_file}", executable]
 
 
 def make_step(step_id: str, passed: bool, detail: str, **extra: Any) -> dict[str, Any]:
     step = {"id": step_id, "passed": bool(passed), "detail": detail}
     step.update(extra)
     return step
+
+
+def interactive_readiness_step(
+    step_id: str, ready_file: Optional[Path], interactive_ms: Optional[float]
+) -> dict[str, Any]:
+    """Build the step reporting whether the app's own content-ready marker
+    fired. Unavailable because the app was launched via a real Dock/Spotlight
+    action (``ready_file`` is ``None``) is not a failure of the app -- it is
+    this script being unable to inject an env var into that activation path
+    -- so that case still passes. A ``ready_file`` that was set but never
+    appeared within the timeout is a real failure worth surfacing."""
+
+    if ready_file is None:
+        return make_step(
+            step_id,
+            True,
+            "interactive timing is unavailable: the app was launched via an "
+            "accessible Dock/Spotlight action, which this script cannot set "
+            "RMAC_BENCHMARK_READY_FILE for",
+        )
+    if interactive_ms is None:
+        return make_step(
+            step_id,
+            False,
+            "the app never wrote its content-ready marker (see "
+            "crates/rmac-ui's mark_content_ready) within the timeout",
+        )
+    return make_step(
+        step_id, True, f"real content was on screen {interactive_ms:.0f} ms after launch"
+    )
 
 
 def build_report(
@@ -237,8 +323,9 @@ def niri_focused_window() -> Optional[dict[str, Any]]:
     return parse_focused_window(result.stdout)
 
 
-def niri_spawn(command: str) -> None:
-    result = _niri("action", "spawn", "--", command)
+def niri_spawn(command: str | list[str]) -> None:
+    argv = [command] if isinstance(command, str) else list(command)
+    result = _niri("action", "spawn", "--", *argv)
     if result.returncode != 0:
         raise JourneyError("niri failed to spawn the target application")
 
@@ -262,11 +349,32 @@ def _wait_for(
         time.sleep(poll)
 
 
-def wait_for_window(app_id: str, timeout: float = WINDOW_APPEAR_TIMEOUT_S):
-    started = time.monotonic()
+def wait_for_window(
+    app_id: str, timeout: float = WINDOW_APPEAR_TIMEOUT_S, started: Optional[float] = None
+):
+    started = time.monotonic() if started is None else started
     window = _wait_for(lambda: find_window_by_app_id(niri_windows(), app_id), timeout)
     elapsed_ms = (time.monotonic() - started) * 1000.0
     return window, elapsed_ms
+
+
+def wait_for_ready_file(
+    path: Path, timeout: float = INTERACTIVE_READY_TIMEOUT_S, started: Optional[float] = None
+) -> Optional[float]:
+    """Poll for the RMAC_BENCHMARK_READY_FILE marker an app writes once its
+    real content -- not a loading placeholder -- is on screen (see
+    crates/rmac-ui's ``mark_content_ready``). Returns the elapsed
+    milliseconds since ``started`` (or since this call began, if not given),
+    or ``None`` if the marker never appears within ``timeout`` seconds."""
+
+    started = time.monotonic() if started is None else started
+    deadline = started + timeout
+    while True:
+        if path.exists():
+            return (time.monotonic() - started) * 1000.0
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(INTERACTIVE_POLL_INTERVAL_S)
 
 
 def wait_for_window_gone(window_id: int, timeout: float = CLOSE_TIMEOUT_S) -> bool:
@@ -590,11 +698,16 @@ def attempt_spotlight_launch(app: dict[str, str]) -> dict[str, Any]:
         )
 
 
-def launch_app(app: dict[str, str]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def launch_app(
+    app: dict[str, str], ready_file: Path
+) -> tuple[list[dict[str, Any]], dict[str, Any], Optional[Path]]:
     """Try the real UI paths, then fall back to a direct spawn so the rest
     of the journey can still be exercised and measured. Returns the UI-path
-    steps plus a launch-result step describing which method actually ran the
-    application."""
+    steps, a launch-result step describing which method actually ran the
+    application, and -- only when the fallback spawn actually ran -- the
+    ready-file path to await for interactive timing (an accessible Dock or
+    Spotlight activation goes through the desktop's own activation path,
+    which this script does not control the environment of)."""
 
     steps = [attempt_dock_launch(app), attempt_spotlight_launch(app)]
     if any(step["passed"] for step in steps):
@@ -602,20 +715,24 @@ def launch_app(app: dict[str, str]) -> tuple[list[dict[str, Any]], dict[str, Any
             "app_launched", True, "launched via an accessible Dock/Spotlight action",
             method="accessible_ui",
         )
-        return steps, launch_step
+        return steps, launch_step, None
 
     try:
-        niri_spawn(app["exec"])
+        niri_spawn(ready_file_spawn_command(app["exec"], ready_file))
     except JourneyError as error:
-        return steps, make_step("app_launched", False, str(error), method="none")
-    return steps, make_step(
-        "app_launched",
-        True,
-        "neither the Dock nor Spotlight could be driven over AT-SPI today "
-        "(see dock_launch/spotlight_launch above); launched the same "
-        "installed command a Dock/Spotlight activation would run, to still "
-        "measure the rest of the journey",
-        method="fallback_spawn",
+        return steps, make_step("app_launched", False, str(error), method="none"), None
+    return (
+        steps,
+        make_step(
+            "app_launched",
+            True,
+            "neither the Dock nor Spotlight could be driven over AT-SPI today "
+            "(see dock_launch/spotlight_launch above); launched the same "
+            "installed command a Dock/Spotlight activation would run, to still "
+            "measure the rest of the journey",
+            method="fallback_spawn",
+        ),
+        ready_file,
     )
 
 
@@ -704,8 +821,11 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
     set_gsettings_accessibility(True)
     first_window: Optional[dict[str, Any]] = None
     second_window: Optional[dict[str, Any]] = None
+    ready_dir = Path(tempfile.mkdtemp(prefix="rmac-journey-ready-"))
     try:
-        ui_steps, launch_step = launch_app(FIRST_APP)
+        first_ready_file = ready_dir / "first-app.ready"
+        first_spawn_started = time.monotonic()
+        ui_steps, launch_step, launched_ready_file = launch_app(FIRST_APP, first_ready_file)
         steps.extend(ui_steps)
         steps.append(launch_step)
         if not any(step["passed"] for step in ui_steps):
@@ -732,22 +852,36 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
         if not launch_step["passed"]:
             return build_report(steps, gaps, performance, started_at_unix_ms)
 
-        first_window, elapsed_ms = wait_for_window(FIRST_APP["app_id"])
-        performance["first_app"] = evaluate_budget(elapsed_ms, budget_ms)
+        first_window, mapped_ms = wait_for_window(
+            FIRST_APP["app_id"], started=first_spawn_started
+        )
         steps.append(
             make_step(
                 "window_appeared",
                 first_window is not None,
                 (
                     f"window appeared with app_id={FIRST_APP['app_id']!r} in "
-                    f"{elapsed_ms:.0f} ms"
+                    f"{mapped_ms:.0f} ms"
                     if first_window
                     else "no window with the expected app_id appeared"
                 ),
             )
         )
         if first_window is None:
+            performance["first_app"] = evaluate_launch_performance(mapped_ms, None, budget_ms)
             return build_report(steps, gaps, performance, started_at_unix_ms)
+
+        first_interactive_ms = (
+            wait_for_ready_file(launched_ready_file, started=first_spawn_started)
+            if launched_ready_file is not None
+            else None
+        )
+        performance["first_app"] = evaluate_launch_performance(
+            mapped_ms, first_interactive_ms, budget_ms
+        )
+        steps.append(
+            interactive_readiness_step("content_ready", launched_ready_file, first_interactive_ms)
+        )
 
         steps.append(
             make_step(
@@ -759,23 +893,39 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
             )
         )
 
-        niri_spawn(SECOND_APP["exec"])
-        second_window, elapsed_ms = wait_for_window(SECOND_APP["app_id"])
-        performance["second_app"] = evaluate_budget(elapsed_ms, budget_ms)
+        second_ready_file = ready_dir / "second-app.ready"
+        second_spawn_started = time.monotonic()
+        niri_spawn(ready_file_spawn_command(SECOND_APP["exec"], second_ready_file))
+        second_window, mapped_ms = wait_for_window(
+            SECOND_APP["app_id"], started=second_spawn_started
+        )
         steps.append(
             make_step(
                 "second_app_launched",
                 second_window is not None,
                 (
                     f"second window appeared with app_id={SECOND_APP['app_id']!r} "
-                    f"in {elapsed_ms:.0f} ms"
+                    f"in {mapped_ms:.0f} ms"
                     if second_window
                     else "no second window appeared"
                 ),
             )
         )
         if second_window is None:
+            performance["second_app"] = evaluate_launch_performance(mapped_ms, None, budget_ms)
             return build_report(steps, gaps, performance, started_at_unix_ms)
+
+        second_interactive_ms = wait_for_ready_file(
+            second_ready_file, started=second_spawn_started
+        )
+        performance["second_app"] = evaluate_launch_performance(
+            mapped_ms, second_interactive_ms, budget_ms
+        )
+        steps.append(
+            interactive_readiness_step(
+                "second_content_ready", second_ready_file, second_interactive_ms
+            )
+        )
 
         switched_to_first = niri_focus_window_safe(first_window["id"])
         steps.append(
@@ -821,6 +971,7 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
                 except JourneyError:
                     pass
         restore_gsettings_accessibility(saved_accessibility)
+        shutil.rmtree(ready_dir, ignore_errors=True)
 
 
 def main() -> int:

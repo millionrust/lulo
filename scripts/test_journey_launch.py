@@ -117,16 +117,73 @@ class NiriJsonParsingTests(unittest.TestCase):
         self.assertIsNone(journey.find_window_by_app_id(windows, "org.rmac.Missing"))
 
 
-class BudgetTests(unittest.TestCase):
-    def test_within_budget(self):
-        result = journey.evaluate_budget(250.0, 500.0)
+class LaunchPerformanceTests(unittest.TestCase):
+    def test_within_budget_when_interactive_is_fast(self):
+        result = journey.evaluate_launch_performance(320.0, 250.0, 500.0)
         self.assertTrue(result["within_budget"])
         self.assertEqual(result["budget_ms"], 500.0)
+        self.assertEqual(result["mapped_ms"], 320.0)
+        self.assertEqual(result["interactive_ms"], 250.0)
 
     def test_over_budget_is_reported_not_raised(self):
-        result = journey.evaluate_budget(900.0, 500.0)
+        result = journey.evaluate_launch_performance(920.0, 900.0, 500.0)
         self.assertFalse(result["within_budget"])
-        self.assertEqual(result["elapsed_ms"], 900.0)
+        self.assertEqual(result["interactive_ms"], 900.0)
+
+    def test_verdict_uses_interactive_even_when_mapped_alone_would_pass(self):
+        # A window that appeared quickly but is still showing a loading
+        # placeholder has not "launched" from a user's perspective -- the
+        # budget verdict must follow interactive_ms, not the earlier mapped
+        # signal.
+        result = journey.evaluate_launch_performance(100.0, 900.0, 500.0)
+        self.assertFalse(result["within_budget"])
+
+    def test_falls_back_to_mapped_when_interactive_is_unavailable(self):
+        # An accessible Dock/Spotlight launch cannot be instrumented with the
+        # ready-file env var, so interactive_ms is None; the verdict must
+        # still be reported against the one signal this script could get.
+        result = journey.evaluate_launch_performance(250.0, None, 500.0)
+        self.assertIsNone(result["interactive_ms"])
+        self.assertTrue(result["within_budget"])
+
+        slow = journey.evaluate_launch_performance(900.0, None, 500.0)
+        self.assertFalse(slow["within_budget"])
+
+
+class ReadyFileSpawnCommandTests(unittest.TestCase):
+    def test_wraps_the_executable_with_env_and_the_marker_path(self):
+        command = journey.ready_file_spawn_command(
+            "/usr/bin/rmac-notes", Path("/tmp/example.ready")
+        )
+        self.assertEqual(
+            command,
+            ["env", "RMAC_BENCHMARK_READY_FILE=/tmp/example.ready", "/usr/bin/rmac-notes"],
+        )
+
+    def test_uses_the_same_env_var_rmac_ui_reads(self):
+        self.assertEqual(journey.BENCHMARK_READY_FILE_ENV, "RMAC_BENCHMARK_READY_FILE")
+
+
+class InteractiveReadinessStepTests(unittest.TestCase):
+    def test_missing_ready_file_is_not_a_failure(self):
+        # No ready_file means the app was launched through a real
+        # Dock/Spotlight action this script cannot instrument -- that is a
+        # good outcome, not something to fail the journey over.
+        step = journey.interactive_readiness_step("content_ready", None, None)
+        self.assertTrue(step["passed"])
+
+    def test_timed_out_ready_file_is_a_failure(self):
+        step = journey.interactive_readiness_step(
+            "content_ready", Path("/tmp/example.ready"), None
+        )
+        self.assertFalse(step["passed"])
+
+    def test_observed_marker_passes_and_reports_the_elapsed_time(self):
+        step = journey.interactive_readiness_step(
+            "content_ready", Path("/tmp/example.ready"), 123.4
+        )
+        self.assertTrue(step["passed"])
+        self.assertIn("123", step["detail"])
 
 
 class ReportShapeTests(unittest.TestCase):

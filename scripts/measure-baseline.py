@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Measure first-frame startup, idle CPU, and idle RSS for every rmac app."""
+"""Measure startup, idle CPU, and idle RSS for every rmac app.
+
+Startup timing waits on RMAC_BENCHMARK_READY_FILE (see
+crates/rmac-ui/src/runtime.rs). For an app that calls
+rmac_ui::mark_content_ready (Notes, Text Editor), that marker now means real
+content is on screen -- launch-to-interactive, not just the first frame. For
+any other app, it still falls back to the generic first-frame marker written
+by every window on its first paint. See scripts/linux/run-journey-launch.py
+for the accessible-UI journey that reports both signals side by side.
+"""
 
 from __future__ import annotations
 

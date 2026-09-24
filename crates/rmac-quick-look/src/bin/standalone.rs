@@ -50,7 +50,7 @@ fn main() {
             let options = rmac_quick_look::Options { uncompress: false };
             match rmac_quick_look::open(paths.clone(), 0, options, cx) {
                 Some((_, panel)) => {
-                    cx.observe_release(&panel, |_, _, cx| cx.quit()).detach();
+                    cx.observe_release(&panel, |_, cx| cx.quit()).detach();
                     cx.activate(true);
                 }
                 None => {

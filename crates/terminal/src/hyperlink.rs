@@ -183,7 +183,7 @@ mod tests {
     fn finds_plain_urls_and_trims_sentence_punctuation() {
         let line = "see https://example.test/docs, then continue.";
         assert_eq!(find_url(line, 4), Some("https://example.test/docs"));
-        assert_eq!(find_url(line, 29), Some("https://example.test/docs"));
+        assert_eq!(find_url(line, 28), Some("https://example.test/docs"));
         assert_eq!(find_url(line, 0), None);
         assert_eq!(find_url(line, 40), None);
         assert_eq!(

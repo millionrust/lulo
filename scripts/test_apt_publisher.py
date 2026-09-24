@@ -24,6 +24,11 @@ publisher = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = publisher
 SPEC.loader.exec_module(publisher)
 
+# Promotion checks the repository's free space against the 15 GiB floor. The
+# fixtures are tiny, so report ample space instead of the host's real disk
+# (CI runners often have less than the floor free).
+PLENTY_OF_SPACE = lambda _path: 1 << 50  # noqa: E731
+
 
 def hashes(value: bytes) -> tuple[str, str]:
     return hashlib.sha256(value).hexdigest(), hashlib.sha512(value).hexdigest()
@@ -362,6 +367,7 @@ class AptPublisherTests(unittest.TestCase):
                 publication,
                 retain=3,
                 contract=contract,
+                free_bytes=PLENTY_OF_SPACE,
             )
             state = (
                 repository / contract["state_directory"] / "state.json"
@@ -374,6 +380,7 @@ class AptPublisherTests(unittest.TestCase):
                 publication,
                 retain=3,
                 contract=contract,
+                free_bytes=PLENTY_OF_SPACE,
             )
             self.assertTrue(state.is_file())
 
@@ -394,6 +401,7 @@ class AptPublisherTests(unittest.TestCase):
                 publication,
                 retain=3,
                 contract=contract,
+                free_bytes=PLENTY_OF_SPACE,
             )
             self.assertEqual(
                 (repository / publisher.INRELEASE_PATH).read_bytes(), release
@@ -433,6 +441,30 @@ class AptPublisherTests(unittest.TestCase):
                     publication,
                     retain=3,
                     contract=contract,
+                    free_bytes=PLENTY_OF_SPACE,
+                )
+            self.assertFalse((repository / publisher.INRELEASE_PATH).exists())
+
+    def test_promotion_refuses_to_cross_the_storage_floor(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stage = root / "stage"
+            repository = root / "repository"
+            stage.mkdir()
+            repository.mkdir()
+            contract, _, _, publication, _ = fixture(stage)
+            keyring = root / "keyring.gpg"
+            keyring.write_bytes(b"unused")
+            floor = int(contract["minimum_free_gib"]) * 1024**3
+            with self.assertRaisesRegex(publisher.PublisherError, "storage floor"):
+                publisher.promote(
+                    stage,
+                    repository,
+                    keyring,
+                    publication,
+                    retain=3,
+                    contract=contract,
+                    free_bytes=lambda _path: floor,
                 )
             self.assertFalse((repository / publisher.INRELEASE_PATH).exists())
 

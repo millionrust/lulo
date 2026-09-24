@@ -17,6 +17,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 
@@ -1178,6 +1179,7 @@ def promote(
     *,
     retain: int,
     contract: dict[str, object] | None = None,
+    free_bytes: Callable[[Path], int] = lambda path: shutil.disk_usage(path).free,
 ) -> None:
     contract = load_contract() if contract is None else contract
     if not repository.is_absolute() or repository.is_symlink() or not repository.is_dir():
@@ -1232,7 +1234,7 @@ def promote(
     )
     # One retained snapshot plus the worst-case temporary/public metadata set.
     needed += metadata_bytes * 2
-    free = shutil.disk_usage(repository).free
+    free = free_bytes(repository)
     minimum_free = int(contract["minimum_free_gib"]) * 1024**3
     if free - needed < minimum_free:
         raise PublisherError("publication would cross the 15 GiB storage floor")

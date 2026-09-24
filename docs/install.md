@@ -300,6 +300,13 @@ only the current user's systemd unit inventory. It never selects the new
 session, restarts GDM, edits niri configuration, or reads user data. Sign out
 normally and choose **Lulo OS** in GDM; keep **Ubuntu** available for recovery.
 
+If `candidate_dir` also holds the exact, pinned `niri` and `xwayland-satellite`
+`.deb`s from `scripts/linux/build-niri-packages.sh` (see [Native
+packaging](native-packaging.md) "Third-party candidates"), the same check and
+install cover that pair too, so the reference PC ends up running Lulo OS's own
+niri build rather than whatever was already installed (the danklinux PPA's, on
+the current reference PC).
+
 ## Flatpak candidate
 
 Text Editor is the sole current sandbox candidate. Prepare its runtime and

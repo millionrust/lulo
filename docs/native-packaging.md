@@ -178,3 +178,21 @@ APT removals, consumes its `/run` marker before invoking APT, checks the 15 GiB
 post-install floor, verifies the exact installed versions and package-owned
 session content, and proves that a separate stock GNOME Wayland entry remains.
 It does not perform upgrade, rollback, remove, purge, or user-data cleanup.
+
+### Third-party candidates
+
+`--directory` may also hold the exact, pinned `niri` and `xwayland-satellite`
+`.deb`s built by `scripts/linux/build-niri-packages.sh`
+(`niri_<upstream_version>+lulo<N>_<arch>.deb` and the matching
+`xwayland-satellite`, versions from `packaging/third-party/upstreams.json`):
+copy `build-niri-packages.sh`'s output `.deb`s in beside the `rmac-apps`/
+`rmac-session` pair and regenerate `SHA256SUMS` over all four (`sha256sum --
+*.deb > SHA256SUMS`). `verify-native-packages.py` then accepts either the
+rmac pair alone or that pair plus exactly this third-party pair -- never one
+of the two third-party packages without the other, and never a version other
+than the one pinned in `upstreams.json` -- and `install-native-candidate.sh`
+installs whichever inventory is present in one `apt-get install`. This is how
+the reference PC (which already has the danklinux PPA's niri) ends up running
+Lulo OS's own build instead: see [Release process](release-process.md)
+"Package names and versions" for why Lulo OS's `+luloN` version now sorts
+above the PPA's.

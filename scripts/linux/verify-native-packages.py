@@ -31,6 +31,7 @@ from native_package_contract import (
     resolved_static_dependencies,
     source_date_epoch,
 )
+import third_party_packages
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -252,6 +253,76 @@ def _verify_binary_records(
     return expected_paths
 
 
+def _dpkg_deb_field(dpkg_deb: str, archive: Path, field: str) -> str:
+    try:
+        result = subprocess.run(
+            [dpkg_deb, "--field", str(archive), field],
+            check=False,
+            capture_output=True,
+            timeout=60,
+            env={
+                **os.environ,
+                "DPKG_COLORS": "never",
+                "DPKG_NLS": "0",
+                "LC_ALL": "C",
+            },
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise VerificationError(f"dpkg-deb could not read {archive.name}") from error
+    if (
+        len(result.stdout) > MAX_TOOL_OUTPUT_BYTES
+        or len(result.stderr) > MAX_TOOL_OUTPUT_BYTES
+    ):
+        raise VerificationError(f"dpkg-deb produced excessive output for {archive.name}")
+    if result.returncode != 0:
+        raise VerificationError(f"dpkg-deb could not read {field} from {archive.name}")
+    return result.stdout.decode("utf-8", errors="replace").strip()
+
+
+def _third_party_filenames(architecture: str) -> dict[str, third_party_packages.Pin]:
+    """The exact, pinned niri/xwayland-satellite filenames for ARCHITECTURE.
+
+    Keyed by filename so a candidate directory's inventory can be checked
+    against them directly; see packaging/third-party/upstreams.json.
+    """
+    return {
+        f"{pin.name}_{pin.debian_version}_{architecture}.deb": pin
+        for pin in third_party_packages.load_pins().values()
+    }
+
+
+def _verify_third_party_archives(
+    directory: Path,
+    *,
+    architecture: str,
+    third_party: dict[str, third_party_packages.Pin],
+    dpkg_deb: str,
+) -> list[str]:
+    """Verify the exact, pinned niri/xwayland-satellite pair and return
+    their "SHA256SUMS" lines. Strict on purpose: this only ever accepts
+    Lulo OS's own pinned build (matched by version, not merely by name), not
+    the danklinux PPA's or any other niri/xwayland-satellite .deb."""
+    lines = []
+    for filename, pin in sorted(third_party.items()):
+        archive = directory / filename
+        mode, size = _regular_mode(archive)
+        if mode != 0o644:
+            raise VerificationError(f"third-party package archive has the wrong mode: {filename}")
+        digest, actual_size = _sha256(archive)
+        if actual_size != size:
+            raise VerificationError(
+                f"third-party package archive changed while reading: {filename}"
+            )
+        if _dpkg_deb_field(dpkg_deb, archive, "Package") != pin.name:
+            raise VerificationError(f"third-party package identity differs: {filename}")
+        if _dpkg_deb_field(dpkg_deb, archive, "Version") != pin.debian_version:
+            raise VerificationError(f"third-party package version differs: {filename}")
+        if _dpkg_deb_field(dpkg_deb, archive, "Architecture") != architecture:
+            raise VerificationError(f"third-party package architecture differs: {filename}")
+        lines.append(f"{digest}  {filename}\n")
+    return lines
+
+
 def verify_directory(
     directory: Path,
     *,
@@ -269,12 +340,22 @@ def verify_directory(
         package_filename(spec, expected_version, architecture)
         for spec in PACKAGE_SPECS
     }
-    expected_inventory = expected_filenames | {MANIFEST_NAME, CHECKSUM_NAME}
+    base_inventory = expected_filenames | {MANIFEST_NAME, CHECKSUM_NAME}
+    third_party = _third_party_filenames(architecture)
+    full_inventory = base_inventory | set(third_party)
     try:
         actual_inventory = {path.name for path in directory.iterdir()}
     except OSError as error:
         raise VerificationError("native package directory cannot be inspected") from error
-    if actual_inventory != expected_inventory:
+    # Exactly the rmac pair, or that pair plus exactly the pinned Lulo niri/
+    # xwayland-satellite pair -- nothing else, and never just one of the two
+    # third-party packages (see docs/release-process.md "Third-party
+    # packages: niri and xwayland-satellite" and the reference-PC workflow).
+    if actual_inventory == base_inventory:
+        include_third_party = False
+    elif actual_inventory == full_inventory:
+        include_third_party = True
+    else:
         raise VerificationError("native package directory inventory is not exact")
 
     document = _load_manifest(directory)
@@ -434,11 +515,25 @@ def verify_directory(
                     f"{specification.name} payload contains an unexpected path"
                 )
 
+    if include_third_party:
+        checksum_lines += _verify_third_party_archives(
+            directory,
+            architecture=architecture,
+            third_party=third_party,
+            dpkg_deb=dpkg_deb,
+        )
+
     try:
         checksum_text = checksums_raw.decode("ascii")
     except UnicodeDecodeError as error:
         raise VerificationError("native package checksum manifest is not ASCII") from error
-    if checksum_text != "".join(checksum_lines):
+    # Compared as a set of lines, not the exact concatenated text: a
+    # directory assembled by hand (docs/release-process.md "combine them
+    # with a native rmac package set") regenerates SHA256SUMS with a plain
+    # `sha256sum -- *.deb`, whose glob order need not match the fixed order
+    # checksum_lines was built in. Every expected line must still be present
+    # with the right digest, and no unexpected line is tolerated.
+    if set(checksum_text.splitlines(keepends=True)) != set(checksum_lines):
         raise VerificationError("native package checksum manifest differs")
 
 

@@ -116,6 +116,10 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             _read_regular(REPO_ROOT / "scripts/linux/start-rmac-session.sh"),
             0o755,
         ),
+        "usr/libexec/rmac/rmac-update-check": (
+            _read_regular(REPO_ROOT / "scripts/linux/rmac-update-check.sh"),
+            0o755,
+        ),
         "usr/share/rmac/niri/shortcuts-fallback.kdl": (
             _read_regular(package / "shortcuts-fallback.kdl"),
             0o644,

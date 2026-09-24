@@ -146,6 +146,10 @@ PACKAGE_SPECS = (
         section="x11",
         install_directory="usr/libexec/rmac",
         binaries=SESSION_BINARIES,
+        # libnotify-bin and packagekit back the rmac-update-check.timer /
+        # .service daily update nudge (docs/install.md "Install and
+        # auto-update"): pkcon asks PackageKit for updates and notify-send
+        # shows the result.
         static_dependencies=(
             "coreutils",
             "dbus-user-session",
@@ -153,7 +157,9 @@ PACKAGE_SPECS = (
             "fonts-jetbrains-mono",
             "gawk | mawk",
             "grim",
+            "libnotify-bin",
             "niri",
+            "packagekit",
             "pipewire-bin",
             "rmac-apps (= {version})",
             "swayidle",

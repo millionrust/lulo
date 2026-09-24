@@ -1,0 +1,12 @@
+[Unit]
+Description=Check for rmac software updates and notify
+Documentation=https://github.com/rmac/rmac
+After=rmac-session-supervisor.service
+StartLimitIntervalSec=0
+ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-update-check
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/libexec/rmac/rmac-update-check
+NoNewPrivileges=yes
+PrivateTmp=yes

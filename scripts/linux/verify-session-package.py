@@ -95,6 +95,8 @@ EXPECTED_SYSTEMD_UNITS = (
     "rmac-setup-assistant.service",
     "rmac-shortcut-broker.service",
     "rmac-top-bar.service",
+    "rmac-update-check.service",
+    "rmac-update-check.timer",
     "rmac-wallpaper.service",
 )
 EXPECTED_PATHS = {
@@ -102,6 +104,7 @@ EXPECTED_PATHS = {
     Path("usr/share/wayland-sessions/rmac.desktop"),
     Path("usr/libexec/rmac/rmac-wayland-session"),
     Path("usr/libexec/rmac/rmac-session-start"),
+    Path("usr/libexec/rmac/rmac-update-check"),
     Path("usr/share/rmac/niri/config.kdl"),
     Path("usr/share/rmac/niri/shell.kdl"),
     Path("usr/share/rmac/niri/shortcuts-fallback.kdl"),

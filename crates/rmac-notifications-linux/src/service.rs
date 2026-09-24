@@ -1249,6 +1249,10 @@ pub const BANNER_TIMEOUT: TimeoutPolicy = TimeoutPolicy {
     high_ms: 4_500,
 };
 
+/// Outgoing calls on this connection (to apps, portals or the bus) give up
+/// after this long, so a peer that never replies cannot hold a call open.
+const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 pub async fn serve() -> Result<(ServiceHandle, Receiver<RuntimeEvent>), ServiceError> {
     let history = HistoryAuthority::load().await?;
     let core = SharedCore::new(500, BANNER_TIMEOUT);
@@ -1272,6 +1276,7 @@ pub async fn serve() -> Result<(ServiceHandle, Receiver<RuntimeEvent>), ServiceE
     };
     let connection = Builder::session()
         .map_err(|_| ServiceError::Bus)?
+        .method_timeout(CALL_TIMEOUT)
         .name("org.freedesktop.Notifications")
         .map_err(|_| ServiceError::Bus)?
         .name("org.freedesktop.impl.portal.desktop.rmac")

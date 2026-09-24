@@ -236,6 +236,11 @@ pub(super) struct RegisteredSecretAgent {
     connection: Connection,
 }
 
+/// Outgoing calls on this connection (to apps, portals or the bus) give up
+/// after this long, so a peer that never replies cannot hold a call open.
+#[cfg(not(target_os = "macos"))]
+const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 #[cfg(not(target_os = "macos"))]
 impl RegisteredSecretAgent {
     fn register(
@@ -243,7 +248,7 @@ impl RegisteredSecretAgent {
         profile_uuid: String,
         secret: WifiSecret,
     ) -> zbus::Result<Self> {
-        let connection = Builder::system()?.build()?;
+        let connection = Builder::system()?.method_timeout(CALL_TIMEOUT).build()?;
         let owner = zbus::blocking::fdo::DBusProxy::new(&connection)?
             .get_name_owner(SERVICE.try_into()?)?
             .to_string();

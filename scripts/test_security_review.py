@@ -71,5 +71,29 @@ class SecurityReviewTests(unittest.TestCase):
                 )
 
 
+class FixedFindingGuardTests(unittest.TestCase):
+    """Source guards for 0.9.0-beta.1 findings whose fix is configuration."""
+
+    root = Path(__file__).resolve().parents[1]
+
+    def test_service_connections_bound_outgoing_calls(self):
+        # SR-25: a peer that never replies must not hold a call open.
+        for relative in (
+            "crates/rmac-notifications-linux/src/service.rs",
+            "crates/rmac-clipboard-linux/src/service.rs",
+            "crates/rmac-focus-linux/src/service.rs",
+            "crates/rmac-file-chooser/src/dbus.rs",
+            "crates/rmac-wallpaper-portal/src/dbus.rs",
+            "crates/rmac-network/src/secret_agent.rs",
+            "crates/rmac-bluetooth/src/pairing_agent.rs",
+        ):
+            with self.subTest(source=relative):
+                text = (self.root / relative).read_text(encoding="utf-8")
+                builders = text.count("Builder::session()") + text.count("Builder::system()")
+                self.assertGreater(builders, 0)
+                self.assertEqual(text.count(".method_timeout(CALL_TIMEOUT)"), builders)
+                self.assertIn("Duration::from_secs(5)", text)
+
+
 if __name__ == "__main__":
     unittest.main()

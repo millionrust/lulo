@@ -233,10 +233,15 @@ impl RequestInterface {
     }
 }
 
+/// Outgoing calls on this connection (to apps, portals or the bus) give up
+/// after this long, so a peer that never replies cannot hold a call open.
+const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Own the backend name and export the interface. Keep the returned
 /// connection alive for the life of the process.
 pub async fn serve(broker: Broker) -> zbus::Result<Connection> {
     Builder::session()?
+        .method_timeout(CALL_TIMEOUT)
         .name(BUS_NAME)?
         .serve_at(PORTAL_PATH, FileChooserInterface { broker })?
         .build()

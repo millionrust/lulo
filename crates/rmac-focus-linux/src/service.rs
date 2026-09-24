@@ -222,6 +222,10 @@ pub struct ServiceHandle {
     evaluation_rx: async_channel::Receiver<()>,
 }
 
+/// Outgoing calls on this connection (to apps, portals or the bus) give up
+/// after this long, so a peer that never replies cannot hold a call open.
+const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 pub async fn serve() -> Result<ServiceHandle, Error> {
     let store = rmac_focus_store::Store::from_environment().map_err(|_| Error::Store)?;
     let clock = Arc::new(ClockSampler::default());
@@ -235,6 +239,7 @@ pub async fn serve() -> Result<ServiceHandle, Error> {
     };
     let connection = Builder::session()
         .map_err(|_| Error::Bus)?
+        .method_timeout(CALL_TIMEOUT)
         .name(BUS_NAME)
         .map_err(|_| Error::Bus)?
         .serve_at(OBJECT_PATH, interface)

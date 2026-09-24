@@ -166,6 +166,10 @@ impl fmt::Debug for ServiceHandle {
     }
 }
 
+/// Outgoing calls on this connection (to apps, portals or the bus) give up
+/// after this long, so a peer that never replies cannot hold a call open.
+const CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Own the dedicated backend name and return the private preview stream which
 /// the supervised UI process must drain for the service to become useful.
 pub async fn serve(
@@ -174,6 +178,7 @@ pub async fn serve(
     let (broker, previews) = Broker::new(importer);
     let connection = Builder::session()
         .map_err(|_| ServiceError::Bus)?
+        .method_timeout(CALL_TIMEOUT)
         .name(BUS_NAME)
         .map_err(|_| ServiceError::Bus)?
         .serve_at(PORTAL_PATH, WallpaperInterface::new(broker.clone()))

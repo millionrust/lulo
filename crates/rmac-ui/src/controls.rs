@@ -5,7 +5,8 @@ use std::rc::Rc;
 use gpui::{
     div, prelude::FluentBuilder as _, px, rgba, AnyElement, App, ClickEvent, Context, ElementId,
     Entity, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _,
-    RenderOnce, SharedString, StyleRefinement, Styled, Window,
+    RenderOnce, Role, SharedString, StatefulInteractiveElement as _, StyleRefinement, Styled,
+    Toggled, Window,
 };
 use gpui_component::{
     button::{
@@ -16,6 +17,7 @@ use gpui_component::{
     menu::{DropdownMenu as _, PopupMenu},
     slider::Slider as ComponentSlider,
     table::DataTable as ComponentTable,
+    tooltip::Tooltip as ComponentTooltip,
     Disableable as _, Icon, Selectable as _, Sizable as _, Size, StyledExt as _,
 };
 
@@ -549,8 +551,7 @@ impl Toggle {
 }
 
 impl RenderOnce for Toggle {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let transparent = rgba(0x00000000).into();
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let active = self.state != ToggleState::Off;
         let next = !matches!(self.state, ToggleState::On);
         let (width, height, thumb) = self.size.dimensions();
@@ -594,32 +595,57 @@ impl RenderOnce for Toggle {
                 track.justify_center()
             })
             .child(indicator);
+        let disabled = self.disabled || self.pending;
+        let label_color = if disabled {
+            mac::text_tertiary()
+        } else {
+            mac::text()
+        };
         let content = div()
             .flex()
             .items_center()
             .gap_2()
+            .text_color(label_color)
             .child(track)
-            .when_some(self.label, |content, label| content.child(label));
-        let disabled = self.disabled || self.pending;
-        let mut button = painted(
-            ComponentButton::new(self.id)
-                .with_size(Size::Small)
-                .compact()
-                .disabled(disabled)
-                .child(content),
-            transparent,
-            mac::text(),
-            None,
-            disabled,
-            cx,
-        );
+            .when_some(self.label.clone(), |content, label| content.child(label));
+        let toggled = match self.state {
+            ToggleState::On => Toggled::True,
+            ToggleState::Off => Toggled::False,
+            ToggleState::Mixed => Toggled::Mixed,
+        };
+        // The visible label doubles as the accessible name; the tooltip is
+        // the fallback for icon-only switches that have none.
+        let accessible_name = self.label.or(self.tooltip.clone());
+        let focus_handle = window
+            .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let is_focused = focus_handle.is_focused(window);
+        let mut switch = div()
+            .id(self.id)
+            .role(Role::Switch)
+            .aria_toggled(toggled)
+            .when_some(accessible_name, |el, name| el.aria_label(name))
+            .cursor_default()
+            .when(!disabled, |el| {
+                el.track_focus(&focus_handle.clone().tab_stop(true).tab_index(0))
+            })
+            .when(disabled, |el| el.opacity(0.5))
+            .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
+            .child(content);
         if let Some(tooltip) = self.tooltip {
-            button = button.tooltip(tooltip);
+            switch = switch.tooltip(move |window, cx| {
+                ComponentTooltip::new(tooltip.clone()).build(window, cx)
+            });
         }
         if let Some(handler) = self.on_change {
-            button = button.on_click(move |_, window, cx| handler(&next, window, cx));
+            switch = switch.on_click(move |_, window, cx| {
+                if !disabled {
+                    handler(&next, window, cx);
+                }
+            });
         }
-        button
+        switch
     }
 }
 
@@ -675,7 +701,7 @@ impl Checkbox {
 }
 
 impl RenderOnce for Checkbox {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let active = self.state != ToggleState::Off;
         let next = !matches!(self.state, ToggleState::On);
         let marker = match self.state {
@@ -707,28 +733,49 @@ impl RenderOnce for Checkbox {
                 mac::control_fill()
             })
             .child(marker);
+        let label_color = if self.disabled {
+            mac::text_tertiary()
+        } else {
+            mac::text()
+        };
         let content = div()
             .flex()
             .items_center()
             .gap_2()
+            .text_color(label_color)
             .child(box_)
-            .when_some(self.label, |content, label| content.child(label));
-        let _ = active;
-        let mut button = painted(
-            ComponentButton::new(self.id)
-                .compact()
-                .disabled(self.disabled)
-                .child(content),
-            rgba(0x00000000).into(),
-            mac::text(),
-            None,
-            self.disabled,
-            cx,
-        );
+            .when_some(self.label.clone(), |content, label| content.child(label));
+        let toggled = match self.state {
+            ToggleState::On => Toggled::True,
+            ToggleState::Off => Toggled::False,
+            ToggleState::Mixed => Toggled::Mixed,
+        };
+        let disabled = self.disabled;
+        let focus_handle = window
+            .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let is_focused = focus_handle.is_focused(window);
+        let mut checkbox = div()
+            .id(self.id)
+            .role(Role::CheckBox)
+            .aria_toggled(toggled)
+            .when_some(self.label, |el, label| el.aria_label(label))
+            .cursor_default()
+            .when(!disabled, |el| {
+                el.track_focus(&focus_handle.tab_stop(true).tab_index(0))
+            })
+            .when(disabled, |el| el.opacity(0.5))
+            .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
+            .child(content);
         if let Some(handler) = self.on_change {
-            button = button.on_click(move |_, window, cx| handler(&next, window, cx));
+            checkbox = checkbox.on_click(move |_, window, cx| {
+                if !disabled {
+                    handler(&next, window, cx);
+                }
+            });
         }
-        button
+        checkbox
     }
 }
 
@@ -775,7 +822,7 @@ impl Radio {
 }
 
 impl RenderOnce for Radio {
-    fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let metrics = rmac_design::Metrics::default();
         let circle = div()
             .size(px(metrics.radio_size))
@@ -796,27 +843,45 @@ impl RenderOnce for Radio {
                         .bg(mac::white()),
                 )
             });
+        let label_color = if self.disabled {
+            mac::text_tertiary()
+        } else {
+            mac::text()
+        };
         let content = div()
             .flex()
             .items_center()
             .gap_2()
+            .text_color(label_color)
             .child(circle)
-            .when_some(self.label, |content, label| content.child(label));
-        let mut button = painted(
-            ComponentButton::new(self.id)
-                .compact()
-                .disabled(self.disabled)
-                .child(content),
-            rgba(0x00000000).into(),
-            mac::text(),
-            None,
-            self.disabled,
-            cx,
-        );
+            .when_some(self.label.clone(), |content, label| content.child(label));
+        let disabled = self.disabled;
+        let selected = self.selected;
+        let focus_handle = window
+            .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
+            .read(cx)
+            .clone();
+        let is_focused = focus_handle.is_focused(window);
+        let mut radio = div()
+            .id(self.id)
+            .role(Role::RadioButton)
+            .aria_selected(selected)
+            .when_some(self.label, |el, label| el.aria_label(label))
+            .cursor_default()
+            .when(!disabled, |el| {
+                el.track_focus(&focus_handle.tab_stop(true).tab_index(0))
+            })
+            .when(disabled, |el| el.opacity(0.5))
+            .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
+            .child(content);
         if let Some(handler) = self.on_change {
-            button = button.on_click(move |_, window, cx| handler(&true, window, cx));
+            radio = radio.on_click(move |_, window, cx| {
+                if !disabled {
+                    handler(&true, window, cx);
+                }
+            });
         }
-        button
+        radio
     }
 }
 
@@ -1661,21 +1726,49 @@ impl RenderOnce for SegmentedControl {
             group = group.child(
                 ComponentButton::new(ElementId::named_usize(base.clone(), index))
                     .custom(variant)
-                    .label(label),
+                    .label(label)
+                    // Exposes the segment's checked state to assistive
+                    // technology; without it every segment reads as plain
+                    // unselected buttons.
+                    .selected(index == selected),
             );
         }
-        if let Some(handler) = self.on_change {
+        let click_handler = self.on_change.clone();
+        if let Some(handler) = click_handler {
             group = group.on_click(move |clicks: &Vec<usize>, window, cx| {
                 if let Some(&index) = clicks.first() {
                     handler(index, window, cx);
                 }
             });
         }
+        let keyboard_handler = self.on_change;
+        let disabled = self.disabled;
         div()
             .rounded(px(crate::theme::current().radii.control))
             .bg(mac::control_fill())
             .p(px(2.0))
             .refine_style(&self.style)
+            .on_key_down(move |event: &KeyDownEvent, window, cx| {
+                let Some(handler) = keyboard_handler.as_ref() else {
+                    return;
+                };
+                if disabled || count == 0 {
+                    return;
+                }
+                let next = match event.keystroke.key.as_str() {
+                    "left" | "up" => Self::wrapped_selection(selected, count, -1),
+                    "right" | "down" => Self::wrapped_selection(selected, count, 1),
+                    "home" => Some(0),
+                    "end" => Some(count - 1),
+                    _ => None,
+                };
+                let Some(next) = next else {
+                    return;
+                };
+                window.prevent_default();
+                cx.stop_propagation();
+                handler(next, window, cx);
+            })
             .child(group)
             .into_any_element()
     }

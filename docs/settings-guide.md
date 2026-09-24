@@ -1,14 +1,14 @@
 # System Settings guide
 
 System Settings uses a macOS-like sidebar and grouped rows, but every value
-comes from a real rmac or Linux authority. A switch is absent or disabled when
+comes from a real Lulo OS or Linux authority. A switch is absent or disabled when
 the session cannot perform that action safely. Loading, stale, unavailable,
 permission-denied, restart-required, and failed states remain distinct.
 
 ## Personalize the desktop
 
 - **Appearance** controls light/dark/automatic mode, accent, increased
-  contrast, reduced motion, and rmac text size.
+  contrast, reduced motion, and Lulo OS text size.
 - **Desktop & Dock** controls Dock placement, output scope, autohide,
   magnification, reserved space, and supported click behavior.
 - **Wallpaper** selects the original built-in wallpaper or a portal-selected
@@ -37,7 +37,7 @@ permission-denied, restart-required, and failed states remain distinct.
 Battery and power, Storage, Date & Time, Language & Region, Login Items,
 Sharing, Users, About, Software Update, Accessibility, and Privacy & Security
 each retain their own service boundary. Privileged actions use the system
-polkit agent; rmac does not ask for or store an administrator password.
+polkit agent; Lulo OS does not ask for or store an administrator password.
 
 ## Saving changes
 

@@ -1,6 +1,6 @@
 # Updates, rollback, and removal
 
-rmac does not yet publish a supported APT repository. Do not add an unofficial
+Lulo OS does not yet publish a supported APT repository. Do not add an unofficial
 key or source, bypass APT authentication, or use repository staging tools as a
 live-root installer.
 
@@ -35,7 +35,7 @@ data to a public report.
    image. Move a third note to Recently Deleted. Finish every pending save and
    confirm previews/search use the accepted library.
 2. Choose **Export Notes**, select **All Notes**, review the live/deleted note
-   and attachment counts plus checked byte total, and export the versioned rmac
+   and attachment counts plus checked byte total, and export the versioned
    Notes bundle through the system file chooser. Record success only after the
    completion sheet reports verified final readback. Cancellation must also be
    exercised once and must leave no destination artifact.
@@ -68,7 +68,7 @@ choices, shell/Focus/theme settings, notification history, recovery journals,
 and recent-document state remain preserved XDG data but do not currently claim
 a cross-profile import format. Network/VPN credentials remain with
 NetworkManager, portal permissions remain with PermissionStore, and PAM/polkit
-state is never copied into an rmac export.
+state is never copied into a Lulo OS export.
 
 ## Configuration migration evidence
 
@@ -104,8 +104,8 @@ Theme, Focus, notification history, recent documents, and other stores that
 currently expose only their first accepted version receive current-version,
 corruption, future-version, last-known-good, and preservation coverage; they do
 not claim a legacy migration until a second format exists. niri, NetworkManager,
-PermissionStore, PAM, polkit, and other Linux-owned formats remain outside rmac
-migration authority.
+PermissionStore, PAM, polkit, and other Linux-owned formats remain outside
+Lulo OS migration authority.
 
 The reviewed migration report contains only candidate/baseline package versions,
 architecture, authority ID, source/current version numbers, semantic counts or
@@ -132,8 +132,8 @@ documents and user-owned XDG configuration, data, cache, state, recovery, and
 safe-mode files.
 
 Removing user data is a separate explicit purge/export decision. Never infer
-consent to delete it from package uninstall. Confirm that the rmac GDM entry is
-gone, Ubuntu/GNOME still starts, rmac units and portal descriptors are removed,
+consent to delete it from package uninstall. Confirm that the Lulo OS GDM entry
+is gone, Ubuntu/GNOME still starts, rmac units and portal descriptors are removed,
 and unrelated niri/portal configuration is unchanged.
 
 The disposable-VM lifecycle procedure in

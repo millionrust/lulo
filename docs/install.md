@@ -1,10 +1,10 @@
-# Install rmac
+# Install Lulo OS
 
-> rmac is not released for general installation yet.
+> Lulo OS is not released for general installation yet.
 
 The repository contains the applications, session integration payload, and
 native package assembly contract, but the signed APT repository and clean-PC
-install gates are still pending. Do not install rmac on a primary machine or
+install gates are still pending. Do not install Lulo OS on a primary machine or
 replace the stock Ubuntu desktop. Use a separate test account on a disposable
 Ubuntu 26.04 machine and keep the Ubuntu/GNOME Wayland session available.
 
@@ -18,7 +18,7 @@ the provisional [hardware support](hardware-support.md) first. Keep at least
 Clone the repository on the disposable Ubuntu machine, then validate and apply
 the guarded reference-PC preparation. It installs the exact development and
 evidence dependencies, the pinned Rust toolchain, cargo-deny, Debian packaging,
-Flatpak, and freedesktop validator tools without building rmac or removing
+Flatpak, and freedesktop validator tools without building Lulo OS or removing
 GNOME:
 
 ```sh
@@ -198,10 +198,10 @@ bash scripts/linux/install-native-candidate.sh \
 
 The installer consumes the one-attempt marker, asks APT to install exactly
 `rmac-apps` and `rmac-session` with package removals forbidden, verifies both
-installed versions and the complete rmac/GNOME session boundary, then reloads
+installed versions and the complete Lulo OS/GNOME session boundary, then reloads
 only the current user's systemd unit inventory. It never selects the new
 session, restarts GDM, edits niri configuration, or reads user data. Sign out
-normally and choose **rmac** in GDM; keep **Ubuntu** available for recovery.
+normally and choose **Lulo OS** in GDM; keep **Ubuntu** available for recovery.
 
 ## Flatpak candidate
 
@@ -219,7 +219,7 @@ recovery, scaling, input, and accessibility review. See
 
 ## First login
 
-At GDM, choose the separate rmac session. Do not remove Ubuntu/GNOME. Confirm
+At GDM, choose the separate Lulo OS session. Do not remove Ubuntu/GNOME. Confirm
 that the desktop, top bar, Dock, shortcuts, Settings, sound, network, lock, and
 logout work before placing any test data in the account. If startup fails,
 return to GDM and choose Ubuntu/GNOME, then follow

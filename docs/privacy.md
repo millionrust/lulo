@@ -1,6 +1,6 @@
 # Privacy
 
-rmac is local-first and does not include an rmac cloud account, advertising
+Lulo OS is local-first and does not include a Lulo OS cloud account, advertising
 identifier, analytics service, or telemetry uploader. Linux services remain
 the authority for portals, networking, Bluetooth, audio, power, packages,
 login, and authorization.
@@ -29,7 +29,7 @@ private notification text must not enter release evidence.
 
 ## Credentials and authorization
 
-rmac does not collect administrator passwords. Privileged changes are
+Lulo OS does not collect administrator passwords. Privileged changes are
 authorized by the system polkit agent. Network and VPN secrets remain with
 NetworkManager and its secret/authentication agents. Lock authentication
 remains with PAM and the installed provider; password text and raw keycodes

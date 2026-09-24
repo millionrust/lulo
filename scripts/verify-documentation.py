@@ -15,9 +15,9 @@ MAX_BYTES = 512 * 1024
 DOCUMENTS = (
     ("README.md", "# Lulo OS"),
     ("CONTRIBUTING.md", "# Contributing"),
-    ("docs/install.md", "# Install rmac"),
+    ("docs/install.md", "# Install Lulo OS"),
     ("docs/hardware-support.md", "# Hardware support"),
-    ("docs/user-guide.md", "# rmac user guide"),
+    ("docs/user-guide.md", "# Lulo OS user guide"),
     ("docs/settings-guide.md", "# System Settings guide"),
     ("docs/shortcuts.md", "# Keyboard shortcuts"),
     ("docs/privacy.md", "# Privacy"),

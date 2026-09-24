@@ -1,6 +1,6 @@
 # Known limitations
 
-rmac is under active development and is not yet a supported daily-driver
+Lulo OS is under active development and is not yet a supported daily-driver
 release. The application and service domains are broad, but many final claims
 require the selected Linux UI framework, real niri layer surfaces, packaged
 Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
@@ -50,7 +50,11 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
 
 ## Feature limits
 
-- rmac does not clone Apple services, proprietary assets, iCloud, AirDrop,
+- Open item: the top-bar logo slot still draws the "R" glyph inherited from
+  the rmac name. It needs a real Lulo mark before release; that is a design
+  task (new artwork), not a text rename, and is intentionally not addressed
+  by the rmac-to-Lulo-OS text rename.
+- Lulo OS does not clone Apple services, proprietary assets, iCloud, AirDrop,
   AppleCare, Time Machine, or Apple account behavior.
 - System Settings exposes only authorities Linux/niri can support without
   inventing state. Some accessibility, display mirroring, per-device input,

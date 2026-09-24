@@ -1,10 +1,10 @@
-# rmac user guide
+# Lulo OS user guide
 
-rmac aims to give Linux the calm, consistent feeling of a Mac: one top bar,
+Lulo OS aims to give Linux the calm, consistent feeling of a Mac: one top bar,
 one Dock, Spotlight-style search, focused first-party apps, coherent Settings,
 predictable shortcuts, and careful system integration. It remains Linux
 underneath. niri owns windows and outputs; Ubuntu services own hardware,
-authorization, packages, and login; rmac presents those real capabilities.
+authorization, packages, and login; Lulo OS presents those real capabilities.
 
 ## The desktop
 
@@ -32,7 +32,7 @@ Shell surfaces remain subject to the Linux framework and hardware gates in
 | Terminal | Run the host shell in tabs with selection, search, profiles, and process ownership |
 | System Monitor | Inspect resources and request confirmed process actions |
 | Apps | Browse and launch valid installed desktop applications |
-| System Settings | Configure the rmac desktop and supported Linux services |
+| System Settings | Configure the Lulo OS desktop and supported Linux services |
 
 ## Everyday flow
 
@@ -63,7 +63,7 @@ diagnostics or testing portal permissions.
 
 ## Learn more
 
-- [Install rmac](install.md)
+- [Install Lulo OS](install.md)
 - [Keyboard shortcuts](shortcuts.md)
 - [System Settings guide](settings-guide.md)
 - [Privacy](privacy.md)

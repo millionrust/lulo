@@ -6,12 +6,12 @@ failure state and preserving user data.
 
 ## Return to a working session
 
-If rmac does not start or the shell repeatedly fails, sign out or return to GDM
-and select the stock Ubuntu/GNOME Wayland session. The rmac package must never
-remove that recovery option.
+If Lulo OS does not start or the shell repeatedly fails, sign out or return to
+GDM and select the stock Ubuntu/GNOME Wayland session. The Lulo OS package
+must never remove that recovery option.
 
 The packaged session uses a safe-mode marker after a bounded crash loop. Safe
-mode starts niri without rmac portal selection and optional shell surfaces,
+mode starts niri without Lulo OS portal selection and optional shell surfaces,
 while retaining the supervised security boundary. It lasts one login: a notice
 names the component that kept quitting, and the next login starts normally.
 Run `/usr/libexec/rmac/rmac-session-start --clear-safe-mode` to leave it
@@ -29,7 +29,7 @@ systemctl --user status rmac-session.target
 systemctl --user status rmac-session-supervisor.service
 ```
 
-Prefer a normal restart of the failed rmac component or target over restarting
+Prefer a normal restart of the failed Lulo OS component or target over restarting
 the entire user manager. A service restart must preserve unrelated state and
 force an authoritative refresh.
 

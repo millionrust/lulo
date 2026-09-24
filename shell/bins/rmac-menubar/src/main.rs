@@ -2559,7 +2559,11 @@ mod linux_wayland {
                 Item {
                     label: logout_label,
                     action: "system::logout".into(),
-                    shortcut: "⇧⌘Q".into(),
+                    // The Mac shows ⇧⌘Q here. Nothing binds it yet: the
+                    // confirmation lives in this menu, which no key can
+                    // open (the ⌃F2 gap), so no hint is shown rather than
+                    // one that does nothing.
+                    shortcut: String::new(),
                     enabled: true,
                     separator_before: false,
                 },

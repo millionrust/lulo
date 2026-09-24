@@ -45,7 +45,7 @@ def test_release_triggers_on_v_tags():
 
 
 def test_every_action_is_pinned_by_commit_sha():
-    for path in (RELEASE, ROLLOUT):
+    for path in sorted((REPO_ROOT / ".github/workflows").glob("*.yml")):
         document = _load(path)
         for job_name, step_name, uses in _iter_uses(document):
             match = SHA_PINNED_USES.match(uses)
@@ -53,6 +53,20 @@ def test_every_action_is_pinned_by_commit_sha():
                 f"{path.name}:{job_name}:{step_name} 'uses: {uses}' is not "
                 "pinned by a 40-character commit SHA"
             )
+
+
+def test_one_action_version_is_pinned_to_one_commit_everywhere():
+    # A second SHA for the same "# vX.Y.Z" label means one of them is not the
+    # tag's commit (for example an annotated tag object's own SHA).
+    seen: dict[tuple[str, str], str] = {}
+    for path in sorted((REPO_ROOT / ".github/workflows").glob("*.yml")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = re.search(r"uses:\s*([^@\s]+)@([0-9a-f]{40})\s+#\s*(\S+)", line)
+            if not match:
+                continue
+            action, sha, label = match.groups()
+            previous = seen.setdefault((action, label), sha)
+            assert previous == sha, f"{action} {label} is pinned to {previous} and {sha}"
 
 
 def test_referenced_local_scripts_exist():

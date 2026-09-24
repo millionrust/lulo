@@ -557,7 +557,7 @@ pub fn boot_unified_app_instance_with_assets<A, V, F>(
         .run(move |cx: &mut App| {
             init_application(cx);
             let requested = build.clone();
-            let opener: Rc<dyn Fn(Vec<String>, &mut App)> = Rc::new(move |arguments, cx| {
+            let opener: OpenWindow = Rc::new(move |arguments, cx| {
                 if let Err(error) =
                     open_unified_window(app_id, width, height, arguments, requested.clone(), cx)
                 {
@@ -586,8 +586,11 @@ pub fn boot_unified_app_instance_with_assets<A, V, F>(
         });
 }
 
+/// Opens one more window from its command-line arguments.
+type OpenWindow = Rc<dyn Fn(Vec<String>, &mut App)>;
+
 /// How a one-process app opens another of its windows.
-struct AppWindowOpener(Rc<dyn Fn(Vec<String>, &mut App)>);
+struct AppWindowOpener(OpenWindow);
 
 impl gpui::Global for AppWindowOpener {}
 

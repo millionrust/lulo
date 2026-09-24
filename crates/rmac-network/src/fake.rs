@@ -199,7 +199,7 @@ impl WifiService for FakeWifiService {
         if cancellation.is_cancelled() {
             return Err(Error::cancelled("join Wi-Fi network"));
         }
-        let _ = password.expose(|_| ());
+        password.expose(|_| ());
         let mut state = self.state.lock().unwrap();
         if !state.available {
             return Err(Error::new("join Wi-Fi network", "no Wi-Fi adapter found"));
@@ -230,7 +230,7 @@ impl WifiService for FakeWifiService {
         if cancellation.is_cancelled() {
             return Err(Error::cancelled("join Wi-Fi network"));
         }
-        let _ = credentials.expose_password(|_| ());
+        credentials.expose_password(|_| ());
         let mut state = self.state.lock().unwrap();
         if !state.available {
             return Err(Error::new("join Wi-Fi network", "no Wi-Fi adapter found"));

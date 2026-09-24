@@ -1,13 +1,12 @@
 //! Shared [`PowerService`] contract, run against every implementation.
 //!
 //! `assert_power_service_is_observable` is read-only and safe to run
-//! against [`SystemPowerService`] on real hardware (see `tests.rs`'s
+//! against [`crate::fake::SystemPowerService`] on real hardware (see `tests.rs`'s
 //! `#[ignore]` live test). `assert_power_service_contract` additionally
 //! switches the active power profile, so — matching the network and
 //! Bluetooth contracts — it only ever runs against
 //! [`crate::fake::FakePowerService`].
 
-use super::*;
 use crate::fake::PowerService;
 
 /// Structural invariants that hold for any snapshot, live or fake.

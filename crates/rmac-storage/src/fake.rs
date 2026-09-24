@@ -48,11 +48,13 @@ impl InMemoryBackend {
     /// Seeds a file and its parent directory chain.
     pub fn with_file(self, path: impl Into<PathBuf>, contents: impl Into<Vec<u8>>) -> Self {
         let path = path.into();
-        let mut state = self.state.lock().unwrap();
-        if let Some(parent) = path.parent() {
-            mark_dir_and_ancestors(&mut state.dirs, parent);
+        {
+            let mut state = self.state.lock().unwrap();
+            if let Some(parent) = path.parent() {
+                mark_dir_and_ancestors(&mut state.dirs, parent);
+            }
+            state.files.insert(path, contents.into());
         }
-        state.files.insert(path, contents.into());
         self
     }
 }

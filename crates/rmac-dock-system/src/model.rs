@@ -33,6 +33,28 @@ pub enum FailureKind {
     Other,
 }
 
+/// The notice shown when an application the Dock launched cannot start,
+/// worded as the Mac words it: a title naming the app and a reason.
+pub fn launch_failure_notice(name: &str, kind: FailureKind) -> (String, String) {
+    let reason = match kind {
+        FailureKind::Io(std::io::ErrorKind::NotFound) => {
+            "Its program is missing. Reinstall the application and try again."
+        }
+        FailureKind::Io(std::io::ErrorKind::PermissionDenied) => {
+            "You don’t have permission to run its program."
+        }
+        FailureKind::Rejected => "The desktop refused to start it.",
+        FailureKind::Unavailable | FailureKind::Transport => {
+            "The desktop could not be reached. Try again in a moment."
+        }
+        _ => "It could not be started.",
+    };
+    (
+        format!("The application “{name}” can’t be opened."),
+        reason.to_owned(),
+    )
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BackendError {
     pub kind: FailureKind,

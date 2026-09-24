@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::*;
-use crate::application::may_fallback;
+use crate::application::{may_fallback, runnable_program};
 use crate::document::is_regular_document;
 
 static TEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -83,6 +83,62 @@ fn notification_documents_are_absolute_regular_files_without_final_symlinks() {
         let link = root.join("document-link.txt");
         std::os::unix::fs::symlink(&document, &link).unwrap();
         assert!(!is_regular_document(&link));
+    }
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn launches_check_the_program_before_the_compositor_spawns_it() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = std::env::temp_dir().join(format!(
+        "rmac-app-launch-program-{}-{}",
+        std::process::id(),
+        TEST_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let bin = root.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let tool = bin.join("tool");
+    std::fs::write(&tool, b"#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let plain = bin.join("plain");
+    std::fs::write(&plain, b"data").unwrap();
+    std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let dangling = bin.join("dangling");
+    std::os::unix::fs::symlink(root.join("gone"), &dangling).unwrap();
+    let path = std::ffi::OsString::from(format!("/nonexistent-rmac:{}", bin.display()));
+
+    assert_eq!(runnable_program(&tool, None), Ok(()));
+    assert_eq!(runnable_program(Path::new("tool"), Some(&path)), Ok(()));
+    assert_eq!(
+        runnable_program(Path::new("missing"), Some(&path)),
+        Err(std::io::ErrorKind::NotFound)
+    );
+    assert_eq!(
+        runnable_program(&dangling, None),
+        Err(std::io::ErrorKind::NotFound)
+    );
+    assert_eq!(
+        runnable_program(&bin, None),
+        Err(std::io::ErrorKind::NotFound)
+    );
+    assert_eq!(
+        runnable_program(Path::new(""), Some(&path)),
+        Err(std::io::ErrorKind::NotFound)
+    );
+    // Root may execute anything; the permission check only holds for users.
+    // SAFETY: `geteuid` has no preconditions.
+    if unsafe { libc::geteuid() } != 0 {
+        assert_eq!(
+            runnable_program(&plain, None),
+            Err(std::io::ErrorKind::PermissionDenied)
+        );
+        assert_eq!(
+            runnable_program(Path::new("plain"), Some(&path)),
+            Err(std::io::ErrorKind::PermissionDenied)
+        );
     }
 
     std::fs::remove_dir_all(root).unwrap();

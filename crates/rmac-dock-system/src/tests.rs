@@ -521,3 +521,18 @@ fn drag_store_transaction_rechecks_the_exact_accepted_order() {
         panic!("remove Dock reorder test directory {directory:?}: {error}")
     });
 }
+
+#[test]
+fn a_failed_launch_names_the_app_and_the_reason() {
+    let (title, body) = launch_failure_notice("Terminal", FailureKind::Io(io::ErrorKind::NotFound));
+    assert_eq!(
+        title,
+        "The application \u{201c}Terminal\u{201d} can\u{2019}t be opened."
+    );
+    assert!(body.contains("missing"), "{body}");
+    let (_, denied) =
+        launch_failure_notice("Notes", FailureKind::Io(io::ErrorKind::PermissionDenied));
+    assert!(denied.contains("permission"), "{denied}");
+    let (_, other) = launch_failure_notice("Notes", FailureKind::Other);
+    assert_eq!(other, "It could not be started.");
+}

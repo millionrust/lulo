@@ -6,6 +6,19 @@ pub async fn launch(spec: rmac_apps::LaunchSpec) -> Result<Outcome, Error> {
         && std::env::var_os(rmac_compositor_niri::SOCKET_PATH_ENV).is_some()
     {
         if let Some(arguments) = rmac_apps::activation_spawn_argv(&spec) {
+            // niri acknowledges `spawn` before it forks, and a failed exec is
+            // only logged in niri's own output, so a missing or unrunnable
+            // program would otherwise "launch" with nothing on screen.
+            if let Some(program) = arguments.first().cloned() {
+                let path = std::env::var_os("PATH");
+                blocking::unblock(move || {
+                    runnable_program(std::path::Path::new(&program), path.as_deref())
+                })
+                .await
+                .map_err(|kind| Error {
+                    kind: ErrorKind::Io(kind),
+                })?;
+            }
             if let Ok(command) = rmac_compositor::SpawnCommand::new(arguments) {
                 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -58,4 +71,56 @@ pub(crate) fn may_fallback(kind: rmac_compositor::ActionErrorKind) -> bool {
             | rmac_compositor::ActionErrorKind::Transport
             | rmac_compositor::ActionErrorKind::Unsupported
     )
+}
+
+/// Whether `program` names an executable the way `execvp` would find it:
+/// a path containing `/` is used as is, a bare name is searched in `path`.
+pub(crate) fn runnable_program(
+    program: &std::path::Path,
+    path: Option<&std::ffi::OsStr>,
+) -> Result<(), std::io::ErrorKind> {
+    if program.as_os_str().is_empty() {
+        return Err(std::io::ErrorKind::NotFound);
+    }
+    if program.components().count() > 1 || program.is_absolute() {
+        return executable(program);
+    }
+    let mut denied = false;
+    for directory in std::env::split_paths(path.unwrap_or_default()) {
+        let directory = if directory.as_os_str().is_empty() {
+            std::path::PathBuf::from(".")
+        } else {
+            directory
+        };
+        match executable(&directory.join(program)) {
+            Ok(()) => return Ok(()),
+            Err(std::io::ErrorKind::PermissionDenied) => denied = true,
+            Err(_) => {}
+        }
+    }
+    Err(if denied {
+        std::io::ErrorKind::PermissionDenied
+    } else {
+        std::io::ErrorKind::NotFound
+    })
+}
+
+fn executable(candidate: &std::path::Path) -> Result<(), std::io::ErrorKind> {
+    // Follows symlinks, so a dangling link counts as missing.
+    let metadata = std::fs::metadata(candidate).map_err(|error| error.kind())?;
+    if !metadata.is_file() {
+        return Err(std::io::ErrorKind::NotFound);
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let Ok(c_path) = std::ffi::CString::new(candidate.as_os_str().as_bytes()) else {
+            return Err(std::io::ErrorKind::NotFound);
+        };
+        // SAFETY: `c_path` is a valid NUL-terminated path for this call.
+        if unsafe { libc::access(c_path.as_ptr(), libc::X_OK) } != 0 {
+            return Err(std::io::ErrorKind::PermissionDenied);
+        }
+    }
+    Ok(())
 }

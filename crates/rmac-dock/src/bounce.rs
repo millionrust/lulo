@@ -90,6 +90,17 @@ impl BounceTracker {
         );
     }
 
+    /// The launch of `app_id` failed: the tile lands at the end of the
+    /// current bounce instead of bouncing on toward the cap.
+    pub fn launch_failed(&mut self, app_id: &str, now_ms: u64) {
+        if let Some(bounce) = self.launches.get_mut(&canonical(app_id)) {
+            if !bounce.finished(now_ms) {
+                let end = end_of_current_bounce(bounce.started_ms, now_ms);
+                bounce.ends_ms = Some(bounce.ends_ms.map_or(end, |cap| cap.min(end)));
+            }
+        }
+    }
+
     /// Reconcile with the newest Dock model. `running` holds applications
     /// with at least one window; `attention` holds applications with an
     /// urgent window that are not frontmost.
@@ -234,6 +245,19 @@ mod tests {
         let cap = MAX_LAUNCH_BOUNCES * BOUNCE_PERIOD_MS;
         assert!(tracker.is_animating(cap - 1));
         assert!(!tracker.is_animating(cap));
+    }
+
+    #[test]
+    fn a_failed_launch_lands_after_the_current_bounce() {
+        let mut tracker = BounceTracker::default();
+        tracker.reconcile(&set(&[]), &set(&[]), 0);
+        tracker.launch("ghost.desktop", 0);
+        tracker.launch_failed("ghost", 100);
+        assert!(tracker.is_animating(BOUNCE_PERIOD_MS - 1));
+        assert!(!tracker.is_animating(BOUNCE_PERIOD_MS));
+        // Failing an app that is not bouncing changes nothing.
+        tracker.launch_failed("other", 100);
+        assert!(!tracker.is_animating(BOUNCE_PERIOD_MS));
     }
 
     #[test]

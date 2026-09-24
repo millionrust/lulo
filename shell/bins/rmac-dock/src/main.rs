@@ -1526,9 +1526,9 @@ mod linux_wayland {
                 let backend = rmac_dock_system::SystemBackend;
                 pending.run(request_id, &backend).await
             });
-            cx.spawn(async move |_, cx| {
+            cx.spawn(async move |this, cx| {
                 let completion = execution.await;
-                status.update(cx, |status, cx| {
+                let failed_launch = status.update(cx, |status, cx| {
                     let (result, transition) = completion.apply(&mut status.actions);
                     if let Err(error) = &result {
                         eprintln!("{error}");
@@ -1539,10 +1539,76 @@ mod linux_wayland {
                     if transition.visible {
                         cx.notify();
                     }
+                    match result {
+                        Err(error) if error.operation == rmac_dock_system::Operation::Launch => {
+                            Some((error.app_id, error.kind))
+                        }
+                        _ => None,
+                    }
                 });
+                if let Some((app_id, kind)) = failed_launch {
+                    let _ = this.update(cx, |dock, cx| dock.launch_failed(&app_id, kind, cx));
+                }
             })
             .detach();
         }
+
+        /// A launch the Dock started failed: the tile stops bouncing and a
+        /// notice names the application, as on the Mac, instead of the click
+        /// silently doing nothing.
+        fn launch_failed(
+            &mut self,
+            app_id: &str,
+            kind: rmac_dock_system::FailureKind,
+            cx: &mut Context<Self>,
+        ) {
+            let now = self.now_ms();
+            self.bounces.launch_failed(app_id, now);
+            cx.notify();
+            let name = self
+                .status
+                .read(cx)
+                .model()
+                .and_then(|model| model.items.iter().find(|item| item.id == app_id))
+                .map_or_else(|| app_id.to_owned(), |item| item.name.clone());
+            let (summary, body) = rmac_dock_system::launch_failure_notice(&name, kind);
+            post_notice(summary, body, cx);
+        }
+    }
+
+    /// A transient notice through the session's notification server.
+    fn post_notice(summary: String, body: String, cx: &mut Context<Dock>) {
+        cx.background_executor()
+            .spawn(async move {
+                let shown = summary.clone();
+                let result = blocking::unblock(move || -> zbus::Result<()> {
+                    let connection = zbus::blocking::Connection::session()?;
+                    let hints: std::collections::HashMap<&str, zbus::zvariant::Value<'_>> =
+                        std::collections::HashMap::new();
+                    connection.call_method(
+                        Some("org.freedesktop.Notifications"),
+                        "/org/freedesktop/Notifications",
+                        Some("org.freedesktop.Notifications"),
+                        "Notify",
+                        &(
+                            "Dock",
+                            0_u32,
+                            "dialog-warning",
+                            summary.as_str(),
+                            body.as_str(),
+                            Vec::<&str>::new(),
+                            hints,
+                            -1_i32,
+                        ),
+                    )?;
+                    Ok(())
+                })
+                .await;
+                if let Err(error) = result {
+                    eprintln!("could not show \"{shown}\": {error}");
+                }
+            })
+            .detach();
     }
 
     impl Render for Dock {

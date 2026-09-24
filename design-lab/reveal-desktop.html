@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Click wallpaper to show desktop — exact</title>
+<!--
+  macOS 26 "Click wallpaper to show desktop" at 1:1 logical points, measured
+  on the owner's Mac (macOS 26.2 Tahoe, dark mode, 2026-09-24, 1470 × 956 pt
+  screen, 33 pt menu bar, Dock at the bottom). Window frames were sampled
+  from the window server (CGWindowListCopyWindowInfo, every ~4 ms) around
+  synthetic clicks on bare wallpaper, with a 60 fps screen recording kept
+  locally (never committed). Rust copies these numbers:
+  crates/rmac-compositor/src/reveal.rs (geometry),
+  shell/bins/rmac-mission-control (the service), and
+  shell/bins/rmac-wallpaper/src/linux_wayland/reveal.rs (the click).
+
+  Pick a state with ?state=before | mac | rmac | animate (default: all).
+  Window chrome and the Dock are schematic (S); only the frames, slivers,
+  rays and the spring are measured. The rmac scene is drawn at the Mac's
+  size to compare like with like.
+
+  Setting (System Settings › Desktop & Dock, section after the Dock rows)
+    row               "Click wallpaper to show desktop", subtitle "Click
+                      wallpaper to move windows out of the way, revealing
+                      your desktop items and widgets." (read through AX)
+    pop-up            Always (the default; the defaults key
+                      com.apple.WindowManager EnableStandardClickToShowDesktop
+                      is absent until changed) | Only in Stage Manager.
+                      rmac has no Stage Manager: it offers Always | Never.
+    section heading   "Desktop & Stage Manager" (S: AX exposes no heading
+                      text); rmac titles it "Desktop".
+
+  Where each window goes
+    direction         along the ray from C to the window's centre, where C is
+                      the centre of the screen below the menu bar
+                      (735, 494.5) — fitted from two windows, then checked
+                      against all seven below to within 1 pt
+    stop              at the first edge that ray reaches, with a 12 pt
+                      sliver of the window still on screen
+    edges             left x = 0, right x = 1470, top = the menu bar's bottom
+                      (y 33: slivers end at y 45), bottom = the screen's
+                      bottom y 956 (the sliver sits under the Dock)
+    measured frames   before → after (x, y; sizes unchanged)
+      Finder      600×380  (400, 300)  → (−588, 173)   left
+      TextEdit    500×350  (100, 100)  → (−488, −235)  left
+      TextEdit    500×350  (850, 480)  → (1458, 748)   right
+      TextEdit    400×300  (535, 600)  → (535, 944)    bottom
+      Zed        1470×833  (0, 33)     → (0, −788)     top
+      GitHub     1297×833  (173, 33)   → (1458, −635)  right
+      Terminal    580×385  (433, 105)  → (406, −340)   top
+    dead centre       a window centred exactly on C: S (rmac moves it up)
+
+  Motion (reveal and restore are the same curve)
+    curve             a critically damped spring, ω ≈ 16.5 rad/s
+                      (stiffness ≈ 272, damping ratio 1): 3 % after one
+                      60 Hz frame, 49 % after 6, 76 % after 10, 92 % after
+                      15, 97.5 % after 20; within 1 pt of a 988 pt move
+                      after ≈ 0.55 s
+    start             the reveal starts ≈ 65–90 ms after the button comes up;
+                      a restoring click starts moving on the press
+    all windows       move together, each on its own ray
+    Reduce Motion     S (not measured; rmac crossfades instead)
+
+  What changes
+    menu bar          Finder becomes the active app (the desktop belongs to
+                      Finder); the bar itself stays
+    Dock              unchanged
+    desktop items     shown; with "Show items: On Desktop" off they appear
+                      only while the desktop is shown
+    shadows           windows keep their shadows at the edges
+
+  What brings the windows back
+    - clicking bare wallpaper again (measured)
+    - clicking a sliver (measured: every window returns, that one in front)
+    - activating an app — a Terminal window opening restored them (measured)
+    - opening a desktop item (S: follows from activation; not tried, so no
+      owner file was opened)
+    - a double-click on the wallpaper: S (rmac ignores the second press)
+
+  rmac on niri 26.04 (the reference laptop, 1536 × 864 logical, scale 1.25)
+    windows           rmac windows float (shell.kdl open-floating), so each
+                      moves with niri's move-floating-window by a relative
+                      distance; niri reports the target position at once
+    sliver            niri keeps at least 75 logical px of a floating window
+                      inside the working area however far it is moved
+                      (measured: 75.2 on every edge after snapping to
+                      physical pixels). rmac's slivers are therefore 75 px,
+                      not 12, and bottom windows stop 75 px above the Dock's
+                      reserved zone instead of sliding under it
+    top inset         29 (rmac's menu bar exclusive zone; niri reports 28.8)
+    motion            niri's window-movement animation for every move:
+                      300 ms ease-out-cubic (shell.kdl), not the Mac's
+                      spring. A spring { damping-ratio 1.0 stiffness 272 }
+                      there would match, but it would change every window
+                      move, so it is left to a separate decision
+    Reduce Motion     niri cannot move a window without animating it, so
+                      the screen holds 300 ms (do-screen-transition) while
+                      the windows move, then crossfades
+    crash safety      nothing is persisted; niri never lets a window leave
+                      the screen entirely, and a restarted service pulls
+                      back any window left showing only its sliver
+-->
+<style>
+  :root { --font: "Inter", -apple-system, "SF Pro Text", system-ui, sans-serif; --accent: #1372F9; }
+  html, body { margin: 0; background: #000; }
+  body { width: 1470px; font: 400 13px/1.2 var(--font); -webkit-font-smoothing: antialiased; color: #fff; }
+  .scene { position: relative; width: 1470px; height: 956px; overflow: hidden;
+    background:
+      radial-gradient(70% 60% at 80% 30%, rgba(160,170,230,.55) 0%, transparent 60%),
+      radial-gradient(60% 80% at 10% 15%, #7b4fd6 0%, transparent 60%),
+      linear-gradient(160deg, #6a3fd0 0%, #2d3ec8 45%, #1b2a9c 100%); }
+  .scene + .scene { border-top: 1px solid #000; }
+  .caption { position: absolute; left: 20px; bottom: 100px; font: 600 15px var(--font); text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+  .bar { position: absolute; left: 0; right: 0; top: 0; height: 33px; display: flex; align-items: center; z-index: 5;
+    padding: 0 20px; gap: 22px; font-size: 13px; font-weight: 500; text-shadow: 0 0 2px rgba(0,0,0,.3); }
+  .bar b { font-weight: 700; }
+  .bar .r { margin-left: auto; }
+  .win { position: absolute; border-radius: 16px; background: #1e1e22; box-shadow: 0 0 0 .5px rgba(255,255,255,.18) inset, 0 22px 50px rgba(0,0,0,.45);
+    overflow: hidden; will-change: transform; }
+  .win .tb { height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: #2a2a2f; font-size: 13px; color: rgba(255,255,255,.8); }
+  .win .tb i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .win .tb span { margin-left: 10px; }
+  .ray { position: absolute; left: 0; top: 0; pointer-events: none; }
+  .dock { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); width: 1164px; height: 78px; border-radius: 29px; z-index: 4;
+    background: rgba(255,255,255,.14); box-shadow: 0 0 0 .5px rgba(255,255,255,.35) inset; backdrop-filter: blur(40px) saturate(180%); }
+  .zone { position: absolute; left: 0; right: 0; bottom: 0; height: 89px; background: repeating-linear-gradient(45deg, rgba(255,255,255,.06) 0 6px, transparent 6px 12px); }
+</style>
+</head>
+<body>
+<div class="scene" id="before"><div class="bar"><b>TextEdit</b><span>File</span><span>Edit</span><span>Format</span><span>View</span><span>Window</span><span>Help</span><span class="r">Thu 24 Sep 8:28 AM</span></div><div class="dock"></div><div class="caption">Before the click</div></div>
+<div class="scene" id="mac"><div class="bar"><b>Finder</b><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span><span class="r">Thu 24 Sep 8:28 AM</span></div><div class="dock"></div><div class="caption">macOS: 12 pt slivers, rays from the centre below the menu bar</div></div>
+<div class="scene" id="rmac"><div class="bar"><b>Files</b><span>File</span><span>Edit</span><span>View</span><span>Go</span><span>Window</span><span>Help</span><span class="r">Thu 24 Sep 8:28 AM</span></div><div class="zone"></div><div class="dock"></div><div class="caption">rmac on niri: 75 px slivers (niri's floor), bottom windows stop above the Dock's zone</div></div>
+<div class="scene" id="animate"><div class="bar"><b>Finder</b><span class="r">Click the wallpaper</span></div><div class="dock"></div><div class="caption">Click the wallpaper: the measured spring (ω 16.5, critically damped)</div></div>
+<script>
+const W = 1470, H = 956, MENU = 33;
+const AREA = { x: 0, y: MENU, w: W, h: H - MENU };
+const WINDOWS = [
+  { t: "Zed", x: 0, y: 33, w: 1470, h: 833 },
+  { t: "GitHub Desktop", x: 173, y: 33, w: 1297, h: 833 },
+  { t: "Terminal", x: 433, y: 105, w: 580, h: 385 },
+  { t: "TextEdit", x: 100, y: 100, w: 500, h: 350 },
+  { t: "Finder", x: 400, y: 300, w: 600, h: 380 },
+  { t: "TextEdit", x: 850, y: 480, w: 500, h: 350 },
+  { t: "TextEdit", x: 535, y: 600, w: 400, h: 300 },
+];
+
+// crates/rmac-compositor/src/reveal.rs push_aside, line for line.
+function pushAside(area, win, sliver) {
+  let dx = win.x + win.w / 2 - (area.x + area.w / 2), dy = win.y + win.h / 2 - (area.y + area.h / 2);
+  if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) { dx = 0; dy = -1; }
+  const kx = Math.min(sliver, win.w), ky = Math.min(sliver, win.h), c = [];
+  if (dx > 0) c.push([(area.x + area.w - kx - win.x) / dx, "right"]);
+  if (dx < 0) c.push([(area.x + kx - win.x - win.w) / dx, "left"]);
+  if (dy > 0) c.push([(area.y + area.h - ky - win.y) / dy, "bottom"]);
+  if (dy < 0) c.push([(area.y + ky - win.y - win.h) / dy, "top"]);
+  const [t, edge] = c.sort((a, b) => a[0] - b[0])[0];
+  return t > 0 ? { edge, dx: dx * t, dy: dy * t } : { edge, dx: 0, dy: 0 };
+}
+
+function draw(scene, sliver, area, rays) {
+  const el = document.getElementById(scene), made = [];
+  if (rays) el.insertAdjacentHTML("beforeend", `<svg class="ray" width="${W}" height="${H}"></svg>`);
+  const svg = el.querySelector("svg");
+  WINDOWS.forEach(win => {
+    const d = document.createElement("div");
+    d.className = "win";
+    d.style.cssText = `left:${win.x}px;top:${win.y}px;width:${win.w}px;height:${win.h}px`;
+    d.innerHTML = `<div class="tb"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i><span>${win.t}</span></div>`;
+    el.insertBefore(d, el.querySelector(".dock"));
+    const p = sliver == null ? { dx: 0, dy: 0 } : pushAside(area, win, sliver);
+    if (sliver != null) d.style.transform = `translate(${p.dx}px,${p.dy}px)`;
+    if (svg && sliver != null) {
+      const cx = area.x + area.w / 2, cy = area.y + area.h / 2;
+      svg.insertAdjacentHTML("beforeend", `<line x1="${cx}" y1="${cy}" x2="${win.x + win.w / 2 + p.dx}" y2="${win.y + win.h / 2 + p.dy}" stroke="rgba(255,255,255,.45)" stroke-dasharray="4 4"/>`);
+    }
+    made.push({ el: d, p });
+  });
+  return made;
+}
+
+draw("before", null, AREA, false);
+draw("mac", 12, AREA, true);
+// rmac: niri clamps to the working area (menu bar 29 on top, the Dock's 89
+// reserved at the bottom), so bottom windows stop 75 above that zone.
+const niri = draw("rmac", 75, { x: 0, y: MENU, w: W, h: H - MENU }, true);
+niri.forEach(({ el, p }, i) => {
+  const win = WINDOWS[i], bottom = H - 89 - 75;
+  if (p.edge === "bottom" && win.y + p.dy > bottom) el.style.transform = `translate(${p.dx}px,${bottom - win.y}px)`;
+});
+
+// The measured spring: x(t) = 1 − (1 + ωt)e^(−ωt), ω = 16.5.
+const anim = draw("animate", null, AREA, false);
+let shown = false, start = 0, from = 0;
+function frame(now) {
+  const t = (now - start) / 1000, k = 1 - (1 + 16.5 * t) * Math.exp(-16.5 * t);
+  const to = shown ? 1 : 0, f = from + (to - from) * k;
+  anim.forEach(({ el }, i) => {
+    const p = pushAside(AREA, WINDOWS[i], 12);
+    el.style.transform = `translate(${p.dx * f}px,${p.dy * f}px)`;
+  });
+  if (k < 0.9995) requestAnimationFrame(frame); else from = to;
+}
+document.getElementById("animate").addEventListener("click", e => {
+  if (e.target.closest(".win")) { if (!shown) return; }
+  from = shown ? 1 : 0; shown = !shown; start = performance.now(); requestAnimationFrame(frame);
+});
+
+const state = new URLSearchParams(location.search).get("state");
+if (state) document.querySelectorAll(".scene").forEach(s => { if (s.id !== state) s.style.display = "none"; });
+</script>
+</body>
+</html>

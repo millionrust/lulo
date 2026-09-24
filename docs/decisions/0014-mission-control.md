@@ -134,3 +134,32 @@ frames were read from the Dock process's accessibility tree, and colours from Re
   sit directly in the pane instead.
 - The service is non-essential. If it fails, ⌃↑, ⌃↓, F11 and ⌃← / ⌃→ stop working, and the rest
   of the desktop keeps running.
+
+## Amendment 2026-09-24 — Click wallpaper to show desktop
+
+macOS 26's Desktop & Dock › "Click wallpaper to show desktop" (Always by default) was measured
+from window-server frames around clicks on bare wallpaper (`design-lab/reveal-desktop.html`). Each
+window slides along the ray from the centre of the screen below the menu bar through its own
+centre, stopping with a 12 pt sliver at the first edge it reaches, on a critically damped spring
+(ω ≈ 16.5 rad/s). Clicking the wallpaper again, clicking a sliver or activating any app brings
+them back.
+
+niri *can* move floating windows most of the way off-screen: `move-floating-window` with a
+relative distance, reported at once in the window's layout. So, unlike Show Desktop above, this
+does not use a workspace:
+
+- The wallpaper sends the word `wallpaper-click` to this service after a plain click on bare
+  wallpaper. The service reads `ShellSettings.click_wallpaper_to_reveal` (Always / Never; rmac has
+  no Stage Manager).
+- `rmac_compositor::reveal` computes each move (`Action::MoveWindowBy`). Restoring undoes each move
+  from where niri now reports the window, so it is exact.
+- The windows come back on the next wallpaper click, when any window takes focus, when the Space
+  changes, and before Mission Control, App Exposé, Show Desktop or a Space switch.
+- Known differences: niri keeps at least 75 px of a floating window inside the working area, so
+  the slivers are 75 px, not 12, and bottom windows stop above the Dock's reserved zone. The
+  motion is niri's global window-movement animation (300 ms ease-out-cubic), not the Mac's
+  spring. Under Reduce Motion the screen holds while the windows move, then crossfades
+  (`do-screen-transition`). A sliver click on the window that was focused before the reveal only
+  restores if clicking the wallpaper moved niri's focus away from it.
+- Nothing is persisted. niri never lets a window leave the screen entirely, and a restarted service
+  pulls back any window that shows only its sliver.

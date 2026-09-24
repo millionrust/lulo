@@ -238,6 +238,7 @@ impl Render for NotificationCenterView {
         div()
             .size_full()
             .relative()
+            .track_focus(&self.focus)
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
                 if event.keystroke.key == "escape" {
                     cx.stop_propagation();

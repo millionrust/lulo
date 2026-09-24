@@ -2,7 +2,7 @@ mod lifecycle;
 
 use std::collections::BTreeSet;
 
-use gpui::{BorrowAppContext as _, Context, SharedString, Window};
+use gpui::{BorrowAppContext as _, Context, FocusHandle, SharedString, Window};
 use rmac_notifications::NotificationId;
 use rmac_notifications_linux::center::{ActionSelection, Snapshot};
 
@@ -12,6 +12,7 @@ use crate::model::{
 use crate::NotificationCenterService;
 
 pub(crate) struct NotificationCenterView {
+    pub(crate) focus: FocusHandle,
     token: u64,
     pub(crate) snapshot: Option<Snapshot>,
     pub(crate) applications: ApplicationCatalog,

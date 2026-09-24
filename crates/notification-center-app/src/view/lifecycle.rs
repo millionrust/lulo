@@ -4,6 +4,8 @@ use super::*;
 
 impl NotificationCenterView {
     pub(crate) fn new(token: u64, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let focus = cx.focus_handle();
+        focus.focus(window, cx);
         cx.observe_window_activation(window, |this, window, cx| {
             if window.is_window_active() {
                 this.was_active = true;
@@ -130,6 +132,7 @@ impl NotificationCenterView {
         .detach();
 
         Self {
+            focus,
             token,
             snapshot: None,
             applications: ApplicationCatalog::default(),

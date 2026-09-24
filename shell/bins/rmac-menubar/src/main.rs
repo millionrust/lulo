@@ -2217,7 +2217,7 @@ mod linux_wayland {
                                         item = item.child(indicator.visible);
                                     }
                                     if is_battery {
-                                        item.child(battery_glyph(snapshot.battery.clone()))
+                                        item.child(battery_glyph(snapshot.battery))
                                     } else {
                                         let (width, height) = status_icon_size(indicator.kind);
                                         item.child(

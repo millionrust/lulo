@@ -92,8 +92,8 @@ mod linux_wayland {
         overlay: Option<WindowHandle<Overlay>>,
         opening: bool,
         shown_desktop: Option<model::ShownDesktop>,
-        /// + was pressed while standing on niri's spare workspace; name the
-        /// next spare one as soon as niri creates it.
+        /// The + button was pressed while standing on niri's spare workspace;
+        /// name the next spare one as soon as niri creates it.
         pending_add: Option<OutputId>,
         corners: HotCornerSettings,
         click_to_reveal: ClickWallpaperToReveal,
@@ -1299,7 +1299,7 @@ mod linux_wayland {
                         cx.background_executor()
                             .timer(Duration::from_millis(u64::from(WINDOW_MOVEMENT_MS)))
                             .await;
-                        let _ = cx.update(|cx| handle_command(&service, command, cx));
+                        cx.update(|cx| handle_command(&service, command, cx));
                     })
                     .detach();
                     return;
@@ -1355,7 +1355,7 @@ mod linux_wayland {
                 .background_executor()
                 .spawn(async move { capture::capture_scene(&captured_scene) })
                 .await;
-            let _ = cx.update(|cx| {
+            cx.update(|cx| {
                 service.update(cx, |service, _| service.opening = false);
                 show_overlay(&service, mode, scene, captured, cx);
             });
@@ -1527,7 +1527,7 @@ mod linux_wayland {
             let watched = service.clone();
             cx.spawn(async move |cx: &mut AsyncApp| {
                 while let Ok(event) = compositor_rx.recv().await {
-                    let _ = cx.update(|cx| {
+                    cx.update(|cx| {
                         let reconnected = matches!(event, rmac_compositor::Event::Snapshot { .. });
                         let (topology, action) =
                             watched.update(cx, |service, _| service.apply(event));
@@ -1568,7 +1568,7 @@ mod linux_wayland {
                         Ok(snapshot) => {
                             let corners = snapshot.settings.hot_corners;
                             let click_to_reveal = snapshot.settings.click_wallpaper_to_reveal;
-                            let _ = cx.update(|cx| {
+                            cx.update(|cx| {
                                 configured.update(cx, |service, _| {
                                     service.corners = corners;
                                     service.click_to_reveal = click_to_reveal;
@@ -1599,7 +1599,7 @@ mod linux_wayland {
 
             cx.spawn(async move |cx: &mut AsyncApp| {
                 while let Ok(command) = command_rx.recv().await {
-                    let _ = cx.update(|cx| handle_command(&service, command, cx));
+                    cx.update(|cx| handle_command(&service, command, cx));
                 }
             })
             .detach();

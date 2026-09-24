@@ -471,7 +471,6 @@ mod linux_wayland {
 
     struct Dock {
         display_id: u64,
-        output: Option<rmac_compositor::OutputId>,
         placement: rmac_shell_settings::DockPlacement,
         render_count: u64,
         status: Entity<DockStatus>,
@@ -529,7 +528,6 @@ mod linux_wayland {
             }
             Self {
                 display_id: u64::from(display_id),
-                output: surface.output.clone(),
                 placement: surface.placement,
                 render_count: 0,
                 status,
@@ -3888,7 +3886,7 @@ mod linux_wayland {
             let launcher_status = status.clone();
             cx.spawn(async move |cx| {
                 while let Ok((app_uri, update)) = launcher_rx.recv().await {
-                    let _ = launcher_status.update(cx, |status, cx| {
+                    launcher_status.update(cx, |status, cx| {
                         if status.launcher.apply(&app_uri, update) {
                             cx.notify();
                         }

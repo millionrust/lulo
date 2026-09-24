@@ -166,10 +166,6 @@ impl Rect {
         (self.x + self.width / 2.0, self.y + self.height / 2.0)
     }
 
-    pub fn contains(&self, x: f32, y: f32) -> bool {
-        x >= self.x && x < self.right() && y >= self.y && y < self.bottom()
-    }
-
     /// The part of `self` inside a `width` × `height` output.
     pub fn clipped(&self, width: f32, height: f32) -> Self {
         let left = self.x.max(0.0);

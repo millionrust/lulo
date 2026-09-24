@@ -360,7 +360,6 @@ impl Wallpaper {
 #[derive(Clone, Copy)]
 pub(crate) enum ItemAction {
     Open,
-    Reveal,
 }
 
 pub(crate) fn spawn_item_action(path: PathBuf, action: ItemAction, cx: &mut App) {
@@ -368,7 +367,6 @@ pub(crate) fn spawn_item_action(path: PathBuf, action: ItemAction, cx: &mut App)
         .spawn(async move {
             let result = match action {
                 ItemAction::Open => rmac_app_launch::open_item(path).await,
-                ItemAction::Reveal => rmac_app_launch::reveal_item(path).await,
             };
             if result.is_err() {
                 eprintln!("a Desktop item action could not be completed");

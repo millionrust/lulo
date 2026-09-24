@@ -156,6 +156,21 @@ impl EditorView {
         cx.notify();
     }
 
+    /// The menu bar's live state for this, the key window: Format ▸
+    /// Monospaced is ticked while it is on, and Cut, Copy and Delete are
+    /// greyed out without a selection in the focused field, as in TextEdit.
+    pub(super) fn publish_menu_state(&self, window: &Window, cx: &mut Context<Self>) {
+        rmac_ui::set_menu_checked("text_editor::ToggleMono", self.mono, cx);
+        let field = [&self.find_input, &self.replace_input]
+            .into_iter()
+            .find(|field| gpui::Focusable::focus_handle(field.read(cx), cx).is_focused(window))
+            .unwrap_or(&self.input);
+        let has_selection = !field.read(cx).selected_range().is_empty();
+        for action in ["input::Cut", "input::Copy", "input::Delete"] {
+            rmac_ui::set_menu_enabled(action, has_selection, cx);
+        }
+    }
+
     pub(super) fn toggle_mono(&mut self, cx: &mut Context<Self>) {
         self.mono = !self.mono;
         cx.notify();

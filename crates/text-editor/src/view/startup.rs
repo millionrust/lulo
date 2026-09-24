@@ -73,6 +73,33 @@ pub(super) fn open_editor_window(cx: &mut App, initial_path: Option<PathBuf>) ->
     .map_err(|_| ())
 }
 
+/// The windows a launch asks for, as the running process's `OpenWindow`
+/// arguments: one list per window, paths made absolute because the running
+/// process has its own working directory. `None` when a path cannot travel
+/// over D-Bus (it is not UTF-8); this launch then opens it itself.
+fn hand_off_windows(request: &StartupRequest) -> Option<Vec<Vec<String>>> {
+    let mut windows = Vec::new();
+    if request.open_untitled {
+        windows.push(vec!["--new-document".to_owned()]);
+    }
+    for path in &request.paths {
+        let path = std::path::absolute(path).ok()?.into_os_string().into_string().ok()?;
+        windows.push(vec!["--".to_owned(), path]);
+    }
+    Some(windows)
+}
+
+fn open_requested_windows(request: StartupRequest, cx: &mut App) {
+    if request.open_untitled && open_editor_window(cx, None).is_err() {
+        eprintln!("Text Editor could not open a document window");
+    }
+    for path in request.paths {
+        if open_editor_window(cx, Some(path)).is_err() {
+            eprintln!("Text Editor could not open a document window");
+        }
+    }
+}
+
 pub(crate) fn run() {
     let request = match parse_startup_request(std::env::args_os().skip(1)) {
         Ok(request) => request,
@@ -81,19 +108,28 @@ pub(crate) fn run() {
             std::process::exit(2);
         }
     };
+    // One process per app, as on the Mac: a Text Editor that is already
+    // running opens these documents as new windows under its own menus.
+    if hand_off_windows(&request).is_some_and(|windows| {
+        rmac_ui::hand_off_to_running_instance(rmac_ui::app_id::TEXT_EDITOR, &windows)
+    }) {
+        return;
+    }
     rmac_ui::application()
         .with_assets(gpui_component_assets::Assets)
         .run(move |cx: &mut App| {
             rmac_ui::init_application(cx);
-            rmac_ui::install_app_menu(rmac_ui::app_id::TEXT_EDITOR, cx);
-            if request.open_untitled && open_editor_window(cx, None).is_err() {
-                eprintln!("Text Editor could not open a document window");
-            }
-            for path in request.paths {
-                if open_editor_window(cx, Some(path)).is_err() {
-                    eprintln!("Text Editor could not open a document window");
-                }
-            }
+            rmac_ui::install_app_instance(
+                rmac_ui::app_id::TEXT_EDITOR,
+                |arguments, cx| {
+                    match parse_startup_request(arguments.into_iter().map(OsString::from)) {
+                        Ok(request) => open_requested_windows(request, cx),
+                        Err(message) => eprintln!("Text Editor ignored a window request: {message}"),
+                    }
+                },
+                cx,
+            );
+            open_requested_windows(request, cx);
             cx.activate(true);
         });
 }
@@ -127,6 +163,30 @@ mod tests {
                 paths: Vec::new(),
             }
         );
+    }
+
+    #[test]
+    fn a_second_launch_hands_its_documents_to_the_running_editor() {
+        let request = StartupRequest {
+            open_untitled: true,
+            paths: vec![PathBuf::from("/home/user/one.txt"), PathBuf::from("two.txt")],
+        };
+        let windows = hand_off_windows(&request).unwrap();
+        assert_eq!(windows[0], ["--new-document"]);
+        assert_eq!(windows[1], ["--", "/home/user/one.txt"]);
+        // Relative paths are resolved here, where they were typed.
+        assert!(std::path::Path::new(&windows[2][1]).is_absolute());
+        assert!(windows[2][1].ends_with("two.txt"));
+        // What the running editor receives parses back to the same request.
+        let reparsed = windows
+            .iter()
+            .map(|arguments| {
+                parse_startup_request(arguments.iter().map(OsString::from)).unwrap()
+            })
+            .collect::<Vec<_>>();
+        assert!(reparsed[0].open_untitled && reparsed[0].paths.is_empty());
+        assert_eq!(reparsed[1].paths, [PathBuf::from("/home/user/one.txt")]);
+        assert!(!reparsed[1].open_untitled);
     }
 
     #[test]

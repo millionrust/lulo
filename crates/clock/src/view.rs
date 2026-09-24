@@ -1689,6 +1689,17 @@ impl Render for ClockView {
         for image in self.garbage.drain(..) {
             cx.drop_image(image, Some(window));
         }
+        if window.is_window_active() {
+            // View ▸ World Clock … Timers tick the tab on show.
+            for (tab, action) in [
+                (Tab::World, "clock::ShowWorldClock"),
+                (Tab::Alarms, "clock::ShowAlarms"),
+                (Tab::Stopwatch, "clock::ShowStopwatch"),
+                (Tab::Timers, "clock::ShowTimers"),
+            ] {
+                rmac_ui::set_menu_checked(action, self.tab == tab, cx);
+            }
+        }
         let viewport = window.viewport_size();
         let (width, height) = (f32::from(viewport.width), f32::from(viewport.height));
         let now = now_millis();

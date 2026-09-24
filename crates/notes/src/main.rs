@@ -328,7 +328,9 @@ fn main() {
     // render_root's Ready/Maintenance/Pending/Stopped arm, which calls
     // rmac_ui::mark_content_ready.
     rmac_ui::defer_content_ready();
-    rmac_ui::boot_app_with_assets(
+    // Notes is one window over one library: a second launch brings the
+    // running Notes forward rather than opening a second, menu-less copy.
+    rmac_ui::boot_single_window_app_with_assets(
         rmac_ui::app_id::NOTES,
         rmac_ui::layered_assets(glyphs::NotesAssets),
         "Notes",

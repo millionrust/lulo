@@ -355,6 +355,46 @@ impl NotesView {
         );
     }
 
+    /// The menu bar's live state: View ▸ Sort By ticks the current order,
+    /// File ▸ Pin Note says Unpin for a pinned note, and commands that need
+    /// a note, the library or no pending change are greyed out without.
+    pub(super) fn publish_menu_state(&self, cx: &mut Context<Self>) {
+        let ready = self.is_interactive_ready();
+        let pending = self.latest_local_generation.is_some();
+        let sort_order = self.session.snapshot().map(|snapshot| snapshot.sort_order);
+        for (action, order) in [
+            ("notes::SortByEdited", SortOrder::Edited),
+            ("notes::SortByCreated", SortOrder::Created),
+            ("notes::SortByTitle", SortOrder::Title),
+        ] {
+            rmac_ui::set_menu_checked(action, sort_order == Some(order), cx);
+            rmac_ui::set_menu_enabled(action, ready, cx);
+        }
+        let (has_note, pinned) = self
+            .session
+            .selected_note()
+            .map_or((false, false), |note| (true, note.pinned));
+        rmac_ui::set_menu_enabled("notes::TogglePin", ready && has_note, cx);
+        rmac_ui::set_menu_label(
+            "notes::TogglePin",
+            if pinned { "Unpin Note" } else { "Pin Note" },
+            cx,
+        );
+        rmac_ui::set_menu_enabled("notes::PrintNote", has_note, cx);
+        rmac_ui::set_menu_enabled("notes::ExportNotePdf", has_note, cx);
+        rmac_ui::set_menu_enabled(
+            "notes::ExportNotes",
+            self.session.snapshot().is_some() && !pending,
+            cx,
+        );
+        rmac_ui::set_menu_enabled("notes::ImportNotesBundle", !pending, cx);
+        rmac_ui::set_menu_checked(
+            "notes::ToggleMarkdownPreview",
+            self.markdown_preview_visible,
+            cx,
+        );
+    }
+
     pub(super) fn set_sort(&mut self, sort_order: SortOrder, cx: &mut Context<Self>) {
         if self.is_interactive_ready() {
             self.send_action(LibraryAction::SetSort(sort_order), cx);

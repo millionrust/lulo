@@ -59,6 +59,9 @@ impl Render for EditorView {
             window.set_window_title(&native_window_title);
             self.native_window_title = native_window_title;
         }
+        if window.is_window_active() {
+            self.publish_menu_state(window, cx);
+        }
         let font_family = if self.mono {
             rmac_ui::MONO_FONT
         } else {

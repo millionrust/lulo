@@ -7,6 +7,9 @@ impl NotesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        if window.is_window_active() {
+            self.publish_menu_state(cx);
+        }
         let content = match self.session.phase() {
             SessionPhase::Starting if self.message.is_none() => centered_state(
                 "Opening Notes…",

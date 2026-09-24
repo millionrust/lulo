@@ -122,7 +122,10 @@ pub(crate) fn open_window(paths: Vec<PathBuf>, cx: &mut App) {
     }
     let opened = cx.open_window(options, |window, cx| {
         rmac_ui::prepare_surface_window(window, cx);
-        let view = cx.new(|cx| PreviewView::new(paths, window, cx));
+        let view = cx.new(|cx| {
+            rmac_ui::track_key_window(window, cx);
+            PreviewView::new(paths, window, cx)
+        });
         let focus = view.read(cx).focus.clone();
         window.focus(&focus, cx);
         cx.new(|cx| Root::new(view, window, cx))
@@ -154,19 +157,68 @@ pub(crate) fn choose_and_open(quit_if_cancelled: bool, cx: &mut App) {
     .detach();
 }
 
+/// A running Preview's `OpenWindow` requests for these documents: one
+/// window for all of them, as a launch opens, split only where a request's
+/// argument limit forces it. An empty request asks for the Open panel.
+/// `None` when a path cannot travel over D-Bus (it is not UTF-8).
+fn hand_off_windows(paths: &[PathBuf]) -> Option<Vec<Vec<String>>> {
+    const PATHS_PER_REQUEST: usize = 8;
+    if paths.is_empty() {
+        return Some(vec![Vec::new()]);
+    }
+    let absolute = paths
+        .iter()
+        .map(|path| {
+            std::path::absolute(path)
+                .ok()?
+                .into_os_string()
+                .into_string()
+                .ok()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(
+        absolute
+            .chunks(PATHS_PER_REQUEST)
+            .map(<[String]>::to_vec)
+            .collect(),
+    )
+}
+
 fn main() {
     let paths: Vec<PathBuf> = std::env::args_os()
         .skip(1)
         .filter(|argument| !argument.to_string_lossy().starts_with("--"))
         .map(PathBuf::from)
         .collect();
+    // One process per app, as on the Mac: a running Preview opens these
+    // documents in a new window under its own menus.
+    if hand_off_windows(&paths)
+        .is_some_and(|windows| rmac_ui::hand_off_to_running_instance(PREVIEW, &windows))
+    {
+        return;
+    }
     rmac_ui::application()
         .with_assets(CombinedAssets)
         .run(move |cx: &mut App| {
             rmac_ui::init_application(cx);
             bind_keys(cx);
             cx.on_action(|_: &OpenFile, cx| choose_and_open(false, cx));
-            rmac_ui::install_app_menu(PREVIEW, cx);
+            rmac_ui::install_app_instance(
+                PREVIEW,
+                |arguments, cx| {
+                    let paths = arguments
+                        .into_iter()
+                        .filter(|argument| !argument.starts_with("--"))
+                        .map(PathBuf::from)
+                        .collect::<Vec<_>>();
+                    if paths.is_empty() {
+                        choose_and_open(false, cx);
+                    } else {
+                        open_window(paths, cx);
+                    }
+                },
+                cx,
+            );
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
                     cx.quit();
@@ -179,4 +231,26 @@ fn main() {
                 open_window(paths, cx);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_second_launch_hands_its_documents_to_the_running_preview() {
+        assert_eq!(hand_off_windows(&[]), Some(vec![Vec::new()]));
+        let paths = (0..10)
+            .map(|index| PathBuf::from(format!("/home/user/scan-{index}.png")))
+            .collect::<Vec<_>>();
+        let windows = hand_off_windows(&paths).unwrap();
+        assert_eq!(windows.len(), 2);
+        assert_eq!(windows[0].len(), 8);
+        assert_eq!(
+            windows[1],
+            ["/home/user/scan-8.png", "/home/user/scan-9.png"]
+        );
+        let relative = hand_off_windows(&[PathBuf::from("photo.jpg")]).unwrap();
+        assert!(std::path::Path::new(&relative[0][0]).is_absolute());
+    }
 }

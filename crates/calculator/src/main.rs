@@ -63,6 +63,8 @@ fn main() {
                 ),
             ]);
             rmac_ui::install_app_menu(CALCULATOR, cx);
+            // Basic is the only mode, so View ▸ Basic is always the ticked one.
+            rmac_ui::set_menu_checked("calculator::ShowBasic", true, cx);
 
             // Calculator is fixed-size like on macOS: keep a restored position
             // but never a restored size.

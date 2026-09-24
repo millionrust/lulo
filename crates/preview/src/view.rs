@@ -2287,6 +2287,11 @@ impl Render for PreviewView {
         for image in self.garbage.drain(..) {
             cx.drop_image(image, Some(window));
         }
+        if window.is_window_active() {
+            // View ▸ Hide Sidebar / Thumbnails tick the key window's choice.
+            rmac_ui::set_menu_checked("preview::HideSidebar", !self.sidebar, cx);
+            rmac_ui::set_menu_checked("preview::ShowThumbnails", self.sidebar, cx);
+        }
         let palette = palette();
         let size = window.viewport_size();
         let (width, height) = (f32::from(size.width), f32::from(size.height));

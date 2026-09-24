@@ -9,7 +9,7 @@
       "tarball_url": "https://github.com/niri-wm/niri/archive/refs/tags/v26.04.tar.gz",
       "tarball_sha256": "134c602d8e0d53413a52d6cd58f9ce7e79a07d03288ee0a51ba1abd5db1b1ad9",
       "tarball_top_directory": "niri-26.04",
-      "vendor_sha256": null,
+      "vendor_sha256": "b1bb5dbf46df9b70189c21c0b8c304d5ae3fd2b1bd7db43f66d22c8a09914c33",
       "license": "GPL-3.0-or-later",
       "homepage": "https://github.com/niri-wm/niri",
       "cargo_package": "niri"
@@ -22,7 +22,7 @@
       "tarball_url": "https://github.com/Supreeeme/xwayland-satellite/archive/refs/tags/v0.8.2.tar.gz",
       "tarball_sha256": "cb50bb6948582d5ec3aa511d2d66ad622989bb14bef94e3bb81bae8b64c120b1",
       "tarball_top_directory": "xwayland-satellite-0.8.2",
-      "vendor_sha256": null,
+      "vendor_sha256": "4657a674e52dec43d969a4406d08c3821fb27a5bdb98551f9a513a0b8d5b5b48",
       "license": "MPL-2.0",
       "homepage": "https://github.com/Supreeeme/xwayland-satellite",
       "cargo_package": "xwayland-satellite"

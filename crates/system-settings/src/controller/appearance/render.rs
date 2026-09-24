@@ -20,7 +20,9 @@ impl Settings {
     pub(in crate::controller) fn render_appearance(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let refresh_view = view.clone();
-        let refresh = footer_buttons(vec![push_button("theme-refresh", "Refresh")
+        // The theme store streams its changes, so the pane stays current on
+        // its own; only an unavailable service offers a retry.
+        let refresh = footer_buttons(vec![push_button("theme-refresh", "Try Again")
             .disabled(self.theme_loading || self.theme_busy || self.theme_stream_refreshing)
             .busy(self.theme_busy || self.theme_stream_refreshing)
             .on_click(move |_, _, cx| {
@@ -169,44 +171,42 @@ impl Settings {
         }
         let tint_view = view.clone();
         cards.push(section_header("Theme"));
-        cards.push(card(vec![
-            row_base()
-                .items_start()
-                .child(text_block("Colour".into(), None))
-                .child(
-                    div()
-                        .v_flex()
-                        .items_end()
-                        .gap(px(3.0))
-                        .child(swatches)
-                        .child(
-                            div()
-                                .text_size(rmac_ui::text_px(11.0))
-                                .line_height(px(14.0))
-                                .text_color(secondary())
-                                .child(selected_name),
-                        ),
-                )
-                .into_any_element(),
-            row_base()
-                .items_start()
-                .child(text_block(
-                    "Tint window background with wallpaper colour".into(),
-                    Some("Subtly mixes the desktop colour into opaque app surfaces.".into()),
-                ))
-                .child(
-                    Toggle::new("theme-wallpaper-tinting")
-                        .checked(preferences.allow_wallpaper_tinting)
-                        .disabled(!enabled)
-                        .on_click(move |value, _, cx| {
-                            tint_view.update(cx, |settings, cx| {
-                                settings
-                                    .apply_theme_change(ThemeChange::WallpaperTinting(*value), cx)
-                            });
-                        }),
-                )
-                .into_any_element(),
-        ]));
+        cards.push(card(vec![row_base()
+            .items_start()
+            .child(text_block("Colour".into(), None))
+            .child(
+                div()
+                    .v_flex()
+                    .items_end()
+                    .gap(px(3.0))
+                    .child(swatches)
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(11.0))
+                            .line_height(px(14.0))
+                            .text_color(secondary())
+                            .child(selected_name),
+                    ),
+            )
+            .into_any_element()]));
+        // macOS 26 files the tint switch under Windows, a plain 37 pt row.
+        cards.push(section_header("Windows"));
+        cards.push(card(vec![row_base()
+            .child(text_block(
+                "Tint window background with wallpaper colour".into(),
+                None,
+            ))
+            .child(
+                Toggle::new("theme-wallpaper-tinting")
+                    .checked(preferences.allow_wallpaper_tinting)
+                    .disabled(!enabled)
+                    .on_click(move |value, _, cx| {
+                        tint_view.update(cx, |settings, cx| {
+                            settings.apply_theme_change(ThemeChange::WallpaperTinting(*value), cx)
+                        });
+                    }),
+            )
+            .into_any_element()]));
         cards.push(section_header("Accessibility"));
         cards.push(card(vec![
             theme_segment_row(
@@ -243,7 +243,12 @@ impl Settings {
                 "The Linux Settings portal is unavailable here. Automatic values use safe Lulo OS defaults; explicit choices remain writable.",
             ));
         }
-        cards.push(refresh);
+        if self.theme_error.is_some()
+            || self.theme_store_stream_error.is_some()
+            || self.theme_portal_stream_error.is_some()
+        {
+            cards.push(refresh);
+        }
         self.pane(cards)
     }
 }

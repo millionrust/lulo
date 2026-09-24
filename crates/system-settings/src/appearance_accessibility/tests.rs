@@ -82,8 +82,10 @@ fn ready_projection_matches_visual_order_selection_and_typed_actions() {
             .collect::<Vec<_>>(),
         vec![AppearanceAction::SetAccent(AccentChoice::Blue)]
     );
-    assert_eq!(snapshot.keyboard_order.len(), 19);
-    assert_eq!(snapshot.initial_focus.as_deref(), Some(REFRESH_ID));
+    // A healthy pane follows the theme stream and offers no manual refresh.
+    assert_eq!(snapshot.keyboard_order.len(), 18);
+    assert!(!snapshot.keyboard_order.iter().any(|id| id == REFRESH_ID));
+    assert!(!snapshot.refresh_action.enabled);
     assert_eq!(
         snapshot.authority.as_ref().unwrap().effective_appearance,
         "Dark"

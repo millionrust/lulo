@@ -33,7 +33,10 @@ pub fn project_appearance(
         budget.add_required(error, true)?;
     }
 
-    let refresh_enabled = !input.loading && !input.busy && !input.refreshing;
+    // The theme store streams its changes, so a manual retry is offered only
+    // when the service is unavailable or reported an error.
+    let refresh_offered = state == PaneState::Unavailable || input.error.is_some();
+    let refresh_enabled = refresh_offered && !input.loading && !input.busy && !input.refreshing;
     let refresh_action = AccessibleAction {
         id: REFRESH_ID.into(),
         name: REFRESH_LABEL,

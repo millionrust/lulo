@@ -4,7 +4,7 @@ use std::fmt;
 
 pub const APPEARANCE_TITLE: &str = "Appearance";
 pub const REFRESH_ID: &str = "theme-refresh";
-pub const REFRESH_LABEL: &str = "Refresh";
+pub const REFRESH_LABEL: &str = "Try Again";
 pub const LOADING_LABEL: &str = "Loading appearance preferences…";
 pub const APPLYING_LABEL: &str = "Applying appearance preferences…";
 pub const UNAVAILABLE_LABEL: &str = "The Lulo OS theme preference service is unavailable.";

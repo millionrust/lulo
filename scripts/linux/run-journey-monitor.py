@@ -14,49 +14,43 @@ this script does not use pyatspi's `generateMouseEvent` either, since niri
 implements no virtual-pointer protocol for it to reach).
 
 Live introspection (dumping the real AT-SPI tree of a running
-rmac-system-monitor, see the commit that added this script for the session
-transcript) found a safety-relevant gap that changes what this script can
-respect­fully do:
+rmac-system-monitor, with its own throwaway disposable process running) found
+that `crates/activity-monitor/src/accessibility.rs`'s
+`AccessibleProcessRow`/`project_process_table` model, once dead code, is now
+genuinely wired into `crates/activity-monitor/src/process_table.rs`'s
+`render_tr`: real processes on the reference laptop appeared as "table row"
+nodes named exactly `"{name} (PID {pid}), {cpu}% CPU, {mem}"` with a working
+AT-SPI `click` action, and the "Quit Process"/"Inspect Process" toolbar
+buttons and the top bar's "Process" menu (with "Force Quit Process…") are
+real too. What is *not* fixed, found by the same live dump, is narrower and
+more specific than before:
 
-  * The process table renders no per-row AT-SPI structure at all -- no
-    "table row"/"list item" node exists for any process, so nothing (a
-    screen reader, a switch device, or this script) can browse, identify, or
-    select one *specific* process over AT-SPI. This is despite
-    `crates/activity-monitor/src/accessibility.rs` already defining a
-    complete, unit-tested pure model for exactly this
-    (`project_process_table`, `AccessibleProcessRow { actions: ["Inspect",
-    "Quit", "Force Quit"], .. }`, `project_process_action_dialog`) -- a
-    repository-wide search shows it is referenced only by its own
-    `#[cfg(test)]` module and is never called from `view.rs` or
-    `process_table.rs`. It is complete, correct, dead code.
-  * The search field (`crates/activity-monitor/src/view.rs:59`, the same
-    `SearchField`/`InputState` widget Text Editor's document buffer uses)
-    exposes AT-SPI's Accessible and Component interfaces only -- no Text, no
-    EditableText (confirmed live) -- so it cannot be used to filter to a
-    specific process by typing either, even with a keyboard.
-  * Quit/Force Quit are *meant* to exist over AT-SPI as plain buttons named
-    "Quit"/"Force Quit" mirroring the `QuitProcess`/`ForceQuitProcess`
-    keyboard actions (`crates/activity-monitor/src/main.rs:16-24,42-51`),
-    and as the top bar's global "Process" menu once System Monitor is
-    focused (`crates/rmac-app-menu/src/lib.rs:236-244`: "Quit Process…" /
-    "Force Quit Process…", both real `menu item` nodes) -- one live run did
-    find both toolbar buttons present with a `click` action; a later run
-    against the same desktop-entry-resolved binary found the window's whole
-    AT-SPI tree collapsed to its 3 (unlabelled) title-bar buttons only, with
-    no toolbar, tabs, search field, or Quit/Force Quit at all (see
-    `check_quit_controls_exist`'s reported detail for what a given run
-    actually found -- this script never assumes either shape). Whichever
-    shape is present, both Quit routes act on whatever `selected_pid` a
-    **mouse** click (left or right) on a row
-    (`crates/activity-monitor/src/process_table.rs:343-365`, both
-    `MouseButton::Left` and `MouseButton::Right`) or **keyboard** table navigation
+  * The table's AT-SPI projection is bounded to a small number of rows (19
+    in one dump) that closely tracked the top processes by %CPU on the
+    system at that moment -- an apparent viewport/virtualization limit
+    rather than a full per-process AT-SPI tree. This script's own
+    intentionally idle, near-0%-CPU disposable process fell outside that
+    window and had no AT-SPI node at all, even though other, busier
+    processes were fully exposed with the correct label/action model.
+  * There is no accessible way to bring a specific low-usage row into that
+    window: the column headers (`crates/activity-monitor/src/
+    process_table.rs`'s `render_th`) expose AT-SPI's Accessible and
+    Component interfaces only -- no Action -- so they cannot be clicked to
+    re-sort (e.g. by PID) over AT-SPI even though a mouse click can. The
+    search field (`crates/activity-monitor/src/view.rs:59`) still exposes
+    no Text/EditableText either, so it cannot filter to a specific process
+    by typing.
+  * Quit/Force Quit still act on whatever `selected_pid` a **mouse** click
+    (left or right) on a row (`crates/activity-monitor/src/
+    process_table.rs:343-365`) or **keyboard** table navigation
     (`crates/activity-monitor/src/view.rs:165-176`) last set -- there is no
-    AT-SPI action that sets it. Since this laptop's session is shared with
-    other automated agents and possibly a person, this script cannot even
-    safely assume "nothing is selected": another actor could have a row
-    highlighted right now. Blindly invoking Quit/Force Quit could therefore
-    signal a process this script does not own, which the brief for this
-    journey explicitly forbids ("Never touch any other process").
+    AT-SPI action that sets it independent of a real row being clickable.
+    Since this laptop's session is shared with other automated agents and
+    possibly a person, this script cannot even safely assume "nothing is
+    selected": another actor could have a row highlighted right now.
+    Blindly invoking Quit/Force Quit could therefore signal a process this
+    script does not own, which the brief for this journey explicitly
+    forbids ("Never touch any other process").
 
 Given that, this script:
 
@@ -65,23 +59,28 @@ Given that, this script:
      argv, never printed into the report.
   2. Launches System Monitor and verifies, structurally and non-
      destructively (reading node names/roles/interfaces only -- no clicks
-     that could act on an unknown selection), whether a specific process can
-     be identified over AT-SPI at all: by a per-row node carrying the label
-     `crates/activity-monitor/src/accessibility.rs` already defines
-     (`"{name} (PID {pid})"`), or by typing into the search field.
+     that could act on an unknown selection), whether a row for its own
+     specific disposable process is among the ones currently exposed over
+     AT-SPI, by the exact label `crates/activity-monitor/src/
+     accessibility.rs` defines (`"{name} (PID {pid})"`, prefix-matched
+     since the live label also appends CPU/memory).
   3. If (and only if) a row for its own disposable process can be safely
-     identified this way, it proceeds with the full journey: select it,
-     invoke Quit through the top bar's Process menu, confirm the dialog
-     appears, Cancel once (assert the process survives), invoke Quit again,
-     confirm (assert the process exits). This is the forward-compatible
-     path: if a future build wires `accessibility.rs`'s model into the live
-     table (closing the gap above), this script starts passing the real
-     journey without modification.
+     identified this way, it proceeds with the full journey: select it via
+     its AT-SPI Click action, re-verify both its AT-SPI STATE_SELECTED and
+     that its name still carries this run's own PID, invoke Quit through
+     the top bar's Process menu, confirm the dialog appears, Cancel once
+     (assert the process survives), re-verify the PID one last time, invoke
+     Quit again, confirm (assert the process exits). Because low-usage
+     processes fall outside the table's visible-row window today, this
+     path is not expected to run on a busy reference laptop, but is exactly
+     what would execute once the table exposes every row (or once this
+     process happens to rank inside the current window).
   4. Otherwise -- the current reality -- it stops short of touching Quit/
-     Force Quit at all, reports the two gaps above precisely, and still
+     Force Quit at all, reports the gaps above precisely, and still
      verifies what it safely can: the disposable process launches and stays
-     alive, System Monitor launches, and both the AT-SPI buttons and the top
-     bar's Process menu items exist (a structural check, not an invocation).
+     alive, System Monitor launches, and both the "Quit Process" button and
+     the top bar's Process menu items (including "Force Quit Process…")
+     exist (a structural check, not an invocation).
 
 Cleanup always terminates the disposable process directly (`os.kill`, never
 through the UI it just finished testing) and closes System Monitor through
@@ -454,15 +453,24 @@ def check_quit_controls_exist() -> dict[str, Any]:
     quit_button = find_node(
         SYSTEM_MONITOR["atspi_name"], "Quit Process", role="button", timeout=2.0
     )
-    menu_button = find_node("rmac-top-bar", "Process menu", role="button", timeout=8.0)
+    menu_button = None
     force_quit_item = None
-    if menu_button is not None and "click" in action_names(menu_button):
-        click(menu_button)
-        force_quit_item = find_node(
-            "rmac-top-bar", "Force Quit Process…", role="menu item", timeout=2.0
-        )
-        # Close the menu again without invoking anything.
-        click(menu_button)
+    # One bounded retry: the per-app menu bridge has been observed to miss
+    # its first switch to a just-focused app under heavy CPU load (see
+    # run-journey-terminal.py's identical observation for Shell/Edit/View).
+    for attempt in range(2):
+        menu_button = find_node("rmac-top-bar", "Process menu", role="button", timeout=8.0)
+        if menu_button is not None and "click" in action_names(menu_button):
+            click(menu_button)
+            force_quit_item = find_node(
+                "rmac-top-bar", "Force Quit Process…", role="menu item", timeout=2.0
+            )
+            # Close the menu again without invoking anything.
+            click(menu_button)
+        if menu_button is not None and force_quit_item is not None:
+            break
+        if attempt == 0:
+            time.sleep(1.0)
     found = bool(quit_button and menu_button and force_quit_item)
     missing = [
         label
@@ -508,6 +516,25 @@ def row_name_matches_pid(name: str, pid: int) -> bool:
     Quit invocation, so it never signals a process it did not start."""
 
     return expected_row_label(DISPOSABLE_COMMAND_NAME, pid) in name
+
+
+def count_process_rows() -> int:
+    """How many "table row" nodes (excluding the header row, which carries
+    no accessible name) are currently exposed over AT-SPI -- used only to
+    report the size of the process table's apparently-virtualized AT-SPI
+    projection, never to select a row."""
+
+    count = 0
+    for node in _atspi_snapshot(SYSTEM_MONITOR["atspi_name"]):
+        try:
+            if node.getRoleName() != "table row":
+                continue
+            if not node.name:
+                continue
+        except (LookupError, RuntimeError):
+            continue
+        count += 1
+    return count
 
 
 def request_process_action(force: bool) -> bool:
@@ -585,6 +612,17 @@ def run_journey(token: str) -> dict[str, Any]:
         if window is None:
             return build_report(steps, gaps, started_at_unix_ms)
 
+        # The shell top bar's per-app menu has been observed elsewhere in
+        # this suite (see run-journey-terminal.py/run-journey-notes.py) to
+        # take a moment to switch to a just-launched app, especially when
+        # a previous window's close left focus in an unclear state; give it
+        # an explicit focus and a short settle before checking for it.
+        try:
+            _niri("action", "focus-window", "--id", str(window["id"]))
+        except JourneyError:
+            pass
+        time.sleep(1.0)
+
         steps.append(check_search_field_editable())
         gaps.append(
             {
@@ -602,6 +640,7 @@ def run_journey(token: str) -> dict[str, Any]:
 
         row = find_disposable_row(disposable.pid)
         row_found = row is not None
+        visible_row_count = count_process_rows() if not row_found else None
         steps.append(
             make_step(
                 "process_row_identifiable",
@@ -609,13 +648,24 @@ def run_journey(token: str) -> dict[str, Any]:
                 "found a row for the disposable process over AT-SPI"
                 if row_found
                 else (
-                    "the process table exposes no per-row AT-SPI structure at all "
-                    "(crates/activity-monitor/src/process_table.rs) -- "
-                    "crates/activity-monitor/src/accessibility.rs already defines "
-                    "the row/label/action model this needs "
-                    "(project_process_table, AccessibleProcessRow) but it is "
-                    "never called outside its own tests, so no assistive "
-                    "technology or this script can select one specific process"
+                    "the process table's row model is real and live -- "
+                    "crates/activity-monitor/src/accessibility.rs's "
+                    "AccessibleProcessRow (\"{name} (PID {pid}), {cpu}% CPU, "
+                    "{mem}\") is confirmed wired into crates/activity-monitor/"
+                    "src/process_table.rs's render_tr, live-verified against "
+                    f"other real processes -- but only {visible_row_count} "
+                    "rows are exposed over AT-SPI at once, apparently the "
+                    "table's current visible viewport rather than its full "
+                    "row set (this run's rows were the highest-%CPU "
+                    "processes on the system); this script's own low-CPU "
+                    "disposable process falls outside that window and has "
+                    "no AT-SPI node. There is no accessible way to bring it "
+                    "into view: the column headers expose no AT-SPI Action "
+                    "interface at all (cannot be clicked to sort by PID), "
+                    "and the search field cannot be typed into (see "
+                    "system-monitor-search gap) -- so no assistive "
+                    "technology can select a specific low-usage process "
+                    "either."
                 ),
             )
         )
@@ -625,18 +675,28 @@ def run_journey(token: str) -> dict[str, Any]:
                 {
                     "surface": "system-monitor-process-table",
                     "issue": (
-                        "Quit/Force Quit act on whatever a mouse click (left or right) or "
+                        "the process table's AT-SPI row model is real and "
+                        "correctly labelled/actionable for the rows it does "
+                        "expose (verified live against other real "
+                        "processes), but its AT-SPI projection appears "
+                        "bounded to the table's current visible viewport "
+                        "rather than every row, and there is no accessible "
+                        "way to bring a specific low-usage row into that "
+                        "window: the column headers expose no AT-SPI Action "
+                        "interface (cannot sort by clicking PID/Name), and "
+                        "the search field still cannot be typed into. Quit/"
+                        "Force Quit act on whatever a mouse click or "
                         "keyboard table-navigation last selected "
-                        "(crates/activity-monitor/src/process_table.rs:352-382, "
-                        "crates/activity-monitor/src/view.rs:165-176); with no "
-                        "row exposed over AT-SPI and no way to type into the "
-                        "search field, this script cannot safely select its own "
-                        "disposable process, so it does not invoke Quit or Force "
-                        "Quit at all -- doing so blind, on a laptop whose session "
-                        "is shared with other agents, could act on an unrelated "
-                        "process. The confirmation/cancel/confirm-and-terminate "
-                        "steps of this journey are blocked by this gap, not "
-                        "attempted, and reported failed rather than faked."
+                        "(crates/activity-monitor/src/process_table.rs:352-"
+                        "382, crates/activity-monitor/src/view.rs:165-176), "
+                        "so this script cannot safely select its own "
+                        "disposable process and does not invoke Quit or "
+                        "Force Quit at all -- doing so blind, on a laptop "
+                        "whose session is shared with other agents, could "
+                        "act on an unrelated process. The confirmation/"
+                        "cancel/confirm-and-terminate steps of this journey "
+                        "are blocked by this gap, not attempted, and "
+                        "reported failed rather than faked."
                     ),
                 }
             )

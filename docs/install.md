@@ -121,6 +121,67 @@ updates"), so a running session is never replaced mid-session. An optional
 "install updates automatically" setting for `origin=rmac` security updates
 is still on the todo list and not implemented yet.
 
+## Install from a GitHub Release (the Beta path)
+
+Until the signed APT repository above exists, a tagged release still
+publishes `rmac-apps` and `rmac-session` `.deb` files, a `SHA256SUMS`, an
+SBOM, and a build-provenance attestation to its GitHub Release page (see
+[Release process](release-process.md) "What exists today"). `install.sh`
+and `uninstall.sh` can use that release directly, on a disposable Ubuntu
+26.04 amd64 or arm64 machine, without ever touching APT repository
+configuration:
+
+```sh
+curl -fsSL -O https://raw.githubusercontent.com/millionrust/lulo/main/scripts/linux/install.sh
+sh install.sh --from-release vX.Y.Z
+```
+
+This downloads `rmac-apps_*_<arch>.deb`, `rmac-session_*_<arch>.deb`, and
+`SHA256SUMS` from that release tag, verifies the two package files against
+`SHA256SUMS`, verifies `gh attestation verify`'s build-provenance check for
+each (skipped with a note if `gh` is not installed -- this is a defense in
+depth on top of the checksum check, not a replacement for it), then runs
+`sudo apt-get install` on the two local files so their `Depends` still
+resolve from the machine's ordinary Ubuntu archive. If you already
+downloaded or copied the `.deb` files and `SHA256SUMS` yourself (for
+example with `gh release download`, or from `build-native-inputs.sh` +
+`check-native-reproducibility.sh`'s output), skip the download instead:
+
+```sh
+sh install.sh --from-dir /absolute/path/to/native-package-set
+```
+
+Reverse either one the same way as the APT-repository path:
+
+```sh
+curl -fsSL -O https://raw.githubusercontent.com/millionrust/lulo/main/scripts/linux/uninstall.sh
+sh uninstall.sh
+```
+
+`uninstall.sh` does not need to know which path you installed from: it
+purges whichever of `rmac-session`, `rmac-apps`, and `rmac-archive-keyring`
+dpkg actually knows about (a `--from-release`/`--from-dir` install never
+registers `rmac-archive-keyring` at all, since it never adds the rmac APT
+repository) and removes the repository configuration files if present.
+
+> **Known packaging gap:** `rmac-session`'s `Depends` includes `niri`, which
+> is not currently packaged in the Ubuntu archive for `resolute` (26.04) or
+> any other Ubuntu release (checked against packages.ubuntu.com); the same
+> is true of `xwayland-satellite`. Until niri is available from the archive,
+> a third-party PPA, or rmac's own `rmac-wm` fork (ADR 0008, Track B) is
+> packaged and added as a dependency, `apt-get install` of `rmac-session`
+> will fail to resolve dependencies through either install path above on a
+> stock Ubuntu 26.04 machine. Install niri from wherever you are sourcing it
+> for development *before* running `install.sh`, so apt sees it as already
+> satisfied; do not remove it as part of `uninstall.sh`, since Ubuntu/GNOME
+> never depended on it and it may be needed again.
+
+For a full manual pass on a disposable VM (install, first login, upgrade,
+uninstall, and confirming Ubuntu/GNOME survives), follow
+[Beta clean-VM checklist](beta-clean-vm-checklist.md), or run
+`scripts/linux/run-package-lifecycle.py --print-checklist` to print its
+path.
+
 ## Build one application
 
 Build only what you need while developing:

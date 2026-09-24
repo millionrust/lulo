@@ -21,6 +21,13 @@ import tempfile
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = REPO_ROOT / "packaging/native/lifecycle.json"
+# The manual runbook for a human (or an agent with real VM access) to
+# exercise install -> first login -> upgrade -> uninstall on a disposable
+# Ubuntu 26.04 VM by hand -- this script requires root and a marked-
+# disposable host (see `_preflight`), so no agent working in this checkout
+# runs it directly; --print-checklist keeps that manual path discoverable
+# from here instead of only from docs/.
+CHECKLIST_PATH = REPO_ROOT / "docs/beta-clean-vm-checklist.md"
 MAX_INPUT_BYTES = 256 * 1024
 MAX_TOOL_OUTPUT_BYTES = 1024 * 1024
 TEST_USER = "rmac-lifecycle"
@@ -591,11 +598,35 @@ def run_lifecycle(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check-contract", action="store_true")
+    parser.add_argument(
+        "--print-checklist",
+        action="store_true",
+        help=(
+            "print the path to the manual clean-VM install/first-login/"
+            "upgrade/uninstall runbook (docs/beta-clean-vm-checklist.md) "
+            "instead of running anything; this script itself refuses to "
+            "run outside a marked-disposable Ubuntu VM as root"
+        ),
+    )
     parser.add_argument("--baseline", type=Path)
     parser.add_argument("--candidate", type=Path)
     parser.add_argument("--evidence", type=Path)
     arguments = parser.parse_args()
     try:
+        if arguments.print_checklist:
+            if any(
+                (
+                    arguments.check_contract,
+                    arguments.baseline,
+                    arguments.candidate,
+                    arguments.evidence,
+                )
+            ):
+                raise LifecycleError("--print-checklist does not accept other arguments")
+            if not CHECKLIST_PATH.is_file():
+                raise LifecycleError("the clean-VM checklist is missing from this checkout")
+            print(CHECKLIST_PATH)
+            return 0
         contract = load_contract()
         if arguments.check_contract:
             if any((arguments.baseline, arguments.candidate, arguments.evidence)):

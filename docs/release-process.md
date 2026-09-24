@@ -21,7 +21,11 @@ Tagging `vX.Y.Z` always:
 - attaches the `.deb` files, `SHA256SUMS`, and the SBOM to the GitHub
   Release, creating it if needed.
 
-None of that needs a secret.
+None of that needs a secret. That release bundle is also what
+`scripts/linux/install.sh --from-release <tag>` and `--from-dir` install
+from today, ahead of the signed APT repository below (see
+[Install](install.md) "Install from a GitHub Release (the Beta path)" and
+[Beta clean-VM checklist](beta-clean-vm-checklist.md)).
 
 Signing and publishing the APT repository -- `stage-apt-snapshot.py`,
 clearsigning `InRelease`, `publish-apt-snapshot.py`, and

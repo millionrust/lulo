@@ -40,10 +40,10 @@ them something that is not true.
 
 | # | Gap | Status | Effort | Files to change |
 |---|---|---|---|---|
-| S1 | ⌥⌘⎋ was not bound. Force Quit… opens all of System Monitor, not the Mac's small Force Quit window (a list of apps, "(Not Responding)" in red, and a Force Quit button). | ⌥⌘⎋ **Fixed** `20c998af`. The window is still Partial. | M | New mode in `shell/bins/rmac-app-switcher` (it already lists running apps and quits them) or a small app; `packaging/rmac-session/shell.kdl` |
-| S2 | Choosing System Settings… or Force Quit… a second time opened another window instead of bringing the open one forward. | **Fixed** `acf66602`. The niri ⌥⌘⎋ bind still spawns directly. | S | `packaging/rmac-session/shell.kdl` (route through a single-instance path) |
+| S1 | ⌥⌘⎋ was not bound. Force Quit… opens all of System Monitor, not the Mac's small Force Quit window (a list of apps, "(Not Responding)" in red, and a Force Quit button). | **Fixed** `8ecee3da`: the switcher service owns a 370 × 310 Force Quit Applications window measured on macOS 26.2. "(Not Responding)" marks only stopped processes (`/proc/<pid>/stat` T/t); a running app that stopped drawing is not detectable. | M | New mode in `shell/bins/rmac-app-switcher` (it already lists running apps and quits them) or a small app; `packaging/rmac-session/shell.kdl` |
+| S2 | Choosing System Settings… or Force Quit… a second time opened another window instead of bringing the open one forward. | **Fixed** `acf66602`; ⌥⌘⎋ and Force Quit… both go through the resident switcher, which brings an open window forward (`8ecee3da`). | S | `packaging/rmac-session/shell.kdl` (route through a single-instance path) |
 | S3 | About This Lulo OS opened the General list rather than the About summary. | **Fixed** `beafa880` | — | `crates/system-settings/src/navigation.rs` (`subpage_route`) |
-| S4 | Control Centre: the Wi-Fi and Bluetooth modules don't expand into a network or device list; they only open Settings. The sound module has no output picker. Neither Control Centre nor Notification Centre can be opened from the keyboard. | Partial | M | `crates/quick-settings-app/src/render/cards.rs`, `render/controls.rs`, `crates/rmac-quick-settings/src/layout.rs` |
+| S4 | Control Centre: the Wi-Fi and Bluetooth modules don't expand into a network or device list; they only open Settings. The sound module has no output picker. Neither Control Centre nor Notification Centre can be opened from the keyboard. | **Fixed** `2a0ef183` (lists, output picker, arrow keys inside). Opening Control Centre and Notification Centre from the keyboard is still Missing. | M | `crates/rmac-quick-settings/src/detail.rs`, `crates/quick-settings-app/src/render/detail.rs` |
 | S5 | Files has no Empty Trash command of its own (Finder › Empty Trash, ⇧⌘⌫). You have to use the Dock, or select everything and choose Delete Immediately. | Missing | S | `crates/finder/src/view/chrome_presentation/menus_tabs.rs`, `startup/shortcuts.rs` (bind `FORCE_DELETE`); reuse the Dock's alert copy (Files owner) |
 | S6 | ⇧⌘Q, and ⌃F2 to move focus to the menu bar. The logout confirmation lives in the menu-bar popover, and no key can open that popover. | Missing | M | `shell/bins/rmac-menubar/src/main.rs` (a command endpoint and the Dock's invisible focus-surface technique), `crates/rmac-shortcuts/src/model.rs` |
 | S7 | Printing: ⌘P works in Text Editor through the portal, but Notes and Preview have no print path. | Partial | S each | `crates/notes/src/startup_controller.rs`, `crates/preview/src/main.rs`; follow `crates/text-editor/src/view/printing.rs` |
@@ -51,7 +51,7 @@ them something that is not true.
 | S9 | Files has no ⌘N (New Window) and no ⇧⌘G (Go to Folder). Go to Folder exists only in the Open/Save panel. | Missing | S (⇧⌘G) / M (⌘N) | `crates/finder/src/view/startup/shortcuts.rs`; lift `crates/rmac-file-chooser/src/goto.rs` (Files owner) |
 | S10 | Wi-Fi: there is no way to join a hidden network (Other… / Join Other Network). | Missing | M | `crates/system-settings/src/connectivity.rs`, `controller/wifi/credentials.rs`, `crates/rmac-network/src/linux.rs` (`AddAndActivateConnection`) |
 | S11 | Keyboard-backlight keys (`XF86KbdBrightnessUp/Down`) are not bound, and the OSD has no row for them. | Missing | S–M | `crates/rmac-osd/src/lib.rs`, `linux.rs` (logind `SetBrightness` on `leds/*::kbd_backlight`), `packaging/rmac-session/shell.kdl` |
-| S12 | Dock app menus have no Show All Windows, Hide, or (with ⌥) Hide Others. The comment explaining their absence says niri can't hide apps, but parking (ADR 0014) now does that, and App Exposé exists. | Missing | M | `crates/rmac-dock/src/menu.rs`, `crates/rmac-dock-system/src/dispatch.rs`, `shell/bins/rmac-dock/src/main.rs` |
+| S12 | Dock app menus have no Show All Windows, Hide, or (with ⌥) Hide Others. The comment explaining their absence says niri can't hide apps, but parking (ADR 0014) now does that, and App Exposé exists. | **Fixed** `0d90bac3`, plus ⌥-click and ⌥⌘-click on Dock icons. A hidden app still shows as minimized tiles, not a running icon. | M | `crates/rmac-dock/src/menu.rs`, `crates/rmac-dock-system/src/dispatch.rs`, `shell/bins/rmac-dock/src/main.rs` |
 | S13 | Title-bar double-click calls GPUI's `zoom_window()` (xdg maximize). The green button uses the compositor's Fill instead. Whether niri honours maximize for floating windows is unverified. There is also no "double-click a window's title bar to" setting. | Partial | S (route through `send_window_action`); M with the setting | `crates/rmac-ui/src/chrome.rs` (`client_bar`), `crates/system-settings/src/controller/chrome.rs`, `crates/weather/src/view.rs`, `crates/clock/src/view.rs` |
 | S14 | The emoji and symbol picker (⌃⌘Space, fn E) isn't there. The binding exists, but GPUI's Linux `show_character_palette` does nothing. | Missing | L | New shell overlay; `crates/rmac-ui/src/text_keys.rs` |
 | S15 | No app binds ⌘, (Settings…). Apps with real settings (Terminal profiles, Weather units, Clock) should open them. | Missing | S each | per app `main.rs` / `lifecycle.rs` |
@@ -92,7 +92,7 @@ The rows, their order and the separators match macOS 26:
 | System Settings… | **Fixed** | Focuses the open Settings window or launches one (`open_or_focus_app`) |
 | Software Center | Works | `gtk-launch snap-store_snap-store`, the Ubuntu App Center (the App Store row's place) |
 | Recent Items › | Works | Submenu, Clear Recent Items |
-| Force Quit… ⌥⌘⎋ | Partial (**Fixed** binding and focus) | Opens System Monitor; see S1 |
+| Force Quit… ⌥⌘⎋ | **Fixed** | The Force Quit Applications window; see S1 |
 | Sleep | Works | `systemctl suspend`. logind locks first (`crates/rmac-shortcuts/src/lock.rs:278-345`) |
 | Restart… / Shut Down… | **Fixed** | Confirmation, then every app is asked to quit; an app still open after 30 s cancels the request and a notification names it |
 | Lock Screen ⌃⌘Q | Works | GlobalShortcuts portal (`crates/rmac-shortcuts/src/model.rs:19`), fallback `shortcuts-fallback.kdl:5`; unlock through the PAM broker |
@@ -104,7 +104,7 @@ The rows, their order and the separators match macOS 26:
 | Step | Status | Evidence |
 |---|---|---|
 | Control Centre modules: Wi-Fi, Bluetooth, Focus, Display, Sound, Now Playing | Works | `crates/quick-settings-app/src/render/{cards,controls}.rs` |
-| Wi-Fi and Bluetooth lists inside Control Centre, sound output picker | Missing | S4 |
+| Wi-Fi and Bluetooth lists inside Control Centre, sound output picker | **Fixed** | S4 |
 | Wi-Fi menu-bar menu with network list and join | Works | `shell/bins/rmac-menubar/src/menu_model.rs` `wifi_menu_rows`; `docs/journey-7-trace.md` |
 | Notification Centre (click the clock), grouping, Clear All, banners with actions | Works | `crates/notification-center-app`, `crates/rmac-notifications-linux/src/service.rs:763` (the `org.freedesktop.Notifications` server) |
 | Spotlight ⌘Space | Works | Portal `launcher` shortcut; `crates/launcher-app` |
@@ -114,7 +114,7 @@ The rows, their order and the separators match macOS 26:
 | Step | Status | Evidence |
 |---|---|---|
 | App menu: windows, Options › Keep in Dock / Open at Login / Show in Files, Quit (⌥ → Force Quit) | Works | `crates/rmac-dock/src/menu.rs:238-385` |
-| Show All Windows, Hide, Hide Others | Missing | S12 |
+| Show All Windows, Hide, Hide Others | **Fixed** | S12 |
 | Drag out to remove; kept apps persist; recent apps | Works | `crates/rmac-dock/src/reorder.rs`, `pins.rs`, `recents.rs` |
 | Trash: Open, Empty Trash with the Mac's alert, drop files to trash | Works | `shell/bins/rmac-dock/src/main.rs:3064-3147`, `:807-819` |
 
@@ -202,6 +202,10 @@ installs the Mac keys on Linux.
 | `159f4208` | Notes commits the newest edit before it quits | `worker.rs` `a_quitting_client_can_wait_…` |
 | `787392b6` | The menu bar holds a logind delay inhibitor while apps have unsaved work | `session_guard.rs` (run standalone with `rustc --test`) |
 
+| `8ecee3da` | Force Quit Applications window (⌥⌘⎋, Force Quit…) | `shell/bins/rmac-app-switcher/src/force_quit.rs` tests (run standalone with `rustc --test`) |
+| `2a0ef183` | Control Centre Wi-Fi, Bluetooth and output lists; keyboard inside | `crates/rmac-quick-settings/src/detail.rs` tests |
+| `0d90bac3` | Dock Show All Windows, Hide, Hide Others; ⌥-click | `crates/rmac-dock/src/tests.rs` `hide_hide_others_…`, `menu.rs` `running_kept_app_menu_…` |
+
 To check on the laptop, one at a time:
 
 1. Log out with an edited Text Editor document. The Save alert should come
@@ -222,3 +226,16 @@ To check on the laptop, one at a time:
 8. Unsaved work on a forced end: run the five checks at the end of
    [ADR 0020](decisions/0020-unsaved-work-at-session-end.md). Start with
    `systemctl poweroff` 1 s after typing into a Text Editor document.
+
+9. Press ⌥⌘⎋ with two or three apps open: the Force Quit Applications
+   window should list them alphabetically (Files last) with the front app
+   selected. ↑↓ move, Return asks "Do you want to force … to quit?", Esc
+   and ⌘W close. Press ⌥⌘⎋ again and choose Force Quit… from the logo
+   menu: the open window should come forward, never a second one.
+   `kill -STOP` a test app to see "(Not Responding)", then `kill -CONT`.
+10. Control Centre: click the Wi-Fi and Bluetooth names and the Sound
+   output button. Join a saved network, connect a paired device, switch
+   output; then use ↑↓, ←→ on the volume, Return and Esc.
+11. Right-click a running app in the Dock: Show All Windows, Hide, and
+    with ⌥ held, Hide Others. ⌥-click another app's icon should hide the
+    one you left.

@@ -70,11 +70,30 @@ impl<K: Copy + PartialEq, V: Clone> Recency<K, V> {
 
 #[derive(Default)]
 struct MenuTargets {
-    windows: Recency<AnyWindowHandle, FocusHandle>,
+    /// Every window seen active, most recent last, with the content that
+    /// handles its menu commands when the app registered one.
+    windows: Recency<AnyWindowHandle, Option<FocusHandle>>,
     observing_closes: bool,
 }
 
 impl Global for MenuTargets {}
+
+impl MenuTargets {
+    fn observe_closes(cx: &mut App) {
+        if std::mem::replace(
+            &mut cx.default_global::<MenuTargets>().observing_closes,
+            true,
+        ) {
+            return;
+        }
+        cx.on_window_closed(|cx, closed| {
+            cx.default_global::<MenuTargets>()
+                .windows
+                .forget_where(|window| window.window_id() == closed);
+        })
+        .detach();
+    }
+}
 
 /// Let desktop menu-bar commands reach this window's content even when the
 /// window has lost keyboard focus to the top bar, or nothing in it is
@@ -86,37 +105,52 @@ pub fn register_menu_target<V: 'static>(
     cx: &mut Context<V>,
 ) {
     let handle = window.window_handle();
-    let first_window = {
-        let targets = cx.default_global::<MenuTargets>();
-        targets.windows.remember(handle, focus.clone());
-        !std::mem::replace(&mut targets.observing_closes, true)
-    };
-    if first_window {
-        cx.on_window_closed(|cx, closed| {
-            cx.default_global::<MenuTargets>()
-                .windows
-                .forget_where(|window| window.window_id() == closed);
-        })
-        .detach();
-    }
+    cx.default_global::<MenuTargets>()
+        .windows
+        .remember(handle, Some(focus.clone()));
+    MenuTargets::observe_closes(cx);
+    track_key_window(window, cx);
+}
+
+/// Remember this window whenever it becomes the key window, so the menu
+/// bar's commands and its validation reach the window the user last worked
+/// in even while the menu bar holds the keyboard. Every window opened with
+/// [`crate::observe_window_state`] is tracked already.
+pub fn track_key_window<V: 'static>(window: &mut Window, cx: &Context<V>) {
     cx.observe_window_activation(window, |_, window, cx| {
-        if window.is_window_active() {
-            let handle = window.window_handle();
-            cx.default_global::<MenuTargets>().windows.promote(handle);
+        if !window.is_window_active() {
+            return;
         }
+        let handle = window.window_handle();
+        let targets = cx.default_global::<MenuTargets>();
+        if targets.windows.value(handle).is_some() {
+            targets.windows.promote(handle);
+        } else {
+            targets.windows.remember(handle, None);
+        }
+        MenuTargets::observe_closes(cx);
     })
     .detach();
+}
+
+/// The window menu commands go to: the active one, else the one most
+/// recently active, with its registered content if any.
+pub(crate) fn target(cx: &App) -> Option<(AnyWindowHandle, Option<FocusHandle>)> {
+    let active = cx.active_window();
+    match cx.try_global::<MenuTargets>() {
+        Some(targets) => targets
+            .windows
+            .target(active)
+            .map(|(window, focus)| (window, focus.flatten())),
+        None => active.map(|window| (window, None)),
+    }
 }
 
 /// Send a menu-bar command to the app's key window, focusing its registered
 /// content first if the command would otherwise not reach a handler.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn dispatch_menu_action(action: Box<dyn Action>, cx: &mut App) {
-    let active = cx.active_window();
-    let target = match cx.try_global::<MenuTargets>() {
-        Some(targets) => targets.windows.target(active),
-        None => active.map(|window| (window, None)),
-    };
+    let target = target(cx);
     let Some((window_handle, focus)) = target else {
         cx.dispatch_action(action.as_ref());
         return;

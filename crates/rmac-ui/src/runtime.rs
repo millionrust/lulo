@@ -194,71 +194,19 @@ fn initial_host_appearance_from(value: &str) -> Option<rmac_appearance::Snapshot
 /// from the desktop menu bar into the app's key window (see
 /// [`crate::register_menu_target`]).
 pub fn install_app_menu(app_id: &'static str, cx: &mut App) {
-    install_app_endpoint(app_id, None, cx);
+    crate::app_menu::install(app_id, None, cx);
 }
 
 /// [`install_app_menu`] for an app whose windows share one process: later
 /// launches hand their arguments to `open_window` here instead of starting a
-/// second process that could not own the app's menu name.
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) fn install_app_instance(
+/// second process that could not own the app's menu name. Pair it with
+/// [`crate::hand_off_to_running_instance`] before GPUI starts.
+pub fn install_app_instance(
     app_id: &'static str,
     open_window: impl Fn(Vec<String>, &mut App) + 'static,
     cx: &mut App,
 ) {
-    install_app_endpoint(app_id, Some(Box::new(open_window)), cx);
-}
-
-type OpenWindowRequest = Box<dyn Fn(Vec<String>, &mut App)>;
-
-fn install_app_endpoint(
-    app_id: &'static str,
-    open_window: Option<OpenWindowRequest>,
-    cx: &mut App,
-) {
-    #[cfg(target_os = "linux")]
-    {
-        let Some(menus) = rmac_app_menu::definition(app_id, cx.all_action_names()) else {
-            return;
-        };
-        let (activation_tx, activation_rx) = rmac_app_menu::activation_channel();
-        let windows = open_window.map(|open_window| {
-            let (window_tx, window_rx) = rmac_app_menu::window_request_channel();
-            cx.spawn(async move |cx| {
-                while let Ok(arguments) = window_rx.recv().await {
-                    cx.update(|cx| open_window(arguments, cx));
-                }
-            })
-            .detach();
-            window_tx
-        });
-        cx.background_executor()
-            .spawn(async move {
-                let served = match windows {
-                    Some(windows) => {
-                        rmac_app_menu::serve_instance(app_id, menus, activation_tx, windows).await
-                    }
-                    None => rmac_app_menu::serve(app_id, menus, activation_tx).await,
-                };
-                // `Ok` means the menu name is owned; the endpoint then lives
-                // until the process exits.
-                if let Err(error) = served {
-                    eprintln!("{app_id}: the menu bar cannot show this app's menus: {error}");
-                }
-            })
-            .detach();
-        cx.spawn(async move |cx| {
-            while let Ok(action_name) = activation_rx.recv().await {
-                cx.update(|cx| match cx.build_action(&action_name, None) {
-                    Ok(action) => crate::menu_target::dispatch_menu_action(action, cx),
-                    Err(error) => eprintln!("ignored unavailable {app_id} menu action: {error}"),
-                });
-            }
-        })
-        .detach();
-    }
-    #[cfg(not(target_os = "linux"))]
-    let _ = (app_id, open_window, cx);
+    crate::app_menu::install(app_id, Some(Box::new(open_window)), cx);
 }
 
 /// Apply the current shared theme and text scale before an on-demand shell

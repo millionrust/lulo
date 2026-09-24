@@ -3,6 +3,8 @@
 //! Every rmac app depends on this crate so they share one look: macOS-style
 //! window chrome, a common live theme, fonts, and application boot helpers.
 
+mod about;
+mod app_menu;
 mod assets;
 mod chrome;
 mod components;
@@ -41,10 +43,13 @@ pub use feedback::{
     ToastKind, Tooltip,
 };
 pub use gpui_component::{ActiveTheme, StyledExt};
-pub use menu_target::register_menu_target;
+pub use app_menu::{
+    set_menu_checked, set_menu_enabled, set_menu_label, set_menu_mixed, ShowAboutPanel,
+};
+pub use menu_target::{register_menu_target, track_key_window};
 pub use runtime::{
-    defer_content_ready, init_application, install_app_menu, mark_content_ready,
-    prepare_surface_window, shell_surface_root, text_px,
+    defer_content_ready, init_application, install_app_instance, install_app_menu,
+    mark_content_ready, prepare_surface_window, shell_surface_root, text_px,
 };
 pub use window::*;
 

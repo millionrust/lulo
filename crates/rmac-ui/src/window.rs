@@ -416,7 +416,11 @@ pub(crate) fn window_options_for_app_with_bounds(
 /// Resize bursts coalesce for a short quiet period, and persistence runs away
 /// from the render thread. Failure is deliberately non-fatal: geometry is a
 /// convenience and the next launch falls back to safe centered bounds.
+///
+/// The window is also tracked as a key-window candidate for the menu bar
+/// ([`crate::track_key_window`]).
 pub fn observe_window_state<V: 'static>(app_id: &str, window: &mut Window, cx: &Context<V>) {
+    crate::menu_target::track_key_window(window, cx);
     let Ok(store) = WindowStateStore::from_environment(app_id) else {
         return;
     };
@@ -555,25 +559,8 @@ pub fn boot_unified_app_instance_with_assets<A, V, F>(
     if windows.is_empty() {
         windows.push(Vec::new());
     }
-    #[cfg(target_os = "linux")]
-    match async_io::block_on(rmac_app_menu::open_window_in_running_instance(
-        app_id,
-        &windows[0],
-    )) {
-        Ok(true) => {
-            for arguments in &windows[1..] {
-                if let Err(error) = async_io::block_on(
-                    rmac_app_menu::open_window_in_running_instance(app_id, arguments),
-                ) {
-                    eprintln!("{app_id} could not open another window: {error}");
-                }
-            }
-            return;
-        }
-        Ok(false) => {}
-        // A process owns the name but did not answer: start normally, as
-        // before single-instance hand-off existed, rather than show nothing.
-        Err(error) => eprintln!("{app_id} could not reach its running process: {error}"),
+    if hand_off_to_running_instance(app_id, &windows) {
+        return;
     }
     let build = Rc::new(build);
     crate::application()
@@ -608,6 +595,83 @@ pub fn boot_unified_app_instance_with_assets<A, V, F>(
             }
             cx.activate(true);
         });
+}
+
+/// Opens a small fixed-size panel of this app (the About panel), centred on
+/// the display rather than at the app's remembered window geometry.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn open_panel_window<V, F>(
+    app_id: &str,
+    title: String,
+    width: f32,
+    height: f32,
+    cx: &mut App,
+    build: F,
+) -> gpui::Result<gpui::AnyWindowHandle>
+where
+    V: Render + 'static,
+    F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
+{
+    let (outer_width, outer_height) = outer_window_size(width, height);
+    let options = WindowOptions {
+        app_id: Some(app_id.to_owned()),
+        is_resizable: false,
+        is_minimizable: false,
+        window_min_size: Some(size(px(width), px(height))),
+        ..window_options_with_bounds(
+            outer_width,
+            outer_height,
+            centered_window_bounds(outer_width, outer_height, cx),
+            Some(SharedString::from(title)),
+        )
+    };
+    let handle = cx.open_window(options, move |window, cx| {
+        reserve_client_frame(window);
+        prepare_surface_window(window, cx);
+        let view = cx.new(|cx| build(window, cx));
+        cx.new(|cx| Root::new(view, window, cx))
+    })?;
+    Ok(handle.into())
+}
+
+/// Hand this launch's windows to the app's running process, if it has one,
+/// so each app runs as one process with one menu, as on the Mac. Returns
+/// true when a running process took them and this launch should exit. Each
+/// entry is one window's arguments (at most eight, each a path or option
+/// that is valid UTF-8); paths must be absolute, since the running process
+/// has its own working directory.
+///
+/// A process that owns the name but does not answer is reported, and this
+/// launch then starts on its own rather than show nothing.
+pub fn hand_off_to_running_instance(app_id: &'static str, windows: &[Vec<String>]) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let first = windows.first().cloned().unwrap_or_default();
+        match async_io::block_on(rmac_app_menu::open_window_in_running_instance(
+            app_id, &first,
+        )) {
+            Ok(true) => {
+                for arguments in windows.iter().skip(1) {
+                    if let Err(error) = async_io::block_on(
+                        rmac_app_menu::open_window_in_running_instance(app_id, arguments),
+                    ) {
+                        eprintln!("{app_id} could not open another window: {error}");
+                    }
+                }
+                true
+            }
+            Ok(false) => false,
+            Err(error) => {
+                eprintln!("{app_id} could not reach its running process: {error}");
+                false
+            }
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (app_id, windows);
+        false
+    }
 }
 
 /// Opens one more window from its command-line arguments.
@@ -707,6 +771,95 @@ pub fn boot_app_with_assets<A, V, F>(
     V: Render + 'static,
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
+    boot_app_window(app_id, assets, title, width, height, false, build);
+}
+
+/// [`boot_app_with_assets`] for an app with one window, as Mac Notes has:
+/// a second launch brings the running app's window forward instead of
+/// starting a second process, which could not own the app's menus (or, for
+/// Notes, its library).
+pub fn boot_single_window_app_with_assets<A, V, F>(
+    app_id: &'static str,
+    assets: A,
+    title: impl Into<SharedString>,
+    width: f32,
+    height: f32,
+    build: F,
+) where
+    A: gpui::AssetSource,
+    V: Render + 'static,
+    F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
+{
+    if hand_off_to_running_instance(app_id, &[Vec::new()]) {
+        focus_running_app(app_id);
+        return;
+    }
+    boot_app_window(app_id, assets, title, width, height, true, build);
+}
+
+/// Bring `app_id`'s most recently used window forward through the
+/// compositor, restoring it if it is minimised. The launch that handed off
+/// to the running app does this: it holds the user's activation, which the
+/// running process does not.
+fn focus_running_app(app_id: &'static str) {
+    #[cfg(target_os = "linux")]
+    async_io::block_on(async {
+        let snapshot = match rmac_compositor_niri::snapshot().await {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                eprintln!("{app_id}: could not find the running window: {error:?}");
+                return;
+            }
+        };
+        let Some(window) = snapshot
+            .windows
+            .iter()
+            .filter(|window| window.app_id.as_deref() == Some(app_id))
+            .max_by_key(|window| {
+                window
+                    .focus_timestamp
+                    .as_ref()
+                    .map(|stamp| (stamp.seconds, stamp.nanoseconds))
+            })
+            .map(|window| window.id)
+        else {
+            return;
+        };
+        let mut store = rmac_compositor::ParkingStore::load_default();
+        let parked = store.entries().iter().any(|entry| entry.window == window);
+        let actions = if parked {
+            store.restore_actions(&[window])
+        } else {
+            vec![rmac_compositor::Action::FocusWindow { window }]
+        };
+        for action in &actions {
+            if let Err(error) = rmac_compositor_niri::execute_action(action).await {
+                eprintln!("{app_id}: could not bring its window forward: {error:?}");
+            }
+        }
+        if parked {
+            if let Err(error) = store.save_default() {
+                eprintln!("could not save the parking set: {error}");
+            }
+        }
+    });
+    #[cfg(not(target_os = "linux"))]
+    let _ = app_id;
+}
+
+fn boot_app_window<A, V, F>(
+    app_id: &'static str,
+    assets: A,
+    title: impl Into<SharedString>,
+    width: f32,
+    height: f32,
+    single_window: bool,
+    build: F,
+) where
+    A: gpui::AssetSource,
+    V: Render + 'static,
+    F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
+{
     let fallback_title: SharedString = title.into();
     let title = rmac_apps::identity::window_title(app_id)
         .map(SharedString::from)
@@ -715,7 +868,22 @@ pub fn boot_app_with_assets<A, V, F>(
         .with_assets(assets)
         .run(move |cx: &mut App| {
             init_application(cx);
-            install_app_menu(app_id, cx);
+            if single_window {
+                // A later launch asks this process to come forward.
+                crate::install_app_instance(
+                    app_id,
+                    |_, cx| {
+                        if let Some((window, _)) = crate::menu_target::target(cx) {
+                            window
+                                .update(cx, |_, window, _| window.activate_window())
+                                .ok();
+                        }
+                    },
+                    cx,
+                );
+            } else {
+                install_app_menu(app_id, cx);
+            }
             // The caller names the visible window's size (the Mac's); the
             // outer bounds add the client frame around it.
             let (outer_width, outer_height) = outer_window_size(width, height);

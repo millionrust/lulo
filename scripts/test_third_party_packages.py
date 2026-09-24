@@ -150,6 +150,25 @@ class VersionPolicyTests(unittest.TestCase):
         self.assertOrdered("26.04-0lulo1", "26.04ppa3")
         self.assertOrdered("0.8.2-0lulo1", "0.8.2ppa1")
 
+    def test_rmac_session_floors_are_the_pinned_upstream_versions(self):
+        session = next(spec for spec in native.PACKAGE_SPECS if spec.name == "rmac-session")
+        for pin in third_party.load_pins(REPO_ROOT).values():
+            relation = f"{pin.name} (>= {pin.upstream_version})"
+            self.assertIn(relation, session.static_dependencies)
+            # Every build that satisfies the floor: ours and the PPA's.
+            for candidate in (pin.debian_version, f"{pin.upstream_version}ppa3"):
+                self.assertGreaterEqual(
+                    third_party.compare_versions(candidate, pin.upstream_version), 0
+                )
+        control = native.control_bytes(
+            session,
+            version="0.9.0~beta.1-38",
+            architecture="amd64",
+            dependencies=native.resolved_static_dependencies(session, "0.9.0~beta.1-38"),
+        ).decode("utf-8")
+        self.assertIn("niri (>= 26.04)", control)
+        self.assertIn("xwayland-satellite (>= 0.8.2)", control)
+
 
 class NoticeAndSbomTests(unittest.TestCase):
     LOCK = (

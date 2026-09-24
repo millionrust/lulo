@@ -152,6 +152,13 @@ PACKAGE_SPECS = (
         # .service daily update nudge (docs/install.md "Install and
         # auto-update"): pkcon asks PackageKit for updates and notify-send
         # shows the result.
+        #
+        # niri and xwayland-satellite are not in the Ubuntu archive; Lulo OS
+        # ships its own builds of the tested releases under the upstream
+        # package names with a "-0luloN" revision (scripts/linux/
+        # build-niri-packages.sh, packaging/third-party/upstreams.json). The
+        # plain versioned relation accepts those builds, the danklinux PPA's
+        # "26.04ppaN", and any future official package alike.
         static_dependencies=(
             "coreutils",
             "dbus-user-session",
@@ -160,7 +167,7 @@ PACKAGE_SPECS = (
             "gawk | mawk",
             "grim",
             "libnotify-bin",
-            "niri",
+            "niri (>= 26.04)",
             "packagekit",
             "pipewire-bin",
             "rmac-apps (= {version})",
@@ -171,6 +178,7 @@ PACKAGE_SPECS = (
             "xdg-desktop-portal",
             "xdg-desktop-portal-gnome",
             "xdg-desktop-portal-gtk",
+            "xwayland-satellite (>= 0.8.2)",
         ),
         # keyd and pkexec serve the opt-in "Use Mac shortcuts in all apps"
         # (docs/decisions/0017-mac-keyboard.md); the Qt platform theme gives Qt

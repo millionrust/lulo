@@ -85,7 +85,9 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("wl-clipboard", apps.static_dependencies)
         session = contract.PACKAGE_SPECS[1]
         self.assertIn("rmac-apps (= {version})", session.static_dependencies)
-        self.assertIn("niri", session.static_dependencies)
+        self.assertIn("niri (>= 26.04)", session.static_dependencies)
+        self.assertIn("xwayland-satellite (>= 0.8.2)", session.static_dependencies)
+        self.assertNotIn("niri", session.static_dependencies)
         self.assertIn("swaylock", session.static_dependencies)
         self.assertIn("wl-clipboard", session.static_dependencies)
         self.assertNotIn("libpam0g", session.static_dependencies)

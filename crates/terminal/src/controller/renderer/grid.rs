@@ -35,7 +35,7 @@ impl TerminalView {
     /// Move to the next or previous Find match anywhere in the scrollback,
     /// scroll it into view and select it (⌘G, ⇧⌘G, Return, Shift-Return).
     /// The whole history is scanned once per step, never while idle.
-    pub(super) fn find_step(&mut self, forward: bool, cx: &mut Context<Self>) {
+    pub(crate) fn find_step(&mut self, forward: bool, cx: &mut Context<Self>) {
         if self.modal_open() {
             return;
         }

@@ -128,6 +128,43 @@ SECOND_APP: dict[str, str] = {
 # --------------------------------------------------------------------------
 
 
+def desktop_entry_dirs(env: dict[str, str], home: str) -> list[Path]:
+    """Application directories in XDG lookup order (user entries first)."""
+    data_home = env.get("XDG_DATA_HOME") or os.path.join(home, ".local/share")
+    data_dirs = env.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
+    return [Path(data_home) / "applications"] + [
+        Path(entry) / "applications" for entry in data_dirs.split(":") if entry
+    ]
+
+
+def exec_from_desktop_entry(text: str) -> str | None:
+    """The program path of a desktop entry's Exec= line, without field codes."""
+    in_entry = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("["):
+            in_entry = stripped == "[Desktop Entry]"
+            continue
+        if in_entry and stripped.startswith("Exec="):
+            words = [w for w in stripped[len("Exec="):].split() if not w.startswith("%")]
+            return words[0] if words else None
+    return None
+
+
+def resolve_app_exec(app: dict[str, str], env: dict[str, str], home: str) -> str:
+    """Launch what the Dock launches: the first desktop entry for the app id wins,
+    so a stale /usr/bin copy never stands in for the user's current build."""
+    for directory in desktop_entry_dirs(env, home):
+        entry = directory / f"{app['app_id']}.desktop"
+        try:
+            program = exec_from_desktop_entry(entry.read_text(encoding="utf-8"))
+        except OSError:
+            continue
+        if program:
+            return program
+    return app["exec"]
+
+
 def discover_environment(
     environ: dict[str, str], runtime_dir: Path
 ) -> dict[str, str]:
@@ -718,7 +755,7 @@ def launch_app(
         return steps, launch_step, None
 
     try:
-        niri_spawn(ready_file_spawn_command(app["exec"], ready_file))
+        niri_spawn(ready_file_spawn_command(resolve_app_exec(app, dict(os.environ), str(Path.home())), ready_file))
     except JourneyError as error:
         return steps, make_step("app_launched", False, str(error), method="none"), None
     return (
@@ -895,7 +932,12 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
 
         second_ready_file = ready_dir / "second-app.ready"
         second_spawn_started = time.monotonic()
-        niri_spawn(ready_file_spawn_command(SECOND_APP["exec"], second_ready_file))
+        niri_spawn(
+            ready_file_spawn_command(
+                resolve_app_exec(SECOND_APP, dict(os.environ), str(Path.home())),
+                second_ready_file,
+            )
+        )
         second_window, mapped_ms = wait_for_window(
             SECOND_APP["app_id"], started=second_spawn_started
         )

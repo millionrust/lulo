@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -235,3 +236,28 @@ class AppConstantTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResolveAppExecTests(unittest.TestCase):
+    def test_user_desktop_entry_wins_over_the_packaged_path(self):
+        with tempfile.TemporaryDirectory() as home:
+            apps = Path(home) / ".local/share/applications"
+            apps.mkdir(parents=True)
+            (apps / "org.rmac.TextEditor.desktop").write_text(
+                "[Desktop Entry]\nName=Text Editor\nExec=/home/u/.local/libexec/rmac/rmac-text-editor %F\n"
+                "[Desktop Action new]\nExec=/other --new-document\n",
+                encoding="utf-8",
+            )
+            app = {"app_id": "org.rmac.TextEditor", "exec": "/usr/bin/rmac-text-editor"}
+            self.assertEqual(
+                journey.resolve_app_exec(app, {"XDG_DATA_DIRS": "/nonexistent"}, home),
+                "/home/u/.local/libexec/rmac/rmac-text-editor",
+            )
+
+    def test_falls_back_to_the_packaged_path_without_an_entry(self):
+        with tempfile.TemporaryDirectory() as home:
+            app = {"app_id": "org.rmac.Notes", "exec": "/usr/bin/rmac-notes"}
+            self.assertEqual(
+                journey.resolve_app_exec(app, {"XDG_DATA_DIRS": "/nonexistent"}, home),
+                "/usr/bin/rmac-notes",
+            )

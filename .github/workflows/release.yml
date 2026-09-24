@@ -1,0 +1,561 @@
+# Build and publish a tagged rmac release: .debs, SHA256SUMS, an SBOM, and
+# build provenance always run and attach to the GitHub Release. Signing the
+# APT repository and deploying it to GitHub Pages additionally need the
+# "apt-signing" environment's secrets and a real rmac source-package builder
+# (see docs/release-process.md); until both exist, that job is a documented
+# no-op rather than a broken or unsafe publish.
+#
+# Every action below is pinned by commit SHA, with the release tag kept in a
+# trailing comment for human review. See docs/release-process.md for the
+# runbook (tagging, approving the apt-signing environment, halting a
+# rollout, the emergency higher-version path, and the still-open key
+# custody decision).
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rmac-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned once here so the SBOM job and docs/release-process.md agree on
+  # which exact cargo-cyclonedx release is trusted.
+  RMAC_CARGO_CYCLONEDX_VERSION: "0.5.9"
+
+jobs:
+  dependency-policy:
+    name: Dependency policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      passed: ${{ steps.mark.outputs.passed }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check advisories, licenses, bans, and sources
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          log-level: error
+          command: check
+          arguments: --locked
+          command-arguments: --hide-inclusion-graph
+
+      - name: Record that the license/advisory gate passed
+        id: mark
+        run: echo "passed=true" >> "$GITHUB_OUTPUT"
+
+  build-amd64:
+    name: Build amd64 packages
+    runs-on: ubuntu-latest
+    # Ubuntu 26.04 has no GitHub-hosted runner image yet. Building inside a
+    # real `ubuntu:26.04` container on the current ubuntu-latest host gets
+    # the target distribution's actual glibc/toolchain ABI, at the cost of
+    # having to create our own non-root build user (build-native-inputs.sh
+    # and check-native-reproducibility.sh both deliberately refuse to run as
+    # root) and to install Rust ourselves. See docs/release-process.md for
+    # the amd64/arm64 runner decision and its risks (container disk space in
+    # particular has not been validated against a real run).
+    container:
+      image: ubuntu:26.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      RUSTUP_HOME: /usr/local/rustup
+      CARGO_HOME: /usr/local/cargo
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+    steps:
+      - name: Install container base tooling
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            clang \
+            curl \
+            debhelper \
+            dpkg-dev \
+            fakeroot \
+            git \
+            gnupg \
+            libfontconfig1-dev \
+            libfreetype-dev \
+            libssl-dev \
+            libvulkan-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            pkg-config \
+            sudo \
+            xz-utils
+
+      - name: Create the non-root build user
+        run: |
+          useradd --create-home --shell /bin/bash builder
+          echo 'builder ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/builder
+          mkdir -p "$RUSTUP_HOME" "$CARGO_HOME"
+          chown -R builder:builder "$RUSTUP_HOME" "$CARGO_HOME"
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Hand the checkout to the build user
+        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Install the pinned Rust toolchains
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --profile minimal --default-toolchain none
+            cd "'"$GITHUB_WORKSPACE"'"
+            rustup show active-toolchain
+            rustup toolchain install 1.95.0 --profile minimal
+          '
+
+      - name: Build the native package input binaries
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            cd "'"$GITHUB_WORKSPACE"'"
+            bash scripts/linux/build-native-inputs.sh \
+              --output "$PWD/target/native-package-inputs"
+          '
+
+      - name: Build and verify two independent, byte-identical package assemblies
+        id: build
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            cd "'"$GITHUB_WORKSPACE"'"
+            epoch="$(git log -1 --format=%ct)"
+            bash scripts/linux/check-native-reproducibility.sh \
+              --binary-dir "$PWD/target/native-package-inputs" \
+              --output "$PWD/target/native-amd64-reproducibility" \
+              --architecture amd64 \
+              --source-date-epoch "$epoch"
+            version="$(python3 -c "import sys; sys.path.insert(0, \"scripts/linux\"); from native_package_contract import native_version; from pathlib import Path; print(native_version(Path(\".\")))")"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          '
+
+      - name: Upload the amd64 native packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-amd64
+          path: target/native-amd64-reproducibility/run-a
+          if-no-files-found: error
+
+  build-arm64:
+    name: Build arm64 packages
+    # No arm64 runner is configured for this repository yet (neither a
+    # GitHub-hosted Ubuntu 26.04 arm64 image nor a self-hosted one). Flip the
+    # "RMAC_HAS_ARM64_RUNNER" repository variable to "true" once a
+    # self-hosted [self-hosted, linux, arm64] runner exists; until then this
+    # job is intentionally skipped rather than failing the release.
+    if: ${{ vars.RMAC_HAS_ARM64_RUNNER == 'true' }}
+    runs-on: [self-hosted, linux, arm64]
+    container:
+      image: ubuntu:26.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      RUSTUP_HOME: /usr/local/rustup
+      CARGO_HOME: /usr/local/cargo
+    steps:
+      - name: Install container base tooling
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            clang \
+            curl \
+            debhelper \
+            dpkg-dev \
+            fakeroot \
+            git \
+            gnupg \
+            libfontconfig1-dev \
+            libfreetype-dev \
+            libssl-dev \
+            libvulkan-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            pkg-config \
+            sudo \
+            xz-utils
+
+      - name: Create the non-root build user
+        run: |
+          useradd --create-home --shell /bin/bash builder
+          echo 'builder ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/builder
+          mkdir -p "$RUSTUP_HOME" "$CARGO_HOME"
+          chown -R builder:builder "$RUSTUP_HOME" "$CARGO_HOME"
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Hand the checkout to the build user
+        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Install the pinned Rust toolchains
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --profile minimal --default-toolchain none
+            cd "'"$GITHUB_WORKSPACE"'"
+            rustup show active-toolchain
+            rustup toolchain install 1.95.0 --profile minimal
+          '
+
+      - name: Build the native package input binaries
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            cd "'"$GITHUB_WORKSPACE"'"
+            bash scripts/linux/build-native-inputs.sh \
+              --output "$PWD/target/native-package-inputs"
+          '
+
+      - name: Build and verify two independent, byte-identical package assemblies
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            cd "'"$GITHUB_WORKSPACE"'"
+            epoch="$(git log -1 --format=%ct)"
+            bash scripts/linux/check-native-reproducibility.sh \
+              --binary-dir "$PWD/target/native-package-inputs" \
+              --output "$PWD/target/native-arm64-reproducibility" \
+              --architecture arm64 \
+              --source-date-epoch "$epoch"
+          '
+
+      - name: Upload the arm64 native packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-arm64
+          path: target/native-arm64-reproducibility/run-a
+          if-no-files-found: error
+
+  sbom:
+    name: Software bill of materials
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Install cargo-cyclonedx
+        run: cargo install cargo-cyclonedx --locked --version "$RMAC_CARGO_CYCLONEDX_VERSION"
+
+      - name: Generate the workspace SBOM
+        run: cargo cyclonedx --format json --all
+
+      - name: Upload the SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom
+          # cargo-cyclonedx names its output after each crate; collect
+          # whatever it produced rather than assuming one fixed filename.
+          path: |
+            bom.json
+            *.cdx.json
+            **/*.cdx.json
+          if-no-files-found: error
+
+  attach-release:
+    name: Attach packages, SBOM, and provenance to the Release
+    needs: [build-amd64, build-arm64, sbom]
+    if: always() && needs.build-amd64.result == 'success' && needs.sbom.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download built artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: release-assets
+          pattern: "native-*"
+          merge-multiple: false
+
+      - name: Download the SBOM
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sbom
+          path: release-assets/sbom
+
+      - name: Assemble the release bundle and checksums
+        run: |
+          set -euo pipefail
+          bundle="$PWD/release-bundle"
+          mkdir -p "$bundle"
+          # Each native-* artifact directory has its own native-packages.json
+          # with the same filename, so rename per architecture on the way in
+          # instead of flattening them into a collision. .deb filenames
+          # already embed their architecture and stay unique as-is.
+          for dir in release-assets/native-*; do
+            [ -d "$dir" ] || continue
+            arch_name="$(basename "$dir")"
+            find "$dir" -maxdepth 1 -name '*.deb' -exec cp -v {} "$bundle/" \;
+            if [ -f "$dir/native-packages.json" ]; then
+              cp -v "$dir/native-packages.json" "$bundle/${arch_name}-packages.json"
+            fi
+          done
+          if [ -d release-assets/sbom ]; then
+            find release-assets/sbom -type f -exec cp -v {} "$bundle/" \;
+          fi
+          (cd "$bundle" && sha256sum -- * > SHA256SUMS)
+          ls -l "$bundle"
+
+      - name: Generate build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "release-bundle/*"
+
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "$tag" --generate-notes
+          fi
+          gh release upload "$tag" release-bundle/* --clobber
+
+  keyring:
+    name: Build the archive keyring packages
+    # build-keyring-packages.py packages an existing public keyring; it does
+    # not create one. Until the offline primary key exists (docs/install.md
+    # "Server side (GitHub)" / docs/update-trust.md "Decisions needed"),
+    # there is nothing to package, so this job stays off until the exported
+    # public keyring is available as a secret.
+    if: ${{ secrets.RMAC_ARCHIVE_PUBLIC_KEYRING_B64 != '' && vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT != '' }}
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:26.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      - name: Install container base tooling
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            debhelper dpkg-dev fakeroot git gnupg python3 sudo xz-utils
+
+      - name: Create the non-root build user
+        run: |
+          useradd --create-home --shell /bin/bash builder
+          echo 'builder ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/builder
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Hand the checkout to the build user
+        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Build the keyring packages
+        env:
+          RMAC_ARCHIVE_PUBLIC_KEYRING_B64: ${{ secrets.RMAC_ARCHIVE_PUBLIC_KEYRING_B64 }}
+          RMAC_ARCHIVE_SIGNING_FINGERPRINT: ${{ vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT }}
+        run: |
+          printf '%s' "$RMAC_ARCHIVE_PUBLIC_KEYRING_B64" | base64 -d \
+            > "$GITHUB_WORKSPACE/rmac-archive-keyring-public.gpg"
+          chown builder:builder "$GITHUB_WORKSPACE/rmac-archive-keyring-public.gpg"
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            cd "'"$GITHUB_WORKSPACE"'"
+            epoch="$(git log -1 --format=%ct)"
+            python3 scripts/linux/build-keyring-packages.py \
+              --keyring "$PWD/rmac-archive-keyring-public.gpg" \
+              --output "$PWD/target/keyring-packages" \
+              --fingerprint "'"$RMAC_ARCHIVE_SIGNING_FINGERPRINT"'" \
+              --build-architecture amd64 \
+              --source-date-epoch "$epoch"
+          '
+
+      - name: Upload the keyring packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: keyring
+          path: target/keyring-packages
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------
+  # Everything below signs and publishes the APT repository. It needs two
+  # things that do not exist yet (docs/release-process.md tracks both as
+  # owner follow-ups):
+  #
+  #   1. the "apt-signing" GitHub Environment's secrets (a signing subkey),
+  #      referenced here by name only -- this workflow never generates,
+  #      stores, or has any other access to key material; and
+  #   2. a real Debian source-package builder for the "rmac" source package
+  #      (update-trust.md requires a genuine source offer bound to the exact
+  #      Cargo.lock/commit; nothing in this repository builds one yet, and
+  #      publishing signed metadata that claims a source offer it can't back
+  #      would violate that H7 requirement). Once it exists, a job producing
+  #      an "rmac-source" artifact (dsc/tar/buildinfo/changes) must be added
+  #      above and named in this job's "needs".
+  #
+  # Both gates below default to off, so this job is a safe, documented no-op
+  # today rather than a broken or unsafe publish.
+  # ---------------------------------------------------------------------
+  apt-repository:
+    name: Sign and publish the APT repository
+    needs: [build-amd64, build-arm64, dependency-policy, keyring]
+    if: ${{ vars.RMAC_SOURCE_PACKAGING_READY == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: apt-signing
+    permissions:
+      contents: read
+      id-token: write
+      pages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Download the amd64 packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: native-amd64
+          path: native-amd64
+
+      - name: Download the arm64 packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: native-arm64
+          path: native-arm64
+
+      - name: Download the keyring packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: keyring
+          path: keyring
+
+      - name: Download the rmac source package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: rmac-source
+          path: rmac-source
+
+      - name: Mirror the currently published repository, if any
+        run: |
+          set -euo pipefail
+          mkdir -p published-repository
+          # A first-ever publish has nothing to mirror; --reject lets a 404
+          # leave published-repository empty instead of failing the job.
+          wget --mirror --no-host-directories --no-parent --quiet \
+            --directory-prefix=published-repository \
+            "https://millionrust.github.io/lulo/" || true
+
+      - name: Stage the unsigned snapshot
+        run: |
+          set -euo pipefail
+          python3 scripts/linux/stage-apt-snapshot.py \
+            --native-amd64 "$PWD/native-amd64" \
+            --native-arm64 "$PWD/native-arm64" \
+            --keyring-dir "$PWD/keyring" \
+            --rmac-source-dir "$PWD/rmac-source" \
+            --output "$PWD/staged-repository" \
+            --phase 10 \
+            --valid-hours 24 \
+            --signer-fingerprint "${{ vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT }}" \
+            --product-revision "${{ github.sha }}" \
+            --binary-packages-verified \
+            --licenses-verified \
+            --reproducibility-verified \
+            --source-offer-verified
+
+      - name: Sign the Release metadata
+        env:
+          # The secret must hold an ASCII-armored export of the signing
+          # subkey only (never the offline primary key -- see
+          # docs/update-trust.md "Signing and rotation").
+          RMAC_APT_SIGNING_SUBKEY: ${{ secrets.RMAC_APT_SIGNING_SUBKEY }}
+          RMAC_ARCHIVE_SIGNING_FINGERPRINT: ${{ vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 -p "$GNUPGHOME"
+          printf '%s' "$RMAC_APT_SIGNING_SUBKEY" | gpg --batch --import
+          gpg --batch --yes --local-user "$RMAC_ARCHIVE_SIGNING_FINGERPRINT" \
+            --digest-algo SHA512 --clearsign \
+            --output staged-repository/dists/resolute/InRelease \
+            staged-repository/dists/resolute/Release
+          rm -f staged-repository/dists/resolute/Release
+          # Export the just-imported public key while GNUPGHOME still has it,
+          # for publish-apt-snapshot.py's gpgv check in the next step.
+          gpg --batch --export "$RMAC_ARCHIVE_SIGNING_FINGERPRINT" \
+            > "$RUNNER_TEMP/rmac-archive-keyring.gpg"
+          gpgconf --kill gpg-agent || true
+          rm -rf "$GNUPGHOME"
+
+      - name: Promote the signed snapshot
+        run: |
+          set -euo pipefail
+          mkdir -p published-repository
+          python3 scripts/linux/publish-apt-snapshot.py \
+            --staging-dir "$PWD/staged-repository" \
+            --repository-dir "$PWD/published-repository" \
+            --keyring "$RUNNER_TEMP/rmac-archive-keyring.gpg"
+
+      - name: Add install.sh, uninstall.sh, and the stable keyring bootstrap
+        run: |
+          set -euo pipefail
+          cp scripts/linux/install.sh published-repository/install.sh
+          cp scripts/linux/uninstall.sh published-repository/uninstall.sh
+          keyring_deb="$(find keyring -maxdepth 1 -name 'rmac-archive-keyring_*_all.deb' | head -n1)"
+          cp "$keyring_deb" published-repository/rmac-archive-keyring-latest.deb
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload the Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: published-repository
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

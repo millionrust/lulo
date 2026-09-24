@@ -1,0 +1,90 @@
+"""Structural checks for the release/rollout GitHub Actions workflows.
+
+These do not run the workflows (that needs a real GitHub Actions runner);
+they check the properties the release-pipeline brief called for: valid YAML,
+every third-party action pinned by a full commit SHA, the tag trigger, and
+that the workflows reference scripts that actually exist in this repository.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import yaml
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+RELEASE = REPO_ROOT / ".github/workflows/release.yml"
+ROLLOUT = REPO_ROOT / ".github/workflows/rollout.yml"
+SHA_PINNED_USES = re.compile(r"^([^@]+)@([0-9a-f]{40})(?:\s+#.*)?$")
+
+
+def _load(path: Path) -> dict:
+    with path.open(encoding="utf-8") as source:
+        return yaml.safe_load(source)
+
+
+def _iter_uses(document: dict):
+    for job_name, job in document["jobs"].items():
+        for step in job.get("steps", ()):
+            if "uses" in step:
+                yield job_name, step.get("name", "<unnamed step>"), step["uses"]
+
+
+def test_both_workflows_are_valid_yaml():
+    for path in (RELEASE, ROLLOUT):
+        document = _load(path)
+        assert document["jobs"], f"{path} defines no jobs"
+
+
+def test_release_triggers_on_v_tags():
+    document = _load(RELEASE)
+    tags = document[True]["push"]["tags"]
+    assert tags == ["v*"]
+
+
+def test_every_action_is_pinned_by_commit_sha():
+    for path in (RELEASE, ROLLOUT):
+        document = _load(path)
+        for job_name, step_name, uses in _iter_uses(document):
+            match = SHA_PINNED_USES.match(uses)
+            assert match, (
+                f"{path.name}:{job_name}:{step_name} 'uses: {uses}' is not "
+                "pinned by a 40-character commit SHA"
+            )
+
+
+def test_referenced_local_scripts_exist():
+    document = _load(RELEASE)
+    text = RELEASE.read_text(encoding="utf-8")
+    for reference in re.findall(r"scripts/linux/[A-Za-z0-9_.-]+\.(?:py|sh)", text):
+        assert (REPO_ROOT / reference).is_file(), f"release.yml references missing {reference}"
+
+    text = ROLLOUT.read_text(encoding="utf-8")
+    for reference in re.findall(r"scripts/linux/[A-Za-z0-9_.-]+\.(?:py|sh)", text):
+        assert (REPO_ROOT / reference).is_file(), f"rollout.yml references missing {reference}"
+
+
+def test_apt_publishing_jobs_are_gated_and_never_generate_keys():
+    for path in (RELEASE, ROLLOUT):
+        text = path.read_text(encoding="utf-8")
+        assert "RMAC_SOURCE_PACKAGING_READY" in text
+        for forbidden in ("gpg --gen-key", "gpg --full-generate-key", "gpg --quick-generate-key"):
+            assert forbidden not in text, f"{path.name} must never generate keys"
+
+
+def test_apt_signing_job_uses_the_environment_gate():
+    document = _load(RELEASE)
+    assert document["jobs"]["apt-repository"]["environment"] == "apt-signing"
+    document = _load(ROLLOUT)
+    assert document["jobs"]["rollout"]["environment"] == "apt-signing"
+
+
+def test_rollout_schedule_and_manual_dispatch_exist():
+    document = _load(ROLLOUT)
+    triggers = document[True]
+    assert "schedule" in triggers
+    assert "workflow_dispatch" in triggers
+    options = triggers["workflow_dispatch"]["inputs"]["phase"]["options"]
+    assert options == ["0", "10", "25", "50", "100"]

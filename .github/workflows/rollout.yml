@@ -1,0 +1,132 @@
+# Advance (or halt) the live APT repository's Phased-Update-Percentage.
+#
+# On a schedule this only ever steps forward -- 10 -> 25 -> 50 -> 100 -- and
+# only after at least 24 hours since the live repository's Date
+# (docs/update-trust.md "Staged rollout and rollback"); it never resumes a
+# halted (0%) rollout on its own. A manual run can request any percentage,
+# including 0 to halt immediately. See docs/release-process.md for how to
+# use this by hand.
+#
+# This workflow only republishes the repository at a new phase: it never
+# rebuilds packages, so it reuses the exact .debs already attached to the
+# most recent GitHub Release. It shares release.yml's not-yet-met
+# prerequisites (the apt-signing environment's secrets and a real "rmac"
+# source-package builder) and is a documented no-op until both exist.
+name: Rollout
+
+on:
+  schedule:
+    # Checked every 6 hours; next-rollout-phase.py itself enforces the
+    # required 24-hour gap between steps, so a tick that is too soon is a
+    # deliberate, cheap no-op rather than something this cron expression has
+    # to get exactly right.
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: "Phased-Update-Percentage to publish now (0 halts the rollout)"
+        required: true
+        type: choice
+        options:
+          - "0"
+          - "10"
+          - "25"
+          - "50"
+          - "100"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rmac-rollout
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    name: Step the rollout
+    # Same not-yet-met prerequisites as release.yml's apt-repository job.
+    if: ${{ vars.RMAC_SOURCE_PACKAGING_READY == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: apt-signing
+    permissions:
+      contents: read
+      id-token: write
+      pages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read the live repository's current phase and Date
+        id: live
+        run: |
+          set -euo pipefail
+          mkdir -p live-repository
+          wget --mirror --no-host-directories --no-parent --quiet \
+            --directory-prefix=live-repository \
+            "https://millionrust.github.io/lulo/" || true
+          packages="live-repository/dists/resolute/main/binary-amd64/Packages"
+          release="live-repository/dists/resolute/InRelease"
+          if [ ! -s "$packages" ] || [ ! -s "$release" ]; then
+            echo "no live repository is published yet; nothing to roll out" >&2
+            echo "has_live=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "has_live=true" >> "$GITHUB_OUTPUT"
+          phase="$(awk -F': ' '
+            /^Package: rmac-apps$/ { in_pkg = 1 }
+            in_pkg && /^Phased-Update-Percentage: / { print $2; exit }
+            /^$/ { in_pkg = 0 }
+          ' "$packages")"
+          date_line="$(sed -n 's/^Date: //p' "$release" | head -n1)"
+          date_seconds="$(date -u -d "$date_line" +%s)"
+          echo "phase=$phase" >> "$GITHUB_OUTPUT"
+          echo "date_seconds=$date_seconds" >> "$GITHUB_OUTPUT"
+
+      - name: Decide the next phase
+        id: decision
+        if: steps.live.outputs.has_live == 'true'
+        run: |
+          set -euo pipefail
+          now_seconds="$(date -u +%s)"
+          requested="${{ github.event.inputs.phase }}"
+          args=(
+            --current-phase "${{ steps.live.outputs.phase }}"
+            --current-date-seconds "${{ steps.live.outputs.date_seconds }}"
+            --now-seconds "$now_seconds"
+          )
+          if [ -n "$requested" ]; then
+            args+=(--requested-phase "$requested")
+          fi
+          next="$(python3 scripts/linux/next-rollout-phase.py "${args[@]}")"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+
+      - name: Download the release's packages and rebuild the snapshot at the new phase
+        if: steps.decision.outputs.next != '' && steps.decision.outputs.next != 'no-step'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          latest_tag="$(gh release list --limit 1 --json tagName --jq '.[0].tagName')"
+          mkdir -p release-download native-amd64 native-arm64 keyring rmac-source
+          gh release download "$latest_tag" --dir release-download --clobber
+          # release-download is a flat bundle (see release.yml's
+          # attach-release job); split it back into the per-input
+          # directories stage-apt-snapshot.py expects.
+          mv release-download/*_amd64.deb native-amd64/ 2>/dev/null || true
+          mv release-download/native-packages.json native-amd64/ 2>/dev/null || true
+          echo "TODO(owner): also fetch/rebuild the arm64 and keyring/source" \
+               "inputs here once they are attached to releases; see" \
+               "docs/release-process.md." >&2
+
+      - name: Stage, sign, and promote the new phase
+        if: steps.decision.outputs.next != '' && steps.decision.outputs.next != 'no-step'
+        run: |
+          echo "TODO(owner): call scripts/linux/stage-apt-snapshot.py with" \
+               "--phase '${{ steps.decision.outputs.next }}' against the" \
+               "downloaded release inputs, then sign and" \
+               "scripts/linux/publish-apt-snapshot.py + actions/deploy-pages" \
+               "exactly as release.yml's apt-repository job does." >&2
+          echo "This step intentionally stops short of publishing until the" \
+               "rmac source-package builder and apt-signing secrets exist" \
+               "(docs/release-process.md)." >&2

@@ -136,6 +136,9 @@ pub struct ColorTokens {
     pub accent: RgbaColor,
     pub accent_subtle: RgbaColor,
     pub accent_border: RgbaColor,
+    /// Keyboard-focus ring color, composited over the surface behind it
+    /// (design-lab/chrome.html: accent at reduced opacity).
+    pub focus_ring: RgbaColor,
     pub on_accent: RgbaColor,
     pub white: RgbaColor,
     pub black: RgbaColor,
@@ -352,6 +355,7 @@ impl ThemeTokens {
             accent,
             accent_subtle: accent.with_opacity(if light { 0x22 } else { 0x30 }),
             accent_border: accent.with_opacity(if light { 0x66 } else { 0x80 }),
+            focus_ring: design.colors.focus_ring.into(),
             on_accent: design.colors.on_accent.into(),
             white: design.colors.white.into(),
             black: design.colors.black.into(),

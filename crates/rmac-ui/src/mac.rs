@@ -344,6 +344,22 @@ pub fn accent_subtle() -> Hsla {
 pub fn accent_border() -> Hsla {
     crate::theme::current().colors.accent_border.hsla()
 }
+/// Keyboard-focus ring color.
+pub fn focus_ring() -> Hsla {
+    crate::theme::current().colors.focus_ring.hsla()
+}
+/// A solid outer ring at the measured keyboard-focus width
+/// (design-lab/chrome.html: 3 pt, widened by the Increase Contrast setting).
+/// Chain with `.when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))` on
+/// any control that draws its own focus indication rather than relying on a
+/// wrapped `gpui_component` control's built-in ring.
+pub fn focus_ring_shadow() -> Vec<gpui::BoxShadow> {
+    let width = crate::theme::current().focus.ring_width;
+    vec![
+        gpui::BoxShadow::new(gpui::px(0.0), gpui::px(0.0), focus_ring())
+            .spread_radius(gpui::px(width)),
+    ]
+}
 /// System red — destructive actions.
 pub fn danger() -> Hsla {
     crate::theme::current().colors.danger.hsla()

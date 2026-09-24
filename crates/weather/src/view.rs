@@ -294,9 +294,7 @@ impl WeatherView {
 
     fn search_results(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let query = self.search.read(cx).value().to_string();
-        if geocode::search_url(&query).is_none() {
-            return None;
-        }
+        geocode::search_url(&query)?;
         let rows = self
             .results
             .iter()
@@ -592,7 +590,7 @@ impl WeatherView {
             )
     }
 
-    fn render_main(&self, width: f32, now: i64, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_main(&self, width: f32, now: i64) -> impl IntoElement {
         let left = m::SIDEBAR_WIDTH;
         let place = self.settings.current().cloned();
         let key = place.as_ref().map(Place::key).unwrap_or_default();
@@ -1076,7 +1074,7 @@ impl Render for WeatherView {
         } else {
             div()
                 .size_full()
-                .child(self.render_main(width, now, cx))
+                .child(self.render_main(width, now))
                 .child(self.render_sidebar(now, cx))
                 .into_any_element()
         };

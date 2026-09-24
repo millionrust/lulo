@@ -183,7 +183,7 @@ pub fn paint(
     let meridian_columns: Vec<bool> = (0..width).map(is_meridian).collect();
     let mut pixels = vec![0u8; width * height * 4];
     for row in 0..height {
-        for column in 0..width {
+        for (column, &meridian) in meridian_columns.iter().enumerate() {
             let index = row * width + column;
             let lit = day[index];
             let edge = (column + 1 < width && day[index + 1] != lit)
@@ -198,7 +198,7 @@ pub fn paint(
                 } else {
                     NIGHT_LAND
                 }
-            } else if meridian_columns[column] {
+            } else if meridian {
                 MERIDIAN
             } else {
                 OCEAN

@@ -171,7 +171,7 @@ pub const CITIES: &[City] = &[
         "Kuala Lumpur",
         "Malaysia",
         "Asia/Kuala_Lumpur",
-        3.14,
+        3.139,
         101.69,
     ),
     city("Kyiv", "Ukraine", "Europe/Kyiv", 50.45, 30.52),

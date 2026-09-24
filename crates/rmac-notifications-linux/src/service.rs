@@ -634,6 +634,10 @@ struct Core {
     started: Instant,
 }
 
+/// What posting one notification did: the outcome, the notification to show
+/// (if any), and the older notifications it pushed out.
+type PostedEvent = (PostOutcome, Option<Box<Notification>>, Vec<Eviction>);
+
 impl SharedCore {
     pub fn new(history_limit: usize, timeout_policy: TimeoutPolicy) -> Self {
         Self {
@@ -666,7 +670,7 @@ impl SharedCore {
         &self,
         request: rmac_notifications::Request,
         policy: DeliveryPolicy,
-    ) -> Result<(PostOutcome, Option<Box<Notification>>, Vec<Eviction>), ServerError> {
+    ) -> Result<PostedEvent, ServerError> {
         let mut core = self.lock();
         let now = monotonic_time(core.started);
         let outcome = core.server.post(request, now, policy)?;

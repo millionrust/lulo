@@ -9,9 +9,9 @@ use std::sync::Arc;
 use gpui::{
     div, img, prelude::FluentBuilder as _, px, rgb, rgba, size, svg, AnyElement, App,
     AppContext as _, Context, Entity, EventEmitter, FocusHandle, Focusable,
-    InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, PlatformDisplay as _,
-    Render, SharedString, StatefulInteractiveElement as _, Styled as _, WeakEntity, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowHandle,
+    InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, Render, SharedString,
+    StatefulInteractiveElement as _, Styled as _, WeakEntity, Window, WindowBackgroundAppearance,
+    WindowBounds, WindowHandle,
 };
 use gpui_component::Root;
 

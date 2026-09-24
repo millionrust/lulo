@@ -591,8 +591,8 @@ mod tests {
         let rule = Rule::parse("XXX3YYY,J60/0,J300/0").unwrap();
         // J60 is March 1 in every year.
         let march1 = days_from_civil(2028, 3, 1) * 86_400 + 3 * 3600;
-        assert_eq!(rule.offset_at(march1 - 1).1, false);
-        assert_eq!(rule.offset_at(march1 + 1).1, true);
+        assert!(!rule.offset_at(march1 - 1).1);
+        assert!(rule.offset_at(march1 + 1).1);
     }
 
     #[test]

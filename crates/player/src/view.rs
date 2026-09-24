@@ -372,7 +372,7 @@ impl PlayerView {
     }
 
     fn next(&mut self, cx: &mut Context<Self>) {
-        if self.playlist.next().is_some() {
+        if self.playlist.advance().is_some() {
             self.sized_for = None;
             self.load_current();
             cx.notify();

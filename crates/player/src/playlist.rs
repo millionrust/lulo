@@ -79,7 +79,7 @@ impl Playlist {
     }
 
     /// Move to the next item; `None` at the end.
-    pub fn next(&mut self) -> Option<&Path> {
+    pub fn advance(&mut self) -> Option<&Path> {
         if !self.has_next() {
             return None;
         }
@@ -206,9 +206,9 @@ mod tests {
     fn next_and_previous() {
         let mut list = Playlist::new(paths(&["1.mp3", "2.mp3", "3.mp3"]));
         assert!(!list.has_previous());
-        assert_eq!(list.next(), Some(Path::new("2.mp3")));
-        assert_eq!(list.next(), Some(Path::new("3.mp3")));
-        assert_eq!(list.next(), None);
+        assert_eq!(list.advance(), Some(Path::new("2.mp3")));
+        assert_eq!(list.advance(), Some(Path::new("3.mp3")));
+        assert_eq!(list.advance(), None);
         assert_eq!(list.index(), 2);
         // Late in a track, Previous restarts it.
         assert_eq!(list.previous(12.0), None);

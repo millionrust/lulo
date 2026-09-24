@@ -174,10 +174,7 @@ mod tests {
         assert_eq!(normalize_job_name(b"bad\0name"), None);
         assert_eq!(normalize_job_name("vim\u{202e}".as_bytes()), None);
         assert_eq!(normalize_job_name(&[0xff]), None);
-        assert_eq!(
-            normalize_job_name(&vec![b'a'; MAX_JOB_NAME_BYTES + 1]),
-            None
-        );
+        assert_eq!(normalize_job_name(&[b'a'; MAX_JOB_NAME_BYTES + 1]), None);
     }
 
     #[test]

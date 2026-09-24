@@ -398,16 +398,6 @@ mod notice {
         sender == Some(server)
     }
 
-    #[cfg(test)]
-    mod tests {
-        #[test]
-        fn only_the_answering_server_can_answer_the_safe_mode_notice() {
-            assert!(super::signal_from(Some(":1.42"), ":1.42"));
-            assert!(!super::signal_from(Some(":1.43"), ":1.42"));
-            assert!(!super::signal_from(None, ":1.42"));
-        }
-    }
-
     fn ask_with_dialog(notice: &SafeModeNotice) -> Result<bool, String> {
         let status = Command::new("zenity")
             .args([
@@ -428,6 +418,16 @@ mod notice {
             Some(0) => Ok(true),
             Some(1 | 5) => Ok(false),
             _ => Err(format!("zenity exited with {status}")),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn only_the_answering_server_can_answer_the_safe_mode_notice() {
+            assert!(super::signal_from(Some(":1.42"), ":1.42"));
+            assert!(!super::signal_from(Some(":1.43"), ":1.42"));
+            assert!(!super::signal_from(None, ":1.42"));
         }
     }
 }

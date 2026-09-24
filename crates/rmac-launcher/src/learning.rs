@@ -121,7 +121,7 @@ impl Learning {
             return;
         }
         self.choices
-            .sort_by(|left, right| right.last_used.cmp(&left.last_used));
+            .sort_by_key(|choice| std::cmp::Reverse(choice.last_used));
         self.choices.truncate(MAX_CHOICES);
     }
 

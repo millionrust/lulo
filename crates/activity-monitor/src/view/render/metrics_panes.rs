@@ -101,9 +101,7 @@ enum Graph<'a> {
 fn aligned(samples: &[f32]) -> impl Iterator<Item = Option<f32>> + '_ {
     let start = samples.len().saturating_sub(History::CAP);
     let visible = &samples[start..];
-    std::iter::repeat(None)
-        .take(History::CAP - visible.len())
-        .chain(visible.iter().copied().map(Some))
+    std::iter::repeat_n(None, History::CAP - visible.len()).chain(visible.iter().copied().map(Some))
 }
 
 fn bar(height: f32, series: Series, top_line: bool) -> gpui::Div {
@@ -126,7 +124,7 @@ fn format_count(value: u64) -> String {
     let digits = value.to_string();
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
     for (index, digit) in digits.chars().enumerate() {
-        if index > 0 && (digits.len() - index) % 3 == 0 {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
             grouped.push(',');
         }
         grouped.push(digit);

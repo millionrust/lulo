@@ -79,18 +79,14 @@ impl EventListener for EventProxy {
                     }
                 }
             }
-            Event::Title(title) => {
-                if self.title.set(Some(&title)) {
-                    if let Some(redraw) = self.redraw.as_ref() {
-                        request_redraw(redraw);
-                    }
+            Event::Title(title) if self.title.set(Some(&title)) => {
+                if let Some(redraw) = self.redraw.as_ref() {
+                    request_redraw(redraw);
                 }
             }
-            Event::ResetTitle => {
-                if self.title.set(None) {
-                    if let Some(redraw) = self.redraw.as_ref() {
-                        request_redraw(redraw);
-                    }
+            Event::ResetTitle if self.title.set(None) => {
+                if let Some(redraw) = self.redraw.as_ref() {
+                    request_redraw(redraw);
                 }
             }
             _ => {}

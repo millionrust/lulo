@@ -86,21 +86,28 @@ script (including via a direct Python import of its own
 `attempt_dock_launch`), and did not reproduce in several standalone manual
 attempts interleaved with the failing runs.
 
-The most likely mechanism, based on reading the launch path: Dock activation
-goes through niri's compositor IPC so niri can attach an XDG activation
-token to the spawned process (`crates/rmac-app-launch/src/application.rs`).
-`launch()`'s `Ok(())` branch (`crates/rmac-app-launch/src/application.rs:19-24`)
-treats niri **accepting** the `action spawn` IPC request as success and
-returns `Delivery::CompositorActivation` with `process_id: None` —
-there is no confirmation that niri's own `fork`+`exec` of the target binary
-actually succeeded, and no error path back to the Dock, an assistive
-technology, or the user if it silently didn't (e.g. a transient `fork()`
-failure under the heavy concurrent-build resource pressure observed
-throughout this session). This would violate todo.md's "errors must be
-visible and actionable" if confirmed. **Not fully proven** — the coordinator
-should reproduce with `strace -f` on niri or a `RUST_LOG` trace through
-`rmac-compositor-niri::execute` while deliberately loading the machine, to
-confirm or rule this out.
+**Root cause (found and fixed the same day).** The launch path was never
+involved: the Dock's AT-SPI tree held a dead copy of the Dock for every
+Dock surface it had ever closed. The Dock re-creates its two layer surfaces
+whenever its shelf changes (an app tile appearing or leaving, the overview,
+fullscreen), and the vendored GPUI Wayland backend's idle frame check
+(`shell/compat/gpui_linux/src/linux/wayland/window.rs`, ADR 0013) held a
+strong reference to its window and re-armed itself every 250 ms forever, so
+a closed window's state -- and its AccessKit adapter -- was never freed. The
+laptop's Dock had 25 AT-SPI frames for 2 live surfaces (the top bar had
+70). `find_node` returns the first match in tree order, which was a dead
+tile: `doAction` answered `true` and nothing ran. The ad-hoc reproductions
+happened to walk the tree from the other end and found the live tile.
+Measured on the laptop: clicking the first "Terminal"/"Notes" tile in tree
+order launched 0/5 before the fix; clicking the last one launched 10/10.
+After the fix (idle checks hold a weak reference) the Dock keeps exactly 2
+frames through app churn and overview toggles, and first-in-tree-order
+clicks launched Terminal, Notes and System Monitor 30/30.
+
+Separately, a launch that really cannot start is no longer silent: niri
+acknowledges `action spawn` before it forks, so `rmac-app-launch` now checks
+the program is present and executable first, and the Dock stops the bounce
+and posts "The application “X” can’t be opened." with the reason.
 
 `scripts/linux/run-journey-launch.py` exercises journey 1 ("Log in, launch an
 app from the Dock or Spotlight, switch apps, and close it") against the real
@@ -756,17 +763,9 @@ without further triage. Each is a genuine gap, not a stale test assumption
 (see "Current results" above for how each was distinguished from
 load-related flakiness).
 
-1. **Dock-driven launches can silently produce no window.**
-   `crates/rmac-app-launch/src/application.rs:19-24` treats niri's IPC
-   acceptance of `action spawn` as launch success and returns
-   `Delivery::CompositorActivation` with no `process_id`, with no
-   confirmation the target process actually started and no visible error if
-   it didn't. Reproduced 5/5 times via `scripts/linux/run-journey-terminal.py`
-   and `scripts/linux/run-journey-notes.py`'s real Dock-click path (including
-   at load average 0.86), while direct spawns of the same binaries and
-   ad-hoc manual AT-SPI clicks outside the journey scripts succeeded 4/4
-   times. Root cause not fully proven within this session — see the
-   "Current results" section above for the reproduction recipe.
+1. **Fixed: Dock-driven launches could silently produce no window.** Dead
+   AT-SPI copies of closed Dock surfaces, left by a GPUI window leak, took
+   the journey scripts' clicks; see "Root cause" under "Current results".
 2. **System Monitor's process table AT-SPI projection is bounded to the
    visible viewport, with no accessible way to bring another row into it.**
    Confirmed live: only ~18-19 "table row" nodes existed at once (matching
@@ -777,20 +776,20 @@ load-related flakiness).
    Action interface — so they cannot be clicked to re-sort (e.g. by PID) to
    bring a specific process into view, and the search field still has no
    Text/EditableText either (`crates/activity-monitor/src/view.rs:59`).
-3. **The shell top bar's per-app category menus (distinct from the generic
-   app menu with About/Hide/Quit) intermittently fail to register or vanish
-   for the focused app**, independent of window/focus state:
-   `crates/rmac-ui/src/runtime.rs:195`'s `install_app_menu` and
-   `crates/rmac-app-menu/src/lib.rs`'s per-app `MenuSpec`s
-   (`shell/bins/rmac-menubar`'s rendering side). Previously documented for
-   Terminal's "Shell/Edit/View" menus and Notes' "File/Edit/Format" menus;
-   this session additionally confirmed it for System Monitor's "Process"
-   menu (present on the first post-fix run, absent on the next two) and
-   Text Editor's "File" menu (Open/Save/Save As each failed to find it at
-   least once across three runs, never all three in the same run). This is
-   the single highest-impact remaining gap in this suite: it blocks Quit
-   flows, Save/Save As, and Copy/Paste across four different apps whenever
-   it doesn't register.
+3. **Fixed: apps' top-bar category menus intermittently failed to
+   register.** `rmac_app_menu::serve` parked its D-Bus connection in a
+   detached GPUI task awaiting `std::future::pending()`, which registers no
+   waker; once the executor released its last waker, `async-task` cancelled
+   the task and the connection closed milliseconds after acquiring
+   `org.rmac.<App>.Menu` (strace: `RequestName` answered, `NameAcquired`
+   received, then the socket closed by the zbus executor thread with no
+   error on stderr). It hit every app, niri-spawned or not, and made
+   single-instance apps start a second process because nothing owned the
+   name. Measured on the laptop before the fix: direct spawns owned their menu
+   name Terminal 17/30, Notes 8/10; Dock launches Terminal 0/5, Notes 2/5,
+   Text Editor 4/5, System Monitor 4/5. The connection is now kept for the
+   life of the process; after the fix: direct spawns Terminal 20/20, Notes
+   20/20, Dock launches of System Monitor 10/10.
 4. **Files' search field's own text node still has no AT-SPI name or
    Text/EditableText** (`crates/finder/src/view/chrome_presentation/
    toolbar.rs:184-206`), even though its parent "Search" landmark and every

@@ -90,9 +90,14 @@ impl Settings {
     }
 
     pub(super) fn global_settings_error(&self) -> Option<&SharedString> {
+        // `system_data_stream_error` (the hostname live-update stream) is
+        // deliberately excluded here: it degrades quietly, in place, on the
+        // About pane's Name row -- see `about_body` -- rather than as a
+        // window-wide banner over whatever pane happens to be open. A
+        // background hostname watcher hiccup is not "unrelated panes are
+        // broken", so it must not read that way.
         self.system_data_error
             .as_ref()
-            .or(self.system_data_stream_error.as_ref())
             .or(self.updates_error.as_ref())
             .or(self.updates_stream_error.as_ref())
             .or(self.storage_error.as_ref())

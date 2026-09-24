@@ -184,14 +184,14 @@ fn graphics_labels_use_only_driver_and_public_pci_ids() {
 }
 
 #[test]
-fn hostname_owner_events_distinguish_loss_and_recovery() {
-    assert_eq!(
-        owner_change_event("org.freedesktop.hostname1", ""),
-        Some(WatchEvent::Unavailable)
-    );
+fn hostname_owner_loss_is_routine_idle_exit_not_an_error() {
+    // systemd-hostnamed is bus-activated and exits when idle; the owner
+    // going empty is expected and must not be surfaced as Unavailable.
+    assert_eq!(owner_change_event("org.freedesktop.hostname1", ""), None);
     assert_eq!(
         owner_change_event("org.freedesktop.hostname1", ":1.42"),
         Some(WatchEvent::Changed)
     );
     assert_eq!(owner_change_event("org.example.Other", ":1.42"), None);
+    assert_eq!(owner_change_event("org.example.Other", ""), None);
 }

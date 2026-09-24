@@ -107,9 +107,19 @@ impl Settings {
                 .into_any_element()
         } else {
             let edit_view = view.clone();
+            // The live-update stream degrading (e.g. systemd-hostnamed
+            // dropping off the bus) never blanks the value above -- it just
+            // adds a quiet note under the Name row, scoped to the row it
+            // actually affects, the way macOS keeps showing the current
+            // value rather than raising a window-wide error.
+            let note = si
+                .hostname_unavailable_reason
+                .clone()
+                .map(Into::into)
+                .or_else(|| self.system_data_stream_error.clone());
             value_button_row(
                 "Name",
-                si.hostname_unavailable_reason.clone().map(Into::into),
+                note,
                 Some(si.display_hostname().to_owned().into()),
                 si.hostname_mutable.then(|| {
                     push_button("hostname-edit", "Edit…")

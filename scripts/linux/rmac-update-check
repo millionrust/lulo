@@ -1,0 +1,350 @@
+#!/usr/bin/python3
+"""rmac-update-check: the daily Lulo OS update check.
+
+Shipped by the rmac-session package as /usr/libexec/rmac/rmac-update-check
+and run once a day (and once shortly after login) by the
+rmac-update-check.timer / rmac-update-check.service user units. It runs once
+and exits; nothing stays resident.
+
+Everything goes through PackageKit's own client library (PackageKitGlib via
+GObject introspection) and the org.freedesktop.Notifications D-Bus service.
+No command-line output is parsed.
+
+1. Refresh the package metadata and read the available updates as
+   structured PackageKit packages. Blocked updates are ignored.
+2. Lulo OS's own packages (rmac-apps, rmac-session, rmac-archive-keyring,
+   niri, xwayland-satellite) are prepared as a PackageKit offline update:
+   a trusted-only, download-only UpdatePackages for exactly those package
+   IDs, then an offline-update trigger with the reboot action. PackageKit's
+   pk-offline-update installs them from system-update.target on the next
+   restart. PackageKit does not ask for authorization for download-only
+   transactions, and the default polkit policy allows the trigger for the
+   active user, so no password prompt is involved. This program never
+   requests interaction; if PackageKit refuses anyway, the updates fall back
+   to the "open System Settings" notification.
+3. At most one desktop notification per run says what is ready and how
+   many other updates wait for review in System Settings > Software Update.
+
+Failures (PackageKit unavailable, metadata refresh, download, trigger) print
+one bounded line to stderr, which lands in the user journal, and the program
+exits non-zero so `systemctl --user status rmac-update-check` shows them. A
+missing notification service is reported but not fatal.
+
+Turn both the nudge and the automatic preparation off with
+`systemctl --user disable --now rmac-update-check.timer`.
+"""
+
+import re
+import sys
+
+LULO_PACKAGES = frozenset(
+    (
+        "rmac-apps",
+        "rmac-session",
+        "rmac-archive-keyring",
+        "niri",
+        "xwayland-satellite",
+    )
+)
+
+APP_NAME = "Software Update"
+ICON = "software-update-available"
+NOTIFICATION_TIMEOUT_MS = 25_000
+
+EXIT_OK = 0
+EXIT_FAILED = 1
+EXIT_UNAVAILABLE = 2
+
+# PackageKitGlib reports a failed transaction as a pk-client-error-quark
+# GError whose code is 0xff plus the PkErrorEnum value
+# (lib/packagekit-glib2/pk-client.c, pk_client_signal_finished).
+CLIENT_ERROR_DOMAIN = "pk-client-error-quark"
+OFFLINE_ERROR_DOMAIN = "pk-offline-error-quark"
+TRANSACTION_ERROR_BASE = 0xFF
+
+CLIENT_ERROR_NAMES = (
+    "FAILED",
+    "FAILED_AUTH",
+    "NO_TID",
+    "ALREADY_TID",
+    "ROLE_UNKNOWN",
+    "CANNOT_START_DAEMON",
+    "INVALID_INPUT",
+    "INVALID_FILE",
+    "NOT_SUPPORTED",
+    "DECLINED_SIMULATION",
+    "DECLINED_INTERACTION",
+)
+OFFLINE_ERROR_NAMES = ("FAILED", "INVALID_VALUE", "NO_DATA")
+
+_SAFE_TOKEN = re.compile(r"[^a-z0-9._:-]+")
+MAX_ERROR_LINE = 200
+
+
+class StageError(Exception):
+    """A PackageKit step failed; carries only a stable, privacy-safe class."""
+
+    def __init__(self, stage, error_class, authorization=False):
+        super().__init__(f"{stage}: {error_class}")
+        self.stage = stage
+        self.error_class = error_class
+        self.authorization = authorization
+
+
+def _token(text):
+    token = _SAFE_TOKEN.sub("-", str(text).lower()).strip("-")
+    return token[:80] or "unknown"
+
+
+def _enum_name(enum_type, names, code):
+    for name in names:
+        value = getattr(enum_type, name, None)
+        if value is not None and int(value) == code:
+            return name.lower().replace("_", "-")
+    return None
+
+
+def classify_error(Pk, error):
+    """Return (class, is_authorization_failure) without any message text.
+
+    GError messages can carry repository URLs, package names or paths; the
+    journal line keeps to the stable domain/code classification instead.
+    """
+    domain = str(getattr(error, "domain", "") or "")
+    code = int(getattr(error, "code", 0) or 0)
+    if domain == CLIENT_ERROR_DOMAIN:
+        if code >= TRANSACTION_ERROR_BASE:
+            transaction_code = code - TRANSACTION_ERROR_BASE
+            try:
+                name = Pk.error_enum_to_string(transaction_code)
+            except Exception:  # an unknown enum value is still classifiable
+                name = None
+            authorization = transaction_code == int(Pk.ErrorEnum.NOT_AUTHORIZED)
+            return _token(name or f"error-{transaction_code}"), authorization
+        name = _enum_name(Pk.ClientError, CLIENT_ERROR_NAMES, code)
+        authorization = code in (
+            int(Pk.ClientError.FAILED_AUTH),
+            int(Pk.ClientError.DECLINED_INTERACTION),
+        )
+        return _token(name or f"client-{code}"), authorization
+    if domain == OFFLINE_ERROR_DOMAIN:
+        name = _enum_name(Pk.OfflineError, OFFLINE_ERROR_NAMES, code)
+        return _token(f"offline-{name or code}"), False
+    return _token(f"{domain or 'error'}-{code}"), False
+
+
+def report(stage, error_class):
+    line = f"rmac-update-check: {stage} failed: {error_class}"
+    print(line[:MAX_ERROR_LINE], file=sys.stderr, flush=True)
+
+
+def _progress(*_args):
+    """PackageKit progress callback; the timer run has no UI to update."""
+
+
+def _call(Pk, GLib, stage, function, *arguments):
+    """Run one synchronous PackageKit transaction and require success."""
+    try:
+        results = function(*arguments, None, _progress, None)
+    except GLib.Error as error:
+        error_class, authorization = classify_error(Pk, error)
+        raise StageError(stage, error_class, authorization) from None
+    if results is None:
+        raise StageError(stage, "no-results")
+    exit_code = int(results.get_exit_code())
+    if exit_code != int(Pk.ExitEnum.SUCCESS):
+        try:
+            name = Pk.exit_enum_to_string(exit_code)
+        except Exception:
+            name = None
+        raise StageError(stage, _token(f"exit-{name or exit_code}"))
+    return results
+
+
+def bitfield(*values):
+    """pk_bitfield_value() is a C macro, so it is not introspectable."""
+    field = 0
+    for value in values:
+        field |= 1 << int(value)
+    return field
+
+
+def prepared_ids(Pk, GLib):
+    """IDs PackageKit already downloaded for an offline update, or empty."""
+    try:
+        return frozenset(Pk.offline_get_prepared_ids() or ())
+    except GLib.Error:
+        # NO_DATA ("No offline updates have been prepared") or an unreadable
+        # prepared-update file: prepare again from scratch.
+        return frozenset()
+
+
+def prepare_offline_update(Pk, GLib, client, package_ids):
+    """Download exactly `package_ids` and schedule them for the next restart.
+
+    Returns True when this run downloaded or triggered something, False when
+    PackageKit already had the same update prepared and scheduled.
+    """
+    wanted = frozenset(package_ids)
+    reboot = int(Pk.OfflineAction.REBOOT)
+    if prepared_ids(Pk, GLib) == wanted:
+        try:
+            action = int(Pk.offline_get_action())
+        except GLib.Error:
+            action = None
+        if action == reboot:
+            return False
+    else:
+        flags = bitfield(
+            Pk.TransactionFlagEnum.ONLY_TRUSTED,
+            Pk.TransactionFlagEnum.ONLY_DOWNLOAD,
+        )
+        _call(Pk, GLib, "download", client.update_packages, flags, sorted(wanted))
+
+    try:
+        triggered = Pk.offline_trigger(Pk.OfflineAction.REBOOT, None)
+    except GLib.Error as error:
+        error_class, authorization = classify_error(Pk, error)
+        raise StageError("trigger", error_class, authorization) from None
+    if not triggered:
+        raise StageError("trigger", "refused")
+    return True
+
+
+def _plural(count, singular, plural):
+    return singular if count == 1 else plural
+
+
+def notification_text(lulo_ready, review_count, review_is_other):
+    """Summary and body for this run, or None when there is nothing to say."""
+    sentences = []
+    if lulo_ready:
+        sentences.append(
+            "Lulo OS updates are ready — they will be installed the next "
+            "time you restart."
+        )
+    if review_count:
+        noun = "other update" if review_is_other else "update"
+        nouns = "other updates" if review_is_other else "updates"
+        verb = _plural(review_count, "is", "are")
+        sentences.append(
+            f"{review_count} {_plural(review_count, noun, nouns)} {verb} "
+            "available — open System Settings to review and install them."
+        )
+    if not sentences:
+        return None
+    summary = "Lulo OS update ready" if lulo_ready else "Updates available"
+    return summary, " ".join(sentences)
+
+
+def notify(Gio, GLib, summary, body):
+    """Send one notification; a missing notification service is not fatal."""
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        bus.call_sync(
+            "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+            "Notify",
+            GLib.Variant(
+                "(susssasa{sv}i)",
+                (APP_NAME, 0, ICON, summary, body, [], {}, -1),
+            ),
+            GLib.VariantType.new("(u)"),
+            Gio.DBusCallFlags.NONE,
+            NOTIFICATION_TIMEOUT_MS,
+            None,
+        )
+    except GLib.Error as error:
+        domain = _token(getattr(error, "domain", "error"))
+        print(
+            f"rmac-update-check: notification not shown: {domain}-"
+            f"{int(getattr(error, 'code', 0) or 0)}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
+def run(Pk, Gio, GLib):
+    try:
+        client = Pk.Client.new()
+        client.set_interactive(False)
+        client.set_background(True)
+    except GLib.Error as error:
+        report("packagekit", classify_error(Pk, error)[0])
+        return EXIT_FAILED
+
+    try:
+        _call(Pk, GLib, "refresh", client.refresh_cache, False)
+        results = _call(
+            Pk,
+            GLib,
+            "get-updates",
+            client.get_updates,
+            bitfield(Pk.FilterEnum.NONE),
+        )
+    except StageError as error:
+        report(error.stage, error.error_class)
+        return EXIT_FAILED
+
+    blocked = int(Pk.InfoEnum.BLOCKED)
+    lulo_ids = set()
+    other_ids = set()
+    for package in results.get_package_array() or ():
+        if int(package.get_info()) == blocked:
+            continue
+        package_id = package.get_id()
+        if package.get_name() in LULO_PACKAGES:
+            lulo_ids.add(package_id)
+        else:
+            other_ids.add(package_id)
+
+    status = EXIT_OK
+    lulo_ready = False
+    review_count = len(other_ids)
+    if lulo_ids:
+        try:
+            prepare_offline_update(Pk, GLib, client, lulo_ids)
+            lulo_ready = True
+        except StageError as error:
+            report(error.stage, error.error_class)
+            if error.authorization:
+                print(
+                    "rmac-update-check: PackageKit asked for authorization; "
+                    "install from System Settings > Software Update",
+                    file=sys.stderr,
+                    flush=True,
+                )
+            # The automatic path did not happen: offer the Lulo OS updates
+            # for review in System Settings instead, and still fail the unit.
+            review_count += len(lulo_ids)
+            status = EXIT_FAILED
+
+    text = notification_text(lulo_ready, review_count, review_is_other=lulo_ready)
+    if text is not None:
+        notify(Gio, GLib, *text)
+    return status
+
+
+def main():
+    try:
+        import gi
+
+        gi.require_version("PackageKitGlib", "1.0")
+        gi.require_version("Gio", "2.0")
+        gi.require_version("GLib", "2.0")
+        from gi.repository import Gio, GLib
+        from gi.repository import PackageKitGlib as Pk
+    except (ImportError, ValueError):
+        print(
+            "rmac-update-check: packagekit client library unavailable "
+            "(gir1.2-packagekitglib-1.0, python3-gi)",
+            file=sys.stderr,
+            flush=True,
+        )
+        return EXIT_UNAVAILABLE
+    return run(Pk, Gio, GLib)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

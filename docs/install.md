@@ -122,14 +122,17 @@ then remove `/etc/apt/sources.list.d/rmac.sources` and
 
 ### Keeping rmac up to date
 
-Once installed, `rmac-update-check.timer` asks PackageKit for updates once a
-day and shows a notification when any exist; it never installs, downloads,
-or removes anything itself. Reviewing and applying updates happens in
-System Settings (see [Software Update](software-update.md)), which drives
-PackageKit directly. PackageKit installs on the next restart ("offline
-updates"), so a running session is never replaced mid-session. An optional
-"install updates automatically" setting for `origin=rmac` security updates
-is still on the todo list and not implemented yet.
+Once installed, `rmac-update-check.timer` checks for updates once a day and
+15 minutes after login. Lulo OS's own packages (`rmac-apps`, `rmac-session`,
+`rmac-archive-keyring`, `niri`, `xwayland-satellite`) are downloaded in the
+background as a trusted-only PackageKit offline update. They are installed the
+next time you restart, so a running session is never replaced mid-session. A
+notification says when they are ready. Other updates only get a notification
+that sends you to System Settings (see
+[Software Update](software-update.md#automatic-lulo-os-updates)), which
+reviews and installs them through PackageKit directly. To turn off both the
+notification and the automatic preparation, run
+`systemctl --user disable --now rmac-update-check.timer`.
 
 ## Install from a GitHub Release (the Beta path)
 

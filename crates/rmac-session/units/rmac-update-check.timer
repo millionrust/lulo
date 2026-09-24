@@ -1,5 +1,5 @@
 [Unit]
-Description=Daily rmac software update check
+Description=Daily Lulo OS update check
 Documentation=https://github.com/rmac/rmac
 PartOf=rmac-session.target
 
@@ -7,6 +7,8 @@ PartOf=rmac-session.target
 OnCalendar=daily
 RandomizedDelaySec=1h
 Persistent=true
+# A laptop that is only on briefly still gets checked.
+OnStartupSec=15min
 
 [Install]
 WantedBy=timers.target

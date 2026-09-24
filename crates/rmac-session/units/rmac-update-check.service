@@ -1,12 +1,21 @@
 [Unit]
-Description=Check for rmac software updates and notify
+Description=Check for Lulo OS updates and prepare them for the next restart
 Documentation=https://github.com/rmac/rmac
 After=rmac-session-supervisor.service
 StartLimitIntervalSec=0
 ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-update-check
 
+# Runs once and exits. PackageKit does the privileged work over the system
+# bus: it refreshes metadata, downloads Lulo OS updates (trusted only,
+# download only) and schedules them as an offline update that
+# pk-offline-update installs on the next restart. Turn this off with
+#   systemctl --user disable --now rmac-update-check.timer
 [Service]
 Type=oneshot
 ExecStart=%h/.local/libexec/rmac/rmac-update-check
+# Downloads can be large on a slow connection.
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=idle
 NoNewPrivileges=yes
 PrivateTmp=yes

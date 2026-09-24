@@ -135,3 +135,120 @@ F10 remains unchecked until the Ubuntu/niri reference PC proves:
 - keyboard-only operation, focus visibility, 100–200% scaling, contrast,
   reduced motion, Orca names/state announcements, bounded latency, and idle
   wakeups.
+
+## Automatic Lulo OS updates
+
+Lulo OS's own packages update themselves without a visit to System Settings.
+The rmac-session package ships `rmac-update-check.timer` and
+`rmac-update-check.service` as user units; `rmac-session.target` wants the
+timer. The timer fires once a day (`OnCalendar=daily`, spread over an hour by
+`RandomizedDelaySec=1h`), catches up after the machine was off
+(`Persistent=true`), and also fires 15 minutes after the user manager starts
+(`OnStartupSec=15min`), so a laptop that is only on briefly still gets checked.
+The service runs `/usr/libexec/rmac/rmac-update-check` once and exits, at
+`Nice=10` and idle I/O priority, with a two-hour start timeout for large
+downloads. Nothing stays resident between runs.
+
+The program is Python 3 and uses PackageKit's own client library through
+GObject introspection (`gir1.2-packagekitglib-1.0`, `python3-gi`). It never runs
+a package-manager command and never parses command output. Each run:
+
+1. Creates a non-interactive, background PackageKit client
+   (`set_interactive(False)`, `set_background(True)`), refreshes the metadata
+   with `refresh_cache(False)` and reads `get_updates` with the `NONE`
+   filter. Blocked updates are ignored.
+2. Splits the updates by exact package name. `rmac-apps`, `rmac-session`,
+   `rmac-archive-keyring`, `niri` and `xwayland-satellite` are Lulo OS
+   packages; everything else is an ordinary update.
+3. Prepares the Lulo OS updates as a PackageKit offline update:
+   `update_packages` with `ONLY_TRUSTED | ONLY_DOWNLOAD` for exactly those
+   package IDs, then `offline_trigger(REBOOT)`. The transaction always keeps
+   `ONLY_TRUSTED`; an unsigned or untrusted package makes the download fail
+   instead of being accepted. If PackageKit's prepared update
+   (`offline_get_prepared_ids`) already holds exactly the same IDs and the
+   pending action is already reboot, nothing is downloaded or triggered
+   again. If the prepared IDs match but the trigger was cancelled, the run
+   triggers again without downloading.
+4. Sends at most one notification over `org.freedesktop.Notifications`
+   (app name "Software Update", icon `software-update-available`): "Lulo OS
+   updates are ready — they will be installed the next time you restart."
+   when the offline update is prepared, and "N other updates are available —
+   open System Settings to review and install them." for the remaining
+   updates. Both sentences share one notification when both apply. A run
+   with no updates sends nothing.
+
+On the next restart systemd enters `system-update.target` because PackageKit
+created the `/system-update` link, and `packagekit-offline-update.service`
+(`/usr/libexec/pk-offline-update`) installs the prepared packages before the
+desktop starts, then reboots again. The install itself runs as root under
+systemd; the user's session is never replaced mid-session.
+
+**Authorization.** A download-only update needs no authorization:
+`pk_transaction_obtain_authorization()` in PackageKit's
+[`src/pk-transaction.c`](https://github.com/PackageKit/PackageKit/blob/v1.3.4/src/pk-transaction.c)
+returns early ("No authentication required") when the cached transaction flags
+contain `ONLY_DOWNLOAD` or `SIMULATE`, so the `system-update` polkit action
+(`auth_admin_keep` on Ubuntu 26.04) is never consulted. When that
+download-only `UpdatePackages` finishes, `pk_transaction_offline_finished()`
+records its package IDs as the prepared update. Triggering uses the
+`org.freedesktop.packagekit.trigger-offline-update` action, which Ubuntu
+26.04's policy grants to the active user without a prompt. The program never
+asks for interaction. If a site policy makes PackageKit refuse anyway
+(`not-authorized`, `failed-auth` or `declined-interaction`), the Lulo OS
+updates are counted with the others in the "open System Settings"
+notification, where the normal interactive flow applies.
+
+**Errors.** If PackageKit or the system bus is unavailable, the metadata
+refresh fails (for example expired or unsigned repository metadata), or the
+download or trigger fails, the program writes one bounded line to the user
+journal, such as `rmac-update-check: refresh failed: gpg-failure`, and exits
+non-zero. `systemctl --user status rmac-update-check` then shows the failed
+run. The line carries only the PackageKit error class, never the GError
+message, which can contain URLs, paths or package names. A download or
+trigger failure still sends the fallback notification, counting the Lulo OS
+updates with the others, and the unit still fails. That way the person can
+act and the failure stays visible. A missing notification service is logged
+and is not a failure. A missing PackageKit client library exits with status 2.
+
+**Opting out.** `systemctl --user disable --now rmac-update-check.timer` turns
+off both the daily notification and the automatic preparation. Updates remain
+available in System Settings > Software Update.
+
+**Phasing.** PackageKit's APT backend reports as updates what libapt marks
+for upgrade in its dependency cache. Neither the backend nor this program
+reads `Phased-Update-Percentage`. It is **unverified** whether PackageKit's
+APT backend holds back phased Ubuntu updates the way `apt upgrade` does.
+This matters only for the "other updates" count: Lulo OS's own repository
+does not publish phased updates, so the prepared Lulo OS set is unaffected.
+
+**Replacing a prepared update.** PackageKit records the IDs of the latest
+download-only `UpdatePackages` as the prepared update. If another tool has
+already prepared a different offline update, a new Lulo OS preparation takes
+its place. System Settings installs online, and we know of no stock Ubuntu
+26.04 component that prepares PackageKit offline updates in the background,
+so nothing on Lulo OS should compete for the prepared update today. Whether PackageKit 1.3.4 replaces or
+merges an existing prepared list is unverified.
+
+### What the reference PC still has to prove
+
+`scripts/test_update_check.py` runs the program against a fake `gi` package
+that records every PackageKit and D-Bus call. On the reference PC, a
+read-only run through the real `PackageKitGlib` (with refresh, download,
+trigger and notification stubbed) confirmed the method signatures, enum
+values, error domains and the `only-trusted;only-download` bitfield. The
+automatic path is not proven until the reference PC completes a real cycle:
+
+- a Lulo OS package update is published to the signed repository; the timer
+  (or `systemctl --user start rmac-update-check.service`) refreshes, downloads
+  and triggers without any polkit prompt; `offline_get_prepared_ids` lists
+  exactly the Lulo OS IDs and the "ready" notification appears once;
+- a second run with no new version performs no download and no trigger;
+- a restart enters `system-update.target`, `pk-offline-update` installs the
+  packages, the machine reboots into the updated Lulo OS session, and
+  `dpkg-query` shows the new versions;
+- expired or unsigned repository metadata, a network loss during download and
+  a refused trigger each leave the unit failed with one journal line, and
+  never schedule a partial update;
+- with the notification centre stopped, the run still succeeds; and
+- `systemctl --user disable --now rmac-update-check.timer` stops both the
+  notification and the preparation.

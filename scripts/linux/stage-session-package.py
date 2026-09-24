@@ -140,7 +140,7 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             0o755,
         ),
         "usr/libexec/rmac/rmac-update-check": (
-            _read_regular(REPO_ROOT / "scripts/linux/rmac-update-check.sh"),
+            _read_regular(REPO_ROOT / "scripts/linux/rmac-update-check"),
             0o755,
         ),
         "usr/share/rmac/niri/shortcuts-fallback.kdl": (

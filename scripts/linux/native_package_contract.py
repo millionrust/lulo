@@ -148,10 +148,13 @@ PACKAGE_SPECS = (
         section="x11",
         install_directory="usr/libexec/rmac",
         binaries=SESSION_BINARIES,
-        # libnotify-bin and packagekit back the rmac-update-check.timer /
-        # .service daily update nudge (docs/install.md "Install and
-        # auto-update"): pkcon asks PackageKit for updates and notify-send
-        # shows the result.
+        # packagekit, gir1.2-packagekitglib-1.0 and python3-gi back the
+        # rmac-update-check.timer / .service daily update check
+        # (docs/software-update.md "Automatic Lulo OS updates"): a Python
+        # program drives PackageKit through its GObject-introspected client
+        # library, prepares Lulo OS updates as an offline update, and sends
+        # its notification over D-Bus. python3-gi pulls in gir1.2-glib-2.0,
+        # which provides the Gio and GLib typelibs.
         #
         # niri and xwayland-satellite are not in the Ubuntu archive; Lulo OS
         # ships its own builds of the tested releases under the upstream
@@ -165,11 +168,12 @@ PACKAGE_SPECS = (
             "fonts-inter",
             "fonts-jetbrains-mono",
             "gawk | mawk",
+            "gir1.2-packagekitglib-1.0",
             "grim",
-            "libnotify-bin",
             "niri (>= 26.04)",
             "packagekit",
             "pipewire-bin",
+            "python3-gi",
             "rmac-apps (= {version})",
             "swayidle",
             "swaylock",

@@ -94,6 +94,13 @@ class NativePackageContractTests(unittest.TestCase):
         self.assertIn("swayidle", session.static_dependencies)
         self.assertNotIn("brightnessctl", session.static_dependencies)
         self.assertIn("pipewire-bin", session.static_dependencies)
+        # rmac-update-check drives PackageKit through PackageKitGlib and
+        # notifies over D-Bus; it no longer shells out to notify-send.
+        self.assertIn("packagekit", session.static_dependencies)
+        self.assertIn("gir1.2-packagekitglib-1.0", session.static_dependencies)
+        self.assertIn("python3-gi", session.static_dependencies)
+        self.assertNotIn("libnotify-bin", session.static_dependencies)
+        self.assertNotIn("packagekit-tools", session.static_dependencies)
         self.assertIn("rmac-wallpaper", session.binaries)
         self.assertIn("rmac-top-bar", session.binaries)
         self.assertIn("rmac-dock", session.binaries)

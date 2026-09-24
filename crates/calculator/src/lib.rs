@@ -3,3 +3,5 @@
 
 pub mod engine;
 pub mod keypad;
+pub mod scientific;
+pub mod scientific_keypad;

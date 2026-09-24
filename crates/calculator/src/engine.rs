@@ -29,6 +29,17 @@ const MAX_SCIENTIFIC_DIGITS: usize = 8;
 /// The text shown for a failed calculation.
 pub const ERROR_TEXT: &str = "Error";
 
+/// One completed calculation, newest kept at the end. The history tape (the
+/// sidebar button, CALC-01/CALC-03) shows these newest-first and lets the
+/// user click one to load its result back into the display.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistoryEntry {
+    /// The expression that produced the result, such as `"3.66+3.59"`.
+    pub expression: String,
+    /// The formatted result, such as `"7.25"`.
+    pub result: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Operator {
     Add,
@@ -110,6 +121,9 @@ pub struct Calculator {
     error: bool,
     /// The secondary line above the result, such as `3.66+3.59`.
     expression: String,
+    /// Every calculation `=` has completed, newest last. Survives `AC` and
+    /// `Error`, like macOS's history tape.
+    history: Vec<HistoryEntry>,
 }
 
 impl Calculator {
@@ -145,6 +159,12 @@ impl Calculator {
     /// The secondary expression line above the result. Empty when idle.
     pub fn expression(&self) -> &str {
         &self.expression
+    }
+
+    /// Completed calculations, oldest first. The history panel shows them
+    /// newest-first (reverse this).
+    pub fn history(&self) -> &[HistoryEntry] {
+        &self.history
     }
 
     /// The operator whose key should be highlighted, if any.
@@ -210,8 +230,10 @@ impl Calculator {
     }
 
     fn fail(&mut self) {
+        let history = std::mem::take(&mut self.history);
         *self = Self {
             error: true,
+            history,
             ..Self::default()
         };
     }
@@ -311,6 +333,10 @@ impl Calculator {
             operator.symbol(),
             format_value(right)
         );
+        self.history.push(HistoryEntry {
+            expression: self.expression.clone(),
+            result: format_value(value),
+        });
         self.value = value;
         self.entry = None;
         self.accumulator = None;
@@ -372,7 +398,11 @@ impl Calculator {
     }
 
     fn all_clear(&mut self) {
-        *self = Self::default();
+        let history = std::mem::take(&mut self.history);
+        *self = Self {
+            history,
+            ..Self::default()
+        };
     }
 
     fn backspace(&mut self) {
@@ -924,6 +954,44 @@ mod tests {
         assert!(longer <= long);
         assert_eq!(fitted_font_size("", 209.0, 64.0, 24.0), 64.0);
         assert_eq!(fitted_font_size(&"8".repeat(100), 209.0, 64.0, 24.0), 24.0);
+    }
+
+    #[test]
+    fn equals_appends_to_history() {
+        let calculator = run("2+3=");
+        assert_eq!(
+            calculator.history(),
+            [HistoryEntry {
+                expression: "2+3".to_owned(),
+                result: "5".to_owned(),
+            }]
+        );
+        let calculator = run("2+3=10=");
+        assert_eq!(calculator.history().len(), 2);
+        assert_eq!(calculator.history()[1].result, "13");
+    }
+
+    #[test]
+    fn history_survives_all_clear_and_error() {
+        let mut calculator = run("2+3=");
+        calculator.press(Clear);
+        calculator.press(Clear);
+        assert_eq!(calculator.history().len(), 1);
+        calculator.press(Digit(5));
+        calculator.press(Key::Operator(Divide));
+        calculator.press(Digit(0));
+        calculator.press(Equals);
+        assert!(calculator.is_error());
+        assert_eq!(calculator.history().len(), 1);
+    }
+
+    #[test]
+    fn history_entry_result_reloads_via_paste() {
+        let mut calculator = run("2+3=");
+        let entry = calculator.history()[0].clone();
+        calculator.press(Digit(9));
+        assert!(calculator.paste(&entry.result));
+        assert_eq!(calculator.display(), "5");
     }
 
     #[test]

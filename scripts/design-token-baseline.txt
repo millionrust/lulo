@@ -1,6 +1,10 @@
 crates/activity-monitor/src/view/render/metrics_panes.rs:8
 crates/finder/src/view/archive_controller.rs:11
+crates/finder/src/view/content_presentation.rs:1
 crates/finder/src/view/finder_style.rs:9
+crates/finder/src/view/list_presentation.rs:1
+crates/finder/src/view/presentation_support.rs:1
+crates/finder/src/view/search_info_controller.rs:1
 crates/launcher-app/src/view/render.rs:5
 crates/launcher-app/src/view/render/mode_panel.rs:4
 crates/launcher-app/src/view/render/query_panel.rs:10
@@ -10,13 +14,12 @@ crates/quick-settings-app/src/render/controls.rs:1
 crates/quick-settings-app/src/render/detail.rs:2
 crates/system-settings/src/controller/appearance/render.rs:1
 crates/system-settings/src/controller/notifications.rs:3
-crates/system-settings/src/controller/settings_style.rs:33
+crates/system-settings/src/controller/settings_style.rs:34
 crates/system-settings/src/controller/sound.rs:1
 crates/system-settings/src/controller/view_helpers.rs:1
 crates/system-settings/src/controller/view_helpers/displays.rs:1
 crates/system-settings/src/controller/view_helpers/form.rs:2
 crates/system-settings/src/controller/view_helpers/power.rs:1
-crates/system-settings/src/controller/wallpaper/render.rs:2
 crates/system-settings/src/controller/wifi/render.rs:1
 crates/terminal/src/controller/renderer/chrome.rs:2
 crates/text-editor/src/view/render.rs:2

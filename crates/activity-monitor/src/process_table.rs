@@ -2,7 +2,8 @@ use std::cmp::Ordering;
 
 use gpui::{
     div, AccessibleAction, App, Context, InteractiveElement as _, IntoElement, MouseButton,
-    ParentElement, Role, SharedString, Stateful, StatefulInteractiveElement as _, Window,
+    ParentElement, Role, SharedString, Stateful, StatefulInteractiveElement as _, Styled as _,
+    Window,
 };
 use gpui_component::menu::PopupMenu;
 use rmac_activity_monitor::accessibility::{

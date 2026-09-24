@@ -139,8 +139,8 @@ impl Render for FinderView {
                     cx.stop_propagation();
                     match event.keystroke.key.as_str() {
                         "escape" | "space" => this.close_quick_look(cx),
-                        "left" => this.move_quick_look(-1, cx),
-                        "right" => this.move_quick_look(1, cx),
+                        "left" | "up" => this.move_quick_look(-1, cx),
+                        "right" | "down" => this.move_quick_look(1, cx),
                         _ => {}
                     }
                     return;

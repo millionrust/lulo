@@ -99,8 +99,9 @@ impl MonitorView {
                 )
         };
 
-        let dialog = div()
+        let card = div()
             .v_flex()
+            .tab_group()
             .gap_1()
             .w(px(420.0))
             .p_5()
@@ -162,17 +163,11 @@ impl MonitorView {
                     ),
             );
 
-        Some(
-            div()
-                .absolute()
-                .top_0()
-                .left_0()
-                .size_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .bg(mac::scrim())
-                .child(dialog),
-        )
+        // A hand-rolled scrim + card used to render here with no role and no
+        // Tab trap, so Tab could leave the inspector for the process table
+        // behind it. `rmac_ui::dialog` gives it `Role::Dialog`, and
+        // `.tab_group()` on the card keeps Tab/Shift-Tab inside it, matching
+        // `rmac_ui::alert`'s pattern.
+        Some(rmac_ui::dialog("activity-monitor-inspector", card).into_any_element())
     }
 }

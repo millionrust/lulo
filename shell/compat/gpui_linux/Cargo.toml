@@ -54,7 +54,7 @@ screen-capture = [
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
 accesskit = "0.24.0"
-accesskit_unix = "0.21.0"
+accesskit_unix = "0.22.1"
 anyhow = "1.0.86"
 bytemuck = "1"
 collections = { version = "=0.1.0", git = "https://github.com/zed-industries/zed.git", package = "collections" }

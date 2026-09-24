@@ -69,6 +69,18 @@ now parks instead:
 - Known gap: a `Window::on_next_frame` callback queued by a frame that drew
   nothing waits for the next event-loop wake-up rather than the next vblank.
 
+### AT-SPI registration (amended 2026-09-24)
+
+Zed's manifest at the pinned revision asks for `accesskit_unix` 0.21, which
+registers a window with the AT-SPI registry only while
+`org.a11y.Status.ScreenReaderEnabled` is true. The Lulo session reports
+`IsEnabled` without a screen reader running, so no rmac surface appeared
+under the registry root and AT-SPI clients (Orca, Accerciser, pyatspi) saw
+none of Lulo. `accesskit_unix` 0.22 watches `IsEnabled`, which GTK and Qt
+honour, and keeps the same public API over `accesskit` 0.24, so the vendored
+manifest now requires 0.22.1. `scripts/test_accesskit_activation.py` fails if
+either lockfile falls back to an older release.
+
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_linux` and re-applying the

@@ -45,27 +45,14 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/accesskit_atspi_common/accesskit_atspi_common-0.18.1.crate",
-        "sha256": "1e8c61bee90b42a772d39d06a740207dc71a4e780004ace1db8d99fb1baaa954",
-        "dest": "cargo/vendor/accesskit_atspi_common-0.18.1"
+        "url": "https://static.crates.io/crates/accesskit_atspi_common/accesskit_atspi_common-0.19.1.crate",
+        "sha256": "023da0e5097f46df7092d5280b02efb9bbf8d93298daeced42652463e357d636",
+        "dest": "cargo/vendor/accesskit_atspi_common-0.19.1"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"1e8c61bee90b42a772d39d06a740207dc71a4e780004ace1db8d99fb1baaa954\", \"files\": {}}",
-        "dest": "cargo/vendor/accesskit_atspi_common-0.18.1",
-        "dest-filename": ".cargo-checksum.json"
-    },
-    {
-        "type": "archive",
-        "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/accesskit_consumer/accesskit_consumer-0.36.0.crate",
-        "sha256": "25e0d7e25d06f4dc21d1774d67146e9e80d6789216cbd4d1e88185b0095dba60",
-        "dest": "cargo/vendor/accesskit_consumer-0.36.0"
-    },
-    {
-        "type": "inline",
-        "contents": "{\"package\": \"25e0d7e25d06f4dc21d1774d67146e9e80d6789216cbd4d1e88185b0095dba60\", \"files\": {}}",
-        "dest": "cargo/vendor/accesskit_consumer-0.36.0",
+        "contents": "{\"package\": \"023da0e5097f46df7092d5280b02efb9bbf8d93298daeced42652463e357d636\", \"files\": {}}",
+        "dest": "cargo/vendor/accesskit_atspi_common-0.19.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {
@@ -110,14 +97,14 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
-        "url": "https://static.crates.io/crates/accesskit_unix/accesskit_unix-0.21.1.crate",
-        "sha256": "b016ca8db0ea0ea2ceff29a9d6240391492d960716aa471967c00e8cc8cb197c",
-        "dest": "cargo/vendor/accesskit_unix-0.21.1"
+        "url": "https://static.crates.io/crates/accesskit_unix/accesskit_unix-0.22.1.crate",
+        "sha256": "03e156ed3802e35eefe894ef2671bc6c889303d8a7e110b5e1b48f504b91362f",
+        "dest": "cargo/vendor/accesskit_unix-0.22.1"
     },
     {
         "type": "inline",
-        "contents": "{\"package\": \"b016ca8db0ea0ea2ceff29a9d6240391492d960716aa471967c00e8cc8cb197c\", \"files\": {}}",
-        "dest": "cargo/vendor/accesskit_unix-0.21.1",
+        "contents": "{\"package\": \"03e156ed3802e35eefe894ef2671bc6c889303d8a7e110b5e1b48f504b91362f\", \"files\": {}}",
+        "dest": "cargo/vendor/accesskit_unix-0.22.1",
         "dest-filename": ".cargo-checksum.json"
     },
     {

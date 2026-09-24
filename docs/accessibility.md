@@ -79,6 +79,16 @@ transfer, or rmac application roles, names, states, actions, and
 announcements. Niri does not currently provide built-in desktop zoom or
 screen curtain. Those controls remain absent.
 
+## AT-SPI registration
+
+Every rmac window registers with the AT-SPI registry as soon as the session
+reports `org.a11y.Status.IsEnabled`, whether or not a screen reader is
+running, the way GTK and Qt applications do. The top bar, Dock, Launcher and
+every rmac app then show up under the registry root for Orca, Accerciser and
+pyatspi. This needs `accesskit_unix` 0.22 or later in the vendored
+`gpui_linux`; older releases waited for `ScreenReaderEnabled` and left Lulo
+invisible to AT-SPI clients (ADR 0013).
+
 ## Screen Reader on/off
 
 Accessibility > Screen Reader shows a real on/off switch, not just readiness:

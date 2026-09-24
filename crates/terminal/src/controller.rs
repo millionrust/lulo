@@ -23,6 +23,7 @@ use crate::emulator::{
 };
 #[cfg(test)]
 use crate::emulator::{TermSize, SCROLLBACK_LINES};
+use crate::find::{self, FindMatch, FindStatus};
 use crate::hyperlink::LinkTarget;
 use crate::ime::{ImeBuffer, MAX_TEXT_BYTES as MAX_IME_TEXT_BYTES};
 #[cfg(test)]
@@ -57,7 +58,7 @@ use gpui::{
 };
 use gpui_component::StyledExt as _;
 use rmac_terminal::accessibility::TerminalAccessibilitySnapshot;
-use rmac_ui::{Button, InputState, SearchField};
+use rmac_ui::{Button, InputEvent, InputState, SearchField};
 #[cfg(test)]
 use vte::ansi::Processor;
 use vte::ansi::{ClearMode, Color, Handler as _, NamedColor};
@@ -103,6 +104,8 @@ gpui::actions!(
         Copy,
         Paste,
         Find,
+        FindNext,
+        FindPrevious,
         ZoomIn,
         ZoomOut,
         ZoomReset,

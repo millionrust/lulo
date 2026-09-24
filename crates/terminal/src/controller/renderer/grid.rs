@@ -1,10 +1,112 @@
 //! Terminal grid, style-run, search-highlight, cursor, and IME projection.
 
 use super::*;
+use alacritty_terminal::grid::Row;
 use alacritty_terminal::index::{Column, Line};
-use alacritty_terminal::term::cell::Flags;
+use alacritty_terminal::term::cell::{Cell, Flags};
+
+/// The row's characters as Find sees them: one entry per character, with the
+/// column it starts in. The spacer column after a wide character is skipped
+/// so a match can span it.
+fn row_cells(row: &Row<Cell>, cols: usize) -> Vec<find::CellText> {
+    let mut cells = Vec::with_capacity(cols);
+    for column in 0..cols {
+        let cell = &row[Column(column)];
+        if cell
+            .flags
+            .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+        {
+            continue;
+        }
+        cells.push(find::CellText {
+            column,
+            width: if cell.flags.contains(Flags::WIDE_CHAR) {
+                2
+            } else {
+                1
+            },
+            character: if cell.c == '\0' { ' ' } else { cell.c },
+        });
+    }
+    cells
+}
 
 impl TerminalView {
+    /// Move to the next or previous Find match anywhere in the scrollback,
+    /// scroll it into view and select it (⌘G, ⇧⌘G, Return, Shift-Return).
+    /// The whole history is scanned once per step, never while idle.
+    pub(super) fn find_step(&mut self, forward: bool, cx: &mut Context<Self>) {
+        if self.modal_open() {
+            return;
+        }
+        self.capture_active_search_query(cx);
+        let query = self.tabs[self.active].ui.search_query.clone();
+        if query.is_empty() {
+            return;
+        }
+        let needle = find::fold_query(&query);
+        let tab = &mut self.tabs[self.active];
+        let Ok(mut term) = tab.term.lock() else {
+            self.operation_error = Some(SessionWriteError::State.to_string().into());
+            cx.notify();
+            return;
+        };
+        let grid = term.grid();
+        let history = grid.history_size();
+        let rows = grid.screen_lines();
+        let cols = grid.columns();
+        let display_offset = grid.display_offset();
+        let mut matches = Vec::new();
+        for line in -(history as i32)..rows as i32 {
+            let cells = row_cells(&grid[Line(line)], cols);
+            for (start, end) in find::match_columns(&cells, &needle) {
+                matches.push(FindMatch { line, start, end });
+            }
+        }
+        let current = tab
+            .ui
+            .find_status
+            .as_ref()
+            .filter(|(searched, _)| *searched == query)
+            .and(tab.ui.find_current);
+        let Some(index) = find::step(&matches, current, forward) else {
+            drop(term);
+            tab.ui.find_current = None;
+            tab.ui.find_status = Some((query, FindStatus::default()));
+            cx.notify();
+            return;
+        };
+        let found = matches[index];
+        let offset = find::display_offset_for(found.line, rows, history, display_offset);
+        if offset != display_offset {
+            term.scroll_display(Scroll::Bottom);
+            term.scroll_display(Scroll::Delta(i32::try_from(offset).unwrap_or(i32::MAX)));
+        }
+        drop(term);
+        tab.ui.selection = Some(Selection {
+            anchor: (found.line, found.start),
+            head: (found.line, found.end.saturating_sub(1)),
+        });
+        tab.ui.find_current = Some(found);
+        tab.ui.find_status = Some((
+            query,
+            FindStatus {
+                current: index + 1,
+                total: matches.len(),
+            },
+        ));
+        cx.notify();
+    }
+
+    /// The Find bar's "3 of 12" or "Not Found", for the query on screen only.
+    pub(super) fn find_status_label(&self) -> Option<String> {
+        let ui = &self.tabs[self.active].ui;
+        ui.find_status
+            .as_ref()
+            .filter(|(searched, _)| *searched == ui.search_query)
+            .map(|(_, status)| status.label())
+    }
+
     pub(super) fn render_ime_preedit(&self) -> Option<Div> {
         let composition = self.ime.as_ref()?;
         if composition.session_id != self.tabs[self.active].id || composition.buffer.text.is_empty()
@@ -67,44 +169,27 @@ impl TerminalView {
             && term.mode().contains(TermMode::SHOW_CURSOR);
         let cursor_line = cursor.line.0;
         let cursor_column = cursor.column.0;
+        let needle = find::fold_query(query);
+        let ui = &self.tabs[self.active].ui;
+        let current_match = ui
+            .find_status
+            .as_ref()
+            .filter(|(searched, _)| !needle.is_empty() && *searched == ui.search_query)
+            .and(ui.find_current);
 
         let mut rows = Vec::with_capacity(self.rows);
         for viewport_row in 0..self.rows as i32 {
             let line_index = viewport_row - offset;
             let row = &grid[Line(line_index)];
-            let matched = if query.is_empty() {
+            let matched = if needle.is_empty() {
                 Vec::new()
             } else {
-                let text: String = (0..self.cols)
-                    .map(|column| {
-                        let character = row[Column(column)].c;
-                        if character == '\0' {
-                            ' '
-                        } else {
-                            character
-                        }
-                    })
-                    .collect::<String>()
-                    .to_lowercase();
-                let mut matched = vec![false; self.cols];
-                let query_length = query.chars().count().max(1);
-                let mut start = 0;
-                while let Some(position) = text.get(start..).and_then(|text| text.find(query)) {
-                    let match_start = start + position;
-                    for cell in matched
-                        .iter_mut()
-                        .take((match_start + query_length).min(self.cols))
-                        .skip(match_start)
-                    {
-                        *cell = true;
-                    }
-                    start = match_start + query_length;
-                    if start >= text.len() {
-                        break;
-                    }
-                }
-                matched
+                find::covered_columns(
+                    &find::match_columns(&row_cells(row, self.cols), &needle),
+                    self.cols,
+                )
             };
+            let current_match = current_match.filter(|found| found.line == line_index);
             let mut spans = Vec::new();
             let mut run = String::new();
             let mut run_style: Option<Style> = None;
@@ -134,7 +219,11 @@ impl TerminalView {
                         background = hsla(active().selection);
                     }
                 }
-                if matched.get(column).copied().unwrap_or(false) {
+                // The match ⌘G moved to reads as selected text; the others
+                // keep the yellow highlight.
+                if current_match.is_some_and(|found| (found.start..found.end).contains(&column)) {
+                    background = hsla(active().selection);
+                } else if matched.get(column).copied().unwrap_or(false) {
                     background = hsla(FIND_HL);
                     foreground = hsla(active().bg);
                 }

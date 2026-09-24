@@ -8,6 +8,7 @@ impl TerminalView {
         find_width: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        let status = self.find_status_label();
         div()
             .absolute()
             .top(px(40.0))
@@ -20,10 +21,40 @@ impl TerminalView {
             .px_2()
             .rounded(px(rmac_ui::mac::radius_segmented()))
             .bg(rmac_ui::mac::raised())
+            .key_context("TerminalFind")
+            .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_step(true, cx)))
+            .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.find_step(false, cx)))
             .child(
                 div()
                     .flex_1()
                     .child(SearchField::new(&self.search).appearance(false)),
+            )
+            .when_some(status, |panel, status| {
+                panel.child(
+                    div()
+                        .flex_none()
+                        .text_xs()
+                        .text_color(rmac_ui::mac::text_secondary())
+                        .child(status),
+                )
+            })
+            .child(
+                div()
+                    .id("find-previous")
+                    .role(Role::Button)
+                    .aria_label("Previous Match")
+                    .text_color(rmac_ui::mac::text_secondary())
+                    .child("‹")
+                    .on_click(cx.listener(|this, _, _, cx| this.find_step(false, cx))),
+            )
+            .child(
+                div()
+                    .id("find-next")
+                    .role(Role::Button)
+                    .aria_label("Next Match")
+                    .text_color(rmac_ui::mac::text_secondary())
+                    .child("›")
+                    .on_click(cx.listener(|this, _, _, cx| this.find_step(true, cx))),
             )
             .child(
                 div()

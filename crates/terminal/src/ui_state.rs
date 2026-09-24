@@ -9,6 +9,8 @@ use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::Term;
 
+use crate::find::{FindMatch, FindStatus};
+
 pub(super) const MAX_SEARCH_QUERY_BYTES: usize = 4096;
 
 /// A selected cell range, in alacritty grid-line coordinates (`Line` values,
@@ -92,6 +94,9 @@ pub(super) struct SessionUiState {
     pub(super) selection: Option<Selection>,
     pub(super) search_open: bool,
     pub(super) search_query: String,
+    /// The match ⌘G / ⇧⌘G last moved to, and the query it was found for.
+    pub(super) find_current: Option<FindMatch>,
+    pub(super) find_status: Option<(String, FindStatus)>,
 }
 
 pub(super) fn bounded_search_query(value: &str) -> String {

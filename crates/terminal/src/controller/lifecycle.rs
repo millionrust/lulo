@@ -16,11 +16,40 @@ impl TerminalView {
             cx.notify();
         })
         .detach();
+        // Return in the Find field moves to the next match and Shift-Return
+        // to the previous one, as in Terminal's Find bar.
+        cx.subscribe(&search, |this, _, event: &InputEvent, cx| {
+            if let InputEvent::PressEnter { shift, .. } = event {
+                this.find_step(!*shift, cx);
+            }
+        })
+        .detach();
 
         cx.bind_keys([
             KeyBinding::new(rmac_ui::shortcuts::COPY.keystroke, Copy, Some("Terminal")),
             KeyBinding::new(rmac_ui::shortcuts::PASTE.keystroke, Paste, Some("Terminal")),
             KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, Find, Some("Terminal")),
+            KeyBinding::new(
+                rmac_ui::shortcuts::FIND_NEXT.keystroke,
+                FindNext,
+                Some("Terminal"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::FIND_PREVIOUS.keystroke,
+                FindPrevious,
+                Some("Terminal"),
+            ),
+            // The same keys while the Find field has focus.
+            KeyBinding::new(
+                rmac_ui::shortcuts::FIND_NEXT.keystroke,
+                FindNext,
+                Some("TerminalFind"),
+            ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::FIND_PREVIOUS.keystroke,
+                FindPrevious,
+                Some("TerminalFind"),
+            ),
             KeyBinding::new(
                 rmac_ui::shortcuts::ZOOM_IN.keystroke,
                 ZoomIn,

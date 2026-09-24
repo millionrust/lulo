@@ -74,6 +74,8 @@ impl TerminalView {
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &Paste, window, cx| this.request_paste(window, cx)))
             .on_action(cx.listener(|this, _: &Find, window, cx| this.toggle_find(window, cx)))
+            .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_step(true, cx)))
+            .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.find_step(false, cx)))
             .on_action(cx.listener(|this, _: &ZoomIn, window, cx| {
                 let size = this.font_size + 1.0;
                 this.set_font(size, window, cx);

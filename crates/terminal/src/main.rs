@@ -2,6 +2,7 @@
 
 mod controller;
 mod emulator;
+mod find;
 mod hyperlink;
 mod ime;
 mod job;

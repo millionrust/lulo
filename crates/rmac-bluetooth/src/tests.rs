@@ -2,6 +2,18 @@ use super::*;
 use crate::macos::{parse_macos_snapshot, sort_devices};
 use crate::watch::bluez_owner_availability;
 
+/// Runs the read-only half of the [`BluetoothService`] contract against
+/// the real BlueZ backend. `#[ignore]`d because it needs a D-Bus session
+/// and a Bluetooth adapter; run it deliberately on the reference laptop
+/// with `cargo test -p rmac-bluetooth -- --ignored`. It never mutates
+/// state (see [`contract::assert_bluetooth_service_contract`]'s doc
+/// comment for why the mutating half only runs against the fake).
+#[test]
+#[ignore = "needs a live BlueZ session; run on the reference laptop"]
+fn system_bluetooth_service_snapshot_is_well_formed() {
+    contract::assert_bluetooth_service_is_observable(&SystemBluetoothService);
+}
+
 #[test]
 fn macos_fixture_parses_and_sorts_known_devices() {
     let snapshot = parse_macos_snapshot(

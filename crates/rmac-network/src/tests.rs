@@ -3,6 +3,18 @@
 use super::*;
 use zbus::zvariant::{DynamicType, OwnedValue, Str, Value};
 
+/// Runs the read-only half of the [`WifiService`] contract against the
+/// real NetworkManager backend. `#[ignore]`d because it needs a D-Bus
+/// session and a Wi-Fi adapter; run it deliberately on the reference
+/// laptop with `cargo test -p rmac-network -- --ignored`. It never
+/// mutates state (see [`contract::assert_wifi_service_contract`]'s doc
+/// comment for why the mutating half only runs against the fake).
+#[test]
+#[ignore = "needs a live NetworkManager session; run on the reference laptop"]
+fn system_wifi_service_snapshot_is_well_formed() {
+    contract::assert_wifi_service_is_observable(&SystemWifiService);
+}
+
 fn owned<T>(value: T) -> OwnedValue
 where
     T: Into<Value<'static>> + DynamicType,

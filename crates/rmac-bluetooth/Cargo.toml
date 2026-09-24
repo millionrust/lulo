@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 
+[features]
+# Exposes `FakeBluetoothService` and the shared contract assertions in
+# `contract` for other crates' tests, without a live D-Bus session.
+test-support = []
+
 [dependencies]
 async-channel.workspace = true
 zeroize.workspace = true

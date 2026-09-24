@@ -1,5 +1,9 @@
 //! Cross-platform Bluetooth adapter and known-device service.
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod contract;
+#[cfg(any(test, feature = "test-support"))]
+pub mod fake;
 #[cfg(not(target_os = "macos"))]
 mod linux;
 mod macos;

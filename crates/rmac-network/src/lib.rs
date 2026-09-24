@@ -7,6 +7,10 @@ use std::process::Command;
 #[cfg(not(target_os = "macos"))]
 use std::time::Duration;
 
+#[cfg(any(test, feature = "test-support"))]
+pub mod contract;
+#[cfg(any(test, feature = "test-support"))]
+pub mod fake;
 #[cfg(any(not(target_os = "macos"), test))]
 mod linux;
 #[cfg(target_os = "macos")]

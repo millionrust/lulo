@@ -1418,6 +1418,21 @@ mod linux_wayland {
             // The same holds while the bar still shows the menus of an app
             // that has no focused window: name that app, not the desktop, so
             // the name, its app menu and the menus beside it agree.
+            // Close a menu whose app is gone first, so this frame already
+            // names the app that owns the bar now. The system and app menus
+            // always sit before the exported ones.
+            if self.open_menu.is_some()
+                && (self.open_menu >= Some(status.menus.len() + 2)
+                    || (self.open_menu != Some(0)
+                        && status
+                            .menu_app_id
+                            .as_deref()
+                            .is_some_and(|id| self.open_app_id.as_deref() != Some(id))))
+            {
+                self.open_menu = None;
+                self.open_app_id = None;
+                self.selected_item = NO_ITEM;
+            }
             let keep_menu_app = self.open_menu.is_some()
                 || (snapshot.focused.app_id.is_none() && !status.menus.is_empty());
             let active_app_id = if keep_menu_app {
@@ -1452,18 +1467,6 @@ mod linux_wayland {
                 ),
             );
 
-            if self.open_menu.is_some()
-                && (self.open_menu >= Some(menus.len())
-                    || (self.open_menu != Some(0)
-                        && status
-                            .menu_app_id
-                            .as_deref()
-                            .is_some_and(|id| self.open_app_id.as_deref() != Some(id))))
-            {
-                self.open_menu = None;
-                self.open_app_id = None;
-                self.selected_item = NO_ITEM;
-            }
             let visible = !self.fullscreen
                 || self.revealed
                 || self.open_menu.is_some()

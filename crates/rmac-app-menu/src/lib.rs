@@ -2,11 +2,12 @@
 
 use std::collections::BTreeSet;
 use std::future;
+use std::sync::Mutex;
 
 use zbus::connection::Builder;
 use zbus::fdo;
 use zbus::message::Header;
-use zbus::{interface, Connection, Proxy};
+use zbus::{interface, Connection};
 
 pub const OBJECT_PATH: &str = "/org/rmac/AppMenu1";
 pub const INTERFACE_NAME: &str = "org.rmac.AppMenu1";
@@ -557,17 +558,20 @@ async fn serve_endpoint(
         activation,
     };
     let mut builder = Builder::session()
-        .map_err(|_| Error::Bus)?
+        .map_err(bus_error("connect to the session bus"))?
         .name(name)
-        .map_err(|_| Error::Bus)?
+        .map_err(bus_error("request the menu bus name"))?
         .serve_at(OBJECT_PATH, interface)
-        .map_err(|_| Error::Bus)?;
+        .map_err(bus_error("export the menu object"))?;
     if let Some(windows) = windows {
         builder = builder
             .serve_at(OBJECT_PATH, InstanceInterface { windows })
-            .map_err(|_| Error::Bus)?;
+            .map_err(bus_error("export the app instance object"))?;
     }
-    let _connection = builder.build().await.map_err(|_| Error::Bus)?;
+    let _connection = builder
+        .build()
+        .await
+        .map_err(bus_error("publish the menu"))?;
     future::pending::<()>().await;
     Ok(())
 }
@@ -584,26 +588,32 @@ pub async fn open_window_in_running_instance(
     if !valid_window_arguments(arguments) {
         return Err(Error::Protocol);
     }
+    // A launch asks once, with its own short timeout, then either exits or
+    // becomes the running process; it does not share the menu connection.
     let connection = Builder::session()
-        .map_err(|_| Error::Bus)?
+        .map_err(bus_error("connect to the session bus"))?
         .method_timeout(INSTANCE_CALL_TIMEOUT)
         .build()
         .await
-        .map_err(|_| Error::Bus)?;
+        .map_err(bus_error("connect to the session bus"))?;
     let bus = fdo::DBusProxy::new(&connection)
         .await
-        .map_err(|_| Error::Bus)?;
+        .map_err(bus_error("reach the bus daemon"))?;
     let bus_name = zbus::names::BusName::try_from(name).map_err(|_| Error::Protocol)?;
-    if !bus.name_has_owner(bus_name).await.map_err(|_| Error::Bus)? {
+    if !bus
+        .name_has_owner(bus_name)
+        .await
+        .map_err(|error| Error::Bus(format!("could not look up {name}: {error}")))?
+    {
         return Ok(false);
     }
-    let proxy = Proxy::new(&connection, name, OBJECT_PATH, INSTANCE_INTERFACE_NAME)
+    let proxy = zbus::Proxy::new(&connection, name, OBJECT_PATH, INSTANCE_INTERFACE_NAME)
         .await
-        .map_err(|_| Error::Bus)?;
+        .map_err(bus_error("reach the running app"))?;
     proxy
         .call::<_, _, ()>("OpenWindow", &(arguments.to_vec(),))
         .await
-        .map_err(|_| Error::Bus)?;
+        .map_err(|error| Error::Bus(format!("{name} OpenWindow: {error}")))?;
     Ok(true)
 }
 
@@ -614,13 +624,53 @@ fn valid_window_arguments(arguments: &[String]) -> bool {
             .all(|argument| argument.len() <= MAX_WINDOW_ARGUMENT_BYTES && !argument.contains('\0'))
 }
 
+/// The menu bar and Spotlight ask for menus on every focus change, so every
+/// caller in a process shares one session-bus connection instead of opening
+/// and authenticating a new one per call.
+static SESSION: Mutex<Option<Connection>> = Mutex::new(None);
+
+async fn session() -> Result<Connection, Error> {
+    if let Some(connection) = SESSION.lock().ok().and_then(|slot| slot.clone()) {
+        return Ok(connection);
+    }
+    let connection = Connection::session()
+        .await
+        .map_err(bus_error("connect to the session bus"))?;
+    let Ok(mut slot) = SESSION.lock() else {
+        return Ok(connection);
+    };
+    // A concurrent first call may have connected as well; keep one so later
+    // calls all reuse it.
+    Ok(slot.get_or_insert(connection).clone())
+}
+
+/// Drop a connection the bus has closed so the next call reconnects.
+fn forget_closed_session(error: &zbus::Error) {
+    if matches!(error, zbus::Error::InputOutput(_)) {
+        if let Ok(mut slot) = SESSION.lock() {
+            *slot = None;
+        }
+    }
+}
+
+fn call_error(name: &'static str, method: &'static str) -> impl Fn(zbus::Error) -> Error {
+    move |error| {
+        forget_closed_session(&error);
+        Error::Bus(format!("{name} {method}: {error}"))
+    }
+}
+
 pub async fn fetch(app_id: &str) -> Result<Vec<Menu>, Error> {
     let name = bus_name(app_id).ok_or(Error::Unsupported)?;
-    let connection = Connection::session().await.map_err(|_| Error::Bus)?;
-    let proxy = Proxy::new(&connection, name, OBJECT_PATH, INTERFACE_NAME)
+    let reply = session()
+        .await?
+        .call_method(Some(name), OBJECT_PATH, Some(INTERFACE_NAME), "Menus", &())
         .await
-        .map_err(|_| Error::Bus)?;
-    let wire: WireMenus = proxy.call("Menus", &()).await.map_err(|_| Error::Bus)?;
+        .map_err(call_error(name, "Menus"))?;
+    let wire: WireMenus = reply
+        .body()
+        .deserialize()
+        .map_err(|error| Error::Bus(format!("{name} Menus reply: {error}")))?;
     decode(wire)
 }
 
@@ -629,14 +679,22 @@ pub async fn activate(app_id: &str, action: &str) -> Result<(), Error> {
     if !valid_action(action) {
         return Err(Error::Protocol);
     }
-    let connection = Connection::session().await.map_err(|_| Error::Bus)?;
-    let proxy = Proxy::new(&connection, name, OBJECT_PATH, INTERFACE_NAME)
+    session()
+        .await?
+        .call_method(
+            Some(name),
+            OBJECT_PATH,
+            Some(INTERFACE_NAME),
+            "Activate",
+            &action,
+        )
         .await
-        .map_err(|_| Error::Bus)?;
-    proxy
-        .call::<_, _, ()>("Activate", &action)
-        .await
-        .map_err(|_| Error::Bus)
+        .map_err(call_error(name, "Activate"))?;
+    Ok(())
+}
+
+fn bus_error(context: &'static str) -> impl Fn(zbus::Error) -> Error {
+    move |error| Error::Bus(format!("could not {context}: {error}"))
 }
 
 fn authenticated_sender(header: &Header<'_>) -> fdo::Result<()> {
@@ -733,10 +791,11 @@ fn valid_action(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.'))
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Error {
     Unsupported,
-    Bus,
+    /// A D-Bus failure, carrying zbus's description so logs say why.
+    Bus(String),
     Protocol,
 }
 
@@ -744,7 +803,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unsupported => formatter.write_str("application menus are not supported"),
-            Self::Bus => formatter.write_str("application menu bus is unavailable"),
+            Self::Bus(detail) => write!(formatter, "application menu D-Bus call failed: {detail}"),
             Self::Protocol => formatter.write_str("application menu data is invalid"),
         }
     }

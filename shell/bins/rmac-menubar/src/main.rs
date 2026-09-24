@@ -286,7 +286,7 @@ mod linux_wayland {
             // The focused app may still be registering its menu interface on
             // D-Bus when focus first arrives, so retry a few times while it
             // stays focused instead of leaving the bar permanently empty.
-            for _ in 0..6 {
+            for attempt in 1..=6 {
                 let result = cx
                     .background_executor()
                     .spawn({
@@ -294,7 +294,15 @@ mod linux_wayland {
                         async move { rmac_app_menu::fetch(&app_id).await }
                     })
                     .await;
-                let fetched = result.ok().filter(|menus| !menus.is_empty());
+                let fetched = match result {
+                    Ok(menus) => Some(menus).filter(|menus| !menus.is_empty()),
+                    Err(error) => {
+                        if attempt == 6 {
+                            eprintln!("could not read {app_id} menus: {error}");
+                        }
+                        None
+                    }
+                };
                 let stop = this
                     .update(cx, |this, cx| {
                         if this.menu_generation != generation

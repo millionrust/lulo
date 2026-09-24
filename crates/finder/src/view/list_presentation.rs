@@ -798,6 +798,12 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoHome, _, cx| this.go_home(cx)))
             .on_action(cx.listener(|this, _: &GoApplications, _, cx| this.applications_click(cx)))
             .on_action(cx.listener(|this, _: &GoDownloads, _, cx| this.go_downloads(cx)))
+            .on_action(cx.listener(|this, _: &GoDesktop, _, cx| this.go_desktop(cx)))
+            .on_action(cx.listener(|this, _: &GoDocuments, _, cx| this.go_documents(cx)))
+            .on_action(cx.listener(|this, _: &GoRecents, _, cx| this.recents_click(cx)))
+            .on_action(cx.listener(|this, _: &Find, window, cx| this.open_search(window, cx)))
+            .on_action(cx.listener(|this, _: &CopyAsPathname, _, cx| this.copy_as_pathname(cx)))
+            .on_action(cx.listener(|this, _: &MoveItemHere, _, cx| this.move_item_here(cx)))
             .on_action(cx.listener(|this, _: &GoTrash, _, cx| this.trash_click(cx)))
             .on_action(cx.listener(|this, _: &OpenItems, _, cx| this.open_selected(cx)))
             .on_action(cx.listener(|this, _: &OpenWith, _, cx| this.request_open_with(cx)))
@@ -826,9 +832,8 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &SortBySize, _, cx| this.set_sort(SortKey::Size, cx)))
             .on_action(cx.listener(|this, _: &SortByKind, _, cx| this.set_sort(SortKey::Kind, cx)))
             .on_action(cx.listener(|this, _: &NewTab, _, cx| this.new_tab(cx)))
-            .on_action(cx.listener(|this, _: &CloseTab, _, cx| {
-                let a = this.active;
-                this.close_tab(a, cx);
+            .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
+                this.close_tab_or_window(window, cx);
             }))
             .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.select_adjacent_tab(-1, cx)))
             .on_action(cx.listener(|this, _: &NextTab, _, cx| this.select_adjacent_tab(1, cx)))
@@ -851,6 +856,24 @@ impl FinderView {
             }))
             .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _, cx| {
                 if this.renaming.is_some() {
+                    return;
+                }
+                // Column view is a browser: ↑/↓ move within the focused
+                // column, →/← cross into the child/parent column, and
+                // `entries`-based indices (below) don't apply to it.
+                if this.view == ViewMode::Column && !this.applications_view && !this.trash_view {
+                    match ev.keystroke.key.as_str() {
+                        "up" => this.column_move_vertical(-1, cx),
+                        "down" => this.column_move_vertical(1, cx),
+                        "right" => this.column_move_right(cx),
+                        "left" => this.column_move_left(cx),
+                        "escape" => {
+                            if this.info.take().is_some() {
+                                cx.notify();
+                            }
+                        }
+                        _ => {}
+                    }
                     return;
                 }
                 let current = this.anchor.and_then(|anchor| {

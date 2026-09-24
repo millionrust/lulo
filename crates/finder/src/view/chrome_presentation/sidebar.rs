@@ -119,6 +119,33 @@ impl FinderView {
                     })),
             );
         }
+        // A favourite the user dragged in (never a built-in one) gets a
+        // small remove button, in place of Finder's right-click "Remove
+        // from Sidebar" — Finder's row itself already owns right-click for
+        // its own context menu here.
+        if self.is_removable_favourite(&p.path) {
+            let removed = p.path.clone();
+            row = row.child(
+                div()
+                    .id(SharedString::from(format!("remove-favourite-{key}")))
+                    .role(Role::Button)
+                    .aria_label(format!("Remove {} from Sidebar", p.name))
+                    .flex_none()
+                    .w(px(20.0))
+                    .h(px(20.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .cursor_pointer()
+                    .text_size(rmac_ui::text_px(13.0))
+                    .text_color(sidebar_section_text())
+                    .child("×")
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.remove_sidebar_favourite(&removed, cx);
+                    })),
+            );
+        }
         row
     }
 
@@ -214,24 +241,36 @@ impl FinderView {
                 continue;
             }
             if !section.title.is_empty() {
-                contents = contents.child(
-                    div()
-                        .id(SharedString::from(format!("section-{}", section.title)))
-                        .role(Role::Heading)
-                        .aria_label(section.title.clone())
-                        .aria_level(2)
-                        .flex_none()
-                        .mt(px(SIDEBAR_SECTION_GAP))
-                        .h(px(SIDEBAR_SECTION_HEIGHT))
-                        .pl(px(SIDEBAR_SECTION_TEXT_X))
-                        .pt(px(2.0))
-                        .flex()
-                        .items_center()
-                        .text_size(rmac_ui::text_px(11.0))
-                        .font_weight(rmac_ui::mac::SEMIBOLD)
-                        .text_color(sidebar_section_text())
-                        .child(section.title.clone()),
-                );
+                let is_favourites = section.title.as_ref() == self.file_words.favourites();
+                let mut header = div()
+                    .id(SharedString::from(format!("section-{}", section.title)))
+                    .role(Role::Heading)
+                    .aria_label(section.title.clone())
+                    .aria_level(2)
+                    .flex_none()
+                    .mt(px(SIDEBAR_SECTION_GAP))
+                    .h(px(SIDEBAR_SECTION_HEIGHT))
+                    .pl(px(SIDEBAR_SECTION_TEXT_X))
+                    .pt(px(2.0))
+                    .flex()
+                    .items_center()
+                    .text_size(rmac_ui::text_px(11.0))
+                    .font_weight(rmac_ui::mac::SEMIBOLD)
+                    .text_color(sidebar_section_text())
+                    .child(section.title.clone());
+                // Dragging a folder onto Favourites adds it, as it does in
+                // Finder — the row area itself keeps its own drop (move the
+                // items there), so the header is the add target.
+                if is_favourites {
+                    header = header
+                        .drag_over::<DraggedPaths>(|style, _, _, _| style.bg(sidebar_selection()))
+                        .on_drop(cx.listener(|this, paths: &DraggedPaths, _, cx| {
+                            if let Some(path) = paths.0.first().cloned() {
+                                this.add_sidebar_favourite(path, cx);
+                            }
+                        }));
+                }
+                contents = contents.child(header);
             }
             for p in &section.places {
                 contents = contents.child(self.render_place(p, cx));

@@ -34,6 +34,7 @@ mod responsive_layout;
 mod search_helpers;
 mod search_info_controller;
 mod selection_controller;
+mod sidebar_favourites;
 mod startup;
 mod thumbnail_controller;
 mod transient_state;
@@ -144,6 +145,12 @@ actions!(
         NewWindow,
         GoToFolder,
         EmptyTrash,
+        Find,
+        CopyAsPathname,
+        MoveItemHere,
+        GoDesktop,
+        GoDocuments,
+        GoRecents,
     ]
 );
 
@@ -282,6 +289,9 @@ struct FinderView {
     fwd: Vec<PathBuf>,
     file_words: rmac_locale::FileVocabulary,
     sections: Vec<Section>,
+    /// User-added Favourites, over and above the built-in ones — the same
+    /// list `sidebar_favourites` persists and every window shares.
+    favourite_extras: Vec<PathBuf>,
     info: Option<Entry>,
     /// Go ▸ Go to Folder…, while its sheet is open.
     go_to: Option<go_to_folder_controller::GoToSheet>,
@@ -372,7 +382,11 @@ pub(crate) fn run(windows: Vec<Vec<String>>) {
             // folder that has since gone away opens the default window.
             let destination =
                 crate::StartupDestination::parse(arguments.iter().cloned()).unwrap_or_default();
-            let mut finder = FinderView::new(window, cx);
+            // Only the default destination (a plain launch, or the Dock)
+            // restores the last-closed window's tabs; ⌘N and every other
+            // explicit destination start this window with exactly one tab.
+            let restore_tabs = destination == crate::StartupDestination::Default;
+            let mut finder = FinderView::new(window, cx, restore_tabs);
             match destination {
                 crate::StartupDestination::Default => {}
                 crate::StartupDestination::Trash => finder.trash_click(cx),

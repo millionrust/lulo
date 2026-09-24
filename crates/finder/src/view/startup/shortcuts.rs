@@ -111,5 +111,18 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             EmptyTrash,
             Some("Finder"),
         ),
+        // File ▸ Open ⌘O: the same open behaviour as ⌘↓, Finder's other
+        // shortcut for it.
+        KeyBinding::new(
+            rmac_ui::shortcuts::OPEN.keystroke,
+            OpenItems,
+            Some("Finder"),
+        ),
+        KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, Find, Some("Finder")),
+        KeyBinding::new("alt-cmd-c", CopyAsPathname, Some("Finder")),
+        KeyBinding::new("alt-cmd-v", MoveItemHere, Some("Finder")),
+        KeyBinding::new("cmd-shift-d", GoDesktop, Some("Finder")),
+        KeyBinding::new("cmd-shift-o", GoDocuments, Some("Finder")),
+        KeyBinding::new("cmd-shift-f", GoRecents, Some("Finder")),
     ]);
 }

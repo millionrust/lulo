@@ -139,8 +139,8 @@ impl Render for FinderView {
                     cx.stop_propagation();
                     match event.keystroke.key.as_str() {
                         "escape" | "space" => this.close_quick_look(cx),
-                        "left" => this.move_quick_look(-1, cx),
-                        "right" => this.move_quick_look(1, cx),
+                        "left" | "up" => this.move_quick_look(-1, cx),
+                        "right" | "down" => this.move_quick_look(1, cx),
                         _ => {}
                     }
                     return;
@@ -210,9 +210,9 @@ impl Render for FinderView {
                     cx.notify();
                 }
             }))
-            .on_action(
-                cx.listener(|_, _: &rmac_ui::RequestClose, window, _| window.remove_window()),
-            )
+            .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
+                this.close_finder_window(window, cx);
+            }))
             .when(layout.sidebar_visible, |root| {
                 root.child(self.render_sidebar(cx))
             })

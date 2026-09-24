@@ -197,6 +197,38 @@ pub(super) fn sort_entries(v: &mut [Entry], key: SortKey, asc: bool) {
     });
 }
 
+/// Finds which Column-view column currently shows `selection`: the column
+/// whose directory is `selection`'s parent. Column view keeps one open
+/// directory per column in `col_stack`, so a plain path match locates it
+/// without any separate "current column" field to keep in sync.
+pub(super) fn column_index_for_selection(
+    col_stack: &[PathBuf],
+    selection: &Entry,
+) -> Option<usize> {
+    let parent = selection.path.parent()?;
+    col_stack.iter().position(|dir| dir.as_path() == parent)
+}
+
+/// Picks the entry one row above or below `current` in a Column-view
+/// column's sorted `entries`, clamped to the column's ends, as the Mac's
+/// ↑/↓ do. With no current selection in this column, the first row is
+/// picked (a fresh window still lets ↓ start the selection).
+pub(super) fn column_vertical_target<'a>(
+    entries: &'a [Entry],
+    current: Option<&Path>,
+    delta: i32,
+) -> Option<&'a Entry> {
+    if entries.is_empty() {
+        return None;
+    }
+    let index = match current.and_then(|path| entries.iter().position(|e| e.path == path)) {
+        Some(index) if delta < 0 => index.saturating_sub(1),
+        Some(index) => (index + 1).min(entries.len() - 1),
+        None => 0,
+    };
+    entries.get(index)
+}
+
 pub(super) fn file_info(e: &Entry) -> Vec<(&'static str, String)> {
     let md = std::fs::metadata(&e.path).ok();
     let mut v: Vec<(&'static str, String)> = vec![("Kind", e.kind.to_string())];

@@ -138,6 +138,23 @@ impl Render for MonitorView {
                 // lives in `process_table.rs`.
                 let row_count = self.table.read(cx).delegate().rows.len();
                 let column_count = self.table.read(cx).delegate().visible.len();
+                let query = self.search.read(cx).value().to_string();
+                // A search that matches nothing says so, instead of leaving
+                // an empty table that reads as a machine with no processes.
+                if row_count == 0 && !query.is_empty() {
+                    return monitor.child(
+                        div()
+                            .id("process-table")
+                            .flex_1()
+                            .min_h(px(0.0))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(rmac_ui::EmptyState::new("No Matching Processes").message(
+                                format!("No process name, PID or path contains “{query}”."),
+                            )),
+                    );
+                }
                 monitor.child(
                     div()
                         .id("process-table")

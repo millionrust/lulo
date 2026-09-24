@@ -101,6 +101,12 @@ impl MonitorView {
                 .rounded(px(mac::radius_control()))
                 .bg(mac::window())
                 .child(header)
+                .when(rows.is_empty(), |table| {
+                    table.child(
+                        rmac_ui::EmptyState::new("No Network Interfaces")
+                            .message("The system reports no network interfaces to measure."),
+                    )
+                })
                 .children(rows),
         )
     }

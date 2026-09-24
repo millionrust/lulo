@@ -304,7 +304,16 @@ impl MonitorView {
     fn cpu_cells(&self, cx: &Context<Self>) -> Vec<AnyElement> {
         let history = &self.sampler.history;
         let aggregates = &self.sampler.aggregates;
-        let (user, system, idle) = self.sampler.cpu_split.unwrap_or((0.0, 0.0, 100.0));
+        // CPU use is a difference between two readings, so the first one
+        // shows a dash rather than an idle machine that was never measured.
+        let (system, user, idle) = match self.sampler.cpu_split {
+            Some((user, system, idle)) => (
+                format!("{system:.2}%"),
+                format!("{user:.2}%"),
+                format!("{idle:.2}%"),
+            ),
+            None => ("—".to_string(), "—".to_string(), "—".to_string()),
+        };
         let mut counts = Vec::new();
         if let Some(threads) = aggregates.threads {
             counts.push(("Threads:", format_count(threads), None));
@@ -316,9 +325,9 @@ impl MonitorView {
         ));
         vec![
             self.stats_cell(vec![
-                ("System:", format!("{system:.2}%"), Some(red().line)),
-                ("User:", format!("{user:.2}%"), Some(blue().line)),
-                ("Idle:", format!("{idle:.2}%"), None),
+                ("System:", system, Some(red().line)),
+                ("User:", user, Some(blue().line)),
+                ("Idle:", idle, None),
             ]),
             self.graph_cell(
                 "CPU LOAD",

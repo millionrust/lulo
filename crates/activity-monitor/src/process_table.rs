@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     div, AccessibleAction, App, Context, InteractiveElement as _, IntoElement, MouseButton,
     ParentElement, Role, SharedString, Stateful, StatefulInteractiveElement as _, Styled as _,
@@ -441,27 +442,6 @@ impl TableDelegate for ProcessTableDelegate {
         cx.defer_in(window, |state, _window, cx| resync_selection(state, cx));
     }
 
-    /// Sort by `column_index` from the keyboard (Space on a focused header)
-    /// or AT-SPI (`AccessibleAction::Click`), reusing the exact same
-    /// [`Self::perform_sort`] the table's own mouse-driven header click
-    /// calls: re-activating the current sort column flips its direction,
-    /// picking a new one defaults it to ascending. This updates the real
-    /// sort order and `self.accessible`'s per-column `sort` field, which is
-    /// what `render_th`'s own `aria_label` reads — but not the table
-    /// widget's private sort-icon state, which only its own mouse-click path
-    /// (already unaffected by this) can reach; an honest limitation, not
-    /// simulated behaviour.
-    fn activate_sort(
-        &mut self,
-        column_index: usize,
-        window: &mut Window,
-        cx: &mut Context<TableState<Self>>,
-    ) {
-        let already_sorting = self.visible.get(column_index) == Some(&self.sort_key);
-        let sort = next_header_sort(already_sorting, self.sort_asc);
-        self.perform_sort(column_index, sort, window, cx);
-    }
-
     fn render_header(
         &mut self,
         _window: &mut Window,
@@ -623,6 +603,29 @@ impl TableDelegate for ProcessTableDelegate {
             .unwrap_or(ColKey::Name);
         let text: SharedString = row.cell_text(key).into();
         div().child(text)
+    }
+}
+
+impl ProcessTableDelegate {
+    /// Sort by `column_index` from the keyboard (Space on a focused header)
+    /// or AT-SPI (`AccessibleAction::Click`), reusing the exact same
+    /// [`Self::perform_sort`] the table's own mouse-driven header click
+    /// calls: re-activating the current sort column flips its direction,
+    /// picking a new one defaults it to ascending. This updates the real
+    /// sort order and `self.accessible`'s per-column `sort` field, which is
+    /// what `render_th`'s own `aria_label` reads — but not the table
+    /// widget's private sort-icon state, which only its own mouse-click path
+    /// (already unaffected by this) can reach; an honest limitation, not
+    /// simulated behaviour.
+    pub(crate) fn activate_sort(
+        &mut self,
+        column_index: usize,
+        window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) {
+        let already_sorting = self.visible.get(column_index) == Some(&self.sort_key);
+        let sort = next_header_sort(already_sorting, self.sort_asc);
+        self.perform_sort(column_index, sort, window, cx);
     }
 }
 

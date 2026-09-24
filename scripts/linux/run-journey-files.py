@@ -511,10 +511,13 @@ def menu_action_with_retry(
 
 
 def set_gsettings_accessibility(enabled: bool) -> None:
-    for schema, key in (
-        ("org.gnome.desktop.interface", "toolkit-accessibility"),
-        ("org.gnome.desktop.a11y.applications", "screen-reader-enabled"),
-    ):
+    # Only toolkit-accessibility is needed: since accesskit_unix 0.22
+    # (ADR 0013, commit 8de9528a) every rmac window registers with AT-SPI
+    # as soon as the bus reports IsEnabled, which this key drives. The
+    # separate screen-reader-enabled key also flips GNOME's Orca autostart
+    # condition, which starts Orca talking on a real session -- leave it
+    # alone.
+    for schema, key in (("org.gnome.desktop.interface", "toolkit-accessibility"),):
         subprocess.run(
             ["gsettings", "set", schema, key, "true" if enabled else "false"],
             check=False,
@@ -525,10 +528,7 @@ def set_gsettings_accessibility(enabled: bool) -> None:
 
 def get_gsettings_accessibility() -> dict[str, str]:
     values: dict[str, str] = {}
-    for schema, key in (
-        ("org.gnome.desktop.interface", "toolkit-accessibility"),
-        ("org.gnome.desktop.a11y.applications", "screen-reader-enabled"),
-    ):
+    for schema, key in (("org.gnome.desktop.interface", "toolkit-accessibility"),):
         result = subprocess.run(
             ["gsettings", "get", schema, key],
             check=False,

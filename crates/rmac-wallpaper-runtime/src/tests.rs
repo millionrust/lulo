@@ -75,6 +75,32 @@ fn waits_for_both_authorities_and_builds_hotplug_plans() {
 }
 
 #[test]
+fn a_disconnected_compositor_still_lets_settings_and_appearance_publish() {
+    // A missing NIRI_SOCKET is reported to the coordinator the same way
+    // `watch_compositor` reports it: a `ConnectionChanged { Disconnected }`
+    // event, never as a `try_join!` failure that would abort the whole
+    // runtime before settings or appearance ever reach it.
+    let mut coordinator = Coordinator::default();
+    assert!(!coordinator.ready());
+    coordinator.apply_compositor(rmac_compositor::Event::ConnectionChanged {
+        state: rmac_compositor::ConnectionState::Disconnected,
+    });
+    assert!(matches!(
+        coordinator.snapshot().health.compositor,
+        SourceHealth::Unavailable { .. }
+    ));
+    // The compositor being unavailable does not block readiness; only
+    // `Starting` does. Settings finishing the wait is what unblocks it.
+    assert!(!coordinator.ready());
+    coordinator.apply_settings(Ok(settings("builtin:rmac-aurora")));
+    assert!(coordinator.ready());
+    // No niri outputs were ever reported, so the plan has no surfaces to
+    // rasterize -- but the coordinator itself never errors, and the shell
+    // binary always falls back to its own default gradient per window.
+    assert!(coordinator.snapshot().plan.surfaces.is_empty());
+}
+
+#[test]
 fn source_failures_retain_last_known_good_visible_plan() {
     let mut coordinator = Coordinator::default();
     coordinator.apply_settings(Ok(settings("builtin:rmac-aurora")));

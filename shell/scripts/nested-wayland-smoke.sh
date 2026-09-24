@@ -133,9 +133,13 @@ fi
 
 # A normal desktop starts the AT-SPI registry before applications. Explicitly
 # activate it in this minimal D-Bus session so AccessKit can register each
-# window when it starts.
+# window when it starts. Only toolkit-accessibility is needed: since
+# accesskit_unix 0.22 (ADR 0013, commit 8de9528a) every rmac window
+# registers as soon as the bus reports IsEnabled, which this key drives
+# and which at-spi2's bus launcher reads on activation below. The separate
+# screen-reader-enabled key is left alone -- it flips GNOME's Orca
+# autostart condition instead, and no screen reader runs in this smoke test.
 gsettings set org.gnome.desktop.interface toolkit-accessibility true
-gsettings set org.gnome.desktop.a11y.applications screen-reader-enabled true
 /usr/bin/python3 -c 'import pyatspi; pyatspi.Registry.getDesktop(0)'
 
 mkdir -p "$runtime_root/wallpaper-renders"

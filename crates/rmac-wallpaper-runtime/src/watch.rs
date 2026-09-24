@@ -10,16 +10,47 @@ pub async fn watch(sender: async_channel::Sender<Update>) -> Result<(), Error> {
     let (compositor_tx, compositor_rx) = async_channel::bounded(64);
     let (settings_tx, settings_rx) = async_channel::bounded(2);
     let (appearance_tx, appearance_rx) = async_channel::bounded(2);
-    let compositor = async {
-        rmac_compositor_niri::watch(compositor_tx)
-            .await
-            .map_err(|error| Error::new(Operation::WatchCompositor, error.to_string()))
-    };
+    let compositor = watch_compositor(compositor_tx);
     let settings = watch_settings(settings_tx);
     let appearance = watch_appearance(appearance_tx);
     let consumer = consume(sender, compositor_rx, settings_rx, appearance_rx);
     let (_, _, _, _) = futures_util::try_join!(compositor, settings, appearance, consumer)?;
     Ok(())
+}
+
+/// Not every session runs inside niri (a nested-Wayland test harness, for
+/// one). A missing socket is reported as a disconnected compositor, the
+/// same signal a connection that drops after it was once open already
+/// sends, instead of aborting the whole wallpaper runtime: the settings
+/// and appearance sources keep publishing, and `consume` keeps rendering
+/// built-ins with an empty output plan (see `Coordinator::ready`, which
+/// only waits on `Starting`, not `Unavailable`).
+async fn watch_compositor(
+    sender: async_channel::Sender<rmac_compositor::Event>,
+) -> Result<(), Error> {
+    loop {
+        match rmac_compositor_niri::watch(sender.clone()).await {
+            Ok(()) => return Ok(()),
+            Err(rmac_compositor_niri::Error::MissingSocketPath) => {
+                if sender
+                    .send(rmac_compositor::Event::ConnectionChanged {
+                        state: rmac_compositor::ConnectionState::Disconnected,
+                    })
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
+                wait_or_closed(&sender, Duration::from_secs(5)).await;
+                if sender.is_closed() {
+                    return Ok(());
+                }
+            }
+            Err(error) => {
+                return Err(Error::new(Operation::WatchCompositor, error.to_string()));
+            }
+        }
+    }
 }
 
 /// Publish whether built-ins should be drawn dark, resolved the same way the

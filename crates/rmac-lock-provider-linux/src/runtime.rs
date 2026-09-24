@@ -275,12 +275,18 @@ impl Coordinator {
         input: DecodedKey,
         actions: &mut RuntimeActions,
     ) -> Result<(), Error> {
-        let outcome = self
+        let outcome = match self
             .editor
             .as_mut()
             .ok_or(Error::PromptUnavailable)?
             .handle(input)
-            .map_err(Error::Edit)?;
+        {
+            Ok(outcome) => outcome,
+            // A full field ignores further typing, like any password box.
+            // Treating it as fatal let a held key crash-loop the provider.
+            Err(EditError::Full) => EditOutcome::Ignored,
+            Err(error) => return Err(Error::Edit(error)),
+        };
         match outcome {
             EditOutcome::Changed | EditOutcome::Ignored => {
                 actions.prompt_changed |= outcome == EditOutcome::Changed;
@@ -864,6 +870,41 @@ mod tests {
         assert!(actions.unlock_authorization.is_some());
         assert!(!actions.exit_provider);
         assert_eq!(coordinator.phase(), Phase::UnlockAuthorized);
+    }
+
+    #[test]
+    fn typing_into_a_full_password_field_is_ignored_not_fatal() {
+        use crate::keyboard::MAX_DECODED_TEXT_BYTES;
+
+        let mut coordinator = Coordinator::new();
+        acquire(&mut coordinator);
+        let (mut conversation, ui) = conversation_channel();
+        let worker = thread::spawn(move || conversation.respond(Request::EchoOff(c"Password:")));
+        let pending = ui.prompt_timeout(WAIT).unwrap().unwrap();
+        coordinator.apply(RuntimeEvent::Prompt(pending)).unwrap();
+        for _ in 0..(crate::MAX_SECRET_BYTES / MAX_DECODED_TEXT_BYTES) {
+            coordinator
+                .apply(RuntimeEvent::Input(text(
+                    &"x".repeat(MAX_DECODED_TEXT_BYTES),
+                )))
+                .unwrap();
+        }
+        // A held key keeps producing text once the field is full.
+        for _ in 0..8 {
+            coordinator.apply(RuntimeEvent::Input(text("y"))).unwrap();
+        }
+        assert_eq!(
+            coordinator.prompt_character_count(),
+            Some(crate::MAX_SECRET_BYTES)
+        );
+        assert_eq!(coordinator.phase(), Phase::Authenticating);
+        coordinator
+            .apply(RuntimeEvent::Input(DecodedKey::Cancel))
+            .unwrap();
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(ConversationError::Cancelled)
+        ));
     }
 
     #[test]

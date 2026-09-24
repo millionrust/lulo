@@ -10,7 +10,7 @@ mod linux_wayland {
     use std::fs::{self, OpenOptions};
     use std::io::Write as _;
     use std::path::PathBuf;
-    use std::process::Command;
+    use std::process::{Command, Stdio};
     use std::rc::Rc;
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -2750,14 +2750,22 @@ mod linux_wayland {
         let dispatcher = local
             .filter(|path| path.is_file())
             .unwrap_or_else(|| PathBuf::from("/usr/libexec/rmac/rmac-shortcut-dispatch"));
+        let mut command = Command::new(dispatcher);
+        command.arg(shortcut);
+        run_to_exit(command, format!("the {shortcut} shortcut dispatcher"), cx);
+    }
+
+    /// Run `command` to completion off the UI thread. Waiting reaps the child,
+    /// so each menu click does not leave a zombie process behind, and a
+    /// non-zero exit is reported instead of being mistaken for success.
+    fn run_to_exit(mut command: Command, what: String, cx: &mut App) {
         cx.background_executor()
             .spawn(async move {
-                let result = blocking::unblock(move || {
-                    Command::new(dispatcher).arg(shortcut).spawn().map(|_| ())
-                })
-                .await;
-                if result.is_err() {
-                    eprintln!("could not open {shortcut}");
+                let result = blocking::unblock(move || command.stdin(Stdio::null()).status()).await;
+                match result {
+                    Ok(status) if status.success() => {}
+                    Ok(status) => eprintln!("{what} failed: {status}"),
+                    Err(error) => eprintln!("could not run {what}: {error}"),
                 }
             })
             .detach();
@@ -3045,16 +3053,9 @@ mod linux_wayland {
     }
 
     fn spawn_command(program: &'static str, args: &'static [&'static str], cx: &mut App) {
-        cx.background_executor()
-            .spawn(async move {
-                let result =
-                    blocking::unblock(move || Command::new(program).args(args).spawn().map(|_| ()))
-                        .await;
-                if let Err(error) = result {
-                    eprintln!("could not run {program}: {error}");
-                }
-            })
-            .detach();
+        let mut command = Command::new(program);
+        command.args(args);
+        run_to_exit(command, program.to_owned(), cx);
     }
 
     fn record_configured_surface(window: &Window, display_id: u64) {

@@ -39,6 +39,7 @@ rmac-places = { version = "=0.9.0-beta.1", path = "../crates/rmac-places" }
 rmac-places-system = { version = "=0.9.0-beta.1", path = "../crates/rmac-places-system" }
 rmac-power = { version = "=0.9.0-beta.1", path = "../crates/rmac-power" }
 rmac-recent-documents = { version = "=0.9.0-beta.1", path = "../crates/rmac-recent-documents" }
+rmac-screen-reader = { version = "=0.9.0-beta.1", path = "../crates/rmac-screen-reader" }
 rmac-search = { version = "=0.9.0-beta.1", path = "../crates/rmac-search" }
 rmac-osd = { version = "=0.9.0-beta.1", path = "../crates/rmac-osd" }
 rmac-login-items-linux = { version = "=0.9.0-beta.1", path = "../crates/rmac-login-items-linux" }

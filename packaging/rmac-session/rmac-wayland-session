@@ -223,6 +223,14 @@ if [ -x /usr/bin/gsettings ]; then
         "'prefer-light'"|"'default'") RMAC_COLOR_SCHEME=light ;;
         *) unset RMAC_COLOR_SCHEME ;;
     esac
+    # The Lulo session's screen reader toggle is System Settings'
+    # Accessibility switch and its own ⌘F5 shortcut (docs/accessibility.md);
+    # disable GNOME's own registered "<Super><Alt>s" accelerator so a legacy
+    # GNOME session component cannot silently start Orca through it.
+    if ! /usr/bin/gsettings set org.gnome.desktop.wm.keybindings \
+        toggle-screen-reader "@as []" >/dev/null 2>&1; then
+        echo "rmac could not disable GNOME's screen-reader shortcut" >&2
+    fi
 else
     unset RMAC_COLOR_SCHEME
 fi

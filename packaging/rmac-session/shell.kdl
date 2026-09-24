@@ -261,6 +261,22 @@ binds {
     XF86AudioStop allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-media" "stop"; }
     XF86MonBrightnessUp allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-up"; }
     XF86MonBrightnessDown allow-when-locked=true { spawn "/usr/libexec/rmac/rmac-osd" "brightness-down"; }
+    // ⌘F5, as on the Mac, toggles the screen reader (Accessibility >
+    // Screen Reader; docs/accessibility.md). Allowed while locked, like the
+    // Mac's login window, since a screen-reader user may need it before
+    // signing in.
+    Mod+F5 repeat=false allow-when-locked=true hotkey-overlay-title="Screen Reader" { spawn "/usr/libexec/rmac/rmac-osd" "toggle-screen-reader"; }
+    // Listing this `binds` block replaces niri's compiled-in defaults
+    // wholesale (niri does not merge unlisted defaults in), so niri's own
+    // Super+Alt+S -> `pkill orca || exec orca` is already inert here. Claim
+    // the combo anyway, routed through the same safe, GSettings-synced
+    // toggle as ⌘F5: it matches muscle memory from stock niri, and it means
+    // the Lulo session can never grow a raw, un-synced Orca toggle by
+    // accident (rmac_screen_reader::disable_gnome_shortcut additionally
+    // disables GNOME's own registered `<Super><Alt>s` accelerator, in case
+    // a legacy GNOME session component still requests it through the
+    // GlobalShortcuts portal).
+    Mod+Alt+S repeat=false allow-when-locked=true hotkey-overlay-title=null { spawn "/usr/libexec/rmac/rmac-osd" "toggle-screen-reader"; }
     // ⌘Tab is the per-application rmac switcher (docs/decisions/0009). Each
     // press forwards one word to the resident service, whose overlay holds
     // the keyboard and activates the selection when ⌘ is released.

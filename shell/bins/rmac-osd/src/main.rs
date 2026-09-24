@@ -544,10 +544,74 @@ mod linux_wayland {
         Ok(())
     }
 
+    /// ⌘F5 (Super+F5 on a PC keyboard): flip GSettings'
+    /// `screen-reader-enabled`, which `rmac_screen_reader::set_enabled`
+    /// starts or stops Orca to match, then post a "Screen Reader On/Off"
+    /// notice the way the OSD confirms other hardware-key toggles. This is
+    /// one of only two places in the Lulo session that can start Orca
+    /// talking (System Settings' switch is the other); GNOME's own
+    /// Super+Alt+S accelerator is disabled for the session so it cannot.
+    fn toggle_screen_reader() -> Result<(), String> {
+        let before = rmac_screen_reader::snapshot().map_err(|error| error.to_string())?;
+        if !before.available || !before.writable {
+            return Err(before
+                .detail
+                .unwrap_or_else(|| "the screen reader setting cannot be changed".to_string()));
+        }
+        let after =
+            rmac_screen_reader::set_enabled(!before.enabled).map_err(|error| error.to_string())?;
+        let summary = if after.enabled {
+            "Screen Reader On"
+        } else {
+            "Screen Reader Off"
+        };
+        notify_screen_reader_toggled(summary);
+        Ok(())
+    }
+
+    /// A transient notice through the session's notification server, the
+    /// same `org.freedesktop.Notifications` call the resident shell surfaces
+    /// use. This binary exits immediately after, so the call is made
+    /// synchronously rather than through an async executor.
+    fn notify_screen_reader_toggled(summary: &str) {
+        let hints: std::collections::HashMap<&str, zbus::zvariant::Value<'_>> =
+            std::collections::HashMap::new();
+        let result = (|| -> zbus::Result<()> {
+            let connection = zbus::blocking::Connection::session()?;
+            connection.call_method(
+                Some("org.freedesktop.Notifications"),
+                "/org/freedesktop/Notifications",
+                Some("org.freedesktop.Notifications"),
+                "Notify",
+                &(
+                    "Lulo OS",
+                    0_u32,
+                    "preferences-desktop-accessibility",
+                    summary,
+                    "",
+                    Vec::<&str>::new(),
+                    hints,
+                    -1_i32,
+                ),
+            )?;
+            Ok(())
+        })();
+        if let Err(error) = result {
+            eprintln!("could not show \"{summary}\": {error}");
+        }
+    }
+
     pub fn run() -> Result<(), rmac_osd::Error> {
         let arguments = env::args().skip(1).collect::<Vec<_>>();
         match arguments.as_slice() {
             [service] if service == "--service" => run_service(),
+            [command] if command == "toggle-screen-reader" => {
+                if let Err(error) = toggle_screen_reader() {
+                    eprintln!("could not toggle the screen reader: {error}");
+                    std::process::exit(1);
+                }
+                Ok(())
+            }
             [command] => run_command(command),
             _ => Err(rmac_osd::Error {
                 operation: rmac_osd::Operation::ParseCommand,

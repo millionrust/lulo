@@ -517,6 +517,11 @@ Object.assign(PANES,{
   'Accessibility › Display':['Display',
     g(pop('Contrast','Automatic')),
     h('Text'),g(pop('Text size','Standard'),pop('GTK application text','Standard'))],
+  'Accessibility › Screen Reader':['Screen Reader',
+    g(sw('Screen Reader',true,'Announces items onscreen and lets you control Lulo OS from the keyboard, using Orca.')),
+    g(val('Shortcut','⌘F5')),
+    `<div class="g"><div class="r" style="color:var(--sec)">Super+F5 on a PC keyboard. Lulo OS reacts only to this shortcut and the switch above, not to GNOME's own Super+Alt+S.</div></div>`,
+    btns('Refresh')],
   'Spotlight':['Spotlight',
     hdr('search',S.blue,'Spotlight','Spotlight helps you quickly find applications, settings, files and calculations on your computer.'),
     g(valbtn('Recent Documents','','Clear Recent Documents…','Documents that Files and Spotlight list as recent. Clearing never deletes a document.')),
@@ -546,7 +551,8 @@ let out='';
 const order=['General','Appearance','Wallpaper','Desktop & Dock','Menu Bar','Displays','Sound','Wi-Fi','Bluetooth','Battery',
   'Network','Network › Wi-Fi','VPN','Notifications','Notifications › Files','Focus','Focus › Do Not Disturb','Lock Screen',
   'Privacy & Security','Privacy & Security › Camera','Keyboard','Keyboard Shortcuts','Mouse','Trackpad','Trackpad › Scroll & Zoom',
-  'Date & Time','Language & Region','Login Items','Sharing','Accessibility','Accessibility › Display','Spotlight','About',
+  'Date & Time','Language & Region','Login Items','Sharing','Accessibility','Accessibility › Display',
+  'Accessibility › Screen Reader','Spotlight','About',
   'Software Update','Storage'];
 const SHEET=`<div class="dim"></div><div class="sheet"><div class="sb"><div style="height:10px"></div>${[['search',S.blue,'Spotlight'],['lock',C.black,'Lock Screen']].map(([ic,c,n],i)=>`<div class="row${i==0?' sel':''}">${tile(ic,c)}<span>${n}</span></div>`).join('')}</div>
   <div class="body"><div class="g"><div class="r" style="color:var(--label)">To change a shortcut, double-click the key combination.</div><div class="li" style="display:flex;height:24px;align-items:center;padding:0 10px 0 20px;border-top:1px solid var(--sep);margin:0 0 8px"><span style="flex:1">Show Spotlight search</span><span>⌘Space</span></div></div></div>

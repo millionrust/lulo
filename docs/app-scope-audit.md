@@ -150,10 +150,10 @@ crate already used and tested elsewhere.
 | Recovery | Done | `edit_recovery_controller.rs` (368 lines), `recovery_presentation.rs` (253 lines) | Unavailable: "Recovery unavailable — Close and reopen Notes safely." (`root_presentation.rs:34`). Worker down: "The private Notes worker is unavailable." (`root_presentation.rs:19`) |
 
 No gaps found against todo.md's checklist; every item is Done with real five-states
-handling. Not a checklist item, but noted for completeness: `docs/beta-gap-list.md`
-S7 says Notes has no print path — that's still accurate (only Text Editor's print
-path exists); todo.md does not require printing for Notes, only import/export,
-which is already Done, so this isn't tracked as a gap here.
+handling. Not a checklist item, so not tracked as a gap here, but noted for
+completeness: `docs/beta-gap-list.md` S7 ("Notes has no print path") is now
+stale — Notes gained ⌘P printing through the same portal transaction Text
+Editor uses (`e6b131dd`).
 
 ## Text Editor (`crates/text-editor`) — audit only; owned by another agent's large-file rebase, not edited
 

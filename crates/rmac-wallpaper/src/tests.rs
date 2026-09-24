@@ -35,7 +35,11 @@ fn output(id: &str, enabled: bool, scale: f64) -> rmac_compositor::Output {
 
 #[test]
 fn source_parser_accepts_original_builtin_and_safe_local_forms_only() {
-    assert_eq!(parse_source(None), Ok(Source::BuiltIn(BuiltInId::Aurora)));
+    assert_eq!(parse_source(None), Ok(Source::BuiltIn(BuiltInId::Lulo)));
+    assert_eq!(
+        parse_source(Some("builtin:lulo-nocturne")),
+        Ok(Source::BuiltIn(BuiltInId::LuloNocturne))
+    );
     assert_eq!(
         parse_source(Some("builtin:rmac-aurora")),
         Ok(Source::BuiltIn(BuiltInId::Aurora))
@@ -96,7 +100,7 @@ fn plan_is_per_output_sorted_hotplug_safe_and_locally_fallbacks() {
     assert_eq!(initial.issues[0].output.0, "DP-2");
     assert_eq!(
         initial.surfaces[1].source,
-        Source::BuiltIn(BuiltInId::Aurora)
+        Source::BuiltIn(FALLBACK_BUILT_IN)
     );
     assert_eq!(
         initial.surfaces[1].fit,
@@ -210,4 +214,50 @@ fn every_built_in_round_trips_and_has_a_distinct_palette() {
     }
     assert_eq!(ids.len(), BuiltInId::ALL.len());
     assert_eq!(palettes.len(), BuiltInId::ALL.len());
+}
+
+#[test]
+fn the_lulo_hero_is_the_default_and_aurora_the_infallible_fallback() {
+    assert_eq!(DEFAULT_BUILT_IN, BuiltInId::Lulo);
+    assert!(DEFAULT_BUILT_IN.metadata().has_artwork);
+    assert_eq!(FALLBACK_BUILT_IN, BuiltInId::Aurora);
+    // The fallback is drawn without file access, so it cannot fail.
+    assert!(!FALLBACK_BUILT_IN.metadata().has_artwork);
+    assert_eq!(BuiltInId::ALL[0], DEFAULT_BUILT_IN);
+}
+
+#[test]
+fn artwork_follows_the_appearance_and_picks_the_smallest_covering_size() {
+    assert_eq!(artwork_size(1920, 1080), (1920, 1080));
+    assert_eq!(artwork_size(1366, 768), (1920, 1080));
+    assert_eq!(artwork_size(1920, 1200), (2560, 1600));
+    assert_eq!(artwork_size(2560, 1440), (2560, 1600));
+    assert_eq!(artwork_size(2880, 1800), (3840, 2160));
+    assert_eq!(artwork_size(5120, 2880), (3840, 2160));
+
+    let name = |path: Option<PathBuf>| {
+        path.and_then(|path| {
+            path.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+    };
+    let lulo = BuiltInId::Lulo.metadata();
+    assert_eq!(
+        name(lulo.artwork_path(true, 1920, 1080)).as_deref(),
+        Some("lulo-dark-1920x1080.jpg")
+    );
+    assert_eq!(
+        name(lulo.artwork_path(false, 2560, 1600)).as_deref(),
+        Some("lulo-light-2560x1600.jpg")
+    );
+    assert_eq!(
+        name(BuiltInId::LuloMist.metadata().thumbnail_path(false)).as_deref(),
+        Some("lulo-mist-light-thumbnail.jpg")
+    );
+    let aurora = BuiltInId::Aurora.metadata();
+    assert_eq!(aurora.artwork_path(true, 1920, 1080), None);
+    assert_eq!(aurora.thumbnail_path(true), None);
+    for id in BuiltInId::ALL {
+        assert_eq!(id.metadata().has_artwork, id.id().starts_with("lulo"));
+    }
 }

@@ -80,8 +80,19 @@ pub(super) fn validate(settings: &ShellSettings, path: &Path) -> Result<(), Erro
 pub(super) fn validate_wallpaper(selection: &WallpaperSelection, path: &Path) -> Result<(), Error> {
     if let Some(source) = &selection.source {
         validate_identifier(source, "wallpaper source", path)?;
-        if source == "builtin:rmac-aurora" {
-            return Ok(());
+        // Built-in identifiers are owned by rmac-wallpaper, which resolves an
+        // unknown one to its fallback with a visible issue; here only the
+        // shape is checked, so every shipped built-in (not just Aurora) saves.
+        if let Some(id) = source.strip_prefix("builtin:") {
+            let well_formed = !id.is_empty()
+                && id.len() <= 64
+                && id
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+            if well_formed {
+                return Ok(());
+            }
+            return Err(invalid(path, "wallpaper built-in identifier is malformed"));
         }
         let source_path = if source.starts_with("file:") {
             let url = url::Url::parse(source)

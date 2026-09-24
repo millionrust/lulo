@@ -307,6 +307,17 @@ fn validation_rejects_duplicates_and_incoherent_focus_expiry() {
     assert!(validate(&invalid_wallpaper, path).is_err());
     invalid_wallpaper.wallpaper.default.source = Some("relative/wallpaper.png".into());
     assert!(validate(&invalid_wallpaper, path).is_err());
+    invalid_wallpaper.wallpaper.default.source = Some("builtin:../lulo".into());
+    assert!(validate(&invalid_wallpaper, path).is_err());
+    invalid_wallpaper.wallpaper.default.source = Some("builtin:".into());
+    assert!(validate(&invalid_wallpaper, path).is_err());
+
+    // Every shipped built-in saves, not only the original Aurora.
+    let mut built_in = ShellSettings::default();
+    for id in ["lulo", "lulo-nocturne", "rmac-aurora", "rmac-tide"] {
+        built_in.wallpaper.default.source = Some(format!("builtin:{id}"));
+        assert!(validate(&built_in, path).is_ok(), "{id} was rejected");
+    }
 }
 
 #[test]

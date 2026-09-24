@@ -12,6 +12,8 @@ pub enum ErrorKind {
     TooManyPixels,
     Decode,
     Watch,
+    /// A packaged built-in image is missing or unreadable.
+    Artwork,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -129,6 +131,7 @@ pub(crate) enum Key {
         id: rmac_wallpaper::BuiltInId,
         width: u32,
         height: u32,
+        dark: bool,
     },
     File {
         path_hash: u64,

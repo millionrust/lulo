@@ -591,11 +591,13 @@ fn valid_raster_source(
     let fallback = match (plan_issue, raster_issue, &planned.source) {
         (None, None, _) => false,
         (Some(_), None, rmac_wallpaper::Source::BuiltIn(id))
-            if *id == rmac_wallpaper::DEFAULT_BUILT_IN =>
+            if *id == rmac_wallpaper::FALLBACK_BUILT_IN =>
         {
             true
         }
-        (None, Some(issue), rmac_wallpaper::Source::File(_))
+        // A user file, or a built-in's packaged artwork, that could not be
+        // opened or decoded.
+        (None, Some(issue), _)
             if matches!(
                 issue.kind,
                 rmac_wallpaper_image::RasterIssueKind::Resolve(_)
@@ -611,7 +613,7 @@ fn valid_raster_source(
     }
     if fallback {
         return raster.source
-            == rmac_wallpaper_image::RasterSource::BuiltIn(rmac_wallpaper::DEFAULT_BUILT_IN);
+            == rmac_wallpaper_image::RasterSource::BuiltIn(rmac_wallpaper::FALLBACK_BUILT_IN);
     }
     match &planned.source {
         rmac_wallpaper::Source::BuiltIn(id) => {

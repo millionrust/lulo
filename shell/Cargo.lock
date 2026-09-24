@@ -5413,9 +5413,12 @@ dependencies = [
  "async-io",
  "blocking",
  "futures-util",
+ "rmac-appearance",
+ "rmac-appearance-portal",
  "rmac-compositor",
  "rmac-compositor-niri",
  "rmac-shell-settings",
+ "rmac-theme",
  "rmac-wallpaper",
  "rmac-wallpaper-image",
 ]

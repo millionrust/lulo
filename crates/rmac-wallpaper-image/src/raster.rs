@@ -40,9 +40,15 @@ pub struct Rasterized {
     pub issues: Vec<RasterIssue>,
 }
 
-/// Resolve, decode, and lay out every output independently. Any custom-file or
-/// codec failure substitutes the original built-in only on that output.
+/// [`rasterize_for`] in the dark appearance.
 pub fn rasterize(plan: &rmac_wallpaper::Plan, cache: &Cache) -> Rasterized {
+    rasterize_for(plan, cache, true)
+}
+
+/// Resolve, decode, and lay out every output independently, drawing built-ins
+/// in their light or dark form. Any custom-file, packaged-artwork, or codec
+/// failure substitutes the file-free fallback built-in only on that output.
+pub fn rasterize_for(plan: &rmac_wallpaper::Plan, cache: &Cache, dark: bool) -> Rasterized {
     let mut rasterized = Rasterized::default();
     for surface in &plan.surfaces {
         let target = physical_target(surface.logical_size, surface.scale);
@@ -67,27 +73,28 @@ pub fn rasterize(plan: &rmac_wallpaper::Plan, cache: &Cache) -> Rasterized {
                     kind: RasterIssueKind::Resolve(error.kind),
                 });
                 (
-                    RasterSource::BuiltIn(rmac_wallpaper::DEFAULT_BUILT_IN),
+                    RasterSource::BuiltIn(rmac_wallpaper::FALLBACK_BUILT_IN),
                     rmac_wallpaper_system::ResolvedSource::BuiltIn(
-                        rmac_wallpaper::DEFAULT_BUILT_IN.metadata(),
+                        rmac_wallpaper::FALLBACK_BUILT_IN.metadata(),
                     ),
                 )
             }
         };
-        let image = match cache.get_or_decode(resolved, target) {
+        let image = match cache.get_or_decode_for(resolved, target, dark) {
             Ok(image) => image,
             Err(error) => {
                 fallback = true;
-                actual_source = RasterSource::BuiltIn(rmac_wallpaper::DEFAULT_BUILT_IN);
+                actual_source = RasterSource::BuiltIn(rmac_wallpaper::FALLBACK_BUILT_IN);
                 rasterized.issues.push(RasterIssue {
                     output: surface.output.clone(),
                     kind: RasterIssueKind::Decode(error.kind),
                 });
-                match cache.get_or_decode(
+                match cache.get_or_decode_for(
                     rmac_wallpaper_system::ResolvedSource::BuiltIn(
-                        rmac_wallpaper::DEFAULT_BUILT_IN.metadata(),
+                        rmac_wallpaper::FALLBACK_BUILT_IN.metadata(),
                     ),
                     target,
+                    dark,
                 ) {
                     Ok(image) => image,
                     Err(_) => continue,

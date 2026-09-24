@@ -7,17 +7,55 @@ desktop portal response.
 
 ## Sources and original default
 
-The safe default is `builtin:rmac-aurora`: original rmac procedural-gradient
-metadata with four sRGB palette colors. It is not an Apple wallpaper, a traced
-asset, or a redistributed bitmap. The renderer generates it directly at the
-output size, avoiding decode, scaling, and licensing ambiguity.
+New users get `builtin:lulo`, the hero of the Lulo collection: Lulo OS's own
+wallpapers. The set is `lulo` (Lulo, default), `lulo-grove` (Grove),
+`lulo-ember` (Ember), `lulo-dusk` (Dusk), `lulo-mist` (Mist, the neutral one)
+and `lulo-nocturne` (Nocturne, very dark and minimal). Each has a light and a
+dark image and follows the system appearance. The images are original
+procedural artwork rendered by `scripts/build-wallpapers.py` (numpy/Pillow,
+composited in linear light, dithered with film grain so 8-bit gradients do
+not band); nothing is traced, sampled or derived from another system's
+wallpapers. Rerunning the script reproduces them byte for byte.
 
-The original set is `rmac-aurora` (default), `rmac-tide`, `rmac-basalt`,
-`rmac-monsoon`, and `rmac-paper`. Each carries a dark `palette` and a distinct
-`light_palette`; `BuiltInMetadata::palette_for(dark)` selects one so a wallpaper
-can follow the system appearance. Every palette is original rmac artwork.
+The session package installs them in `/usr/share/rmac/wallpapers` as
+`<id>-<light|dark>-<W>x<H>.jpg` at 3840x2160, 2560x1600 and 1920x1080, plus a
+320x200 `<id>-<light|dark>-thumbnail.jpg` for the System Settings gallery.
+The renderer loads the smallest size that covers the output, so a 1080p panel
+never decodes a 4K image. `RMAC_WALLPAPER_DIR` points a development build at
+another normalized absolute directory (for example the checkout's
+`packaging/rmac-session/wallpapers`).
 
-User sources accept only that built-in ID, a hostless local `file:///` URI, or
+The palette comes from the lulo (naranjilla), whose orange skin surrounds
+translucent green flesh in four segments:
+
+| Name | sRGB | Use |
+| --- | --- | --- |
+| Lulo Orange | `#F08A24` | peel, the warm accent |
+| Peel Deep | `#C9541A` | shaded peel, Ember |
+| Peel Light | `#FFC27A` | lit peel in light variants |
+| Lulo Green | `#8CC63F` | lit flesh |
+| Flesh Deep | `#2E6B3A` | flesh in shadow |
+| Forest | `#0E2A1F` | darkest green, night grounds |
+| Mist | `#F3F0EA` | warm neutral light ground |
+| Stone | `#CFC8BD` | warm neutral mid |
+| Graphite | `#1B1D20` | neutral dark ground |
+| Ink | `#08090B` | near-black |
+
+The procedural set that came first, `rmac-aurora`, `rmac-tide`, `rmac-basalt`,
+`rmac-monsoon` and `rmac-paper`, stays available. Each carries a dark
+`palette` and a distinct `light_palette`; `BuiltInMetadata::palette_for(dark)`
+selects one. The renderer draws them directly at the output size with no file
+access, which is why `builtin:rmac-aurora` is the fallback
+(`FALLBACK_BUILT_IN`): it cannot itself fail. A saved source of `None` means
+"the default", so anyone who never picked a wallpaper moves from Aurora to
+Lulo; an explicit `builtin:rmac-aurora` choice is kept.
+
+The wallpaper runtime resolves light or dark the same way the shell's design
+tokens do (the rmac theme preference over the Settings portal), watches both
+without polling, and redraws built-ins only when the resolved appearance
+actually changes. User files are not redrawn.
+
+User sources accept only a `builtin:` ID, a hostless local `file:///` URI, or
 a normalized absolute path. Remote schemes, relative paths, parent traversal,
 unknown built-ins, and hosted file URIs are rejected during settings validation
 and again at the wallpaper domain boundary.
@@ -29,8 +67,9 @@ that handle to the decoder. This avoids reopening a potentially replaced path.
 Default errors and `Debug` output redact the private path.
 
 Resolution is per output. A missing, empty, oversized, unreadable, or unknown
-custom file records only a typed output/error kind and substitutes Aurora on
-that output; already resolved peers remain present.
+custom file, or a missing packaged Lulo image (`ErrorKind::Artwork`), records
+only a typed output/error kind and substitutes Aurora on that output; already
+resolved peers remain present.
 
 ## Per-output and hotplug behavior
 

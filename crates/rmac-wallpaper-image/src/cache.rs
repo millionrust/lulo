@@ -21,14 +21,25 @@ impl Cache {
         }
     }
 
-    /// Decode or rasterize on the caller's background worker. The lock keeps
-    /// simultaneous requests for one source from duplicating large RGBA data.
+    /// Decode or rasterize for the dark appearance. See [`Self::get_or_decode_for`].
     pub fn get_or_decode(
         &self,
         source: rmac_wallpaper_system::ResolvedSource,
         target: rmac_compositor::PhysicalSize,
     ) -> Result<Arc<Decoded>, Error> {
-        let key = key(&source, target)?;
+        self.get_or_decode_for(source, target, true)
+    }
+
+    /// Decode or rasterize on the caller's background worker. Built-ins use
+    /// their light or dark form for `dark`; user files ignore it. The lock
+    /// keeps simultaneous requests for one source from duplicating RGBA data.
+    pub fn get_or_decode_for(
+        &self,
+        source: rmac_wallpaper_system::ResolvedSource,
+        target: rmac_compositor::PhysicalSize,
+        dark: bool,
+    ) -> Result<Arc<Decoded>, Error> {
+        let key = key(&source, target, dark)?;
         let mut state = self
             .state
             .lock()
@@ -39,7 +50,7 @@ impl Cache {
             entry.last_used = sequence;
             return Ok(entry.image.clone());
         }
-        let image = Arc::new(decode(source, target)?);
+        let image = Arc::new(decode(source, target, dark)?);
         state.decodes = state.decodes.saturating_add(1);
         let bytes = image.byte_len();
         if bytes <= self.byte_budget {
@@ -113,14 +124,23 @@ impl Cache {
 fn key(
     source: &rmac_wallpaper_system::ResolvedSource,
     target: rmac_compositor::PhysicalSize,
+    dark: bool,
 ) -> Result<Key, Error> {
     match source {
         rmac_wallpaper_system::ResolvedSource::BuiltIn(metadata) => {
             validate_dimensions(target.width, target.height)?;
+            // Artwork is one packaged image per size tier, so every output in
+            // that tier shares a single decode.
+            let (width, height) = if metadata.has_artwork {
+                rmac_wallpaper::artwork_size(target.width, target.height)
+            } else {
+                (target.width, target.height)
+            };
             Ok(Key::BuiltIn {
                 id: metadata.id,
-                width: target.width,
-                height: target.height,
+                width,
+                height,
+                dark,
             })
         }
         rmac_wallpaper_system::ResolvedSource::File(asset) => Ok(Key::File {
@@ -139,11 +159,42 @@ fn key(
 fn decode(
     source: rmac_wallpaper_system::ResolvedSource,
     target: rmac_compositor::PhysicalSize,
+    dark: bool,
 ) -> Result<Decoded, Error> {
     match source {
-        rmac_wallpaper_system::ResolvedSource::BuiltIn(metadata) => procedural(metadata, target),
+        rmac_wallpaper_system::ResolvedSource::BuiltIn(metadata) if metadata.has_artwork => {
+            artwork(metadata, target, dark)
+        }
+        rmac_wallpaper_system::ResolvedSource::BuiltIn(metadata) => {
+            procedural(metadata, target, dark)
+        }
         rmac_wallpaper_system::ResolvedSource::File(asset) => decode_file(asset),
     }
+}
+
+/// Open the packaged image through the same bounded file authority and
+/// decoder as user files. A missing or unreadable image is an error, never a
+/// silent substitute: the caller records it and shows the fallback.
+fn artwork(
+    metadata: rmac_wallpaper::BuiltInMetadata,
+    target: rmac_compositor::PhysicalSize,
+    dark: bool,
+) -> Result<Decoded, Error> {
+    validate_dimensions(target.width, target.height)?;
+    let path = metadata
+        .artwork_path(dark, target.width, target.height)
+        .ok_or_else(|| failure(ErrorKind::Artwork, "built-in has no packaged artwork"))?;
+    let asset = rmac_wallpaper_system::open_file(&path).map_err(|error| {
+        failure(
+            ErrorKind::Artwork,
+            format!(
+                "the packaged {} wallpaper image is unavailable: {}",
+                metadata.title,
+                error.detail()
+            ),
+        )
+    })?;
+    decode_file(asset)
 }
 
 fn decode_file(asset: rmac_wallpaper_system::FileAsset) -> Result<Decoded, Error> {
@@ -174,7 +225,9 @@ fn decode_file(asset: rmac_wallpaper_system::FileAsset) -> Result<Decoded, Error
 fn procedural(
     metadata: rmac_wallpaper::BuiltInMetadata,
     target: rmac_compositor::PhysicalSize,
+    dark: bool,
 ) -> Result<Decoded, Error> {
+    let palette = metadata.palette_for(dark);
     validate_dimensions(target.width, target.height)?;
     let capacity = usize::try_from(u64::from(target.width) * u64::from(target.height) * 4)
         .map_err(|_| {
@@ -200,7 +253,6 @@ fn procedural(
             let scaled = position * 3.0;
             let index = (scaled.floor() as usize).min(2);
             let amount = scaled - index as f32;
-            let palette = metadata.palette_for(true);
             let from = rgb(palette[index]);
             let to = rgb(palette[index + 1]);
             rgba.extend_from_slice(&[

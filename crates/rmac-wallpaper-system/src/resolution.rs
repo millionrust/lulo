@@ -12,7 +12,7 @@ pub fn resolve_plan(plan: &rmac_wallpaper::Plan) -> Resolution {
                     output: surface.output.clone(),
                     kind: error.kind,
                 });
-                ResolvedSource::BuiltIn(rmac_wallpaper::DEFAULT_BUILT_IN.metadata())
+                ResolvedSource::BuiltIn(rmac_wallpaper::FALLBACK_BUILT_IN.metadata())
             }
         };
         resolution.surfaces.push(ResolvedSurface {

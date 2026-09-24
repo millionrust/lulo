@@ -1,4 +1,4 @@
-use crate::{parse_source, Source, SourceErrorKind, DEFAULT_BUILT_IN};
+use crate::{parse_source, Source, SourceErrorKind, FALLBACK_BUILT_IN};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Issue {
@@ -55,7 +55,7 @@ pub fn plan(
                     output: output.id.clone(),
                     kind,
                 });
-                Source::BuiltIn(DEFAULT_BUILT_IN)
+                Source::BuiltIn(FALLBACK_BUILT_IN)
             }
         };
         plan.surfaces.push(Surface {

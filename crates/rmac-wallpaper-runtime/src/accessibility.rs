@@ -451,7 +451,7 @@ mod tests {
         assert_eq!(projected.applied_surface_count, 2);
         assert!(!projected.degraded);
         assert_eq!(projected.surfaces[0].name, DESKTOP_NAME);
-        assert_eq!(projected.surfaces[0].wallpaper.name, "Aurora wallpaper");
+        assert_eq!(projected.surfaces[0].wallpaper.name, "Lulo wallpaper");
         assert_eq!(projected.surfaces[1].wallpaper.name, USER_WALLPAPER_NAME);
         assert_eq!(
             projected.surfaces[1].wallpaper.fit,
@@ -508,7 +508,7 @@ mod tests {
                 vec![planned],
                 vec![raster(
                     "Private-A",
-                    rmac_wallpaper_image::RasterSource::BuiltIn(rmac_wallpaper::DEFAULT_BUILT_IN),
+                    rmac_wallpaper_image::RasterSource::BuiltIn(rmac_wallpaper::FALLBACK_BUILT_IN),
                     true,
                     rmac_shell_settings::WallpaperFit::Fill,
                     2,

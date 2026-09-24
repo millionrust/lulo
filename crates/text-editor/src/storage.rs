@@ -8,6 +8,7 @@ pub(crate) type Failure = rmac_storage::Failure<Operation>;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Operation {
     CreateRecoveryDirectory,
+    ExportPdf,
     LoadDocument,
     LoadRecovery,
     RemoveRecovery,
@@ -22,6 +23,7 @@ impl fmt::Display for Operation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::CreateRecoveryDirectory => "create recovery storage",
+            Self::ExportPdf => "export the document as PDF",
             Self::LoadDocument => "open document",
             Self::LoadRecovery => "load recovery data",
             Self::RemoveRecovery => "remove recovery data",

@@ -17,6 +17,7 @@ gpui-component-assets.workspace = true
 notify.workspace = true
 rmac-ui.workspace = true
 rmac-editor.workspace = true
+rmac-print.workspace = true
 rmac-recent-documents.workspace = true
 rmac-storage.workspace = true
 rmac-sound.workspace = true

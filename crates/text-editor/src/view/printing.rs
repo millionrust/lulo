@@ -86,4 +86,82 @@ impl EditorView {
             cx.notify();
         }
     }
+
+    /// File › Export as PDF…, like TextEdit's own. Reuses the same
+    /// `rmac_print::render_pdf` renderer `print_document` calls after the
+    /// print portal negotiates page settings, but this path has no portal
+    /// dialog of its own — it renders with the default layout straight to a
+    /// file chosen from a Save panel. Unlike printing, this needs no XDG
+    /// print portal or Wayland window handle, so it isn't Linux-only.
+    pub(super) fn export_pdf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !can_begin_print(
+            self.file_busy,
+            self.print_busy,
+            self.recovery_loading,
+            self.alert.is_some(),
+            false,
+        ) {
+            return;
+        }
+        if self.rtf_runs.is_some() {
+            self.alert = Some(ActiveAlert::Error {
+                title: "Could not export the document as PDF.",
+                message: "Exporting the formatted RTF preview as PDF is not supported yet. Continue as plain text to export without implying the original formatting is preserved."
+                    .into(),
+            });
+            cx.notify();
+            return;
+        }
+
+        let directory = self
+            .path
+            .as_deref()
+            .and_then(Path::parent)
+            .map(Path::to_path_buf)
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| PathBuf::from("."));
+        let suggested_name = pdf_export_filename(self.path.as_deref());
+        let text = self.document_text(cx);
+
+        self.print_busy = true;
+        self.status_notice = None;
+        cx.notify();
+        let receiver = cx.prompt_for_new_path(&directory, Some(&suggested_name));
+        cx.spawn_in(window, async move |this, cx| {
+            let picker = receiver.await;
+            let Ok(Ok(Some(path))) = picker else {
+                let _ = this.update_in(cx, |this, _, cx| {
+                    this.print_busy = false;
+                    if !matches!(picker, Ok(Ok(None))) {
+                        this.alert = Some(ActiveAlert::Error {
+                            title: "Could not open the save dialog.",
+                            message: "The desktop file chooser is temporarily unavailable.".into(),
+                        });
+                    }
+                    cx.notify();
+                });
+                return;
+            };
+            let result = cx
+                .background_executor()
+                .spawn(async move { render_pdf_export(&path, &text) })
+                .await;
+            let _ = this.update_in(cx, |this, _, cx| {
+                this.print_busy = false;
+                match result {
+                    Ok(()) => {
+                        this.status_notice = Some("Exported the document as PDF.".into());
+                    }
+                    Err(error) => {
+                        this.alert = Some(ActiveAlert::Error {
+                            title: "Could not export the document as PDF.",
+                            message: error.to_string(),
+                        });
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
 }

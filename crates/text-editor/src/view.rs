@@ -43,8 +43,9 @@ use crate::{
 };
 
 use document_io::{
-    can_begin_print, inspect_external_revision, load_selected_document, save_document,
-    save_document_copy, should_reuse_untitled_window, LoadedFile, SaveFailure,
+    can_begin_print, inspect_external_revision, load_selected_document, pdf_export_filename,
+    render_pdf_export, save_document, save_document_copy, should_reuse_untitled_window, LoadedFile,
+    SaveFailure,
 };
 use recovery_state::{recovery_failure_message, startup_recovery, RecoveryClock, RecoveryPrompt};
 use startup::open_editor_window;
@@ -179,8 +180,8 @@ mod tests {
     use super::document_io::same_file_identity;
     use super::recovery_state::recovery_path_for_platform;
     use super::{
-        can_begin_print, document, save_document_copy, should_reuse_untitled_window, RecoveryClock,
-        SaveFailure,
+        can_begin_print, document, pdf_export_filename, render_pdf_export, save_document_copy,
+        should_reuse_untitled_window, RecoveryClock, SaveFailure,
     };
     use std::path::PathBuf;
 
@@ -307,5 +308,41 @@ mod tests {
         assert!(!can_begin_print(false, false, true, false, false));
         assert!(!can_begin_print(false, false, false, true, false));
         assert!(!can_begin_print(false, false, false, false, true));
+    }
+
+    #[test]
+    fn pdf_export_replaces_the_extension_or_names_an_untitled_document() {
+        assert_eq!(
+            pdf_export_filename(Some(&PathBuf::from("/home/user/notes.txt"))),
+            "notes.pdf"
+        );
+        assert_eq!(
+            pdf_export_filename(Some(&PathBuf::from("draft.rtf"))),
+            "draft.pdf"
+        );
+        // No extension at all: the whole name is the stem.
+        assert_eq!(
+            pdf_export_filename(Some(&PathBuf::from("README"))),
+            "README.pdf"
+        );
+        assert_eq!(pdf_export_filename(None), "Untitled.pdf");
+    }
+
+    #[test]
+    fn export_pdf_writes_a_valid_pdf_to_the_chosen_path() {
+        let directory = std::env::temp_dir().join(format!(
+            "rmac-text-editor-pdf-export-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("export.pdf");
+
+        render_pdf_export(&path, "Exported from Text Editor").unwrap();
+
+        let bytes = std::fs::read(&path).unwrap();
+        assert!(bytes.starts_with(b"%PDF"));
+
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

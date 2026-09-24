@@ -16,6 +16,7 @@ gpui::actions!(
         OpenFile,
         SaveFile,
         SaveFileAs,
+        ExportPdf,
         PrintFile,
         ToggleFind,
         ToggleReplace,

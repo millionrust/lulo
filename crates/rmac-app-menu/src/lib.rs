@@ -91,6 +91,7 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
             item!("Open…", "text_editor::OpenFile", "⌘O"),
             item!("Save", "text_editor::SaveFile", "⌘S", separator),
             item!("Save As…", "text_editor::SaveFileAs", "⇧⌘S"),
+            item!("Export as PDF…", "text_editor::ExportPdf", "", separator),
             item!("Print…", "text_editor::PrintFile", "⌘P", separator),
             item!("Close Window", "text_editor::CloseWindow", "⌘W", separator),
         ],

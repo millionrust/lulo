@@ -13,8 +13,8 @@ use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_ui::{mac, Button, SearchField, TextField};
 
 use crate::{
-    document, CloseBar, CloseWindow, DecreaseFont, FindNext, FindPrev, IncreaseFont, NewFile,
-    OpenFile, PrintFile, SaveFile, SaveFileAs, SetEncodingUtf16Be, SetEncodingUtf16Le,
+    document, CloseBar, CloseWindow, DecreaseFont, ExportPdf, FindNext, FindPrev, IncreaseFont,
+    NewFile, OpenFile, PrintFile, SaveFile, SaveFileAs, SetEncodingUtf16Be, SetEncodingUtf16Le,
     SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf,
     ToggleFind, ToggleMono, ToggleReplace,
 };
@@ -97,6 +97,9 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &OpenFile, window, cx| this.open(window, cx)))
             .on_action(cx.listener(|this, _: &SaveFile, window, cx| this.save(window, cx)))
             .on_action(cx.listener(|this, _: &SaveFileAs, window, cx| this.save_as(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &ExportPdf, window, cx| this.export_pdf(window, cx)),
+            )
             .on_action(
                 cx.listener(|this, _: &PrintFile, window, cx| this.print_document(window, cx)),
             )

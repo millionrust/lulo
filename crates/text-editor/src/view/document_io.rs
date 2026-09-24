@@ -136,3 +136,50 @@ pub(super) fn can_begin_print(
 ) -> bool {
     !file_busy && !print_busy && !recovery_loading && !alert_open && !rich_text_preview
 }
+
+#[derive(Debug)]
+pub(super) enum ExportPdfFailure {
+    Render(rmac_print::Error),
+    Storage(storage::Failure),
+}
+
+impl std::fmt::Display for ExportPdfFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Render(error) => error.fmt(formatter),
+            Self::Storage(error) => error.fmt(formatter),
+        }
+    }
+}
+
+/// Render the document to PDF and write it to `path`, off the UI thread.
+///
+/// This reuses the print pipeline's own renderer (`rmac_print::render_pdf`,
+/// the same one `crates/rmac-print-linux` calls after the print portal
+/// negotiates page settings) rather than a second implementation. Export as
+/// PDF has no portal dialog to negotiate a page size with, so it uses
+/// `PageLayout::default()` — the same A4 layout the portal path itself falls
+/// back to when a page description omits one.
+pub(super) fn render_pdf_export(path: &Path, text: &str) -> Result<(), ExportPdfFailure> {
+    let pdf = rmac_print::render_pdf(text, rmac_print::PageLayout::default())
+        .map_err(ExportPdfFailure::Render)?;
+    storage::write(
+        &storage::RealStorage,
+        storage::Operation::ExportPdf,
+        path,
+        &pdf,
+    )
+    .map_err(ExportPdfFailure::Storage)
+}
+
+/// The suggested Export as PDF filename: the open document's name with its
+/// extension replaced by `.pdf`, or "Untitled.pdf" for a document with no
+/// path yet.
+pub(super) fn pdf_export_filename(path: Option<&Path>) -> String {
+    let stem = path
+        .and_then(Path::file_stem)
+        .and_then(|stem| stem.to_str())
+        .filter(|stem| !stem.is_empty())
+        .unwrap_or("Untitled");
+    format!("{stem}.pdf")
+}

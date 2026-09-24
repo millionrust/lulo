@@ -87,6 +87,7 @@ impl NotesView {
                         .map_err(|error| format!("Notes could not start its event bridge: {error}"))
                 }) {
                 Ok((client, receiver)) => {
+                    keep_last_edit_on_quit(client.clone(), cx);
                     self.worker = Some(client);
                     cx.spawn_in(window, async move |this, cx| {
                         while let Ok(event) = receiver.recv().await {
@@ -203,4 +204,33 @@ impl NotesView {
             }
         }
     }
+}
+
+/// How long a quitting Notes waits for its repository thread to commit the
+/// newest edit before the process exits.
+const QUIT_COMMIT_LIMIT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// However Notes quits — ⌘Q, or SIGTERM because the session is ending — hand
+/// the newest typing to the repository worker and wait for it to commit
+/// before the process exits. Edits are otherwise committed half a second
+/// after the last keystroke, which a shutdown can cut short.
+fn keep_last_edit_on_quit(client: NotesWorkerClient, cx: &mut Context<NotesView>) {
+    let view = cx.weak_entity();
+    gpui::App::on_app_quit(cx, move |cx| {
+        if let Some(view) = view.upgrade() {
+            view.update(cx, |this, cx| this.schedule_current_edit(cx));
+        }
+        match client.try_send(WorkerCommand::Shutdown) {
+            // Closed: the worker has already stopped.
+            Ok(()) | Err(WorkerSendError::Closed) => {}
+            Err(error) => eprintln!("Notes could not stop its library cleanly: {error}"),
+        }
+        if !client.wait_until_stopped(QUIT_COMMIT_LIMIT) {
+            eprintln!(
+                "Notes quit before its library finished writing; the newest edit may be lost"
+            );
+        }
+        async {}
+    })
+    .detach();
 }

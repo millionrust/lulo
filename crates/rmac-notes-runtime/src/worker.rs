@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{
     self, Receiver, RecvError, RecvTimeoutError, SyncSender, TryRecvError, TrySendError,
 };
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -806,17 +806,60 @@ pub struct NotesWorker {
     commands: Option<SyncSender<WorkerCommand>>,
     events: Option<Receiver<WorkerEvent>>,
     thread: Option<JoinHandle<()>>,
+    stopped: Arc<StopSignal>,
+}
+
+/// Set once the repository thread has returned, whatever made it return.
+#[derive(Default)]
+struct StopSignal {
+    stopped: Mutex<bool>,
+    changed: Condvar,
+}
+
+impl StopSignal {
+    fn wait(&self, timeout: Duration) -> bool {
+        let stopped = self.stopped.lock().unwrap_or_else(PoisonError::into_inner);
+        let (stopped, _) = self
+            .changed
+            .wait_timeout_while(stopped, timeout, |stopped| !*stopped)
+            .unwrap_or_else(PoisonError::into_inner);
+        *stopped
+    }
+}
+
+/// Marks the [`StopSignal`] when the repository thread ends, even by panic.
+struct StopOnDrop(Arc<StopSignal>);
+
+impl Drop for StopOnDrop {
+    fn drop(&mut self) {
+        *self
+            .0
+            .stopped
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = true;
+        self.0.changed.notify_all();
+    }
 }
 
 /// Cloneable, nonblocking command endpoint retained by the UI thread.
 #[derive(Clone)]
 pub struct NotesWorkerClient {
     commands: SyncSender<WorkerCommand>,
+    stopped: Arc<StopSignal>,
 }
 
 impl NotesWorkerClient {
     pub fn try_send(&self, command: WorkerCommand) -> Result<(), WorkerSendError> {
         try_send_command(&self.commands, command)
+    }
+
+    /// Block until the repository thread has stopped, for at most `timeout`.
+    /// After [`WorkerCommand::Shutdown`] this is the moment a scheduled edit
+    /// has been committed, so an app that is quitting — perhaps because the
+    /// session is ending — waits here before its process exits. Returns
+    /// whether the thread stopped in time.
+    pub fn wait_until_stopped(&self, timeout: Duration) -> bool {
+        self.stopped.wait(timeout)
     }
 }
 
@@ -887,14 +930,22 @@ impl NotesWorker {
         let scheduler = EditScheduler::new(debounce).map_err(WorkerStartError::Scheduler)?;
         let (command_sender, command_receiver) = mpsc::sync_channel(COMMAND_CAPACITY);
         let (event_sender, event_receiver) = mpsc::sync_channel(EVENT_CAPACITY);
+        let stopped = Arc::new(StopSignal::default());
         let thread = thread::Builder::new()
             .name("rmac-notes-storage".into())
-            .spawn(move || run_worker(paths, scheduler, command_receiver, event_sender))
+            .spawn({
+                let stopped = StopOnDrop(Arc::clone(&stopped));
+                move || {
+                    let _stopped = stopped;
+                    run_worker(paths, scheduler, command_receiver, event_sender);
+                }
+            })
             .map_err(|error| WorkerStartError::Thread(error.kind()))?;
         Ok(Self {
             commands: Some(command_sender),
             events: Some(event_receiver),
             thread: Some(thread),
+            stopped,
         })
     }
 
@@ -940,6 +991,7 @@ impl NotesWorker {
         (
             NotesWorkerClient {
                 commands: commands.clone(),
+                stopped: Arc::clone(&self.stopped),
             },
             NotesWorkerEvents {
                 events: Some(events),
@@ -4737,6 +4789,42 @@ mod tests {
             reopened.recv_timeout(Duration::from_secs(2)).unwrap(),
             WorkerEvent::Stopped { .. }
         ));
+        drop(reopened);
+        std::fs::remove_dir_all(container).unwrap();
+    }
+
+    #[test]
+    fn a_quitting_client_can_wait_for_the_scheduled_edit_to_be_committed() {
+        let (container, paths) = roots("quit-wait");
+        let worker =
+            NotesWorker::start_with_debounce(paths.clone(), Duration::from_secs(5)).unwrap();
+        ready(&worker);
+        let (note_id, _) = create_note(&worker, 1);
+        let (client, events) = worker.into_parts();
+        // As in the app, a bridge thread keeps draining events.
+        let bridge = thread::spawn(move || while events.recv().is_ok() {});
+
+        client
+            .try_send(WorkerCommand::ScheduleEdit(scheduled_edit(
+                2,
+                1,
+                note_id,
+                1,
+                "Typed just before SIGTERM",
+            )))
+            .unwrap();
+        assert!(!client.wait_until_stopped(Duration::from_millis(20)));
+        client.try_send(WorkerCommand::Shutdown).unwrap();
+        assert!(client.wait_until_stopped(Duration::from_secs(2)));
+        assert!(client.wait_until_stopped(Duration::ZERO));
+        bridge.join().unwrap();
+
+        let reopened = NotesWorker::start(paths).unwrap();
+        assert_eq!(
+            ready(&reopened).snapshot.notes[0].body,
+            "Typed just before SIGTERM"
+        );
+        reopened.try_send(WorkerCommand::Shutdown).unwrap();
         drop(reopened);
         std::fs::remove_dir_all(container).unwrap();
     }

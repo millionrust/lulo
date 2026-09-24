@@ -308,3 +308,103 @@ because here even the identify-and-clean-up precondition cannot be met.
 `scripts/test_journey_notes.py` unit-tests the script's pure JSON-parsing,
 environment-discovery, budget, and AT-SPI-node-classification logic and runs
 anywhere with `python3 -m pytest scripts/test_journey_notes.py`.
+
+### Journey 5 -- text file through the portal
+
+`scripts/linux/run-journey-launch.py`'s AT-SPI/niri pattern extends to
+journey 5 ("Open, edit and save a text file through the portal without
+losing content") as `scripts/linux/run-journey-textfile.py`. It creates a
+disposable fixture under `~/Documents/lulo-journey-5-<random>/`, drives Text
+Editor's exported File menu (`crates/rmac-app-menu`, rendered by
+`rmac-top-bar` as real AT-SPI `menu`/`menu item` nodes) to open and save
+through the portal Open/Save panel (`crates/rmac-file-chooser`, ADR 0012),
+edits the file's external-change and content-integrity behaviour, and always
+removes the fixture folder afterward.
+
+Two systemic gaps limit what is exercisable on the reference laptop today,
+found by directly probing the live AT-SPI tree (not inferred):
+
+* **The portal panel is not deployed there.** `systemctl --user status
+  rmac-file-chooser.service` reports the unit does not exist, and
+  `rmac-portals.conf` still reads `default=gnome;gtk;*` with no
+  `org.freedesktop.impl.portal.FileChooser` override. Clicking File > Open
+  or File > Save As... over AT-SPI genuinely activates the menu item (the
+  click succeeds), but no dialog window opens at all -- not even a GTK
+  fallback -- and Text Editor shows no error either. The script waits a
+  bounded time for the panel's window, records the gap precisely when it
+  doesn't appear, and falls back to opening the fixture with a direct launch
+  (`fallback_spawn`, the same pattern as journey 1's Dock/Spotlight
+  fallback) so the rest of the journey can still be measured; Save As has no
+  such fallback; ADR 0012's backend exists in the repository but is simply
+  not installed on this host yet.
+* **No AT-SPI Text or EditableText anywhere.** `queryText()` and
+  `queryEditableText()` both raise on every `InputState`-backed entry this
+  script has probed, including Text Editor's own document body -- not just
+  Spotlight's query field (run-journey-launch.py documented that gap for
+  Spotlight alone; this script confirms it is systemic). With no keyboard or
+  pointer injector installed on the reference laptop either, the buffer can
+  never be dirtied by assistive technology, so File > Save is a guaranteed
+  no-op (`crates/text-editor/src/view/saving.rs:37-42`) and the
+  SIGKILL-during-save race cannot be exercised as a real write on this
+  build.
+
+What the script *can* and does verify for real, without typing anything: the
+on-disk content is unchanged by merely opening or by a no-op Save (SHA-256
+compared at every step); and external-change detection, which needs no
+typing at all -- Text Editor watches its open document's directory
+(`crates/text-editor/src/view/lifecycle.rs:17-26`) and shows an always-
+visible "This document changed outside Text Editor..." banner with a real,
+clickable "Review..." control the moment the file changes underneath it
+(`crates/text-editor/src/view/render.rs:191-224`). The script edits the file
+directly on disk while it's open, waits for that banner, opens the Conflict
+dialog via Review..., dismisses it with Cancel, and confirms the file on
+disk still holds exactly the externally-written bytes.
+
+`scripts/test_journey_textfile.py` unit-tests the pure JSON-parsing,
+environment-discovery, hashing, and report-building logic with
+`python3 -m pytest scripts/test_journey_textfile.py` (no live session
+required).
+
+### Journey 6 -- inspect and stop a process, with confirmation
+
+`scripts/linux/run-journey-monitor.py` exercises journey 6 ("Inspect
+resource use and safely stop a process, with confirmation") against System
+Monitor (`crates/activity-monitor`, binary `rmac-system-monitor`). It starts
+a single disposable `sleep 600` it owns -- identified throughout by the
+exact PID this script spawned, never by a fuzzy name match, so it can never
+act on any other process -- then tries to find and stop it exactly as a
+real user would, through the search field, the process list, and the
+Quit/Force Quit confirmation flow.
+
+On the reference laptop as of this writing this is entirely blocked, and the
+script proves it precisely rather than reporting a false pass:
+
+* **The process list has zero AT-SPI semantic representation.** A live dump
+  of `rmac-system-monitor`'s whole AT-SPI tree at its default 960x640 size
+  contains exactly 14 nodes -- 1 application, 1 frame, 11 chrome buttons,
+  and 1 (unlabelled) search entry -- no table, row, or cell for any process,
+  ever. `crates/activity-monitor/src/accessibility.rs` already defines the
+  right projection for this (`project_process_table`,
+  `ProcessTableAccessibilitySnapshot`, `project_process_action_dialog` --
+  accessibility.rs:149,241, each with its own passing unit tests), but grep
+  confirms zero call sites for any of it outside those unit tests: the live
+  table renders each row as a plain `div()` with no AccessKit wiring
+  (`crates/activity-monitor/src/process_table.rs:363-389`), so none of the
+  modelled semantics ever reaches AT-SPI.
+* **The search field cannot be typed into either**, for the same systemic
+  reason as journey 5's document body: `queryEditableText()` raises.
+
+Because selecting a row is a hard prerequisite for the confirmation dialog
+and for Quit/Force Quit, there is no separate accessible path left to fall
+back to (unlike journey 1's Dock/Spotlight fallback, there is nothing
+downstream of "select a process" that a different mechanism could still
+reach). The script still opens System Monitor's exported Process menu and
+clicks Quit Process... over AT-SPI to observe real behaviour -- confirming
+that, with nothing selected, it has no effect -- and always kills its own
+marker process directly in a `finally` block so no stray `sleep` survives a
+run regardless of how the journey went.
+
+`scripts/test_journey_monitor.py` unit-tests the pure JSON-parsing,
+environment-discovery, process-identity, and report-building logic with
+`python3 -m pytest scripts/test_journey_monitor.py` (no live session
+required).

@@ -267,10 +267,9 @@ pub(super) fn pane_nav_row(
 ) -> AnyElement {
     let id = ElementId::from(SharedString::from(format!("pane-{title}")));
     nav_list_row(id, nav_content(icon, color, title.into(), None))
-        .on_activate(move |_, _, cx| {
+        .on_activate(move |_, window, cx| {
             view.update(cx, |s, cx| {
-                s.sidebar_focused = false;
-                s.select_category(title, cx);
+                s.select_category(title, window, cx);
             });
         })
         .into_any_element()

@@ -61,9 +61,10 @@ impl Settings {
                     tile("icons/keyboard.svg", hsl(0x8e8e93), style::ROW_ICON).into_any_element(),
                     "Keyboard",
                     None,
-                    move |_, cx| {
-                        keyboard_view
-                            .update(cx, |settings, cx| settings.select_category("Keyboard", cx));
+                    move |window, cx| {
+                        keyboard_view.update(cx, |settings, cx| {
+                            settings.select_category("Keyboard", window, cx)
+                        });
                     },
                 ),
                 page_row(&view, "icons/mouse.svg", hsl(0x8e8e93), POINTER_CONTROL),

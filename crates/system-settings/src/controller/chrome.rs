@@ -80,7 +80,7 @@ impl Settings {
                     can_back,
                 )
                 .when(can_back, |back| {
-                    back.on_click(cx.listener(|this, _, _, cx| this.go_back(cx)))
+                    back.on_click(cx.listener(|this, _, window, cx| this.go_back(window, cx)))
                 }),
             )
             .child(
@@ -405,11 +405,13 @@ impl Settings {
                         style::SIDEBAR_ROW_HEIGHT
                     }))
                     .on_activate(cx.listener(move |t, _, window, cx| {
-                        t.sidebar_focused = true;
-                        t.select_position((si, ci), cx);
+                        // `select_position` moves focus into the chosen
+                        // pane's content itself (macOS's own sidebar
+                        // behaviour), so no separate re-focus is needed
+                        // here for either path.
+                        t.select_position((si, ci), window, cx);
                         if searching {
                             t.clear_search(window, cx);
-                            window.focus(&t.focus, cx);
                         }
                     })),
                 );

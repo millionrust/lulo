@@ -124,7 +124,7 @@ impl Render for Settings {
                     }
                 }
             }))
-            .on_action(cx.listener(|t, _: &GoBack, _, cx| t.go_back(cx)))
+            .on_action(cx.listener(|t, _: &GoBack, window, cx| t.go_back(window, cx)))
             .on_action(cx.listener(|t, _: &GoForward, _, cx| t.go_forward(cx)))
             .on_action(cx.listener(|this, _: &SelectAlert, _, cx| {
                 this.apply_sound_policy_change(
@@ -239,6 +239,12 @@ impl Render for Settings {
                         .min_w_0()
                         .h_full()
                         .v_flex()
+                        // A boundary, not a stop of its own (`tab_stop(false)`):
+                        // `select_position` focuses it then steps onto the
+                        // pane's first real control, so Tab reaches this
+                        // pane's own content and Shift-Tab from that first
+                        // control returns to the sidebar.
+                        .track_focus(&self.content_focus.clone().tab_stop(false))
                         .child(self.render_toolbar(layout, cx))
                         .when_some(settings_error, |settings, message| {
                             settings.child(

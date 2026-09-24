@@ -112,6 +112,14 @@ pub(super) struct Settings {
     pub(super) keyboard_shortcuts_open: bool,
     pub(super) keyboard_shortcuts_category: usize,
     pub(super) focus: FocusHandle,
+    /// The detail column's own focus boundary (`shell_render.rs`), separate
+    /// from the window-level `focus` above. Choosing a sidebar category
+    /// (`select_position`) moves focus here, then onto the new pane's first
+    /// real control, so Tab reaches the pane's own content instead of
+    /// continuing through the remaining sidebar rows; Shift-Tab from the
+    /// pane's first control returns to the sidebar, since this handle is a
+    /// tab-stop boundary rather than a stop of its own.
+    pub(super) content_focus: FocusHandle,
     pub(super) native_window_title: String,
     pub(super) focused_once: bool,
     pub(super) wifi_error: Option<SharedString>,

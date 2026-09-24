@@ -173,10 +173,9 @@ impl Settings {
             ),
             Some(
                 push_button("keyboard-input-sources", "Edit…")
-                    .on_click(move |_, _, cx| {
+                    .on_click(move |_, window, cx| {
                         sources_view.update(cx, |settings, cx| {
-                            settings.sidebar_focused = false;
-                            settings.select_category("Language & Region", cx);
+                            settings.select_category("Language & Region", window, cx);
                         });
                     })
                     .into_any_element(),

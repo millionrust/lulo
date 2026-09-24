@@ -2,6 +2,29 @@
 
 use super::*;
 
+/// Bring focus onto `content_focus`'s pane if it currently isn't there.
+///
+/// Deliberately two frames, not one, the same way `rmac_ui`'s own dialog
+/// focus trap is: `window.focus_next` reads the *last painted* frame's tab
+/// stops, which on the frame a pane's content first changes don't yet
+/// reflect it — only `window.focus(content_focus, ...)` is safe to call
+/// before that content has ever been painted. So the first frame's focus
+/// lands on `content_focus` itself (the detail column's own boundary, a
+/// legitimate landing spot), and once that has been painted at least once,
+/// the next frame steps from it onto the pane's real first control.
+fn enter_content_focus(content_focus: &FocusHandle, window: &mut Window, cx: &mut App) {
+    if content_focus.is_focused(window) {
+        window.focus_next(cx);
+        if !content_focus.contains_focused(window, cx) {
+            window.focus(content_focus, cx);
+        }
+        return;
+    }
+    if !content_focus.contains_focused(window, cx) {
+        window.focus(content_focus, cx);
+    }
+}
+
 impl Settings {
     pub(super) fn current(&self) -> &Category {
         &self.sections[self.selected.0][self.selected.1]
@@ -80,7 +103,10 @@ impl Settings {
             .saturating_add_signed(delta)
             .min(positions.len() - 1);
         self.sidebar_focused = true;
-        self.select_position(positions[next_index], cx);
+        // Not `select_position`: Up/Down here browses the highlight while
+        // the sidebar list itself keeps keyboard focus (so the next
+        // arrow-press keeps working), unlike actually choosing a category.
+        self.select_position_keeping_focus(positions[next_index], cx);
         true
     }
 
@@ -107,9 +133,8 @@ impl Settings {
         else {
             return false;
         };
-        self.select_position(target, cx);
+        self.select_position(target, window, cx);
         self.clear_search(window, cx);
-        window.focus(&self.focus, cx);
         true
     }
 
@@ -123,11 +148,11 @@ impl Settings {
         !self.forward.is_empty()
     }
 
-    pub(super) fn go_back(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(page) = self.nav.pop() {
             self.forward.push(page);
         } else if let Some(parent) = category_parent(self.current().name.as_ref()) {
-            self.select_category(parent, cx);
+            self.select_category(parent, window, cx);
         }
         cx.notify();
     }
@@ -155,7 +180,12 @@ impl Settings {
         cx.notify();
     }
 
-    pub(super) fn select_category(&mut self, name: &str, cx: &mut Context<Self>) {
+    pub(super) fn select_category(
+        &mut self,
+        name: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let target = self
             .sections
             .iter()
@@ -167,20 +197,46 @@ impl Settings {
                     .map(|item| (section, item))
             });
         if let Some(target) = target {
-            self.select_position(target, cx);
+            self.select_position(target, window, cx);
         }
     }
 
-    pub(super) fn select_position(&mut self, target: (usize, usize), cx: &mut Context<Self>) {
+    /// Choose a category, the way clicking or Return-activating a sidebar
+    /// row, a search result, or an in-pane "jump to Keyboard…"-style link
+    /// does: moves focus into the new pane's content
+    /// (`content_focus`/`enter_content_focus`), same as macOS's own sidebar.
+    /// Up/Down browsing the sidebar's own highlight uses
+    /// [`Self::select_position_keeping_focus`] instead, so it doesn't kick
+    /// focus out of the list mid-arrow-press.
+    pub(super) fn select_position(
+        &mut self,
+        target: (usize, usize),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.select_position_keeping_focus(target, cx) {
+            return;
+        }
+        self.sidebar_focused = false;
+        enter_content_focus(&self.content_focus, window, cx);
+    }
+
+    /// The state change behind [`Self::select_position`], without moving
+    /// focus. Returns whether `target` was a real, selectable category.
+    fn select_position_keeping_focus(
+        &mut self,
+        target: (usize, usize),
+        cx: &mut Context<Self>,
+    ) -> bool {
         let Some(category) = self
             .sections
             .get(target.0)
             .and_then(|section| section.get(target.1))
         else {
-            return;
+            return false;
         };
         let Some(pane_id) = pane_id_for_category_name(category.name.as_ref()) else {
-            return;
+            return false;
         };
         self.selected = target;
         self.nav.clear();
@@ -188,5 +244,6 @@ impl Settings {
         self.compact_sidebar_open = false;
         self.navigation_persistence.schedule(pane_id);
         cx.notify();
+        true
     }
 }

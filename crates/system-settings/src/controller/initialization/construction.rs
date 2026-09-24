@@ -144,6 +144,7 @@ impl Settings {
             keyboard_shortcuts_open: false,
             keyboard_shortcuts_category: 0,
             focus: cx.focus_handle(),
+            content_focus: cx.focus_handle(),
             native_window_title: "Settings".into(),
             focused_once: false,
             wifi_error: None,

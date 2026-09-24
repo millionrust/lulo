@@ -60,6 +60,11 @@ fn reads_known_values_and_explicit_false_flags() {
     assert!(!settings.touchpad.disable_while_typing);
     assert!(settings.touchpad.pointer.middle_emulation);
     assert_eq!(settings.touchpad.pointer.accel_speed, 0.2);
+    // CONFIG has no click-method line, so libinput's own default applies.
+    assert_eq!(
+        settings.touchpad.secondary_click,
+        SecondaryClick::CornerClick
+    );
 }
 
 #[test]
@@ -121,6 +126,42 @@ fn managed_override_preserves_unknown_pointer_nodes_and_explicit_off() {
         &mut reread,
     );
     assert_eq!(reread.settings, requested);
+}
+
+#[test]
+fn secondary_click_choice_round_trips_through_the_managed_touchpad_block() {
+    let effective = effective(CONFIG);
+    let authority = Authority {
+        main_path: PathBuf::from("/config.kdl"),
+        main_source: String::new(),
+        managed_path: PathBuf::from("/.rmac-input.kdl"),
+        managed_source: None,
+        has_managed_include: false,
+        safe_to_write: true,
+        detail: None,
+        effective: effective.clone(),
+        files: vec![ConfigFile {
+            path: PathBuf::from("/config.kdl"),
+            source: String::new(),
+        }],
+        missing_optional_files: Vec::new(),
+    };
+    let mut requested = effective.settings.clone();
+    requested.touchpad.secondary_click = SecondaryClick::TwoFingerClickOrTap;
+    let managed = update_managed_source(&authority, &requested).unwrap();
+    assert!(managed.contains("click-method \"clickfinger\""));
+
+    let managed =
+        parse_managed_document(&managed).unwrap_or_else(|error| panic!("{error}\n{managed}"));
+    let mut reread = effective;
+    apply_input(
+        managed.get("input").unwrap().children().unwrap(),
+        &mut reread,
+    );
+    assert_eq!(
+        reread.settings.touchpad.secondary_click,
+        SecondaryClick::TwoFingerClickOrTap
+    );
 }
 
 #[test]

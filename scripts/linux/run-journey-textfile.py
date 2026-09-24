@@ -139,7 +139,15 @@ POLL_INTERVAL_S = 0.05
 TEXT_EDITOR: dict[str, str] = {
     "display_name": "Text Editor",
     "app_id": "org.rmac.TextEditor",
-    "exec": "/usr/bin/rmac-text-editor",
+    # Launched by desktop id, never a hard-coded binary path: on the
+    # reference laptop /usr/bin/rmac-* are stale packaged binaries, while the
+    # user's actual desktop entries
+    # (~/.local/share/applications/org.rmac.*.desktop, XDG lookup order puts
+    # this ahead of /usr/share/applications) point at the current dev build
+    # via ~/.local/libexec/rmac -> ~/rmac-dev-bin. `gtk-launch` resolves and
+    # runs a desktop entry's Exec= (substituting a given path for %F) exactly
+    # the way a real launch (Dock, Spotlight, a file manager) would.
+    "desktop_id": "org.rmac.TextEditor",
     "atspi_name": "rmac-text-editor",
 }
 
@@ -454,11 +462,15 @@ def has_text_interface(node) -> bool:
 
 
 def launch_editor(path: Optional[Path] = None) -> tuple[dict[str, Any], Optional[dict[str, Any]]]:
-    """Launch a fresh rmac-text-editor window, optionally with a path given
-    directly on the command line (the same thing a real double-click on the
-    file, or `Exec=%F`, does -- not a synthetic shortcut)."""
+    """Launch a fresh Text Editor window via its desktop entry
+    (`gtk-launch org.rmac.TextEditor [path]`), optionally with a path (the
+    same thing a real double-click on the file, or `Exec=%F`, does -- not a
+    synthetic shortcut, and never a hard-coded binary path -- see
+    TEXT_EDITOR's comment)."""
 
-    command = [TEXT_EDITOR["exec"]] + ([str(path)] if path is not None else [])
+    command = ["gtk-launch", TEXT_EDITOR["desktop_id"]] + (
+        [str(path)] if path is not None else []
+    )
     try:
         niri_spawn(*command)
     except JourneyError as error:

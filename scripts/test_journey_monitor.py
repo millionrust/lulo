@@ -136,7 +136,9 @@ class ReportShapeTests(unittest.TestCase):
 class SystemMonitorConstantTests(unittest.TestCase):
     def test_system_monitor_identity_is_well_formed(self):
         self.assertEqual(journey.SYSTEM_MONITOR["app_id"], "org.rmac.SystemMonitor")
-        self.assertTrue(journey.SYSTEM_MONITOR["exec"].startswith("/usr/bin/"))
+        # Launched by desktop id (gtk-launch), never a hard-coded binary path
+        # -- /usr/bin/rmac-* on the reference laptop is a stale package.
+        self.assertEqual(journey.SYSTEM_MONITOR["desktop_id"], "org.rmac.SystemMonitor")
 
 
 if __name__ == "__main__":

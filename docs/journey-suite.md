@@ -320,7 +320,17 @@ Editor's exported File menu (`crates/rmac-app-menu`, rendered by
 through whichever `org.freedesktop.portal.FileChooser` backend answers
 (`crates/rmac-file-chooser`, ADR 0012, or a GTK/GNOME fallback -- the chooser
 is driven generically, by name match, so the script doesn't care which one
-opened), and always removes the fixture folder afterward.
+opened), and always removes the fixture folder afterward. It launches Text
+Editor with `gtk-launch org.rmac.TextEditor [path]` rather than a hard-coded
+binary path: on the reference laptop `/usr/bin/rmac-text-editor` is a stale
+packaged build, while the user's own desktop entry
+(`~/.local/share/applications/org.rmac.TextEditor.desktop`, ahead of
+`/usr/share/applications` in the XDG lookup order) points at the current
+build (`~/.local/libexec/rmac/rmac-text-editor` -> `~/rmac-dev-bin/`).
+`scripts/linux/run-journey-monitor.py` does the same for System Monitor.
+`scripts/linux/run-journey-launch.py` (journey 1) still spawns
+`/usr/bin/rmac-text-editor`/`/usr/bin/rmac-notes` directly and should
+probably be updated the same way -- out of scope for this change.
 
 Two systemic gaps limit what is exercisable on the reference laptop today,
 found by directly probing the live AT-SPI tree (not inferred):
@@ -399,16 +409,26 @@ script proves it precisely rather than reporting a false pass:
 
 * **The process list has zero AT-SPI semantic representation.** A live dump
   of `rmac-system-monitor`'s whole AT-SPI tree at its default 960x640 size
-  contains exactly 14 nodes -- 1 application, 1 frame, 11 chrome buttons,
-  and 1 (unlabelled) search entry -- no table, row, or cell for any process,
-  ever. `crates/activity-monitor/src/accessibility.rs` already defines the
-  right projection for this (`project_process_table`,
-  `ProcessTableAccessibilitySnapshot`, `project_process_action_dialog` --
-  accessibility.rs:149,241, each with its own passing unit tests), but grep
-  confirms zero call sites for any of it outside those unit tests: the live
-  table renders each row as a plain `div()` with no AccessKit wiring
+  found no table, row, or cell for any process, ever -- one run's tree
+  contained 14 nodes total (1 application, 1 frame, 11 chrome buttons, and 1
+  unlabelled search entry); a later run against the same desktop-entry
+  ("gtk-launch org.rmac.SystemMonitor", resolving through
+  `~/.local/share/applications` to the current dev build) found the window's
+  entire AT-SPI tree collapsed to its 3 unlabelled title-bar buttons only --
+  no tabs, no toolbar, no Quit/Force Quit, no search entry either. Neither
+  run ever saw a table/row/cell. `crates/activity-monitor/src/accessibility.rs`
+  already defines the right projection for process rows
+  (`project_process_table`, `ProcessTableAccessibilitySnapshot`,
+  `project_process_action_dialog` -- accessibility.rs:149,241, each with its
+  own passing unit tests), but grep confirms zero call sites for any of it
+  outside those unit tests: the live table renders each row as a plain
+  `div()` with no AccessKit wiring
   (`crates/activity-monitor/src/process_table.rs:363-389`), so none of the
-  modelled semantics ever reaches AT-SPI.
+  modelled semantics ever reaches AT-SPI. The coordinator should re-check
+  whether the currently staged dev build has a broader accessibility
+  regression beyond the process table -- `scripts/linux/run-journey-monitor.py`'s
+  `check_quit_controls_exist` step reports exactly what a given run finds,
+  rather than assuming either shape.
 * **The search field cannot be typed into either**, for the same systemic
   reason as journey 5's document body: `queryEditableText()` raises.
 

@@ -166,7 +166,9 @@ class ReportShapeTests(unittest.TestCase):
 class TextEditorConstantTests(unittest.TestCase):
     def test_text_editor_identity_is_well_formed(self):
         self.assertEqual(journey.TEXT_EDITOR["app_id"], "org.rmac.TextEditor")
-        self.assertTrue(journey.TEXT_EDITOR["exec"].startswith("/usr/bin/"))
+        # Launched by desktop id (gtk-launch), never a hard-coded binary path
+        # -- /usr/bin/rmac-* on the reference laptop is a stale package.
+        self.assertEqual(journey.TEXT_EDITOR["desktop_id"], "org.rmac.TextEditor")
 
 
 if __name__ == "__main__":

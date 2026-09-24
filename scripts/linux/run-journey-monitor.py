@@ -34,13 +34,20 @@ respect­fully do:
     exposes AT-SPI's Accessible and Component interfaces only -- no Text, no
     EditableText (confirmed live) -- so it cannot be used to filter to a
     specific process by typing either, even with a keyboard.
-  * Quit/Force Quit are real and do exist over AT-SPI -- as plain buttons
-    named "Quit"/"Force Quit" mirroring the `QuitProcess`/`ForceQuitProcess`
+  * Quit/Force Quit are *meant* to exist over AT-SPI as plain buttons named
+    "Quit"/"Force Quit" mirroring the `QuitProcess`/`ForceQuitProcess`
     keyboard actions (`crates/activity-monitor/src/main.rs:16-24,42-51`),
     and as the top bar's global "Process" menu once System Monitor is
     focused (`crates/rmac-app-menu/src/lib.rs:236-244`: "Quit Process…" /
-    "Force Quit Process…", both real `menu item` nodes). But both routes act
-    on whatever `selected_pid` a **mouse** click (left or right) on a row
+    "Force Quit Process…", both real `menu item` nodes) -- one live run did
+    find both toolbar buttons present with a `click` action; a later run
+    against the same desktop-entry-resolved binary found the window's whole
+    AT-SPI tree collapsed to its 3 (unlabelled) title-bar buttons only, with
+    no toolbar, tabs, search field, or Quit/Force Quit at all (see
+    `check_quit_controls_exist`'s reported detail for what a given run
+    actually found -- this script never assumes either shape). Whichever
+    shape is present, both Quit routes act on whatever `selected_pid` a
+    **mouse** click (left or right) on a row
     (`crates/activity-monitor/src/process_table.rs:343-365`, both
     `MouseButton::Left` and `MouseButton::Right`) or **keyboard** table navigation
     (`crates/activity-monitor/src/view.rs:165-176`) last set -- there is no
@@ -122,7 +129,15 @@ POLL_INTERVAL_S = 0.05
 SYSTEM_MONITOR: dict[str, str] = {
     "display_name": "System Monitor",
     "app_id": "org.rmac.SystemMonitor",
-    "exec": "/usr/bin/rmac-system-monitor",
+    # Launched by desktop id, never a hard-coded binary path: on the
+    # reference laptop /usr/bin/rmac-* are stale packaged binaries, while the
+    # user's actual desktop entries
+    # (~/.local/share/applications/org.rmac.*.desktop, XDG lookup order puts
+    # this ahead of /usr/share/applications) point at the current dev build
+    # via ~/.local/libexec/rmac -> ~/rmac-dev-bin. `gtk-launch` resolves and
+    # runs a desktop entry's Exec= exactly the way a real launch (Dock,
+    # Spotlight, a file manager) would.
+    "desktop_id": "org.rmac.SystemMonitor",
     "atspi_name": "rmac-system-monitor",
 }
 
@@ -377,7 +392,7 @@ def has_editable_text(node) -> bool:
 
 def launch_monitor() -> tuple[dict[str, Any], Optional[dict[str, Any]]]:
     try:
-        niri_spawn(SYSTEM_MONITOR["exec"])
+        niri_spawn("gtk-launch", SYSTEM_MONITOR["desktop_id"])
     except JourneyError as error:
         return make_step("launch", False, str(error)), None
     window = wait_for_window(SYSTEM_MONITOR["app_id"])

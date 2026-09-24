@@ -56,6 +56,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Read the live repository's current phase and Date
         id: live
@@ -86,13 +88,20 @@ jobs:
       - name: Decide the next phase
         id: decision
         if: steps.live.outputs.has_live == 'true'
+        # Values read from the fetched repository reach the shell only as
+        # environment variables: `${{ }}` inside `run:` is pasted into the
+        # script text before bash parses it.
+        env:
+          REQUESTED_PHASE: ${{ github.event.inputs.phase }}
+          LIVE_PHASE: ${{ steps.live.outputs.phase }}
+          LIVE_DATE_SECONDS: ${{ steps.live.outputs.date_seconds }}
         run: |
           set -euo pipefail
           now_seconds="$(date -u +%s)"
-          requested="${{ github.event.inputs.phase }}"
+          requested="$REQUESTED_PHASE"
           args=(
-            --current-phase "${{ steps.live.outputs.phase }}"
-            --current-date-seconds "${{ steps.live.outputs.date_seconds }}"
+            --current-phase "$LIVE_PHASE"
+            --current-date-seconds "$LIVE_DATE_SECONDS"
             --now-seconds "$now_seconds"
           )
           if [ -n "$requested" ]; then

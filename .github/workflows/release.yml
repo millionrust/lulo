@@ -40,6 +40,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Check advisories, licenses, bans, and sources
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
@@ -112,6 +114,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Hand the checkout to the build user
@@ -218,6 +221,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Hand the checkout to the build user
@@ -273,6 +277,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain
@@ -297,8 +303,10 @@ jobs:
 
   attach-release:
     name: Attach packages, SBOM, and provenance to the Release
-    needs: [build-amd64, build-arm64, sbom]
-    if: always() && needs.build-amd64.result == 'success' && needs.sbom.result == 'success'
+    # The licence/advisory gate must pass before anything is attached and
+    # attested; always() only lets a skipped optional arm64 build through.
+    needs: [dependency-policy, build-amd64, build-arm64, sbom]
+    if: always() && needs.dependency-policy.result == 'success' && needs.build-amd64.result == 'success' && needs.sbom.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -308,6 +316,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Download built artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -377,8 +387,11 @@ jobs:
     # not create one. Until the offline primary key exists (docs/install.md
     # "Server side (GitHub)" / docs/update-trust.md "Decisions needed"),
     # there is nothing to package, so this job stays off until the exported
-    # public keyring is available as a secret.
-    if: ${{ secrets.RMAC_ARCHIVE_PUBLIC_KEYRING_B64 != '' && vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT != '' }}
+    # public keyring is available as a secret. A job-level `if` cannot read
+    # the `secrets` context (GitHub rejects the whole workflow file), so the
+    # job is gated on the fingerprint variable and the first step refuses
+    # when the keyring secret is missing.
+    if: ${{ vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT != '' }}
     runs-on: ubuntu-latest
     container:
       image: ubuntu:26.04
@@ -398,6 +411,8 @@ jobs:
 
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Hand the checkout to the build user
         run: chown -R builder:builder "$GITHUB_WORKSPACE"
@@ -407,6 +422,10 @@ jobs:
           RMAC_ARCHIVE_PUBLIC_KEYRING_B64: ${{ secrets.RMAC_ARCHIVE_PUBLIC_KEYRING_B64 }}
           RMAC_ARCHIVE_SIGNING_FINGERPRINT: ${{ vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT }}
         run: |
+          if [ -z "$RMAC_ARCHIVE_PUBLIC_KEYRING_B64" ]; then
+            echo "RMAC_ARCHIVE_SIGNING_FINGERPRINT is set but the RMAC_ARCHIVE_PUBLIC_KEYRING_B64 secret is missing" >&2
+            exit 1
+          fi
           printf '%s' "$RMAC_ARCHIVE_PUBLIC_KEYRING_B64" | base64 -d \
             > "$GITHUB_WORKSPACE/rmac-archive-keyring-public.gpg"
           chown builder:builder "$GITHUB_WORKSPACE/rmac-archive-keyring-public.gpg"
@@ -463,6 +482,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Download the amd64 packages

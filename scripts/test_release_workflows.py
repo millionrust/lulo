@@ -88,3 +88,34 @@ def test_rollout_schedule_and_manual_dispatch_exist():
     assert "workflow_dispatch" in triggers
     options = triggers["workflow_dispatch"]["inputs"]["phase"]["options"]
     assert options == ["0", "10", "25", "50", "100"]
+
+
+def test_no_job_condition_reads_the_secrets_context():
+    # GitHub rejects a workflow whose job-level `if` names `secrets`, which
+    # would stop every release job (checksums, SBOM, provenance) from running.
+    for path in (RELEASE, ROLLOUT):
+        document = _load(path)
+        for job_name, job in document["jobs"].items():
+            condition = str(job.get("if", ""))
+            assert "secrets." not in condition, (
+                f"{path.name}:{job_name} job-level if reads the secrets context"
+            )
+
+
+def test_release_is_attached_only_after_the_dependency_gate_passes():
+    job = _load(RELEASE)["jobs"]["attach-release"]
+    assert "dependency-policy" in job["needs"]
+    assert "needs.dependency-policy.result == 'success'" in job["if"]
+
+
+def test_fetched_repository_values_never_expand_inside_run_scripts():
+    for path in (RELEASE, ROLLOUT):
+        document = _load(path)
+        for job_name, job in document["jobs"].items():
+            for step in job.get("steps", ()):
+                script = step.get("run", "")
+                for expression in ("steps.live.outputs", "github.event.inputs"):
+                    assert "${{ " + expression not in script, (
+                        f"{path.name}:{job_name}:{step.get('name')} expands "
+                        f"{expression} into shell text"
+                    )

@@ -34,7 +34,9 @@ clearsigning `InRelease`, `publish-apt-snapshot.py`, and
 (`vars.RMAC_SOURCE_PACKAGING_READY != 'true'`) until the two gaps in
 "What the owner still has to do" are closed. Building the keyring packages
 (`keyring` job in `release.yml`) is separately gated on
-`secrets.RMAC_ARCHIVE_PUBLIC_KEYRING_B64` existing.
+`vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT` being set, and then fails if the
+`RMAC_ARCHIVE_PUBLIC_KEYRING_B64` secret is missing (a job-level `if`
+cannot read secrets).
 
 ## What the owner still has to do
 

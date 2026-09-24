@@ -24,6 +24,8 @@ impl Settings {
         let output_volume = Self::audio_slider(cx, 0.0, rmac_audio::DeviceKind::Output);
         let input_volume = Self::audio_slider(cx, 0.0, rmac_audio::DeviceKind::Input);
         let output_balance = Self::audio_balance_slider(cx, 0.0);
+        // Replaced once the initial backlight read lands (start_snapshot_loads).
+        let brightness_slider = Self::brightness_slider(cx, 0.0);
         let (sound_policy, sound_policy_error) = match rmac_sound::load_settings() {
             Ok(settings) => (settings, None),
             Err(error) => (
@@ -114,6 +116,10 @@ impl Settings {
             file_sharing_confirmation: None,
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
+            brightness: None,
+            brightness_slider,
+            brightness_generation: 0,
+            brightness_error: None,
             network: rmac_network::NetworkSnapshot::default(),
             storage: Vec::new(),
             storage_busy: false,

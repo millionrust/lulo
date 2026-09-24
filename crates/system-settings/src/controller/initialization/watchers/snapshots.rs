@@ -7,7 +7,19 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
-                .spawn(async { rmac_network::snapshot() })
+                .spawn(async {
+                    // Kick NetworkManager into an immediate scan so a
+                    // freshly opened Wi-Fi pane does not read "No other
+                    // networks found" while NM's own background scan
+                    // interval catches up (SET-14). A scan failure (radio
+                    // off, no adapter yet) is not fatal here: the snapshot
+                    // read below is still the authoritative result and
+                    // surfaces its own error if Wi-Fi is genuinely
+                    // unavailable.
+                    let _ = rmac_network::request_scan();
+                    std::thread::sleep(Duration::from_millis(750));
+                    rmac_network::snapshot()
+                })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wifi_update(result);
@@ -85,6 +97,24 @@ impl Settings {
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_display_update(result);
                 this.flush_display_stream_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        // The backlight is read once at startup, then only ever changed by
+        // this pane's slider or the hardware brightness keys (rmac-osd);
+        // there is no logind signal to poll for, so it is not re-read.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async { rmac_osd::brightness() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if let Ok(value) = result {
+                    this.brightness = Some(value);
+                    this.brightness_slider = Self::brightness_slider(cx, f32::from(value));
+                }
                 cx.notify();
             });
         })

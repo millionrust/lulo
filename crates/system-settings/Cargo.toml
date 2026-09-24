@@ -42,6 +42,7 @@ rmac-network.workspace = true
 rmac-notifications-linux.workspace = true
 rmac-notifications.workspace = true
 rmac-notifications-store.workspace = true
+rmac-osd.workspace = true
 rmac-power.workspace = true
 rmac-privacy.workspace = true
 rmac-privacy-linux.workspace = true

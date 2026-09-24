@@ -532,6 +532,30 @@ pub(in crate::controller) fn stepped_slider_row(
         .into_any_element()
 }
 
+/// A form row with a label on the left and a continuous [`Slider`] on the
+/// right, its value shown as a tooltip rather than a trailing number
+/// (Displays "Brightness", Desktop & Dock "Size"/"Magnification").
+pub(in crate::controller) fn value_slider_row(
+    title: impl Into<SharedString>,
+    id: impl Into<ElementId>,
+    state: &Entity<SliderState>,
+    value: SharedString,
+) -> AnyElement {
+    row_base()
+        .child(text_block(title.into(), None))
+        .child(
+            div()
+                .id(id.into())
+                .w(px(style::SLIDER_WIDTH))
+                .flex_none()
+                .tooltip(move |window, cx| {
+                    gpui_component::tooltip::Tooltip::new(value.clone()).build(window, cx)
+                })
+                .child(Slider::new(state).w_full()),
+        )
+        .into_any_element()
+}
+
 // ---- tabs ----------------------------------------------------------------------
 
 /// Trackpad's tab bar: equal segments across the content width, 24 tall,

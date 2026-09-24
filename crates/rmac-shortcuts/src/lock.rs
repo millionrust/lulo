@@ -102,6 +102,10 @@ pub enum Operation {
     ServeSettings,
     SaveIdlePolicy,
     RestartIdleManager,
+    InhibitPowerKey,
+    WatchPowerKey,
+    Suspend,
+    ShowShutdownDialog,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -308,14 +312,70 @@ pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
     let _settings = crate::lock_settings::serve(policy_path)
         .await
         .map_err(|_| Error::failed(Operation::ServeSettings))?;
+
+    // The power button (docs/decisions/0020): listen for niri's presses
+    // first, and only then ask logind to leave the button to us, so a press
+    // is never swallowed while nothing can hear it.
+    let (press_sender, presses) = async_channel::bounded(8);
+    let (bound_sender, bound) = async_channel::bounded(1);
+    let press_watch = futures_util::FutureExt::fuse(crate::watch_dispatches_ready(
+        crate::ShortcutId(crate::power_key::POWER_KEY_SHORTCUT.into()),
+        press_sender,
+        bound_sender,
+    ));
+    futures_util::pin_mut!(press_watch);
+    let mut power_key_inhibitor = None;
+    {
+        let bound = futures_util::FutureExt::fuse(bound.recv());
+        futures_util::pin_mut!(bound);
+        futures_util::select! {
+            ready = bound => {
+                if ready.is_ok() {
+                    power_key_inhibitor = acquire_power_key_inhibitor(&manager).await;
+                }
+            },
+            result = press_watch => report_power_key_watch_end(result),
+        }
+    }
+    let mut power_key = crate::power_key::PowerKey::default();
+
     notify_systemd("Lulo OS lock coordinator is ready")?;
     futures_util::pin_mut!(lock_requests, sleep_changes);
 
     loop {
         let lock_request = futures_util::FutureExt::fuse(lock_requests.next());
         let sleep_change = futures_util::FutureExt::fuse(sleep_changes.next());
-        futures_util::pin_mut!(lock_request, sleep_change);
+        // Once the listener has gone, `recv` would fail at once on every
+        // turn; leave it out instead of spinning.
+        let press = if presses.is_closed() {
+            futures_util::future::Fuse::terminated()
+        } else {
+            futures_util::FutureExt::fuse(presses.recv())
+        };
+        let deadline = futures_util::FutureExt::fuse(match power_key.deadline() {
+            Some(at) => async_io::Timer::at(at),
+            None => async_io::Timer::never(),
+        });
+        futures_util::pin_mut!(lock_request, sleep_change, press, deadline);
         futures_util::select! {
+            event = press => {
+                if let Ok(crate::Event::Activated { .. }) = event {
+                    let locked = session_locked(&session).await;
+                    let action = power_key.press(std::time::Instant::now(), locked);
+                    act_on_power_key(action, &manager).await;
+                }
+            },
+            _ = deadline => {
+                let locked = session_locked(&session).await;
+                let action = power_key.deadline_passed(std::time::Instant::now(), locked);
+                act_on_power_key(action, &manager).await;
+            },
+            result = press_watch => {
+                // Nothing hears the button any more: hand it back to logind
+                // rather than leave it dead.
+                power_key_inhibitor.take();
+                report_power_key_watch_end(result);
+            },
             request_signal = lock_request => {
                 if request_signal.is_none() {
                     return Err(Error::failed(Operation::ReadSignal));
@@ -331,6 +391,7 @@ pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
                     .map_err(|_| Error::failed(Operation::ReadSignal))?
                     .start();
                 if preparing {
+                    power_key.sleeping();
                     match request() {
                         Ok(()) => {
                             sleep_inhibitor.take();
@@ -340,9 +401,103 @@ pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
                         }
                     }
                 } else {
+                    power_key.woke(std::time::Instant::now());
                     sleep_inhibitor = Some(acquire_sleep_inhibitor(&manager).await?);
                 }
             },
+        }
+    }
+}
+
+/// Whether the session shows the lock screen now. An unreadable hint counts
+/// as unlocked, so a press still locks before it sleeps.
+#[cfg(target_os = "linux")]
+async fn session_locked(session: &LoginSessionProxy<'_>) -> bool {
+    session.locked_hint().await.unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+async fn act_on_power_key(
+    action: crate::power_key::PowerKeyAction,
+    manager: &LoginManagerProxy<'_>,
+) {
+    use crate::power_key::PowerKeyAction;
+
+    match action {
+        PowerKeyAction::Ignore | PowerKeyAction::WaitUntil(_) => {}
+        PowerKeyAction::ShowShutdownDialog => {
+            let dialog = crate::ShortcutId(crate::power_key::SHUTDOWN_DIALOG_SHORTCUT.into());
+            if let Err(error) = crate::dispatch(&dialog) {
+                eprintln!(
+                    "the power button could not show the shutdown dialog ({:?}): {error}; \
+                     choose Shut Down in the Lulo OS menu instead",
+                    Operation::ShowShutdownDialog
+                );
+            }
+        }
+        PowerKeyAction::Sleep { lock_first } => {
+            // Lock first, so the screen that wakes is the lock screen.
+            // `request` returns once the locker reports it is up.
+            if lock_first {
+                if let Err(error) = request() {
+                    eprintln!(
+                        "the power button could not lock before sleeping ({:?}); sleeping \
+                         anyway, and the pre-sleep lock tries again",
+                        error.operation
+                    );
+                }
+            }
+            if let Err(error) = manager.suspend(false).await {
+                eprintln!(
+                    "the power button could not put the computer to sleep ({:?}): {error}",
+                    Operation::Suspend
+                );
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn report_power_key_watch_end(result: Result<(), crate::Error>) {
+    match result {
+        Ok(()) => eprintln!(
+            "the power button listener stopped ({:?}); the button now does what logind is \
+             configured to do",
+            Operation::WatchPowerKey
+        ),
+        Err(error) => eprintln!(
+            "the power button listener failed ({:?}): {error}; the button now does what logind \
+             is configured to do",
+            Operation::WatchPowerKey
+        ),
+    }
+}
+
+/// Take logind's `handle-power-key` block inhibitor, as GNOME does, so a
+/// press reaches Lulo OS instead of powering off. Without it logind's own
+/// action stays in place; that is reported but not fatal, since locking and
+/// sleeping still work.
+#[cfg(target_os = "linux")]
+async fn acquire_power_key_inhibitor(
+    manager: &LoginManagerProxy<'_>,
+) -> Option<zbus::zvariant::OwnedFd> {
+    match manager
+        .inhibit(
+            crate::power_key::INHIBIT_WHAT,
+            "Lulo OS",
+            crate::power_key::INHIBIT_WHY,
+            "block",
+        )
+        .await
+    {
+        Ok(fd) => Some(fd),
+        Err(error) => {
+            eprintln!(
+                "could not take over the power button ({:?}): {error}; a press does what logind \
+                 is configured to do, which on Ubuntu is to shut down",
+                Operation::InhibitPowerKey
+            );
+            None
         }
     }
 }
@@ -620,6 +775,9 @@ trait LoginSession {
     #[zbus(property)]
     fn remote(&self) -> zbus::Result<bool>;
 
+    #[zbus(property)]
+    fn locked_hint(&self) -> zbus::Result<bool>;
+
     #[zbus(property, name = "Type")]
     fn session_type(&self) -> zbus::Result<String>;
 
@@ -645,6 +803,7 @@ trait LoginManager {
         why: &str,
         mode: &str,
     ) -> zbus::Result<zbus::zvariant::OwnedFd>;
+    fn suspend(&self, interactive: bool) -> zbus::Result<()>;
 
     #[zbus(signal)]
     fn prepare_for_sleep(&self, start: bool) -> zbus::Result<()>;

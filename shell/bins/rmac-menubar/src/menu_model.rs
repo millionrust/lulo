@@ -757,6 +757,101 @@ pub fn quit_all_interrupted_copy(action: &str, apps: &[String]) -> (String, Stri
     )
 }
 
+// ---- Session confirmations ----
+
+/// The dialog a second press of the power button opens (the Mac shows it
+/// on a long press, which an x86 power button cannot report; see
+/// `rmac_shortcuts::power_key`).
+pub const POWER_DIALOG_ACTION: &str = "system::power-dialog";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConfirmationButton {
+    pub label: &'static str,
+    /// The system action the button runs; `None` is Cancel.
+    pub action: Option<&'static str>,
+    /// Return runs this one, and it is drawn in the accent colour.
+    pub default: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Confirmation {
+    pub title: &'static str,
+    pub detail: &'static str,
+    pub buttons: Vec<ConfirmationButton>,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// Width of the Log Out / Restart / Shut Down confirmation.
+pub const CONFIRMATION_WIDTH: f32 = 248.0;
+/// The power-button dialog has four buttons. S: not measured on the Mac.
+pub const POWER_DIALOG_WIDTH: f32 = 360.0;
+
+const fn button(
+    label: &'static str,
+    action: Option<&'static str>,
+    default: bool,
+) -> ConfirmationButton {
+    ConfirmationButton {
+        label,
+        action,
+        default,
+    }
+}
+
+/// What the menu shows in place of its items while `action` waits for a
+/// confirmation. Log Out, Restart and Shut Down each ask every app to quit
+/// first (`quit_all_then`), and so do the power dialog's Restart and
+/// Shut Down, so no path from the power button skips the Save alerts.
+pub fn system_confirmation(action: &str) -> Confirmation {
+    const QUIT_FIRST: &str = "Each app is asked to quit first, so you can save your work.";
+    let simple = |title, confirm, confirm_action| Confirmation {
+        title,
+        detail: QUIT_FIRST,
+        buttons: vec![
+            button("Cancel", None, false),
+            button(confirm, Some(confirm_action), true),
+        ],
+        width: CONFIRMATION_WIDTH,
+        height: 150.0,
+    };
+    match action {
+        "system::restart" => simple("Restart this computer?", "Restart", "system::restart"),
+        "system::shutdown" => simple("Shut down this computer?", "Shut Down", "system::shutdown"),
+        "system::logout" => simple("Log out now?", "Log Out", "system::logout"),
+        // The Mac's wording for its power-button dialog. Its 60-second
+        // countdown is left out rather than shutting down unattended.
+        POWER_DIALOG_ACTION => Confirmation {
+            title: "Are you sure you want to shut down your computer now?",
+            detail: QUIT_FIRST,
+            buttons: vec![
+                button("Restart", Some("system::restart"), false),
+                button("Sleep", Some("system::sleep"), false),
+                button("Cancel", None, false),
+                button("Shut Down", Some("system::shutdown"), true),
+            ],
+            width: POWER_DIALOG_WIDTH,
+            height: 150.0,
+        },
+        _ => Confirmation {
+            title: "Continue?",
+            detail: "Confirm this system action.",
+            buttons: vec![button("Cancel", None, false)],
+            width: CONFIRMATION_WIDTH,
+            height: 150.0,
+        },
+    }
+}
+
+/// The action Return runs in `action`'s confirmation.
+pub fn confirmation_default_action(action: &str) -> Option<&'static str> {
+    system_confirmation(action)
+        .buttons
+        .into_iter()
+        .find(|button| button.default)
+        .and_then(|button| button.action)
+}
+
 // ---- Low battery ----
 
 /// Battery levels, in percent, that post a warning while running on
@@ -1618,5 +1713,44 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(delays, [50, 100, 200, 400, 800, 1600, 3200]);
         assert_eq!(reconcile_retry_delay(u32::MAX), None);
+    }
+
+    #[test]
+    fn the_power_dialog_offers_restart_sleep_cancel_and_shut_down() {
+        let dialog = system_confirmation(POWER_DIALOG_ACTION);
+        let labels = dialog
+            .buttons
+            .iter()
+            .map(|button| button.label)
+            .collect::<Vec<_>>();
+        assert_eq!(labels, ["Restart", "Sleep", "Cancel", "Shut Down"]);
+        // Restart and Shut Down go through the same quit-every-app path as
+        // the menu items, so unsaved documents get their Save alerts.
+        assert_eq!(dialog.buttons[0].action, Some("system::restart"));
+        assert_eq!(dialog.buttons[1].action, Some("system::sleep"));
+        assert_eq!(dialog.buttons[2].action, None);
+        assert_eq!(dialog.buttons[3].action, Some("system::shutdown"));
+        assert_eq!(
+            confirmation_default_action(POWER_DIALOG_ACTION),
+            Some("system::shutdown")
+        );
+        assert!(dialog.width > CONFIRMATION_WIDTH);
+    }
+
+    #[test]
+    fn menu_confirmations_keep_cancel_and_their_own_action() {
+        for (action, confirm) in [
+            ("system::restart", "Restart"),
+            ("system::shutdown", "Shut Down"),
+            ("system::logout", "Log Out"),
+        ] {
+            let confirmation = system_confirmation(action);
+            assert_eq!(confirmation.buttons.len(), 2);
+            assert_eq!(confirmation.buttons[0].label, "Cancel");
+            assert_eq!(confirmation.buttons[1].label, confirm);
+            assert_eq!(confirmation.buttons[1].action, Some(action));
+            assert_eq!(confirmation_default_action(action), Some(action));
+        }
+        assert_eq!(confirmation_default_action("system::unknown"), None);
     }
 }

@@ -56,8 +56,6 @@ mod linux_wayland {
     const EDGE: f32 = 1.0;
     /// Scans finish a moment after the menu opens; list them when they land.
     const WIFI_RESCAN_DELAY: Duration = Duration::from_millis(2500);
-    /// Width of the logout/restart confirmation shown in place of a menu.
-    const CONFIRMATION_MENU_WIDTH: f32 = 248.0;
     // Menu bar geometry measured on macOS 26 (design-lab/menubar.html).
     const BAR_LEAD: f32 = 10.0;
     const BAR_TRAIL: f32 = 7.0;
@@ -628,6 +626,26 @@ mod linux_wayland {
             if self.fullscreen && !self.pointer_inside {
                 self.schedule_fullscreen_hide(cx);
             }
+        }
+
+        /// Cancel in a confirmation: back to the menu it came from, or, for
+        /// the power button's dialog, which has no menu behind it, closed.
+        fn cancel_confirmation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            if self.pending_system_action.as_deref() == Some(menu_model::POWER_DIALOG_ACTION) {
+                self.close_menu(window, cx);
+            } else {
+                self.pending_system_action = None;
+                cx.notify();
+            }
+        }
+
+        /// A second press of the power button (see
+        /// `rmac_shortcuts::power_key`): the Restart / Sleep / Cancel /
+        /// Shut Down dialog, shown where the system menu opens.
+        fn open_power_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            self.open_menu(0, SYSTEM_MENU_ID.to_owned(), window, cx);
+            self.pending_system_action = Some(menu_model::POWER_DIALOG_ACTION.to_owned());
+            cx.notify();
         }
 
         fn open_menu(
@@ -1284,13 +1302,12 @@ mod linux_wayland {
             };
             if let Some(action) = self.pending_system_action.clone() {
                 match event.keystroke.key.as_str() {
-                    "escape" => {
-                        self.pending_system_action = None;
-                        cx.notify();
-                    }
+                    "escape" => self.cancel_confirmation(window, cx),
                     "enter" | "space" => {
                         self.close_menu(window, cx);
-                        dispatch_system_menu(action, cx);
+                        if let Some(confirmed) = menu_model::confirmation_default_action(&action) {
+                            dispatch_system_menu(confirmed.to_owned(), cx);
+                        }
                     }
                     _ => {}
                 }
@@ -1497,8 +1514,12 @@ mod linux_wayland {
             let menu_top = BAR_HEIGHT + menu_model::MENU_TOP_GAP;
             // Menus are as wide as their widest item, as on macOS, and stay
             // on screen near the right edge.
-            let menu_width = if self.pending_system_action.is_some() {
-                self.open_menu.map(|_| CONFIRMATION_MENU_WIDTH)
+            let confirmation = self
+                .pending_system_action
+                .as_deref()
+                .map(menu_model::system_confirmation);
+            let menu_width = if let Some(confirmation) = &confirmation {
+                self.open_menu.map(|_| confirmation.width)
             } else {
                 self.open_menu
                     .and_then(|index| menus.get(index))
@@ -1510,8 +1531,8 @@ mod linux_wayland {
                 .map(|index| menu_anchor_x(&active_app, &menus, index, window))
                 .zip(menu_width)
                 .map(|(left, width)| left.min(screen_width - width - 4.0).max(4.0));
-            let menu_height = if self.pending_system_action.is_some() {
-                Some(150.0)
+            let menu_height = if let Some(confirmation) = &confirmation {
+                Some(confirmation.height)
             } else {
                 self.open_menu
                     .and_then(|index| menus.get(index))
@@ -1694,72 +1715,63 @@ mod linux_wayland {
                     .shadow(menu_shadows(palette.hairline))
                     .occlude();
                 if let Some(action) = self.pending_system_action.clone() {
-                    let (title, detail, confirm) = system_confirmation_copy(&action);
-                    let cancel_action = action.clone();
-                    let confirm_action = action;
+                    let confirmation = menu_model::system_confirmation(&action);
+                    let display_id = self.display_id;
+                    let buttons = confirmation
+                        .buttons
+                        .iter()
+                        .map(|button| {
+                            let confirmed = button.action;
+                            let (background, hover) = if button.default {
+                                (tokens::accent(), tokens::accent_hover())
+                            } else {
+                                (tokens::separator(), tokens::separator())
+                            };
+                            div()
+                                .id(format!(
+                                    "system-confirmation-{display_id}-{action}-{}",
+                                    button.label
+                                ))
+                                .role(Role::Button)
+                                .aria_label(button.label)
+                                .px_3()
+                                .h(px(28.0))
+                                .flex()
+                                .items_center()
+                                .rounded(px(tokens::menu_item_radius()))
+                                .bg(rgba(background))
+                                .cursor_pointer()
+                                .hover(move |style| style.bg(rgba(hover)))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    cx.stop_propagation();
+                                    match confirmed {
+                                        Some(confirmed) => {
+                                            this.close_menu(window, cx);
+                                            dispatch_system_menu(confirmed.to_owned(), cx);
+                                        }
+                                        None => this.cancel_confirmation(window, cx),
+                                    }
+                                }))
+                                .child(button.label)
+                        })
+                        .collect::<Vec<_>>();
                     panel = panel.child(
                         div()
                             .p_3()
                             .flex()
                             .flex_col()
                             .gap_2()
-                            .child(div().font_weight(FontWeight::SEMIBOLD).child(title))
                             .child(
                                 div()
-                                    .text_color(rgba(tokens::secondary_text()))
-                                    .child(detail),
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(confirmation.title),
                             )
                             .child(
                                 div()
-                                    .flex()
-                                    .justify_end()
-                                    .gap_2()
-                                    .mt_2()
-                                    .child(
-                                        div()
-                                            .id(format!(
-                                                "system-cancel-{}-{cancel_action}",
-                                                self.display_id
-                                            ))
-                                            .role(Role::Button)
-                                            .px_3()
-                                            .h(px(28.0))
-                                            .flex()
-                                            .items_center()
-                                            .rounded(px(tokens::menu_item_radius()))
-                                            .bg(rgba(tokens::separator()))
-                                            .cursor_pointer()
-                                            .hover(|style| style.bg(rgba(tokens::separator())))
-                                            .on_click(cx.listener(|this, _, _, cx| {
-                                                cx.stop_propagation();
-                                                this.pending_system_action = None;
-                                                cx.notify();
-                                            }))
-                                            .child("Cancel"),
-                                    )
-                                    .child(
-                                        div()
-                                            .id(format!(
-                                                "system-confirm-{}-{confirm_action}",
-                                                self.display_id
-                                            ))
-                                            .role(Role::Button)
-                                            .px_3()
-                                            .h(px(28.0))
-                                            .flex()
-                                            .items_center()
-                                            .rounded(px(tokens::menu_item_radius()))
-                                            .bg(rgba(tokens::accent()))
-                                            .cursor_pointer()
-                                            .hover(|style| style.bg(rgba(tokens::accent_hover())))
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                cx.stop_propagation();
-                                                this.close_menu(window, cx);
-                                                dispatch_system_menu(confirm_action.clone(), cx);
-                                            }))
-                                            .child(confirm),
-                                    ),
-                            ),
+                                    .text_color(rgba(tokens::secondary_text()))
+                                    .child(confirmation.detail),
+                            )
+                            .child(div().flex().justify_end().gap_2().mt_2().children(buttons)),
                     );
                     return Some(panel);
                 }
@@ -2650,27 +2662,6 @@ mod linux_wayland {
         )
     }
 
-    fn system_confirmation_copy(action: &str) -> (&'static str, &'static str, &'static str) {
-        match action {
-            "system::restart" => (
-                "Restart this computer?",
-                "Each app is asked to quit first, so you can save your work.",
-                "Restart",
-            ),
-            "system::shutdown" => (
-                "Shut down this computer?",
-                "Each app is asked to quit first, so you can save your work.",
-                "Shut Down",
-            ),
-            "system::logout" => (
-                "Log out now?",
-                "Each app is asked to quit first, so you can save your work.",
-                "Log Out",
-            ),
-            _ => ("Continue?", "Confirm this system action.", "Continue"),
-        }
-    }
-
     /// Top of the Recent Items submenu: its first row lines up with the
     /// parent row, as macOS submenus do.
     fn menu_item_top(menu: &rmac_app_menu::Menu, index: usize) -> f32 {
@@ -3341,6 +3332,7 @@ mod linux_wayland {
             rmac_shell_ui::tokens::install_appearance_watch(cx);
             let status = start_status(cx);
             crate::unsaved_guard::start(cx);
+            watch_power_dialog_requests(cx);
             let (backdrop_tx, backdrop_rx) = async_channel::bounded(16);
             cx.spawn(async move |cx| {
                 let mut tracker = MenuBackdropTracker::default();
@@ -3432,6 +3424,47 @@ mod linux_wayland {
             })
             .detach();
         });
+    }
+
+    /// The lock coordinator asks for the shutdown dialog on a second press
+    /// of the power button, through the `shutdown-dialog` dispatch socket.
+    /// The watch waits on the socket; nothing polls.
+    fn watch_power_dialog_requests(cx: &mut App) {
+        let (sender, requests) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                let id = rmac_shortcuts::ShortcutId(
+                    rmac_shortcuts::power_key::SHUTDOWN_DIALOG_SHORTCUT.into(),
+                );
+                if let Err(error) = rmac_shortcuts::watch_dispatches(id, sender).await {
+                    eprintln!("the power button cannot show Restart / Sleep / Shut Down: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |cx| {
+            while let Ok(event) = requests.recv().await {
+                if matches!(event, rmac_shortcuts::Event::Activated { .. }) {
+                    cx.update(show_power_dialog);
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Shows the dialog on the first menu bar that can take it.
+    fn show_power_dialog(cx: &mut App) {
+        for handle in cx.windows() {
+            let Some(bar) = handle.downcast::<TopBar>() else {
+                continue;
+            };
+            if bar
+                .update(cx, |bar, window, cx| bar.open_power_dialog(window, cx))
+                .is_ok()
+            {
+                return;
+            }
+        }
+        eprintln!("the power button's shutdown dialog has no menu bar to open in");
     }
 
     fn restart_for_reappeared_output(

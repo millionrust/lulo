@@ -14,6 +14,7 @@ pub mod lock;
 pub mod lock_settings;
 mod model;
 mod portal;
+pub mod power_key;
 #[cfg(test)]
 mod tests;
 

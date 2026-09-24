@@ -141,6 +141,24 @@ fn dispatcher_endpoints_are_action_scoped() {
     assert!(shortcut_socket_path_in(runtime, &ShortcutId("unknown".into())).is_err());
 }
 
+#[test]
+fn the_power_button_and_its_dialog_have_their_own_endpoints() {
+    let runtime = Path::new("/tmp/rmac-shortcuts-test");
+    let press = ShortcutId(power_key::POWER_KEY_SHORTCUT.into());
+    let dialog = ShortcutId(power_key::SHUTDOWN_DIALOG_SHORTCUT.into());
+    assert!(shortcut_socket_path_in(runtime, &press)
+        .unwrap()
+        .ends_with("shortcut-power-key.sock"));
+    assert!(shortcut_socket_path_in(runtime, &dialog)
+        .unwrap()
+        .ends_with("shortcut-shutdown-dialog.sock"));
+    // Neither is a user shortcut: niri binds the key itself in shell.kdl,
+    // so neither is offered to the GlobalShortcuts portal or the fallback.
+    assert!(!default_shortcuts()
+        .iter()
+        .any(|spec| spec.id == press || spec.id == dialog));
+}
+
 #[cfg(unix)]
 #[test]
 fn configuration_request_is_session_scoped_acknowledged_and_cleans_up() {

@@ -13,7 +13,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 mod command;
 #[cfg(any(not(target_os = "macos"), test))]
 mod linux;
-#[cfg(target_os = "macos")]
+// The macOS parsers also build under test, so their fixtures run on Linux.
+#[cfg(any(target_os = "macos", test))]
 mod macos;
 mod model;
 #[cfg(test)]
@@ -22,6 +23,8 @@ mod tests;
 use command::*;
 #[cfg(any(not(target_os = "macos"), test))]
 use linux::*;
+#[cfg(all(test, not(target_os = "macos")))]
+use macos::parse_macos_displays;
 #[cfg(target_os = "macos")]
 use macos::*;
 pub use model::*;

@@ -220,7 +220,14 @@ fn quit_after_running(show_recent_apps: bool) -> Coordinator {
     coordinator.apply_catalog(Ok(vec![app("notes.desktop")]));
     coordinator.apply_places(Ok(places_report("/home/alex/Downloads", 0)));
     coordinator.apply_appearance(Ok(false));
-    let mut settings = rmac_shell_settings::ShellSettings::default();
+    // An empty Dock (no default pinned apps) so items[0] is unambiguously
+    // the one app this test runs and quits, not one of the profile's
+    // deliberate first-party pinned apps (which happens to include Notes
+    // under a different, unrelated app identity).
+    let mut settings = rmac_shell_settings::ShellSettings {
+        pinned_apps: Vec::new(),
+        ..Default::default()
+    };
     settings.dock.show_recent_apps = show_recent_apps;
     coordinator.apply_settings(Ok(settings));
     let window = rmac_compositor::Window {

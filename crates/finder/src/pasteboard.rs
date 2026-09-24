@@ -414,7 +414,7 @@ mod tests {
             &[a.clone(), b.clone()],
             &[b.clone(), a.clone(), a.clone()]
         ));
-        assert!(!same_files(std::slice::from_ref(&a), &[a, b]));
+        assert!(!same_files(std::slice::from_ref(&a), &[a.clone(), b]));
     }
 }
 

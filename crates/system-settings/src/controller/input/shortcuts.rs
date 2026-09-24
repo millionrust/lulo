@@ -114,7 +114,7 @@ impl Settings {
                     let select_view = view.clone();
                     sheet_sidebar_row(
                         SharedString::from(format!("keyboard-shortcuts-category-{index}")),
-                        tile(*icon, hsl(*color), style::SIDEBAR_ICON).into_any_element(),
+                        tile(icon, hsl(*color), style::SIDEBAR_ICON).into_any_element(),
                         *name,
                         index == selected,
                         move |_, cx| {

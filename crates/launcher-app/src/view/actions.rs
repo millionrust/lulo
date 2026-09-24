@@ -43,7 +43,7 @@ pub(crate) enum Command {
     LockScreen,
     Sleep,
     OpenSetting(String),
-    MenuCommand { app_id: String, action: String },
+    AppMenu { app_id: String, action: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -96,7 +96,7 @@ pub(crate) fn load_system_state() -> SystemState {
 /// a menu (first-party rmac apps).
 pub(crate) async fn load_frontmost() -> Option<Frontmost> {
     let snapshot = rmac_compositor_niri::snapshot().await.ok()?;
-    let focused = snapshot.focus.window.clone();
+    let focused = snapshot.focus.window;
     let window = snapshot
         .windows
         .iter()
@@ -172,7 +172,7 @@ pub(crate) fn catalog(
                     icon: app_icon.clone(),
                     keywords: &[],
                     query_only: true,
-                    command: Command::MenuCommand {
+                    command: Command::AppMenu {
                         app_id: frontmost.app_id.clone(),
                         action: entry.action.clone(),
                     },
@@ -314,7 +314,7 @@ pub(super) async fn execute(
             .open_setting(&pane)
             .await
             .map_err(|error| error.detail().to_owned()),
-        Command::MenuCommand { app_id, action } => rmac_app_menu::activate(&app_id, &action)
+        Command::AppMenu { app_id, action } => rmac_app_menu::activate(&app_id, &action)
             .await
             .map_err(|_| "the app did not accept the command".to_owned()),
         Command::CreateNote => {

@@ -117,17 +117,6 @@ pub(super) const TOUCHPAD_SPEEDS: [InputOption; 5] = [
     ("Fast", InputChange::TouchpadAccelSpeed(1.0)),
 ];
 
-pub(super) const MOUSE_PROFILES: [InputOption; 2] = [
-    (
-        "Adaptive",
-        InputChange::MouseAccelProfile(rmac_input::AccelProfile::Adaptive),
-    ),
-    (
-        "Flat",
-        InputChange::MouseAccelProfile(rmac_input::AccelProfile::Flat),
-    ),
-];
-
 pub(super) const MOUSE_PRECISION_PRESETS: [InputOption; 3] = [
     (
         "Standard",
@@ -149,17 +138,6 @@ pub(super) const MOUSE_PRECISION_PRESETS: [InputOption; 3] = [
             speed: -0.5,
             profile: rmac_input::AccelProfile::Flat,
         },
-    ),
-];
-
-pub(super) const TOUCHPAD_PROFILES: [InputOption; 2] = [
-    (
-        "Adaptive",
-        InputChange::TouchpadAccelProfile(rmac_input::AccelProfile::Adaptive),
-    ),
-    (
-        "Flat",
-        InputChange::TouchpadAccelProfile(rmac_input::AccelProfile::Flat),
     ),
 ];
 

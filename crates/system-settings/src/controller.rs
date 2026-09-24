@@ -74,7 +74,7 @@ use crate::focus::{
 use crate::input::{
     compositor_event_affects_input, compositor_input_config_failed, speed_index, InputChange,
     InputOption, KEYBOARD_DELAYS, KEYBOARD_RATES, KEYBOARD_RESPONSE_PRESETS,
-    MOUSE_PRECISION_PRESETS, MOUSE_PROFILES, MOUSE_SPEEDS, TOUCHPAD_PROFILES, TOUCHPAD_SPEEDS,
+    MOUSE_PRECISION_PRESETS, MOUSE_SPEEDS, TOUCHPAD_SPEEDS,
 };
 use crate::navigation::{
     categories, category_has_dedicated_renderer, category_name_for_pane_id, category_parent,
@@ -198,20 +198,6 @@ fn sep() -> Hsla {
 fn white() -> Hsla {
     gpui::white()
 }
-fn on_accent() -> Hsla {
-    rmac_ui::mac::on_accent()
-}
-fn swatch_foreground(hex: u32) -> Hsla {
-    let swatch = rmac_ui::theme::RgbaColor::opaque(hex);
-    let white = rmac_ui::theme::RgbaColor::opaque(0xffffff);
-    let black = rmac_ui::theme::RgbaColor::opaque(0x000000);
-    if swatch.contrast_ratio(white) >= swatch.contrast_ratio(black) {
-        white.hsla()
-    } else {
-        black.hsla()
-    }
-}
-
 fn glyph(path: &'static str, size: f32, color: Hsla) -> Svg {
     svg()
         .path(path)

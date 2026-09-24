@@ -300,7 +300,6 @@ pub(super) const WELL_ROW_HEIGHT: f32 = 24.0;
 pub(super) const WELL_BAR_HEIGHT: f32 = 24.0;
 /// Radio circles and the checkboxes in wells and previews.
 pub(super) const RADIO: f32 = 16.0;
-pub(super) const RADIO_GAP: f32 = 14.0;
 /// Storage: the bar is 21 tall, radius 3, with 1 pt gaps between segments.
 pub(super) const STORAGE_BAR_HEIGHT: f32 = 21.0;
 pub(super) const STORAGE_BAR_RADIUS: f32 = 3.0;

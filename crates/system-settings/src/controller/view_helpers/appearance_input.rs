@@ -79,29 +79,3 @@ pub(in crate::controller) fn input_segment_row(
     let current = popup_value(&choices, "Custom");
     popup_row(id, title, None, current, choices, enabled)
 }
-
-#[allow(clippy::too_many_arguments)]
-pub(in crate::controller) fn input_switch_row(
-    view: Entity<Settings>,
-    id: &'static str,
-    icon: &'static str,
-    title: &'static str,
-    subtitle: Option<&'static str>,
-    checked: bool,
-    enabled: bool,
-    change: fn(bool) -> InputChange,
-) -> AnyElement {
-    let switch = Toggle::new(id)
-        .checked(checked)
-        .disabled(!enabled)
-        .on_click(move |value, _, cx| {
-            view.update(cx, |settings, cx| {
-                settings.apply_input_change(change(*value), cx)
-            });
-        });
-    row_base()
-        .child(tile(icon, secondary(), style::ROW_ICON))
-        .child(text_block(title.into(), subtitle.map(Into::into)))
-        .child(switch)
-        .into_any_element()
-}

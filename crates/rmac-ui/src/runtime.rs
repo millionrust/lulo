@@ -249,7 +249,7 @@ fn install_app_endpoint(
             .detach();
         cx.spawn(async move |cx| {
             while let Ok(action_name) = activation_rx.recv().await {
-                let _ = cx.update(|cx| match cx.build_action(&action_name, None) {
+                cx.update(|cx| match cx.build_action(&action_name, None) {
                     Ok(action) => crate::menu_target::dispatch_menu_action(action, cx),
                     Err(error) => eprintln!("ignored unavailable {app_id} menu action: {error}"),
                 });
@@ -473,7 +473,7 @@ fn apply_resolved_tokens(tokens: theme::ThemeTokens, cx: &mut gpui::AsyncApp) {
         return;
     }
     let mode = component_theme_mode(tokens.color_scheme);
-    let _ = cx.update(|app| {
+    cx.update(|app| {
         let windows = app.windows();
         for handle in windows {
             let _ = app.update_window(handle, |_, window, _| {

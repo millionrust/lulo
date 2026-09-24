@@ -88,7 +88,7 @@ fn publish_unsaved_work(cx: &mut App) {
     cx.default_global::<SessionEnd>().publish = Some(state_tx);
     cx.spawn(async move |cx| {
         while let Ok(done) = preserve_rx.recv().await {
-            cx.update(|cx| preserve_all(cx));
+            cx.update(preserve_all);
             if done.try_send(()).is_err() {
                 eprintln!("the session stopped waiting for unsaved work to be kept");
             }

@@ -245,13 +245,16 @@ enum Glyph {
 /// Paint `glyph` in a light's 14 pt circle as vector paths, black at 50 %
 /// as measured on macOS 26 (design-lab/chrome.html): × with ±3.5 arms, an
 /// 8 pt −, and the full-screen pair of right triangles with 4.75 pt legs.
+/// One straight stroke of a glyph, from one point to another on its 14pt grid.
+type Segment = ((f32, f32), (f32, f32));
+
 fn paint_glyph(glyph: Glyph, bounds: Bounds<Pixels>, window: &mut Window) {
     let scale = f32::from(bounds.size.width) / 14.0;
     let left = f32::from(bounds.origin.x);
     let top = f32::from(bounds.origin.y);
     let at = |x: f32, y: f32| point(px(left + x * scale), px(top + y * scale));
     let color = mac::black().opacity(0.5);
-    let stroke = |width: f32, segments: &[((f32, f32), (f32, f32))], window: &mut Window| {
+    let stroke = |width: f32, segments: &[Segment], window: &mut Window| {
         let mut path = PathBuilder::stroke(px(width * scale));
         for &((x0, y0), (x1, y1)) in segments {
             path.move_to(at(x0, y0));

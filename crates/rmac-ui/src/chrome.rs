@@ -607,7 +607,7 @@ pub fn traffic_lights_fixed_size(active: bool) -> TrafficLights {
 /// A draggable client title bar that deliberately has no platform control
 /// cluster. gpui-component's `TitleBar` adds Linux minimize/maximize/close
 /// buttons on the right, which duplicated rmac's traffic lights.
-fn client_bar(height: f32, children: impl IntoElement) -> impl IntoElement {
+fn client_bar(height: f32, base: Hsla, children: impl IntoElement) -> impl IntoElement {
     div()
         .id("rmac-title-bar")
         .h(px(height))
@@ -618,7 +618,7 @@ fn client_bar(height: f32, children: impl IntoElement) -> impl IntoElement {
         .pl(px(12.0))
         .bg(mac::chrome())
         .border_b_1()
-        .border_color(mac::separator())
+        .border_color(base)
         .window_control_area(WindowControlArea::Drag)
         .on_double_click(|_, window, _| window.zoom_window())
         .child(div().h_full().flex_1().child(children))
@@ -656,6 +656,7 @@ pub fn title_bar(title: impl Into<SharedString>) -> impl IntoElement {
         false,
         client_bar(
             metrics.titlebar_height,
+            mac::titlebar_base(),
             div()
                 .size_full()
                 .flex()
@@ -674,7 +675,11 @@ pub fn title_bar(title: impl Into<SharedString>) -> impl IntoElement {
 pub fn title_bar_content(children: impl IntoElement) -> impl IntoElement {
     with_traffic_lights(
         false,
-        client_bar(rmac_design::Metrics::default().titlebar_height, children),
+        client_bar(
+            rmac_design::Metrics::default().titlebar_height,
+            mac::titlebar_base(),
+            children,
+        ),
     )
 }
 
@@ -692,7 +697,10 @@ pub fn body_bg(cx: &App) -> gpui::Hsla {
 /// A unified 52 pt toolbar with the chrome colour and a hairline base; the
 /// lights sit centred 26 from the corner, as in Finder and Notes.
 pub fn toolbar(children: impl IntoElement) -> impl IntoElement {
-    with_traffic_lights(true, client_bar(mac::toolbar_height(), children))
+    with_traffic_lights(
+        true,
+        client_bar(mac::toolbar_height(), mac::separator(), children),
+    )
 }
 
 /// A toolbar window's title: 15 pt bold primary text (Finder "jake").

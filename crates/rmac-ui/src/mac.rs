@@ -326,6 +326,17 @@ pub fn window_title(active: bool) -> Hsla {
     }
 }
 
+/// The 1 pt line under a 32 pt title bar: opaque #232323 in dark, darker
+/// than the tinted bar (measured on TextEdit, design-lab/chrome.html).
+/// Light is S (the separator).
+pub fn titlebar_base() -> Hsla {
+    if dark_scheme() {
+        gpui::rgb(0x232323).into()
+    } else {
+        separator()
+    }
+}
+
 /// The " — Edited" that follows a dirty document's title: #63626F in the
 /// key window (measured, design-lab/apps.html). Inactive and light are S.
 pub fn window_title_edited(active: bool) -> Hsla {

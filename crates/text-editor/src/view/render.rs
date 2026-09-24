@@ -271,6 +271,7 @@ impl Render for EditorView {
                     .bg(text_background())
                     .child(
                         TextField::new(&self.input)
+                            .large()
                             .h_full()
                             .appearance(false)
                             .disabled(!editable)

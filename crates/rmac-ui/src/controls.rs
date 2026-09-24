@@ -1473,6 +1473,13 @@ impl TextField {
         self
     }
 
+    /// A document body: the caret spans the full line height, as
+    /// NSTextView's insertion point does (13 on a 13 pt line).
+    pub fn large(mut self) -> Self {
+        self.size = Size::Large;
+        self
+    }
+
     pub fn tab_index(mut self, tab_index: isize) -> Self {
         self.tab_index = tab_index;
         self

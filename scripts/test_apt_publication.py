@@ -546,7 +546,12 @@ class RealKeySigningTests(unittest.TestCase):
             repository = root / "repository"
             repository.mkdir()
             publisher.promote(
-                staged, repository, keyring, publisher.validate_staging(staged, keyring, now_seconds=now), retain=3
+                staged,
+                repository,
+                keyring,
+                publisher.validate_staging(staged, keyring, now_seconds=now),
+                retain=3,
+                free_bytes=fixtures.PLENTY_OF_SPACE,
             )
             parts = root / "sources.list.d"
             parts.mkdir()

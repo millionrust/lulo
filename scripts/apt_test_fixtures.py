@@ -15,7 +15,7 @@ from pathlib import Path
 import shutil
 import sys
 import tarfile
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 
 LINUX = Path(__file__).resolve().parent / "linux"
@@ -24,6 +24,13 @@ if str(LINUX) not in sys.path:
 
 SIGNER = "A" * 40
 MAINTAINER = "Jacob Samas <samasjacob@icloud.com>"
+
+# publish() below exercises publisher.promote() against a synthetic,
+# throwaway work directory, not the real archive host, so it should not be
+# subject to the real host's free disk space. Tests that want to exercise
+# the storage-floor check itself inject their own free_bytes into
+# publisher.promote() directly (see test_apt_publisher.py).
+PLENTY_OF_SPACE: Callable[[Path], int] = lambda _path: 1 << 50  # noqa: E731
 
 
 def load_script(name: str, filename: str):
@@ -333,6 +340,7 @@ def publish(
     allow_first: bool = False,
     requested: Optional[int] = None,
     retain: int = 3,
+    free_bytes: Callable[[Path], int] = PLENTY_OF_SPACE,
 ):
     """publish-apt-repository.sh's steps, with a plain InRelease instead of gpg."""
     publication = load_script("rmac_apt_publication", "apt-publication.py")
@@ -384,7 +392,7 @@ def publish(
         Path(previous).rename(repository)
     else:
         repository.mkdir()
-    publisher.promote(staged, repository, keyring, result, retain=retain)
+    publisher.promote(staged, repository, keyring, result, retain=retain, free_bytes=free_bytes)
     bundle = publication.bundle(repository, sidecar, work / "bundle")
     github.upload(summary["target_tag"], bundle)
     return summary, decision, repository

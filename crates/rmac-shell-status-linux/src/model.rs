@@ -87,25 +87,55 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// Whether a `PropertiesChanged` signal changes only properties the shell
-/// status never shows, so re-reading the service would find nothing new.
-///
-/// NetworkManager republishes the Wi-Fi link's bitrate and UPower the
-/// battery's poll time every few seconds; each used to cost a full re-read of
-/// the service on fresh bus connections. The payload is only used to skip a
-/// re-read, never as state.
+/// What a `PropertiesChanged` signal means for the shell status.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PropertyChange {
+    /// Only properties the status never shows: re-reading finds nothing new.
+    Unshown,
+    /// Only a Wi-Fi access point's signal strength.
+    SignalStrength,
+    /// Anything else: re-read the service.
+    Shown,
+}
+
+/// A Wi-Fi signal-strength change re-reads the network at most this often.
+/// NetworkManager republishes access-point strength every few seconds, and
+/// the bar's signal bars only need to follow it loosely. Not measured on
+/// the Mac.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-pub(crate) fn only_unshown_properties(
+pub(crate) const SIGNAL_STRENGTH_REFRESH: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Classify a `PropertiesChanged` signal by its changed property names.
+///
+/// NetworkManager republishes the Wi-Fi link's bitrate and access-point
+/// strength, and UPower the battery's poll time, every few seconds; each used
+/// to cost a full re-read of the service on fresh bus connections. The
+/// payload is only used to skip or defer a re-read, never as state.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn property_change(
     interface: &str,
     changed: &[&str],
     invalidated: &[&str],
-) -> bool {
-    let unshown: &[&str] = match interface {
-        "org.freedesktop.NetworkManager.Device.Wireless" => &["Bitrate"],
-        "org.freedesktop.UPower.Device" => &["UpdateTime"],
-        _ => return false,
-    };
-    !changed.is_empty()
-        && invalidated.is_empty()
-        && changed.iter().all(|property| unshown.contains(property))
+) -> PropertyChange {
+    if changed.is_empty() || !invalidated.is_empty() {
+        return PropertyChange::Shown;
+    }
+    let only = |properties: &[&str]| changed.iter().all(|property| properties.contains(property));
+    match interface {
+        "org.freedesktop.NetworkManager.Device.Wireless" if only(&["Bitrate"]) => {
+            PropertyChange::Unshown
+        }
+        "org.freedesktop.UPower.Device" if only(&["UpdateTime"]) => PropertyChange::Unshown,
+        "org.freedesktop.NetworkManager.AccessPoint" if only(&["Strength"]) => {
+            PropertyChange::SignalStrength
+        }
+        _ => PropertyChange::Shown,
+    }
+}
+
+/// Whether a signal-strength change should re-read the network, given how
+/// long ago the network was last re-read (`None`: never).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn signal_strength_refresh_due(since_network_read: Option<std::time::Duration>) -> bool {
+    since_network_read.is_none_or(|elapsed| elapsed >= SIGNAL_STRENGTH_REFRESH)
 }

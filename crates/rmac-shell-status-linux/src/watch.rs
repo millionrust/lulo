@@ -144,16 +144,20 @@ async fn watch_system_bus_once(
 
     send(sender, Event::Refresh(Sources::system_bus())).await?;
     *previous_error = None;
+    let mut network_read = Some(std::time::Instant::now());
 
     loop {
         let mut pending = Sources::empty();
+        let strength_due = crate::model::signal_strength_refresh_due(
+            network_read.map(|read: std::time::Instant| read.elapsed()),
+        );
         let closed = futures_util::FutureExt::fuse(sender.closed());
         futures_util::pin_mut!(closed);
         futures_util::select! {
-            message = network.next() => record_message(message, Sources { network: true, ..Sources::empty() }, &mut pending)?,
-            message = bluetooth.next() => record_message(message, Sources { bluetooth: true, ..Sources::empty() }, &mut pending)?,
-            message = upower.next() => record_message(message, Sources { power: true, ..Sources::empty() }, &mut pending)?,
-            message = legacy_profiles.next() => record_message(message, Sources { power: true, ..Sources::empty() }, &mut pending)?,
+            message = network.next() => record_message(message, Sources { network: true, ..Sources::empty() }, strength_due, &mut pending)?,
+            message = bluetooth.next() => record_message(message, Sources { bluetooth: true, ..Sources::empty() }, strength_due, &mut pending)?,
+            message = upower.next() => record_message(message, Sources { power: true, ..Sources::empty() }, strength_due, &mut pending)?,
+            message = legacy_profiles.next() => record_message(message, Sources { power: true, ..Sources::empty() }, strength_due, &mut pending)?,
             _ = closed => return Ok(()),
         }
         if pending.is_empty() {
@@ -165,28 +169,38 @@ async fn watch_system_bus_once(
             let closed = futures_util::FutureExt::fuse(sender.closed());
             futures_util::pin_mut!(quiet, closed);
             futures_util::select! {
-                message = network.next() => record_message(message, Sources { network: true, ..Sources::empty() }, &mut pending)?,
-                message = bluetooth.next() => record_message(message, Sources { bluetooth: true, ..Sources::empty() }, &mut pending)?,
-                message = upower.next() => record_message(message, Sources { power: true, ..Sources::empty() }, &mut pending)?,
-                message = legacy_profiles.next() => record_message(message, Sources { power: true, ..Sources::empty() }, &mut pending)?,
+                message = network.next() => record_message(message, Sources { network: true, ..Sources::empty() }, strength_due, &mut pending)?,
+                message = bluetooth.next() => record_message(message, Sources { bluetooth: true, ..Sources::empty() }, strength_due, &mut pending)?,
+                message = upower.next() => record_message(message, Sources { power: true, ..Sources::empty() }, strength_due, &mut pending)?,
+                message = legacy_profiles.next() => record_message(message, Sources { power: true, ..Sources::empty() }, strength_due, &mut pending)?,
                 _ = quiet => break,
                 _ = closed => return Ok(()),
             }
+        }
+        if pending.network {
+            network_read = Some(std::time::Instant::now());
         }
         send(sender, Event::Refresh(pending)).await?;
     }
 }
 
+/// Record which services a signal asks to re-read. `strength_due` says
+/// whether a Wi-Fi signal-strength change alone may re-read the network yet.
 #[cfg(target_os = "linux")]
 fn record_message(
     message: Option<Result<zbus::Message, zbus::Error>>,
     sources: Sources,
+    strength_due: bool,
     pending: &mut Sources,
 ) -> Result<(), Error> {
+    use crate::model::PropertyChange;
+
     match message {
         Some(Ok(message)) => {
-            if !changes_only_unshown_properties(&message) {
-                pending.merge(sources);
+            match property_change(&message) {
+                PropertyChange::Shown => pending.merge(sources),
+                PropertyChange::SignalStrength if strength_due => pending.merge(sources),
+                PropertyChange::SignalStrength | PropertyChange::Unshown => {}
             }
             Ok(())
         }
@@ -199,21 +213,21 @@ fn record_message(
 }
 
 #[cfg(target_os = "linux")]
-fn changes_only_unshown_properties(message: &zbus::Message) -> bool {
+fn property_change(message: &zbus::Message) -> crate::model::PropertyChange {
     use std::collections::HashMap;
 
     let header = message.header();
     if header.member().map(|member| member.as_str()) != Some("PropertiesChanged") {
-        return false;
+        return crate::model::PropertyChange::Shown;
     }
     let body = message.body();
     let Ok((interface, changed, invalidated)) =
         body.deserialize::<(&str, HashMap<&str, zbus::zvariant::Value<'_>>, Vec<&str>)>()
     else {
-        return false;
+        return crate::model::PropertyChange::Shown;
     };
     let changed = changed.keys().copied().collect::<Vec<_>>();
-    crate::model::only_unshown_properties(interface, &changed, &invalidated)
+    crate::model::property_change(interface, &changed, &invalidated)
 }
 
 #[cfg(target_os = "linux")]

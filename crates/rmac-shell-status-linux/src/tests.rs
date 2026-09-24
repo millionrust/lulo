@@ -11,35 +11,48 @@ fn source_sets_merge_without_losing_independent_services() {
 
 #[test]
 fn bitrate_and_poll_time_changes_do_not_refresh() {
-    use crate::model::only_unshown_properties;
+    use crate::model::{property_change, PropertyChange};
 
     let wireless = "org.freedesktop.NetworkManager.Device.Wireless";
     let battery = "org.freedesktop.UPower.Device";
-    assert!(only_unshown_properties(wireless, &["Bitrate"], &[]));
-    assert!(only_unshown_properties(battery, &["UpdateTime"], &[]));
+    let access_point = "org.freedesktop.NetworkManager.AccessPoint";
+    assert_eq!(
+        property_change(wireless, &["Bitrate"], &[]),
+        PropertyChange::Unshown
+    );
+    assert_eq!(
+        property_change(battery, &["UpdateTime"], &[]),
+        PropertyChange::Unshown
+    );
+    assert_eq!(
+        property_change(access_point, &["Strength"], &[]),
+        PropertyChange::SignalStrength
+    );
 
     // Anything the bar shows, or anything unknown, still refreshes.
-    assert!(!only_unshown_properties(
-        battery,
-        &["UpdateTime", "Percentage"],
-        &[]
-    ));
-    assert!(!only_unshown_properties(
-        wireless,
-        &["ActiveAccessPoint"],
-        &[]
-    ));
-    assert!(!only_unshown_properties(
-        wireless,
-        &["Bitrate"],
-        &["Bitrate"]
-    ));
-    assert!(!only_unshown_properties(wireless, &[], &[]));
-    assert!(!only_unshown_properties(
-        "org.freedesktop.NetworkManager.AccessPoint",
-        &["Strength"],
-        &[]
-    ));
+    for (interface, changed, invalidated) in [
+        (battery, &["UpdateTime", "Percentage"][..], &[][..]),
+        (wireless, &["ActiveAccessPoint"][..], &[][..]),
+        (wireless, &["Bitrate"][..], &["Bitrate"][..]),
+        (wireless, &[][..], &[][..]),
+        (access_point, &["Strength", "Ssid"][..], &[][..]),
+    ] {
+        assert_eq!(
+            property_change(interface, changed, invalidated),
+            PropertyChange::Shown,
+            "{interface} {changed:?} {invalidated:?}"
+        );
+    }
+}
+
+#[test]
+fn signal_strength_rereads_the_network_at_most_every_30_seconds() {
+    use crate::model::signal_strength_refresh_due;
+    use std::time::Duration;
+
+    assert!(signal_strength_refresh_due(None));
+    assert!(!signal_strength_refresh_due(Some(Duration::from_secs(6))));
+    assert!(signal_strength_refresh_due(Some(Duration::from_secs(30))));
 }
 
 #[test]

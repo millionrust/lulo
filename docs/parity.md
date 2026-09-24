@@ -347,12 +347,12 @@ Toolbar shape matches when a document is open; two-line title matches.
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| PREV-01 | P0 | M (pdftotext `-bbox` word boxes already exist; needs hit-test + draw) | Missing | Mac supports text selection and ⌘C in PDFs. / Lulo: absent — ⌘C does nothing for PDFs. | `crates/preview/src/view.rs:536-563` |
-| PREV-02 | P1 | S | Missing | Mac has Print ⌘P. / Lulo: absent. | follow `crates/text-editor/src/view/printing.rs` |
+| PREV-01 | P0 | M (pdftotext `-bbox` word boxes already exist; needs hit-test + draw) | Fixed 6bc1c39a | Mac supports text selection and ⌘C in PDFs. / Lulo: absent — ⌘C does nothing for PDFs. | `crates/preview/src/view.rs:536-563` |
+| PREV-02 | P1 | S | Partial 6bc1c39a (PDF print only) | Mac has Print ⌘P. / Lulo: absent. | follow `crates/text-editor/src/view/printing.rs` |
 | PREV-03 | P1 | L | Missing | Mac has Markup (Show Markup Toolbar ⇧⌘A, highlight/annotate/Signature/Text) — filling and signing PDF forms is a common reason to open Preview. / Lulo: absent. | new; needs a PDF writer (e.g. `lopdf`) |
-| PREV-04 | P1 | M | Missing | Mac supports Save/Export As (PNG/JPEG/HEIC/PDF/TIFF), Export as PDF, Duplicate, and persisted Rotate/Crop. / Lulo is view-only — rotation is never saved. | `crates/preview` |
-| PREV-05 | P1 (Go to Page, links) | S / M | Missing | Mac has Go to Page… ⌥⌘G, ⇞/⇟ paging, Back/Forward ⌘[/⌘] link history, clickable PDF links. / Lulo's paging keys just scroll; none of the rest exist. | `view.rs:372-416`, `poppler.rs` |
-| PREV-06 | P2 (TOC is P1 for long PDFs) | M (`pdfinfo`/poppler outline) | Missing | Mac sidebar has Table of Contents, Highlights and Notes, Bookmarks, Contact Sheet. / Lulo has Thumbnails only. | `view.rs:1192-1282` |
+| PREV-04 | P1 | M | Fixed 6bc1c39a | Mac supports Save/Export As (PNG/JPEG/HEIC/PDF/TIFF), Export as PDF, Duplicate, and persisted Rotate/Crop. / Lulo is view-only — rotation is never saved. | `crates/preview` |
+| PREV-05 | P1 (Go to Page, links) | S / M | Partial 6bc1c39a (external URLs only) | Mac has Go to Page… ⌥⌘G, ⇞/⇟ paging, Back/Forward ⌘[/⌘] link history, clickable PDF links. / Lulo's paging keys just scroll; none of the rest exist. | `view.rs:372-416`, `poppler.rs` |
+| PREV-06 | P2 (TOC is P1 for long PDFs) | M (`pdfinfo`/poppler outline) | Fixed 6bc1c39a | Mac sidebar has Table of Contents, Highlights and Notes, Bookmarks, Contact Sheet. / Lulo has Thumbnails only. | `view.rs:1192-1282` |
 | PREV-07 | P2 | M | Missing | Mac has Single Page ⌘2 and Two Pages ⌘3. / Lulo has Continuous only. | `view.rs:1388-1413` |
 | PREV-08 | P1 | S | Missing | Mac records opened documents to Recents (File menu and Files' Recents). / Lulo records nothing. | `crates/preview/src/main.rs`; `crates/rmac-recent-documents` |
 | PREV-09 | P1 (HEIC) / P2 (rest) | M (`libheif`) | Missing | Mac opens HEIC, SVG, PSD, RAW, EPS and more. / Lulo opens PDF/PNG/JPEG/GIF/WebP/BMP/TIFF — no HEIC. | `crates/preview/src/document.rs:54-70` |
@@ -367,13 +367,13 @@ Window shape (580×385 at 80×24) matches the Mac.
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| TERM-01 | P0 | M (single-instance + multi-window, like Files) | Missing | Mac: ⌘N opens a new window; several Terminal windows is the default workflow. / Lulo: the app has exactly one window (`boot_app`). | `crates/terminal/src/main.rs`, `crates/rmac-ui/src/window.rs` |
-| TERM-02 | P1 (Reset) / P2 (rest) | S | Missing | Mac has Clear Scrollback ⌥⌘K, Clear Screen ⌃⌘L, Reset ⌥⌘R, Hard Reset ⌃⌥⌘R in addition to ⌘K. / Lulo has ⌘K only — a wedged terminal can't be recovered without closing the tab. | `crates/terminal/src/controller/view_state.rs:43-56`, `emulator.rs` |
-| TERM-03 | P1 | M | Missing | Mac's Settings… ⌘, opens a full Profiles/General settings window (font, size, cursor, default login shell). / Lulo's ⌘,/⇧⌘P open a dropdown profile picker only — nothing is customisable. | `crates/terminal/src/profiles.rs`, `controller/lifecycle.rs` |
+| TERM-01 | P0 | M (single-instance + multi-window, like Files) | Fixed ccda7f50 | Mac: ⌘N opens a new window; several Terminal windows is the default workflow. / Lulo: the app has exactly one window (`boot_app`). | `crates/terminal/src/main.rs`, `crates/rmac-ui/src/window.rs` |
+| TERM-02 | P1 (Reset) / P2 (rest) | S | Fixed dbc08e5e | Mac has Clear Scrollback ⌥⌘K, Clear Screen ⌃⌘L, Reset ⌥⌘R, Hard Reset ⌃⌥⌘R in addition to ⌘K. / Lulo has ⌘K only — a wedged terminal can't be recovered without closing the tab. | `crates/terminal/src/controller/view_state.rs:43-56`, `emulator.rs` |
+| TERM-03 | P1 | M | Partial dbc08e5e | Mac's Settings… ⌘, opens a full Profiles/General settings window (font, size, cursor, default login shell). / Lulo's ⌘,/⇧⌘P open a dropdown profile picker only — nothing is customisable. | `crates/terminal/src/profiles.rs`, `controller/lifecycle.rs` |
 | TERM-04 | P2 | S | Missing | Mac's window title is "<user> — <process> — cols×rows". / Lulo shows "<OSC title or job> — cols×rows", e.g. the shell's own bashrc title on Ubuntu. | `controller/renderer/chrome.rs:46-63`, `session.rs:714-722` |
-| TERM-05 | P2 | M | Missing | Mac has Split Pane ⌘D/⇧⌘D. / Lulo: absent. | — |
-| TERM-06 | P1 | S (mark lines at Return, or ship a bash snippet) | Missing | Mac marks every Return-pressed line regardless of shell, so ⌘↑/⌘↓ always work. / Lulo's marks need the shell to emit OSC 133 — stock Ubuntu bash doesn't, so ⌘↑/⌘↓ do nothing out of the box. | `crates/terminal/src/shell_integration.rs:1` |
-| TERM-07 | P2 | S | Missing | Mac bell is audible or a visual flash, with a Dock bounce/badge when backgrounded. / Lulo ignores bell events entirely. | `crates/terminal/src/session.rs:63-94` |
+| TERM-05 | P2 | M | Fixed dbc08e5e | Mac has Split Pane ⌘D/⇧⌘D. / Lulo: absent. | — |
+| TERM-06 | P1 | S (mark lines at Return, or ship a bash snippet) | Fixed dbc08e5e | Mac marks every Return-pressed line regardless of shell, so ⌘↑/⌘↓ always work. / Lulo's marks need the shell to emit OSC 133 — stock Ubuntu bash doesn't, so ⌘↑/⌘↓ do nothing out of the box. | `crates/terminal/src/shell_integration.rs:1` |
+| TERM-07 | P2 | S | Fixed dbc08e5e | Mac bell is audible or a visual flash, with a Dock bounce/badge when backgrounded. / Lulo ignores bell events entirely. | `crates/terminal/src/session.rs:63-94` |
 | TERM-08 | P1 | S | Missing | Mac: ⌘-click/⌘-double-click any URL in the text opens it. / Lulo: only explicit OSC 8 hyperlinks work; plain URLs aren't detected. | `controller/pointer.rs:48-62` |
 | TERM-09 | P1 | S | Missing | Mac: dragging a file onto the window types its escaped path. / Lulo: no drop handler. | `crates/terminal/src/controller` |
 | TERM-10 | P1 (UK/European keyboards) | S | Missing | Mac's "Use Option as Meta Key" defaults off, so ⌥ types special characters (€, #). / Lulo: Alt always sends an ESC prefix, so ⌥3 can't type "#" on a UK layout. | `crates/terminal/src/keyboard.rs:148-165` |

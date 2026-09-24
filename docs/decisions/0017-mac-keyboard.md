@@ -3,8 +3,10 @@
 - **Status:** accepted 2026-09-23; privilege model revised 2026-09-24 (security finding SR-13,
   see "Revision: keyd's group is root" below).
 - **Scope:** `crates/rmac-keyboard` (generator, the `rmac-mac-keyboard` helper and follower),
-  `rmac-mac-keyboard.service`, `packaging/rmac-session/{debian,polkit}`, and the PC Keyboard group
-  in System Settings › Keyboard (`design-lab/settings.html`, Keyboard frame).
+  `rmac-mac-keyboard.service`, `packaging/rmac-session/{debian,polkit}`, the PC Keyboard group
+  in System Settings › Keyboard (`design-lab/settings.html`, Keyboard frame), and the Mac
+  Shortcuts step in Setup Assistant (`crates/setup-assistant`, `docs/beta-gap-list.md` gap B1),
+  which calls the same `rmac_keyboard::apply`.
 
 ## The question
 

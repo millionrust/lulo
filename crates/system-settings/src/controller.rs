@@ -298,6 +298,13 @@ pub(crate) fn run() {
                 ),
                 // ⌘] replays a page left with Back, as on the Mac.
                 KeyBinding::new("cmd-]", GoForward, Some("SystemSettings")),
+                // ⌘W closes the window; already handled by on_action in
+                // shell_render.rs, just never had a keystroke bound to it.
+                KeyBinding::new(
+                    rmac_ui::shortcuts::CLOSE.keystroke,
+                    rmac_ui::RequestClose,
+                    Some("SystemSettings"),
+                ),
             ]);
             Settings::new(window, cx)
         },

@@ -22,7 +22,7 @@ use gpui::{
     div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px, rgba, svg,
     AnyElement, AnyWindowHandle, App, AssetSource, Bounds, Context, DisplayId, Entity, FocusHandle,
     FontWeight, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels,
-    PlatformDisplay, Point, QuitMode, RenderImage, Role, SharedString, Size, Window,
+    PlatformDisplay, Point, QuitMode, RenderImage, Role, SharedString, Size, Task, Window,
     WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions,
 };
 use gpui_platform::application;
@@ -142,6 +142,8 @@ pub(crate) struct WallpaperStatus {
     pub(crate) gallery: Option<AnyWindowHandle>,
     /// The display the most recent desktop interaction happened on.
     pub(crate) last_display: Option<DisplayId>,
+    /// The Clock widget's second hand; runs only while a Clock is placed.
+    clock_ticker: Option<Task<()>>,
 }
 
 pub(crate) struct StatusChannels {
@@ -167,6 +169,13 @@ impl WallpaperStatus {
                                 this.desktop_error = error;
                             }
                             PreparedUpdate::Battery(battery, none) => {
+                                // UPower announces a new UpdateTime every
+                                // 30 s; only a visible change redraws.
+                                if this.widgets.battery == battery
+                                    && this.widgets.no_battery == none
+                                {
+                                    return;
+                                }
                                 this.widgets.battery = battery;
                                 this.widgets.no_battery = none;
                             }
@@ -190,20 +199,7 @@ impl WallpaperStatus {
             }
         })
         .detach();
-        // The Clock widget's second hand.
-        cx.spawn(async move |this, cx| loop {
-            cx.background_executor().timer(Duration::from_secs(1)).await;
-            let alive = this.update(cx, |this, cx| {
-                if this.has_widget(WidgetKind::Clock) {
-                    cx.notify();
-                }
-            });
-            if alive.is_err() {
-                break;
-            }
-        })
-        .detach();
-        let status = Self {
+        let mut status = Self {
             surfaces: BTreeMap::new(),
             health: rmac_wallpaper_runtime::HealthSnapshot::default(),
             compositor: rmac_compositor::State::default(),
@@ -217,11 +213,32 @@ impl WallpaperStatus {
             weather_kick: channels.weather_kick,
             gallery: None,
             last_display: None,
+            clock_ticker: None,
         };
         status
             .weather_wanted
             .store(status.has_widget(WidgetKind::Weather), Ordering::Relaxed);
+        status.sync_clock_ticker(cx);
         status
+    }
+
+    /// Starts the Clock widget's once-a-second redraw when a Clock is on
+    /// the desktop and stops it when the last one is removed, so a desktop
+    /// without a Clock never wakes on its own.
+    fn sync_clock_ticker(&mut self, cx: &mut Context<Self>) {
+        if !self.has_widget(WidgetKind::Clock) {
+            self.clock_ticker = None;
+            return;
+        }
+        if self.clock_ticker.is_some() {
+            return;
+        }
+        self.clock_ticker = Some(cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(Duration::from_secs(1)).await;
+            if this.update(cx, |_, cx| cx.notify()).is_err() {
+                break;
+            }
+        }));
     }
 
     pub(crate) fn has_widget(&self, kind: WidgetKind) -> bool {
@@ -251,6 +268,7 @@ impl WallpaperStatus {
         if has_weather && !had_weather {
             let _ = self.weather_kick.try_send(());
         }
+        self.sync_clock_ticker(cx);
         let _ = self.saves.try_send(self.settings.clone());
         cx.notify();
     }

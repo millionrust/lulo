@@ -86,15 +86,22 @@ name collisions, disappearing mounts and interrupted operations.
 Every pull request runs `cargo fmt --check`, Clippy with `-D warnings`, tests
 and `cargo deny`. The main branch is never left red.
 
-- [ ] Move the Linux jobs from `ubuntu-24.04` to Ubuntu 26.04 (self-hosted
-      until GitHub offers the image).
-- [ ] Add a Linux aarch64 job: cross-build first, native smoke test before
-      Beta.
-- [ ] Add a minimum-supported-Rust-version job.
-- [ ] Add a scheduled dependency and security audit.
+- [ ] Move the Linux jobs from `ubuntu-24.04` to Ubuntu 26.04. GitHub's
+      hosted image went GA 2026-09-17, so self-hosting is no longer needed.
+      `release-contracts`/`dependency-policy` already moved (no `apt-get`
+      step); `linux-2604` trials the GPUI job's checks on 26.04
+      non-blocking until its `apt` package list is verified, then it should
+      replace `linux` and `upstream-gpui-linux` outright (docs/ci.md).
+- [ ] Add a Linux aarch64 job: cross-build first (done, non-blocking:
+      `linux-aarch64` cross-builds the GPUI-free crates via `cross`), native
+      smoke test before Beta (not started; docs/ci.md notes
+      `ubuntu-26.04-arm` hosted runners as a option).
+- [x] Add a minimum-supported-Rust-version job.
+- [x] Add a scheduled dependency and security audit.
 - [ ] Add a release build and package smoke test.
-- [ ] Add bounded fuzz runs for desktop entries, config files, terminal input
-      and niri IPC JSON.
+- [x] Add bounded fuzz runs for desktop entries, config files, terminal input
+      and niri IPC JSON (terminal input covers the pinned `vte`/
+      `alacritty_terminal` parser, not rmac's own wrapper — see docs/ci.md).
 - [ ] Add a Windows job once the Windows port starts (PLAN_NEW workstream C).
 
 ### Tests

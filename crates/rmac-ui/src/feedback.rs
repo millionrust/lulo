@@ -187,7 +187,14 @@ impl RenderOnce for Spinner {
         let center = size / 2.0;
         let radius = (center - 2.0).max(0.0);
         let dot = (size * 0.16).max(2.0);
-        let mut container = div().relative().size(px(size)).refine_style(&self.style);
+        // Indeterminate: no numeric value, matching gpui-component's own
+        // `progress/progress.rs` role for a spinner-style indicator.
+        let mut container = div()
+            .id("spinner")
+            .role(Role::ProgressIndicator)
+            .relative()
+            .size(px(size))
+            .refine_style(&self.style);
         for index in 0..SPINNER_SPOKES {
             let angle = f32::from(index) * std::f32::consts::TAU / f32::from(SPINNER_SPOKES);
             let x = center + radius * angle.sin() - dot / 2.0;
@@ -267,12 +274,22 @@ impl Styled for Progress {
 impl RenderOnce for Progress {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
         let width = self.value.unwrap_or(0.35);
+        let determinate = self.value;
         let fill = if self.status == ProgressStatus::Error {
             mac::danger()
         } else {
             mac::accent()
         };
         div()
+            .id("progress")
+            .role(Role::ProgressIndicator)
+            // Indeterminate progress leaves `aria_numeric_value` unset, matching
+            // the ARIA convention of no `aria-valuenow` on a busy indicator.
+            .when_some(determinate, |el, value| {
+                el.aria_numeric_value(f64::from(value))
+                    .aria_min_numeric_value(0.0)
+                    .aria_max_numeric_value(1.0)
+            })
             .v_flex()
             .gap_1()
             .refine_style(&self.style)
@@ -344,7 +361,19 @@ impl Styled for EmptyState {
 
 impl RenderOnce for EmptyState {
     fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        // The error variant appears asynchronously (a load that failed), so it
+        // is announced the same way `Toast` announces itself: one alert node
+        // with the title and message combined into its accessible name. A
+        // plain empty state (no error) stays a silent, unlabeled container.
+        let id: ElementId = SharedString::from(format!("empty-state-{}", self.title)).into();
+        let accessible_name = match &self.message {
+            Some(message) => SharedString::from(format!("{}. {}", self.title, message)),
+            None => self.title.clone(),
+        };
+        let error = self.error;
         div()
+            .id(id)
+            .when(error, |el| el.role(Role::Alert).aria_label(accessible_name))
             .min_h(px(96.0))
             .w_full()
             .v_flex()

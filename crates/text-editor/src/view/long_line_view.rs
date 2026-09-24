@@ -26,6 +26,9 @@ pub(super) struct LongLineDocument {
     rows: Rc<Vec<u32>>,
     columns: usize,
     scroll: UniformListScrollHandle,
+    /// Whether a second layout pass was requested to wrap to the list's
+    /// measured width (at most once, so an unlaid-out list cannot spin).
+    remeasure_requested: bool,
 }
 
 impl LongLineDocument {
@@ -36,6 +39,7 @@ impl LongLineDocument {
             rows: Rc::new(Vec::new()),
             columns: 0,
             scroll: UniformListScrollHandle::new(),
+            remeasure_requested: false,
         }
     }
 
@@ -84,9 +88,6 @@ impl EditorView {
             .map(|size| f32::from(size.width))
             .unwrap_or(font_size * 0.6)
             .max(1.0);
-        // Leave room for the scroll bar at the trailing edge.
-        let usable = f32::from(window.bounds().size.width) - inset_x * 2.0 - 8.0;
-        let columns = ((usable / advance).floor() as usize).max(8);
         let needle_len = self.find_input.read(cx).text().len();
         let highlight = self
             .find_open
@@ -97,6 +98,22 @@ impl EditorView {
         let Some(document) = self.long_lines.as_mut() else {
             return div().into_any_element();
         };
+        // Wrap to the list's own width from the last layout: the window's
+        // bounds include client-side decoration insets. Before the first
+        // layout, estimate from the viewport and lay out once more.
+        let list_width = f32::from(document.scroll.0.borrow().base_handle.bounds().size.width);
+        let width = if list_width > 0.0 {
+            list_width
+        } else {
+            if !document.remeasure_requested {
+                document.remeasure_requested = true;
+                cx.on_next_frame(window, |_, _, cx| cx.notify());
+            }
+            f32::from(window.viewport_size().width)
+        };
+        // Leave room for the scroll bar at the trailing edge.
+        let usable = width - inset_x * 2.0 - 8.0;
+        let columns = ((usable / advance).floor() as usize).max(8);
         document.ensure_columns(columns);
         let text = document.text.clone();
         let rows = document.rows.clone();

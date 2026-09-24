@@ -5,8 +5,8 @@ Source: https://github.com/niri-wm/niri/archive/refs/tags/v26.04.tar.gz
 Comment:
  Built by Lulo OS from upstream tag v26.04, commit
  8ed0da44d974c32c6877d2f4630c314da0717ecb, without modification. The
- complete corresponding source is the niri_26.04+lulo1 source package
- (niri_26.04+lulo1.dsc and the tarballs it names) attached to the same
+ complete corresponding source is the niri_26.04+lulo1-1 source package
+ (niri_26.04+lulo1-1.dsc and the tarballs it names) attached to the same
  GitHub Release as this binary package.
  .
  The niri binary statically links the Rust crates in vendor/. Every

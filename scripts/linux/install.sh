@@ -340,7 +340,7 @@ verify_local_package_directory() {
 }
 
 # True when PACKAGE is already installed at a version newer than DEB's.
-# Lulo OS's own build ("26.04+lulo1") sorts above the danklinux PPA's
+# Lulo OS's own build ("26.04+lulo1-1") sorts above the danklinux PPA's
 # "26.04ppaN" for any N, so this normally lets an ordinary `apt-get install`
 # upgrade the PPA build to ours. It still guards the rarer case -- an
 # official Debian/Ubuntu package, or a later PPA release, already newer than

@@ -18,7 +18,8 @@ side-effect-free parts it and the tests share, plus a small CLI:
                                  compare a vendor tarball with its recorded pin
 
 Packages keep the upstream names (niri, xwayland-satellite) with a Debian
-version suffix of +luloN, never an epoch or a tilde; see docs/release-process.md
+version suffix of +luloN plus an ordinary -N Debian revision, never an epoch
+or a tilde; see docs/release-process.md
 "Third-party packages" for why.
 """
 
@@ -48,6 +49,7 @@ class ThirdPartyError(RuntimeError):
 class Pin:
     name: str
     upstream_version: str
+    lulo_suffix: str
     debian_revision: str
     tag: str
     commit: str
@@ -60,28 +62,34 @@ class Pin:
     cargo_package: str
 
     @property
+    def upstream_version_component(self) -> str:
+        # The upstream-version part of the full Debian version: what dpkg
+        # compares against the PPA/official packages *before* it ever looks
+        # at a revision after a hyphen (a bare "26.04" already sorts below
+        # the danklinux PPA's "26.04ppaN"; folding "+luloN" into this part
+        # -- Debian's usual "+dfsg"/"+repack" pattern -- is what sorts above
+        # it instead), and what dpkg-source expects the orig/vendor
+        # tarballs' names to carry. See docs/release-process.md "Package
+        # names and versions".
+        return f"{self.upstream_version}+{self.lulo_suffix}"
+
+    @property
     def debian_version(self) -> str:
-        # No hyphen: dpkg compares the upstream_version *component* of a
-        # hyphenated version ("26.04" here) on its own before it ever looks
-        # at a revision after a hyphen, and a bare "26.04" already sorts
-        # below the danklinux PPA's "26.04ppaN" (letters sort below the "+"
-        # that follows them). Folding "+luloN" into the upstream-version
-        # component itself -- Debian's usual "+dfsg"/"+repack" pattern -- is
-        # the only way to sort above the PPA. See docs/release-process.md
-        # "Package names and versions".
-        return f"{self.upstream_version}+{self.debian_revision}"
+        # A real hyphenated Debian revision after the upstream-version part:
+        # source format "3.0 (quilt)" refuses to build a version with no
+        # hyphen at all ("non-native package version does not contain a
+        # revision"). The revision bumps for a rebuild of the same upstream
+        # (packaging change, toolchain change, ...); "+luloN" only changes
+        # if the Lulo build variant itself does.
+        return f"{self.upstream_version_component}-{self.debian_revision}"
 
     @property
     def orig_tarball(self) -> str:
-        # Named after the *full* debian_version, not the bare upstream tag:
-        # with no hyphen in the version, "26.04+lulo1" is the whole
-        # upstream-version component dpkg-source expects the orig tarball's
-        # name to carry.
-        return f"{self.name}_{self.debian_version}.orig.tar.gz"
+        return f"{self.name}_{self.upstream_version_component}.orig.tar.gz"
 
     @property
     def vendor_tarball(self) -> str:
-        return f"{self.name}_{self.debian_version}.orig-vendor.tar.xz"
+        return f"{self.name}_{self.upstream_version_component}.orig-vendor.tar.xz"
 
 
 _FIELD_PATTERNS = {
@@ -95,7 +103,13 @@ _FIELD_PATTERNS = {
     # permanent and highly visible in `apt policy`/`dpkg -l` for something
     # that only exists to out-rank a PPA. See docs/release-process.md
     # "Package names and versions".
-    "debian_revision": r"lulo[1-9][0-9]*",
+    "lulo_suffix": r"lulo[1-9][0-9]*",
+    # An ordinary Debian revision, required by source format "3.0 (quilt)"
+    # ("non-native package version does not contain a revision" otherwise).
+    # It sorts *after* the upstream-version comparison above has already
+    # decided the ordering against the PPA/official packages, so any value
+    # here is safe; it just needs to exist and bump on a rebuild.
+    "debian_revision": r"[1-9][0-9]*",
     "tag": r"v[0-9]+(?:\.[0-9]+)+",
     "commit": r"[0-9a-f]{40}",
     "tarball_url": r"https://github\.com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/archive/refs/tags/v[0-9.]+\.tar\.gz",

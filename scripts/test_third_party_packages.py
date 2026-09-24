@@ -112,7 +112,7 @@ class PinTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             (root / "packaging" / "third-party").mkdir(parents=True)
-            for field, value in (("debian_revision", "~lulo1"), ("tag", "v26.08")):
+            for field, value in (("lulo_suffix", "~lulo1"), ("tag", "v26.08")):
                 broken = json.loads(json.dumps(document))
                 broken["packages"]["niri"][field] = value
                 (root / third_party.PINS_PATH).write_text(json.dumps(broken), encoding="utf-8")
@@ -129,7 +129,7 @@ class VersionPolicyTests(unittest.TestCase):
         self.assertOrdered("1.0~rc1", "1.0")
         self.assertOrdered("1.0", "1.0a")
         self.assertOrdered("1.9", "1.10")
-        self.assertOrdered("1.0+lulo2", "1.0+lulo10")
+        self.assertOrdered("1.0+lulo1-2", "1.0+lulo1-10")
         self.assertOrdered("9:1.0", "10:0.1")
         self.assertEqual(third_party.compare_versions("1.0-1", "1.0-1"), 0)
 
@@ -161,8 +161,8 @@ class VersionPolicyTests(unittest.TestCase):
             self.assertOrdered(ours, self._next_upstream_release(upstream))
             self.assertNotIn("~", ours)
             self.assertNotIn(":", ours)
-        self.assertOrdered("26.04ppa3", "26.04+lulo1")
-        self.assertOrdered("0.8.2ppa1", "0.8.2+lulo1")
+        self.assertOrdered("26.04ppa3", "26.04+lulo1-1")
+        self.assertOrdered("0.8.2ppa1", "0.8.2+lulo1-1")
 
     def test_embedding_the_exact_ppa_version_beaten_would_have_been_fragile(self):
         # Documented rejection in docs/release-process.md "Package names and
@@ -192,8 +192,8 @@ class VersionPolicyTests(unittest.TestCase):
             architecture="amd64",
             dependencies=native.resolved_static_dependencies(session, "0.9.0~beta.1-38"),
         ).decode("utf-8")
-        self.assertIn("niri (>= 26.04+lulo1)", control)
-        self.assertIn("xwayland-satellite (>= 0.8.2+lulo1)", control)
+        self.assertIn("niri (>= 26.04+lulo1-1)", control)
+        self.assertIn("xwayland-satellite (>= 0.8.2+lulo1-1)", control)
 
 
 class NoticeAndSbomTests(unittest.TestCase):
@@ -257,7 +257,7 @@ class NoticeAndSbomTests(unittest.TestCase):
     def test_shell_assignments_are_quoted_and_complete(self):
         pin = third_party.load_pins(REPO_ROOT)["xwayland-satellite"]
         text = third_party.shell_assignments(pin)
-        self.assertIn("PIN_DEBIAN_VERSION='0.8.2+lulo1'\n", text)
+        self.assertIn("PIN_DEBIAN_VERSION='0.8.2+lulo1-1'\n", text)
         self.assertIn(
             "PIN_VENDOR_TARBALL='xwayland-satellite_0.8.2+lulo1.orig-vendor.tar.xz'\n", text
         )

@@ -300,7 +300,7 @@ def test_uploaded_asset_names_match_sha256sums_after_github_renames_tildes():
         for name in (
             "rmac-apps_0.9.0~beta.1-38_amd64.deb",
             "rmac-session_0.9.0~beta.1-38_amd64.deb",
-            "niri_26.04+lulo1_amd64.deb",
+            "niri_26.04+lulo1-1_amd64.deb",
         ):
             (bundle / name).write_bytes(name.encode())
         subprocess.run(
@@ -311,7 +311,7 @@ def test_uploaded_asset_names_match_sha256sums_after_github_renames_tildes():
         names = sorted(path.name for path in bundle.iterdir())
         assert names == [
             "SHA256SUMS",
-            "niri_26.04+lulo1_amd64.deb",
+            "niri_26.04+lulo1-1_amd64.deb",
             "rmac-apps_0.9.0.beta.1-38_amd64.deb",
             "rmac-session_0.9.0.beta.1-38_amd64.deb",
         ]

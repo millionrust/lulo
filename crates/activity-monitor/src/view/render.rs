@@ -9,7 +9,9 @@ use sysinfo::Pid;
 
 use crate::columns::ColKey;
 use crate::metrics::{format_bytes, format_duration, format_mem, format_rate, Tab};
-use crate::{process_action, CancelKill, ConfirmKill, FocusSearch, ForceQuitProcess, QuitProcess};
+use crate::{
+    process_action, CancelKill, ConfirmKill, FocusSearch, ForceQuitProcess, Minimize, QuitProcess,
+};
 
 use super::MonitorView;
 
@@ -46,6 +48,9 @@ impl Render for MonitorView {
             }))
             .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| {
                 window.remove_window();
+            }))
+            .on_action(cx.listener(|_, _: &Minimize, _, cx| {
+                rmac_ui::minimize_focused_window(cx);
             }))
             .size_full()
             .v_flex()

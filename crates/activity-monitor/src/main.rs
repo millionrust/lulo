@@ -20,7 +20,8 @@ gpui::actions!(
         ForceQuitProcess,
         FocusSearch,
         CancelKill,
-        ConfirmKill
+        ConfirmKill,
+        Minimize
     ]
 );
 
@@ -69,6 +70,9 @@ fn main() {
                 // System Monitor is a single window, so ⌘Q and ⌘W both just
                 // need to close it -- reuse the same handler.
                 gpui::KeyBinding::new("cmd-q", rmac_ui::RequestClose, Some("ActivityMonitor")),
+                // ⌘M minimizes the window, the same as the yellow traffic
+                // light.
+                gpui::KeyBinding::new("cmd-m", Minimize, Some("ActivityMonitor")),
             ]);
             window.focus(&view.focus, cx);
             view

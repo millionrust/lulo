@@ -5372,7 +5372,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-activity-monitor"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "gpui",
  "gpui-component",
@@ -5384,7 +5384,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-app-drawer"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "blocking",
@@ -5402,7 +5402,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-app-launch"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "blocking",
  "libc",
@@ -5415,7 +5415,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-app-menu"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "rmac-apps",
@@ -5425,14 +5425,14 @@ dependencies = [
 
 [[package]]
 name = "rmac-appearance"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
 ]
 
 [[package]]
 name = "rmac-appearance-portal"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "ashpd 0.12.3",
  "async-channel",
@@ -5443,14 +5443,14 @@ dependencies = [
 
 [[package]]
 name = "rmac-apps"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "notify",
 ]
 
 [[package]]
 name = "rmac-archive"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "bzip2",
  "chrono",
@@ -5463,7 +5463,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-archive-utility"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "gpui",
@@ -5476,7 +5476,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-audio"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5489,7 +5489,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-bluetooth"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5500,7 +5500,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-calculator"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "gpui",
  "gpui-component",
@@ -5511,14 +5511,14 @@ dependencies = [
 
 [[package]]
 name = "rmac-clipboard"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "rmac-clipboard-linux"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5532,7 +5532,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-clock"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "gpui",
  "gpui-component",
@@ -5549,7 +5549,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-component-gallery"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "gpui",
  "gpui-component",
@@ -5558,7 +5558,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-compositor"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -5566,7 +5566,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-compositor-niri"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5578,14 +5578,14 @@ dependencies = [
 
 [[package]]
 name = "rmac-design"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-appearance",
 ]
 
 [[package]]
 name = "rmac-desktop"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "notify",
  "rmac-storage",
@@ -5596,7 +5596,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-desktop-widgets"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
  "gpui",
@@ -5607,7 +5607,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-display"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "kdl 6.5.0",
  "rmac-storage",
@@ -5617,7 +5617,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-dock"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-apps",
  "rmac-compositor",
@@ -5627,7 +5627,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-dock-runtime"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5651,7 +5651,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-dock-system"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "blocking",
  "futures-lite",
@@ -5670,7 +5670,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-editor"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "gpui",
  "gpui-component",
@@ -5678,7 +5678,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-file-chooser"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5701,7 +5701,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-finder"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5737,14 +5737,14 @@ dependencies = [
 
 [[package]]
 name = "rmac-focus"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-notifications",
 ]
 
 [[package]]
 name = "rmac-focus-linux"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5758,7 +5758,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-focus-runtime"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
  "rmac-focus",
@@ -5768,7 +5768,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-focus-settings"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-focus",
  "rmac-notifications",
@@ -5776,7 +5776,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-focus-store"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-focus",
  "rmac-notifications",
@@ -5787,7 +5787,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-gtk-settings"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "rmac-appearance",
@@ -5796,7 +5796,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-icon"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "image",
  "libc",
@@ -5806,7 +5806,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-input"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "kdl 6.5.0",
@@ -5817,7 +5817,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-keyboard"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5831,7 +5831,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-launcher"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-apps",
  "rmac-compositor",
@@ -5841,7 +5841,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-launcher-app"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5871,7 +5871,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-launcher-providers"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
  "flate2",
@@ -5883,7 +5883,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-launcher-runtime"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5901,7 +5901,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-launcher-system"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "futures-lite",
  "rmac-app-launch",
@@ -5911,11 +5911,11 @@ dependencies = [
 
 [[package]]
 name = "rmac-locale"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 
 [[package]]
 name = "rmac-locale-linux"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5927,11 +5927,11 @@ dependencies = [
 
 [[package]]
 name = "rmac-lock-provider"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 
 [[package]]
 name = "rmac-lock-provider-linux"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
  "cosmic-text 0.14.2",
@@ -5950,11 +5950,11 @@ dependencies = [
 
 [[package]]
 name = "rmac-login-items"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 
 [[package]]
 name = "rmac-login-items-linux"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -5969,14 +5969,14 @@ dependencies = [
 
 [[package]]
 name = "rmac-media"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "zbus",
 ]
 
 [[package]]
 name = "rmac-mounts"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "blocking",
@@ -5986,7 +5986,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-network"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6000,7 +6000,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-notes"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "chrono",
@@ -6017,7 +6017,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-notes-runtime"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "image",
  "rmac-notes-storage",
@@ -6027,7 +6027,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-notes-storage"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "image",
  "libc",
@@ -6039,11 +6039,11 @@ dependencies = [
 
 [[package]]
 name = "rmac-notes-store"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 
 [[package]]
 name = "rmac-notification-center-app"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "blocking",
@@ -6073,11 +6073,11 @@ dependencies = [
 
 [[package]]
 name = "rmac-notifications"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 
 [[package]]
 name = "rmac-notifications-linux"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6104,7 +6104,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-notifications-runtime"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-appearance",
  "rmac-compositor",
@@ -6113,7 +6113,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-notifications-store"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-notifications",
  "rmac-storage",
@@ -6123,7 +6123,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-osd"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "libc",
  "rmac-audio",
@@ -6135,11 +6135,11 @@ dependencies = [
 
 [[package]]
 name = "rmac-places"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 
 [[package]]
 name = "rmac-places-system"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "notify",
  "rmac-app-launch",
@@ -6150,7 +6150,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-platform-lab"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "gpui",
  "gpui-component",
@@ -6159,7 +6159,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-player"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "gpui",
@@ -6176,7 +6176,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-portal"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "ashpd 0.12.3",
  "url",
@@ -6184,7 +6184,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-power"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6194,7 +6194,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-preview"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
  "gpui",
@@ -6208,7 +6208,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-print"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "cosmic-text 0.14.2",
  "flate2",
@@ -6216,7 +6216,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-print-linux"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "ashpd 0.12.3",
  "blocking",
@@ -6230,11 +6230,11 @@ dependencies = [
 
 [[package]]
 name = "rmac-privacy"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 
 [[package]]
 name = "rmac-privacy-linux"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6246,7 +6246,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-quick-look"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
  "gpui",
@@ -6263,7 +6263,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-quick-settings"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-audio",
  "rmac-bluetooth",
@@ -6276,7 +6276,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-quick-settings-app"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "blocking",
@@ -6297,7 +6297,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-quick-settings-system"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-audio",
  "rmac-bluetooth",
@@ -6311,7 +6311,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-recent-documents"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "libc",
  "rmac-storage",
@@ -6322,7 +6322,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-search"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
  "libc",
@@ -6334,7 +6334,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-session"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-gtk-settings",
  "rmac-shell-settings",
@@ -6346,7 +6346,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-setup-assistant"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "gpui",
  "libc",
@@ -6365,11 +6365,11 @@ dependencies = [
 
 [[package]]
 name = "rmac-sharing"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 
 [[package]]
 name = "rmac-sharing-linux"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6381,7 +6381,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-shell-activation-runtime"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6394,7 +6394,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-shell-invocation"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6405,7 +6405,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-shell-invocation-runtime"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6417,7 +6417,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-shell-runtime"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6442,7 +6442,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-shell-settings"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "notify",
@@ -6455,7 +6455,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-shell-status"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-audio",
  "rmac-bluetooth",
@@ -6467,7 +6467,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-shell-status-linux"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6479,7 +6479,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-shortcuts"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "ashpd 0.12.3",
  "async-channel",
@@ -6495,7 +6495,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-sound"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-audio",
  "rmac-focus-linux",
@@ -6506,7 +6506,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-storage"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "libc",
  "sha2",
@@ -6514,7 +6514,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-system-info"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6524,7 +6524,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-system-settings"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6586,7 +6586,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-terminal"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "alacritty_terminal",
  "async-channel",
@@ -6604,7 +6604,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-text-editor"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "gpui",
@@ -6626,7 +6626,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-theme"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "notify",
@@ -6638,7 +6638,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-thumbnails"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "image",
  "libc",
@@ -6647,14 +6647,14 @@ dependencies = [
 
 [[package]]
 name = "rmac-time"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
 ]
 
 [[package]]
 name = "rmac-time-linux"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6666,7 +6666,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-top-bar"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "chrono",
  "rmac-compositor",
@@ -6676,7 +6676,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-top-bar-runtime"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6696,7 +6696,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-ui"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6717,11 +6717,11 @@ dependencies = [
 
 [[package]]
 name = "rmac-updates"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 
 [[package]]
 name = "rmac-updates-linux"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6732,7 +6732,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-wallpaper"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-compositor",
  "rmac-shell-settings",
@@ -6741,7 +6741,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-wallpaper-image"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "image",
@@ -6754,7 +6754,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-wallpaper-portal"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "blocking",
@@ -6773,7 +6773,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-wallpaper-runtime"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
@@ -6791,7 +6791,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-wallpaper-system"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-compositor",
  "rmac-shell-settings",
@@ -6800,7 +6800,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-weather"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "gpui",
  "gpui-component",
@@ -6814,7 +6814,7 @@ dependencies = [
 
 [[package]]
 name = "rmac-window-state"
-version = "0.1.0"
+version = "0.9.0-beta.1"
 dependencies = [
  "rmac-storage",
  "serde",

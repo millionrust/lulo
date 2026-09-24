@@ -3,10 +3,11 @@
 use std::rc::Rc;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, rgba, AnyElement, App, ClickEvent, Context, DismissEvent,
-    ElementId, Entity, Focusable as _, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent,
-    MouseButton, ParentElement as _, RenderOnce, Role, SharedString,
-    StatefulInteractiveElement as _, StyleRefinement, Styled, Toggled, Window,
+    div, prelude::FluentBuilder as _, px, rgba, AccessibleAction, Anchor, AnyElement, App,
+    ClickEvent, Context, DismissEvent, ElementId, Entity, Focusable as _, Hsla,
+    InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, ParentElement as _,
+    RenderOnce, Role, SharedString, StatefulInteractiveElement as _, StyleRefinement, Styled,
+    Toggled, Window,
 };
 use gpui_component::{
     button::{
@@ -553,6 +554,211 @@ impl RenderOnce for PopUpButton {
             dropdown = dropdown.disabled(true);
         }
         dropdown.refine_style(&self.style).into_any_element()
+    }
+}
+
+/// The document title of a title-bar window (TextEdit): the title, a
+/// dimmer " — Edited" while the document is dirty, and a ▾ that shows while
+/// the pointer is over the title. Title and chevron form one button that
+/// opens the document menu, by pointer or by an assistive technology's
+/// Click action (the menu's open state is held here, not in the pointer
+/// handler, so both paths open it). Measured in design-lab/apps.html.
+#[derive(IntoElement)]
+pub struct DocumentTitleMenu {
+    id: SharedString,
+    title: SharedString,
+    edited: bool,
+    accessible_label: SharedString,
+    disabled: bool,
+    menu: Option<MenuBuilder>,
+}
+
+impl DocumentTitleMenu {
+    pub fn new(id: impl Into<SharedString>, title: impl Into<SharedString>) -> Self {
+        Self {
+            id: id.into(),
+            title: title.into(),
+            edited: false,
+            accessible_label: SharedString::new_static("Document options"),
+            disabled: false,
+            menu: None,
+        }
+    }
+
+    pub fn edited(mut self, edited: bool) -> Self {
+        self.edited = edited;
+        self
+    }
+
+    /// The button's accessible name (default "Document options").
+    pub fn accessible_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.accessible_label = label.into();
+        self
+    }
+
+    /// A disabled title still shows, but opens nothing.
+    pub fn disabled(mut self, disabled: bool) -> Self {
+        self.disabled = disabled;
+        self
+    }
+
+    pub fn menu(
+        mut self,
+        builder: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+    ) -> Self {
+        self.menu = Some(Rc::new(builder));
+        self
+    }
+}
+
+/// The title-and-chevron trigger inside a [`DocumentTitleMenu`].
+#[derive(IntoElement)]
+struct DocumentTitleTrigger {
+    id: SharedString,
+    title: SharedString,
+    edited: bool,
+    accessible_label: SharedString,
+    enabled: bool,
+    open: Entity<bool>,
+    selected: bool,
+}
+
+impl Selectable for DocumentTitleTrigger {
+    fn selected(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+
+    fn is_selected(&self) -> bool {
+        self.selected
+    }
+}
+
+impl RenderOnce for DocumentTitleTrigger {
+    fn render(self, window: &mut Window, _cx: &mut App) -> impl IntoElement {
+        let active = window.is_window_active();
+        let title_color = mac::window_title(active);
+        let group = SharedString::from(format!("{}-hover", self.id));
+        let chevron_idle = if self.selected {
+            title_color
+        } else {
+            gpui::transparent_black()
+        };
+        let view = window.current_view();
+        let open = self.open.clone();
+        div()
+            .id(self.id.clone())
+            .group(group.clone())
+            .role(Role::Button)
+            .aria_label(self.accessible_label)
+            .aria_expanded(self.selected)
+            .h(px(18.0))
+            .min_w_0()
+            .flex()
+            .items_center()
+            .text_size(crate::text_px(13.0))
+            .font_weight(mac::BOLD)
+            .text_color(title_color)
+            .child(div().min_w_0().truncate().child(self.title))
+            .when(self.edited, |row| {
+                row.child(
+                    div()
+                        .flex_none()
+                        .whitespace_nowrap()
+                        .font_weight(mac::MEDIUM)
+                        .text_color(mac::window_title_edited(active))
+                        .child("\u{a0}\u{2014} Edited"),
+                )
+            })
+            .child(
+                div().flex_none().pl(px(3.0)).child(
+                    gpui::svg()
+                        .path("icons/chevron-down.svg")
+                        .size(px(10.0))
+                        .text_color(chevron_idle)
+                        .when(self.enabled, |chevron| {
+                            chevron.group_hover(group, move |style| style.text_color(title_color))
+                        }),
+                ),
+            )
+            .when(self.enabled, |trigger| {
+                trigger.on_a11y_action(AccessibleAction::Click, move |_, _window, cx| {
+                    open.update(cx, |open, _| *open = !*open);
+                    cx.notify(view);
+                })
+            })
+    }
+}
+
+impl RenderOnce for DocumentTitleMenu {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let open = window.use_keyed_state(
+            SharedString::from(format!("{}-open", self.id)),
+            cx,
+            |_, _| false,
+        );
+        let menu_slot: Entity<Option<Entity<PopupMenu>>> = window.use_keyed_state(
+            SharedString::from(format!("{}-menu", self.id)),
+            cx,
+            |_, _| None,
+        );
+        let enabled = !self.disabled && self.menu.is_some();
+        if !enabled && *open.read(cx) {
+            open.update(cx, |open, _| *open = false);
+        }
+        let is_open = *open.read(cx);
+        let trigger = DocumentTitleTrigger {
+            id: self.id.clone(),
+            title: self.title,
+            edited: self.edited,
+            accessible_label: self.accessible_label,
+            enabled,
+            open: open.clone(),
+            selected: false,
+        };
+        let Some(builder) = self.menu.filter(|_| enabled) else {
+            return div().child(trigger).into_any_element();
+        };
+        Popover::new(SharedString::from(format!("{}-popover", self.id)))
+            .appearance(false)
+            .overlay_closable(false)
+            .anchor(Anchor::TopLeft)
+            .open(is_open)
+            .on_open_change({
+                let open = open.clone();
+                let menu_slot = menu_slot.clone();
+                move |now_open, _, cx| {
+                    open.update(cx, |open, _| *open = *now_open);
+                    if !*now_open {
+                        // Rebuild on the next open so checkmarks are current.
+                        menu_slot.update(cx, |slot, _| *slot = None);
+                    }
+                }
+            })
+            .trigger(trigger)
+            .content(move |_, window, cx| {
+                if let Some(menu) = menu_slot.read(cx).clone() {
+                    return menu;
+                }
+                let builder = builder.clone();
+                let menu = PopupMenu::build(window, cx, move |menu, window, cx| {
+                    builder(menu, window, cx)
+                });
+                menu_slot.update(cx, |slot, _| *slot = Some(menu.clone()));
+                menu.focus_handle(cx).focus(window, cx);
+                let popover = cx.entity();
+                let open = open.clone();
+                let menu_slot = menu_slot.clone();
+                window
+                    .subscribe(&menu, cx, move |_, _: &DismissEvent, window, cx| {
+                        popover.update(cx, |popover, cx| popover.dismiss(window, cx));
+                        open.update(cx, |open, _| *open = false);
+                        menu_slot.update(cx, |slot, _| *slot = None);
+                    })
+                    .detach();
+                menu
+            })
+            .into_any_element()
     }
 }
 

@@ -54,8 +54,20 @@ pub(super) fn folder_row(
     selected: bool,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> Stateful<Div> {
+    let label = label.into();
+    // No AccessKit `description` setter is exposed on `div()` (see
+    // `docs/accessibility-audit.md`'s Toast fix for the same constraint), so
+    // the item count is folded into the accessible name, matching the visible
+    // row's own text.
+    let accessible_label = format!(
+        "{label}, {count} {}",
+        if count == 1 { "note" } else { "notes" }
+    );
     div()
         .id(id)
+        .role(Role::ListItem)
+        .aria_label(accessible_label)
+        .aria_selected(selected)
         .flex()
         .items_center()
         .gap_2()
@@ -78,7 +90,7 @@ pub(super) fn folder_row(
                 .flex_1()
                 .truncate()
                 .text_size(rmac_ui::text_px(13.0))
-                .child(label.into()),
+                .child(label.clone()),
         )
         .child(
             div()

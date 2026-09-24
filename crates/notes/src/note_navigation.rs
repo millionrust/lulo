@@ -23,6 +23,9 @@ impl NotesView {
         let current = self.session.folder_selection();
         let has_selected_folder = matches!(current, FolderSelection::Folder(_));
         let mut sidebar = div()
+            .id("notes-folders")
+            .role(Role::List)
+            .aria_label("Folders")
             .w(px(FOLDERS_W))
             .h_full()
             .flex_shrink_0()
@@ -275,9 +278,24 @@ impl NotesView {
                     .collect::<Vec<_>>()
             });
             let matches_truncated = search_hit.is_some_and(|hit| hit.matches_truncated);
+            // No AccessKit `description` setter is exposed on `div()`, so the
+            // date and preview join the title in one accessible name, the
+            // same fold `presentation::folder_row` uses for its count.
+            let mut accessible_label = String::new();
+            if note.pinned {
+                accessible_label.push_str("Pinned, ");
+            }
+            accessible_label.push_str(title_fragment.text());
+            accessible_label.push_str(", ");
+            accessible_label.push_str(&date_label(note.modified_unix_ms));
+            accessible_label.push_str(", ");
+            accessible_label.push_str(body_fragment.text());
             items.push(
                 div()
                     .id(("note", note.id.get()))
+                    .role(Role::ListItem)
+                    .aria_label(accessible_label)
+                    .aria_selected(is_selected)
                     .mx(px(10.0))
                     .px(px(10.0))
                     .py(px(8.0))
@@ -475,6 +493,8 @@ impl NotesView {
             .child(
                 div()
                     .id("notes-scroll")
+                    .role(Role::List)
+                    .aria_label(if search_active { "Results" } else { "Notes" })
                     .flex_1()
                     .overflow_y_scroll()
                     .py_1()

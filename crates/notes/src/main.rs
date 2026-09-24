@@ -31,10 +31,10 @@ use std::sync::Arc;
 use std::thread;
 
 use gpui::{
-    actions, div, img, prelude::FluentBuilder as _, px, AnyElement, AppContext as _, Context, Div,
-    Entity, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, ObjectFit,
-    ParentElement, Render, RenderImage, SharedString, Stateful, StatefulInteractiveElement as _,
-    Styled, StyledImage as _, Window,
+    accesskit, actions, div, img, prelude::FluentBuilder as _, px, AccessibleAction, AnyElement,
+    AppContext as _, Context, Div, Entity, FocusHandle, InteractiveElement as _, IntoElement,
+    KeyBinding, ObjectFit, ParentElement, Render, RenderImage, Role, SharedString, Stateful,
+    StatefulInteractiveElement as _, Styled, StyledImage as _, Window,
 };
 use gpui_component::{Icon, IconName, Sizable as _, Size, StyledExt as _};
 use rmac_editor::InputState;

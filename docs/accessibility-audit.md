@@ -217,3 +217,19 @@ These are consistent with ADR 0015's direction (drop `gpui-component`'s styled
 widgets for `gpui-base` behaviour underneath rmac-owned visuals): once that
 migration lands, rmac-ui's controls will own this layer directly instead of
 routing around a pinned dependency's private internals.
+
+## Follow-through into app-owned rows (not shared components)
+
+This audit is scoped to `crates/rmac-ui`/`shell/crates/rmac-shell-ui`, but the
+`div()`-rewrite pattern it proved for `Toggle`/`Checkbox`/`Radio` — and the
+`ListRow`/`TreeRow` `Role::ListItem`/`Role::TreeItem` gap it called out above
+as proven-but-unconverted — is the exact fix journey 3 and 4's live
+acceptance tests (`docs/journey-suite.md`) found missing in two app crates
+that build their own rows directly on `div()` rather than through
+`rmac-ui`: `crates/terminal`'s tab strip (now `Role::Tab`/`Role::TabList`/
+`Role::Menu`/`Role::MenuItem`) and `crates/notes`'s folder/note rows (now
+`Role::ListItem`/`Role::List`). Neither app crate depends on the
+`gpui_component::button::Button` internals this document's "Blocked" section
+describes, so both were fixable without any upstream change — see
+`docs/journey-suite.md`'s journey 3/4 sections for what changed and what a
+live re-run still needs to confirm.

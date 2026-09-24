@@ -202,6 +202,12 @@ run a command, scroll, select, copy and paste, and manage tabs";
 `crates/terminal`, package `rmac-terminal`) the same way, over AT-SPI and
 niri IPC only:
 
+`scripts/linux/run-journey-terminal.py` exercises journey 3 ("Open Terminal,
+run a command, scroll, select and copy text, paste it, and manage tabs")
+against `rmac-terminal` on the reference laptop, the same way
+`run-journey-launch.py`/`run-journey-files.py` do: AT-SPI (`pyatspi`) and
+niri IPC only, no keyboard or pointer injector.
+
 ```sh
 scp scripts/linux/run-journey-terminal.py jacob@<reference-pc>:/tmp/
 ssh jacob@<reference-pc> \
@@ -257,6 +263,81 @@ with `python3 -m pytest scripts/test_journey_terminal.py`.
 `scripts/linux/run-journey-notes.py` exercises journey 4 ("Create, search and
 edit a note, and recover it after a crash"; `crates/notes`, package
 `rmac-notes`) against the real Notes library on the reference laptop:
+
+  'exec 9>/tmp/lulo-journey.lock; flock -w 900 9 && \
+   python3 /tmp/run-journey-terminal.py --output /tmp/journey-terminal-report.json'
+```
+
+The last real run against the reference laptop (2026-09-24, before this
+pass) found the terminal's *content* surface with real accessibility gaps
+against todo.md's "no pointer-only controls" gate: the AT-SPI tree for a real
+`rmac-terminal` window exposed exactly 4 button nodes (a profile-picker
+button plus 3 unnamed tab-strip buttons) and no text/entry node for the grid
+at all.
+
+* **The terminal grid published no accessible text, caret, or selection.**
+  `crates/terminal/src/accessibility.rs` fully implements and unit-tests
+  `TerminalAccessibilitySnapshot`/`project_visible_terminal`, but that module
+  was compiled only into the crate's own library target
+  (`crates/terminal/src/lib.rs`) — nothing in the running `rmac-terminal`
+  binary (`src/main.rs`'s own module tree) referenced it, so it had no effect
+  on the live accessibility tree. `run_command`, `scroll`, and the read-back
+  half of `select`/`copy` could not be driven or verified over AT-SPI because
+  there was no node to find.
+* **The tab strip, close buttons, new-tab button, and profile-picker rows
+  used only `.id(...)`, never `.role()`/`.aria_label()`**
+  (`crates/terminal/src/controller/renderer/chrome.rs`), so they were
+  reachable only as unnamed, structurally-countable AT-SPI "button" nodes —
+  enough to count tabs opening and closing, but not to identify one by name
+  or read back which tab is active.
+
+This pass fixes both, following the same `.role()`/`.aria_label()` pattern
+`shell/bins/rmac-dock/src/main.rs` and `crates/rmac-ui` already use:
+
+* The terminal body div now carries `.id("terminal-grid")`,
+  `.role(Role::Terminal)`, and `.a11y_synthetic_children(...)`
+  (`crates/terminal/src/controller/renderer/accessibility.rs`, new) that
+  publishes the active tab's visible-grid projection as a synthetic
+  `Role::TextRun` child with character lengths and a `TextSelection` for the
+  caret/selection, exactly the pattern GPUI's own `_accessibility` guide
+  documents for a text surface with no per-cell child elements. The
+  projection is cached per tab for 120 ms so a fast-scrolling command (`yes`,
+  a build log) cannot turn every `cx.notify()` into a full grid re-walk;
+  idle windows never call this path at all (nothing calls `cx.notify()`
+  without real output/input — see `TerminalView::new`'s redraw channel).
+  `rmac_terminal::accessibility` is reached from the binary's own module
+  tree the same way `crates/finder/src/view/accessibility.rs` reaches
+  `rmac_finder::accessibility` — through the package's implicit lib
+  dependency, not a duplicated `mod accessibility;` in `main.rs`.
+* Each tab is now `Role::Tab` named with its title, `aria_selected` for the
+  active tab, and its close button is named "Close tab `<title>`"; the tab
+  track is `Role::TabList`; the new-tab button is named "New Tab"; the
+  profile-picker panel is `Role::Menu` and each row is a named, selectable
+  `Role::MenuItem`. All of these already had a working AT-SPI `click` action
+  via `.on_click(...)`, which GPUI registers automatically.
+
+**Still a gap, not fixed here:** the pinned `accesskit_unix` AT-SPI bridge
+does not implement `org.a11y.atspi.EditableText` at all (see
+`docs/known-limitations.md` and Spotlight's write-up above), so even with a
+real text/caret node, a command still cannot be *typed* into the terminal
+without a keyboard injector. Unlike Spotlight's search field or Notes' text
+fields below, this pass deliberately does not wire an
+`on_a11y_action(AccessibleAction::SetValue, ...)` handler onto the terminal
+grid: a screen reader's "set value" action is a single blind
+whole-value replace, which is the wrong model for a live shell (it bypasses
+line editing, job control, and the exact bytes a shell expects) — an honest
+limitation is preferable to a simulated one. **This fix has not yet been
+re-verified live**; it needs a fresh `run-journey-terminal.py` run against a
+rebuilt `rmac-terminal` binary to confirm the grid, tabs, and picker now
+appear with the names and text described above.
+
+`scripts/test_journey_terminal.py` unit-tests the script's own pure logic
+(`python3 -m pytest scripts/test_journey_terminal.py`, no live session
+required) and does not exercise the live AT-SPI/niri orchestration.
+
+`scripts/linux/run-journey-notes.py` exercises journey 4 ("Create, search
+and edit a note, and recover it after a crash") against `rmac-notes` on the
+reference laptop, the same way the other journey scripts do.
 
 ```sh
 scp scripts/linux/run-journey-notes.py jacob@<reference-pc>:/tmp/
@@ -454,3 +535,69 @@ run regardless of how the journey went.
 environment-discovery, process-identity, and report-building logic with
 `python3 -m pytest scripts/test_journey_monitor.py` (no live session
 required).
+
+  'exec 9>/tmp/lulo-journey.lock; flock -w 900 9 && \
+   python3 /tmp/run-journey-notes.py --output /tmp/journey-notes-report.json'
+```
+
+The last real run against the reference laptop (2026-09-24, before this
+pass) found two compounding accessibility gaps severe enough that the script
+deliberately stops short of creating, editing, or deleting any note — doing
+so blind, with no way to identify or find the note again afterward, could
+leave unremovable clutter in the reference user's real Notes library:
+
+* **No text-entry surface exposed AT-SPI Text or EditableText.** A fresh
+  `rmac-notes` window's four `entry`-roled nodes (search, title, tags, body)
+  reported `interfaces=['Accessible', 'Component']` only — no name, no
+  readable value, and (unlike Spotlight's search field) no
+  `on_a11y_action(AccessibleAction::SetValue/ReplaceSelectedText, ...)`
+  handler at all.
+* **The entire note list and folder sidebar were absent from the AT-SPI tree
+  outright, not merely unnamed** (`crates/notes/src/note_navigation.rs`'s
+  folder rows and note rows, both plain `div().id(...).on_click(...)` with
+  no `.role()`/`.aria_label()`, via `crates/notes/src/presentation.rs`'s
+  `folder_row`). A live tree dump found exactly one frame with 20 flat
+  children (16 unnamed/inert buttons, 2 named view-toggle buttons, and the 4
+  `entry` nodes) and no container, list, or row nodes at all.
+
+This pass fixes both, following the same pattern the terminal fix above and
+`crates/launcher-app`'s Spotlight field already use:
+
+* Folder rows (`presentation::folder_row`) and note rows
+  (`note_navigation::render_note_list`) are now `Role::ListItem` with
+  `aria_selected` for the current selection. Since GPUI's `div()` exposes no
+  AccessKit `description` property, each row folds what would have been a
+  description into its accessible name — "All Notes, 12 notes",
+  "Pinned, Groceries, Yesterday, milk eggs bread" — the same way this
+  audit's own Toast fix combined a title and message into one `aria_label`
+  when no separate mechanism existed. Their containers (the folder sidebar
+  and the note-list scroll view) are now `Role::List` with a name ("Folders",
+  "Notes"/"Results"). All rows already had a working `click` action via
+  `.on_click(...)`.
+* The search, title, tags, and body fields are each wrapped in a
+  `Role::TextInput`/`Role::SearchInput` node with an `aria_label` and
+  `aria_value` set to the field's current text, and
+  `on_a11y_action(AccessibleAction::SetValue/ReplaceSelectedText, ...)`
+  handlers that replace the value and then run the same edit-scheduling or
+  search-dispatch path a keystroke takes — mirroring
+  `crates/launcher-app/src/view/render.rs`'s Spotlight field exactly. The
+  title/tags/body handlers no-op while the field is read-only (Recently
+  Deleted, Markdown preview, or no worker), matching the field's own
+  `.disabled(...)` state.
+
+**Still a gap, not fixed here:** as with Terminal, the pinned `accesskit_unix`
+does not implement `org.a11y.atspi.EditableText`, so a real screen-reader
+user still cannot *type* into these fields without a keyboard injector today
+— the `SetValue`/`ReplaceSelectedText` wiring above is there for when that
+upstream gap closes, not a present-day substitute for it. Folder/note rows
+also do not yet expose the pin state as a distinct AccessKit property (folded
+into the name instead, for the same reason as the description above).
+**This fix has not yet been re-verified live**; it needs a fresh
+`run-journey-notes.py` run against a rebuilt `rmac-notes` binary, and even
+then the script's own safety reasoning above means it will still stop short
+of creating a note — a full live confirmation that a title can be set and
+read back needs a manual Orca pass, not just this script.
+
+`scripts/test_journey_notes.py` unit-tests the script's own pure logic
+(`python3 -m pytest scripts/test_journey_notes.py`, no live session
+required) and does not exercise the live AT-SPI/niri orchestration.

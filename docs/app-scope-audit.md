@@ -1,201 +1,183 @@
-# 1.0 scope audit: app × item × state
+# 1.0 app scope audit, 2026-09-24
 
-This audits each app in `todo.md`'s "## 1.0 scope per app" checklist against
-the code on branch `dev` (this branch, `app-scope`, starts from it at
-`ea11db97`). "Done" means the item works and covers the five states
-`todo.md` requires: loading, empty, unavailable, permission-denied and
-error. Status is one of **Done**, **Partial** or **Missing**, each with
-`file:line` evidence. `docs/beta-gap-list.md` and `docs/journey-suite.md`
-were read first; where they disagreed with the current code, the code wins
-and the doc is noted as stale.
+This audit checks each app against the "1.0 scope per app" list in
+[`todo.md`](../todo.md). There, "Done" includes the loading, empty,
+unavailable, permission-denied and error states, so every item below records
+those states as well as the feature.
 
-Two crates were being edited by other agents while this audit ran and were
-**not** changed here: `crates/system-settings` (visual + idle-CPU work) and
-`crates/text-editor` (large-file rebase). Their rows below are audit-only.
+The audit read the code on `dev` at `ea11db97`, plus the fixes made on branch
+`app-scope` (listed in section 9). Nothing was run on the laptop, so every
+**Done** means "present and wired in the code" and still needs the laptop
+checks in section 10.
+
+- **Status key:** **Done**, **Partial**, **Missing**, **Fixed** (fixed on
+  `app-scope`).
+- **State key:** L = loading, E = empty, U = unavailable, P =
+  permission-denied, X = error. "n/a" means the state cannot happen for that
+  item.
+- **Out of scope for fixes:** System Settings and Text Editor were being
+  edited by other agents during this audit. Their gaps are recorded here but
+  were not fixed.
 
 ## Summary
 
-Most of the seven apps are substantially more complete than `todo.md`'s
-unchecked boxes suggest. Of the five candidate small/medium items named in
-the task brief, only one was still genuinely missing:
-
-| Candidate item | Actual state |
-|---|---|
-| Terminal find-in-scrollback | Was **Partial**, now **Done** — implemented on this branch, see below |
-| System Monitor history graph | Already **Done** (not touched) |
-| Files open-with menu | Already **Done** (not touched) |
-| Text Editor export-as-PDF via print path | Already **Done** (not touched) |
-| Notes import/export formats | Already **Done** (not touched) |
-
-Every app's `todo.md` checklist item is now **Done**. System Monitor's
-missing "no processes match" empty state (found during this audit) was fixed
-in `b1d83bc0`, along with two related five-states gaps in the same pass:
-CPU% showing a fake `0%/0%/100% Idle` for the first two seconds before a real
-reading exists, and an unnamed empty network-interface list. One small gap
-remains open, not implemented here because it sits in App Drawer's launch
-surface rather than being a states/error-handling gap: search uses plain
-substring matching instead of the fuzzy matcher (`rmac_launcher::query_matches`)
-Spotlight already uses. Notes, Text Editor and System Settings are fully covered below;
-Text Editor and System Settings are audit-only (owned by other agents
-currently editing those crates).
-
-## Terminal (`crates/terminal`)
-
-| Item | Status | Evidence | Five states |
-|---|---|---|---|
-| Real PTY | Done | `session.rs:14-15` uses `portable_pty::native_pty_system`; open/start/reader/writer failures are a typed `SessionStartError` (`session.rs:160-179`) | Unavailable: `Session::failed()` builds a dead session labelled "Unavailable" (`session.rs:150-157,623`). No distinct permission-denied message; a shell-exec permission failure surfaces as the generic "Terminal could not start the configured shell." |
-| Dynamic resize | Done | `session.rs:706` `resize`; rejected-size fallback tested (`session.rs:1081` `resize_failure_retains_the_last_kernel_accepted_geometry`) | Error: resize failure keeps last accepted geometry, not fatal |
-| Scrollback | Done | `emulator.rs:70` `scrollback_limit_for_tab_count`, tested `emulator.rs:345-395` | n/a |
-| Selection | Done | `ui_state.rs:17` `Selection`; keyboard select-all across full history `view_state.rs:88-99` | n/a |
-| Search (find-in-scrollback) | **Was Partial, now Done** | Previously: find bar existed (`controller/renderer/overlays.rs` `render_find_panel`) but `render_rows` matched only the visible viewport (`controller/renderer/grid.rs:59-101`), no jump-to-match, no match count. **Fixed on this branch**: `crates/terminal/src/find.rs` (new, pure and unit-tested: column-precise matches, wide-character handling, wrap-around stepping, scroll centring) plus wiring in `controller/renderer/grid.rs` (`find_step`, `find_status_label`), `controller/lifecycle.rs` (⌘G / ⇧⌘G key bindings), `controller/renderer/interactions.rs` (`FindNext`/`FindPrevious` action handlers) and `controller/renderer/overlays.rs` (the find panel now shows "N of M" / "Not Found"). | Empty query: no highlight, no count shown. Zero matches: "Not Found" label instead of a count. |
-| Tabs | Done | `KeyBinding`s `controller/lifecycle.rs:63-83`; `new_tab` bounded by `MAX_TABS` with an error message (`tab_lifecycle.rs:36-39`); per-tab close with running-process confirmation (`tab_lifecycle.rs:89-108`) | Error: tab-limit/rebalance failures surface via `operation_error` |
-| Profiles | Done (colour presets, not full shell-config profiles) | `profiles.rs` 8 built-ins; ⌘, opens the picker (`5357ebb9`); persistence errors surfaced (`lifecycle.rs:128-137`) | Error: `persistence_error` banner on load/save/migration failure |
-| Quit / running-process confirmation (beta-gap B4) | Done | `controller/lifecycle.rs:103-112` `window.on_window_should_close` covers Dock/menu bar/⌘Q/⌘Tab-Q/logout; confirmation dialog `controller/renderer/dialogs.rs:5-33` | — |
-
-`docs/beta-gap-list.md`'s B4 is stale (already fixed at `5357ebb9`, ancestor
-of `ea11db97`).
-
-## Files (`crates/finder`, `rmac-file-chooser`, `rmac-mounts`)
-
-| Item | Status | Evidence | Five states |
-|---|---|---|---|
-| Safe file operations | Done | `file_ops.rs` (2954 lines): copy/move with cancellation, atomic staging, no-follow-symlink throughout | Loading: `journal_loading`/`trash_loading` block mutation with explicit messages (`view/operations.rs:65-70`). Error: `operation_error` banner. Unavailable: journal-unavailable message (`operations.rs:72-76`) |
-| Trash | Done | `trash_store.rs` (4821 lines), freedesktop-trash-compliant: durable move + `.trashinfo` (`trash_store.rs:2380,3450`), collision-safe (`trash_store.rs:4397`) | Empty: dedicated "Trash is Empty" UI (`view/list_presentation.rs:633-645`). Permission-denied tested (`trash_store.rs:2686,2911,4495`) |
-| Undo | Done | `undo_journal.rs` (2527 lines); `view/undo_controller.rs` `start_undo`/`cancel_undo` | — |
-| Mounts | Done, but discovery is `/proc/self/mountinfo` + `gio mount -u`, **not D-Bus/udisks2** | `rmac-mounts/src/inventory.rs:11-27` `discover()`; watch via `poll` on `/proc/self/mounts` (`watch.rs:30-42`); unmount via `gio mount -u` (`mutation.rs:8-29`) | Unavailable: `WatchEvent::Unavailable` on non-Linux/watch failure. Error: per-volume `usage_error`, never hides healthy mounts. Disappearing mount: `filesystem_helpers.rs:167` `disappeared_mount_roots`, tested `view/tests.rs:59` |
-| Search | Done | `view/search_helpers.rs` + `search_info_controller.rs`, backed by `rmac_search` | Error: distinguishes invalid-query vs. generic read failure (`search_helpers.rs:26-30`) |
-| Previews (Quick Look) | Done | `view/quick_look_controller/controller.rs`, `view/thumbnail_controller.rs` | — |
-| Open-with actions | Done, including "always open with" | `view/open_with_controller.rs:4-58,113,136-176`; wired into both the File menu and the right-click context menu (`view/chrome_presentation/menus_tabs.rs:92`, `view/list_presentation.rs:782`) | Guards for Applications/Trash views and multi-selection (`open_with_controller.rs:6-21`); async load failure surfaces "Could not load compatible applications: {error}" |
-
-### Files safety rules (`todo.md:76-80`)
-
-| Rule | Status | Evidence |
+| App | Verdict | Open gaps |
 |---|---|---|
-| Never block UI thread on recursive I/O | Done | `view/operations.rs:116-133` runs transfers in `cx.background_executor().spawn(...)`; `view/trash_task_controller.rs:21` similarly off-thread |
-| Never follow symlinks in recursive copy/delete | Done | `symlink_metadata` throughout (`file_ops.rs:269,327,375,378,416,431,457,494`); TOCTOU-safe open (`file_ops.rs:296-346`); test `file_ops.rs:2806` creates a symlink cycle and asserts it isn't followed |
-| Every overwrite has an explicit conflict policy | Done | `conflict.rs`: `ConflictDecision` (`KeepBoth`/`Replace`/`Skip`, `conflict.rs:36,38,57-61,150,193`) |
-| Cancel leaves source intact | Done | 6 dedicated tests, e.g. `file_ops.rs:1860,1912,2133,2223,2320,2496` |
-| Trash before permanent deletion | Done | `view/permanent_delete_controller.rs:4-9` only reachable from the Trash view |
-| Tests: cross-filesystem moves | Done | `file_ops.rs:1752,1912,1996,2288,2320` |
-| Tests: permission errors | Done | `file_ops.rs:1737,1772,1816`; `trash_store.rs:4495` |
-| Tests: low disk | Done | `file_ops.rs:2587,2874` (simulated `ENOSPC`) |
-| Tests: name collisions | Done | `trash_store.rs:4397`; `conflict.rs` `KeepBoth`-numbering tests |
-| Tests: disappearing mounts | Done | `view/tests.rs:59`; `rmac-mounts/src/inventory.rs:69-76` |
-| Tests: interrupted operations | Done | Cancellation suite above + `operation_journal.rs` (3699 lines) recovery on next launch |
+| Text Editor | Every item Done except export | No Export as PDF… (print to PDF works through the portal) |
+| Notes | Done, now including printing | No import from other apps (`.enex`) and no PDF export |
+| Terminal | Done | Find doesn't join soft-wrapped lines; a failed shell start gives one message for every cause |
+| Files | Done | Open With shows no loading state while associations load |
+| System Monitor | Done | Per-process CPU reads 0.0 until the second sample; the Energy column is an estimate the UI doesn't label |
+| Apps | Done, now with ranked search | First catalog scan blocks the UI thread; unreadable `.desktop` files are skipped silently |
+| System Settings | Partial: only the six named panes were verified | 19 more panes to verify for real backends |
 
-All Files safety rules have direct test coverage. No gaps found.
+## 1. Text Editor (`crates/text-editor`, document only)
 
-## System Monitor (`crates/activity-monitor`)
-
-| Item | Status | Evidence | Five states |
+| Item | Status | Evidence | States |
 |---|---|---|---|
-| Process view | Done | `process_table.rs` (`ProcRow`/`Delegate`), columns in `columns.rs:12-24`; inspector dialog `view/render/overlays.rs:59-172` | Loading: tick-loop sampler (`view.rs:105`). Error: dismissible `persistence_error` banner (`view.rs:41,50,341`). Empty (0 rows after a search filter): "No Matching Processes" with the query named, `view/render.rs:141-157` (fixed in `b1d83bc0`) |
-| Resource view (CPU/Mem/Energy/Disk/Network) | Done | `view/render/metrics_panes.rs` `cpu_cells`/`memory_cells`/`energy_cells`/`disk_cells`/`network_cells` (304-435) | Loading: CPU% shows a dash rather than a fake `0%/0%/100% Idle` before the first two-tick reading exists; empty network interface list is named rather than left blank (both `b1d83bc0`) |
-| Search | Done | `SearchField` (`view/render/chrome.rs:186`); filter in `process_table.rs:213-214,286-299` (substring only, no fuzzy) | Empty search collapses to the toolbar circle (`view.rs:266-267,273`) |
-| Sort | Done | Click-header sort `process_table.rs:396-406`; comparator `process_table.rs:305+` | — |
-| Safe terminate | Done, best-in-class states | Confirm dialog always required (`view/render/overlays.rs:6-57`); Quit→SIGTERM/ForceQuit→SIGKILL via pidfd, so no PID-reuse race (`process_signal.rs:29-83`) | `EPERM`→`Outcome::Rejected` with an explicit "your account may not have permission" message (`process_action.rs:105-114`, tested `process_action.rs:160-177`); also distinguishes `Missing` (exited before confirmation), `Replaced` (PID reused), `Unsupported` |
-| History (graphs) | Done | Data: bounded 60-sample ring per metric, `metrics.rs:71-95`. UI: real Area/Stacked/Mirrored graphs, `view/render/metrics_panes.rs:81,173-301,322-435` | n/a — graphs render a left-padded partial history while filling (`metrics_panes.rs:99-107`) |
-| Per-process GPU numbers | Compliant — none invented | Exhaustive grep for `gpu`/`GPU` in the crate returns no per-process or system GPU metric; no GPU column in `ColKey::ALL` (`columns.rs:29-40`) | n/a |
+| UTF-8 text | Done | `src/document.rs:6-18` `TextEncoding` (UTF-8, UTF-8 BOM, UTF-16 LE/BE); decode `:146-159`, encode `:189-205`; round-trip tests `:333-423` | X: `CodecError::InvalidUtf8` (`:116-126`) is shown as "Text Editor could not read the selected document" (`src/view/document_io.rs:32-51`) |
+| Open/save | Done | `src/view/document_io.rs:14-51`, `src/view/saving.rs`, bounded reads in `src/storage.rs` | X: `SaveFailure` (`document_io.rs:15-29`); external changes are `ExternalChange::{Modified, Missing, Unreadable}` (`src/view.rs:88-92`) with a reload flow (`src/view/conflicts.rs`); U: `DocumentWatchEvent::Unavailable` (`view.rs:94-97`) |
+| Find/replace | Done | `src/view/render/find.rs` | E: blank status for an empty query and "Not found" for no matches (`find.rs:12-17`); Replace is disabled while printing (`:88`, `:97`) |
+| Crash recovery | Done | `src/recovery.rs` (bounded discovery `:12-15`), `ActiveAlert::Recover` (`view.rs:73-74`); drafts are written at session end (`6a65af6e`) | L: `recovery_loading` (`view.rs:143`); U: `Discovery.unavailable` (`recovery.rs:60`, `:106`); X: malformed records are counted, never fatal (`recovery.rs:56`) |
+| Status | Done | Format and encoding status in the document menu (`src/view/render/chrome.rs:52`, `:68`), one-line notices (`view.rs:148`). TextEdit has no status bar, so none is drawn. | — |
+| Printing or export | **Partial** | ⌘P goes through the XDG Print portal (`src/view/printing.rs`, `crates/rmac-print-linux/src/linux.rs`). There is no Export as PDF… action. | L: `print_busy`; U: a non-Linux build explains that printing is unavailable (`printing.rs:78-87`); X: portal and window-handle failures raise an alert (`printing.rs:31-43`, `:66-71`); cancelling is silent; RTF previews are refused with an explanation (`:16-24`) |
 
-`docs/journey-suite.md`'s System Monitor notes (§6) are AT-SPI projection
-findings (process table bounded to the visible viewport for accessibility
-tooling, no `Action` interface on column headers to re-sort) — accessibility
-gaps, not functional ones; out of this audit's scope but worth a follow-up.
+**Gap (not fixed; the crate belongs to another agent).** The PDF renderer
+already exists and printing already uses it: `rmac_print::render_pdf`
+(`crates/rmac-print/src/lib.rs:12`, called from `rmac-print-linux/src/linux.rs`).
+Export as PDF… needs only a Save panel and a write of that output.
 
-**Gap found during this audit, now fixed:** the missing "no processes match
-your search" empty state, plus the CPU-dashes-before-first-reading and
-unnamed-empty-network-list five-states gaps, were fixed in `b1d83bc0` using
-`rmac_ui::EmptyState`, the same reusable pattern App Drawer already uses
-(`crates/app-drawer/src/view/render.rs:38-51`).
+## 2. Notes (`crates/notes`, `rmac-notes-runtime`, `rmac-notes-storage`, `rmac-notes-store`)
 
-## Apps / App Drawer (`crates/app-drawer`, `crates/rmac-apps`, `crates/rmac-app-launch`)
-
-Actual `.desktop` discovery lives in `crates/rmac-apps`, not
-`rmac-launcher-providers` (which only consumes the catalog for Spotlight
-search). `crates/app-drawer/src/catalog.rs` is a macOS-only dev-port helper
-(`sips`/`PlistBuddy`, all `#[cfg(target_os = "macos")]`) and is not the
-Linux discovery path.
-
-| Item | Status | Evidence | Five states |
+| Item | Status | Evidence | States |
 |---|---|---|---|
-| Standards-compliant discovery | Done — all 5 XDG keys honoured | `rmac-apps/src/platform.rs:186-231` `parse_desktop_entry`: `Type=Application` (188), `Hidden` (193), `NoDisplay` (194), `OnlyShowIn`/`NotShowIn` via `desktop_visible()` (195, 621-626), `TryExec` (199-202). Tests: `rmac-apps/src/tests.rs:295-298,498,508` | Unavailable: `collect_desktop_files` silently skips unreadable dirs (`platform.rs:167-169`), degrades rather than crashes |
-| Icons | Done | Icon-theme resolution chain `rmac-apps/src/icons.rs:60-90`; fallback plate for unresolved icons `app-drawer/src/view/render/content.rs:36,48,288` | Fallback path covers missing/unresolvable icons |
-| Actions | Done | Desktop Actions parsed (`rmac-apps/src/platform.rs:238-268`), duplicate/invalid ids and empty/oversized names guarded (247-248,252-253); "Reveal application" (`app-drawer/src/view.rs:221`) | Action missing `Exec=` is dropped, not shown broken (`platform.rs:257-258`) |
-| Search | **Partial** | Plain substring only, no ranking: `app-drawer/src/view.rs:88` `app.search_text.contains(&query)`. Spotlight's `rmac-launcher-providers/src/applications.rs:154-199` already calls a real graded fuzzy matcher, `rmac_launcher::query_matches` (`rmac-launcher/src/engine.rs:81-119`, exact>prefix>word-prefix>substring>subsequence), which App Drawer does not reuse | Zero matches: real distinct empty state (`DrawerEmptyState::NoMatches` vs `::EmptyCatalog`, `view/render.rs:38-45`) |
-| Launch | Done, command-output-free | `app-drawer/src/view.rs:195-208` → `rmac_app_launch::launch`. On niri: compositor's own structured IPC `Spawn` action with an XDG-activation token (`rmac-app-launch/src/application.rs:9-24`), not a shell and not text parsing. Falls back to direct `Command::spawn()` only if unavailable (`application.rs:51-57`) | Loading: synchronous catalog scan at open + async live-reload (`view/lifecycle.rs:11,113-120`), degraded-mode message if the fs-watch fails ("Apps loaded, but live updates are unavailable", `lifecycle.rs:89-92`). Error: dismissible "Could not open application: {error}" banner (`view.rs:200-208`) |
+| Folders | Done | `crates/notes/src/library_actions.rs:59` (create), `:73` (rename), `:133`/`:145` (delete); `FolderRecord` in `rmac-notes-store/src/model.rs:50` | E: "No notes in this folder" (`note_navigation.rs:516`); X: rejected actions set the status message |
+| Tags | Done | The Tags field (`editor_presentation.rs:233-255`) and inline `#tags`; `tags` in `model.rs:77` | No tag browser (not required for 1.0) |
+| Search | Done | `SearchState` in `rmac-notes-runtime/src/search.rs:447-454`; rendered in `note_navigation.rs:502-511`; background worker in `search_worker.rs` | L: "Searching…"; E: "No matching notes"; U/X: "Search is unavailable", with the failure reason where one is known |
+| Attachments | Done | `rmac-notes-storage/src/attachment.rs`; UI in `editor_presentation.rs:6-140`; add and remove in `transfer_controller.rs:5-83` | L: "Loading preview…"; U: "Preview unavailable" with Try Again; E: no attachment row; X: an image chooser that fails to open is reported (`transfer_controller.rs:28`) |
+| Pinning | Done | `TogglePin` (`root_presentation.rs:88`), `SetPinned` (`library_actions.rs:349-352`), `set_note_pinned` (`rmac-notes-store/src/mutation.rs:517-536`), the Pinned group (`note_navigation.rs:216`) | X: rejections go to the status message |
+| Import/export | Done | Markdown export of one note (`rmac-notes-store/src/export.rs:246`) and whole-library bundles (`rmac-notes-storage/src/export.rs:17-24`); Markdown import with review and bundle import with collision review (`dialog_presentation.rs:320-675`, `transfer_controller.rs:88-293`) | L: progress dialogs; E: a cancelled chooser does nothing; X: chooser failures (`transfer_controller.rs:114`, `:270`); a library change during review is detected (`:168-171`, `:263-266`). Not supported: Apple Notes `.enex` import and PDF export |
+| Recovery | Done | Each debounced edit is saved as a durable draft before commit (`rmac-notes-runtime/src/worker.rs:2274`, `:2320`); drafts are reviewed on the next start (`recovery_presentation.rs:76`); the last edit is flushed on quit (`startup_controller.rs:223-240`) | Covers a crash, not only a clean quit; conflicting and orphaned drafts get their own choices |
+| Close (⌘W) and quit | Done | `startup_controller.rs:30`, `root_presentation.rs:127`, `main.rs:234` | Open choosers, imports and print dialogs block closing, with a message saying why |
+| Printing | **Fixed** | ⌘P and File › Print…: `src/print_controller.rs:29`, menu at `crates/rmac-app-menu/src/lib.rs:157` | E: "Select a note to print."; L: the window stays open while the dialog is up (`runtime_controller.rs:84`); X: portal errors appear in the status line; an edit made while the dialog is open prints nothing |
 
-Adjacent, not a checklist item: `rmac-apps/src/platform.rs` shells out to
-`xdg-mime` for file-association queries (`run_xdg_mime`, 432-443) and
-`icons.rs:77-84` parses `gsettings get` for the icon theme name. Both are
-narrow, size-capped, single-line-parsed utility calls outside the discovery
-and launch paths, so they don't change either item's status, but a strict
-reading of `todo.md`'s "never parse human-readable CLI output" principle
-would flag them for a future pass.
+## 3. Terminal (`crates/terminal`)
 
-**Gap found, not implemented here:** App Drawer's search should call
-`rmac_launcher::query_matches` instead of `.contains()`, matching Spotlight.
-Small, well-scoped — the matcher is a pure function in a dependency-free
-crate already used and tested elsewhere.
-
-## Notes (`crates/notes`, `crates/rmac-notes-store`, `crates/rmac-notes-runtime`)
-
-| Item | Status | Evidence | Five states |
+| Item | Status | Evidence | States |
 |---|---|---|---|
-| Folders | Done | `library_actions.rs:6-14,44,67,77-114` (`FolderSelection`; create/rename/select) | Empty name rejected: "A Notes folder name cannot be empty" (`library_actions.rs:105`) |
-| Tags | Done | Referenced across `editor_presentation.rs`, `input_support.rs`, `note_navigation.rs`; persisted via `rmac-notes-store/src/{codec,mutation,validation}.rs` | — |
-| Search | Done | `search_controller.rs`, `search_highlight.rs` | — |
-| Attachments | Done | `transfer_controller.rs:6-84` image attach via portal (`rmac_portal::choose_notes_image`), revision-guarded (`queue_image_attachment:38-84`) | Error: "Notes could not open the Linux image chooser" (:27). Race guard: "The note changed while the image chooser was open. Save it, then choose the image again." (:44-46) |
-| Pinning | Done | `library_actions.rs`, `rmac-notes-store/src/model.rs`, `mutation.rs`; tested in `rmac-notes-store/src/tests.rs` | — |
-| Import/export | Done | Export: `rmac-notes-store/src/export.rs` (`ExportScope::{Note,Folder,Library}`; Markdown for a single note, the app's own Bundle format for a folder or the whole library — `transfer_controller.rs:376-613`). Import: plain-text-note import (`transfer_controller.rs:87-151`), Markdown import with a review step (`:153-227`), Bundle import with a collision policy (`rmac-notes-store/src/bundle_import.rs`, `transfer_controller.rs:228-371`) | Error: distinct messages per failure ("Notes could not open the Linux note importer", revision-conflict, collection-limit, `MarkdownRequiresSingleNote`, `MarkdownHasAttachments`, via `ExportError`/`BundlePlanError`) |
-| Recovery | Done | `edit_recovery_controller.rs` (368 lines), `recovery_presentation.rs` (253 lines) | Unavailable: "Recovery unavailable — Close and reopen Notes safely." (`root_presentation.rs:34`). Worker down: "The private Notes worker is unavailable." (`root_presentation.rs:19`) |
+| Real PTY | Done | `portable_pty` `openpty` (`src/session.rs:536`); spawn `:566` | X/U: `SessionStartError` (`session.rs:159-181`) is written into the grid by `Session::failed` (`:623`), and the tab reads "Unavailable". P: a shell that can't run shows the generic start error |
+| Dynamic resize | Done | `resize_to` (`controller/view_state.rs`), PTY resize with rejection handling (`session.rs:240-270`) | X: "The shell rejected the new window size…" |
+| Scrollback | Done | Budget shared across tabs (`src/emulator.rs:70`), rebalanced per tab (`controller/tab_lifecycle.rs:6-30`) | X: a poisoned grid lock sets `operation_error` |
+| Selection | Done | `Selection` (`src/ui_state.rs`), pointer selection (`controller/pointer.rs`), Select All / Command / Command Output | — |
+| Search | **Fixed** | Find (⌘F) used to highlight only the rows on screen, by byte offset. ⌘G, ⇧⌘G, Return and Shift-Return now step through every match in the scrollback, scroll to it and select it, and show "3 of 12": `src/find.rs`, `controller/renderer/grid.rs:38` (`find_step`), `controller/renderer/overlays.rs:24-60`, bindings `controller/lifecycle.rs:22-55` | E: "Not found"; X: a poisoned grid lock sets `operation_error`. Limitation: a match that soft-wraps onto the next row isn't found |
+| Tabs | Done | `controller/tab_lifecycle.rs:32-168`; `MAX_TABS` is reported, not silent | Closing a tab or window with a running job asks "Do you want to terminate running processes…?" (`controller/renderer/dialogs.rs:17`, `:26`); Dock, menu-bar, ⌘Q and log-out closes go through the same question (`controller/lifecycle.rs:134`) |
+| Profiles | Done | `src/profiles.rs`; ⌘, opens the picker (`controller/lifecycle.rs:122`) | X: a profile that fails to load or save shows `persistence_error` |
 
-No gaps found against todo.md's checklist; every item is Done with real five-states
-handling. Not a checklist item, so not tracked as a gap here, but noted for
-completeness: `docs/beta-gap-list.md` S7 ("Notes has no print path") is now
-stale — Notes gained ⌘P printing through the same portal transaction Text
-Editor uses (`e6b131dd`).
+## 4. Files (`crates/finder`, `rmac-quick-look`, `rmac-mounts`)
 
-## Text Editor (`crates/text-editor`) — audit only; owned by another agent's large-file rebase, not edited
+| Item | Status | Evidence | States |
+|---|---|---|---|
+| Safe file operations | Done | Recursive copy off the UI thread (`src/view/operations.rs:115-134`); symlinks are recreated, never followed (`src/file_ops.rs:316`, `:329`); `O_NOFOLLOW` opens; copying a folder into itself is refused | P: `permission_denied_move_never_falls_back_to_copy_and_delete` (`file_ops.rs:1737`); low disk: `low_space_preflight_refuses_the_batch_before_mutation` (`:2705`); cross-filesystem: `:1752`; X: a partial destination is reported |
+| Conflict policy | Done | `ConflictDecision` Keep Both / Replace / Skip (`src/conflict.rs:35`) | No silent overwrite path was found |
+| Cancel | Done | Cancellation tests (`file_ops.rs:1860`, `:1912`, `:2133`, `:2223`, `:2320`) | A cancel leaves the source intact, including mid cross-device and journaled moves |
+| Trash | Done | Trash first; Delete Immediately is a separate command; Empty Trash… with confirmation (`src/view/permanent_delete_controller.rs:67`, ⇧⌘⌫) | Collisions never overwrite (`src/trash_store.rs:4397`) |
+| Undo | Done | `src/undo_journal.rs`, `src/view/undo_controller.rs` | X: refuses to undo a move when space is short (`file_ops.rs:223-229`) |
+| Mounts | Done | `rmac-mounts` discover, revalidate, unmount and watch; `src/view/mount_controller.rs` | U: a failed mount watch shows a banner (`mount_controller.rs:9`); a mount disappearing is tested (`src/view/tests.rs:59`); X: eject errors are shown |
+| Search | Done, now with **Fixed** empty state | Ranked recursive search (`src/view/search_info_controller.rs:23`) with a result summary; List and Icon views now say "No Matching Items" (`src/view/list_presentation.rs:663`), as Gallery already did | L: "Searching…"; E: **Fixed**; X: "Search could not safely read this folder"; a cancelled search is silent; skipped folders are counted in the summary |
+| Previews | Done | Quick Look `Load::{Loading, Ready, Failed}` (`crates/rmac-quick-look/src/panel.rs:73`) | P: "You don't have permission to see this item." (`content.rs:410`); U: a missing converter falls back to a summary; X: separate messages for not found and changed while loading |
+| Open with | Done | Context menu Open With… (`src/view/chrome_presentation/menus_tabs.rs:91-92`), File menu, picker with Always Open With (`src/view/open_with_controller.rs`) | X: refused for the Trash, the Applications view and folders; a failed association load is reported. L: no indicator while associations load (gap) |
 
-| Item | Status | Evidence |
+Files safety rules from `todo.md`: all are met in the code (off-thread
+recursion, no symlink following, explicit conflict policy, cancel keeps the
+source, Trash first), and there are tests for cross-filesystem moves,
+permission errors, low disk, collisions, disappearing mounts and interrupted
+journaled moves.
+
+## 5. System Monitor (`crates/activity-monitor`)
+
+| Item | Status | Evidence | States |
+|---|---|---|---|
+| Process view | Done | `src/process_table.rs:87-284` (real `sysinfo`, sampled every 2 s from `src/sampling.rs`), 11 columns (`src/columns.rs`) | P: an unknown user shows as `uid N`; L: per-process CPU reads 0.0 until the second sample (gap) |
+| Resource views | Done | CPU, Memory, Energy, Disk and Network tabs (`src/metrics.rs:6-49`, `src/view/render/metrics_panes.rs`); rows the platform doesn't provide are left out rather than invented (`src/host_stats.rs:1-29`) | L: **Fixed**. The CPU figures show "—" until two readings exist (`metrics_panes.rs:309`); they used to read 100% Idle. E: **Fixed**. "No Network Interfaces" (`metrics_panes/network.rs:106`) |
+| Search and sort | Done | Search by name, PID or path (`src/view.rs:58-67`, `process_table.rs:287-300`); click-to-sort (`process_table.rs:396-407`) | E: **Fixed**. "No Matching Processes" (`src/view/render.rs:153`) |
+| Safe terminate | Done | PID identity is checked again before confirming (`src/process_action.rs:39-67`); signals go through a pidfd (`src/process_signal.rs:33-80`); Quit / Force Quit dialog (`src/view/render/overlays.rs:6-57`) | E: "exited before confirmation"; U: "This system cannot send the requested signal."; P: "your account may not have permission"; X: other rejections. All are tested (`process_action.rs:118-178`) |
+| History | Done | 60-sample (2 min) ring per metric (`src/metrics.rs:71-97`), drawn as the bottom graphs (`metrics_panes.rs:173-302`) | — |
+| No invented GPU numbers | Done | There is no GPU column or tab at all (`src/columns.rs:12-24`, `src/metrics.rs:6-21`) | Related: the Energy column is an estimate from CPU and disk I/O (`process_table.rs:30-35`, `:272`). The code says so, but the UI does not (gap) |
+
+## 6. Apps: App Drawer and Spotlight (`crates/app-drawer`, `rmac-apps`, `rmac-launcher*`)
+
+| Item | Status | Evidence | States |
+|---|---|---|---|
+| Standards-compliant discovery | Done | `Type`, `Hidden`, `NoDisplay`, `OnlyShowIn`/`NotShowIn` and `TryExec` (`crates/rmac-apps/src/platform.rs:188-202`, `:624-625`); XDG data-dir order (`:82-93`); localized keys (`:203-210`); superseded GNOME apps hidden from browsing (`src/superseded.rs:52-107`, `crates/app-drawer/src/catalog.rs:111`) | L: **Partial**. The first `catalog::scan()` runs on the UI thread with no indicator (`crates/app-drawer/src/view/lifecycle.rs:11`); rescans run in the background. P: an unreadable `.desktop` file is skipped silently |
+| Icons | Done | Icon-theme lookup with inheritance, sizes and `pixmaps` (`crates/rmac-apps/src/icons.rs:1-91`) | U: an app without an icon falls back to the generic icon plate (`8dd62774`; not checked line by line) |
+| Actions | Done | `[Desktop Action]` groups (`platform.rs:237-275`) shown as alternate actions (`crates/rmac-launcher-runtime/src/coordinator.rs:308-315`) | Actions are launched by `Exec` only; D-Bus activation isn't supported (a documented limitation at `platform.rs:256-257`) |
+| Search and launch | Done, search ranking **Fixed** | `Phase::{Loading, Results, Empty, Unavailable, Activating, ActivationFailed}` (`crates/rmac-launcher-runtime/src/model.rs:47-58`); `DrawerEmptyState` (`crates/app-drawer/src/accessibility.rs:146-165`). Search used to keep catalog order and match only a plain substring (`app.search_text.contains(&query)`); `crates/app-drawer/src/search.rs` (new, unit-tested) now grades each match exact > prefix > word-prefix > substring > subsequence — the same order Spotlight's `rmac_launcher::engine::match_quality` uses, kept as a small local copy rather than a dependency on that crate, which also pulls in `rmac-compositor` and shell invocation that catalog search has no other reason to need. `view.rs`'s `search_matching_indices` sorts by score, stable so ties keep catalog order (`76832c8c`) | P: "permission to start the application was denied" (`crates/rmac-app-launch/src/model.rs:33-34`); X: a dismissable error in the drawer (`crates/app-drawer/src/view/render.rs:170-204`); U: "Search providers are unavailable" |
+
+## 7. System Settings (`crates/system-settings`, document only)
+
+`todo.md` asks for real backends in Network, Bluetooth, Power, Sound, Display
+info and Appearance, and for no placeholder panes.
+
+| Pane | Status | Backend | States |
+|---|---|---|---|
+| Network | Done | NetworkManager through `rmac-network` (`src/connectivity.rs`) | L/X: `controller/network/refresh.rs:15-72` ("Could not update Network: …") |
+| Bluetooth | Done | BlueZ through `rmac-bluetooth` | U: "No Bluetooth adapter is available…" (`controller/bluetooth/render.rs:66-68`), and actions are disabled; X: `state.rs:17-34` |
+| Power (Battery) | Done | UPower and power-profiles-daemon through `rmac-power` | L/X: `controller/power.rs:14-24` |
+| Sound | Done | PipeWire through `rmac-audio` | U: `Availability::{Available, Unknown, Unavailable}` (`src/sound.rs:38-72`); X: `controller/sound.rs:158-162` |
+| Display info | Done | niri through `rmac-display` | L: "Loading displays from the compositor…" (`controller/displays/render.rs:25-26`) |
+| Appearance | Done | `rmac-appearance` and its portal | L/X: `controller/appearance.rs:16-26` |
+| No placeholder panes | **Partial** | 25 panes (`src/navigation.rs:46`). No `todo!()` or "coming soon" text was found, and each pane has a backend crate in `Cargo.toml`, but only the six above were traced end to end. The laptop audit also found Settings idling at 25% CPU (`docs/system-audit-2026-09-24.md` #1). | Empty states follow one pattern (`group_placeholder`, `controller/view_helpers/form.rs:319`) |
+
+## 8. Gaps left open
+
+Small or medium, with a clear place in the code:
+
+1. **Text Editor: Export as PDF…** Write `rmac_print::render_pdf` output to a
+   file chosen in a Save panel (owner: the Text Editor agent).
+2. **System Monitor: per-process CPU on the first paint.** Show "—" in the
+   CPU column until `sysinfo` has two samples, or take a second sample about
+   200 ms after launch (`src/view.rs`, `process_table.rs:253`, `:269`).
+3. **System Monitor: the Energy column.** Say in its header tooltip or help
+   that it is estimated from CPU and disk I/O.
+4. **Apps: the first catalog scan.** Move it to the background executor and
+   show the drawer's loading state (`crates/app-drawer/src/view/lifecycle.rs:11`).
+5. **Files: Open With loading.** Show progress in the picker while
+   `file_association` runs (`src/view/open_with_controller.rs:26-59`).
+6. **Terminal: shell start errors.** Tell "permission denied" apart from
+   "not found" in `SessionStartError::StartShell` (`src/session.rs:159-181`).
+
+Need design or backend work first:
+
+- Notes import from Apple Notes `.enex` and other apps, and Notes PDF export
+  (the latter could reuse `render_pdf`).
+- Terminal Find across soft-wrapped lines.
+- Desktop actions over D-Bus activation.
+- Confirming that each of System Settings' other 19 panes has a real backend.
+
+## 9. Changes on `app-scope`
+
+| Commit | Change | Test |
 |---|---|---|
-| UTF-8 text | Done | `document.rs:17-18` (`TextEncoding::Utf8`/`Utf8Bom`), default `Utf8` (:57) |
-| Open/save | Done | `view/document_io.rs`, `view/saving.rs`, `view/opening.rs` |
-| Find/replace | Done | `view/editing.rs:80-149` (`find_next`/`find_prev`/`replace_current`/`replace_all`); bar UI `view/render/find.rs` |
-| Crash recovery | Done | `recovery.rs`, `view/recovery_state.rs`; draft flushed at once on session end (`6a65af6e`, beta-gap B9/B3) |
-| Status | Done | `document.rs:66-92` builds the encoding/line-ending status string; rendered in `view/render/chrome.rs` |
-| Printing / export path | Done | `view/printing.rs:6-84` via `rmac_print_linux::PrintDocument`, routed through the Linux print portal — the portal's own "Print to File" / PDF virtual printer satisfies "a printing or export path" without a separate PDF code path |
+| `a23265a8` | Terminal Find steps through the whole scrollback with ⌘G, ⇧⌘G, Return and Shift-Return, with a "3 of 12" count; highlights use cell columns, not bytes | `crates/terminal/src/find.rs` (7 tests, run standalone with `rustc --test`) |
+| `b1d83bc0` | System Monitor: No Matching Processes, "—" before the first CPU reading, No Network Interfaces | none (view code) |
+| `e6b131dd` | Notes prints with ⌘P; the menu bar lists Notes' Print… and Terminal's Find Next and Find Previous; the portal's errors no longer name Text Editor | `print_controller.rs` (3 tests, run standalone), `rmac-app-menu` `exported_hints_preserve_standard_macos_shortcuts` |
+| `30c5de94` | Files: No Matching Items in List and Icon views | none (view code) |
+| `dd043ed6` | Terminal's Find bar says "Not found", matching Text Editor | `find.rs` |
+| `76832c8c` | Apps ranks search results by match quality (exact > prefix > word-prefix > substring > subsequence) instead of plain substring, keeping catalog order for ties | `crates/app-drawer/src/search.rs` (5 tests, run standalone with `rustc --test`) |
 
-No gaps found against todo.md's checklist. This crate was not touched (another
-agent's large-file rebase is in flight); this is audit-only, matching the
-"System Monitor history graph" and "Files open-with menu" and "Notes
-import/export" candidate items from the task brief — Text Editor's
-export-as-PDF candidate is likewise **already Done**, nothing to build.
+## 10. Laptop checks
 
-## System Settings (`crates/system-settings`) — audit only; owned by another agent's visual + idle-CPU work, not edited
-
-| Item | Status | Evidence |
-|---|---|---|
-| Only panes with a real backend (Network, Bluetooth, Power, Sound, Display info, Appearance) | Done for the required six | `navigation.rs:48-65,100-323` routes Network, Bluetooth, Power, Sound, Displays and Appearance; `grep -rn "placeholder\|not yet implemented\|coming soon\|todo!()"` across the crate returns only text-input `.placeholder(...)` attributes and legitimate empty-state copy ("No VPN Configurations", "No Schedules") — no placeholder pane found |
-
-Observation, not a gap: the crate has substantially more panes than todo.md's
-six-pane whitelist (accessibility, connectivity, displays, focus, input,
-notifications, storage_categories, system_environment, privacy_security, vpn,
-wifi, date_time, locale, system_info, …). Whether each of those extra panes has
-a real backend was not re-audited pane-by-pane here, in keeping with "only
-document gaps, don't edit" for a crate another agent is actively changing; a
-follow-up pass should confirm none of the extra panes are placeholders as the
-crate settles.
-
-## Cross-app notes
-
-- `let _ = self.tabs[self.active].resize(size);` in
-  `crates/terminal/src/controller/view_state.rs:140` drops a `Result`, but the
-  failure path (`session.rs:1081` `resize_failure_retains_the_last_kernel_accepted_geometry`)
-  already keeps the last accepted geometry internally, so nothing destructive
-  is silently lost — not flagged as a `todo.md` "never drop a destructive
-  error with `let _ =`" violation, just noted for visibility.
-- Every app audited exposes real loading/empty/unavailable/permission-denied/
-  error states with user-visible copy, not silent failure or invented data —
-  the one deliberate exception is System Monitor's GPU metric, which is
-  correctly *absent* rather than fabricated (see above).
+1. **Terminal.** Run `seq 1 5000`, press ⌘F and type `4999`. Return should
+   jump to the match and show "1 of 1". Search for `9`: ⌘G and ⇧⌘G should
+   move down and up and wrap. Search for `zzz`: the bar should say "Not
+   found". With two tabs, each keeps its own search.
+2. **Notes.** Select a note and press ⌘P: the portal dialog should open.
+   Cancel, then print to a PDF file. With the dialog open, ⌘W should say to
+   finish the print dialog first. Choose File › Print… from the menu bar.
+3. **System Monitor.** At launch, the CPU figures should read "—" for about
+   2 s. Search for `zzzz` to see No Matching Processes.
+4. **Files.** Type a name that matches nothing in List and in Icon view.
+   Press Return for a ranked search with no results.
+5. **Apps.** Open the drawer and type a partial app name (e.g. "term" for
+   Terminal): an exact or prefix match should sort to the top over a
+   substring hit elsewhere in an app's keywords.

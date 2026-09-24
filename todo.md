@@ -73,10 +73,10 @@ loading, empty, unavailable, permission-denied and error states.
       terminate, history. Never invent per-process GPU numbers.
       (`docs/app-scope-audit.md`; empty/loading states fixed on this pass —
       `b1d83bc0`)
-- [ ] **Apps:** standards-compliant discovery, icons, actions, search and
-      launch. Later: installing apps. Partial: search is plain substring
-      matching, not the fuzzy matcher Spotlight already uses
-      (`docs/app-scope-audit.md`).
+- [x] **Apps:** standards-compliant discovery, icons, actions, search and
+      launch. Later: installing apps. (`docs/app-scope-audit.md`; search
+      ranked by match quality instead of plain substring, fixed on this
+      pass — `crates/app-drawer/src/search.rs`)
 - [x] **System Settings:** only panes with a real backend (Network,
       Bluetooth, Power, Sound, Display info, Appearance). No placeholder panes.
       (`docs/app-scope-audit.md`; audit-only for the required six panes,

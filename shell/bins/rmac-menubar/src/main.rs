@@ -3408,7 +3408,7 @@ mod linux_wayland {
         if action == "finder::NewWindow" {
             return Ok(());
         }
-        let published = async {
+        let published = async move {
             while let Some((app_id, published)) = owners.next().await {
                 if app_id == rmac_apps::identity::FILES && published {
                     return true;

@@ -555,6 +555,58 @@ fn write_theme(
         .unwrap();
 }
 
+/// Regression coverage for a real incident: on the reference install,
+/// Calculator, Clock, and Archive Utility all appeared to be missing from
+/// the App Drawer even though their `.desktop` entries and binaries were
+/// installed. Reading the actual packaged entries here (not a synthetic
+/// fixture) pins down each one's visibility gate directly against the files
+/// `dpkg` ships, so packaging drift (an entry gaining a stray `NoDisplay`,
+/// `OnlyShowIn`, or `Hidden` key) fails a fast, hermetic test instead of
+/// only showing up as "an app went missing" on someone's machine.
+#[test]
+fn packaged_calculator_and_clock_stay_visible_only_archive_utility_is_deliberately_hidden() {
+    let rmac_desktops = vec!["rmac".to_string(), "niri".to_string()];
+
+    let calculator = desktop_group_named(
+        include_str!("../../../packaging/rmac-apps/applications/org.rmac.Calculator.desktop"),
+        "Desktop Entry",
+    );
+    let clock = desktop_group_named(
+        include_str!("../../../packaging/rmac-apps/applications/org.rmac.Clock.desktop"),
+        "Desktop Entry",
+    );
+    let archive_utility = desktop_group_named(
+        include_str!("../../../packaging/rmac-apps/applications/org.rmac.ArchiveUtility.desktop"),
+        "Desktop Entry",
+    );
+
+    for (name, values) in [("Calculator", &calculator), ("Clock", &clock)] {
+        assert!(
+            !bool_value(values.get("Hidden")),
+            "{name} must not carry Hidden=true"
+        );
+        assert!(
+            !bool_value(values.get("NoDisplay")),
+            "{name} must not carry NoDisplay=true -- it belongs in the App Drawer"
+        );
+        assert!(
+            desktop_visible(values, &rmac_desktops),
+            "{name} must stay visible under the rmac session"
+        );
+        assert_eq!(values.get("Type").map(String::as_str), Some("Application"));
+    }
+
+    // Archive Utility is deliberately NoDisplay -- like macOS's own Archive
+    // Utility.app, it is invoked through a file association, not browsed.
+    assert!(bool_value(archive_utility.get("NoDisplay")));
+
+    // Every non-hidden packaged entry must be a registered first-party
+    // identity, or App Drawer's name-based duplicate suppression could treat
+    // it as a stray non-rmac app and hide it behind a same-named original.
+    assert!(identity::ALL.contains(&"org.rmac.Calculator"));
+    assert!(identity::ALL.contains(&"org.rmac.Clock"));
+}
+
 #[test]
 fn only_an_absolute_desktop_entry_path_becomes_the_working_directory() {
     let entry =

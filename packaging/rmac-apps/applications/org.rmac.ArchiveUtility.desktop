@@ -14,6 +14,11 @@ TryExec=/usr/bin/rmac-archive-utility
 Exec=/usr/bin/rmac-archive-utility %F
 Icon=org.rmac.ArchiveUtility
 Terminal=false
+# Deliberately not browsable: like macOS's own Archive Utility.app (tucked
+# away in /System/Library/CoreServices/Applications, out of Launchpad's
+# scanned folders), this app is a file-association helper, not something a
+# person opens from the App Drawer. It still resolves through file
+# associations, "Open With", and any command naming it directly.
 NoDisplay=true
 Categories=Utility;Archiving;Compression;
 MimeType=application/zip;application/x-tar;application/x-compressed-tar;application/x-bzip2-compressed-tar;application/x-bzip-compressed-tar;application/x-xz-compressed-tar;application/gzip;application/x-bzip2;application/x-bzip;application/x-xz;

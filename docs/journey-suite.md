@@ -101,3 +101,92 @@ environment-discovery, and report-building logic and runs anywhere with
 `python3 -m pytest scripts/test_journey_launch.py` (no pyatspi, niri, or live
 session required); it does not exercise the live AT-SPI/niri orchestration,
 which only runs on the reference laptop.
+
+`scripts/linux/run-journey-files.py` exercises journey 2 ("Find a file,
+preview it, copy, move, rename and trash it, and undo a destructive
+operation") against Files (`crates/finder`, binary `rmac-files`) on the
+reference laptop, the same way run-journey-launch.py exercises journey 1:
+AT-SPI (`pyatspi`) and niri IPC only, no keyboard or pointer injector. It
+creates a disposable folder under `~/Documents/lulo-journey-2-<random>`,
+never touches anything outside it, and always removes it (and any Trash
+entries it created) even on failure:
+
+```sh
+scp scripts/linux/run-journey-files.py jacob@<reference-pc>:/tmp/
+ssh jacob@<reference-pc> \
+  'python3 /tmp/run-journey-files.py --output /tmp/journey-files-report.json'
+```
+
+Because other agents may also be driving the reference laptop's screen, wrap
+the run in the shared lock so only one UI-driving run happens at a time:
+
+```sh
+ssh jacob@<reference-pc> \
+  'exec 9>/tmp/lulo-journey.lock; flock -w 900 9 && \
+   python3 /tmp/run-journey-files.py --output /tmp/journey-files-report.json'
+```
+
+The last real run against the reference laptop (2026-09-24) found Files
+considerably less accessible than journey 1's Dock/Spotlight surfaces:
+
+* **No accessible name anywhere in a Files window itself.** Every toolbar
+  button, the search/path entry, and the icon-size slider are exposed over
+  AT-SPI with an empty name (`grep -rn "aria_label\|\.role(\|
+  on_a11y_action" crates/finder/src` returns nothing, unlike
+  `shell/bins/rmac-dock/src/main.rs`, which uses that exact API for its own
+  tiles). Worse, **no file, folder, or sidebar row is exposed at all** -- a
+  Files window's AT-SPI frame has only its toolbar controls as children.
+  This blocks "find a file" (`find_file` step) and any per-item selection
+  entirely; the script falls back to whole-folder Edit > Select All against
+  a single-item folder to get a definite target for the rest of the
+  journey.
+* The shell top bar's per-app menu for Files *is* fully accessible --
+  "File menu" (New Folder, New Tab, Close Tab, Move to Trash, Get Info),
+  "Edit menu" (Undo, Cut, Copy, Paste, Select All), "View menu" (view
+  modes, sort, Show Hidden Files, Quick Look), "Go menu" (Back, Forward,
+  Enclosing Folder, Home, Applications, Downloads, Trash) -- but there is
+  no "Rename" item anywhere, and no "Quit Files" item in "Files menu"
+  either (unlike journey 1's Text Editor/Notes). Renaming is otherwise
+  inline-only (`crates/finder/src/view/rename_controller.rs`), needing both
+  row-level selection (unavailable) and a Return keypress (no keyboard
+  injector); `File > Get Info`'s dialog also exposes no editable content
+  over AT-SPI, only a Close button. The `rename` step fails for real, live,
+  every run.
+* Selection-scoped top-bar menu commands (Select All, Move to Trash, Undo,
+  Quick Look) silently no-op -- no error, no dialog, nothing on disk --
+  unless the target Files window's AT-SPI frame is given focus first via
+  the `Component` interface's `grabFocus()`; the script always does this
+  immediately before such a click.
+* `View > Quick Look` does not open any visible window or layer-shell
+  surface on this build even with a real selection and a focused window
+  (`crates/finder/src/view/quick_look_controller/controller.rs:33`); the
+  `preview` step fails for real.
+* **Copy and Move do not work on Linux at all.** Both menu actions are
+  reached and clicked correctly, but nothing is ever pasted:
+  `crates/finder/src/pasteboard.rs`'s `#[cfg(not(target_os = "macos"))]`
+  module (lines 62-70) stubs `write_file_urls`, `read_file_urls`, and
+  `clear_file_urls` to complete no-ops, so Copy never writes anything a
+  Paste could read back, on this window or any other. This is a real
+  product gap, not flaky automation -- the `copy`/`move` steps fail for
+  real, every run, once the script deliberately never keeps two Files
+  windows open at the same time (see below).
+* Two simultaneously open `rmac-files` processes were observed to register
+  only one `org.rmac.Files.Menu` D-Bus name between them (`dbus-send
+  ... org.freedesktop.DBus.ListNames` shows a single entry with two Files
+  windows open), which can make it unpredictable which window a top-bar
+  menu click actually reaches. The script therefore always fully closes a
+  source Files window before opening a destination one, rather than
+  keeping both open.
+* Trash and Undo work correctly once a window has AT-SPI focus: `File >
+  Move to Trash` moves the file for real (verified against
+  `~/.local/share/Trash/{files,info}`, matched to this run by the
+  `.trashinfo`'s `Path=` line rather than by name, so it never confuses
+  another user's or run's Trash entries with this one), and `Edit > Undo`
+  restores it and removes the matching Trash entry. These two steps pass
+  reliably.
+
+`scripts/test_journey_files.py` unit-tests the script's pure JSON-parsing,
+environment-discovery, Trash-entry-matching, and report-building logic and
+runs anywhere with `python3 -m pytest scripts/test_journey_files.py` (no
+pyatspi, niri, or live session required); it does not exercise the live
+AT-SPI/niri orchestration, which only runs on the reference laptop.

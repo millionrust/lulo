@@ -1,0 +1,185 @@
+name: CI quality gates
+
+# Everything here is additional to .github/workflows/ci.yml: MSRV drift and
+# an aarch64 cross-build check run on every PR (the aarch64 job is
+# non-blocking for now, see docs/ci.md); the dependency/security audit and
+# the bounded fuzz smoke runs are weekly-scheduled, not per-PR, to keep
+# per-PR CI disk- and time-bounded (AGENTS.md).
+on:
+  pull_request:
+  push:
+    branches: [master, dev]
+  schedule:
+    # Monday 05:17 UTC. An off-the-hour time avoids the scheduling pile-up
+    # documented at https://docs.github.com/actions/using-workflows/events-that-trigger-workflows#schedule.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  msrv:
+    name: MSRV check
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Check that rust-version matches the pinned toolchain
+        run: python3 scripts/check-msrv.py
+
+  linux-aarch64:
+    name: Linux aarch64 cross-build (non-blocking)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Not a merge gate yet: see docs/ci.md for what this does and does not
+    # cover, and what "native smoke test before Beta" (todo.md) still needs.
+    continue-on-error: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Add the aarch64 target
+        run: rustup target add aarch64-unknown-linux-gnu
+
+      - name: Cache Cargo data
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cache/cross
+            target
+          key: ${{ runner.os }}-cross-aarch64-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Install cross
+        run: cargo install --locked --git https://github.com/cross-rs/cross --rev f8151ae777290430cf2108efacf3976d9528500b cross
+
+      - name: Cross-build the dependency-light crates for aarch64
+        # These crates have no GPUI/Wayland/Vulkan system-dependency, so
+        # `cross`'s stock Docker image can build them without a custom
+        # image. This proves the aarch64 toolchain/target pipeline works;
+        # it does not yet cross-build the GPUI-based binaries. See
+        # docs/ci.md for the follow-up needed to extend this.
+        run: |
+          cross build --locked --target aarch64-unknown-linux-gnu \
+            -p rmac-storage \
+            -p rmac-apps \
+            -p rmac-shell-settings \
+            -p rmac-theme \
+            -p rmac-compositor-niri
+
+  dependency-audit:
+    name: Weekly dependency and security audit
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Check root-workspace advisories
+        uses: EmbarkStudios/cargo-deny-action@c3bbe7e4e3f7baeee1a3dd9aec0a3b2aded580fb # v2.1.1
+        with:
+          log-level: error
+          command: check
+          arguments: --locked
+          command-arguments: advisories --hide-inclusion-graph
+
+      - name: Check shell-workspace advisories
+        uses: EmbarkStudios/cargo-deny-action@c3bbe7e4e3f7baeee1a3dd9aec0a3b2aded580fb # v2.1.1
+        with:
+          log-level: error
+          command: check
+          arguments: --locked --manifest-path shell/Cargo.toml
+          command-arguments: --config shell/deny.toml advisories --hide-inclusion-graph
+
+      - name: cargo audit (root workspace)
+        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: cargo audit (shell workspace)
+        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          working-directory: shell
+
+      - name: Open an issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "Weekly dependency/security audit failed ($(date -u +%F))" \
+            --body "The scheduled dependency-audit job failed: ${RUN_URL}" \
+            --label "dependencies" || true
+
+  fuzz:
+    name: Bounded fuzz smoke run
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - desktop_entry
+          - shell_settings_config
+          - theme_config
+          - terminal_escape
+          - niri_ipc
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Install nightly (cargo-fuzz needs -Z flags)
+        run: rustup toolchain install nightly --profile minimal
+
+      - name: Cache Cargo data
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            fuzz/target
+          key: ${{ runner.os }}-fuzz-${{ matrix.target }}-${{ hashFiles('fuzz/Cargo.toml') }}
+
+      - name: Install cargo-fuzz
+        run: cargo install --locked cargo-fuzz
+
+      - name: Fuzz ${{ matrix.target }} for 60 seconds
+        working-directory: fuzz
+        run: cargo +nightly fuzz run ${{ matrix.target }} -- -max_total_time=60
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore

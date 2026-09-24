@@ -6,7 +6,11 @@ After=graphical-session.target
 OnFailure=rmac-lock-fallback.service
 StartLimitIntervalSec=30s
 StartLimitBurst=5
-ConditionPathExists=/etc/pam.d/rmac-lock
+# Assert, never Condition: a failed Condition skips the unit while
+# `systemctl start` still exits 0, so a lock request (and the pre-sleep lock
+# that holds suspend) would report success with nothing locked. A failed
+# Assert fails the start job and runs OnFailure.
+AssertPathExists=/etc/pam.d/rmac-lock
 
 [Service]
 Type=notify
@@ -18,3 +22,6 @@ WatchdogSignal=SIGKILL
 Restart=on-failure
 RestartSec=1s
 KillMode=control-group
+# Release builds abort on panic, and a core of this process can hold the
+# typed password (libpam's copy and the input buffer).
+LimitCORE=0

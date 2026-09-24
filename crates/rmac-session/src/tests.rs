@@ -507,6 +507,11 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     assert!(lock.contains("ExecStart=%h/.local/libexec/rmac/rmac-lock-provider"));
     assert!(lock.contains("WatchdogSec=10s"));
     assert!(lock.contains("KillMode=control-group"));
+    // A skipped (Condition) unit makes `systemctl start` succeed with
+    // nothing locked; only an Assert fails the lock request.
+    assert!(lock.contains("AssertPathExists=/etc/pam.d/rmac-lock"));
+    assert!(!lock.contains("ConditionPathExists"));
+    assert!(lock.contains("LimitCORE=0"));
     assert!(!lock.contains("OnFailure=rmac-component-failure"));
     assert!(!lock.contains("NoNewPrivileges=yes"));
     assert!(!lock.contains("/bin/sh"));

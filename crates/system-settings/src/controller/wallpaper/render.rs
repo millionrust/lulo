@@ -224,19 +224,23 @@ impl Settings {
             )));
         }
 
-        // The built-in wallpapers: each thumbnail is drawn from that
-        // wallpaper's own procedural palette for the current appearance.
+        // The built-in wallpapers, for the current appearance: the Lulo set
+        // shows its packaged thumbnail over a swatch of its own colours (the
+        // swatch stays if the image is missing); procedural ones show their
+        // palette.
         let current_builtin = match rmac_wallpaper::parse_source(selection.source.as_deref()) {
             Ok(rmac_wallpaper::Source::BuiltIn(id)) => Some(id),
             _ => None,
         };
         let mut grid = div().flex().flex_wrap().gap(px(THUMB_GAP));
+        let dark = style::dark();
         for id in rmac_wallpaper::BuiltInId::ALL {
             let metadata = id.metadata();
-            let palette = metadata.palette_for(style::dark());
+            let palette = metadata.palette_for(dark);
+            let thumbnail = metadata.thumbnail_path(dark);
             let using = current_builtin == Some(id);
             let row_view = view.clone();
-            let change = if id == rmac_wallpaper::BuiltInId::Aurora {
+            let change = if id == rmac_wallpaper::DEFAULT_BUILT_IN {
                 WallpaperChange::Source(None)
             } else {
                 WallpaperChange::Source(Some(format!("builtin:{}", id.id())))
@@ -254,11 +258,16 @@ impl Settings {
                             .w_full()
                             .h(px(THUMB_HEIGHT))
                             .rounded(px(8.0))
+                            .overflow_hidden()
                             .bg(gpui::linear_gradient(
                                 135.0,
                                 gpui::linear_color_stop(hsl(palette[0]), 0.0),
                                 gpui::linear_color_stop(hsl(palette[3]), 1.0),
                             ))
+                            .when_some(thumbnail, |picture, path| {
+                                picture
+                                    .child(img(path).w_full().h_full().object_fit(ObjectFit::Cover))
+                            })
                             .when(using, |picture| picture.border_2().border_color(accent())),
                     )
                     .child(

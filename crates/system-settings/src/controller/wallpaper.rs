@@ -13,6 +13,7 @@ impl Settings {
         };
         let (selection, _) =
             wallpaper_selection(&snapshot.settings.wallpaper, &self.wallpaper_target);
+        let dark = style::dark();
         let watched_paths = rmac_wallpaper::parse_source(selection.source.as_deref())
             .ok()
             .and_then(|source| rmac_wallpaper::file_path(&source).map(PathBuf::from))
@@ -29,7 +30,7 @@ impl Settings {
             let (events_tx, events_rx) = async_channel::bounded(1);
             let (result, watcher) = blocking::unblock(move || {
                 let watcher = rmac_wallpaper_image::watch_files(&watched_paths, events_tx);
-                (render_wallpaper_preview(&selection), watcher)
+                (render_wallpaper_preview(&selection, dark), watcher)
             })
             .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {

@@ -417,11 +417,17 @@ fn wallpaper_selection_reports_inheritance_without_inventing_an_override() {
 
 #[test]
 fn original_wallpaper_preview_uses_the_bounded_renderer() {
-    let preview =
-        render_wallpaper_preview(&rmac_shell_settings::WallpaperSelection::default()).unwrap();
-    assert_eq!(preview.size(0).width.0, 480);
-    assert_eq!(preview.size(0).height.0, 270);
-    assert_eq!(preview.as_bytes(0).unwrap().len(), 480 * 270 * 4);
+    // Aurora is drawn without packaged files, so this runs from a checkout.
+    let aurora = rmac_shell_settings::WallpaperSelection {
+        source: Some("builtin:rmac-aurora".into()),
+        ..Default::default()
+    };
+    for dark in [true, false] {
+        let preview = render_wallpaper_preview(&aurora, dark).unwrap();
+        assert_eq!(preview.size(0).width.0, 480);
+        assert_eq!(preview.size(0).height.0, 270);
+        assert_eq!(preview.as_bytes(0).unwrap().len(), 480 * 270 * 4);
+    }
 }
 
 #[test]

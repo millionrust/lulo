@@ -412,19 +412,23 @@ pub(super) fn composite_wallpaper_pixel(source: [u8; 4], background: [u8; 4]) ->
     [blend(0), blend(1), blend(2), 255]
 }
 
+/// Render the selection as the desktop would show it; built-ins use their
+/// light or dark form for `dark`.
 pub(super) fn render_wallpaper_preview(
     selection: &rmac_shell_settings::WallpaperSelection,
+    dark: bool,
 ) -> std::result::Result<std::sync::Arc<gpui::RenderImage>, String> {
     let source = rmac_wallpaper::parse_source(selection.source.as_deref())
         .map_err(|_| "the saved wallpaper source is invalid".to_owned())?;
     let resolved = rmac_wallpaper_system::resolve(&source).map_err(|error| error.to_string())?;
     let decoded = rmac_wallpaper_image::Cache::new(0)
-        .get_or_decode(
+        .get_or_decode_for(
             resolved,
             rmac_compositor::PhysicalSize {
                 width: WALLPAPER_PREVIEW_WIDTH,
                 height: WALLPAPER_PREVIEW_HEIGHT,
             },
+            dark,
         )
         .map_err(|error| error.to_string())?;
     let layout = rmac_wallpaper::layout(
@@ -505,7 +509,7 @@ pub(super) fn validate_wallpaper_choice(
         source: Some(source.clone()),
         fit,
     };
-    render_wallpaper_preview(&selection).map_err(|error| {
+    render_wallpaper_preview(&selection, true).map_err(|error| {
         format!("The selected file is not a usable PNG, JPEG, or WebP image: {error}")
     })?;
     Ok(source)

@@ -166,6 +166,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             item!("Close Tab", "finder::CloseTab", "⌘W"),
             item!("Move to Trash", "finder::MoveToTrash", "⌘⌫", separator),
             item!("Get Info", "finder::GetInfo", "⌘I"),
+            item!("Rename", "finder::RenameItem", ""),
             item!("Compress", "finder::Compress", ""),
         ],
     },
@@ -908,5 +909,23 @@ mod tests {
         .unwrap();
         assert_eq!(menus[0].items[0].label, "Move to Bin");
         assert_eq!(menus[1].items[0].label, "Bin");
+    }
+
+    #[test]
+    fn files_file_menu_offers_rename_after_get_info() {
+        let menus = definition_for_vocabulary(
+            rmac_apps::identity::FILES,
+            &["finder::GetInfo", "finder::RenameItem", "finder::Compress"],
+            rmac_locale::FileVocabulary::for_locale("en_US.UTF-8"),
+        )
+        .unwrap();
+        let labels = menus[0]
+            .items
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(menus[0].label, "File");
+        assert_eq!(labels, ["Get Info", "Rename", "Compress"]);
+        assert_eq!(menus[0].items[1].action, "finder::RenameItem");
     }
 }

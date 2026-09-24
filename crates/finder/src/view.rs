@@ -278,6 +278,8 @@ struct FinderView {
     file_words: rmac_locale::FileVocabulary,
     sections: Vec<Section>,
     info: Option<Entry>,
+    /// Get Info's editable Name & Extension field and the path it renames.
+    info_name: Option<(PathBuf, gpui::Entity<InputState>)>,
     open_with: Option<OpenWithPicker>,
     open_generation: u64,
     quick_look: Option<QuickLookPanel>,

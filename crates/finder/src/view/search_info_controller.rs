@@ -2,7 +2,7 @@ use super::*;
 use gpui_component::scroll::ScrollableElement as _;
 
 impl FinderView {
-    pub(super) fn get_info(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn get_info(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.trash_view {
             self.operation_error =
                 Some("Restore an item before viewing its file information".into());
@@ -10,6 +10,12 @@ impl FinderView {
             return;
         }
         self.info = self.selected_entry().cloned();
+        self.info_name = None;
+        if let Some(entry) = self.info.clone() {
+            if entry.application.is_none() {
+                self.info_name_field(&entry, window, cx);
+            }
+        }
         cx.notify();
     }
 
@@ -184,6 +190,9 @@ impl FinderView {
         let glyph_color = if e.is_dir { folder_blue() } else { secondary() };
 
         let mut card = div()
+            .id("info-panel")
+            .role(Role::Dialog)
+            .aria_label(format!("{} Info", e.name))
             .w(px(300.0))
             .max_h(px(500.0))
             .overflow_hidden()
@@ -230,6 +239,29 @@ impl FinderView {
                             .child(e.name.clone()),
                     ),
             );
+
+        // Finder's Name & Extension field: edit and press Return to rename.
+        let name_field = self
+            .info_name
+            .as_ref()
+            .filter(|(path, _)| *path == e.path)
+            .map(|(_, input)| {
+                div()
+                    .id("info-name")
+                    .role(Role::Group)
+                    .aria_label("Name & Extension")
+                    .v_flex()
+                    .gap_1()
+                    .px_4()
+                    .pt_2()
+                    .pb_2()
+                    .border_b_1()
+                    .border_color(sep())
+                    .text_size(rmac_ui::text_px(12.0))
+                    .child(div().text_color(secondary()).child("Name & Extension:"))
+                    .child(TextField::new(input).small())
+            });
+        card = card.when_some(name_field, |card, field| card.child(field));
 
         let mut details = div()
             .v_flex()

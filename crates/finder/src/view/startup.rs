@@ -224,6 +224,7 @@ impl FinderView {
             file_words,
             sections,
             info: None,
+            info_name: None,
             open_with: None,
             open_generation: 0,
             quick_look: None,

@@ -14,4 +14,5 @@ async-io.workspace = true
 async-process.workspace = true
 futures-lite.workspace = true
 futures-util.workspace = true
+rmac-audio.workspace = true
 zbus.workspace = true

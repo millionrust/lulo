@@ -204,8 +204,8 @@ async fn watch_audio_once(
 
     // `pw-dump --monitor` is the machine-readable PipeWire graph monitor: it
     // prints the full graph once, then a fresh JSON array of changed objects
-    // on every subsequent state change. This loop never parses those bytes —
-    // it only treats their arrival as a "something changed, re-read the
+    // on every subsequent state change. Any array that changes more than
+    // PipeWire's client list is a "something changed, re-read the
     // authoritative state" trigger, matching `rmac-audio`'s own watcher.
     let mut command = async_process::Command::new("pw-dump");
     command
@@ -223,38 +223,55 @@ async fn watch_audio_once(
         .take()
         .ok_or_else(|| Error::new("start the PipeWire monitor", "stdout was not captured"))?;
     let mut buffer = [0_u8; 8192];
+    // Re-reading the audio state runs one-shot PipeWire clients, which this
+    // monitor reports; reacting to those would re-read forever.
+    let mut changes = rmac_audio::MonitorChanges::default();
+    let mut audio_changed = |bytes: &[u8]| {
+        changes
+            .feed(bytes)
+            .map_err(|error| Error::new("read PipeWire changes", error))
+    };
 
     // The process is listening before the authoritative audio snapshot is read.
     send(sender, Event::Refresh(Sources::audio())).await?;
     *previous_error = None;
     loop {
-        let next = futures_util::FutureExt::fuse(stdout.read(&mut buffer));
-        let closed = futures_util::FutureExt::fuse(sender.closed());
-        futures_util::pin_mut!(next, closed);
-        let read = futures_util::select! {
-            read = next => read,
-            _ = closed => return Ok(()),
+        let read = {
+            let next = futures_util::FutureExt::fuse(stdout.read(&mut buffer));
+            let closed = futures_util::FutureExt::fuse(sender.closed());
+            futures_util::pin_mut!(next, closed);
+            futures_util::select! {
+                read = next => read,
+                _ = closed => return Ok(()),
+            }
         }
         .map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
         if read == 0 {
             return child_status_error(child).await;
         }
+        if !audio_changed(&buffer[..read])? {
+            continue;
+        }
 
         loop {
-            let next = futures_util::FutureExt::fuse(stdout.read(&mut buffer));
-            let quiet = futures_util::FutureExt::fuse(async_io::Timer::after(QUIET_PERIOD));
-            let closed = futures_util::FutureExt::fuse(sender.closed());
-            futures_util::pin_mut!(next, quiet, closed);
-            futures_util::select! {
-                read = next => {
-                    let read = read.map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
-                    if read == 0 {
-                        return child_status_error(child).await;
-                    }
-                },
-                _ = quiet => break,
-                _ = closed => return Ok(()),
+            let read = {
+                let next = futures_util::FutureExt::fuse(stdout.read(&mut buffer));
+                let quiet = futures_util::FutureExt::fuse(async_io::Timer::after(QUIET_PERIOD));
+                let closed = futures_util::FutureExt::fuse(sender.closed());
+                futures_util::pin_mut!(next, quiet, closed);
+                futures_util::select! {
+                    read = next => read,
+                    _ = quiet => break,
+                    _ = closed => return Ok(()),
+                }
+            };
+            let read =
+                read.map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
+            if read == 0 {
+                return child_status_error(child).await;
             }
+            // Already refreshing; this only keeps the monitor's framing.
+            audio_changed(&buffer[..read])?;
         }
         send(sender, Event::Refresh(Sources::audio())).await?;
     }

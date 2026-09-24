@@ -6485,6 +6485,7 @@ dependencies = [
  "async-process",
  "futures-lite",
  "futures-util",
+ "rmac-audio",
  "zbus",
 ]
 

@@ -22,6 +22,8 @@ use linux::*;
 #[cfg(target_os = "macos")]
 use macos::*;
 pub use model::*;
+#[cfg(any(not(target_os = "macos"), test))]
+pub use monitor_filter::MonitorChanges;
 pub use notification::*;
 
 pub fn snapshot() -> Result<Snapshot, Error> {

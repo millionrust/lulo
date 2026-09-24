@@ -84,9 +84,53 @@ pub(crate) fn drain_json_values(
     Ok(values)
 }
 
+/// Reads `pw-dump --monitor` output as it arrives and says whether it holds
+/// a change an audio snapshot could observe. Shared by every process that
+/// watches audio through its own monitor, such as the menu bar's status
+/// watcher.
+#[derive(Debug, Default)]
+pub struct MonitorChanges {
+    pending: Vec<u8>,
+    filter: MonitorFilter,
+}
+
+impl MonitorChanges {
+    /// Feed the next bytes read from the monitor's stdout. Returns whether
+    /// any complete update among them can change audio state; a partial
+    /// update waits for the next read.
+    pub fn feed(&mut self, bytes: &[u8]) -> Result<bool, String> {
+        const PENDING_LIMIT: usize = 16 * 1024 * 1024;
+        self.pending.extend_from_slice(bytes);
+        if self.pending.len() > PENDING_LIMIT {
+            return Err("pw-dump --monitor sent an update larger than 16 MiB".to_owned());
+        }
+        let values = drain_json_values(&mut self.pending).map_err(|error| error.to_string())?;
+        Ok(values
+            .iter()
+            .fold(false, |changed, value| self.filter.absorb(value) | changed))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monitor_changes_ignore_a_snapshot_client_split_across_reads() {
+        let mut changes = MonitorChanges::default();
+        assert_eq!(
+            changes.feed(b"[{\"id\":40,\"type\":\"PipeWire:Interface:Node\",\"info\":{}}]\n"),
+            Ok(true)
+        );
+        let client = b"[{\"id\":67,\"type\":\"PipeWire:Interface:Client\",\"info\":{}}]\n";
+        assert_eq!(changes.feed(&client[..20]), Ok(false));
+        assert_eq!(changes.feed(&client[20..]), Ok(false));
+        assert_eq!(changes.feed(b"[{\"id\":67,\"info\":null}]\n"), Ok(false));
+        assert_eq!(
+            changes.feed(b"[{\"id\":40,\"type\":\"PipeWire:Interface:Node\",\"info\":{}}]"),
+            Ok(true)
+        );
+    }
 
     fn object(id: u64, kind: &str) -> serde_json::Value {
         serde_json::json!({

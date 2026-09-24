@@ -58,22 +58,11 @@ pub(super) async fn watch_once(
         .take()
         .ok_or_else(|| Error::new("start the PipeWire monitor", "stdout was not captured"))?;
     let mut buffer = [0_u8; 8192];
-    let mut pending = Vec::new();
-    let mut filter = crate::monitor_filter::MonitorFilter::default();
-    let mut absorb = |bytes: &[u8], pending: &mut Vec<u8>| -> Result<bool, Error> {
-        const PENDING_LIMIT: usize = 16 * 1024 * 1024;
-        pending.extend_from_slice(bytes);
-        if pending.len() > PENDING_LIMIT {
-            return Err(Error::new(
-                "read PipeWire changes",
-                "pw-dump --monitor sent an update larger than 16 MiB",
-            ));
-        }
-        let values = crate::monitor_filter::drain_json_values(pending)
-            .map_err(|error| Error::new("read PipeWire changes", error.to_string()))?;
-        Ok(values
-            .iter()
-            .fold(false, |changed, value| filter.absorb(value) | changed))
+    let mut changes = crate::MonitorChanges::default();
+    let mut absorb = |bytes: &[u8]| -> Result<bool, Error> {
+        changes
+            .feed(bytes)
+            .map_err(|error| Error::new("read PipeWire changes", error))
     };
 
     loop {
@@ -88,7 +77,7 @@ pub(super) async fn watch_once(
         if read == 0 {
             return monitor_status_error(child).await;
         }
-        if !absorb(&buffer[..read], &mut pending)? {
+        if !absorb(&buffer[..read])? {
             continue;
         }
 
@@ -109,7 +98,7 @@ pub(super) async fn watch_once(
                     if read == 0 {
                         return monitor_status_error(child).await;
                     }
-                    absorb(&buffer[..read], &mut pending)?;
+                    absorb(&buffer[..read])?;
                 },
                 _ = quiet => break,
                 _ = maximum => break,

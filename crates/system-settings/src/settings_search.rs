@@ -133,6 +133,7 @@ pub(crate) fn terms_for_pane(name: &str) -> &'static [&'static str] {
             "automatically hide Dock",
             "reserve screen space",
             "application clicks",
+            "click wallpaper to show desktop",
             "hot corners",
         ],
         "Menu Bar" => &[

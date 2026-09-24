@@ -216,6 +216,35 @@ impl Settings {
             _ => {}
         }
 
+        // macOS 26.2 puts this pop-up, with the Mac's own wording, under
+        // "Desktop & Stage Manager". rmac has no Stage Manager, so its
+        // choices are Always and Never (design-lab/reveal-desktop.html).
+        cards.push(section_header("Desktop"));
+        let reveal = snapshot.settings.click_wallpaper_to_reveal;
+        let reveal_choices = rmac_shell_settings::ClickWallpaperToReveal::ALL
+            .into_iter()
+            .map(|value| {
+                let reveal_view = view.clone();
+                choice(value.title(), value == reveal, move |_, cx| {
+                    reveal_view.update(cx, |settings, cx| {
+                        settings.apply_click_wallpaper_to_reveal(value, cx)
+                    });
+                })
+            })
+            .collect::<Vec<_>>();
+        let reveal_value = popup_value(&reveal_choices, reveal.title());
+        cards.push(card(vec![popup_row(
+            "click-wallpaper-to-reveal",
+            "Click wallpaper to show desktop",
+            Some(
+                "Click wallpaper to move windows out of the way, revealing your desktop items and widgets."
+                    .into(),
+            ),
+            reveal_value,
+            reveal_choices,
+            enabled,
+        )]));
+
         // macOS keeps these behind a "Hot Corners…" sheet; rmac lists the
         // four pop-ups in the pane. Only actions rmac can perform are
         // offered (rmac_shell_settings::HotCornerAction).

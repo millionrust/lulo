@@ -240,6 +240,43 @@ impl Settings {
         .detach();
     }
 
+    /// Save "Click wallpaper to reveal desktop" through the shell-settings
+    /// store that `rmac-mission-control` watches. The Dock's revert point is
+    /// left alone.
+    pub(super) fn apply_click_wallpaper_to_reveal(
+        &mut self,
+        value: rmac_shell_settings::ClickWallpaperToReveal,
+        cx: &mut Context<Self>,
+    ) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            return;
+        };
+        if snapshot.settings.click_wallpaper_to_reveal == value {
+            return;
+        }
+
+        self.shell_settings_busy = true;
+        self.shell_settings_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                persist_shell_settings_mutation(ShellSettingsMutation::ClickWallpaperToReveal(
+                    value,
+                ))
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                let dock_revert = this.shell_settings_revert.clone();
+                this.finish_shell_settings_mutation(result, dock_revert);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     pub(super) fn revert_dock_change(&mut self, cx: &mut Context<Self>) {
         if self.shell_settings_loading || self.shell_settings_busy {
             return;

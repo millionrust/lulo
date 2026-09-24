@@ -274,6 +274,9 @@ pub(super) enum ShellSettingsMutation {
     RestoreSpotlight(SpotlightAuthority),
     MenuBar(MenuBarChange),
     HotCorner(HotCornerChange),
+    /// Desktop & Dock › Click wallpaper to reveal desktop.
+    /// `rmac-mission-control` reads it on every wallpaper click.
+    ClickWallpaperToReveal(rmac_shell_settings::ClickWallpaperToReveal),
 }
 
 impl ShellSettingsMutation {
@@ -289,6 +292,7 @@ impl ShellSettingsMutation {
             Self::RestoreSpotlight(spotlight) => spotlight.apply_to(settings),
             Self::MenuBar(change) => change.apply(settings),
             Self::HotCorner(change) => change.apply(settings),
+            Self::ClickWallpaperToReveal(value) => settings.click_wallpaper_to_reveal = value,
         }
     }
 }

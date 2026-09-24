@@ -86,6 +86,7 @@ fn settings() -> ShellSettings {
             bottom_right: HotCornerAction::Desktop,
             ..HotCornerSettings::default()
         },
+        click_wallpaper_to_reveal: ClickWallpaperToReveal::Never,
         ..ShellSettings::default()
     }
 }
@@ -395,5 +396,36 @@ fn hot_corners_default_off_and_read_from_older_files() {
     assert_eq!(
         HotCornerAction::NotificationCenter.title(),
         "Notification Centre"
+    );
+}
+
+#[test]
+fn click_wallpaper_to_reveal_defaults_to_always_like_macos() {
+    assert_eq!(
+        ShellSettings::default().click_wallpaper_to_reveal,
+        ClickWallpaperToReveal::Always
+    );
+    // A file saved before the setting existed reads as the default.
+    let (root, store) = test_store("reveal-default");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        store.path(),
+        format!(r#"{{"version":{CURRENT_VERSION},"settings":{{"pinned_apps":[]}}}}"#),
+    )
+    .unwrap();
+    assert_eq!(
+        store.load().unwrap().settings.click_wallpaper_to_reveal,
+        ClickWallpaperToReveal::Always
+    );
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        serde_json::to_value(ClickWallpaperToReveal::Never).unwrap(),
+        "never"
+    );
+    assert!(serde_json::from_str::<ClickWallpaperToReveal>(r#""only-in-stage-manager""#).is_err());
+    assert_eq!(
+        ClickWallpaperToReveal::ALL.map(ClickWallpaperToReveal::title),
+        ["Always", "Never"]
     );
 }

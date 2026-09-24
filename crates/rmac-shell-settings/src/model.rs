@@ -249,6 +249,30 @@ pub struct HotCornerSettings {
     pub bottom_right: HotCornerAction,
 }
 
+/// Desktop & Dock › "Click wallpaper to reveal desktop". macOS offers
+/// Always and Only in Stage Manager. rmac has no Stage Manager, so the
+/// second choice is Never. Always is the Mac's default.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ClickWallpaperToReveal {
+    #[default]
+    Always,
+    Never,
+}
+
+impl ClickWallpaperToReveal {
+    /// Every choice in the order System Settings lists them.
+    pub const ALL: [Self; 2] = [Self::Always, Self::Never];
+
+    /// The pop-up title System Settings shows for this choice.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Always => "Always",
+            Self::Never => "Never",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct ShellSettings {
@@ -261,6 +285,8 @@ pub struct ShellSettings {
     pub providers: BTreeMap<ProviderId, ProviderPolicy>,
     pub spotlight: SpotlightSettings,
     pub hot_corners: HotCornerSettings,
+    /// Read live by `rmac-mission-control`, which moves the windows.
+    pub click_wallpaper_to_reveal: ClickWallpaperToReveal,
 }
 
 impl Default for ShellSettings {
@@ -288,6 +314,7 @@ impl Default for ShellSettings {
             providers: BTreeMap::new(),
             spotlight: SpotlightSettings::default(),
             hot_corners: HotCornerSettings::default(),
+            click_wallpaper_to_reveal: ClickWallpaperToReveal::Always,
         }
     }
 }

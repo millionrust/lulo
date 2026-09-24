@@ -66,6 +66,9 @@ fn main() {
                     rmac_ui::RequestClose,
                     Some("ActivityMonitor"),
                 ),
+                // System Monitor is a single window, so ⌘Q and ⌘W both just
+                // need to close it -- reuse the same handler.
+                gpui::KeyBinding::new("cmd-q", rmac_ui::RequestClose, Some("ActivityMonitor")),
             ]);
             window.focus(&view.focus, cx);
             view

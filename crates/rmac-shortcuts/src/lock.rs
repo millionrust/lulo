@@ -816,7 +816,10 @@ mod tests {
 
     /// Manual check on a Lulo OS session: holds the power-button inhibitor
     /// for `RMAC_POWER_KEY_HOLD_SECONDS` (default 5) so `systemd-inhibit
-    /// --list` can show it. Never presses the button.
+    /// --list` can show it. Never presses the button. polkit grants
+    /// `inhibit-handle-power-key` only to local sessions, so run it as a
+    /// user service (`systemd-run --user`), like the coordinator, not over
+    /// SSH, where logind answers AccessDenied.
     #[cfg(target_os = "linux")]
     #[test]
     #[ignore = "needs a logind session; run by hand"]

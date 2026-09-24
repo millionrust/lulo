@@ -186,6 +186,9 @@ Run each check once, with the journey lock held:
 5. Type into Text Editor, run `kill -TERM <pid>`, and reopen it. It should offer to restore the
    draft.
 6. Run `systemd-inhibit --list`. It should show `Lulo OS … rmac-lock-coord handle-power-key …
-   block`, and no `niri … handle-power-key` entry. Only the owner presses the power button: one
+   block`, and no `niri … handle-power-key` entry. (polkit allows this inhibitor only to local
+   sessions; a user service such as the coordinator qualifies, an SSH shell does not. The
+   ignored test `power_key_inhibitor_is_a_block_on_handle_power_key`, run through
+   `systemd-run --user`, showed the Lulo OS entry on the reference laptop on 2026-09-25.) Only the owner presses the power button: one
    press should lock and then sleep; two quick presses should show the dialog; neither should
    power off.

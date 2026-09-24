@@ -97,8 +97,12 @@ print(window.get("id", "none") if isinstance(window, dict) else "none")
 '
 }
 
+# Only toolkit-accessibility is needed: since accesskit_unix 0.22
+# (ADR 0013, commit 8de9528a) every rmac window registers with AT-SPI as
+# soon as the bus reports IsEnabled, which this key drives. The separate
+# screen-reader-enabled key also flips GNOME's Orca autostart condition,
+# which starts Orca talking on the owner's real session -- leave it alone.
 old_toolkit="$(gsettings get org.gnome.desktop.interface toolkit-accessibility)"
-old_reader="$(gsettings get org.gnome.desktop.a11y.applications screen-reader-enabled)"
 temporary="$(mktemp -d "$XDG_RUNTIME_DIR/rmac-real-niri-smoke.XXXXXX")"
 a11y_pid=""
 cleanup() {
@@ -109,7 +113,6 @@ cleanup() {
     wait "$a11y_pid" 2>/dev/null || true
   fi
   gsettings set org.gnome.desktop.interface toolkit-accessibility "$old_toolkit" >/dev/null
-  gsettings set org.gnome.desktop.a11y.applications screen-reader-enabled "$old_reader" >/dev/null
   systemctl --user restart rmac-top-bar.service rmac-dock.service >/dev/null 2>&1 || true
   rm -rf -- "$temporary"
   exit "$result"
@@ -117,7 +120,6 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 gsettings set org.gnome.desktop.interface toolkit-accessibility true
-gsettings set org.gnome.desktop.a11y.applications screen-reader-enabled true
 /usr/bin/python3 -c 'import pyatspi; pyatspi.Registry.getDesktop(0)'
 
 focus_before="$(focused_window_id)"

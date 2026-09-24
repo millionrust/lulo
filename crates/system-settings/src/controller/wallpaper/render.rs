@@ -394,8 +394,9 @@ fn gallery_section(title: &'static str, tiles: Vec<Stateful<Div>>) -> Div {
             div()
                 .flex()
                 .flex_wrap()
+                // A wrapped line starts right under the tile above: the tile's
+                // own 100 pt height already leaves the Mac's space after a name.
                 .gap_x(px(THUMB_GAP))
-                .gap_y(px(SECTION_TITLE_GAP))
                 .children(tiles),
         )
 }

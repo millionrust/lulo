@@ -63,6 +63,15 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   application access or active capture ended.
 - Application provenance does not prove that an app is safe, signed,
   sandboxed, updated, or owned by APT.
+- Files does not yet browse network shares (SMB/SFTP), mount MTP phones or
+  cameras, or drag files into other apps. Ubuntu's own Files (Nautilus) stays
+  installed for those jobs, kept out of Spotlight, the App Drawer, and the
+  Dock's suggestions so it does not sit next to ours and cause confusion, but
+  it is not removed: it is still offered in any file's "Open With" menu, and
+  it still opens with its own `nautilus` command. Other GNOME apps we ship a
+  first-party equivalent for -- the text editor, calculator, system monitor,
+  terminal, image and document viewer, clock, and weather app -- are hidden
+  from the same browsing surfaces the same way and reachable the same way.
 - Search is local, bounded, exclusion-aware, and not a promise to index every
   file format or location.
 

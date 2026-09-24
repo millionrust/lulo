@@ -38,6 +38,52 @@ impl Settings {
         true
     }
 
+    /// The top-level categories the sidebar shows when not searching, in
+    /// the same section/row order `render_sidebar` paints them
+    /// (`chrome.rs`'s `matching` filter: `category_parent(..).is_none()`).
+    pub(super) fn visible_sidebar_positions(&self) -> Vec<(usize, usize)> {
+        self.sections
+            .iter()
+            .enumerate()
+            .flat_map(|(section_index, section)| {
+                section
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, category)| category_parent(category.name.as_ref()).is_none())
+                    .map(move |(category_index, _)| (section_index, category_index))
+            })
+            .collect()
+    }
+
+    /// Up/Down while the sidebar list itself holds keyboard focus: move the
+    /// highlighted row to the next or previous top-level category, stopping
+    /// at both ends (macOS's own sidebar list does not wrap).
+    pub(super) fn move_category_selection(&mut self, delta: isize, cx: &mut Context<Self>) -> bool {
+        let positions = self.visible_sidebar_positions();
+        if positions.is_empty() {
+            return false;
+        }
+        let current = self.current().name.clone();
+        let owner = category_parent(current.as_ref())
+            .map(SharedString::from)
+            .unwrap_or(current);
+        let current_index = positions
+            .iter()
+            .position(|&(section, item)| {
+                self.sections
+                    .get(section)
+                    .and_then(|items| items.get(item))
+                    .is_some_and(|category| category.name == owner)
+            })
+            .unwrap_or(0);
+        let next_index = current_index
+            .saturating_add_signed(delta)
+            .min(positions.len() - 1);
+        self.sidebar_focused = true;
+        self.select_position(positions[next_index], cx);
+        true
+    }
+
     pub(super) fn clear_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.search
             .update(cx, |state, cx| state.set_value("", window, cx));

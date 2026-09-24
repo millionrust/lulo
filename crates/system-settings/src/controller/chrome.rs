@@ -261,6 +261,24 @@ impl Settings {
             .px(px(style::SIDEBAR_ROW_INSET))
             .pb(px(style::SIDEBAR_ROW_INSET))
             .overflow_y_scroll()
+            // Up/Down move the highlighted category while a sidebar row has
+            // focus (Tab into the list, then arrow like the Mac's own
+            // System Settings sidebar). The search field's own Up/Down
+            // handling lives on the root capture_key_down and stops
+            // propagation before it reaches here.
+            .capture_key_down(cx.listener(move |this, event: &KeyDownEvent, _, cx| {
+                if searching {
+                    return;
+                }
+                let handled = match event.keystroke.key.as_str() {
+                    "down" => this.move_category_selection(1, cx),
+                    "up" => this.move_category_selection(-1, cx),
+                    _ => false,
+                };
+                if handled {
+                    cx.stop_propagation();
+                }
+            }))
             .child(account)
             .when(no_search_results, |sidebar| {
                 sidebar.child(

@@ -23,10 +23,12 @@ cargo deny --locked --log-level error check
 ```
 
 The graph includes all features for arm64/x86_64 macOS and GNU/Linux. The
-product graph currently resolves only from crates.io; unknown registries and
-all Git dependency sources are denied. Local rmac crates use exact versions as
-well as paths, and dependencies shared by multiple members must be declared in
-the root `[workspace.dependencies]` table.
+product graph resolves crates.io plus an explicit `[sources] allow-git` list:
+`zed-industries/zed.git` (GPUI itself), `longbridge/gpui-component.git`, and
+the `zed-industries` forks (`font-kit`, `scap`, `reqwest`) GPUI depends on.
+Any other registry or Git source is denied. Local rmac crates use exact
+versions as well as paths, and dependencies shared by multiple members must be
+declared in the root `[workspace.dependencies]` table.
 
 ## License decision
 

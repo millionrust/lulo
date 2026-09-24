@@ -6,8 +6,9 @@
 //! one word to the service and exits. The service reads the focused output
 //! once, maps a full-screen overlay that niri backs with the bare wallpaper
 //! (layer-rule xray), and flies the windows' pictures into the Mac's
-//! measured layout. It also owns the Spaces bar, Show Desktop and the
-//! hot-corner surfaces configured in Desktop & Dock.
+//! measured layout. It also owns the Spaces bar, Show Desktop, the
+//! wallpaper click that pushes windows aside, and the hot-corner surfaces
+//! configured in Desktop & Dock.
 
 mod capture;
 #[cfg(unix)]
@@ -29,8 +30,9 @@ mod linux_wayland {
         WindowHandle, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
+    use rmac_compositor::reveal::{self, Revealed};
     use rmac_compositor::{Action, OutputId, Snapshot, WindowId, WorkspaceId};
-    use rmac_shell_settings::HotCornerSettings;
+    use rmac_shell_settings::{ClickWallpaperToReveal, HotCornerSettings};
     use rmac_shell_ui::tokens;
     use uuid::Uuid;
 
@@ -43,6 +45,13 @@ mod linux_wayland {
     const ANIMATION: Duration = Duration::from_millis(model::ANIMATION_MS);
     /// Windows glide to their new slots when the Spaces bar grows (S).
     const RELAYOUT: Duration = Duration::from_millis(250);
+    /// The height rmac's menu bar reserves (rmac-menubar BAR_HEIGHT). The
+    /// Mac measures its wallpaper-click reveal from below the menu bar.
+    const MENU_BAR_HEIGHT: f64 = 29.0;
+    /// niri's window-movement animation (shell.kdl: 300 ms). Under Reduce
+    /// Motion the screen holds this long while windows move, then
+    /// crossfades; Mission Control waits this long for windows coming back.
+    const WINDOW_MOVEMENT_MS: u16 = 300;
 
     // Measured over the wallpaper on macOS 26 (design-lab/mission-control.html).
     const BAR_FILL: u32 = 0xFFFF_FF0D;
@@ -87,6 +96,11 @@ mod linux_wayland {
         /// next spare one as soon as niri creates it.
         pending_add: Option<OutputId>,
         corners: HotCornerSettings,
+        click_to_reveal: ClickWallpaperToReveal,
+        /// Windows pushed aside by a wallpaper click. Nothing is persisted.
+        revealed: Option<Revealed>,
+        /// Windows an earlier run left at an edge were pulled back.
+        recovered: bool,
         corner_key: Vec<(Uuid, Corner)>,
         corner_windows: Vec<WindowHandle<CornerView>>,
         space_pictures: HashMap<WorkspaceId, SpacePicture>,
@@ -102,6 +116,9 @@ mod linux_wayland {
                 shown_desktop: None,
                 pending_add: None,
                 corners: HotCornerSettings::default(),
+                click_to_reveal: ClickWallpaperToReveal::default(),
+                revealed: None,
+                recovered: false,
                 corner_key: Vec::new(),
                 corner_windows: Vec::new(),
                 space_pictures: HashMap::new(),
@@ -126,6 +143,60 @@ mod linux_wayland {
             self.space_pictures
                 .retain(|workspace, _| live.contains(workspace));
             (change.topology, action)
+        }
+
+        /// A wallpaper click: bring pushed-aside windows back, or push every
+        /// window on the showing Spaces to the screen edges.
+        fn wallpaper_click(&mut self) -> Vec<Action> {
+            if self.revealed.is_some() {
+                return self.bring_back();
+            }
+            if self.click_to_reveal == ClickWallpaperToReveal::Never {
+                return Vec::new();
+            }
+            let snapshot = self.compositor.snapshot();
+            let Some((revealed, actions)) =
+                reveal::reveal(&snapshot, MENU_BAR_HEIGHT, reveal_sliver())
+            else {
+                return Vec::new();
+            };
+            self.revealed = Some(revealed);
+            with_motion(actions)
+        }
+
+        /// Bring windows pushed aside by a wallpaper click back to where
+        /// they were. Empty when none are aside.
+        fn bring_back(&mut self) -> Vec<Action> {
+            let Some(revealed) = self.revealed.take() else {
+                return Vec::new();
+            };
+            with_motion(reveal::restore(&self.compositor.snapshot(), &revealed))
+        }
+
+        /// After each compositor event: bring the windows back when a window
+        /// takes focus (a sliver was clicked, an app was activated, an item
+        /// was opened) or the Space changes. On the first snapshot, pull
+        /// back windows an earlier run of this service left at an edge.
+        fn follow_reveal(&mut self, reconnected: bool) -> Vec<Action> {
+            if reconnected {
+                if self.revealed.is_some() {
+                    return self.bring_back();
+                }
+                if !self.recovered {
+                    self.recovered = true;
+                    let snapshot = self.compositor.snapshot();
+                    return reveal::recover(&snapshot, MENU_BAR_HEIGHT, reveal_sliver());
+                }
+                return Vec::new();
+            }
+            let Some(revealed) = self.revealed.as_mut() else {
+                return Vec::new();
+            };
+            if revealed.should_restore(&self.compositor.snapshot()) {
+                self.bring_back()
+            } else {
+                Vec::new()
+            }
         }
 
         fn refresh_catalog(&mut self, cx: &mut Context<Self>) {
@@ -189,6 +260,27 @@ mod linux_wayland {
     fn render_image((width, height, bgra): capture::Pixels) -> Option<Arc<RenderImage>> {
         let buffer = image::RgbaImage::from_raw(width, height, bgra)?;
         Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
+    }
+
+    /// How much of each window stays on screen: the Mac leaves 12 pt, but
+    /// niri will not move a floating window further than 75 px from the
+    /// working area.
+    fn reveal_sliver() -> f64 {
+        reveal::MAC_SLIVER.max(rmac_compositor_niri::FLOATING_MIN_VISIBLE)
+    }
+
+    /// Under Reduce Motion, hold the screen while niri moves the windows and
+    /// crossfade to the result instead of showing them slide.
+    fn with_motion(mut actions: Vec<Action>) -> Vec<Action> {
+        if !actions.is_empty() && tokens::current().motion.reduced_motion {
+            actions.insert(
+                0,
+                Action::CrossfadeScreen {
+                    delay_ms: WINDOW_MOVEMENT_MS,
+                },
+            );
+        }
+        actions
     }
 
     /// Run compositor actions in order, one socket each.
@@ -1195,12 +1287,38 @@ mod linux_wayland {
     }
 
     fn handle_command(service: &Entity<Service>, command: Command, cx: &mut App) {
+        // Every other command starts from the windows where they belong.
+        if command != Command::WallpaperClick {
+            let back = service.update(cx, |service, _| service.bring_back());
+            if !back.is_empty() {
+                run_actions(back, cx);
+                if let Command::MissionControl | Command::AppWindows = command {
+                    // Mission Control reads the screen: let the windows land.
+                    let service = service.clone();
+                    cx.spawn(async move |cx: &mut AsyncApp| {
+                        cx.background_executor()
+                            .timer(Duration::from_millis(u64::from(WINDOW_MOVEMENT_MS)))
+                            .await;
+                        let _ = cx.update(|cx| handle_command(&service, command, cx));
+                    })
+                    .detach();
+                    return;
+                }
+            }
+        }
         match command {
             Command::MissionControl => toggle(service, Mode::MissionControl, cx),
             Command::AppWindows => toggle(service, Mode::AppWindows, cx),
             Command::ShowDesktop => {
                 close_overlay(service, cx);
                 show_desktop(service, cx);
+            }
+            Command::WallpaperClick => {
+                // The overlay covers the wallpaper; a click there is its own.
+                if service.read(cx).overlay.is_none() {
+                    let actions = service.update(cx, |service, _| service.wallpaper_click());
+                    run_actions(actions, cx);
+                }
             }
             Command::NextSpace | Command::PreviousSpace => {
                 close_overlay(service, cx);
@@ -1410,11 +1528,15 @@ mod linux_wayland {
             cx.spawn(async move |cx: &mut AsyncApp| {
                 while let Ok(event) = compositor_rx.recv().await {
                     let _ = cx.update(|cx| {
+                        let reconnected = matches!(event, rmac_compositor::Event::Snapshot { .. });
                         let (topology, action) =
                             watched.update(cx, |service, _| service.apply(event));
                         if let Some(action) = action {
                             run_actions(vec![action], cx);
                         }
+                        let follow =
+                            watched.update(cx, |service, _| service.follow_reveal(reconnected));
+                        run_actions(follow, cx);
                         if topology {
                             reconcile_corners(&watched, cx);
                         }
@@ -1445,8 +1567,12 @@ mod linux_wayland {
                     match store.load() {
                         Ok(snapshot) => {
                             let corners = snapshot.settings.hot_corners;
+                            let click_to_reveal = snapshot.settings.click_wallpaper_to_reveal;
                             let _ = cx.update(|cx| {
-                                configured.update(cx, |service, _| service.corners = corners);
+                                configured.update(cx, |service, _| {
+                                    service.corners = corners;
+                                    service.click_to_reveal = click_to_reveal;
+                                });
                                 reconcile_corners(&configured, cx);
                             });
                         }
@@ -1492,7 +1618,7 @@ mod linux_wayland {
                     .map_err(|error| format!("Mission Control is not running: {error}"))
             }
             _ => Err(
-                "usage: mission-control --service | mission-control | app-windows | show-desktop | next-space | previous-space | cancel"
+                "usage: mission-control --service | mission-control | app-windows | show-desktop | wallpaper-click | next-space | previous-space | cancel"
                     .to_owned(),
             ),
         }

@@ -24,6 +24,10 @@ pub enum Command {
     AppWindows,
     /// F11: show the desktop, or bring the windows back.
     ShowDesktop,
+    /// A plain click on bare wallpaper: push every window to the screen
+    /// edges, or bring them back (Desktop & Dock › Click wallpaper to show
+    /// desktop).
+    WallpaperClick,
     /// ⌃→ / ⌃←: the next or previous Space on the focused display.
     NextSpace,
     PreviousSpace,
@@ -36,6 +40,7 @@ impl Command {
             "mission-control" => Self::MissionControl,
             "app-windows" => Self::AppWindows,
             "show-desktop" => Self::ShowDesktop,
+            "wallpaper-click" => Self::WallpaperClick,
             "next-space" => Self::NextSpace,
             "previous-space" => Self::PreviousSpace,
             "cancel" => Self::Cancel,
@@ -48,6 +53,7 @@ impl Command {
             Self::MissionControl => "mission-control",
             Self::AppWindows => "app-windows",
             Self::ShowDesktop => "show-desktop",
+            Self::WallpaperClick => "wallpaper-click",
             Self::NextSpace => "next-space",
             Self::PreviousSpace => "previous-space",
             Self::Cancel => "cancel",
@@ -875,6 +881,7 @@ mod tests {
             Command::MissionControl,
             Command::AppWindows,
             Command::ShowDesktop,
+            Command::WallpaperClick,
             Command::NextSpace,
             Command::PreviousSpace,
             Command::Cancel,

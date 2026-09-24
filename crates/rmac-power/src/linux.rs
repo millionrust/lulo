@@ -569,17 +569,26 @@ pub(super) async fn watch_once(
         PROFILE_ENDPOINTS[1].destination,
         "build legacy power-profile signal filter",
     )?;
-    let owner_rule = MatchRule::builder()
-        .msg_type(Type::Signal)
-        .sender("org.freedesktop.DBus")
-        .map_err(|error| Error::new("build power owner filter", error.to_string()))?
-        .path("/org/freedesktop/DBus")
-        .map_err(|error| Error::new("build power owner filter", error.to_string()))?
-        .interface("org.freedesktop.DBus")
-        .map_err(|error| Error::new("build power owner filter", error.to_string()))?
-        .member("NameOwnerChanged")
-        .map_err(|error| Error::new("build power owner filter", error.to_string()))?
-        .build();
+    // Only the power services' own owner changes: the system bus announces
+    // every client that connects, and waking for each of them kept this
+    // watcher busy on a quiet desktop.
+    let owner_rule = |upower_namespace: bool| -> Result<MatchRule<'static>, Error> {
+        let builder = MatchRule::builder()
+            .msg_type(Type::Signal)
+            .sender("org.freedesktop.DBus")
+            .and_then(|builder| builder.path("/org/freedesktop/DBus"))
+            .and_then(|builder| builder.interface("org.freedesktop.DBus"))
+            .and_then(|builder| builder.member("NameOwnerChanged"));
+        let builder = if upower_namespace {
+            // org.freedesktop.UPower and org.freedesktop.UPower.PowerProfiles.
+            builder.and_then(|builder| builder.arg0ns(UPOWER_SERVICE))
+        } else {
+            builder.and_then(|builder| builder.add_arg(PROFILE_ENDPOINTS[1].destination))
+        };
+        builder
+            .map(|builder| builder.build())
+            .map_err(|error| Error::new("build power owner filter", error.to_string()))
+    };
     let mut upower = MessageStream::for_match_rule(upower_rule, &connection, Some(64))
         .await
         .map_err(|error| Error::new("subscribe to UPower changes", error.to_string()))?
@@ -599,7 +608,11 @@ pub(super) async fn watch_once(
                 )
             })?
             .fuse();
-    let mut owners = MessageStream::for_match_rule(owner_rule, &connection, Some(32))
+    let mut owners = MessageStream::for_match_rule(owner_rule(true)?, &connection, Some(8))
+        .await
+        .map_err(|error| Error::new("subscribe to power service restarts", error.to_string()))?
+        .fuse();
+    let mut legacy_owners = MessageStream::for_match_rule(owner_rule(false)?, &connection, Some(8))
         .await
         .map_err(|error| Error::new("subscribe to power service restarts", error.to_string()))?
         .fuse();
@@ -636,6 +649,7 @@ pub(super) async fn watch_once(
                     .then_some(PowerOwnerEvent::Profiles)
             },
             message = owners.next() => read_owner_event(message)?,
+            message = legacy_owners.next() => read_owner_event(message)?,
             _ = closed => return Ok(()),
         };
         match event {

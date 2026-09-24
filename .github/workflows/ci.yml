@@ -32,9 +32,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      # scripts/build-cursors.py (and so test_build_cursors) draws with Pillow.
+      # test_build_cursors draws with Pillow; test_release_workflows parses YAML.
       - name: Install Python test dependencies
-        run: python3 -m pip install --disable-pip-version-check Pillow==12.1.1
+        run: python3 -m pip install --disable-pip-version-check Pillow==12.1.1 PyYAML==6.0.3
 
       - name: Verify release contracts
         run: python3 scripts/run-release-contract-checks.py
@@ -91,9 +91,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      # scripts/build-cursors.py (and so test_build_cursors) draws with Pillow.
+      # test_build_cursors draws with Pillow; test_release_workflows parses YAML.
       - name: Install Python test dependencies
-        run: python3 -m pip install --disable-pip-version-check Pillow==12.1.1
+        run: python3 -m pip install --disable-pip-version-check Pillow==12.1.1 PyYAML==6.0.3
 
       - name: Cache Cargo data
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -179,9 +179,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      # scripts/build-cursors.py (and so test_build_cursors) draws with Pillow.
+      # test_build_cursors draws with Pillow; test_release_workflows parses YAML.
       - name: Install Python test dependencies
-        run: python3 -m pip install --disable-pip-version-check Pillow==12.1.1
+        run: python3 -m pip install --disable-pip-version-check Pillow==12.1.1 PyYAML==6.0.3
 
       - name: Cache Cargo data
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -221,9 +221,9 @@ jobs:
         with:
           python-version: "3.12"
 
-      # scripts/build-cursors.py (and so test_build_cursors) draws with Pillow.
+      # test_build_cursors draws with Pillow; test_release_workflows parses YAML.
       - name: Install Python test dependencies
-        run: python3 -m pip install --disable-pip-version-check Pillow==12.1.1
+        run: python3 -m pip install --disable-pip-version-check Pillow==12.1.1 PyYAML==6.0.3
 
       - name: Cache Cargo data
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4

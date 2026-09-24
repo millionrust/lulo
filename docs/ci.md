@@ -41,8 +41,9 @@ two of the `scripts/test_*.py` files use `tomllib` (3.11+) and
 reference macOS machines is an old Xcode 3.9 stub that lacks both — install
 a newer Python (`brew install python@3.12`, or `pyenv`) before running the
 suite locally, or aim `python3 -m unittest` at that interpreter directly.
-`scripts/test_build_cursors.py` also needs Pillow; the jobs install
-`Pillow==12.1.1` after setting up Python.
+`scripts/test_build_cursors.py` also needs Pillow and
+`scripts/test_release_workflows.py` needs PyYAML; the jobs install
+`Pillow==12.1.1 PyYAML==6.0.3` after setting up Python.
 
 Two of the source gates carry a checked-in exemption that may only shrink:
 

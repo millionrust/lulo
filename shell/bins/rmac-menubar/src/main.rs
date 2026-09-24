@@ -3437,7 +3437,22 @@ mod linux_wayland {
         use menu_model::WindowCommand;
         use rmac_compositor::Action;
 
-        cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
+        cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+            // Sizing runs Mission Control's own command on the focused
+            // window, so bring the menu's window back into focus first.
+            if let Some(word) = command.mission_control_command() {
+                let Some(window) = window_id else {
+                    eprintln!("no {app_id} window to act on from the Window menu");
+                    return;
+                };
+                let focus = Action::FocusWindow { window };
+                if let Err(error) = rmac_compositor_niri::execute_action(&focus).await {
+                    eprintln!("could not focus the window to {word}: {error:?}");
+                    return;
+                }
+                cx.update(|cx| run_mission_control(word, cx));
+                return;
+            }
             let snapshot = match rmac_compositor_niri::snapshot().await {
                 Ok(snapshot) => snapshot,
                 Err(error) => {
@@ -3467,19 +3482,14 @@ mod linux_wayland {
                         .map(|window| Action::FocusWindow { window })
                         .collect()
                 }
-                (_, None) => {
-                    eprintln!("no {app_id} window to act on from the Window menu");
-                    Vec::new()
-                }
                 (WindowCommand::Minimise, Some(window)) => {
                     store.record_from(&snapshot, &[window]);
                     store_changed = true;
                     vec![Action::MinimizeWindow { window }]
                 }
-                (WindowCommand::Zoom, Some(window)) => vec![Action::FillWindow { window }],
-                (WindowCommand::Centre, Some(window)) => vec![Action::CenterWindow { window }],
-                (WindowCommand::Tile(region), Some(window)) => {
-                    vec![Action::TileWindow { window, region }]
+                (_, _) => {
+                    eprintln!("no {app_id} window to act on from the Window menu");
+                    Vec::new()
                 }
             };
             for action in &actions {
@@ -3494,6 +3504,20 @@ mod linux_wayland {
             }
         })
         .detach();
+    }
+
+    /// Run one of Mission Control's one-word window commands, as its
+    /// keyboard shortcuts do.
+    fn run_mission_control(word: &'static str, cx: &mut App) {
+        let local = env::var_os("HOME")
+            .map(PathBuf::from)
+            .map(|home| home.join(".local/libexec/rmac/rmac-mission-control"));
+        let program = local
+            .filter(|path| path.is_file())
+            .unwrap_or_else(|| PathBuf::from("/usr/libexec/rmac/rmac-mission-control"));
+        let mut command = Command::new(program);
+        command.arg(word);
+        run_to_exit(command, format!("Mission Control's {word} command"), cx);
     }
 
     /// Hide/Hide Others/Show All use the parking model (§2.2): niri has no

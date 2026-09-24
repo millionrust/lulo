@@ -167,45 +167,53 @@ pub struct MenuWindow {
     pub parked: bool,
 }
 
-/// What a Window-menu row does. The menu bar runs these itself through the
-/// compositor, so every app, first-party or not, has them.
+/// What a Window-menu row does. The menu bar runs these itself, so every
+/// app, first-party or not, has them: minimising and focusing through the
+/// compositor, sizing through Mission Control's one-word commands (the
+/// path its keyboard shortcuts take), which also remember the size to
+/// return to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WindowCommand {
     Minimise,
     Zoom,
+    Fill,
     Centre,
-    Tile(rmac_compositor::TileRegion),
+    Tile(Half),
+    ReturnToPreviousSize,
     BringAllToFront,
     Focus(rmac_compositor::WindowId),
+}
+
+/// The halves of the screen Move & Resize offers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Half {
+    Left,
+    Right,
+    Top,
+    Bottom,
 }
 
 const WINDOW_ACTION_PREFIX: &str = "window::";
 
 impl WindowCommand {
     pub fn action(self) -> String {
-        use rmac_compositor::TileRegion;
         let name = match self {
             Self::Minimise => "minimise",
             Self::Zoom => "zoom",
+            Self::Fill => "fill",
             Self::Centre => "centre",
+            Self::ReturnToPreviousSize => "restore-size",
             Self::BringAllToFront => "bring-all-to-front",
-            Self::Tile(region) => match region {
-                TileRegion::Left => "tile.left",
-                TileRegion::Right => "tile.right",
-                TileRegion::Top => "tile.top",
-                TileRegion::Bottom => "tile.bottom",
-                TileRegion::TopLeft => "tile.top-left",
-                TileRegion::TopRight => "tile.top-right",
-                TileRegion::BottomLeft => "tile.bottom-left",
-                TileRegion::BottomRight => "tile.bottom-right",
-            },
+            Self::Tile(Half::Left) => "tile-left",
+            Self::Tile(Half::Right) => "tile-right",
+            Self::Tile(Half::Top) => "tile-top",
+            Self::Tile(Half::Bottom) => "tile-bottom",
             Self::Focus(window) => return format!("{WINDOW_ACTION_PREFIX}focus.{}", window.0),
         };
         format!("{WINDOW_ACTION_PREFIX}{name}")
     }
 
     pub fn parse(action: &str) -> Option<Self> {
-        use rmac_compositor::TileRegion;
         let name = action.strip_prefix(WINDOW_ACTION_PREFIX)?;
         if let Some(id) = name.strip_prefix("focus.") {
             return id
@@ -216,17 +224,31 @@ impl WindowCommand {
         Some(match name {
             "minimise" => Self::Minimise,
             "zoom" => Self::Zoom,
+            "fill" => Self::Fill,
             "centre" => Self::Centre,
+            "restore-size" => Self::ReturnToPreviousSize,
             "bring-all-to-front" => Self::BringAllToFront,
-            "tile.left" => Self::Tile(TileRegion::Left),
-            "tile.right" => Self::Tile(TileRegion::Right),
-            "tile.top" => Self::Tile(TileRegion::Top),
-            "tile.bottom" => Self::Tile(TileRegion::Bottom),
-            "tile.top-left" => Self::Tile(TileRegion::TopLeft),
-            "tile.top-right" => Self::Tile(TileRegion::TopRight),
-            "tile.bottom-left" => Self::Tile(TileRegion::BottomLeft),
-            "tile.bottom-right" => Self::Tile(TileRegion::BottomRight),
+            "tile-left" => Self::Tile(Half::Left),
+            "tile-right" => Self::Tile(Half::Right),
+            "tile-top" => Self::Tile(Half::Top),
+            "tile-bottom" => Self::Tile(Half::Bottom),
             _ => return None,
+        })
+    }
+
+    /// The `rmac-mission-control` command that sizes the focused window,
+    /// for the commands that go that way.
+    pub fn mission_control_command(self) -> Option<&'static str> {
+        Some(match self {
+            // The green button's Zoom fills the working area, as Fill does.
+            Self::Zoom | Self::Fill => "fill",
+            Self::Centre => "centre",
+            Self::ReturnToPreviousSize => "restore-size",
+            Self::Tile(Half::Left) => "tile-left",
+            Self::Tile(Half::Right) => "tile-right",
+            Self::Tile(Half::Top) => "tile-top",
+            Self::Tile(Half::Bottom) => "tile-bottom",
+            Self::Minimise | Self::BringAllToFront | Self::Focus(_) => return None,
         })
     }
 }
@@ -235,38 +257,40 @@ impl WindowCommand {
 /// & Resize, the app's own Window items (Files' tabs), Bring All to Front
 /// and the app's windows with a check on the current one.
 ///
-/// There is no Zoom toggle back to the user's size (niri cannot restore
-/// it), so Zoom fills the working area as the Mac's Fill does and Fill is
-/// not listed twice. Full-Screen Tile and Arrange need several windows in
-/// a floating layout niri does not keep, and are left out.
+/// The hints are the session's keys for the same commands (niri binds
+/// them; a PC has no Globe key, so the Mac's fn⌃ is ⌃⌘ here). The quarter
+/// tiles, Full-Screen Tile and Arrange have no command yet and are left out.
 pub fn window_menu(
     windows: &[MenuWindow],
     focused: Option<rmac_compositor::WindowId>,
     app_items: Vec<Item>,
     words: rmac_locale::FileVocabulary,
 ) -> rmac_app_menu::Menu {
-    use rmac_compositor::TileRegion;
     let has_focus = focused.is_some();
     let command = |label: &str, command: WindowCommand, shortcut: &str| {
         Item::new(label, command.action(), shortcut).enabled(has_focus)
     };
-    let tile = |label: &str, region| command(label, WindowCommand::Tile(region), "");
+    let tile =
+        |label: &str, half, shortcut: &str| command(label, WindowCommand::Tile(half), shortcut);
     let mut items = vec![
         command(words.minimise(), WindowCommand::Minimise, "⌘M"),
         command("Zoom", WindowCommand::Zoom, ""),
-        command(words.centre(), WindowCommand::Centre, ""),
+        command("Fill", WindowCommand::Fill, "⌃⇧⌘F"),
+        command(words.centre(), WindowCommand::Centre, "⌃⌘C"),
         Item::submenu(
             "Move & Resize",
             "window::move-and-resize",
             vec![
-                tile("Left", TileRegion::Left),
-                tile("Right", TileRegion::Right),
-                tile("Top", TileRegion::Top),
-                tile("Bottom", TileRegion::Bottom),
-                tile("Top Left", TileRegion::TopLeft).separated(),
-                tile("Top Right", TileRegion::TopRight),
-                tile("Bottom Left", TileRegion::BottomLeft),
-                tile("Bottom Right", TileRegion::BottomRight),
+                tile("Left", Half::Left, "⌃⌘←"),
+                tile("Right", Half::Right, "⌃⌘→"),
+                tile("Top", Half::Top, "⌃⌘↑"),
+                tile("Bottom", Half::Bottom, "⌃⌘↓"),
+                command(
+                    "Return to Previous Size",
+                    WindowCommand::ReturnToPreviousSize,
+                    "⌃⌘R",
+                )
+                .separated(),
             ],
         )
         .enabled(has_focus)
@@ -1352,6 +1376,7 @@ mod tests {
             [
                 "Minimise",
                 "Zoom",
+                "Fill",
                 "Centre",
                 "Move & Resize",
                 "Show Next Tab",
@@ -1361,12 +1386,19 @@ mod tests {
             ]
         );
         assert_eq!(menu.items[0].shortcut, "⌘M");
-        assert!(menu.items[3].is_submenu());
-        assert!(menu.items[4].separator_before);
-        assert_eq!(menu.items[7].checked, rmac_app_menu::CheckState::On);
-        assert_eq!(menu.items[6].checked, rmac_app_menu::CheckState::Off);
+        assert_eq!(menu.items[2].shortcut, "⌃⇧⌘F");
+        assert_eq!(menu.items[3].shortcut, "⌃⌘C");
+        assert!(menu.items[4].is_submenu());
+        assert_eq!(menu.items[4].children[0].shortcut, "⌃⌘←");
         assert_eq!(
-            WindowCommand::parse(&menu.items[6].action),
+            WindowCommand::parse(&menu.items[4].children[4].action),
+            Some(WindowCommand::ReturnToPreviousSize)
+        );
+        assert!(menu.items[5].separator_before);
+        assert_eq!(menu.items[8].checked, rmac_app_menu::CheckState::On);
+        assert_eq!(menu.items[7].checked, rmac_app_menu::CheckState::Off);
+        assert_eq!(
+            WindowCommand::parse(&menu.items[7].action),
             Some(WindowCommand::Focus(rmac_compositor::WindowId(7)))
         );
         assert!(rmac_app_menu::validate_menus(std::slice::from_ref(&menu)).is_ok());
@@ -1379,17 +1411,29 @@ mod tests {
 
     #[test]
     fn window_actions_round_trip() {
-        use rmac_compositor::TileRegion;
         for command in [
             WindowCommand::Minimise,
             WindowCommand::Zoom,
+            WindowCommand::Fill,
             WindowCommand::Centre,
+            WindowCommand::ReturnToPreviousSize,
             WindowCommand::BringAllToFront,
-            WindowCommand::Tile(TileRegion::BottomRight),
+            WindowCommand::Tile(Half::Bottom),
             WindowCommand::Focus(rmac_compositor::WindowId(42)),
         ] {
             assert_eq!(WindowCommand::parse(&command.action()), Some(command));
         }
+        // Sizing goes through Mission Control's own command words.
+        assert_eq!(
+            WindowCommand::Tile(Half::Left).mission_control_command(),
+            Some("tile-left")
+        );
+        assert_eq!(WindowCommand::Zoom.mission_control_command(), Some("fill"));
+        assert_eq!(
+            WindowCommand::ReturnToPreviousSize.mission_control_command(),
+            Some("restore-size")
+        );
+        assert_eq!(WindowCommand::Minimise.mission_control_command(), None);
         assert_eq!(WindowCommand::parse("window::focus.x"), None);
         assert_eq!(WindowCommand::parse("finder::NextTab"), None);
     }

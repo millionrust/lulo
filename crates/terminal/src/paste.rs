@@ -31,6 +31,30 @@ pub(crate) fn has_unsafe_unbracketed_control(text: &str) -> bool {
         .any(|character| character.is_control() && !matches!(character, '\t' | '\r' | '\n'))
 }
 
+/// POSIX single-quote a path for dropping onto the window: safe to type
+/// as-is when it holds only unambiguous shell characters, otherwise wrapped
+/// in `'…'` with any embedded `'` escaped as `'\''`.
+pub(crate) fn shell_quote(value: &str) -> String {
+    let is_plain = !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'_' | b'-'));
+    if is_plain {
+        return value.to_owned();
+    }
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('\'');
+    for character in value.chars() {
+        if character == '\'' {
+            quoted.push_str("'\\''");
+        } else {
+            quoted.push(character);
+        }
+    }
+    quoted.push('\'');
+    quoted
+}
+
 pub(crate) fn prepare(text: &str, bracketed: bool) -> Vec<u8> {
     if bracketed {
         let mut bytes = Vec::with_capacity(text.len().saturating_add(12));
@@ -81,8 +105,8 @@ impl std::fmt::Debug for PendingPaste {
 #[cfg(test)]
 mod tests {
     use super::{
-        has_unsafe_unbracketed_control, logical_line_count, prepare, PendingPaste, BRACKETED_END,
-        BRACKETED_START, MAX_BYTES,
+        has_unsafe_unbracketed_control, logical_line_count, prepare, shell_quote, PendingPaste,
+        BRACKETED_END, BRACKETED_START, MAX_BYTES,
     };
 
     #[test]
@@ -122,6 +146,16 @@ mod tests {
         assert!(has_unsafe_unbracketed_control("one\x1btwo"));
         assert!(has_unsafe_unbracketed_control("one\x03two"));
         assert!(!has_unsafe_unbracketed_control("one\ttwo\nthree"));
+    }
+
+    #[test]
+    fn shell_quoting_only_wraps_paths_with_special_characters() {
+        assert_eq!(shell_quote("/home/jake/notes.txt"), "/home/jake/notes.txt");
+        assert_eq!(shell_quote("a-b_c.1"), "a-b_c.1");
+        assert_eq!(shell_quote("my file.txt"), "'my file.txt'");
+        assert_eq!(shell_quote("it's.txt"), "'it'\\''s.txt'");
+        assert_eq!(shell_quote(""), "''");
+        assert_eq!(shell_quote("$HOME"), "'$HOME'");
     }
 
     #[test]

@@ -56,9 +56,27 @@ impl TerminalView {
         if row[Column(column)].flags.contains(Flags::WIDE_CHAR_SPACER) {
             column = column.saturating_sub(1);
         }
-        let uri = row[Column(column)].hyperlink()?.uri().to_owned();
+        if let Some(hyperlink) = row[Column(column)].hyperlink() {
+            let uri = hyperlink.uri().to_owned();
+            drop(term);
+            return Some(LinkTarget::parse(&uri));
+        }
+        // No OSC 8 hyperlink here: fall back to a plain `http(s)://` URL
+        // printed as bare text, which most shell output is.
+        let cols = self.cols;
+        let text: String = (0..cols)
+            .map(|c| {
+                let cell = &row[Column(c)];
+                if cell.flags.contains(Flags::WIDE_CHAR_SPACER) || cell.c == '\0' {
+                    ' '
+                } else {
+                    cell.c
+                }
+            })
+            .collect();
+        let url = crate::hyperlink::find_url(&text, column)?.to_owned();
         drop(term);
-        Some(LinkTarget::parse(&uri))
+        Some(LinkTarget::parse(&url))
     }
 
     pub(super) fn update_hovered_link(&mut self, position: Point<Pixels>) -> bool {

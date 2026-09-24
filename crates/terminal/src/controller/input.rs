@@ -11,7 +11,7 @@ impl TerminalView {
                 .map_err(|_| SessionWriteError::State)?;
             *term.mode()
         };
-        if uses_platform_text_input(&event.keystroke, mode) {
+        if uses_platform_text_input(&event.keystroke, mode, self.option_as_meta) {
             return Ok(false);
         }
         let kind = if event.is_held {

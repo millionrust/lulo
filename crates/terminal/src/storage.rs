@@ -9,8 +9,10 @@ pub(crate) type Failure = rmac_storage::Failure<Operation>;
 pub(crate) enum Operation {
     CreateConfigDirectory,
     LoadProfile,
+    LoadSetting,
     ResolveConfigPath,
     SaveProfile,
+    SaveSetting,
 }
 
 impl fmt::Display for Operation {
@@ -18,8 +20,10 @@ impl fmt::Display for Operation {
         f.write_str(match self {
             Self::CreateConfigDirectory => "create the preferences directory",
             Self::LoadProfile => "load the terminal profile",
+            Self::LoadSetting => "load a terminal setting",
             Self::ResolveConfigPath => "resolve the preferences path",
             Self::SaveProfile => "save the terminal profile",
+            Self::SaveSetting => "save a terminal setting",
         })
     }
 }
@@ -27,11 +31,12 @@ impl fmt::Display for Operation {
 pub(crate) fn load_optional(
     storage: &impl Storage,
     path: &Path,
+    operation: Operation,
 ) -> Result<Option<String>, Failure> {
     match storage.read_to_string(path) {
         Ok(contents) => Ok(Some(contents)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(Failure::from_io(Operation::LoadProfile, path, error)),
+        Err(error) => Err(Failure::from_io(operation, path, error)),
     }
 }
 
@@ -39,6 +44,7 @@ pub(crate) fn save(
     storage: &impl Storage,
     path: &Path,
     contents: impl AsRef<[u8]>,
+    operation: Operation,
 ) -> Result<(), Failure> {
     let parent = path.parent().ok_or_else(|| {
         Failure::message(
@@ -52,7 +58,7 @@ pub(crate) fn save(
         .map_err(|error| Failure::from_io(Operation::CreateConfigDirectory, parent, error))?;
     storage
         .write_atomic(path, contents.as_ref())
-        .map_err(|error| Failure::from_io(Operation::SaveProfile, path, error))
+        .map_err(|error| Failure::from_io(operation, path, error))
 }
 
 #[cfg(test)]
@@ -97,6 +103,7 @@ mod tests {
                 create_succeeds: false,
             },
             Path::new("profile.txt"),
+            Operation::LoadProfile,
         )
         .unwrap_err();
         let directory_failure = save(
@@ -105,6 +112,7 @@ mod tests {
             },
             Path::new("config/profile.txt"),
             "Basic",
+            Operation::SaveProfile,
         )
         .unwrap_err();
         let write_failure = save(
@@ -113,6 +121,7 @@ mod tests {
             },
             Path::new("config/profile.txt"),
             "Basic",
+            Operation::SaveProfile,
         )
         .unwrap_err();
 

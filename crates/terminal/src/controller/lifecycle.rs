@@ -116,13 +116,19 @@ impl TerminalView {
                 CycleProfile,
                 Some("Terminal"),
             ),
-            // Terminal › Settings… opens the profiles; here that is the
-            // profile picker.
+            // Terminal › Settings… opens the profile list and font size.
             KeyBinding::new(
                 rmac_ui::shortcuts::SETTINGS.keystroke,
-                ShowProfiles,
+                ShowSettings,
                 Some("Terminal"),
             ),
+            KeyBinding::new(
+                rmac_ui::shortcuts::NEW_WINDOW.keystroke,
+                NewWindow,
+                Some("Terminal"),
+            ),
+            KeyBinding::new("alt-cmd-r", ResetTerminal, Some("Terminal")),
+            KeyBinding::new("ctrl-alt-cmd-r", HardResetTerminal, Some("Terminal")),
         ]);
 
         // A close request from outside the window — the Dock's or the menu
@@ -161,6 +167,8 @@ impl TerminalView {
                 Some(SharedString::from(failure.to_string())),
             ),
         };
+        let option_as_meta = profiles::load_option_as_meta();
+        let font_size = profiles::load_font_size().unwrap_or(FONT_SIZE);
 
         // PTY/model events wake this task. The bounded channel coalesces output
         // bursts while leaving the application fully asleep when nothing changes.
@@ -179,9 +187,9 @@ impl TerminalView {
             active: 0,
             cols: COLS,
             rows: ROWS,
-            font_size: FONT_SIZE,
-            line_h: LINE_H,
-            cell_w: measure_cell_w(window, FONT_SIZE),
+            font_size,
+            line_h: font_size * (LINE_H / FONT_SIZE),
+            cell_w: measure_cell_w(window, font_size),
             content_origin: (0.0, 0.0),
             focus,
             native_window_title: "Terminal".into(),
@@ -197,6 +205,7 @@ impl TerminalView {
             hovered_link: None,
             profile,
             picker_open: false,
+            option_as_meta,
             persistence_error,
             operation_error: None,
             pending_close: None,

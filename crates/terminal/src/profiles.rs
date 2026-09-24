@@ -177,7 +177,11 @@ fn parse(content: &str) -> Result<(usize, bool), String> {
 
 pub(crate) fn load() -> Result<(usize, bool), storage::Failure> {
     let path = config_path()?;
-    match storage::load_optional(&storage::RealStorage, &path)? {
+    match storage::load_optional(
+        &storage::RealStorage,
+        &path,
+        storage::Operation::LoadProfile,
+    )? {
         Some(content) => parse(&content).map_err(|detail| {
             storage::Failure::message(storage::Operation::LoadProfile, &path, detail)
         }),
@@ -194,7 +198,67 @@ pub(crate) fn save(index: usize) -> Result<(), storage::Failure> {
             format!("profile index {index} is out of range"),
         )
     })?;
-    storage::save(&storage::RealStorage, &path, profile.name)
+    storage::save(
+        &storage::RealStorage,
+        &path,
+        profile.name,
+        storage::Operation::SaveProfile,
+    )
+}
+
+fn setting_path(name: &str) -> Result<PathBuf, storage::Failure> {
+    Ok(config_path()?.with_file_name(name))
+}
+
+/// Shell ▸ Use Option as Meta Key: off by default, like the Mac.
+pub(crate) fn load_option_as_meta() -> bool {
+    (|| -> Result<bool, storage::Failure> {
+        let path = setting_path("option-as-meta.txt")?;
+        let stored = storage::load_optional(
+            &storage::RealStorage,
+            &path,
+            storage::Operation::LoadSetting,
+        )?;
+        Ok(stored.is_some_and(|value| value.trim() == "1"))
+    })()
+    .unwrap_or(false)
+}
+
+pub(crate) fn save_option_as_meta(enabled: bool) -> Result<(), storage::Failure> {
+    let path = setting_path("option-as-meta.txt")?;
+    storage::save(
+        &storage::RealStorage,
+        &path,
+        if enabled { "1" } else { "0" },
+        storage::Operation::SaveSetting,
+    )
+}
+
+/// The font size new Terminal windows open with, from Settings.
+pub(crate) fn load_font_size() -> Option<f32> {
+    let path = setting_path("font-size.txt").ok()?;
+    let stored = storage::load_optional(
+        &storage::RealStorage,
+        &path,
+        storage::Operation::LoadSetting,
+    )
+    .ok()
+    .flatten()?;
+    stored
+        .trim()
+        .parse::<f32>()
+        .ok()
+        .filter(|size| (8.0..=32.0).contains(size))
+}
+
+pub(crate) fn save_font_size(size: f32) -> Result<(), storage::Failure> {
+    let path = setting_path("font-size.txt")?;
+    storage::save(
+        &storage::RealStorage,
+        &path,
+        format!("{size}"),
+        storage::Operation::SaveSetting,
+    )
 }
 
 #[cfg(test)]

@@ -74,7 +74,7 @@ pub fn restore_locale(rollback: &rmac_locale::LocaleRollback) -> Result<Snapshot
     if !rmac_locale::locale_assignments_match(&current.locale, rollback.expected()) {
         return Err(Error::new(
             ErrorKind::Conflict,
-            "the system locale changed after rmac applied it; refresh before reverting",
+            "the system locale changed after Lulo OS applied it; refresh before reverting",
         ));
     }
     apply_complete_locale(current, rollback.previous())
@@ -85,7 +85,7 @@ pub fn restore_x11_keyboard(rollback: &rmac_locale::KeyboardRollback) -> Result<
     if current.x11_keyboard() != *rollback.expected() {
         return Err(Error::new(
             ErrorKind::Conflict,
-            "the keyboard layout changed after rmac applied it; refresh before reverting",
+            "the keyboard layout changed after Lulo OS applied it; refresh before reverting",
         ));
     }
     let previous = rollback.previous();

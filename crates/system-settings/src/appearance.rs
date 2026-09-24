@@ -94,10 +94,10 @@ pub(super) async fn load_theme_state() -> std::result::Result<ThemeLoad, String>
         ),
     };
     let store = rmac_theme::ThemeStore::from_environment()
-        .map_err(|_| "the rmac appearance preference authority is unavailable".to_string())?;
+        .map_err(|_| "the Lulo OS appearance preference authority is unavailable".to_string())?;
     let theme = store
         .load(&host)
-        .map_err(|_| "the rmac appearance preferences could not be read".to_string())?;
+        .map_err(|_| "the Lulo OS appearance preferences could not be read".to_string())?;
     Ok(ThemeLoad { host, theme })
 }
 
@@ -133,7 +133,7 @@ pub(super) async fn apply_theme_change_authoritatively(
     }
 
     let store = rmac_theme::ThemeStore::from_environment()
-        .map_err(|_| "the rmac appearance preference authority is unavailable".to_string())?;
+        .map_err(|_| "the Lulo OS appearance preference authority is unavailable".to_string())?;
     store
         .save(&requested, &fresh.host)
         .map_err(|_| "the appearance preference could not be saved".to_string())?;

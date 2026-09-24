@@ -73,7 +73,7 @@ impl Settings {
             self.append_spotlight_settings(view.clone(), &snapshot.settings, &mut cards);
         } else {
             cards.push(note_card(
-                "The rmac shell-settings service is unavailable. Search preferences remain unchanged.",
+                "The Lulo OS shell-settings service is unavailable. Search preferences remain unchanged.",
             ));
         }
 

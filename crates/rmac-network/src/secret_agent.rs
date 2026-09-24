@@ -114,7 +114,7 @@ impl OneShotSecretAgent {
         };
         if setting_name != expected_setting {
             return Err(SecretAgentError::NoSecrets(
-                "rmac has no secret for the requested setting".to_string(),
+                "Lulo OS has no secret for the requested setting".to_string(),
             ));
         }
         let secret = state.secret.take().ok_or_else(|| {

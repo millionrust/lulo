@@ -982,7 +982,7 @@ fn recover_failed_update(
             }
         }
         Err(error) => format!(
-            "rmac could not prove it still owned the staged profile and left it untouched: {error}"
+            "Lulo OS could not prove it still owned the staged profile and left it untouched: {error}"
         ),
     }
 }

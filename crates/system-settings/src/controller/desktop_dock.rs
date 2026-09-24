@@ -46,7 +46,7 @@ impl Settings {
         }
         let Some(snapshot) = self.shell_settings.as_ref() else {
             cards.push(note_card(
-                "The versioned rmac shell-settings authority is unavailable. No Dock preference can be changed until it is readable again.",
+                "The versioned Lulo OS shell-settings authority is unavailable. No Dock preference can be changed until it is readable again.",
             ));
             cards.push(footer);
             return self.pane(cards);
@@ -257,7 +257,7 @@ impl Settings {
         }
         if !outputs_live {
             cards.push(note_card(
-                "niri is not connected in this process. Output-specific choices are limited to currently known outputs; saved Dock policy remains editable and is applied when the rmac niri session is available.",
+                "niri is not connected in this process. Output-specific choices are limited to currently known outputs; saved Dock policy remains editable and is applied when the Lulo OS niri session is available.",
             ));
         }
         cards.push(footer);

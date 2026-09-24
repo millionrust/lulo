@@ -32,7 +32,7 @@ pub use system::{apply, status};
 #[cfg(not(target_os = "linux"))]
 pub fn status() -> Result<Status, Error> {
     Err(Error::new(
-        "Mac keyboard settings are available in the rmac Linux session",
+        "Mac keyboard settings are available in the Lulo OS Linux session",
     ))
 }
 

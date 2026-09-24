@@ -45,7 +45,7 @@ impl Settings {
             header_card(
                 tile26("icons/accessibility.svg", accent()),
                 "Accessibility",
-                "Personalise rmac in ways that work best for you with accessibility features for vision and motor.",
+                "Personalise Lulo OS in ways that work best for you with accessibility features for vision and motor.",
                 None,
             ),
             section_header("Vision"),
@@ -143,7 +143,7 @@ impl Settings {
             ));
         } else {
             body = body.child(note_card(
-                "The rmac visual accessibility preference service is unavailable.",
+                "The Lulo OS visual accessibility preference service is unavailable.",
             ));
         }
         let mut gtk_note = None;
@@ -169,7 +169,7 @@ impl Settings {
                 .child(section_header("Text"))
                 .child(card(text_rows))
                 .child(footnote(
-                    "Text size applies to rmac's own interface text; GTK application text changes GNOME applications. Neither changes display scaling.",
+                    "Text size applies to Lulo OS's own interface text; GTK application text changes GNOME applications. Neither changes display scaling.",
                 ));
         }
         if let Some(note) = gtk_note {
@@ -198,7 +198,7 @@ impl Settings {
             )]));
         } else {
             body = body.child(note_card(
-                "The rmac visual accessibility preference service is unavailable.",
+                "The Lulo OS visual accessibility preference service is unavailable.",
             ));
         }
         body.child(self.theme_refresh_footer(view))

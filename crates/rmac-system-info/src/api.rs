@@ -35,7 +35,7 @@ impl Snapshot {
 
     /// A deliberately bounded report suitable for the clipboard or a bug.
     pub fn diagnostic_report(&self) -> String {
-        let mut lines = vec!["rmac system report".to_string()];
+        let mut lines = vec!["Lulo OS system report".to_string()];
         push_fact(&mut lines, "Operating system", Some(&self.operating_system));
         push_fact(&mut lines, "Kernel", Some(&self.kernel));
         push_fact(&mut lines, "Architecture", Some(&self.architecture));

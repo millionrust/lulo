@@ -72,7 +72,7 @@ pub fn background_service(
         .unwrap_or(id)
         .replace(['-', '_'], " ");
     let detail = if protected {
-        "Required by the rmac session".into()
+        "Required by the Lulo OS session".into()
     } else if state == UnitFileState::Runtime {
         "Runtime-only state is read-only; it ends at logout or reboot".into()
     } else if state == UnitFileState::Masked {

@@ -108,7 +108,7 @@ impl Settings {
                 dialog.child(note_card(format!("Expected after installation: {restart}.")))
             })
             .child(note_card(
-                "rmac installs only the exact revalidated plan and keeps PackageKit's trusted-only flag enabled. Authorization may be requested.",
+                "Lulo OS installs only the exact revalidated plan and keeps PackageKit's trusted-only flag enabled. Authorization may be requested.",
             ))
             .child(
                 div()

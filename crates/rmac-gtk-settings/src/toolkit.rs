@@ -87,13 +87,13 @@ impl ToolkitFollower {
     /// Returns `Ok(true)` when it applied a change.
     pub fn poll(&mut self) -> Result<bool, Error> {
         let store = rmac_theme::ThemeStore::from_environment()
-            .map_err(|error| Error::new("read rmac appearance", error.operation.to_string()))?;
+            .map_err(|error| Error::new("read Lulo OS appearance", error.operation.to_string()))?;
         let host = rmac_appearance::Snapshot::unavailable(
-            "third-party toolkits follow rmac's own preference",
+            "third-party toolkits follow Lulo OS's own preference",
         );
         let preferences = store
             .load(&host)
-            .map_err(|error| Error::new("read rmac appearance", error.operation.to_string()))?
+            .map_err(|error| Error::new("read Lulo OS appearance", error.operation.to_string()))?
             .preferences;
         let host_dark = preferences.color_scheme == SchemePreference::Automatic
             && host_prefers_dark(&RealRunner);

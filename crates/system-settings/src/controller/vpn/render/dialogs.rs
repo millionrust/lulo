@@ -10,9 +10,9 @@ impl Settings {
         let preview = self.vpn_secret_preview.as_ref()?;
         let busy = self.vpn_secret_busy;
         let consequence = if preview.currently_connected {
-            "The current connection will stay active. NetworkManager will remove saved passwords, certificate passphrases, proxy passwords, and plugin tokens, then the installed VPN plugin may ask for them after the next disconnect. This cannot be undone by rmac."
+            "The current connection will stay active. NetworkManager will remove saved passwords, certificate passphrases, proxy passwords, and plugin tokens, then the installed VPN plugin may ask for them after the next disconnect. This cannot be undone by Lulo OS."
         } else {
-            "NetworkManager will remove saved passwords, certificate passphrases, proxy passwords, and plugin tokens. The installed VPN plugin may ask for them on the next connection. This cannot be undone by rmac."
+            "NetworkManager will remove saved passwords, certificate passphrases, proxy passwords, and plugin tokens. The installed VPN plugin may ask for them on the next connection. This cannot be undone by Lulo OS."
         };
         let content = div()
             .w(px(440.0))

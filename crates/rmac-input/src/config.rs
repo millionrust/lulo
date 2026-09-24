@@ -209,26 +209,26 @@ pub(super) fn load_authority(location: &ConfigLocation) -> Result<Authority, Err
         Some("niri is using the system configuration; create a user configuration before changing input settings.".into())
     } else if main_is_symlink {
         Some(
-            "The main niri configuration is a symbolic link and will not be replaced by rmac."
+            "The main niri configuration is a symbolic link and will not be replaced by Lulo OS."
                 .into(),
         )
     } else if include_is_ambiguous {
         Some(
-            "The rmac input include must appear exactly once as the final top-level niri node."
+            "The Lulo OS input include must appear exactly once as the final top-level niri node."
                 .into(),
         )
     } else if !managed_is_owned {
         Some(format!(
-            "{} exists but is not owned by rmac.",
+            "{} exists but is not owned by Lulo OS.",
             managed_path.display()
         ))
     } else if !safe_to_write {
         Some(
-            "The managed input configuration is a symbolic link and will not be replaced by rmac."
+            "The managed input configuration is a symbolic link and will not be replaced by Lulo OS."
                 .into(),
         )
     } else if !has_managed_include {
-        Some("Input values are effective from the current include graph and have not yet been placed under isolated rmac ownership.".into())
+        Some("Input values are effective from the current include graph and have not yet been placed under isolated Lulo OS ownership.".into())
     } else {
         None
     };

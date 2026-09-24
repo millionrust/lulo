@@ -15,11 +15,11 @@ pub(super) fn finish_exit(
         )),
         4 => Err(Error::new(
             ErrorKind::Trust,
-            "a repository signing key must be reviewed outside rmac",
+            "a repository signing key must be reviewed outside Lulo OS",
         )),
         5 => Err(Error::new(
             ErrorKind::Interaction,
-            "a package licence must be reviewed outside rmac",
+            "a package licence must be reviewed outside Lulo OS",
         )),
         7 => Err(Error::new(
             ErrorKind::Interaction,
@@ -67,7 +67,7 @@ pub(super) fn packagekit_error(code: u32, _detail: &str) -> Error {
         ),
         34 | 47 => Error::new(
             ErrorKind::Interaction,
-            "PackageKit requires a licence or installation media that rmac cannot accept silently",
+            "PackageKit requires a licence or installation media that Lulo OS cannot accept silently",
         ),
         46 => Error::new(
             ErrorKind::Backend,

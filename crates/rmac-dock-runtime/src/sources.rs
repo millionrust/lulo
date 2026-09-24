@@ -44,7 +44,7 @@ async fn watch_appearance(sender: Sender<Result<bool, String>>) -> Result<(), Er
             Ok(setup) => setup,
             Err(_) => {
                 if sender
-                    .send(Err("the rmac appearance authority is unavailable".into()))
+                    .send(Err("the Lulo OS appearance authority is unavailable".into()))
                     .await
                     .is_err()
                 {
@@ -126,7 +126,7 @@ async fn consume_appearance(
             AppearanceInput::Store(Ok(rmac_theme::StoreEvent::Changed)) => {}
             AppearanceInput::Store(Ok(rmac_theme::StoreEvent::WatchError(_)))
             | AppearanceInput::Store(Err(_)) => {
-                return Err(Error::new("watch rmac appearance", "watcher stopped"));
+                return Err(Error::new("watch Lulo OS appearance", "watcher stopped"));
             }
         }
 
@@ -141,7 +141,7 @@ async fn consume_appearance(
         store = returned_store;
         let result = resolved
             .map(|snapshot| snapshot.effective.motion == rmac_appearance::MotionPreference::Reduced)
-            .map_err(|_| "the rmac appearance preference could not be resolved".into());
+            .map_err(|_| "the Lulo OS appearance preference could not be resolved".into());
         if sender.send(result).await.is_err() {
             return Ok(());
         }

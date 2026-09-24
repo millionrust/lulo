@@ -85,7 +85,7 @@ impl Settings {
                             }
                             ThemeStoreWatchEvent::Unavailable => {
                                 this.theme_store_stream_error = Some(
-                                    "Live rmac appearance updates are temporarily unavailable"
+                                    "Live Lulo OS appearance updates are temporarily unavailable"
                                         .into(),
                                 );
                             }

@@ -7,8 +7,8 @@ pub const REFRESH_ID: &str = "theme-refresh";
 pub const REFRESH_LABEL: &str = "Refresh";
 pub const LOADING_LABEL: &str = "Loading appearance preferences…";
 pub const APPLYING_LABEL: &str = "Applying appearance preferences…";
-pub const UNAVAILABLE_LABEL: &str = "The rmac theme preference service is unavailable.";
-pub const HOST_UNAVAILABLE_LABEL: &str = "The Linux Settings portal is unavailable. Automatic values use safe rmac defaults; explicit choices remain writable.";
+pub const UNAVAILABLE_LABEL: &str = "The Lulo OS theme preference service is unavailable.";
+pub const HOST_UNAVAILABLE_LABEL: &str = "The Linux Settings portal is unavailable. Automatic values use safe Lulo OS defaults; explicit choices remain writable.";
 pub const MAX_TEXT_VALUE_BYTES: usize = 16 * 1024;
 pub const MAX_TEXT_BYTES: usize = 64 * 1024;
 

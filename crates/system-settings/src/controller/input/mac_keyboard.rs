@@ -182,12 +182,12 @@ impl Settings {
             ));
         } else if !status.foreign_keyd_configs.is_empty() && !state.shortcuts_in_all_apps {
             cards.push(footnote(format!(
-                "keyd already has another configuration ({}), so rmac leaves it alone.",
+                "keyd already has another configuration ({}), so Lulo OS leaves it alone.",
                 status.foreign_keyd_configs.join(", ")
             )));
         } else if !status.helper_installed && !state.shortcuts_in_all_apps {
             cards.push(footnote(
-                "Mac shortcuts in all apps are available when rmac is installed from its package.",
+                "Mac shortcuts in all apps are available when Lulo OS is installed from its package.",
             ));
         }
         if !status.option_characters_available && !state.layout.option_characters {

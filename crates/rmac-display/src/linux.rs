@@ -385,27 +385,27 @@ pub(super) fn persistence_authority() -> Result<PersistenceAuthority, Error> {
     if include_indexes.len() > 1 {
         return Err(Error::new(
             "resolve persistent display configuration",
-            "the rmac display include appears more than once",
+            "the Lulo OS display include appears more than once",
         ));
     }
     if include_indexes.first().is_some_and(|index| *index != 0) {
         return Err(Error::new(
             "resolve persistent display configuration",
-            "the rmac display include must remain the first top-level niri node so its output identity is deterministic",
+            "the Lulo OS display include must remain the first top-level niri node so its output identity is deterministic",
         ));
     }
     let has_include = !include_indexes.is_empty();
     let managed_path = main_path.with_file_name(MANAGED_CONFIG_NAME);
     let managed_source = match std::fs::symlink_metadata(&managed_path) {
         Ok(_) => {
-            reject_symlink(&managed_path, "use the rmac display configuration")?;
+            reject_symlink(&managed_path, "use the Lulo OS display configuration")?;
             let source =
                 read_bounded_config(&managed_path, "read persistent display configuration")?;
             if !source.starts_with(MANAGED_HEADER) {
                 return Err(Error::new(
                     "read persistent display configuration",
                     format!(
-                        "{} already exists but is not owned by rmac",
+                        "{} already exists but is not owned by Lulo OS",
                         managed_path.display()
                     ),
                 ));
@@ -573,7 +573,7 @@ pub(super) fn parse_managed_primary(source: &str) -> Result<Option<String>, Erro
     if primaries.len() > 1 {
         return Err(Error::new(
             "parse persistent display configuration",
-            "only one output may be the rmac main display",
+            "only one output may be the Lulo OS main display",
         ));
     }
     Ok(primaries.first().map(|id| (*id).to_owned()))

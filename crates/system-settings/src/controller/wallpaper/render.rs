@@ -29,7 +29,7 @@ impl Settings {
         }
         let Some(snapshot) = self.shell_settings.as_ref() else {
             cards.push(note_card(
-                "The versioned rmac shell-settings authority is unavailable. Wallpaper choices remain unchanged.",
+                "The versioned Lulo OS shell-settings authority is unavailable. Wallpaper choices remain unchanged.",
             ));
             cards.push(footer_buttons(vec![push_button(
                 "wallpaper-refresh",

@@ -108,7 +108,7 @@ impl Settings {
         if self.display.can_configure {
             if self.display.can_persist {
                 cards.push(footnote(
-                    "Resolution, scale, rotation and arrangement changes stay temporary until you choose Keep Changes; rmac then saves the complete live layout to its niri include.",
+                    "Resolution, scale, rotation and arrangement changes stay temporary until you choose Keep Changes; Lulo OS then saves the complete live layout to its niri include.",
                 ));
             } else if let Some(detail) = &self.display.persistence_detail {
                 cards.push(note_card(detail.clone()));

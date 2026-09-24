@@ -169,7 +169,7 @@ impl Settings {
                 match result {
                     Ok(_) => {
                         this.recent_history_notice =
-                            Some("Recent document history was cleared for rmac Search.".into());
+                            Some("Recent document history was cleared for Spotlight.".into());
                     }
                     Err(_) => {
                         this.spotlight_error =

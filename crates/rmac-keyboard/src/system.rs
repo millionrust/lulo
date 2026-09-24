@@ -105,7 +105,7 @@ pub fn apply_as_root(target: &MacKeyboard) -> Result<(), Error> {
         let foreign = foreign_keyd_configs();
         if !foreign.is_empty() {
             return Err(Error::new(format!(
-                "another keyd configuration is installed ({}); rmac will not change it",
+                "another keyd configuration is installed ({}); Lulo OS will not change it",
                 foreign.join(", ")
             )));
         }

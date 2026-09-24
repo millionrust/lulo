@@ -18,7 +18,7 @@ impl Settings {
         }
         let Some(snapshot) = self.shell_settings.as_ref() else {
             cards.push(note_card(
-                "The versioned rmac shell-settings authority is unavailable. Menu bar items stay as they are until it is readable again.",
+                "The versioned Lulo OS shell-settings authority is unavailable. Menu bar items stay as they are until it is readable again.",
             ));
             return self.pane(cards);
         };

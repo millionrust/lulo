@@ -34,7 +34,7 @@ impl Settings {
         }
         let Some(theme) = &self.theme else {
             cards.push(note_card(
-                "The rmac theme preference service is unavailable.",
+                "The Lulo OS theme preference service is unavailable.",
             ));
             cards.push(refresh);
             return self.pane(cards);
@@ -240,7 +240,7 @@ impl Settings {
         }
         if !self.host_appearance.available {
             cards.push(note_card(
-                "The Linux Settings portal is unavailable here. Automatic values use safe rmac defaults; explicit choices remain writable.",
+                "The Linux Settings portal is unavailable here. Automatic values use safe Lulo OS defaults; explicit choices remain writable.",
             ));
         }
         cards.push(refresh);

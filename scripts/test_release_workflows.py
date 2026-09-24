@@ -81,6 +81,40 @@ def test_apt_signing_job_uses_the_environment_gate():
     assert document["jobs"]["rollout"]["environment"] == "apt-signing"
 
 
+def test_niri_packages_build_in_the_ubuntu_container_and_gate_the_release():
+    document = _load(RELEASE)
+    jobs = document["jobs"]
+    for architecture in ("amd64", "arm64"):
+        job = jobs[f"build-third-party-{architecture}"]
+        assert job["container"]["image"] == "ubuntu:26.04"
+        script = "\n".join(step.get("run", "") for step in job["steps"])
+        assert "scripts/linux/build-niri-packages.sh" in script
+        assert "--build-deps system" in script
+        assert "sudo -E -u builder" in script
+        assert "rustup toolchain install 1.95.0" in script
+        uploads = [step for step in job["steps"] if "upload-artifact" in step.get("uses", "")]
+        assert uploads[0]["with"]["name"] == f"third-party-{architecture}"
+    assert jobs["build-third-party-arm64"]["if"] == jobs["build-arm64"]["if"]
+    # The container installs every Build-Depends the Debian packaging names.
+    install = jobs["build-third-party-amd64"]["steps"][0]["run"]
+    for control in (REPO_ROOT / "packaging/third-party").glob("*/debian/control"):
+        text = control.read_text(encoding="utf-8")
+        block = re.search(r"(?ms)^Build-Depends:(.*?)(?=^\S)", text).group(1)
+        for relation in block.split(","):
+            name = relation.split("(")[0].strip()
+            assert re.search(rf"^\s+{re.escape(name)}(?: \\)?$", install, re.M), (
+                f"release.yml does not install {name} from {control}"
+            )
+
+    attach = jobs["attach-release"]
+    assert "build-third-party-amd64" in attach["needs"]
+    assert "needs.build-third-party-amd64.result == 'success'" in attach["if"]
+    assemble = next(step["run"] for step in attach["steps"] if step.get("name", "").startswith("Assemble"))
+    for suffix in ("*.dsc", "*.orig.tar.gz", "*.orig-*.tar.xz", "*.debian.tar.xz", "*.cdx.json"):
+        assert suffix in assemble
+    assert "sha256sum" in assemble
+
+
 def test_rollout_schedule_and_manual_dispatch_exist():
     document = _load(ROLLOUT)
     triggers = document[True]

@@ -1,5 +1,8 @@
 # Build and publish a tagged rmac release: .debs, SHA256SUMS, an SBOM, and
-# build provenance always run and attach to the GitHub Release. Signing the
+# build provenance always run and attach to the GitHub Release, together
+# with Lulo OS's own niri and xwayland-satellite packages and their source
+# packages (build-third-party-*; see docs/release-process.md "Third-party
+# packages: niri and xwayland-satellite"). Signing the
 # APT repository and deploying it to GitHub Pages additionally need the
 # "apt-signing" environment's secrets and a real rmac source-package builder
 # (see docs/release-process.md); until both exist, that job is a documented
@@ -270,6 +273,187 @@ jobs:
           path: target/native-arm64-reproducibility/run-a
           if-no-files-found: error
 
+  build-third-party-amd64:
+    name: Build niri and xwayland-satellite packages (amd64)
+    # Neither is in the Ubuntu 26.04 archive, and rmac-session Depends on
+    # both, so every Release carries Lulo OS's own builds of the pinned
+    # upstream releases (packaging/third-party/upstreams.json) together with
+    # their complete source packages -- the GPL-3.0 (niri) and MPL-2.0
+    # (xwayland-satellite) source offer. Same ubuntu:26.04 container and
+    # non-root build user as build-amd64. `cargo vendor` is the only
+    # networked build step; the compile itself runs `cargo build --frozen`.
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    container:
+      image: ubuntu:26.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      RUSTUP_HOME: /usr/local/rustup
+      CARGO_HOME: /usr/local/cargo
+    steps:
+      - name: Install container base tooling and the Build-Depends
+        # Keep in sync with packaging/third-party/*/debian/control.
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            clang \
+            curl \
+            dpkg-dev \
+            git \
+            libcairo2-dev \
+            libclang-dev \
+            libdbus-1-dev \
+            libdisplay-info-dev \
+            libgbm-dev \
+            libinput-dev \
+            libpango1.0-dev \
+            libpipewire-0.3-dev \
+            libseat-dev \
+            libsystemd-dev \
+            libudev-dev \
+            libwayland-dev \
+            libxcb-cursor-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            pkgconf \
+            python3 \
+            sudo \
+            xz-utils
+
+      - name: Create the non-root build user
+        run: |
+          useradd --create-home --shell /bin/bash builder
+          echo 'builder ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/builder
+          mkdir -p "$RUSTUP_HOME" "$CARGO_HOME"
+          chown -R builder:builder "$RUSTUP_HOME" "$CARGO_HOME"
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Hand the checkout to the build user
+        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --profile minimal --default-toolchain none
+            rustup toolchain install 1.95.0 --profile minimal
+          '
+
+      - name: Build the packages, source packages, and SBOMs
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            cd "'"$GITHUB_WORKSPACE"'"
+            bash scripts/linux/build-niri-packages.sh \
+              --work-dir /home/builder/niri-build \
+              --output "$PWD/target/third-party-packages" \
+              --build-deps system \
+              --minimum-free-gib 8
+          '
+
+      - name: Upload the amd64 third-party packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: third-party-amd64
+          path: target/third-party-packages
+          if-no-files-found: error
+
+  build-third-party-arm64:
+    name: Build niri and xwayland-satellite packages (arm64)
+    # Same as build-third-party-amd64, gated like build-arm64 on a
+    # self-hosted arm64 runner. attach-release takes the source packages
+    # from the amd64 job only, so each source file is published once.
+    if: ${{ vars.RMAC_HAS_ARM64_RUNNER == 'true' }}
+    runs-on: [self-hosted, linux, arm64]
+    timeout-minutes: 120
+    container:
+      image: ubuntu:26.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      RUSTUP_HOME: /usr/local/rustup
+      CARGO_HOME: /usr/local/cargo
+    steps:
+      - name: Install container base tooling and the Build-Depends
+        # Keep in sync with packaging/third-party/*/debian/control.
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            clang \
+            curl \
+            dpkg-dev \
+            git \
+            libcairo2-dev \
+            libclang-dev \
+            libdbus-1-dev \
+            libdisplay-info-dev \
+            libgbm-dev \
+            libinput-dev \
+            libpango1.0-dev \
+            libpipewire-0.3-dev \
+            libseat-dev \
+            libsystemd-dev \
+            libudev-dev \
+            libwayland-dev \
+            libxcb-cursor-dev \
+            libxcb1-dev \
+            libxkbcommon-dev \
+            pkgconf \
+            python3 \
+            sudo \
+            xz-utils
+
+      - name: Create the non-root build user
+        run: |
+          useradd --create-home --shell /bin/bash builder
+          echo 'builder ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/builder
+          mkdir -p "$RUSTUP_HOME" "$CARGO_HOME"
+          chown -R builder:builder "$RUSTUP_HOME" "$CARGO_HOME"
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Hand the checkout to the build user
+        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --profile minimal --default-toolchain none
+            rustup toolchain install 1.95.0 --profile minimal
+          '
+
+      - name: Build the packages, source packages, and SBOMs
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            cd "'"$GITHUB_WORKSPACE"'"
+            bash scripts/linux/build-niri-packages.sh \
+              --work-dir /home/builder/niri-build \
+              --output "$PWD/target/third-party-packages" \
+              --build-deps system \
+              --minimum-free-gib 8
+          '
+
+      - name: Upload the arm64 third-party packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: third-party-arm64
+          path: target/third-party-packages
+          if-no-files-found: error
+
   sbom:
     name: Software bill of materials
     runs-on: ubuntu-24.04
@@ -305,8 +489,15 @@ jobs:
     name: Attach packages, SBOM, and provenance to the Release
     # The licence/advisory gate must pass before anything is attached and
     # attested; always() only lets a skipped optional arm64 build through.
-    needs: [dependency-policy, build-amd64, build-arm64, sbom]
-    if: always() && needs.dependency-policy.result == 'success' && needs.build-amd64.result == 'success' && needs.sbom.result == 'success'
+    # rmac-session cannot install without niri and xwayland-satellite, so a
+    # Release is only published once their amd64 packages exist too.
+    needs: [dependency-policy, build-amd64, build-arm64, build-third-party-amd64, build-third-party-arm64, sbom]
+    if: >-
+      always() &&
+      needs.dependency-policy.result == 'success' &&
+      needs.build-amd64.result == 'success' &&
+      needs.build-third-party-amd64.result == 'success' &&
+      needs.sbom.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -332,6 +523,13 @@ jobs:
           name: sbom
           path: release-assets/sbom
 
+      - name: Download the niri and xwayland-satellite packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: release-assets
+          pattern: "third-party-*"
+          merge-multiple: false
+
       - name: Assemble the release bundle and checksums
         run: |
           set -euo pipefail
@@ -352,6 +550,32 @@ jobs:
           if [ -d release-assets/sbom ]; then
             find release-assets/sbom -type f -exec cp -v {} "$bundle/" \;
           fi
+          # niri and xwayland-satellite: every architecture contributes its
+          # .deb, .buildinfo, .changes, and SBOM (all named per
+          # architecture); the source package (.dsc, orig tarballs,
+          # .debian.tar.xz) is the same for every architecture and is taken
+          # from amd64 only. The job's own SHA256SUMS is superseded by the
+          # bundle's.
+          for dir in release-assets/third-party-*; do
+            [ -d "$dir" ] || continue
+            find "$dir" -maxdepth 1 -type f \
+              \( -name '*.deb' -o -name '*.buildinfo' -o -name '*.changes' -o -name '*.cdx.json' \) \
+              -exec cp -v {} "$bundle/" \;
+          done
+          find release-assets/third-party-amd64 -maxdepth 1 -type f \
+            \( -name '*.dsc' -o -name '*.orig.tar.gz' -o -name '*.orig-*.tar.xz' -o -name '*.debian.tar.xz' \) \
+            -exec cp -v {} "$bundle/" \;
+          # GitHub rewrites "~" in Release asset names, which would leave
+          # SHA256SUMS naming files that do not exist (rmac's own pre-release
+          # versions look like 0.9.0~beta.1-38). Rename before checksumming;
+          # apt reads a package's version from its control file, not its
+          # filename. None of the niri/xwayland-satellite source files carry
+          # a "~", so the names inside each .dsc stay valid.
+          for path in "$bundle"/*~*; do
+            [ -e "$path" ] || continue
+            name="$(basename "$path")"
+            mv -v "$path" "$bundle/${name//\~/.}"
+          done
           (cd "$bundle" && sha256sum -- * > SHA256SUMS)
           ls -l "$bundle"
 

@@ -399,5 +399,5 @@ pub(super) fn directory_distance(directory: &IconDirectory, size: u32, scale: u3
 }
 
 pub(super) fn sort_applications(applications: &mut [Application]) {
-    applications.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    applications.sort_by_cached_key(|application| application.name.to_lowercase());
 }

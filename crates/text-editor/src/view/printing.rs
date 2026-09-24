@@ -48,7 +48,7 @@ impl EditorView {
                 document_generation: self.document_generation,
                 current_document_generation: self.current_document_generation.clone(),
                 title: self.filename().to_string(),
-                text: self.input.read(cx).value().to_string(),
+                text: self.document_text(cx),
             };
             self.print_busy = true;
             self.status_notice = None;

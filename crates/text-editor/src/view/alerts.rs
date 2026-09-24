@@ -32,8 +32,8 @@ impl EditorView {
                 self.saved_format = prompt.format;
                 self.path = None;
                 self.saved_bytes = None;
-                self.input
-                    .update(cx, |state, cx| state.set_value(prompt.content, window, cx));
+                let longest_line = long_lines::longest_line_bytes(&prompt.content);
+                self.install_document_text(prompt.content, longest_line, window, cx);
                 if prompt.additional_drafts > 0 {
                     self.status_notice = Some(
                         format!(

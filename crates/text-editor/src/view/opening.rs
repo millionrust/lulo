@@ -49,7 +49,7 @@ impl EditorView {
             self.dirty,
             self.path.is_some(),
             self.rtf_runs.is_some(),
-            self.input.read(cx).value().is_empty(),
+            self.input.read(cx).text().len() == 0 && self.long_lines.is_none(),
         );
         cx.notify();
         let receiver = cx.prompt_for_paths(PathPromptOptions {
@@ -131,26 +131,31 @@ impl EditorView {
                 this.file_busy = false;
                 match loaded {
                     Ok(LoadedFile::Plain(document)) => {
-                        this.input.update(cx, |state, cx| {
-                            state.set_value(document.text.clone(), window, cx)
-                        });
+                        this.install_document_text(
+                            document.text,
+                            document.longest_line,
+                            window,
+                            cx,
+                        );
                         this.path = Some(path);
                         this.saved_bytes = Some(document.original_bytes);
                         this.text_format = document.format;
                         this.rtf_runs = None;
                         this.reset_document_watch();
-                        this.mark_clean(document.text, cx);
+                        this.mark_clean(cx);
                         this.record_current_document(cx);
                     }
                     Ok(LoadedFile::RichText { text, runs }) => {
+                        this.long_lines = None;
                         this.input
-                            .update(cx, |state, cx| state.set_value(text.clone(), window, cx));
+                            .update(cx, |state, cx| state.set_value(text, window, cx));
+                        this.text_revision = this.text_revision.wrapping_add(1);
                         this.path = Some(path);
                         this.saved_bytes = None;
                         this.text_format = document::TextFormat::default();
                         this.rtf_runs = Some(runs);
                         this.reset_document_watch();
-                        this.mark_clean(text, cx);
+                        this.mark_clean(cx);
                         this.record_current_document(cx);
                     }
                     Err(message) => {

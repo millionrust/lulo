@@ -37,23 +37,28 @@ impl EditorView {
                 this.file_busy = false;
                 match loaded {
                     Ok(LoadedFile::Plain(document)) => {
-                        this.input.update(cx, |state, cx| {
-                            state.set_value(document.text.clone(), window, cx)
-                        });
+                        this.install_document_text(
+                            document.text,
+                            document.longest_line,
+                            window,
+                            cx,
+                        );
                         this.saved_bytes = Some(document.original_bytes);
                         this.text_format = document.format;
                         this.rtf_runs = None;
                         this.reset_document_watch();
-                        this.mark_clean(document.text, cx);
+                        this.mark_clean(cx);
                     }
                     Ok(LoadedFile::RichText { text, runs }) => {
+                        this.long_lines = None;
                         this.input
-                            .update(cx, |state, cx| state.set_value(text.clone(), window, cx));
+                            .update(cx, |state, cx| state.set_value(text, window, cx));
+                        this.text_revision = this.text_revision.wrapping_add(1);
                         this.saved_bytes = None;
                         this.text_format = document::TextFormat::default();
                         this.rtf_runs = Some(runs);
                         this.reset_document_watch();
-                        this.mark_clean(text, cx);
+                        this.mark_clean(cx);
                     }
                     Err(message) => {
                         this.alert = Some(ActiveAlert::Error {
@@ -73,7 +78,7 @@ impl EditorView {
             return;
         }
         self.alert = None;
-        let content = self.input.read(cx).value().to_string();
+        let content = self.document_text(cx);
         self.save_to_new_path(
             content,
             self.text_format,
@@ -142,7 +147,7 @@ impl EditorView {
         };
         self.alert = None;
         self.file_busy = true;
-        let content = self.input.read(cx).value().to_string();
+        let content = self.document_text(cx);
         let format = self.text_format;
         cx.notify();
         cx.spawn_in(window, async move |this, cx| {

@@ -4,13 +4,22 @@ use gpui::EntityInputHandler as _;
 
 use super::*;
 
-/// Largest document whose text is copied into the accessibility tree. The
-/// copy runs on every frame, so a bigger document keeps its role and name
-/// but exposes no value rather than stalling typing.
+/// Largest document whose text is exposed as the accessibility tree's value.
+/// The value is cached per text revision (see
+/// [`EditorView::accessible_document_value`]), so this bounds one copy per
+/// edit, not per frame; a bigger document keeps its role and name but
+/// exposes no value.
 const MAX_ACCESSIBLE_VALUE_BYTES: usize = 1024 * 1024;
 
 fn accessible_value_fits(len_bytes: usize) -> bool {
     len_bytes <= MAX_ACCESSIBLE_VALUE_BYTES
+}
+
+/// Byte offset of every non-overlapping, case-sensitive match of `needle`.
+fn match_offsets(hay: &str, needle: &str) -> Vec<usize> {
+    hay.match_indices(needle)
+        .map(|(offset, _)| offset)
+        .collect()
 }
 
 impl EditorView {
@@ -33,7 +42,8 @@ impl EditorView {
             self.close_bar(cx);
         } else {
             self.find_open = true;
-            self.replace_mode = true;
+            // The long-line view is read-only: Replace opens plain Find.
+            self.replace_mode = self.long_lines.is_none();
             self.current = 0;
             self.recompute_matches(cx);
             self.find_input
@@ -51,17 +61,14 @@ impl EditorView {
     /// Case-sensitive scan of the buffer for the current query, recording the
     /// byte offset of every match.
     pub(super) fn recompute_matches(&mut self, cx: &Context<Self>) {
-        let needle = self.find_input.read(cx).value().to_string();
-        let hay = self.input.read(cx).value().to_string();
-        let mut matches = Vec::new();
-        if !needle.is_empty() {
-            let mut start = 0;
-            while let Some(position) = hay[start..].find(&needle) {
-                let absolute = start + position;
-                matches.push(absolute);
-                start = absolute + needle.len();
-            }
-        }
+        let needle = self.find_input.read(cx).text().to_string();
+        let matches = if needle.is_empty() {
+            Vec::new()
+        } else if let Some(document) = &self.long_lines {
+            match_offsets(&document.text, &needle)
+        } else {
+            match_offsets(&self.input.read(cx).text().to_string(), &needle)
+        };
         if self.current >= matches.len() {
             self.current = 0;
         }
@@ -69,6 +76,12 @@ impl EditorView {
     }
 
     fn scroll_to_current(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(document) = &self.long_lines {
+            if let Some(&offset) = self.matches.get(self.current) {
+                document.reveal_offset(offset);
+            }
+            return;
+        }
         if let Some(&offset) = self.matches.get(self.current) {
             let position: Position = self.input.read(cx).text().offset_to_position(offset);
             self.input.update(cx, |state, cx| {
@@ -99,7 +112,7 @@ impl EditorView {
     }
 
     pub(super) fn replace_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.print_busy {
+        if self.print_busy || self.long_lines.is_some() {
             return;
         }
         self.recompute_matches(cx);
@@ -109,7 +122,7 @@ impl EditorView {
         let offset = self.matches[self.current];
         let needle = self.find_input.read(cx).value().to_string();
         let replacement = self.replace_input.read(cx).value().to_string();
-        let mut hay = self.input.read(cx).value().to_string();
+        let mut hay = self.input.read(cx).text().to_string();
         if offset + needle.len() <= hay.len()
             && &hay[offset..offset + needle.len()] == needle.as_str()
         {
@@ -123,7 +136,7 @@ impl EditorView {
     }
 
     pub(super) fn replace_all(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.print_busy {
+        if self.print_busy || self.long_lines.is_some() {
             return;
         }
         let needle = self.find_input.read(cx).value().to_string();
@@ -131,7 +144,7 @@ impl EditorView {
             return;
         }
         let replacement = self.replace_input.read(cx).value().to_string();
-        let hay = self.input.read(cx).value().to_string();
+        let hay = self.input.read(cx).text().to_string();
         if !hay.contains(&needle) {
             return;
         }
@@ -193,10 +206,25 @@ impl EditorView {
     }
 
     /// The document text for the accessibility tree, when it is small
-    /// enough to copy each frame (see [`MAX_ACCESSIBLE_VALUE_BYTES`]).
-    pub(super) fn accessible_document_value(&self, cx: &App) -> Option<SharedString> {
-        let text = self.input.read(cx).text();
-        accessible_value_fits(text.len()).then(|| SharedString::from(text.to_string()))
+    /// enough (see [`MAX_ACCESSIBLE_VALUE_BYTES`]). Built once per text
+    /// revision: frames that only move or blink the caret reuse it.
+    pub(super) fn accessible_document_value(&mut self, cx: &App) -> Option<SharedString> {
+        if let Some((revision, value)) = &self.accessible_value {
+            if *revision == self.text_revision {
+                return value.clone();
+            }
+        }
+        let value = match &self.long_lines {
+            Some(document) => {
+                accessible_value_fits(document.text.len()).then(|| document.text.clone())
+            }
+            None => {
+                let text = self.input.read(cx).text();
+                accessible_value_fits(text.len()).then(|| SharedString::from(text.to_string()))
+            }
+        };
+        self.accessible_value = Some((self.text_revision, value.clone()));
+        value
     }
 
     /// A listener that applies an assistive technology's text edit to the
@@ -226,7 +254,11 @@ impl EditorView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.recovery_loading || self.print_busy || self.rtf_runs.is_some() {
+        if self.recovery_loading
+            || self.print_busy
+            || self.rtf_runs.is_some()
+            || self.long_lines.is_some()
+        {
             return;
         }
         self.input.update(cx, |state, cx| match edit {
@@ -241,7 +273,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn accessible_value_stops_at_the_per_frame_copy_limit() {
+    fn accessible_value_stops_at_the_copy_limit() {
         assert!(accessible_value_fits(0));
         assert!(accessible_value_fits(MAX_ACCESSIBLE_VALUE_BYTES));
         assert!(!accessible_value_fits(MAX_ACCESSIBLE_VALUE_BYTES + 1));

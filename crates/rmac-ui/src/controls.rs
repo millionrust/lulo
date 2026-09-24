@@ -23,7 +23,7 @@ use gpui_component::{
     Disableable as _, Icon, Selectable, Sizable as _, Size, StyledExt as _,
 };
 
-pub use gpui_component::input::{InputEvent, InputState, Position, RopeExt, SelectAll};
+pub use gpui_component::input::{InputEvent, InputState, Position, Rope, RopeExt, SelectAll};
 pub use gpui_component::slider::{SliderEvent, SliderState};
 pub use gpui_component::table::{Column, ColumnSort, TableDelegate, TableEvent, TableState};
 

@@ -14,7 +14,7 @@ impl EditorView {
         if self.file_busy || self.rtf_runs.is_some() || self.file_action_blocked() {
             return;
         }
-        let content = self.input.read(cx).value().to_string();
+        let content = self.document_text(cx);
         self.save_to_new_path(content, self.text_format, None, None, window, cx);
     }
 
@@ -40,7 +40,7 @@ impl EditorView {
             }
             return;
         }
-        let content = self.input.read(cx).value().to_string();
+        let content = self.document_text(cx);
         if let Some(path) = self.path.clone() {
             let Some(expected) = self.saved_bytes.clone() else {
                 self.alert = Some(ActiveAlert::Error {
@@ -151,14 +151,12 @@ impl EditorView {
         match result {
             Ok(saved) => {
                 if saved.text != requested_text {
-                    self.input.update(cx, |state, cx| {
-                        state.set_value(saved.text.clone(), window, cx)
-                    });
+                    self.install_document_text(saved.text, saved.longest_line, window, cx);
                 }
                 self.saved_bytes = Some(saved.original_bytes);
                 self.text_format = saved.format;
                 self.reset_document_watch();
-                let recovery_cleared = self.mark_clean(saved.text, cx);
+                let recovery_cleared = self.mark_clean(cx);
                 self.record_current_document(cx);
                 if recovery_cleared {
                     if let Some(pending) = then {

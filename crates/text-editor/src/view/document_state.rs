@@ -54,7 +54,38 @@ impl EditorView {
             self.path.is_some() && self.watched_directory != next_directory;
     }
 
+    /// The whole document as one string, for saving, printing and recovery.
+    pub(super) fn document_text(&self, cx: &App) -> String {
+        match &self.long_lines {
+            Some(document) => document.text.to_string(),
+            None => self.input.read(cx).text().to_string(),
+        }
+    }
+
+    /// Show `text` as the document: in the editable view, or in the
+    /// read-only long-line view when a line is too long to lay out.
+    /// `longest_line` is the byte length of its longest line.
+    pub(super) fn install_document_text(
+        &mut self,
+        text: String,
+        longest_line: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if long_lines::exceeds_editor_limit(longest_line) {
+            self.input
+                .update(cx, |state, cx| state.set_value("", window, cx));
+            self.long_lines = Some(long_line_view::LongLineDocument::new(text, longest_line));
+        } else {
+            self.long_lines = None;
+            self.input
+                .update(cx, |state, cx| state.set_value(text, window, cx));
+        }
+        self.text_revision = self.text_revision.wrapping_add(1);
+    }
+
     pub(super) fn on_buffer_changed(&mut self, cx: &mut Context<Self>) {
+        self.text_revision = self.text_revision.wrapping_add(1);
         self.advance_document_generation();
         if self.find_open {
             self.recompute_matches(cx);
@@ -63,13 +94,19 @@ impl EditorView {
     }
 
     pub(super) fn refresh_dirty_state(&mut self, cx: &mut Context<Self>) {
-        let value = self.input.read(cx).value().to_string();
-        self.dirty = document::has_unsaved_changes(
-            &value,
-            &self.saved_value,
-            self.text_format,
-            self.saved_format,
-        );
+        self.dirty = match &self.long_lines {
+            // The read-only view changes text only by replacing it whole
+            // (recovery restore), which bumps the revision.
+            Some(_) => {
+                self.text_revision != self.saved_revision || self.text_format != self.saved_format
+            }
+            None => document::has_unsaved_changes(
+                self.input.read(cx).text(),
+                &self.saved_text,
+                self.text_format,
+                self.saved_format,
+            ),
+        };
         self.report_unsaved(cx);
         if self.dirty {
             self.schedule_autosave(cx);
@@ -92,7 +129,7 @@ impl EditorView {
         if !self.dirty || self.closing || self.recovery_loading {
             return;
         }
-        let content = self.input.read(cx).value().to_string();
+        let content = self.document_text(cx);
         let record =
             recovery::RecoveryRecord::for_document(self.path.as_deref(), self.text_format, content);
         let result = self
@@ -133,7 +170,7 @@ impl EditorView {
                     this.recovery_clock
                         .should_write(generation, this.dirty)
                         .then(|| {
-                            let content = this.input.read(cx).value().to_string();
+                            let content = this.document_text(cx);
                             (
                                 this.recovery_path.clone(),
                                 recovery::RecoveryRecord::for_document(
@@ -220,8 +257,10 @@ impl EditorView {
         }
     }
 
-    pub(super) fn mark_clean(&mut self, value: String, cx: &mut Context<Self>) -> bool {
-        self.saved_value = value;
+    /// Record the current buffer as the saved baseline.
+    pub(super) fn mark_clean(&mut self, cx: &mut Context<Self>) -> bool {
+        self.saved_text = self.input.read(cx).text().clone();
+        self.saved_revision = self.text_revision;
         self.saved_format = self.text_format;
         self.dirty = false;
         self.report_unsaved(cx);

@@ -6,6 +6,7 @@ mod document_io;
 mod document_state;
 mod editing;
 mod lifecycle;
+mod long_line_view;
 mod opening;
 mod printing;
 mod recovery_state;
@@ -31,11 +32,11 @@ use gpui::{
 };
 use gpui_component::Root;
 use notify::Watcher as _;
-use rmac_ui::{InputEvent, InputState, Position, RopeExt as _};
+use rmac_ui::{InputEvent, InputState, Position, Rope, RopeExt as _};
 
 #[cfg(target_os = "linux")]
 use crate::PrintFile;
-use crate::{document, recovery, rtf, storage};
+use crate::{document, long_lines, recovery, rtf, storage};
 use crate::{
     CloseBar, CloseWindow, DecreaseFont, FindNext, FindPrev, IncreaseFont, NewFile, OpenFile,
     SaveFile, SaveFileAs, ToggleFind, ToggleMono, ToggleReplace,
@@ -107,8 +108,22 @@ struct EditorView {
     /// Format at the last exact successful read or write. A format-only
     /// conversion is an unsaved document change just like a text edit.
     saved_format: document::TextFormat,
-    /// Text as last saved (or opened/new) — the dirty baseline.
-    saved_value: String,
+    /// Text as last saved (or opened/new) — the dirty baseline. A rope
+    /// snapshot shares the buffer's chunks, so it costs no copy of the
+    /// document, and comparing it stops at the first differing chunk.
+    saved_text: Rope,
+    /// Bumped whenever the document text changes, keying caches derived
+    /// from the whole text.
+    text_revision: u64,
+    /// `text_revision` at the last save or open: the read-only long-line
+    /// view's dirty baseline.
+    saved_revision: u64,
+    /// The accessible value for `text_revision`, so frames that only move
+    /// the caret or blink it do not copy the document.
+    accessible_value: Option<(u64, Option<SharedString>)>,
+    /// `Some` when the document has a line too long for the editable view;
+    /// it is then shown read-only by [`long_line_view`].
+    long_lines: Option<long_line_view::LongLineDocument>,
     dirty: bool,
     file_busy: bool,
     print_busy: bool,

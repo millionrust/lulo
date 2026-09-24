@@ -71,6 +71,22 @@ impl Render for EditorView {
         let status_notice = self.status_notice.clone();
         let external_change = self.external_change;
         let document_watch_warning = self.document_watch_warning;
+        let accessible_value = self.accessible_document_value(cx);
+        let long_line_body = if self.long_lines.is_some() && self.rtf_runs.is_none() {
+            Some(
+                self.render_long_line_view(
+                    font_family,
+                    size,
+                    line_height,
+                    TEXT_INSET_X,
+                    window,
+                    cx,
+                )
+                .into_any_element(),
+            )
+        } else {
+            None
+        };
 
         div()
             .size_full()
@@ -253,6 +269,19 @@ impl Render for EditorView {
             .when(self.find_open, |d| d.child(self.render_find_bar(layout, cx)))
             .child(if self.rtf_runs.is_some() {
                 self.render_rtf_preview(layout, cx).into_any_element()
+            } else if let Some(body) = long_line_body {
+                div()
+                    .id("document-body")
+                    .role(Role::Document)
+                    .aria_label(filename.clone())
+                    .when_some(accessible_value.clone(), |body, value| body.aria_value(value))
+                    .flex_1()
+                    .min_h(px(0.0))
+                    .flex()
+                    .flex_col()
+                    .bg(text_background())
+                    .child(body)
+                    .into_any_element()
             } else {
                 // TextEdit's plain-text view: #1E1E1E edge to edge, the text
                 // origin 10 from the left and flush with the top, Menlo 11 on
@@ -260,7 +289,6 @@ impl Render for EditorView {
                 // wrapper names the document for assistive technologies and
                 // accepts their SetValue / ReplaceSelectedText edits.
                 let editable = !(recovery_loading || self.print_busy);
-                let accessible_value = self.accessible_document_value(cx);
                 div()
                     .id("document-body")
                     .role(Role::MultilineTextInput)

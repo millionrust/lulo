@@ -1,4 +1,4 @@
-Package: rmac-apps rmac-archive-keyring rmac-session
+Package: niri rmac-apps rmac-archive-keyring rmac-session xwayland-satellite
 Pin: release o=rmac,n=resolute,c=main
 Pin-Priority: 500
 

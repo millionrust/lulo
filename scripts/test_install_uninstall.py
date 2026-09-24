@@ -80,10 +80,31 @@ class ScriptStructureTests(unittest.TestCase):
         self.assertIn('VERSION_ID:-}" = "26.04"', text)
         self.assertIn("amd64 | arm64", text)
 
-    def test_install_pins_a_marked_placeholder_fingerprint(self):
+    def test_install_pin_matches_the_repository_archive_key_pin(self):
+        # One reviewed pin: before the archive key exists install.sh carries
+        # a marked placeholder; afterwards create-archive-key.sh writes the
+        # same primary fingerprint into both files.
+        import json
+        import re as regex
+
         text = INSTALL.read_text(encoding="utf-8")
-        self.assertIn("RMAC_ARCHIVE_KEYRING_FINGERPRINT=", text)
-        self.assertIn("TODO", text)
+        lines = regex.findall(r'(?m)^RMAC_ARCHIVE_KEYRING_FINGERPRINT="([^"]*)"$', text)
+        self.assertEqual(len(lines), 1)
+        pin = json.loads(
+            (Path(__file__).parent.parent / "packaging/apt/archive-key.json").read_text(encoding="utf-8")
+        )["primary_fingerprints"]
+        if pin:
+            self.assertEqual(lines[0], pin[0])
+            self.assertTrue(
+                (Path(__file__).parent.parent / "packaging/apt/archive-keyring.asc").is_file()
+            )
+        else:
+            self.assertTrue(lines[0].startswith("TODO_"))
+
+    def test_repository_install_pins_niri_and_xwayland_satellite_too(self):
+        text = INSTALL.read_text(encoding="utf-8")
+        preferences = (Path(__file__).parent.parent / "packaging/apt/rmac.pref").read_text(encoding="utf-8")
+        self.assertIn(preferences, text)
 
     def test_install_ends_with_the_required_login_message(self):
         text = INSTALL.read_text(encoding="utf-8")
@@ -116,7 +137,8 @@ class InstallScriptBehaviorTests(unittest.TestCase):
             _stub_sudo(bin_dir)
             result = _run(INSTALL, bin_dir)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("not been published", result.stderr)
+            self.assertIn("not published yet", result.stderr)
+            self.assertIn("--from-release", result.stderr)
 
     def test_from_release_requires_a_tag_argument(self):
         # Argument validation happens before check_not_root/check_platform,

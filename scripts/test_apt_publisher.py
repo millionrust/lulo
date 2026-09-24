@@ -46,6 +46,14 @@ def fixture(stage: Path, signer: str = "A" * 40):
         "pool/main/r/rmac-archive-keyring/rmac-archive-keyring_1_all.buildinfo": b"keyring build record\n",
         "pool/main/r/rmac-archive-keyring/rmac-archive-keyring_1_all.changes": b"keyring upload record\n",
     }
+    for name in ("niri", "xwayland-satellite"):
+        directory = f"pool/main/{name[0]}/{name}"
+        for architecture in ("amd64", "arm64"):
+            pool_contents[f"{directory}/{name}_1_{architecture}.deb"] = f"{name} {architecture}\n".encode()
+        pool_contents[f"{directory}/{name}_1.dsc"] = f"{name} source control\n".encode()
+        pool_contents[f"{directory}/{name}_1.orig.tar.gz"] = f"{name} source archive\n".encode()
+        pool_contents[f"{directory}/{name}_1_amd64.buildinfo"] = f"{name} build record\n".encode()
+        pool_contents[f"{directory}/{name}_1_amd64.changes"] = f"{name} upload record\n".encode()
     pool_identity = {
         path: (*hashes(value), len(value))
         for path, value in pool_contents.items()
@@ -55,9 +63,11 @@ def fixture(stage: Path, signer: str = "A" * 40):
     for architecture in ("amd64", "arm64"):
         package_rows = []
         paths = {
+            "niri": f"pool/main/n/niri/niri_1_{architecture}.deb",
             "rmac-apps": f"pool/main/r/rmac/rmac-apps_1_{architecture}.deb",
             "rmac-archive-keyring": "pool/main/r/rmac-archive-keyring/rmac-archive-keyring_1_all.deb",
             "rmac-session": f"pool/main/r/rmac/rmac-session_1_{architecture}.deb",
+            "xwayland-satellite": f"pool/main/x/xwayland-satellite/xwayland-satellite_1_{architecture}.deb",
         }
         for package, path in paths.items():
             sha256, sha512, size = pool_identity[path]
@@ -83,6 +93,7 @@ def fixture(stage: Path, signer: str = "A" * 40):
 
     source_rows = []
     for package, directory, names in (
+        ("niri", "pool/main/n/niri", ("niri_1.dsc", "niri_1.orig.tar.gz")),
         (
             "rmac",
             "pool/main/r/rmac",
@@ -95,6 +106,11 @@ def fixture(stage: Path, signer: str = "A" * 40):
                 "rmac-archive-keyring_1.dsc",
                 "rmac-archive-keyring_1.tar.xz",
             ),
+        ),
+        (
+            "xwayland-satellite",
+            "pool/main/x/xwayland-satellite",
+            ("xwayland-satellite_1.dsc", "xwayland-satellite_1.orig.tar.gz"),
         ),
     ):
         sha256_rows = []

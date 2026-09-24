@@ -27,9 +27,10 @@ EXPECTED_SOURCES = (
 ).encode()
 # The second stanza is what stops the rmac origin replacing any other package
 # (sudo, openssh-server, …): every package it does not name is never
-# installed from it.
+# installed from it. niri and xwayland-satellite are Lulo OS's own builds of
+# rmac-session's compositor dependencies, which the Ubuntu archive lacks.
 EXPECTED_PREFERENCES = (
-    "Package: rmac-apps rmac-archive-keyring rmac-session\n"
+    "Package: niri rmac-apps rmac-archive-keyring rmac-session xwayland-satellite\n"
     "Pin: release o=rmac,n=resolute,c=main\n"
     "Pin-Priority: 500\n"
     "\n"
@@ -137,11 +138,19 @@ def verify_policy(
         policy["repository"],
         {
             "binary_packages": [
+                "niri",
                 "rmac-apps",
                 "rmac-archive-keyring",
                 "rmac-session",
+                "xwayland-satellite",
             ],
-            "source_packages": ["rmac", "rmac-archive-keyring"],
+            "source_packages": [
+                "niri",
+                "rmac",
+                "rmac-archive-keyring",
+                "xwayland-satellite",
+            ],
+            "state_source": "github-releases",
             "uri_placeholder": "@RMAC_REPOSITORY_URI@",
         },
         "repository",

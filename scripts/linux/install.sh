@@ -2,12 +2,18 @@
 # Install rmac (Lulo OS) on a disposable Ubuntu 26.04 test account.
 #
 # Usage:
+#   # Default: add the signed rmac APT repository (its keyring is checked
+#   # against the fingerprint pinned below before APT trusts it) and install
+#   # rmac-session, rmac-apps, niri, and xwayland-satellite from it. APT and
+#   # PackageKit then see every later Lulo OS release as an ordinary update,
+#   # and rmac-update-check.timer prepares it to install at the next restart.
 #   curl -fsSL https://millionrust.github.io/lulo/install.sh | sh
 #
-#   # Beta path, before the signed APT repository exists: install rmac-apps,
-#   # rmac-session, and Lulo OS's niri and xwayland-satellite builds straight
-#   # from a tagged GitHub Release, verified by SHA256SUMS (and, when `gh` is
-#   # installed, its build-provenance attestation).
+#   # Offline or pinned installs: rmac-apps, rmac-session, and Lulo OS's niri
+#   # and xwayland-satellite builds straight from a tagged GitHub Release,
+#   # verified by SHA256SUMS (and, when `gh` is installed, its
+#   # build-provenance attestation). This path adds no repository, so it
+#   # receives no automatic updates.
 #   sh install.sh --from-release vX.Y.Z
 #
 #   # Or from a directory you already downloaded/verified yourself (for
@@ -36,12 +42,12 @@ RMAC_PREFERENCES_PATH="/etc/apt/preferences.d/rmac.pref"
 # rmac-archive-keyring_*.deb it installs still lives in the signed pool.
 RMAC_KEYRING_URL="${RMAC_REPOSITORY_URI}rmac-archive-keyring-latest.deb"
 
-# TODO(owner): docs/update-trust.md's "Decisions needed" still has to settle
-# who holds the signing keys before the real archive key can be generated
-# (docs/install.md "Server side (GitHub)"). This placeholder is not a valid
-# OpenPGP fingerprint on purpose, so install.sh refuses to run until it is
-# replaced with the real 40- or 64-character hex fingerprint published in
-# the README, docs/install.md, and the GitHub Release notes.
+# The archive's offline PRIMARY key fingerprint. It must equal
+# packaging/apt/archive-key.json; scripts/release/create-archive-key.sh
+# writes both (docs/release-process.md "Switching on signed updates").
+# Until the owner has created the key this is a placeholder that is not a
+# valid OpenPGP fingerprint on purpose, so the repository install refuses to
+# run and points at --from-release instead.
 RMAC_ARCHIVE_KEYRING_FINGERPRINT="TODO_REPLACE_WITH_THE_REAL_ARCHIVE_FINGERPRINT"
 
 # The GitHub repository that `--from-release` downloads .debs from, and that
@@ -62,9 +68,12 @@ usage() {
     cat >&2 <<'EOF'
 usage: install.sh [--from-release TAG | --from-dir DIRECTORY]
 
-  (no argument)        Install from the signed rmac APT repository. Not
-                        available yet; see docs/install.md.
-  --from-release TAG   Download rmac-apps, rmac-session, niri, and
+  (no argument)        Add the signed rmac APT repository (keyring checked
+                        against the pinned archive fingerprint) and install
+                        rmac-session from it. Later releases arrive as
+                        ordinary APT/PackageKit updates.
+  --from-release TAG   Offline/pinned install without the repository (no
+                        automatic updates): download rmac-apps, rmac-session, niri, and
                         xwayland-satellite for this machine's architecture
                         from the named GitHub Release tag (e.g. v0.5.0),
                         verify them against the release's SHA256SUMS (and
@@ -91,7 +100,7 @@ check_not_root() {
 check_placeholder_fingerprint_was_replaced() {
     case "$RMAC_ARCHIVE_KEYRING_FINGERPRINT" in
         TODO_*)
-            fail "the archive keyring fingerprint has not been published yet; rmac is not released for install yet (see docs/install.md)"
+            fail "the signed rmac APT repository is not published yet; install a tagged release with: sh install.sh --from-release vX.Y.Z (see docs/install.md)"
             ;;
     esac
 }
@@ -175,7 +184,7 @@ Check-Valid-Until: yes
 EOF
 
     sudo tee "$RMAC_PREFERENCES_PATH" >/dev/null <<'EOF'
-Package: rmac-apps rmac-archive-keyring rmac-session
+Package: niri rmac-apps rmac-archive-keyring rmac-session xwayland-satellite
 Pin: release o=rmac,n=resolute,c=main
 Pin-Priority: 500
 
@@ -188,8 +197,12 @@ EOF
 install_session() {
     sudo apt-get update \
         || fail "apt update failed; check the rmac repository configuration"
-    sudo apt-get install --yes rmac-archive-keyring rmac-session \
-        || fail "installing rmac-session failed"
+    if ! sudo apt-get install --yes rmac-archive-keyring rmac-session; then
+        if [ "$architecture" = arm64 ]; then
+            fail "installing rmac-session failed; the repository may not carry arm64 builds yet (only the keyring is published for architectures without a build)"
+        fi
+        fail "installing rmac-session failed"
+    fi
 }
 
 # Find the filenames in a SHA256SUMS listing for one package and this

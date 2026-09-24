@@ -1,0 +1,5 @@
+{
+  "format": 1,
+  "primary_fingerprints": [],
+  "public_keyring": "packaging/apt/archive-keyring.asc"
+}

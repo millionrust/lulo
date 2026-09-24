@@ -2,299 +2,240 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 
-
-def load_script(name: str, filename: str):
-    script = Path(__file__).parent / "linux" / filename
-    spec = importlib.util.spec_from_file_location(name, script)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+import apt_test_fixtures as fixtures
 
 
-stager = load_script("stage_apt_snapshot", "stage-apt-snapshot.py")
-publisher = load_script("publish_apt_snapshot_for_staging_test", "publish-apt-snapshot.py")
+stager = fixtures.load_script("rmac_stage_apt_snapshot", "stage-apt-snapshot.py")
+publisher = fixtures.load_script("rmac_publish_apt_snapshot", "publish-apt-snapshot.py")
+apt_archive = __import__("apt_archive")
 
-VERSION = "1.0.0-38"
-KEYRING_VERSION = "1.0.0-1"
-SIGNER = "A" * 40
-PRODUCT_REVISION = "b" * 40
+SIGNER = fixtures.SIGNER
 
 
-def _write(path: Path, data: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-
-
-def build_native_dir(root: Path, architecture: str) -> Path:
-    directory = root / f"native-{architecture}"
-    packages = []
-    for package in ("rmac-apps", "rmac-session"):
-        filename = f"{package}_{VERSION}_{architecture}.deb"
-        contents = f"{package} {architecture} package\n".encode()
-        _write(directory / filename, contents)
-        packages.append({"package": package, "filename": filename})
-    (directory / "native-packages.json").write_text(
-        json.dumps(
-            {
-                "architecture": architecture,
-                "format": 1,
-                "packages": packages,
-                "source_date_epoch": 1_700_000_000,
-                "version": VERSION,
-            }
-        ),
-        encoding="utf-8",
-    )
-    return directory
-
-
-def build_keyring_dir(root: Path) -> Path:
-    directory = root / "keyring"
-    names = {
-        "binary": f"rmac-archive-keyring_{KEYRING_VERSION}_all.deb",
-        "dsc": f"rmac-archive-keyring_{KEYRING_VERSION}.dsc",
-        "orig": f"rmac-archive-keyring_1.0.0.orig.tar.xz",
-        "debian": f"rmac-archive-keyring_{KEYRING_VERSION}.debian.tar.xz",
-        "buildinfo": f"rmac-archive-keyring_{KEYRING_VERSION}_all.buildinfo",
-        "changes": f"rmac-archive-keyring_{KEYRING_VERSION}_all.changes",
-    }
-    for role, name in names.items():
-        _write(directory / name, f"keyring {role}\n".encode())
-    (directory / "keyring-packages.json").write_text(
-        json.dumps(
-            {
-                "format": 1,
-                "package": "rmac-archive-keyring",
-                "package_architecture": "all",
-                "source_package": "rmac-archive-keyring",
-                "version": KEYRING_VERSION,
-            }
-        ),
-        encoding="utf-8",
-    )
-    return directory
-
-
-def build_rmac_source_dir(root: Path) -> Path:
-    directory = root / "rmac-source"
-    names = (
-        f"rmac_{VERSION}.dsc",
-        f"rmac_{VERSION}.tar.xz",
-        f"rmac_{VERSION}_amd64.buildinfo",
-        f"rmac_{VERSION}_amd64.changes",
-    )
-    for name in names:
-        _write(directory / name, f"rmac source {name}\n".encode())
-    return directory
-
-
-def stage_fixture(root: Path, **overrides) -> Path:
+def stage(root: Path, inputs: Path = None, **overrides) -> Path:
+    inputs = inputs or fixtures.build_inputs(root / "inputs")
     output = root / "output"
-    arguments = {
-        "native_amd64": build_native_dir(root, "amd64"),
-        "native_arm64": build_native_dir(root, "arm64"),
-        "keyring_dir": build_keyring_dir(root),
-        "rmac_source_dir": build_rmac_source_dir(root),
-        "output": output,
-        "phase": 10,
-        "valid_hours": 24,
-        "signer_fingerprints": [SIGNER],
-        "product_revision": PRODUCT_REVISION,
-        "now_seconds": 1_700_000_000,
-        "gate_binary_packages": True,
-        "gate_licenses": True,
-        "gate_reproducibility": True,
-        "gate_source_offer": True,
-    }
-    arguments.update(overrides)
-    stager.stage(**arguments)
+    stager.stage(
+        **fixtures.stage_arguments(
+            inputs, output=output, sidecar_output=root / "rmac-snapshot.json", **overrides
+        )
+    )
     return output
 
 
+def verify_everything_but_the_signature(output: Path):
+    contract = publisher.load_contract()
+    manifest, records = publisher._parse_manifest(output, contract)
+    for record in records:
+        assert publisher._hash_file(output / record.path) == (record.size, record.sha256, record.sha512)
+        if record.role == "index":
+            for by_hash in publisher._by_hash_paths(record):
+                assert publisher._hash_file(output / by_hash) == (record.size, record.sha256, record.sha512)
+    maximum = int(contract["maximum_metadata_bytes"])
+    publisher._verify_package_indices(output, records, maximum)
+    publisher._verify_source_index(output, records, maximum)
+    manifest["_manifest_path"] = output / contract["publication_manifest"]
+    publisher.validate_release(
+        (output / "dists/resolute/Release").read_bytes(),
+        manifest=manifest,
+        records=records,
+        contract=contract,
+        now_seconds=manifest["date_seconds"],
+    )
+    return manifest, records
+
+
+def packages(output: Path, architecture: str):
+    return {
+        paragraph["Package"]: paragraph
+        for paragraph in apt_archive.read_deb822_file(
+            output / f"dists/resolute/main/binary-{architecture}/Packages", "Packages"
+        )
+    }
+
+
 class StageAptSnapshotTests(unittest.TestCase):
-    def test_staged_tree_passes_inventory_and_index_verification(self):
+    def test_staged_tree_passes_the_publisher_checks(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            output = stage_fixture(root)
-            contract = publisher.load_contract()
-            manifest, records = publisher._parse_manifest(output, contract)
+            output = stage(root)
+            manifest, _ = verify_everything_but_the_signature(output)
             self.assertEqual(manifest["snapshot"], "20231114T221320Z")
             self.assertEqual(manifest["signer_fingerprints"], [SIGNER])
-            self.assertTrue(all(manifest["gates"].values()))
-            # The stager never writes InRelease itself; only a plaintext
-            # Release body a separate signing step turns into InRelease.
+            # The stager never writes InRelease; a separate step signs Release.
             self.assertFalse((output / publisher.INRELEASE_PATH).exists())
-            self.assertTrue((output / "dists/resolute/Release").is_file())
-            # _verify_stage_inventory also demands InRelease to exist as part
-            # of the *full* staging contract; verify everything else it
-            # checks by calling the lower-level index/pool verifiers plus a
-            # manual by-hash/pool pass excluding the not-yet-signed InRelease.
-            self._verify_everything_but_inrelease(output, contract, records)
-
-    def _verify_everything_but_inrelease(self, output, contract, records):
-        by_path = {record.path: record for record in records}
-        for record in records:
+            amd64 = packages(output, "amd64")
             self.assertEqual(
-                publisher._hash_file(output / record.path),
-                (record.size, record.sha256, record.sha512),
+                sorted(amd64),
+                ["niri", "rmac-apps", "rmac-archive-keyring", "rmac-session", "xwayland-satellite"],
             )
-            if record.role == "index":
-                for by_hash in publisher._by_hash_paths(record):
-                    self.assertEqual(
-                        publisher._hash_file(output / by_hash),
-                        (record.size, record.sha256, record.sha512),
-                    )
-        publisher._verify_package_indices(output, records, int(contract["maximum_metadata_bytes"]))
-        publisher._verify_source_index(output, records, int(contract["maximum_metadata_bytes"]))
+            # arm64 is not built: its clients see only the keyring.
+            self.assertEqual(sorted(packages(output, "arm64")), ["rmac-archive-keyring"])
+            sources = apt_archive.read_deb822_file(output / "dists/resolute/main/source/Sources", "Sources")
+            self.assertEqual(
+                [paragraph["Package"] for paragraph in sources],
+                ["niri", "rmac", "rmac-archive-keyring", "xwayland-satellite"],
+            )
 
-    def test_signed_release_validates_after_clearsigning(self):
+    def test_packages_carry_each_binarys_own_control_fields(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            output = stage_fixture(root)
-            contract = publisher.load_contract()
-            manifest, records = publisher._parse_manifest(output, contract)
-            manifest["_manifest_path"] = output / contract["publication_manifest"]
-            release_path = output / "dists/resolute/Release"
-            release_bytes = release_path.read_bytes()
-            publisher.validate_release(
-                release_bytes,
-                manifest=manifest,
-                records=records,
-                contract=contract,
-                now_seconds=manifest["date_seconds"],
+            output = stage(root)
+            session = packages(output, "amd64")["rmac-session"]
+            self.assertEqual(
+                session["Depends"],
+                "niri (>= 26.04), rmac-apps (= 1.0.0-38), xwayland-satellite (>= 0.8.2)",
             )
+            self.assertEqual(session["Installed-Size"], "42")
+            self.assertEqual(
+                session["Description"],
+                "rmac-session summary\nA longer description line.\n.\nA second paragraph.",
+            )
+            self.assertEqual(session["Filename"], "pool/main/r/rmac/rmac-session_1.0.0-38_amd64.deb")
+            self.assertEqual(session["Phased-Update-Percentage"], "10")
+            niri = packages(output, "amd64")["niri"]
+            self.assertEqual(niri["Filename"], "pool/main/n/niri/niri_26.04-0lulo1_amd64.deb")
+            self.assertEqual(packages(output, "amd64")["rmac-archive-keyring"]["Phased-Update-Percentage"], "100")
 
-    @unittest.skipUnless(
-        shutil.which("gpg") and shutil.which("gpgv"),
-        "GnuPG tools are unavailable",
-    )
+    def test_pre_release_versions_keep_their_tilde_in_the_pool(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = fixtures.build_inputs(root / "inputs", rmac="0.9.0~beta.1-38")
+            output = stage(root, inputs)
+            verify_everything_but_the_signature(output)
+            self.assertTrue(
+                (output / "pool/main/r/rmac/rmac-apps_0.9.0~beta.1-38_amd64.deb").is_file()
+            )
+            self.assertTrue((output / "pool/main/r/rmac/rmac_0.9.0~beta.1.orig.tar.xz").is_file())
+
+    def test_both_architectures_publish_the_full_set(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = fixtures.build_inputs(root / "inputs", architectures=("amd64", "arm64"))
+            output = stage(root, inputs)
+            verify_everything_but_the_signature(output)
+            self.assertEqual(len(packages(output, "arm64")), 5)
+            self.assertTrue((output / "pool/main/n/niri/niri_26.04-0lulo1_arm64.buildinfo").is_file())
+
+    def test_two_signers_are_comma_separated_for_apt(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = stage(root, signer_fingerprints=["B" * 40, SIGNER])
+            release = (output / "dists/resolute/Release").read_text(encoding="utf-8")
+            self.assertIn(f"Signed-By: {SIGNER},{'B' * 40}\n", release)
+            verify_everything_but_the_signature(output)
+
+    def test_sidecar_names_each_pool_objects_release(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = stage(root, release_tag="v1.0.0")
+            sidecar = json.loads((root / "rmac-snapshot.json").read_text(encoding="utf-8"))
+            manifest = json.loads((output / "dists/resolute/rmac-publication.json").read_text(encoding="utf-8"))
+            pool = {item["path"] for item in manifest["files"] if item["path"].startswith("pool/")}
+            self.assertEqual(set(sidecar["origins"]), pool)
+            self.assertEqual(set(sidecar["origins"].values()), {"v1.0.0"})
+            self.assertEqual(sidecar["phase"], 10)
+            self.assertEqual(sidecar["phase_since_seconds"], manifest["date_seconds"])
+            self.assertEqual(sidecar["snapshot"], manifest["snapshot"])
+
+    def test_missing_gate_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(stager.StagingError, "gate"):
+                stage(Path(temporary), gate_source_offer=False)
+
+    def test_the_sidecar_must_live_outside_the_staging_tree(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = fixtures.build_inputs(root / "inputs")
+            with self.assertRaisesRegex(stager.StagingError, "sidecar"):
+                stager.stage(
+                    **fixtures.stage_arguments(
+                        inputs, output=root / "output", sidecar_output=root / "output" / "x.json"
+                    )
+                )
+
+    def test_mismatched_architecture_versions_are_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = fixtures.build_inputs(root / "inputs", architectures=("amd64", "arm64"))
+            other = fixtures.build_inputs(root / "other", rmac="9.9.9-1", architectures=("arm64",))
+            shutil.rmtree(inputs / "native-arm64")
+            shutil.copytree(other / "native-arm64", inputs / "native-arm64")
+            with self.assertRaisesRegex(stager.StagingError, "version"):
+                stage(root, inputs)
+
+    def test_a_binary_must_come_from_the_staged_source_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = fixtures.build_inputs(root / "inputs")
+            other = fixtures.build_inputs(root / "other", niri="26.08-0lulo1")
+            for path in (inputs / "third-party-amd64").glob("niri_*_amd64.deb"):
+                path.unlink()
+            shutil.copy(other / "third-party-amd64/niri_26.08-0lulo1_amd64.deb", inputs / "third-party-amd64")
+            with self.assertRaisesRegex(stager.StagingError, "not built from"):
+                stage(root, inputs)
+
+    def test_a_dsc_that_does_not_match_its_files_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = fixtures.build_inputs(root / "inputs")
+            (inputs / "rmac-source/rmac_1.0.0.orig.tar.xz").write_bytes(b"tampered")
+            with self.assertRaisesRegex(stager.StagingError, "differs"):
+                stage(root, inputs)
+
+    def test_a_control_file_that_lies_about_its_package_is_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            inputs = fixtures.build_inputs(root / "inputs")
+            native = inputs / "native-amd64"
+            document = json.loads((native / "native-packages.json").read_text(encoding="utf-8"))
+            document["version"] = "1.0.0-39"
+            (native / "native-packages.json").write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(stager.StagingError, "control differs"):
+                stage(root, inputs)
+
+    @unittest.skipUnless(shutil.which("gpg") and shutil.which("gpgv"), "GnuPG tools are unavailable")
     def test_full_round_trip_through_publish_apt_snapshot(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             home = root / "gnupg"
             home.mkdir(mode=0o700)
             environment = {**os.environ, "GNUPGHOME": str(home), "LC_ALL": "C"}
-            subprocess.run(
-                [
-                    "gpg",
-                    "--batch",
-                    "--passphrase",
-                    "",
-                    "--quick-generate-key",
-                    "rmac apt snapshot fixture",
-                    "ed25519",
-                    "sign",
-                    "1d",
-                ],
-                env=environment,
-                check=True,
-                capture_output=True,
-                timeout=30,
-            )
-            listing = subprocess.run(
-                ["gpg", "--batch", "--with-colons", "--list-keys"],
-                env=environment,
-                check=True,
-                capture_output=True,
-                timeout=30,
-            ).stdout.decode("ascii")
+
+            def gpg(*arguments):
+                return subprocess.run(
+                    ["gpg", "--batch", *arguments], env=environment, check=True, capture_output=True, timeout=60
+                ).stdout
+
+            gpg("--passphrase", "", "--quick-generate-key", "rmac apt fixture", "ed25519", "sign", "1d")
             signer = next(
                 line.split(":")[9]
-                for line in listing.splitlines()
+                for line in gpg("--with-colons", "--list-keys").decode("ascii").splitlines()
                 if line.startswith("fpr:")
             )
             keyring = root / "keyring.gpg"
-            keyring.write_bytes(
-                subprocess.run(
-                    ["gpg", "--batch", "--export", signer],
-                    env=environment,
-                    check=True,
-                    capture_output=True,
-                    timeout=30,
-                ).stdout
+            keyring.write_bytes(gpg("--export", signer))
+            output = stage(root, signer_fingerprints=[signer], now_seconds=1_700_000_000)
+            release = output / "dists/resolute/Release"
+            gpg(
+                "--yes", "--local-user", signer, "--digest-algo", "SHA512", "--clearsign",
+                "--output", str(output / publisher.INRELEASE_PATH), str(release),
             )
-            output = stage_fixture(root, signer_fingerprints=[signer])
-            release_path = output / "dists/resolute/Release"
-            inrelease_path = output / publisher.INRELEASE_PATH
-            subprocess.run(
-                [
-                    "gpg",
-                    "--batch",
-                    "--yes",
-                    "--local-user",
-                    signer,
-                    "--digest-algo",
-                    "SHA512",
-                    "--clearsign",
-                    "--output",
-                    str(inrelease_path),
-                    str(release_path),
-                ],
-                env=environment,
-                check=True,
-                capture_output=True,
-                timeout=30,
-            )
-            release_path.unlink()
-            publication = publisher.validate_staging(
-                output, keyring, now_seconds=1_700_000_000
-            )
+            release.unlink()
+            publication = publisher.validate_staging(output, keyring, now_seconds=1_700_000_000)
             self.assertEqual(publication.signers, (signer,))
             repository = root / "repository"
             repository.mkdir()
-            publisher.promote(
-                output,
-                repository,
-                keyring,
-                publication,
-                retain=3,
-            )
+            publisher.promote(output, repository, keyring, publication, retain=3)
             self.assertTrue((repository / publisher.INRELEASE_PATH).is_file())
-
-    def test_missing_gate_is_refused(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            with self.assertRaisesRegex(stager.StagingError, "gate"):
-                stage_fixture(root, gate_source_offer=False)
-
-    def test_mismatched_architecture_versions_are_refused(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            native_amd64 = build_native_dir(root, "amd64")
-            native_arm64 = build_native_dir(root, "arm64")
-            manifest_path = native_arm64 / "native-packages.json"
-            document = json.loads(manifest_path.read_text(encoding="utf-8"))
-            document["version"] = "9.9.9-1"
-            manifest_path.write_text(json.dumps(document), encoding="utf-8")
-            with self.assertRaisesRegex(stager.StagingError, "version"):
-                stager.stage(
-                    native_amd64=native_amd64,
-                    native_arm64=native_arm64,
-                    keyring_dir=build_keyring_dir(root),
-                    rmac_source_dir=build_rmac_source_dir(root),
-                    output=root / "output",
-                    phase=10,
-                    valid_hours=24,
-                    signer_fingerprints=[SIGNER],
-                    product_revision=PRODUCT_REVISION,
-                    now_seconds=1_700_000_000,
-                    gate_binary_packages=True,
-                    gate_licenses=True,
-                    gate_reproducibility=True,
-                    gate_source_offer=True,
-                )
 
 
 if __name__ == "__main__":

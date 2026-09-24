@@ -2,11 +2,14 @@
 # build provenance always run and attach to the GitHub Release, together
 # with Lulo OS's own niri and xwayland-satellite packages and their source
 # packages (build-third-party-*; see docs/release-process.md "Third-party
-# packages: niri and xwayland-satellite"). Signing the
-# APT repository and deploying it to GitHub Pages additionally need the
-# "apt-signing" environment's secrets and a real rmac source-package builder
-# (see docs/release-process.md); until both exist, that job is a documented
-# no-op rather than a broken or unsafe publish.
+# packages: niri and xwayland-satellite"), the rmac Debian source package
+# (rmac-source), and apt-inputs-<tag>.tar, the exact package set the signed
+# APT repository is built from. Signing the APT repository and deploying it
+# to GitHub Pages (apt-repository) additionally needs the archive key
+# (packaging/apt/archive-key.json), the "apt-signing" environment's secret,
+# and the RMAC_APT_PUBLISHING_ENABLED repository variable; until the owner
+# sets them up (docs/release-process.md), that job is skipped rather than a
+# broken or unsafe publish.
 #
 # Every action below is pinned by commit SHA, with the release tag kept in a
 # trailing comment for human review. See docs/release-process.md for the
@@ -104,6 +107,7 @@ jobs:
             libxkbcommon-dev \
             libxkbcommon-x11-dev \
             pkg-config \
+            python3 \
             sudo \
             xz-utils
 
@@ -211,6 +215,7 @@ jobs:
             libxkbcommon-dev \
             libxkbcommon-x11-dev \
             pkg-config \
+            python3 \
             sudo \
             xz-utils
 
@@ -454,6 +459,181 @@ jobs:
           path: target/third-party-packages
           if-no-files-found: error
 
+  rmac-source:
+    name: Build the rmac Debian source package
+    # The complete corresponding source for rmac-apps and rmac-session
+    # (docs/update-trust.md "Source and license obligations"): a 3.0 (quilt)
+    # source package whose orig tarball is `git archive` of this commit and
+    # whose orig-vendor tarball is `cargo vendor --locked` of both cargo
+    # workspaces, so `dpkg-buildpackage` rebuilds both binaries offline.
+    # `cargo vendor` is the only networked step; nothing is compiled here.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: ubuntu:26.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      RUSTUP_HOME: /usr/local/rustup
+      CARGO_HOME: /usr/local/cargo
+    steps:
+      - name: Install container base tooling
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            ca-certificates \
+            curl \
+            dpkg-dev \
+            git \
+            python3 \
+            sudo \
+            xz-utils
+
+      - name: Create the non-root build user
+        run: |
+          useradd --create-home --shell /bin/bash builder
+          echo 'builder ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/builder
+          mkdir -p "$RUSTUP_HOME" "$CARGO_HOME"
+          chown -R builder:builder "$RUSTUP_HOME" "$CARGO_HOME"
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Hand the checkout to the build user
+        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --profile minimal --default-toolchain none
+            rustup toolchain install 1.95.0 --profile minimal
+          '
+
+      - name: Build the source package
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            cd "'"$GITHUB_WORKSPACE"'"
+            bash scripts/linux/build-rmac-source-package.sh source \
+              --revision "$GITHUB_SHA" \
+              --tag "$GITHUB_REF_NAME" \
+              --output "$PWD/target/rmac-source" \
+              --minimum-free-gib 8
+          '
+
+      - name: Upload the rmac source package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rmac-source
+          path: target/rmac-source
+          if-no-files-found: error
+
+  rmac-source-rebuild:
+    name: Rebuild rmac offline from its source package
+    # Proves the source offer is real before anything is signed: unpack the
+    # .dsc exactly as a user would (`dpkg-source -x`), check its
+    # Build-Depends, and build rmac-apps and rmac-session with networking
+    # disabled for cargo, then verify the result with the package verifier.
+    # The rebuilt .debs are evidence, not release assets: they need not be
+    # byte-identical to build-amd64's (docs/update-trust.md binds the commit,
+    # Cargo.lock, packaging, and procedure).
+    needs: [rmac-source]
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    container:
+      image: ubuntu:26.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      RUSTUP_HOME: /usr/local/rustup
+      CARGO_HOME: /usr/local/cargo
+    steps:
+      - name: Install container base tooling and the Build-Depends
+        # Keep in sync with packaging/rmac-source/debian/control.
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            clang \
+            curl \
+            debhelper \
+            dpkg-dev \
+            fakeroot \
+            git \
+            gnupg \
+            libfontconfig1-dev \
+            libfreetype-dev \
+            libssl-dev \
+            libvulkan-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            pkg-config \
+            python3 \
+            sudo \
+            xz-utils
+
+      - name: Create the non-root build user
+        run: |
+          useradd --create-home --shell /bin/bash builder
+          echo 'builder ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/builder
+          mkdir -p "$RUSTUP_HOME" "$CARGO_HOME"
+          chown -R builder:builder "$RUSTUP_HOME" "$CARGO_HOME"
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the rmac source package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: rmac-source
+          path: rmac-source
+
+      - name: Hand the checkout to the build user
+        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
+              | sh -s -- -y --profile minimal --default-toolchain none
+            rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
+          '
+
+      - name: Rebuild the binary packages offline from the source package
+        run: |
+          sudo -E -u builder bash -lc '
+            set -euo pipefail
+            export PATH="'"$CARGO_HOME"'/bin:$PATH"
+            cd "'"$GITHUB_WORKSPACE"'"
+            bash scripts/linux/build-rmac-source-package.sh rebuild \
+              --source-dir "$PWD/rmac-source" \
+              --output "$PWD/target/rmac-source-rebuild" \
+              --minimum-free-gib 8
+          '
+
+      - name: Upload the rebuild evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rmac-source-rebuild
+          path: target/rmac-source-rebuild
+          if-no-files-found: error
+
   sbom:
     name: Software bill of materials
     runs-on: ubuntu-24.04
@@ -488,16 +668,20 @@ jobs:
   attach-release:
     name: Attach packages, SBOM, and provenance to the Release
     # The licence/advisory gate must pass before anything is attached and
-    # attested; always() only lets a skipped optional arm64 build through.
+    # attested; always() only lets a skipped optional arm64 build (and a
+    # keyring job skipped before the archive key exists) through.
     # rmac-session cannot install without niri and xwayland-satellite, so a
-    # Release is only published once their amd64 packages exist too.
-    needs: [dependency-policy, build-amd64, build-arm64, build-third-party-amd64, build-third-party-arm64, sbom]
+    # Release is only published once their amd64 packages exist too, and
+    # never without rmac's own source package.
+    needs: [dependency-policy, build-amd64, build-arm64, build-third-party-amd64, build-third-party-arm64, sbom, rmac-source, keyring]
     if: >-
       always() &&
       needs.dependency-policy.result == 'success' &&
       needs.build-amd64.result == 'success' &&
       needs.build-third-party-amd64.result == 'success' &&
-      needs.sbom.result == 'success'
+      needs.sbom.result == 'success' &&
+      needs.rmac-source.result == 'success' &&
+      (needs.keyring.result == 'success' || needs.keyring.result == 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -529,6 +713,39 @@ jobs:
           path: release-assets
           pattern: "third-party-*"
           merge-multiple: false
+
+      - name: Download the rmac source package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: rmac-source
+          path: release-assets/rmac-source
+
+      - name: Download the archive keyring packages, if built
+        if: needs.keyring.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: keyring
+          path: release-assets/keyring
+
+      - name: Refuse to change a Release the APT repository already serves
+        # Every pool object the signed repository publishes is re-fetched from
+        # its Release's apt-inputs tar on later runs (docs/update-trust.md
+        # "Stateless publication from GitHub Releases"), so once a Release
+        # carries an apt-snapshot bundle its assets are sealed: a re-run would
+        # replace them with rebuilt bytes and orphan the published pool. Tag
+        # a new version instead.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            sealed="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name | select(startswith("apt-snapshot-"))] | length')"
+            if [ "$sealed" != "0" ]; then
+              echo "release $tag is already published in the APT repository; its assets are sealed" >&2
+              exit 1
+            fi
+          fi
 
       - name: Assemble the release bundle and checksums
         run: |
@@ -571,6 +788,21 @@ jobs:
           # apt reads a package's version from its control file, not its
           # filename. None of the niri/xwayland-satellite source files carry
           # a "~", so the names inside each .dsc stay valid.
+          # The exact, unrenamed package sets the signed APT repository is
+          # built from -- rmac's own and niri's binaries per architecture,
+          # the rmac and niri/xwayland-satellite source packages, and the
+          # archive keyring packages -- in one attested asset. The rmac
+          # source package lives only here (and in the repository's deb-src):
+          # its file names carry "~", which GitHub would rewrite.
+          inputs="$PWD/apt-inputs"
+          mkdir -p "$inputs"
+          for name in native-amd64 native-arm64 third-party-amd64 third-party-arm64 keyring rmac-source; do
+            if [ -d "release-assets/$name" ]; then
+              cp -R "release-assets/$name" "$inputs/$name"
+            fi
+          done
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+            -cf "$bundle/apt-inputs-${GITHUB_REF_NAME}.tar" -C "$inputs" .
           for path in "$bundle"/*~*; do
             [ -e "$path" ] || continue
             name="$(basename "$path")"
@@ -607,14 +839,14 @@ jobs:
 
   keyring:
     name: Build the archive keyring packages
-    # build-keyring-packages.py packages an existing public keyring; it does
-    # not create one. Until the offline primary key exists (docs/install.md
-    # "Server side (GitHub)" / docs/update-trust.md "Decisions needed"),
-    # there is nothing to package, so this job stays off until the exported
-    # public keyring is available as a secret. A job-level `if` cannot read
-    # the `secrets` context (GitHub rejects the whole workflow file), so the
-    # job is gated on the fingerprint variable and the first step refuses
-    # when the keyring secret is missing.
+    # build-keyring-packages.py packages the committed PUBLIC archive keyring
+    # (packaging/apt/archive-keyring.asc, written by
+    # scripts/release/create-archive-key.sh); it never creates a key. Until
+    # the owner has created the key and set the RMAC_ARCHIVE_SIGNING_FINGERPRINT
+    # repository variable (the PRIMARY fingerprint, also listed in
+    # packaging/apt/archive-key.json), there is nothing to package and the
+    # job is skipped. A job-level `if` cannot read `secrets`, and nothing
+    # here needs one: the keyring is public.
     if: ${{ vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT != '' }}
     runs-on: ubuntu-latest
     container:
@@ -643,24 +875,21 @@ jobs:
 
       - name: Build the keyring packages
         env:
-          RMAC_ARCHIVE_PUBLIC_KEYRING_B64: ${{ secrets.RMAC_ARCHIVE_PUBLIC_KEYRING_B64 }}
           RMAC_ARCHIVE_SIGNING_FINGERPRINT: ${{ vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT }}
         run: |
-          if [ -z "$RMAC_ARCHIVE_PUBLIC_KEYRING_B64" ]; then
-            echo "RMAC_ARCHIVE_SIGNING_FINGERPRINT is set but the RMAC_ARCHIVE_PUBLIC_KEYRING_B64 secret is missing" >&2
-            exit 1
-          fi
-          printf '%s' "$RMAC_ARCHIVE_PUBLIC_KEYRING_B64" | base64 -d \
-            > "$GITHUB_WORKSPACE/rmac-archive-keyring-public.gpg"
-          chown builder:builder "$GITHUB_WORKSPACE/rmac-archive-keyring-public.gpg"
+          set -euo pipefail
+          # The variable must name a key the repository pins; the build then
+          # proves the committed keyring holds exactly the pinned primaries.
+          fingerprint_arguments="$(python3 scripts/linux/archive-key-pin.py \
+            --require "$RMAC_ARCHIVE_SIGNING_FINGERPRINT" --fingerprint-arguments)"
           sudo -E -u builder bash -lc '
             set -euo pipefail
             cd "'"$GITHUB_WORKSPACE"'"
             epoch="$(git log -1 --format=%ct)"
             python3 scripts/linux/build-keyring-packages.py \
-              --keyring "$PWD/rmac-archive-keyring-public.gpg" \
+              --keyring "$PWD/packaging/apt/archive-keyring.asc" \
               --output "$PWD/target/keyring-packages" \
-              --fingerprint "'"$RMAC_ARCHIVE_SIGNING_FINGERPRINT"'" \
+              '"$fingerprint_arguments"' \
               --build-architecture amd64 \
               --source-date-epoch "$epoch"
           '
@@ -673,31 +902,98 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------
-  # Everything below signs and publishes the APT repository. It needs two
-  # things that do not exist yet (docs/release-process.md tracks both as
-  # owner follow-ups):
+  # Sign and publish the APT repository. Everything it serves is rebuilt
+  # from GitHub Releases on every run (scripts/linux/apt-publication.py;
+  # docs/update-trust.md "Stateless publication from GitHub Releases"), so
+  # Pages' lack of history cannot bypass the monotonic, immutable-pool, and
+  # retention checks (SR-12). It needs, all set up by the owner
+  # (docs/release-process.md "Switching on signed updates"):
   #
-  #   1. the "apt-signing" GitHub Environment's secrets (a signing subkey),
-  #      referenced here by name only -- this workflow never generates,
-  #      stores, or has any other access to key material; and
-  #   2. a real Debian source-package builder for the "rmac" source package
-  #      (update-trust.md requires a genuine source offer bound to the exact
-  #      Cargo.lock/commit; nothing in this repository builds one yet, and
-  #      publishing signed metadata that claims a source offer it can't back
-  #      would violate that H7 requirement). Once it exists, a job producing
-  #      an "rmac-source" artifact (dsc/tar/buildinfo/changes) must be added
-  #      above and named in this job's "needs".
-  #
-  # Both gates below default to off, so this job is a safe, documented no-op
-  # today rather than a broken or unsafe publish.
+  #   1. the archive key: packaging/apt/archive-key.json and
+  #      archive-keyring.asc committed, RMAC_ARCHIVE_SIGNING_FINGERPRINT set;
+  #   2. the "apt-signing" environment (required reviewer) holding the
+  #      RMAC_APT_SIGNING_SUBKEY secret -- the signing subkey only;
+  #   3. GitHub Pages with source "GitHub Actions"; and
+  #   4. RMAC_APT_PUBLISHING_ENABLED=true (plus RMAC_APT_FIRST_PUBLICATION=true
+  #      for the very first publication only).
   # ---------------------------------------------------------------------
   apt-repository:
     name: Sign and publish the APT repository
-    needs: [build-amd64, build-arm64, dependency-policy, keyring]
-    if: ${{ vars.RMAC_SOURCE_PACKAGING_READY == 'true' }}
+    needs: [attach-release, rmac-source-rebuild, keyring, dependency-policy]
+    if: >-
+      always() &&
+      vars.RMAC_APT_PUBLISHING_ENABLED == 'true' &&
+      needs.attach-release.result == 'success' &&
+      needs.rmac-source-rebuild.result == 'success' &&
+      needs.keyring.result == 'success' &&
+      needs.dependency-policy.result == 'success'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     environment: apt-signing
+    # Shared with rollout.yml: one publication at a time, never cancelled.
+    concurrency:
+      group: rmac-apt-publication
+      cancel-in-progress: false
+    permissions:
+      attestations: read
+      contents: write
+    outputs:
+      deploy: ${{ steps.publish.outputs.deploy }}
+      snapshot: ${{ steps.publish.outputs.snapshot }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Make room for two releases of packages
+        # publish-apt-snapshot.py refuses to cross a 15 GiB free-space floor.
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Rebuild, sign, and promote the repository
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # The subkey export only (docs/release-process.md); the offline
+          # primary never reaches CI, and the script refuses one that does.
+          RMAC_APT_SIGNING_SUBKEY: ${{ secrets.RMAC_APT_SIGNING_SUBKEY }}
+          RMAC_ARCHIVE_SIGNING_FINGERPRINT: ${{ vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT }}
+          FIRST_PUBLICATION: ${{ vars.RMAC_APT_FIRST_PUBLICATION }}
+        run: |
+          set -euo pipefail
+          arguments=(
+            --mode release
+            --repository "$GITHUB_REPOSITORY"
+            --work "$RUNNER_TEMP/apt-publication"
+            --tag "$GITHUB_REF_NAME"
+            --product-revision "$GITHUB_SHA"
+          )
+          if [ "$FIRST_PUBLICATION" = "true" ]; then
+            arguments+=(--allow-first-publication)
+          fi
+          bash scripts/linux/publish-apt-repository.sh "${arguments[@]}"
+
+      - name: Upload the Pages artifact
+        if: steps.publish.outputs.deploy == 'true'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ steps.publish.outputs.site }}
+
+  apt-pages:
+    name: Deploy the APT repository to GitHub Pages
+    # A Pages deployment runs in the "github-pages" environment, so it is its
+    # own job; its deployment policy must admit v* tags (release.yml) and the
+    # default branch (rollout.yml) -- docs/release-process.md.
+    needs: [apt-repository]
+    if: needs.apt-repository.outputs.deploy == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: rmac-apt-pages
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write
@@ -707,109 +1003,27 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          fetch-depth: 0
 
-      - name: Download the amd64 packages
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: native-amd64
-          path: native-amd64
-
-      - name: Download the arm64 packages
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: native-arm64
-          path: native-arm64
-
-      - name: Download the keyring packages
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: keyring
-          path: keyring
-
-      - name: Download the rmac source package
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: rmac-source
-          path: rmac-source
-
-      - name: Mirror the currently published repository, if any
-        run: |
-          set -euo pipefail
-          mkdir -p published-repository
-          # A first-ever publish has nothing to mirror; --reject lets a 404
-          # leave published-repository empty instead of failing the job.
-          wget --mirror --no-host-directories --no-parent --quiet \
-            --directory-prefix=published-repository \
-            "https://millionrust.github.io/lulo/" || true
-
-      - name: Stage the unsigned snapshot
-        run: |
-          set -euo pipefail
-          python3 scripts/linux/stage-apt-snapshot.py \
-            --native-amd64 "$PWD/native-amd64" \
-            --native-arm64 "$PWD/native-arm64" \
-            --keyring-dir "$PWD/keyring" \
-            --rmac-source-dir "$PWD/rmac-source" \
-            --output "$PWD/staged-repository" \
-            --phase 10 \
-            --valid-hours 24 \
-            --signer-fingerprint "${{ vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT }}" \
-            --product-revision "${{ github.sha }}" \
-            --binary-packages-verified \
-            --licenses-verified \
-            --reproducibility-verified \
-            --source-offer-verified
-
-      - name: Sign the Release metadata
+      - name: Skip a site that a newer publication already superseded
+        id: fresh
+        # A rollout can publish between this run's signing job and this
+        # deployment; never put an older snapshot back on Pages.
         env:
-          # The secret must hold an ASCII-armored export of the signing
-          # subkey only (never the offline primary key -- see
-          # docs/update-trust.md "Signing and rotation").
-          RMAC_APT_SIGNING_SUBKEY: ${{ secrets.RMAC_APT_SIGNING_SUBKEY }}
-          RMAC_ARCHIVE_SIGNING_FINGERPRINT: ${{ vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT }}
+          GH_TOKEN: ${{ github.token }}
+          SNAPSHOT: ${{ needs.apt-repository.outputs.snapshot }}
         run: |
-          set -euo pipefail
-          export GNUPGHOME="$RUNNER_TEMP/gnupg"
-          mkdir -m 700 -p "$GNUPGHOME"
-          printf '%s' "$RMAC_APT_SIGNING_SUBKEY" | gpg --batch --import
-          gpg --batch --yes --local-user "$RMAC_ARCHIVE_SIGNING_FINGERPRINT" \
-            --digest-algo SHA512 --clearsign \
-            --output staged-repository/dists/resolute/InRelease \
-            staged-repository/dists/resolute/Release
-          rm -f staged-repository/dists/resolute/Release
-          # Export the just-imported public key while GNUPGHOME still has it,
-          # for publish-apt-snapshot.py's gpgv check in the next step.
-          gpg --batch --export "$RMAC_ARCHIVE_SIGNING_FINGERPRINT" \
-            > "$RUNNER_TEMP/rmac-archive-keyring.gpg"
-          gpgconf --kill gpg-agent || true
-          rm -rf "$GNUPGHOME"
-
-      - name: Promote the signed snapshot
-        run: |
-          set -euo pipefail
-          mkdir -p published-repository
-          python3 scripts/linux/publish-apt-snapshot.py \
-            --staging-dir "$PWD/staged-repository" \
-            --repository-dir "$PWD/published-repository" \
-            --keyring "$RUNNER_TEMP/rmac-archive-keyring.gpg"
-
-      - name: Add install.sh, uninstall.sh, and the stable keyring bootstrap
-        run: |
-          set -euo pipefail
-          cp scripts/linux/install.sh published-repository/install.sh
-          cp scripts/linux/uninstall.sh published-repository/uninstall.sh
-          keyring_deb="$(find keyring -maxdepth 1 -name 'rmac-archive-keyring_*_all.deb' | head -n1)"
-          cp "$keyring_deb" published-repository/rmac-archive-keyring-latest.deb
-
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-
-      - name: Upload the Pages artifact
-        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: published-repository
+          set +e
+          python3 scripts/linux/apt-publication.py is-newest \
+            --repository "$GITHUB_REPOSITORY" --snapshot "$SNAPSHOT"
+          status=$?
+          set -e
+          case "$status" in
+            0) echo "deploy=true" >> "$GITHUB_OUTPUT" ;;
+            3) echo "deploy=false" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
 
       - name: Deploy to GitHub Pages
+        if: steps.fresh.outputs.deploy == 'true'
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

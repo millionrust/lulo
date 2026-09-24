@@ -45,14 +45,19 @@
   },
   "repository": {
     "binary_packages": [
+      "niri",
       "rmac-apps",
       "rmac-archive-keyring",
-      "rmac-session"
+      "rmac-session",
+      "xwayland-satellite"
     ],
     "source_packages": [
+      "niri",
       "rmac",
-      "rmac-archive-keyring"
+      "rmac-archive-keyring",
+      "xwayland-satellite"
     ],
+    "state_source": "github-releases",
     "uri_placeholder": "@RMAC_REPOSITORY_URI@"
   },
   "rollback": {

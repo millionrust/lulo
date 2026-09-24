@@ -83,16 +83,119 @@ def test_referenced_local_scripts_exist():
 def test_apt_publishing_jobs_are_gated_and_never_generate_keys():
     for path in (RELEASE, ROLLOUT):
         text = path.read_text(encoding="utf-8")
-        assert "RMAC_SOURCE_PACKAGING_READY" in text
+        assert "RMAC_SOURCE_PACKAGING_READY" not in text
+        assert "vars.RMAC_APT_PUBLISHING_ENABLED == 'true'" in text
         for forbidden in ("gpg --gen-key", "gpg --full-generate-key", "gpg --quick-generate-key"):
             assert forbidden not in text, f"{path.name} must never generate keys"
 
 
 def test_apt_signing_job_uses_the_environment_gate():
-    document = _load(RELEASE)
-    assert document["jobs"]["apt-repository"]["environment"] == "apt-signing"
-    document = _load(ROLLOUT)
-    assert document["jobs"]["rollout"]["environment"] == "apt-signing"
+    # Publishing new packages waits for the apt-signing reviewer; the
+    # unattended rollout/refresh signer is a separate environment and can
+    # only republish already-published pool objects (--rollout-only).
+    release = _load(RELEASE)["jobs"]["apt-repository"]
+    assert release["environment"] == "apt-signing"
+    rollout = _load(ROLLOUT)["jobs"]["rollout"]
+    assert rollout["environment"] == "apt-refresh"
+    assert "--mode rollout" in "\n".join(step.get("run", "") for step in rollout["steps"])
+    publish = Path(REPO_ROOT / "scripts/linux/publish-apt-repository.sh").read_text(encoding="utf-8")
+    assert 'stage_args+=(--rollout-only)' in publish
+
+
+def test_both_publishers_share_one_serialized_concurrency_group():
+    release = _load(RELEASE)["jobs"]["apt-repository"]
+    rollout = _load(ROLLOUT)["jobs"]["rollout"]
+    for job in (release, rollout):
+        assert job["concurrency"] == {"group": "rmac-apt-publication", "cancel-in-progress": False}
+
+
+def test_apt_repository_waits_for_the_release_and_the_source_rebuild():
+    job = _load(RELEASE)["jobs"]["apt-repository"]
+    for needed in ("attach-release", "rmac-source-rebuild", "keyring", "dependency-policy"):
+        assert needed in job["needs"]
+        assert f"needs.{needed}.result == 'success'" in job["if"]
+    script = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "scripts/linux/publish-apt-repository.sh" in script
+    assert "--mode release" in script
+    # No wget mirror of the live site: state comes from GitHub Releases (SR-12).
+    for path in (RELEASE, ROLLOUT):
+        assert "wget" not in path.read_text(encoding="utf-8")
+    permissions = job["permissions"]
+    assert permissions["contents"] == "write"
+    assert permissions["attestations"] == "read"
+
+
+def test_pages_deploys_run_in_the_pages_environment_and_never_go_backwards():
+    for path, publisher_job, deploy_job in (
+        (RELEASE, "apt-repository", "apt-pages"),
+        (ROLLOUT, "rollout", "pages"),
+    ):
+        jobs = _load(path)["jobs"]
+        publish = jobs[publisher_job]
+        assert set(publish["outputs"]) == {"deploy", "snapshot"}
+        assert "pages" not in publish["permissions"]
+        assert "id-token" not in publish["permissions"]
+        uses = [step.get("uses", "") for step in publish["steps"]]
+        assert any("upload-pages-artifact" in value for value in uses)
+        assert not any("deploy-pages" in value for value in uses)
+        deploy = jobs[deploy_job]
+        assert deploy["needs"] == [publisher_job]
+        assert deploy["if"] == f"needs.{publisher_job}.outputs.deploy == 'true'"
+        assert deploy["environment"]["name"] == "github-pages"
+        assert deploy["permissions"] == {"contents": "read", "id-token": "write", "pages": "write"}
+        assert deploy["concurrency"] == {"group": "rmac-apt-pages", "cancel-in-progress": False}
+        fresh = next(step for step in deploy["steps"] if step.get("id") == "fresh")
+        assert "apt-publication.py is-newest" in fresh["run"]
+        final = deploy["steps"][-1]
+        assert "deploy-pages" in final["uses"]
+        assert final["if"] == "steps.fresh.outputs.deploy == 'true'"
+
+
+def test_release_attaches_the_source_package_and_the_apt_inputs():
+    jobs = _load(RELEASE)["jobs"]
+    source = jobs["rmac-source"]
+    script = "\n".join(step.get("run", "") for step in source["steps"])
+    assert "build-rmac-source-package.sh source" in script
+    assert '--revision "$GITHUB_SHA"' in script
+    rebuild = jobs["rmac-source-rebuild"]
+    assert rebuild["needs"] == ["rmac-source"]
+    assert "build-rmac-source-package.sh rebuild" in "\n".join(
+        step.get("run", "") for step in rebuild["steps"]
+    )
+    attach = jobs["attach-release"]
+    assert "rmac-source" in attach["needs"]
+    assert "needs.rmac-source.result == 'success'" in attach["if"]
+    steps = {step.get("name", ""): step for step in attach["steps"]}
+    assemble = next(step["run"] for name, step in steps.items() if name.startswith("Assemble"))
+    assert 'apt-inputs-${GITHUB_REF_NAME}.tar' in assemble
+    assert assemble.index("apt-inputs-") < assemble.index("sha256sum")
+    seal = next(step["run"] for name, step in steps.items() if name.startswith("Refuse to change"))
+    assert "apt-snapshot-" in seal
+    names = list(steps)
+    assert names.index(next(n for n in names if n.startswith("Refuse to change"))) < names.index(
+        next(n for n in names if n.startswith("Create or update"))
+    )
+
+
+def test_rmac_source_rebuild_installs_every_build_dependency():
+    install = _load(RELEASE)["jobs"]["rmac-source-rebuild"]["steps"][0]["run"]
+    control = (REPO_ROOT / "packaging/rmac-source/debian/control").read_text(encoding="utf-8")
+    block = re.search(r"(?ms)^Build-Depends:(.*?)(?=^\S)", control).group(1)
+    for relation in block.split(","):
+        name = relation.split("(")[0].strip()
+        if not name:
+            continue
+        assert re.search(rf"^\s+{re.escape(name)}(?: \\)?$", install, re.M), (
+            f"rmac-source-rebuild does not install {name}"
+        )
+
+
+def test_keyring_job_packages_the_committed_public_keyring_without_secrets():
+    job = _load(RELEASE)["jobs"]["keyring"]
+    script = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "packaging/apt/archive-keyring.asc" in script
+    assert "archive-key-pin.py" in script
+    assert "secrets." not in RELEASE.read_text(encoding="utf-8").split("  keyring:")[1].split("  apt-repository:")[0]
 
 
 def test_niri_packages_build_in_the_ubuntu_container_and_gate_the_release():

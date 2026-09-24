@@ -1,25 +1,28 @@
-# Advance (or halt) the live APT repository's Phased-Update-Percentage.
+# Step, halt, or refresh the live APT repository.
 #
-# On a schedule this only ever steps forward -- 10 -> 25 -> 50 -> 100 -- and
-# only after at least 24 hours since the live repository's Date
-# (docs/update-trust.md "Staged rollout and rollback"); it never resumes a
-# halted (0%) rollout on its own. A manual run can request any percentage,
-# including 0 to halt immediately. See docs/release-process.md for how to
-# use this by hand.
+# On a schedule this re-signs the repository before its Valid-Until lapses
+# (APT refuses expired metadata; update-trust.md caps validity at 48 hours)
+# and steps the phase forward -- 10 -> 25 -> 50 -> 100 -- only after at least
+# 24 hours in the current phase (docs/update-trust.md "Staged rollout and
+# rollback"); it never resumes a halted (0%) rollout on its own. A manual run
+# can request any percentage, including 0 to halt immediately. See
+# docs/release-process.md for how to use this by hand.
 #
-# This workflow only republishes the repository at a new phase: it never
-# rebuilds packages, so it reuses the exact .debs already attached to the
-# most recent GitHub Release. It shares release.yml's not-yet-met
-# prerequisites (the apt-signing environment's secrets and a real "rmac"
-# source-package builder) and is a documented no-op until both exist.
+# A rollout never rebuilds or adds packages: scripts/linux/apt-publication.py
+# rebuilds the published repository from GitHub Releases, and
+# stage-apt-snapshot.py --rollout-only refuses any pool object that is not
+# already published, so this job can only change phasing, Date, and
+# Valid-Until. That is why it signs through the "apt-refresh" environment,
+# which (unlike release.yml's "apt-signing") has no required reviewer: the
+# repository must be re-signed at least every 48 hours without a human.
+# Restrict "apt-refresh" to the default branch (docs/release-process.md).
 name: Rollout
 
 on:
   schedule:
-    # Checked every 6 hours; next-rollout-phase.py itself enforces the
-    # required 24-hour gap between steps, so a tick that is too soon is a
-    # deliberate, cheap no-op rather than something this cron expression has
-    # to get exactly right.
+    # Every 6 hours; apt-publication.py decides whether a phase step or a
+    # signature refresh is due, so a tick with nothing to do is a cheap
+    # no-op rather than something this expression has to get exactly right.
     - cron: "17 */6 * * *"
   workflow_dispatch:
     inputs:
@@ -37,18 +40,75 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: rmac-rollout
-  cancel-in-progress: false
-
 jobs:
   rollout:
-    name: Step the rollout
-    # Same not-yet-met prerequisites as release.yml's apt-repository job.
-    if: ${{ vars.RMAC_SOURCE_PACKAGING_READY == 'true' }}
+    name: Step or refresh the rollout
+    if: ${{ vars.RMAC_APT_PUBLISHING_ENABLED == 'true' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    environment: apt-signing
+    timeout-minutes: 45
+    environment: apt-refresh
+    # Shared with release.yml's apt-repository job: one publication at a
+    # time, never cancelled.
+    concurrency:
+      group: rmac-apt-publication
+      cancel-in-progress: false
+    permissions:
+      attestations: read
+      contents: write
+    outputs:
+      deploy: ${{ steps.publish.outputs.deploy }}
+      snapshot: ${{ steps.publish.outputs.snapshot }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Make room for two releases of packages
+        # publish-apt-snapshot.py refuses to cross a 15 GiB free-space floor.
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Rebuild the live repository and publish the next phase or a fresh signature
+        id: publish
+        # The requested phase reaches the shell only as an environment
+        # variable: `${{ }}` inside `run:` is pasted into the script text
+        # before bash parses it.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RMAC_APT_SIGNING_SUBKEY: ${{ secrets.RMAC_APT_SIGNING_SUBKEY }}
+          RMAC_ARCHIVE_SIGNING_FINGERPRINT: ${{ vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT }}
+          REQUESTED_PHASE: ${{ github.event.inputs.phase }}
+        run: |
+          set -euo pipefail
+          arguments=(
+            --mode rollout
+            --repository "$GITHUB_REPOSITORY"
+            --work "$RUNNER_TEMP/apt-publication"
+          )
+          if [ -n "$REQUESTED_PHASE" ]; then
+            arguments+=(--phase "$REQUESTED_PHASE")
+          fi
+          bash scripts/linux/publish-apt-repository.sh "${arguments[@]}"
+
+      - name: Upload the Pages artifact
+        if: steps.publish.outputs.deploy == 'true'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ steps.publish.outputs.site }}
+
+  pages:
+    name: Deploy the APT repository to GitHub Pages
+    # Same as release.yml's apt-pages job.
+    needs: [rollout]
+    if: needs.rollout.outputs.deploy == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: rmac-apt-pages
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write
@@ -59,83 +119,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Read the live repository's current phase and Date
-        id: live
-        run: |
-          set -euo pipefail
-          mkdir -p live-repository
-          wget --mirror --no-host-directories --no-parent --quiet \
-            --directory-prefix=live-repository \
-            "https://millionrust.github.io/lulo/" || true
-          packages="live-repository/dists/resolute/main/binary-amd64/Packages"
-          release="live-repository/dists/resolute/InRelease"
-          if [ ! -s "$packages" ] || [ ! -s "$release" ]; then
-            echo "no live repository is published yet; nothing to roll out" >&2
-            echo "has_live=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "has_live=true" >> "$GITHUB_OUTPUT"
-          phase="$(awk -F': ' '
-            /^Package: rmac-apps$/ { in_pkg = 1 }
-            in_pkg && /^Phased-Update-Percentage: / { print $2; exit }
-            /^$/ { in_pkg = 0 }
-          ' "$packages")"
-          date_line="$(sed -n 's/^Date: //p' "$release" | head -n1)"
-          date_seconds="$(date -u -d "$date_line" +%s)"
-          echo "phase=$phase" >> "$GITHUB_OUTPUT"
-          echo "date_seconds=$date_seconds" >> "$GITHUB_OUTPUT"
-
-      - name: Decide the next phase
-        id: decision
-        if: steps.live.outputs.has_live == 'true'
-        # Values read from the fetched repository reach the shell only as
-        # environment variables: `${{ }}` inside `run:` is pasted into the
-        # script text before bash parses it.
-        env:
-          REQUESTED_PHASE: ${{ github.event.inputs.phase }}
-          LIVE_PHASE: ${{ steps.live.outputs.phase }}
-          LIVE_DATE_SECONDS: ${{ steps.live.outputs.date_seconds }}
-        run: |
-          set -euo pipefail
-          now_seconds="$(date -u +%s)"
-          requested="$REQUESTED_PHASE"
-          args=(
-            --current-phase "$LIVE_PHASE"
-            --current-date-seconds "$LIVE_DATE_SECONDS"
-            --now-seconds "$now_seconds"
-          )
-          if [ -n "$requested" ]; then
-            args+=(--requested-phase "$requested")
-          fi
-          next="$(python3 scripts/linux/next-rollout-phase.py "${args[@]}")"
-          echo "next=$next" >> "$GITHUB_OUTPUT"
-
-      - name: Download the release's packages and rebuild the snapshot at the new phase
-        if: steps.decision.outputs.next != '' && steps.decision.outputs.next != 'no-step'
+      - name: Skip a site that a newer publication already superseded
+        id: fresh
         env:
           GH_TOKEN: ${{ github.token }}
+          SNAPSHOT: ${{ needs.rollout.outputs.snapshot }}
         run: |
-          set -euo pipefail
-          latest_tag="$(gh release list --limit 1 --json tagName --jq '.[0].tagName')"
-          mkdir -p release-download native-amd64 native-arm64 keyring rmac-source
-          gh release download "$latest_tag" --dir release-download --clobber
-          # release-download is a flat bundle (see release.yml's
-          # attach-release job); split it back into the per-input
-          # directories stage-apt-snapshot.py expects.
-          mv release-download/*_amd64.deb native-amd64/ 2>/dev/null || true
-          mv release-download/native-packages.json native-amd64/ 2>/dev/null || true
-          echo "TODO(owner): also fetch/rebuild the arm64 and keyring/source" \
-               "inputs here once they are attached to releases; see" \
-               "docs/release-process.md." >&2
+          set +e
+          python3 scripts/linux/apt-publication.py is-newest \
+            --repository "$GITHUB_REPOSITORY" --snapshot "$SNAPSHOT"
+          status=$?
+          set -e
+          case "$status" in
+            0) echo "deploy=true" >> "$GITHUB_OUTPUT" ;;
+            3) echo "deploy=false" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$status" ;;
+          esac
 
-      - name: Stage, sign, and promote the new phase
-        if: steps.decision.outputs.next != '' && steps.decision.outputs.next != 'no-step'
-        run: |
-          echo "TODO(owner): call scripts/linux/stage-apt-snapshot.py with" \
-               "--phase '${{ steps.decision.outputs.next }}' against the" \
-               "downloaded release inputs, then sign and" \
-               "scripts/linux/publish-apt-snapshot.py + actions/deploy-pages" \
-               "exactly as release.yml's apt-repository job does." >&2
-          echo "This step intentionally stops short of publishing until the" \
-               "rmac source-package builder and apt-signing secrets exist" \
-               "(docs/release-process.md)." >&2
+      - name: Deploy to GitHub Pages
+        if: steps.fresh.outputs.deploy == 'true'
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

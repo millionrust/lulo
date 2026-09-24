@@ -38,8 +38,21 @@ GATES = (
     "reproducibility_verified",
     "source_offer_verified",
 )
-BINARY_PACKAGES = ("rmac-apps", "rmac-archive-keyring", "rmac-session")
-SOURCE_PACKAGES = ("rmac", "rmac-archive-keyring")
+KEYRING_PACKAGE = "rmac-archive-keyring"
+# Every built architecture's index names exactly these binaries. An
+# architecture that is not built (arm64 until a runner exists) carries only
+# the Architecture: all keyring, so its clients see no rmac candidate rather
+# than a partial set.
+BINARY_PACKAGES = (
+    "niri",
+    "rmac-apps",
+    "rmac-archive-keyring",
+    "rmac-session",
+    "xwayland-satellite",
+)
+KEYRING_ONLY_PACKAGES = (KEYRING_PACKAGE,)
+REQUIRED_BUILT_ARCHITECTURES = ("amd64",)
+SOURCE_PACKAGES = ("niri", "rmac", "rmac-archive-keyring", "xwayland-satellite")
 PHASE_PERCENTAGES = {0, 10, 25, 50, 100}
 
 
@@ -389,7 +402,9 @@ def _verify_package_indices(
             package = paragraph["Package"]
             if package not in BINARY_PACKAGES or package in packages:
                 raise PublisherError("Packages index package inventory is not exact")
-            if paragraph["Architecture"] not in {architecture, "all"}:
+            if paragraph["Architecture"] != (
+                "all" if package == KEYRING_PACKAGE else architecture
+            ):
                 raise PublisherError("Packages index architecture is invalid")
             version = paragraph["Version"]
             if not re.fullmatch(r"[0-9A-Za-z.+:~_-]{1,128}", version):
@@ -409,7 +424,7 @@ def _verify_package_indices(
             if (
                 phase not in PHASE_PERCENTAGES
                 or prior_phase != phase
-                or (package == "rmac-archive-keyring" and phase != 100)
+                or (package == KEYRING_PACKAGE and phase != 100)
                 or size != record.size
                 or paragraph["SHA256"] != record.sha256
                 or paragraph["SHA512"] != record.sha512
@@ -417,7 +432,10 @@ def _verify_package_indices(
                 raise PublisherError("Packages index binary identity differs")
             referenced.add(path)
             packages[package] = paragraph
-        if set(packages) != set(BINARY_PACKAGES):
+        allowed = [set(BINARY_PACKAGES)]
+        if architecture not in REQUIRED_BUILT_ARCHITECTURES:
+            allowed.append(set(KEYRING_ONLY_PACKAGES))
+        if set(packages) not in allowed:
             raise PublisherError("Packages index package inventory is not exact")
     expected = {
         record.path for record in records if record.role == "pool-binary"
@@ -712,7 +730,8 @@ def validate_release(
         "Components": "main",
         "Label": "rmac",
         "Origin": "rmac",
-        "Signed-By": " ".join(manifest["signer_fingerprints"]),
+        # apt-secure(8): a comma-separated list of fingerprints.
+        "Signed-By": ",".join(manifest["signer_fingerprints"]),
         "Suite": "stable",
         "X-Rmac-Snapshot": manifest["snapshot"],
     }

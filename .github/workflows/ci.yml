@@ -72,6 +72,7 @@ jobs:
             clang \
             libfontconfig1-dev \
             libfreetype-dev \
+            libpam0g-dev \
             libssl-dev \
             libvulkan-dev \
             libwayland-dev \
@@ -160,6 +161,7 @@ jobs:
             clang \
             libfontconfig1-dev \
             libfreetype-dev \
+            libpam0g-dev \
             libssl-dev \
             libvulkan-dev \
             libwayland-dev \
@@ -265,6 +267,7 @@ jobs:
             libfontconfig1-dev \
             libfreetype-dev \
             libglib2.0-bin \
+            libpam0g-dev \
             libssl-dev \
             libvulkan-dev \
             libwayland-dev \

@@ -156,6 +156,9 @@ async fn watch_system_bus_once(
             message = legacy_profiles.next() => record_message(message, Sources { power: true, ..Sources::empty() }, &mut pending)?,
             _ = closed => return Ok(()),
         }
+        if pending.is_empty() {
+            continue;
+        }
 
         loop {
             let quiet = futures_util::FutureExt::fuse(async_io::Timer::after(QUIET_PERIOD));
@@ -181,8 +184,10 @@ fn record_message(
     pending: &mut Sources,
 ) -> Result<(), Error> {
     match message {
-        Some(Ok(_)) => {
-            pending.merge(sources);
+        Some(Ok(message)) => {
+            if !changes_only_unshown_properties(&message) {
+                pending.merge(sources);
+            }
             Ok(())
         }
         Some(Err(error)) => Err(Error::new("read system service signal", error.to_string())),
@@ -191,6 +196,24 @@ fn record_message(
             "the D-Bus signal stream ended",
         )),
     }
+}
+
+#[cfg(target_os = "linux")]
+fn changes_only_unshown_properties(message: &zbus::Message) -> bool {
+    use std::collections::HashMap;
+
+    let header = message.header();
+    if header.member().map(|member| member.as_str()) != Some("PropertiesChanged") {
+        return false;
+    }
+    let body = message.body();
+    let Ok((interface, changed, invalidated)) =
+        body.deserialize::<(&str, HashMap<&str, zbus::zvariant::Value<'_>>, Vec<&str>)>()
+    else {
+        return false;
+    };
+    let changed = changed.keys().copied().collect::<Vec<_>>();
+    crate::model::only_unshown_properties(interface, &changed, &invalidated)
 }
 
 #[cfg(target_os = "linux")]

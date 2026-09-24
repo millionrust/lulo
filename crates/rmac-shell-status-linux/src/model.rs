@@ -86,3 +86,26 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+/// Whether a `PropertiesChanged` signal changes only properties the shell
+/// status never shows, so re-reading the service would find nothing new.
+///
+/// NetworkManager republishes the Wi-Fi link's bitrate and UPower the
+/// battery's poll time every few seconds; each used to cost a full re-read of
+/// the service on fresh bus connections. The payload is only used to skip a
+/// re-read, never as state.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn only_unshown_properties(
+    interface: &str,
+    changed: &[&str],
+    invalidated: &[&str],
+) -> bool {
+    let unshown: &[&str] = match interface {
+        "org.freedesktop.NetworkManager.Device.Wireless" => &["Bitrate"],
+        "org.freedesktop.UPower.Device" => &["UpdateTime"],
+        _ => return false,
+    };
+    !changed.is_empty()
+        && invalidated.is_empty()
+        && changed.iter().all(|property| unshown.contains(property))
+}

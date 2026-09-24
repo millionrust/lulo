@@ -4,9 +4,10 @@
 # Usage:
 #   curl -fsSL https://millionrust.github.io/lulo/install.sh | sh
 #
-#   # Beta path, before the signed APT repository exists: install the two
-#   # .debs straight from a tagged GitHub Release, verified by SHA256SUMS
-#   # (and, when `gh` is installed, its build-provenance attestation).
+#   # Beta path, before the signed APT repository exists: install rmac-apps,
+#   # rmac-session, and Lulo OS's niri and xwayland-satellite builds straight
+#   # from a tagged GitHub Release, verified by SHA256SUMS (and, when `gh` is
+#   # installed, its build-provenance attestation).
 #   sh install.sh --from-release vX.Y.Z
 #
 #   # Or from a directory you already downloaded/verified yourself (for
@@ -47,6 +48,11 @@ RMAC_ARCHIVE_KEYRING_FINGERPRINT="TODO_REPLACE_WITH_THE_REAL_ARCHIVE_FINGERPRINT
 # `gh attestation verify` checks build provenance against.
 RMAC_GITHUB_REPOSITORY="millionrust/lulo"
 
+# Lulo OS's own builds of rmac-session's compositor dependencies, published
+# in the same GitHub Release (docs/release-process.md "Third-party packages:
+# niri and xwayland-satellite"). Neither is in the Ubuntu 26.04 archive.
+RMAC_THIRD_PARTY_PACKAGES="xwayland-satellite niri"
+
 fail() {
     echo "install.sh: $*" >&2
     exit 1
@@ -58,12 +64,14 @@ usage: install.sh [--from-release TAG | --from-dir DIRECTORY]
 
   (no argument)        Install from the signed rmac APT repository. Not
                         available yet; see docs/install.md.
-  --from-release TAG   Download rmac-apps and rmac-session for this
-                        machine's architecture from the named GitHub
-                        Release tag (e.g. v0.5.0), verify them against the
-                        release's SHA256SUMS (and its build-provenance
-                        attestation when `gh` is installed), then install
-                        them with apt.
+  --from-release TAG   Download rmac-apps, rmac-session, niri, and
+                        xwayland-satellite for this machine's architecture
+                        from the named GitHub Release tag (e.g. v0.5.0),
+                        verify them against the release's SHA256SUMS (and
+                        its build-provenance attestation when `gh` is
+                        installed), then install them with apt. A newer
+                        niri or xwayland-satellite that is already
+                        installed (for example from a PPA) is kept.
   --from-dir DIRECTORY Install from .deb files and a SHA256SUMS you already
                         have locally, skipping the download.
 EOF
@@ -180,29 +188,62 @@ install_session() {
         || fail "installing rmac-session failed"
 }
 
-# Find the single filename in a SHA256SUMS listing for one package and this
+# Find the filenames in a SHA256SUMS listing for one package and this
 # machine's architecture (e.g. "rmac-apps" -> "rmac-apps_1.2.3-4_amd64.deb").
-# Fails loudly if there is not exactly one match, rather than guess.
-release_asset_name() {
+# Any Debian version is accepted, including a pre-release whose "~" the
+# Release workflow rewrote to "." (GitHub renames "~" in asset names).
+release_asset_matches() {
     sums_file="$1"
     package="$2"
-    # A Debian upstream version carries a pre-release as "~" (0.9.0~beta.1),
-    # which native_package_contract.py produces for Beta builds.
-    pattern="^${package}_[0-9]+\\.[0-9]+\\.[0-9]+(~[0-9A-Za-z]+(\\.[0-9A-Za-z]+)*)?-[0-9]+_${architecture}\\.deb\$"
-    matches="$(awk '{print $NF}' "$sums_file" | grep -E "$pattern" || true)"
+    pattern="^${package}_[0-9A-Za-z.+~-]+_${architecture}\\.deb\$"
+    awk '{print $NF}' "$sums_file" | grep -E "$pattern" || true
+}
+
+# Exactly one match, or fail loudly rather than guess.
+release_asset_name() {
+    matches="$(release_asset_matches "$1" "$2")"
     count="$(printf '%s\n' "$matches" | grep -c . || true)"
     [ "$count" -eq 1 ] \
-        || fail "SHA256SUMS did not list exactly one $package package for $architecture (found $count)"
+        || fail "SHA256SUMS did not list exactly one $2 package for $architecture (found $count)"
     printf '%s' "$matches"
 }
 
-# Download rmac-apps and rmac-session for this architecture from a tagged
-# GitHub Release, verify them against that release's SHA256SUMS, and -- when
-# `gh` is installed -- verify actions/attest-build-provenance attestations
-# too (see .github/workflows/release.yml "attach-release"). HTTPS transport
-# is never treated as authentication on its own; the checksum (and, when
-# available, the attestation) is what is actually trusted, matching the
-# APT-repository path's stance in docs/update-trust.md.
+# Zero or one match; prints nothing when the listing has none.
+optional_release_asset_name() {
+    matches="$(release_asset_matches "$1" "$2")"
+    count="$(printf '%s\n' "$matches" | grep -c . || true)"
+    [ "$count" -le 1 ] \
+        || fail "SHA256SUMS listed more than one $2 package for $architecture (found $count)"
+    printf '%s' "$matches"
+}
+
+# Choose the package files to verify and install from one SHA256SUMS:
+# rmac-apps and rmac-session (required) plus Lulo OS's own niri and
+# xwayland-satellite builds when the listing has them. Every release made by
+# release.yml does; a hand-assembled --from-dir set may not, and then apt has
+# to find them in another configured source. Sets $selected_names, a
+# space-separated list (the name pattern above admits no whitespace).
+select_release_assets() {
+    sums_file="$1"
+    selected_names="$(release_asset_name "$sums_file" rmac-apps) $(release_asset_name "$sums_file" rmac-session)"
+    for package in $RMAC_THIRD_PARTY_PACKAGES; do
+        name="$(optional_release_asset_name "$sums_file" "$package")"
+        if [ -n "$name" ]; then
+            selected_names="$selected_names $name"
+        else
+            echo "install.sh: this package set has no $package for $architecture; apt must find it in another configured source" >&2
+        fi
+    done
+}
+
+# Download rmac-apps, rmac-session, niri, and xwayland-satellite for this
+# architecture from a tagged GitHub Release, verify them against that
+# release's SHA256SUMS, and -- when `gh` is installed -- verify
+# actions/attest-build-provenance attestations too (see
+# .github/workflows/release.yml "attach-release"). HTTPS transport is never
+# treated as authentication on its own; the checksum (and, when available,
+# the attestation) is what is actually trusted, matching the APT-repository
+# path's stance in docs/update-trust.md.
 #
 # Sets $downloaded_package_dir rather than returning the path on stdout: a
 # caller capturing this function's output with "$(...)" would run it in a
@@ -223,10 +264,9 @@ download_release_packages() {
         "$base_url/SHA256SUMS" \
         || fail "could not download SHA256SUMS for release $tag"
 
-    apps_name="$(release_asset_name "$work_dir/SHA256SUMS" rmac-apps)"
-    session_name="$(release_asset_name "$work_dir/SHA256SUMS" rmac-session)"
+    select_release_assets "$work_dir/SHA256SUMS"
 
-    for name in "$apps_name" "$session_name"; do
+    for name in $selected_names; do
         curl -fsSL --proto '=https' --tlsv1.2 -o "$work_dir/$name" \
             "$base_url/$name" \
             || fail "could not download $name from release $tag"
@@ -235,7 +275,7 @@ download_release_packages() {
     verify_local_package_directory "$work_dir"
 
     if command -v gh >/dev/null 2>&1; then
-        for name in "$apps_name" "$session_name"; do
+        for name in $selected_names; do
             gh attestation verify "$work_dir/$name" --repo "$RMAC_GITHUB_REPOSITORY" \
                 || fail "build provenance attestation did not verify for $name"
         done
@@ -246,12 +286,12 @@ download_release_packages() {
     downloaded_package_dir="$work_dir"
 }
 
-# Verify the SHA256SUMS entries for exactly the rmac-apps and rmac-session
-# packages present in DIRECTORY, and record their paths in $apps_deb /
-# $session_deb. Never trusts a directory's SHA256SUMS blindly: only the two
-# lines that name our own packages for this architecture are checked, so an
-# incomplete local copy (missing the SBOM or the other architecture) is not
-# treated as a verification failure.
+# Verify the SHA256SUMS entries for exactly the packages
+# select_release_assets chose from DIRECTORY. Never trusts a directory's
+# SHA256SUMS blindly: only the lines that name those packages for this
+# architecture are checked, so an incomplete local copy (missing the SBOM,
+# the source packages, or the other architecture) is not treated as a
+# verification failure.
 verify_local_package_directory() {
     directory="$1"
     [ -n "$directory" ] || fail "a package directory is required"
@@ -261,33 +301,73 @@ verify_local_package_directory() {
         || fail "$directory does not contain a SHA256SUMS file"
     require_command sha256sum
 
-    apps_name="$(release_asset_name "$directory/SHA256SUMS" rmac-apps)"
-    session_name="$(release_asset_name "$directory/SHA256SUMS" rmac-session)"
+    select_release_assets "$directory/SHA256SUMS"
 
     # No temporary file (and so no EXIT trap) here on purpose: this function
     # can run inside download_release_packages, which already owns the EXIT
     # trap for its own work directory, and a second `trap ... EXIT` in the
     # same shell would silently replace (not stack with) the first one.
-    selected_count="$(grep -cE "  (${apps_name}|${session_name})\$" "$directory/SHA256SUMS" || true)"
-    [ "$selected_count" -eq 2 ] \
-        || fail "SHA256SUMS did not list exactly one line for each of $apps_name and $session_name"
-    (cd "$directory" && grep -E "  (${apps_name}|${session_name})\$" SHA256SUMS | sha256sum -c -) \
-        || fail "downloaded/local package checksums did not match SHA256SUMS"
-
-    apps_deb="$directory/$apps_name"
-    session_deb="$directory/$session_name"
+    for name in $selected_names; do
+        line_count="$(awk -v name="$name" '$NF == name' "$directory/SHA256SUMS" | grep -c . || true)"
+        [ "$line_count" -eq 1 ] \
+            || fail "SHA256SUMS did not list exactly one line for $name"
+    done
+    (
+        cd "$directory" || exit 1
+        for name in $selected_names; do
+            awk -v name="$name" '$NF == name' SHA256SUMS
+        done | sha256sum -c -
+    ) || fail "downloaded/local package checksums did not match SHA256SUMS"
 }
 
-# Install an already-checksum-verified rmac-apps/rmac-session pair with apt,
-# so missing Depends (keyd, niri, wl-clipboard, ...) still resolve from the
+# True when PACKAGE is already installed at a version newer than DEB's --
+# typically the danklinux PPA's "26.04ppa3" against Lulo OS's "26.04-0lulo1".
+# That install already satisfies rmac-session, and apt would refuse the
+# downgrade, so it is kept and the way to switch is printed instead.
+installed_third_party_is_newer() {
+    package="$1"
+    deb="$2"
+    status="$(dpkg-query -W -f='${db:Status-Abbrev}' "$package" 2>/dev/null || true)"
+    case "$status" in
+        ii*) ;;
+        *) return 1 ;;
+    esac
+    installed="$(dpkg-query -W -f='${Version}' "$package")" \
+        || fail "could not read the installed $package version"
+    candidate="$(dpkg-deb -f "$deb" Version)" \
+        || fail "could not read the version of $deb"
+    if dpkg --compare-versions "$installed" gt "$candidate"; then
+        echo "install.sh: keeping the installed $package $installed, which is newer than this release's $candidate and already satisfies rmac-session." >&2
+        echo "install.sh: to use the Lulo OS build instead, run: sudo apt-get install --allow-downgrades ./$(basename "$deb") (from the release's or directory's copy)" >&2
+        return 0
+    fi
+    return 1
+}
+
+# Install the already-checksum-verified packages with apt, so remaining
+# Depends (keyd, wl-clipboard, xwayland, ...) still resolve from the
 # machine's normal Ubuntu archive. This never touches the APT repository
 # configuration: nothing here writes a sources.list.d/preferences.d entry,
 # so uninstall.sh's repository cleanup is simply a no-op for this path.
 install_local_packages() {
     directory="$1"
+    require_command dpkg-deb
+    require_command dpkg-query
     verify_local_package_directory "$directory"
-    sudo apt-get install --yes -- "$apps_deb" "$session_deb" \
-        || fail "installing rmac-apps and rmac-session from $directory failed"
+    set --
+    for name in $selected_names; do
+        package="${name%%_*}"
+        case " $RMAC_THIRD_PARTY_PACKAGES " in
+            *" $package "*)
+                if installed_third_party_is_newer "$package" "$directory/$name"; then
+                    continue
+                fi
+                ;;
+        esac
+        set -- "$@" "$directory/$name"
+    done
+    sudo apt-get install --yes -- "$@" \
+        || fail "installing the rmac packages from $directory failed"
 }
 
 main() {

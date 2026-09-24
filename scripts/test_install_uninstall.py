@@ -286,6 +286,112 @@ class InstallReleaseAssetNameTests(unittest.TestCase):
                 result = self._asset(listing, "rmac-apps")
                 self.assertNotEqual(result.returncode, 0)
 
+class LocalPackageSelectionTests(unittest.TestCase):
+    """Drive install_local_packages() with stubbed dpkg/apt tools."""
+
+    FILES = (
+        "rmac-apps_0.9.0.beta.1-38_amd64.deb",
+        "rmac-session_0.9.0.beta.1-38_amd64.deb",
+        "rmac-apps_0.9.0.beta.1-38_arm64.deb",
+        "niri_26.04-0lulo1_amd64.deb",
+        "xwayland-satellite_0.8.2-0lulo1_amd64.deb",
+        "niri_26.04-0lulo1.dsc",
+        "niri_26.04.orig.tar.gz",
+    )
+
+    def _run(self, files, installed=None, corrupt=None):
+        installed = installed or {}
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        packages = root / "package set"
+        packages.mkdir()
+        for name in files:
+            (packages / name).write_text(name, encoding="utf-8")
+        result = subprocess.run(
+            ["sha256sum", *files], cwd=packages, capture_output=True, text=True, check=True
+        )
+        (packages / "SHA256SUMS").write_text(result.stdout, encoding="utf-8")
+        if corrupt:
+            (packages / corrupt).write_text("tampered", encoding="utf-8")
+        log = root / "apt.log"
+        _stub_sudo(bin_dir)
+        _write_stub(bin_dir / "apt-get", f'printf "%s\\n" "$@" > "{log}"')
+        status = "\n".join(
+            f'  {name}) version="{version}" ;;' for name, version in installed.items()
+        )
+        _write_stub(
+            bin_dir / "dpkg-query",
+            'eval "package=\\${$#}"\n'
+            'case "$*" in *Status-Abbrev*) mode=status ;; *) mode=version ;; esac\n'
+            'case "$package" in\n' + status + "\n  *) exit 1 ;;\nesac\n"
+            '[ "$mode" = status ] && echo "ii " || echo "$version"',
+        )
+        # The package files hold their own names; the version is the middle
+        # field, exactly what `dpkg-deb -f FILE Version` would report.
+        _write_stub(bin_dir / "dpkg-deb", 'basename "$2" | cut -d_ -f2')
+        linux = Path(__file__).parent / "linux"
+        _write_stub(
+            bin_dir / "dpkg",
+            f'exec python3 -c "import sys; sys.path.insert(0, \'{linux}\'); '
+            "from third_party_packages import compare_versions as c; "
+            "a, op, b = sys.argv[2:5]; r = c(a, b); "
+            "sys.exit(0 if {'gt': r > 0, 'lt': r < 0, 'eq': r == 0}[op] else 1)\" \"$@\"",
+        )
+        driver = root / "driver.sh"
+        body = INSTALL.read_text(encoding="utf-8").rsplit('main "$@"', 1)[0]
+        driver.write_text(
+            body + 'architecture=amd64\ninstall_local_packages "$1"\n', encoding="utf-8"
+        )
+        completed = subprocess.run(
+            ["/bin/sh", str(driver), str(packages)],
+            env={"PATH": f"{bin_dir}:/usr/bin:/bin:/sbin", "HOME": str(root)},
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        installed_args = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        return completed, [Path(arg).name for arg in installed_args[3:]], installed_args
+
+    def test_installs_rmac_and_the_lulo_niri_builds_for_this_architecture(self):
+        completed, names, args = self._run(self.FILES)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(args[:3], ["install", "--yes", "--"])
+        self.assertEqual(
+            sorted(names),
+            sorted([
+                "rmac-apps_0.9.0.beta.1-38_amd64.deb",
+                "rmac-session_0.9.0.beta.1-38_amd64.deb",
+                "niri_26.04-0lulo1_amd64.deb",
+                "xwayland-satellite_0.8.2-0lulo1_amd64.deb",
+            ]),
+        )
+
+    def test_keeps_a_newer_ppa_niri_instead_of_downgrading(self):
+        completed, names, _ = self._run(
+            self.FILES, installed={"niri": "26.04ppa3", "xwayland-satellite": "0.8.1-1"}
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("niri_26.04-0lulo1_amd64.deb", names)
+        self.assertIn("xwayland-satellite_0.8.2-0lulo1_amd64.deb", names)
+        self.assertIn("keeping the installed niri 26.04ppa3", completed.stderr)
+        self.assertIn("--allow-downgrades ./niri_26.04-0lulo1_amd64.deb", completed.stderr)
+
+    def test_a_package_set_without_niri_still_installs_rmac(self):
+        completed, names, _ = self._run(self.FILES[:3])
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(len(names), 2)
+        self.assertIn("has no niri for amd64", completed.stderr)
+
+    def test_a_tampered_niri_package_stops_the_install(self):
+        completed, names, _ = self._run(self.FILES, corrupt="niri_26.04-0lulo1_amd64.deb")
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(names, [])
+        self.assertIn("did not match SHA256SUMS", completed.stderr)
+
 
 class UninstallScriptBehaviorTests(unittest.TestCase):
     def test_runs_cleanly_when_no_rmac_packages_are_known_to_dpkg(self):

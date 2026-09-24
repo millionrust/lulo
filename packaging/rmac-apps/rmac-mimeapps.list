@@ -5,9 +5,11 @@
 # which expands them next to themselves, as on macOS; audio and video open
 # in Media Player, as they open in QuickTime Player; PDFs and pictures open
 # in Preview and plain text in Text Editor, as they open in Preview and
-# TextEdit. Without these lines a double-click picked whichever installed
-# app happened to claim the type first.
+# TextEdit. Folders open in Files, as they open in Finder. Without these
+# lines a double-click picked whichever installed app happened to claim the
+# type first.
 [Default Applications]
+inode/directory=org.rmac.Files.desktop
 application/pdf=org.rmac.Preview.desktop
 image/png=org.rmac.Preview.desktop
 image/jpeg=org.rmac.Preview.desktop

@@ -76,6 +76,25 @@ PLAYER_MIME_TYPES = (
     "video/ogg",
 )
 MIMEAPPS = Path("usr/share/applications/rmac-mimeapps.list")
+SUPERSEDED_APPS = Path("usr/share/rmac/superseded-apps.list")
+# Kept in sync with DEFAULT_SUPERSEDED in crates/rmac-apps/src/superseded.rs.
+# The key is the superseded desktop entry; the value is the rmac identity
+# (from APPLICATIONS below) that does the same job.
+SUPERSEDED_APPLICATIONS = {
+    "org.gnome.Nautilus.desktop": "org.rmac.Files",
+    "org.gnome.TextEditor.desktop": "org.rmac.TextEditor",
+    "gnome-system-monitor.desktop": "org.rmac.SystemMonitor",
+    "org.gnome.SystemMonitor.desktop": "org.rmac.SystemMonitor",
+    "gnome-calculator.desktop": "org.rmac.Calculator",
+    "org.gnome.Calculator.desktop": "org.rmac.Calculator",
+    "org.gnome.Loupe.desktop": "org.rmac.Preview",
+    "org.gnome.Evince.desktop": "org.rmac.Preview",
+    "org.gnome.Papers.desktop": "org.rmac.Preview",
+    "org.gnome.Terminal.desktop": "org.rmac.Terminal",
+    "org.gnome.Ptyxis.desktop": "org.rmac.Terminal",
+    "org.gnome.clocks.desktop": "org.rmac.Clock",
+    "org.gnome.Weather.desktop": "org.rmac.Weather",
+}
 APPLICATIONS = {
     "org.rmac.AppDrawer": {
         "name": "Apps",
@@ -260,6 +279,7 @@ def _expected_paths() -> set[Path]:
         Path("usr/share/doc/rmac-apps/LICENSES.md"),
         Path("usr/share/doc/rmac-apps/copyright"),
         MIMEAPPS,
+        SUPERSEDED_APPS,
     }
     for identity in APPLICATIONS:
         paths.update(
@@ -567,10 +587,41 @@ def _verify_mimeapps(root: Path) -> None:
     expected.update({mime: "org.rmac.Player.desktop" for mime in PLAYER_MIME_TYPES})
     expected.update({mime: "org.rmac.Preview.desktop" for mime in PREVIEW_MIME_TYPES})
     expected.update({mime: "org.rmac.TextEditor.desktop" for mime in TEXT_MIME_TYPES})
+    expected["inode/directory"] = "org.rmac.Files.desktop"
     if parser.sections() != ["Default Applications"] or dict(
         parser["Default Applications"]
     ) != expected:
         raise VerificationError("rmac MIME defaults are not exact")
+
+
+def _verify_superseded_apps(root: Path) -> None:
+    raw, _mode = _regular_bytes(root / SUPERSEDED_APPS, MAX_METADATA_BYTES)
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise VerificationError("superseded-app list is not UTF-8") from error
+    entries: dict[str, str] = {}
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if "=" not in stripped:
+            raise VerificationError("superseded-app list has an unparsable line")
+        superseded, _, equivalent = stripped.partition("=")
+        superseded = superseded.strip()
+        equivalent = equivalent.strip()
+        if not superseded.endswith(".desktop") or not equivalent:
+            raise VerificationError("superseded-app list entry is invalid")
+        if superseded in entries:
+            raise VerificationError("superseded-app list has a duplicate entry")
+        entries[superseded] = equivalent
+    if entries != SUPERSEDED_APPLICATIONS:
+        raise VerificationError("superseded-app list does not match the shipped default")
+    for equivalent in entries.values():
+        if equivalent not in APPLICATIONS:
+            raise VerificationError(
+                f"superseded-app list names an app rmac does not ship: {equivalent}"
+            )
 
 
 def _verify_metadata(root: Path) -> None:
@@ -579,6 +630,7 @@ def _verify_metadata(root: Path) -> None:
         _verify_metainfo(root, identity, specification)
     _verify_localization(root)
     _verify_mimeapps(root)
+    _verify_superseded_apps(root)
     license_text, _ = _regular_bytes(
         root / "usr/share/doc/rmac-apps/copyright", MAX_METADATA_BYTES
     )

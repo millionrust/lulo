@@ -112,6 +112,10 @@ def package_files() -> dict[str, tuple[bytes, int]]:
         _read_regular(package / "rmac-mimeapps.list"),
         0o644,
     )
+    files["usr/share/rmac/superseded-apps.list"] = (
+        _read_regular(package / "superseded-apps.list"),
+        0o644,
+    )
     files["usr/share/doc/rmac-apps/LICENSES.md"] = (
         _read_regular(package / "LICENSES.md"),
         0o644,

@@ -99,6 +99,7 @@ class ApplicationPackageTests(unittest.TestCase):
                 self.assertEqual(defaults[mime], "org.rmac.Preview.desktop")
             for mime in ("text/plain", "text/markdown"):
                 self.assertEqual(defaults[mime], "org.rmac.TextEditor.desktop")
+            self.assertEqual(defaults["inode/directory"], "org.rmac.Files.desktop")
             # Every type an rmac app claims in its desktop entry has an rmac
             # default, so no claimed type silently falls to a host viewer.
             for identity in verify_package.APPLICATIONS:
@@ -124,6 +125,42 @@ class ApplicationPackageTests(unittest.TestCase):
                     verify_package.VerificationError, "manifest metadata is invalid"
                 ):
                     verify_package.verify_tree(root, exact_tree=False)
+
+    def test_superseded_apps_list_names_only_shipped_rmac_apps(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.stage(Path(temporary))
+            verify_package.verify_tree(root)
+            text = (root / verify_package.SUPERSEDED_APPS).read_text(encoding="utf-8")
+            entries = {}
+            for line in text.splitlines():
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                superseded, _, equivalent = stripped.partition("=")
+                entries[superseded.strip()] = equivalent.strip()
+            self.assertEqual(entries, verify_package.SUPERSEDED_APPLICATIONS)
+            # Ubuntu's Files is the one hidden app the owner named explicitly.
+            self.assertEqual(entries["org.gnome.Nautilus.desktop"], "org.rmac.Files")
+            # GNOME Settings covers controls ours does not yet expose, so it
+            # must stay out of the hide list.
+            self.assertNotIn("org.gnome.Settings.desktop", entries)
+            self.assertNotIn("gnome-control-center.desktop", entries)
+            for equivalent in entries.values():
+                self.assertIn(equivalent, verify_package.APPLICATIONS)
+
+    def test_superseded_apps_list_rejects_a_malformed_or_stale_entry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = self.stage(Path(temporary))
+            path = Path("usr/share/rmac/superseded-apps.list")
+            (root / path).write_text(
+                (root / path).read_text(encoding="utf-8") + "not-a-valid-line\n",
+                encoding="utf-8",
+            )
+            rehash(root, path)
+            with self.assertRaisesRegex(
+                verify_package.VerificationError, "unparsable line"
+            ):
+                verify_package.verify_tree(root)
 
     def test_refuses_live_root_relative_and_nonempty_destinations(self):
         with self.assertRaises(stage_package.PackageError):

@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: MIT
+# Apps that stay installed in the Lulo OS session because Ubuntu/GNOME still
+# needs them, but that do exactly the job a shipped rmac app already does.
+# Ubuntu's own Files, text editor, calculator, system monitor, terminal,
+# image viewer, document viewer, clock, and weather app are untouched here --
+# a plain Ubuntu/GNOME session (any XDG_CURRENT_DESKTOP other than "rmac")
+# never reads this file, and nothing in it uninstalls, disables, or edits the
+# package it names.
+#
+# Inside Lulo OS, the App Drawer (Launchpad), Spotlight, and the Dock's
+# quit-app suggestion strip read this list (installed as
+# /usr/share/rmac/superseded-apps.list) and hide the desktop entry on the
+# left of "=" from browsing and search -- the way macOS keeps its own extra
+# utilities out of Launchpad's default view while a third-party replacement
+# is installed. "Open With", xdg-mime default-application lookups, and any
+# command that names the app directly (including plain `nautilus`) are
+# unaffected: they read the full application catalog, not this list.
+#
+# One entry per line: superseded-desktop-id=rmac-equivalent-app-id
+# Keep this in sync with DEFAULT_SUPERSEDED in crates/rmac-apps/src/superseded.rs.
+org.gnome.Nautilus.desktop=org.rmac.Files
+org.gnome.TextEditor.desktop=org.rmac.TextEditor
+gnome-system-monitor.desktop=org.rmac.SystemMonitor
+org.gnome.SystemMonitor.desktop=org.rmac.SystemMonitor
+gnome-calculator.desktop=org.rmac.Calculator
+org.gnome.Calculator.desktop=org.rmac.Calculator
+org.gnome.Loupe.desktop=org.rmac.Preview
+org.gnome.Evince.desktop=org.rmac.Preview
+org.gnome.Papers.desktop=org.rmac.Preview
+org.gnome.Terminal.desktop=org.rmac.Terminal
+org.gnome.Ptyxis.desktop=org.rmac.Terminal
+org.gnome.clocks.desktop=org.rmac.Clock
+org.gnome.Weather.desktop=org.rmac.Weather
+#
+# Deliberately not listed: GNOME Settings (org.gnome.Settings.desktop /
+# gnome-control-center.desktop). Our System Settings exposes only the
+# authorities Linux/niri can support (docs/known-limitations.md); GNOME's own
+# panel still reaches network shares, printers, and other controls ours does
+# not yet have, so hiding it would take away real functionality rather than a
+# duplicate.

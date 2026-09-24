@@ -1,0 +1,82 @@
+use std::io;
+use std::io::Read as _;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
+pub(crate) const MAX_COMMAND_OUTPUT_BYTES: usize = 4 * 1024;
+pub(crate) const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+const POLL_INTERVAL: Duration = Duration::from_millis(25);
+
+pub(crate) struct CommandOutput {
+    pub(crate) success: bool,
+    pub(crate) stdout: String,
+}
+
+/// Run `command` with piped, bounded output and a wall-clock timeout, never
+/// blocking on a child that produces more output than rmac ever needs to
+/// read back.
+pub(crate) fn bounded_command_output(command: &mut Command) -> io::Result<CommandOutput> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn()?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| io::Error::other("missing stdout pipe"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| io::Error::other("missing stderr pipe"))?;
+    let stdout_reader = std::thread::spawn(move || drain_bounded(stdout));
+    let stderr_reader = std::thread::spawn(move || drain_bounded(stderr));
+    let deadline = Instant::now() + COMMAND_TIMEOUT;
+    let status = loop {
+        match child.try_wait()? {
+            Some(status) => break status,
+            None if Instant::now() < deadline => std::thread::sleep(POLL_INTERVAL),
+            None => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "the command timed out",
+                ));
+            }
+        }
+    };
+    let (stdout, stdout_excessive) = stdout_reader
+        .join()
+        .map_err(|_| io::Error::other("stdout reader failed"))??;
+    let (_, stderr_excessive) = stderr_reader
+        .join()
+        .map_err(|_| io::Error::other("stderr reader failed"))??;
+    if stdout_excessive || stderr_excessive {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "command output exceeded the limit",
+        ));
+    }
+    let stdout = String::from_utf8(stdout)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "stdout is not UTF-8"))?;
+    Ok(CommandOutput {
+        success: status.success(),
+        stdout,
+    })
+}
+
+fn drain_bounded(mut reader: impl io::Read) -> io::Result<(Vec<u8>, bool)> {
+    let mut bytes = Vec::new();
+    reader
+        .by_ref()
+        .take(MAX_COMMAND_OUTPUT_BYTES as u64 + 1)
+        .read_to_end(&mut bytes)?;
+    let excessive = bytes.len() > MAX_COMMAND_OUTPUT_BYTES;
+    bytes.truncate(MAX_COMMAND_OUTPUT_BYTES);
+    // Keep draining so a child with excessive output cannot block on a full pipe.
+    io::copy(&mut reader, &mut io::sink())?;
+    Ok((bytes, excessive))
+}

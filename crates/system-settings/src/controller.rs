@@ -99,6 +99,7 @@ use crate::service_updates::{
     snapshot_is_current as network_stream_snapshot_is_current,
     snapshot_is_current as power_stream_snapshot_is_current,
     snapshot_is_current as privacy_stream_snapshot_is_current,
+    snapshot_is_current as screen_reader_toggle_stream_snapshot_is_current,
     snapshot_is_current as storage_stream_snapshot_is_current,
     snapshot_is_current as system_info_stream_snapshot_is_current,
     snapshot_is_current as theme_stream_snapshot_is_current,

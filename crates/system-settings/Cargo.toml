@@ -47,6 +47,7 @@ rmac-privacy.workspace = true
 rmac-privacy-linux.workspace = true
 rmac-portal.workspace = true
 rmac-recent-documents.workspace = true
+rmac-screen-reader.workspace = true
 rmac-storage.workspace = true
 rmac-shortcuts.workspace = true
 rmac-sharing.workspace = true

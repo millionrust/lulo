@@ -110,6 +110,7 @@ pub(crate) fn terms_for_pane(name: &str) -> &'static [&'static str] {
         "Accessibility" => &[
             "text size",
             "screen reader",
+            "VoiceOver",
             "Orca",
             "display contrast",
             "reduced motion",

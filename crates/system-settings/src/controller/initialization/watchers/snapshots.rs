@@ -164,6 +164,52 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
+                .spawn(async { rmac_screen_reader::snapshot() })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_screen_reader_toggle_update(result);
+                this.run_pending_screen_reader_toggle_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+
+        let (screen_reader_toggle_updates, screen_reader_toggle_update_rx) =
+            async_channel::bounded(2);
+        std::thread::spawn(move || {
+            let _ = rmac_screen_reader::watch(screen_reader_toggle_updates);
+        });
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            while let Ok(event) = screen_reader_toggle_update_rx.recv().await {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        match event {
+                            rmac_screen_reader::WatchEvent::Available => {
+                                this.screen_reader_toggle_stream_error = None;
+                            }
+                            rmac_screen_reader::WatchEvent::Changed => {
+                                this.screen_reader_toggle_stream_error = None;
+                                this.queue_screen_reader_toggle_stream_refresh(cx);
+                            }
+                            rmac_screen_reader::WatchEvent::Unavailable => {
+                                this.screen_reader_toggle_stream_error = Some(
+                                    "Live screen reader updates are temporarily unavailable".into(),
+                                );
+                            }
+                        }
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
                 .spawn(async { rmac_privacy_linux::snapshot() })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {

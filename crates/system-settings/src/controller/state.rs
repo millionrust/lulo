@@ -87,6 +87,7 @@ pub(super) struct Settings {
     pub(super) audio: rmac_audio::Snapshot,
     pub(super) input: rmac_input::Snapshot,
     pub(super) gtk_text: Option<rmac_gtk_settings::Snapshot>,
+    pub(super) screen_reader_toggle: Option<rmac_screen_reader::Snapshot>,
     pub(super) privacy: Option<rmac_privacy::Snapshot>,
     pub(super) security_coverage: Option<rmac_privacy::SecurityCoverageSnapshot>,
     pub(super) sections: Vec<Vec<Category>>,
@@ -135,6 +136,8 @@ pub(super) struct Settings {
     pub(super) shell_settings_stream_error: Option<SharedString>,
     pub(super) gtk_text_error: Option<SharedString>,
     pub(super) gtk_text_stream_error: Option<SharedString>,
+    pub(super) screen_reader_toggle_error: Option<SharedString>,
+    pub(super) screen_reader_toggle_stream_error: Option<SharedString>,
     pub(super) privacy_error: Option<SharedString>,
     pub(super) privacy_stream_error: Option<SharedString>,
     pub(super) notification_error: Option<SharedString>,
@@ -260,6 +263,13 @@ pub(super) struct Settings {
     pub(super) gtk_text_generation: u64,
     pub(super) gtk_text_refresh_pending: bool,
     pub(super) gtk_text_stream_refreshing: bool,
+
+    // Accessibility > Screen Reader (Orca)
+    pub(super) screen_reader_toggle_loading: bool,
+    pub(super) screen_reader_toggle_busy: bool,
+    pub(super) screen_reader_toggle_generation: u64,
+    pub(super) screen_reader_toggle_refresh_pending: bool,
+    pub(super) screen_reader_toggle_stream_refreshing: bool,
 
     // Privacy & Security
     pub(super) privacy_loading: bool,

@@ -7,12 +7,12 @@ use super::{
     locale_stream_snapshot_is_current, login_items_stream_snapshot_is_current,
     network_stream_snapshot_is_current, power_change_needs_followup,
     power_stream_snapshot_is_current, privacy_stream_snapshot_is_current, render_wallpaper_preview,
-    shortcut_configuration_available, storage_stream_snapshot_is_current,
-    system_info_stream_snapshot_is_current, theme_stream_snapshot_is_current,
-    time_stream_snapshot_is_current, update_stream_snapshot_is_current,
-    vpn_stream_snapshot_is_current, wallpaper_selection, wifi_stream_snapshot_is_current,
-    DockChange, ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
-    WallpaperTarget,
+    screen_reader_toggle_stream_snapshot_is_current, shortcut_configuration_available,
+    storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
+    theme_stream_snapshot_is_current, time_stream_snapshot_is_current,
+    update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
+    wifi_stream_snapshot_is_current, DockChange, ShellSettingsMutation, SpotlightAuthority,
+    SpotlightChange, WallpaperChange, WallpaperTarget,
 };
 
 #[test]
@@ -77,6 +77,22 @@ fn gtk_text_stream_snapshots_cannot_cross_mutation_generations() {
     assert!(!gtk_text_stream_snapshot_is_current(3, 4, false, false));
     assert!(!gtk_text_stream_snapshot_is_current(4, 4, true, false));
     assert!(!gtk_text_stream_snapshot_is_current(4, 4, false, true));
+}
+
+#[test]
+fn screen_reader_toggle_stream_snapshots_cannot_cross_mutation_generations() {
+    assert!(screen_reader_toggle_stream_snapshot_is_current(
+        4, 4, false, false
+    ));
+    assert!(!screen_reader_toggle_stream_snapshot_is_current(
+        3, 4, false, false
+    ));
+    assert!(!screen_reader_toggle_stream_snapshot_is_current(
+        4, 4, true, false
+    ));
+    assert!(!screen_reader_toggle_stream_snapshot_is_current(
+        4, 4, false, true
+    ));
 }
 
 #[test]

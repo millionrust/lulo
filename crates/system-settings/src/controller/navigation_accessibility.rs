@@ -134,6 +134,8 @@ impl Settings {
             .or(self.spotlight_error.as_ref())
             .or(self.gtk_text_error.as_ref())
             .or(self.gtk_text_stream_error.as_ref())
+            .or(self.screen_reader_toggle_error.as_ref())
+            .or(self.screen_reader_toggle_stream_error.as_ref())
             .or(self.privacy_error.as_ref())
             .or(self.privacy_stream_error.as_ref())
     }

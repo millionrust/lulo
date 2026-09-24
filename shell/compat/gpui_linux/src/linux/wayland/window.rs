@@ -1970,7 +1970,8 @@ impl PlatformWindow for WaylandWindow {
         self.borrow_mut().accesskit_adapter = Some(adapter);
     }
 
-    fn a11y_tree_update(&self, tree_update: accesskit::TreeUpdate) {
+    fn a11y_tree_update(&self, mut tree_update: accesskit::TreeUpdate) {
+        crate::linux::a11y::label_toolkit(&mut tree_update);
         let mut state = self.borrow_mut();
         if let Some(adapter) = state.accesskit_adapter.as_mut() {
             adapter.update_if_active(|| tree_update);

@@ -1,3 +1,4 @@
+pub(crate) mod a11y;
 mod dispatcher;
 mod headless;
 mod keyboard;

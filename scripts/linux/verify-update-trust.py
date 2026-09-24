@@ -25,10 +25,17 @@ EXPECTED_SOURCES = (
     "Signed-By: /usr/share/keyrings/rmac-archive-keyring.gpg\n"
     "Check-Valid-Until: yes\n"
 ).encode()
+# The second stanza is what stops the rmac origin replacing any other package
+# (sudo, openssh-server, …): every package it does not name is never
+# installed from it.
 EXPECTED_PREFERENCES = (
     "Package: rmac-apps rmac-archive-keyring rmac-session\n"
     "Pin: release o=rmac,n=resolute,c=main\n"
     "Pin-Priority: 500\n"
+    "\n"
+    "Package: *\n"
+    "Pin: release o=rmac\n"
+    "Pin-Priority: -1\n"
 ).encode()
 
 

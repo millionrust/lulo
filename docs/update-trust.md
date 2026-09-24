@@ -25,9 +25,11 @@ arm64, keeps `Check-Valid-Until` enabled, and accepts signatures only through
 The binary OpenPGP keyring is owned by a narrow
 `rmac-archive-keyring` package. It is never copied to the global trusted
 keyrings and no setup instruction uses `apt-key`, `trusted=yes`, an insecure
-repository exception, or disabled expiry. `rmac.pref` names only
-`rmac-apps`, `rmac-session`, and the keyring package, preventing the repository
-from replacing unrelated Ubuntu packages.
+repository exception, or disabled expiry. `rmac.pref` gives `rmac-apps`,
+`rmac-session`, and the keyring package the normal priority 500 from the rmac
+origin, and gives every other package from that origin priority -1, so the
+repository can never install or replace an unrelated Ubuntu package such as
+`sudo` or `openssh-server`.
 
 The reproducible binary/source package boundary and rotation build procedure
 are specified in [Archive keyring packaging](keyring-packaging.md). It installs

@@ -32,6 +32,23 @@ class UpdateTrustTests(unittest.TestCase):
         preferences.write_bytes(verify.PREFERENCES_PATH.read_bytes())
         return policy, sources, preferences
 
+    def test_the_rmac_origin_cannot_replace_other_packages(self):
+        text = verify.EXPECTED_PREFERENCES.decode()
+        stanzas = [stanza.splitlines() for stanza in text.strip().split("\n\n")]
+        self.assertEqual(
+            stanzas[-1],
+            ["Package: *", "Pin: release o=rmac", "Pin-Priority: -1"],
+        )
+        install = (verify.REPO_ROOT / "scripts/linux/install.sh").read_text(encoding="utf-8")
+        self.assertIn(text, install)
+        with tempfile.TemporaryDirectory() as temporary:
+            policy, sources, preferences = self.fixtures(Path(temporary))
+            preferences.write_text(
+                text.split("\n\n")[0] + "\n", encoding="utf-8"
+            )
+            with self.assertRaises(verify.VerificationError):
+                verify.verify_policy(policy, sources, preferences)
+
     def test_rejects_insecure_source_configuration(self):
         with tempfile.TemporaryDirectory() as temporary:
             policy, sources, preferences = self.fixtures(Path(temporary))

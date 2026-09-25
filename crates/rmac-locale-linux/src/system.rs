@@ -332,10 +332,12 @@ fn installed_locales() -> Result<(Vec<String>, bool), Error> {
 #[cfg(target_os = "linux")]
 fn installed_x11_layouts() -> Result<(Vec<String>, bool), Error> {
     let mut command = std::process::Command::new("localectl");
-    command
-        .arg("--no-pager")
-        .arg("--no-legend")
-        .arg("list-x11-keymap-layouts");
+    // Not `--no-legend`: unlike systemctl's family of tools, this
+    // systemd's `localectl` has no such option at all, so passing it made
+    // the command fail outright ("could not read installed XKB layout
+    // list") -- SET-80. `list-x11-keymap-layouts` prints no legend line to
+    // begin with, so there is nothing to suppress.
+    command.arg("--no-pager").arg("list-x11-keymap-layouts");
     let output = bounded_command_output(
         command,
         MAX_XKB_INVENTORY_BYTES,

@@ -207,6 +207,34 @@ fn x11_layout_inventory_is_sorted_deduplicated_and_bounded() {
     assert!(values.windows(2).all(|pair| pair[0] < pair[1]));
 }
 
+/// `localectl --no-pager list-x11-keymap-layouts` on the reference laptop
+/// (Ubuntu 26.04, systemd 259) — 99 plain codes, no legend line. This
+/// systemd has no `--no-legend` option at all, so passing it (as the code
+/// used to) made `localectl` fail outright and Language & Region show
+/// "could not read installed XKB layout list" for every user on this
+/// build (SET-80). This fixture guards the parsing side: real output
+/// should survive normalization with nothing dropped.
+const REFERENCE_X11_LAYOUTS: &str = "af\nal\nam\nara\nat\nau\naz\nba\nbd\nbe\nbg\nbr\nbrai\nbt\nbw\nby\nca\ncd\nch\ncm\ncn\ncustom\ncz\nde\ndk\ndz\nee\neg\nepo\nes\net\nfi\nfo\nfr\ngb\nge\ngh\ngn\ngr\nhr\nhu\nid\nie\nil\nin\niq\nir\nis\nit\njp\nke\nkg\nkh\nkr\nkz\nla\nlatam\nlk\nlt\nlv\nma\nmd\nme\nmk\nml\nmm\nmn\nmt\nmv\nmy\nng\nnl\nno\nnp\nnz\nph\npk\npl\npt\nro\nrs\nru\nse\nsi\nsk\nsn\nsy\ntg\nth\ntj\ntm\ntr\ntw\ntz\nua\nus\nuz\nvn\nza\n";
+
+#[test]
+fn a_real_localectl_layout_list_survives_normalization_intact() {
+    let lines = REFERENCE_X11_LAYOUTS
+        .lines()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    let expected_count = lines.len();
+    let (values, truncated) = normalize_installed_x11_layouts(lines);
+    assert!(!truncated);
+    assert_eq!(
+        values.len(),
+        expected_count,
+        "no real layout code should be dropped"
+    );
+    assert!(values.contains(&"us".to_owned()));
+    assert!(values.contains(&"gb".to_owned()));
+    assert!(values.windows(2).all(|pair| pair[0] < pair[1]));
+}
+
 #[test]
 fn file_vocabulary_follows_the_message_language() {
     let british = FileVocabulary::for_locale("en_GB.UTF-8");

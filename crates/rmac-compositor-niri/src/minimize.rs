@@ -120,7 +120,14 @@ pub fn record_and_capture(snapshot: &domain::Snapshot, window: domain::WindowId)
     if let Some(dir) = domain::ParkingStore::default_thumbnail_dir() {
         // An earlier minimize's picture of the same window is stale now.
         domain::ParkingStore::remove_thumbnails_in(&dir, window);
-        if let Some(rect) = capture_rect(snapshot, window) {
+        let rect = capture_rect(snapshot, window);
+        if rect.is_none() {
+            eprintln!(
+                "window {} is not on screen; its Dock tile shows the app icon",
+                window.0
+            );
+        }
+        if let Some(rect) = rect {
             let stamp = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|elapsed| elapsed.as_millis())

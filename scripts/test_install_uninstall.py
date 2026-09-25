@@ -175,6 +175,18 @@ class InstallScriptBehaviorTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("unrecognized argument", result.stderr)
 
+    def test_allow_unattested_applies_only_to_a_release_download(self):
+        for arguments in (["--allow-unattested"], ["--from-dir", "/tmp", "--allow-unattested"]):
+            result = subprocess.run(
+                ["/bin/sh", str(INSTALL), *arguments],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("--allow-unattested applies only to --from-release", result.stderr)
+
     def test_refuses_on_a_machine_that_is_not_ubuntu_26_04(self):
         # install.sh reads the real /etc/os-release rather than an
         # injectable path (it is meant to run unmodified on the target
@@ -275,10 +287,11 @@ class InstallKeyringVerificationTests(unittest.TestCase):
 
 
 class InstallReleaseAttestationTests(unittest.TestCase):
-    """SR-17: with gh present, a release's provenance must verify and name
-    this repository's release workflow as its signer."""
+    """SR-17: a release's provenance must verify and name this repository's
+    release workflow as its signer. Without gh the install refuses unless
+    --allow-unattested was passed."""
 
-    def _download(self, gh_exit: int | None):
+    def _download(self, gh_exit: int | None, allow_unattested: bool = False):
         import hashlib
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -311,12 +324,22 @@ class InstallReleaseAttestationTests(unittest.TestCase):
                     f'#!/bin/sh\necho "$@" >> "{log}"\nexit {gh_exit}\n', encoding="utf-8"
                 )
                 gh.chmod(0o755)
+            curl_log = root / "curl.log"
+            curl.write_text(
+                curl.read_text(encoding="utf-8")
+                + f'echo "$url" >> "{curl_log}"\n',
+                encoding="utf-8",
+            )
             path = f"{bin_dir}:/usr/bin:/bin:/usr/sbin:/sbin"
+            flag = "true" if allow_unattested else "false"
             result = _run_install_function(
-                f'PATH="{path}"\narchitecture=amd64\n'
+                f'PATH="{path}"\narchitecture=amd64\nallow_unattested={flag}\n'
                 'download_release_packages v0.9.0-beta.1\necho downloaded'
             )
             calls = log.read_text(encoding="utf-8") if log.exists() else ""
+            self.downloads = (
+                curl_log.read_text(encoding="utf-8") if curl_log.exists() else ""
+            )
             return result, calls
 
     def test_a_failed_attestation_stops_the_install(self):
@@ -333,13 +356,32 @@ class InstallReleaseAttestationTests(unittest.TestCase):
         self.assertEqual(calls.count("attestation verify"), 2)
         self.assertIn("--signer-workflow millionrust/lulo/.github/workflows/release.yml", calls)
 
-    def test_without_gh_the_install_says_what_was_not_checked(self):
-        result, calls = self._download(gh_exit=None)
-        if Path("/usr/bin/gh").exists() or Path("/bin/gh").exists():
+    def _skip_if_gh_on_system_path(self):
+        if any(Path(d, "gh").exists() for d in ("/usr/bin", "/bin", "/usr/sbin", "/sbin")):
             self.skipTest("this host has gh on the system path")
+
+    def test_without_gh_the_install_refuses_before_downloading(self):
+        self._skip_if_gh_on_system_path()
+        result, calls = self._download(gh_exit=None)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("downloaded", result.stdout)
+        self.assertIn("'gh' is not installed", result.stderr)
+        self.assertIn("--allow-unattested", result.stderr)
+        self.assertEqual(self.downloads, "")
+
+    def test_allow_unattested_installs_without_gh_and_says_what_was_not_checked(self):
+        self._skip_if_gh_on_system_path()
+        result, calls = self._download(gh_exit=None, allow_unattested=True)
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("downloaded", result.stdout)
         self.assertIn("attestation was not checked", result.stderr)
         self.assertIn("rests on HTTPS", result.stderr)
+
+    def test_allow_unattested_never_skips_a_failing_attestation(self):
+        result, calls = self._download(gh_exit=1, allow_unattested=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("attestation did not verify", result.stderr)
+        self.assertNotIn("downloaded", result.stdout)
 
 
 class InstallReleaseAssetNameTests(unittest.TestCase):

@@ -26,7 +26,14 @@ _GTK_THEME = (
 _DESKTOP_OVERRIDE = Path(
     "usr/share/glib-2.0/schemas/91_rmac-desktop.gschema.override"
 )
-_DOCK_SPECIAL_ICONS = ("application.svg", "trash-empty.svg", "trash-full.svg")
+_DOCK_SPECIAL_ICONS = (
+    "application.svg",
+    "trash-empty.svg",
+    "trash-full.svg",
+    "folder.svg",
+    "downloads.svg",
+    "stack-item-document.svg",
+)
 # Original Lulo wallpapers: light and dark artwork per packaged size plus a
 # Settings thumbnail (scripts/build-wallpapers.py, rmac-wallpaper).
 _WALLPAPER_FILES = tuple(

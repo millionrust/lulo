@@ -19,6 +19,16 @@ impl FinderView {
     }
 
     pub(super) fn rename_start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Return both commits the rename field (its own "Input" keymap
+        // context) and, as the plain "Finder" context's Return shortcut for
+        // File ▸ Rename, restarts one — both bindings match the same
+        // keystroke, and the global one runs first (FILES-43). Restarting
+        // here would blow away the field the person was just typing into,
+        // so a rename already in progress makes this a no-op and lets the
+        // field's own Return commit normally right after.
+        if self.renaming.is_some() {
+            return;
+        }
         if self.block_mutation_during_transfer(cx) {
             return;
         }
@@ -29,11 +39,15 @@ impl FinderView {
         let name = entry.name.to_string();
         let selection = rename_selection(&name, entry.is_dir);
         let input = cx.new(|cx| InputState::new(window, cx).default_value(name));
-        cx.subscribe(&input, |this, _input, event: &InputEvent, cx| match event {
-            InputEvent::PressEnter { .. } => this.rename_commit(cx),
-            InputEvent::Blur => this.renaming = None,
-            _ => {}
-        })
+        cx.subscribe_in(
+            &input,
+            window,
+            |this, _input, event: &InputEvent, window, cx| match event {
+                InputEvent::PressEnter { .. } => this.rename_commit(window, cx),
+                InputEvent::Blur => this.renaming = None,
+                _ => {}
+            },
+        )
         .detach();
         let focus = input.read(cx).focus_handle(cx);
         window.focus(&focus, cx);
@@ -51,12 +65,17 @@ impl FinderView {
         });
     }
 
-    fn rename_commit(&mut self, cx: &mut Context<Self>) {
+    fn rename_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some((path, input)) = self.renaming.take() else {
             return;
         };
         let new_name = input.read(cx).value().to_string();
-        self.rename_path_to(&path, &new_name, cx);
+        // Keep the item selected under its new name, and return focus to
+        // the list, as Finder does — reload's own path-based selection
+        // would otherwise look for the item under its old (now nonexistent)
+        // path and find nothing.
+        self.pending_select = self.rename_path_to(&path, &new_name, cx).or(Some(path));
+        window.focus(&self.focus, cx);
         self.reload(cx);
     }
 
@@ -72,6 +91,12 @@ impl FinderView {
 
     /// Rename `path` to `new_name` in its own folder, reporting a failure or
     /// a name clash visibly. Returns the new path when the item was renamed.
+    ///
+    /// Goes through the same journaled transfer the file list uses for a
+    /// same-folder drag (a rename is just that: a `Move` whose source and
+    /// destination share a parent), so Command-Z can undo it exactly as it
+    /// undoes any other move — a plain `file_ops::rename` records nothing
+    /// an Undo could act on.
     fn rename_path_to(
         &mut self,
         path: &Path,
@@ -100,13 +125,44 @@ impl FinderView {
             );
             return None;
         }
-        match file_ops::rename(&file_ops::RealFileSystem, &entry.path, &destination) {
-            Ok(()) => Some(destination),
-            Err(failure) => {
-                self.record_operation_failures(vec![failure], cx);
-                None
+        let Some(journal) = self.operation_journal.clone() else {
+            // Recovery data failed to initialize: rename directly rather
+            // than block renaming entirely, but this one won't be undoable.
+            return match file_ops::rename(&file_ops::RealFileSystem, &entry.path, &destination) {
+                Ok(()) => Some(destination),
+                Err(failure) => {
+                    self.record_operation_failures(vec![failure], cx);
+                    None
+                }
+            };
+        };
+        let task = file_ops::TransferTask {
+            kind: file_ops::TransferKind::Move,
+            source: entry.path.clone(),
+            destination: destination.clone(),
+        };
+        let report = file_ops::execute_transfers(
+            &file_ops::RealFileSystem,
+            Some(journal.as_ref()),
+            std::slice::from_ref(&task),
+            &AtomicBool::new(false),
+            |_| {},
+        );
+        if !report.failures.is_empty() {
+            self.record_operation_failures(report.failures, cx);
+            return None;
+        }
+        if report.processed == 0 {
+            return None;
+        }
+        match journal.undo_store().latest() {
+            Ok(availability) => self.undo_available = availability,
+            Err(_) => {
+                self.undo_available = None;
+                self.operation_journal = None;
             }
         }
+        Some(destination)
     }
 
     /// Get Info's editable Name & Extension field, as in Finder's Info

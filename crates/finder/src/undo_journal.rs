@@ -635,11 +635,13 @@ impl UndoStore {
             UndoKind::Trash => self.undo_trash(&mut record, cancel, progress)?,
             UndoKind::Restore => self.undo_restore(&mut record, cancel, progress)?,
         }
-        // Only undoing a Move to Trash puts an item back where Files can
-        // select it by a path it already knows; the other kinds either
-        // remove something (Copy) or restore it to a destination the
-        // caller already has selected (Move, Replace).
-        let restored_to = matches!(record.kind, UndoKind::Trash).then(|| record.source());
+        // Undoing a Move to Trash or a Move (including a rename, which is
+        // a same-folder Move) puts an item back at its own source() path,
+        // which nothing else already has selected; Copy's undo removes
+        // something, and Replace/MoveReplace restore a destination the
+        // caller already has selected.
+        let restored_to =
+            matches!(record.kind, UndoKind::Trash | UndoKind::Move).then(|| record.source());
         Ok(Some(UndoOutcome { label, restored_to }))
     }
 

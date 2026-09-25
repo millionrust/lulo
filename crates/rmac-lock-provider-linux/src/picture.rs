@@ -15,7 +15,9 @@
 //! Aurora gradient and monogram disc exactly as before.
 
 use std::fs;
-use std::path::PathBuf;
+use std::io::Read as _;
+use std::os::unix::fs::OpenOptionsExt as _;
+use std::path::{Path, PathBuf};
 
 use crate::paint::PictureRaster;
 
@@ -45,23 +47,109 @@ fn cache_dir() -> Option<PathBuf> {
 }
 
 /// Reads `name` under the cache directory and builds a [`PictureRaster`]
-/// from it, only when the file is exactly `width * height * 3` bytes. A
-/// bounded read (one byte over the expected size is enough to reject it)
-/// keeps an oversized or unrelated file from costing more than one `read`.
+/// from it, only when the file is exactly `width * height * 3` bytes.
 fn load_fixed(name: &str, width: u32, height: u32) -> Option<PictureRaster> {
-    let path = cache_dir()?.join(name);
     let expected = usize::try_from(width)
         .ok()?
         .checked_mul(usize::try_from(height).ok()?)?;
     let expected = expected.checked_mul(3)?;
-    let metadata = fs::symlink_metadata(&path).ok()?;
-    // No symlinks, no directories/devices/pipes: only a plain file this
-    // user process itself is expected to have written.
+    let bytes = read_exact_plain_file(&cache_dir()?.join(name), expected)?;
+    PictureRaster::new(width, height, bytes)
+}
+
+/// The contents of `path` when it is a plain file of exactly `expected`
+/// bytes, else `None`. The checks apply to the descriptor actually read, not
+/// to the path before opening it (SR-28): a link is refused by `O_NOFOLLOW`,
+/// a FIFO or device swapped in cannot block the lock screen (`O_NONBLOCK`,
+/// then `fstat` must say regular file), and the read stops one byte past
+/// `expected`, so a file that grows after the check costs no more than that.
+fn read_exact_plain_file(path: &Path, expected: usize) -> Option<Vec<u8>> {
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_NOCTTY)
+        .open(path)
+        .ok()?;
+    let metadata = file.metadata().ok()?;
     if !metadata.file_type().is_file() || metadata.len() != expected as u64 {
         return None;
     }
-    let bytes = fs::read(&path).ok()?;
-    PictureRaster::new(width, height, bytes)
+    let mut bytes = Vec::with_capacity(expected);
+    file.take(expected as u64 + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    (bytes.len() == expected).then_some(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_exact_plain_file;
+    use std::path::PathBuf;
+
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(label: &str) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("rmac-lock-picture-{label}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn a_plain_file_of_the_exact_size_is_read() {
+        let scratch = Scratch::new("exact");
+        let path = scratch.0.join("picture.rgb");
+        std::fs::write(&path, [7u8; 12]).unwrap();
+        assert_eq!(read_exact_plain_file(&path, 12), Some(vec![7u8; 12]));
+    }
+
+    #[test]
+    fn a_file_of_any_other_size_is_refused() {
+        let scratch = Scratch::new("size");
+        let path = scratch.0.join("picture.rgb");
+        std::fs::write(&path, [7u8; 13]).unwrap();
+        assert_eq!(read_exact_plain_file(&path, 12), None);
+        std::fs::write(&path, [7u8; 11]).unwrap();
+        assert_eq!(read_exact_plain_file(&path, 12), None);
+    }
+
+    #[test]
+    fn a_link_to_a_plain_file_of_the_right_size_is_refused() {
+        let scratch = Scratch::new("link");
+        let target = scratch.0.join("elsewhere.rgb");
+        std::fs::write(&target, [7u8; 12]).unwrap();
+        let link = scratch.0.join("picture.rgb");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert_eq!(read_exact_plain_file(&link, 12), None);
+    }
+
+    #[test]
+    fn a_fifo_is_refused_without_blocking_the_lock_screen() {
+        let scratch = Scratch::new("fifo");
+        let fifo = scratch.0.join("picture.rgb");
+        let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: a valid NUL-terminated path; mkfifo has no other
+        // preconditions.
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        // With no writer, a blocking open would hang here forever.
+        assert_eq!(read_exact_plain_file(&fifo, 12), None);
+    }
+
+    #[test]
+    fn a_directory_is_refused() {
+        let scratch = Scratch::new("dir");
+        let directory = scratch.0.join("picture.rgb");
+        std::fs::create_dir(&directory).unwrap();
+        assert_eq!(read_exact_plain_file(&directory, 0), None);
+    }
 }
 
 /// The current wallpaper, blurred (LOCK-01). `None` when the resident

@@ -661,6 +661,12 @@ impl TableDelegate for ProcessTableDelegate {
             .role(Role::Row)
             .aria_label(SharedString::from(accessible_name))
             .aria_selected(selected)
+            // Matches the row index/count `rmac_ui::Table` gives the
+            // off-screen rows it publishes synthetically (ACC, journey 6),
+            // so a screen reader announces "row N of M" the same way
+            // whether or not this particular row happens to be painted.
+            .aria_row_index(row_index + 1)
+            .aria_row_count(self.rows.len())
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |state, _, _, cx| select_row(state, row_index, cx)),
@@ -714,6 +720,23 @@ impl TableDelegate for ProcessTableDelegate {
             .unwrap_or(ColKey::Name);
         let text: SharedString = row.cell_text(key).into();
         div().child(text)
+    }
+
+    /// Export/accessibility text for one cell. `rmac_ui::Table` calls this
+    /// (with `column_index` 0) to name the off-screen rows it publishes to
+    /// assistive technology (ACC, journey 6) — the default implementation
+    /// returns an empty string, which would leave every unpainted process
+    /// row unnamed.
+    fn cell_text(&self, row_index: usize, column_index: usize, _cx: &App) -> String {
+        let Some(row) = self.rows.get(row_index) else {
+            return String::new();
+        };
+        let key = self
+            .visible
+            .get(column_index)
+            .copied()
+            .unwrap_or(ColKey::Name);
+        row.cell_text(key)
     }
 }
 

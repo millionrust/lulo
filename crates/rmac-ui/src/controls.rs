@@ -2398,6 +2398,16 @@ impl RenderOnce for SegmentedControl {
     }
 }
 
+/// A hover tooltip view for GPUI's `.tooltip(...)` hook, so callers outside
+/// rmac-ui never reach for the component library's tooltip directly (ADR 0015).
+pub fn tooltip_view(
+    text: impl Into<SharedString>,
+    window: &mut Window,
+    cx: &mut App,
+) -> gpui::AnyView {
+    ComponentTooltip::new(text.into()).build(window, cx)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2500,14 +2510,4 @@ mod tests {
         let defaults = (false, true, true, true);
         assert_eq!(defaults, (false, true, true, true));
     }
-}
-
-/// A hover tooltip view for GPUI's `.tooltip(...)` hook, so callers outside
-/// rmac-ui never reach for the component library's tooltip directly (ADR 0015).
-pub fn tooltip_view(
-    text: impl Into<SharedString>,
-    window: &mut Window,
-    cx: &mut App,
-) -> gpui::AnyView {
-    ComponentTooltip::new(text.into()).build(window, cx)
 }

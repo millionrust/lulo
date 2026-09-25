@@ -4824,6 +4824,7 @@ dependencies = [
  "async-channel",
  "async-io",
  "futures-util",
+ "rmac-dbus",
  "zbus",
  "zeroize",
 ]
@@ -4846,6 +4847,14 @@ dependencies = [
  "rmac-compositor",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rmac-dbus"
+version = "0.9.0-beta.1"
+dependencies = [
+ "async-io",
+ "zbus",
 ]
 
 [[package]]
@@ -4953,6 +4962,7 @@ dependencies = [
  "async-channel",
  "async-io",
  "futures-util",
+ "rmac-dbus",
  "rmac-focus",
  "rmac-focus-runtime",
  "rmac-focus-store",
@@ -5008,6 +5018,7 @@ dependencies = [
  "futures-util",
  "libc",
  "notify",
+ "rmac-dbus",
  "rmac-login-items",
  "rmac-storage",
  "trash",
@@ -5022,6 +5033,7 @@ dependencies = [
  "async-io",
  "futures-util",
  "libloading",
+ "rmac-dbus",
  "url",
  "uuid",
  "zbus",
@@ -5048,6 +5060,7 @@ dependencies = [
  "rmac-apps",
  "rmac-audio",
  "rmac-compositor",
+ "rmac-dbus",
  "rmac-focus-linux",
  "rmac-icon",
  "rmac-notifications",
@@ -5130,6 +5143,7 @@ dependencies = [
  "async-channel",
  "async-io",
  "futures-util",
+ "rmac-dbus",
  "zbus",
 ]
 
@@ -5542,6 +5556,7 @@ dependencies = [
  "blocking",
  "futures-util",
  "libc",
+ "rmac-dbus",
  "rmac-storage",
  "serde",
  "serde_json",

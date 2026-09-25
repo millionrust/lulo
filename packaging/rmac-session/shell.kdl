@@ -307,6 +307,8 @@ binds {
     // ⌃F3 moves keyboard focus to the Dock, as on macOS. The resident Dock
     // holds the keyboard until Esc, an activation or a click.
     Ctrl+F3 repeat=false hotkey-overlay-title="Move Focus to the Dock" { spawn "/usr/libexec/rmac/rmac-dock" "focus"; }
+    // ⌥⌘D turns Dock hiding on and off, as on macOS (DOCK-04).
+    Mod+Alt+D repeat=false hotkey-overlay-title="Turn Dock Hiding On or Off" { spawn "/usr/libexec/rmac/rmac-dock" "toggle-hide"; }
     // ⌥⌘⎋ is Force Quit, as on macOS. Like the system menu's Force Quit…
     // item, it asks the resident switcher service for its Force Quit
     // Applications window, which comes forward if it is already open. keyd

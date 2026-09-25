@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Original rmac artwork, MIT licensed. A generic document glyph for a
+     Dock folder/file stack popover's non-directory items (§ folder/file
+     stacks left of the Trash); no per-file-type icon lookup here. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="128" height="128">
+<defs><linearGradient id="dback" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F5F5F6" stop-opacity="1"/><stop offset="1" stop-color="#DADEE3" stop-opacity="1"/></linearGradient><filter id="dlift" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity=".22"/></filter></defs>
+<g>
+  <path d="M214 150h404l206 206v518c0 35-29 64-64 64H214c-35 0-64-29-64-64V214c0-35 29-64 64-64z" fill="url(#dback)" filter="url(#dlift)"/>
+  <path d="M618 150v142c0 35 29 64 64 64h142z" fill="#B7BEC6"/>
+  <rect x="278" y="432" width="468" height="44" rx="22" fill="#AEB5BD"/>
+  <rect x="278" y="548" width="468" height="44" rx="22" fill="#AEB5BD"/>
+  <rect x="278" y="664" width="300" height="44" rx="22" fill="#AEB5BD"/>
+</g>
+</svg>

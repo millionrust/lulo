@@ -54,6 +54,11 @@ pub enum Command {
 }
 
 impl Command {
+    // The Dock binary only ever receives on this socket (Apps is the only
+    // sender, crates/app-drawer/src/drag_endpoint.rs); encode/send exist
+    // here for the wire format's own round-trip test below and to keep
+    // this module symmetric with the sending side's.
+    #[allow(dead_code)]
     fn encode(&self) -> String {
         match self {
             Self::Hover { app_id, fraction } => format!("hover:{fraction}:{app_id}"),
@@ -152,6 +157,9 @@ impl Drop for Listener {
     }
 }
 
+// See the comment on Command::encode: the Dock binary never sends on this
+// socket, only Apps does (its own copy of this module).
+#[allow(dead_code)]
 pub fn send(command: &Command) -> io::Result<()> {
     let socket = UnixDatagram::unbound()?;
     let encoded = command.encode();

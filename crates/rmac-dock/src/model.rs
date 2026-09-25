@@ -360,6 +360,21 @@ pub struct ContextMenu {
     pub hide_others: Option<ContextAction>,
 }
 
+/// The Files tile's own Dock menu (DOCK-05), matching the Mac's Finder
+/// tile: windows, then New Finder Window (offered whether or not Files is
+/// already running, unlike a generic app's Open), Show All Windows, Hide/
+/// Hide Others -- no Options ▸ and no Quit, since Finder has neither.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FinderContextMenu {
+    pub app_id: String,
+    pub application_name: String,
+    pub windows: Vec<WindowMenu>,
+    pub new_window: Option<ContextAction>,
+    pub show_all_windows: Option<ContextAction>,
+    pub hide: Option<ContextAction>,
+    pub hide_others: Option<ContextAction>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum StackCommand {
     /// Dropping a folder/file onto the Dock, or Options ▸ Keep in Dock from

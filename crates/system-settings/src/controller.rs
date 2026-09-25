@@ -249,11 +249,6 @@ const DOCK_PLACEMENT_OPTIONS: [DockOption; 3] = [
         DockChange::Placement(rmac_shell_settings::DockPlacement::Right),
     ),
 ];
-const DOCK_MAGNIFICATION_OPTIONS: [DockOption; 3] = [
-    ("1.25×", DockChange::MagnificationScale(1.25)),
-    ("1.5×", DockChange::MagnificationScale(1.5)),
-    ("2×", DockChange::MagnificationScale(2.0)),
-];
 const DOCK_REPEATED_CLICK_OPTIONS: [DockOption; 2] = [
     (
         "Cycle Windows",

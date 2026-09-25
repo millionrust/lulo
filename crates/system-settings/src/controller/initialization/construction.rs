@@ -26,6 +26,12 @@ impl Settings {
         let output_balance = Self::audio_balance_slider(cx, 0.0);
         // Replaced once the initial backlight read lands (start_snapshot_loads).
         let brightness_slider = Self::brightness_slider(cx, 0.0);
+        // Replaced once the first shell-settings snapshot lands, and again
+        // whenever it changes from elsewhere (e.g. the Dock's own
+        // separator drag, DOCK-03).
+        let dock_size_slider =
+            Self::dock_size_slider(cx, rmac_shell_settings::DEFAULT_DOCK_TILE_SIZE);
+        let dock_magnification_slider = Self::dock_magnification_slider(cx, 0.0);
         let (sound_policy, sound_policy_error) = match rmac_sound::load_settings() {
             Ok(settings) => (settings, None),
             Err(error) => (
@@ -120,6 +126,8 @@ impl Settings {
             brightness_slider,
             brightness_generation: 0,
             brightness_error: None,
+            dock_size_slider,
+            dock_magnification_slider,
             network: rmac_network::NetworkSnapshot::default(),
             storage: Vec::new(),
             storage_busy: false,

@@ -362,6 +362,71 @@ impl Model {
         })
     }
 
+    /// The Files tile's own Dock menu (DOCK-05): built like `context_menu`,
+    /// but New Finder Window replaces the generic Open row (offered
+    /// whether or not Files is running) and there is no Options ▸ or Quit.
+    pub fn finder_context_menu(&self) -> Option<FinderContextMenu> {
+        let canonical = canonical_app_id(rmac_apps::identity::FILES);
+        let item = self
+            .items
+            .iter()
+            .find(|item| canonical_app_id(&item.id) == canonical)?;
+        let windows = item
+            .windows
+            .iter()
+            .map(|window| {
+                let title = window
+                    .title
+                    .clone()
+                    .filter(|title| !title.trim().is_empty())
+                    .unwrap_or_else(|| item.name.clone());
+                WindowMenu {
+                    id: window.id,
+                    title,
+                    focused: window.focused,
+                    urgent: window.urgent,
+                    focus: ContextAction::FocusWindow {
+                        app_id: item.id.clone(),
+                        window: window.id,
+                    },
+                    close: ContextAction::CloseWindow {
+                        app_id: item.id.clone(),
+                        window: window.id,
+                    },
+                }
+            })
+            .collect();
+        let visible = item
+            .windows
+            .iter()
+            .map(|window| window.id)
+            .collect::<Vec<_>>();
+        Some(FinderContextMenu {
+            app_id: item.id.clone(),
+            application_name: item.name.clone(),
+            windows,
+            new_window: item.launch.clone().map(|spec| ContextAction::LaunchNew {
+                app_id: item.id.clone(),
+                spec,
+            }),
+            show_all_windows: item
+                .windows
+                .first()
+                .map(|window| ContextAction::ShowAllWindows {
+                    app_id: item.id.clone(),
+                    window: window.id,
+                }),
+            hide: (!visible.is_empty()).then(|| ContextAction::HideApplication {
+                app_id: item.id.clone(),
+                windows: visible.clone(),
+            }),
+            hide_others: (!visible.is_empty()).then(|| ContextAction::HideOthers {
+                app_id: item.id.clone(),
+                windows: self.other_visible_windows(&canonical),
+            }),
+        })
+    }
+
     /// Every visible window of the other applications in the Dock, for
     /// Hide Others.
     fn other_visible_windows(&self, canonical: &str) -> Vec<rmac_compositor::WindowId> {

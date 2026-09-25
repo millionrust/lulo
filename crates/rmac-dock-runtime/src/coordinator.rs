@@ -15,12 +15,14 @@ impl Coordinator {
                 )
             },
             |places| {
-                rmac_dock::Model::build_with_places(
+                let stacks = resolve_stacks(&self.settings.dock_stacks, places);
+                rmac_dock::Model::build_with_stacks(
                     &self.settings.pinned_apps,
                     &self.settings.dock,
                     &self.catalog,
                     &compositor,
                     places,
+                    &stacks,
                 )
             },
         );
@@ -222,4 +224,30 @@ impl Coordinator {
         }
         before != self.snapshot()
     }
+}
+
+/// Resolve persisted `DockStackEntry` configuration against the live
+/// filesystem (existence only, no directory listing). The Downloads special
+/// case reuses the places system's own already-verified `exists` (it has
+/// already stat'd it; no need to stat it again here); an arbitrary path is
+/// stat'd directly since nothing else has checked it.
+fn resolve_stacks(
+    stacks: &[rmac_shell_settings::DockStackEntry],
+    places: &rmac_places::Snapshot,
+) -> Vec<rmac_dock::ResolvedStack> {
+    stacks
+        .iter()
+        .map(|entry| {
+            let available = match &entry.kind {
+                rmac_shell_settings::DockStackKind::Downloads => places.downloads.exists,
+                rmac_shell_settings::DockStackKind::Path { path } => {
+                    std::path::Path::new(path).is_dir()
+                }
+            };
+            rmac_dock::ResolvedStack {
+                entry: entry.clone(),
+                available,
+            }
+        })
+        .collect()
 }

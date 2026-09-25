@@ -26,30 +26,80 @@ mod linux_wayland {
     use rmac_shell_ui::tokens;
 
     // Measured from the owner's Mac 2026-09-23 and drawn in
-    // design-lab/dock.html. ICON_SIZE is the Dock tile (the icon canvas, the
-    // macOS "Size" preference); everything else is a measured ratio of it.
-    const ICON_SIZE: f32 = 64.0;
-    // Pitch 68: tiles sit 4 apart (their visible squircles 16 apart).
-    const ICON_GAP: f32 = ICON_SIZE * 0.0625;
-    // Tile → shelf rim on every side (16 from the visible squircle).
-    const SHELF_PADDING: f32 = ICON_SIZE * 0.15625;
-    const SHELF_THICKNESS: f32 = ICON_SIZE + 2.0 * SHELF_PADDING;
-    // Shelf rim → screen edge.
-    const SHELF_BOTTOM_MARGIN: f32 = ICON_SIZE * 0.078125;
-    const EXCLUSIVE_ZONE: f32 = SHELF_THICKNESS + SHELF_BOTTOM_MARGIN;
+    // design-lab/dock.html, at the default tile size (macOS Desktop & Dock ▸
+    // Size, DOCK-01). `TileMetrics` below turns this into a runtime struct
+    // so `DockSettings::tile_size` (a Settings slider and a live separator
+    // drag, DOCK-03) can change it; every field is a measured ratio of the
+    // tile size, exactly as the consts it replaces were.
     // The macOS icon grid shows a 52-of-64 squircle; rmac art draws its
     // squircle at 824/1024 of the image, so the image is scaled to match.
     const ICON_SQUIRCLE: f32 = 0.8125;
     const ICON_ART_SCALE: f32 = ICON_SQUIRCLE * 1024.0 / 824.0;
     // Separator: a 1 × 62 line centred in the shelf with 13 either side
-    // (plus the tile gap), so the pitch across it is 99.
+    // (plus the tile gap), so the pitch across it is 99 (at the default
+    // tile size).
     const SEPARATOR_WIDTH: f32 = 1.0;
-    const SEPARATOR_LENGTH: f32 = ICON_SIZE * 0.96875;
-    const SEPARATOR_MARGIN: f32 = ICON_SIZE * 0.203125;
-    const SEPARATOR_SLOT: f32 = SEPARATOR_WIDTH + 2.0 * SEPARATOR_MARGIN;
-    // Running dot: 4 across, its centre 4 below the tile.
-    const INDICATOR_SIZE: f32 = ICON_SIZE * 0.0625;
-    const INDICATOR_OFFSET: f32 = ICON_SIZE * 0.03125;
+
+    /// Runtime Dock tile geometry: every value is a measured ratio of
+    /// `icon_size` (see the module doc comment above).
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    struct TileMetrics {
+        icon_size: f32,
+        // Pitch 68: tiles sit 4 apart (their visible squircles 16 apart).
+        icon_gap: f32,
+        // Tile → shelf rim on every side (16 from the visible squircle).
+        shelf_padding: f32,
+        shelf_thickness: f32,
+        // Shelf rim → screen edge.
+        shelf_bottom_margin: f32,
+        exclusive_zone: f32,
+        separator_length: f32,
+        separator_margin: f32,
+        separator_slot: f32,
+        // Running dot: 4 across, its centre 4 below the tile.
+        indicator_size: f32,
+        indicator_offset: f32,
+        tooltip_bottom: f32,
+    }
+
+    impl TileMetrics {
+        fn new(tile_size: f32) -> Self {
+            let icon_size = if tile_size.is_finite() {
+                tile_size.clamp(
+                    rmac_shell_settings::MIN_DOCK_TILE_SIZE,
+                    rmac_shell_settings::MAX_DOCK_TILE_SIZE,
+                )
+            } else {
+                rmac_shell_settings::DEFAULT_DOCK_TILE_SIZE
+            };
+            let shelf_padding = icon_size * 0.15625;
+            let shelf_thickness = icon_size + 2.0 * shelf_padding;
+            let shelf_bottom_margin = icon_size * 0.078125;
+            let exclusive_zone = shelf_thickness + shelf_bottom_margin;
+            let separator_margin = icon_size * 0.203125;
+            Self {
+                icon_size,
+                icon_gap: icon_size * 0.0625,
+                shelf_padding,
+                shelf_thickness,
+                shelf_bottom_margin,
+                exclusive_zone,
+                separator_length: icon_size * 0.96875,
+                separator_margin,
+                separator_slot: SEPARATOR_WIDTH + 2.0 * separator_margin,
+                indicator_size: icon_size * 0.0625,
+                indicator_offset: icon_size * 0.03125,
+                tooltip_bottom: exclusive_zone + 6.0,
+            }
+        }
+    }
+
+    impl Default for TileMetrics {
+        fn default() -> Self {
+            Self::new(rmac_shell_settings::DEFAULT_DOCK_TILE_SIZE)
+        }
+    }
+
     // The tile whose Dock menu is open is darkened (black ≈ 53 %).
     const MENU_OPEN_DIM: u32 = 0x00000087;
     // Dock menu (captures f046–f052): no title, 5 inside the edge (4 padding
@@ -72,11 +122,17 @@ mod linux_wayland {
     const MENU_CHEVRON_COLUMN: f32 = 20.0;
     const MENU_SUBMENU_OVERLAP: f32 = 3.0;
     const TOOLTIP_WIDTH: f32 = 240.0;
+    // Stack popover (item 1, design-lab/dock-stack-popover.html, S: not
+    // measured against the owner's Mac). GPUI has no rotate/scale
+    // transform, so the Fan is a plain row rather than the Mac's fanned
+    // stagger; both views cap how many items they draw and note the rest.
+    const STACK_POPOVER_WIDTH: f32 = 260.0;
+    const STACK_POPOVER_ITEM: f32 = 56.0;
+    const STACK_POPOVER_MAX_ITEMS: usize = 8;
     // Badge bubble and progress bar published by apps (rmac values; not yet
     // measured against a Mac badge).
     const BADGE_SIZE: f32 = 20.0;
     const PROGRESS_HEIGHT: f32 = 8.0;
-    const TOOLTIP_BOTTOM: f32 = EXCLUSIVE_ZONE + 6.0;
     const READY_FILE_ENV: &str = "RMAC_DOCK_READY_FILE";
     const RENDER_COUNT_DIR_ENV: &str = "RMAC_DOCK_RENDER_COUNT_DIR";
     static NEXT_ACTIVATION: AtomicU64 = AtomicU64::new(0);
@@ -165,6 +221,7 @@ mod linux_wayland {
                             surface,
                             fullscreen.get(&output).copied().unwrap_or(false),
                             shelf_extent,
+                            snapshot.settings.tile_size,
                         )
                     })
                     .collect()
@@ -189,12 +246,21 @@ mod linux_wayland {
     }
 
     fn dock_shelf_extent(snapshot: &rmac_dock_runtime::Snapshot) -> f32 {
+        let metrics = TileMetrics::new(snapshot.settings.tile_size);
         let entries = snapshot.content.applications.len();
         let minimized = snapshot
             .content
             .places
             .iter()
             .filter(|entry| matches!(entry.id, rmac_dock::presentation::EntryId::Minimized(_)))
+            .count();
+        // Folder/file stacks (§ folder/file stacks left of the Trash) sit
+        // between the minimized group and Trash, same as any other place.
+        let stacks = snapshot
+            .content
+            .places
+            .iter()
+            .filter(|entry| matches!(entry.id, rmac_dock::presentation::EntryId::Stack(_)))
             .count();
         let pinned = snapshot
             .model
@@ -204,12 +270,12 @@ mod linux_wayland {
             .count();
         let separates_running = pinned > 0 && pinned < entries;
         let separators = usize::from(separates_running) + usize::from(entries > 0);
-        let items = entries + minimized + 1;
+        let items = entries + minimized + stacks + 1;
         let children = items + separators;
-        ICON_SIZE * items as f32
-            + SEPARATOR_SLOT * separators as f32
-            + ICON_GAP * children.saturating_sub(1) as f32
-            + 2.0 * SHELF_PADDING
+        metrics.icon_size * items as f32
+            + metrics.separator_slot * separators as f32
+            + metrics.icon_gap * children.saturating_sub(1) as f32
+            + 2.0 * metrics.shelf_padding
     }
 
     struct TileDragUi {
@@ -230,6 +296,34 @@ mod linux_wayland {
         started_ms: u64,
     }
 
+    /// A live drag of the Dock separator (DOCK-03): dragging it towards or
+    /// away from the screen edge previews a new tile size, committed to
+    /// `DockSettings::tile_size` on release.
+    struct SeparatorDragUi {
+        /// Pointer distance from the shelf's inner edge when the drag
+        /// began, and the tile size at that moment.
+        start_lift: f32,
+        start_size: f32,
+        preview_size: f32,
+    }
+
+    /// The Dock separator's own right-click menu (DOCK-02): Turn Hiding On/
+    /// Off, Turn Magnification On/Off, Position on Screen ▸, Minimise Using
+    /// ▸, Dock Settings…. Modelled locally (not in `rmac_dock::menu`) since
+    /// every row here writes `DockSettings` directly rather than going
+    /// through the Dock's item/stack model.
+    struct SeparatorMenu {
+        anchor: f32,
+        dock: rmac_shell_settings::DockSettings,
+        submenu_open: Option<SeparatorSubmenu>,
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum SeparatorSubmenu {
+        Position,
+        MinimizeUsing,
+    }
+
     struct DockMenu {
         anchor: f32,
         session: rmac_dock::menu::Session,
@@ -237,6 +331,29 @@ mod linux_wayland {
         submenu_open: bool,
         /// Options ▸ Open at Login, once the XDG autostart state is read.
         login: Option<LoginOption>,
+    }
+
+    /// A folder/file stack's Fan or Grid popover (§ folder/file stacks left
+    /// of the Trash): a click on the stack tile opens this rather than
+    /// activating the stack (`StackActivation::OpenDirectory` is the
+    /// context menu's separate "Open <name>" row). Dock-local UI state,
+    /// never reaching the dispatch layer (commit 10e708d8).
+    struct StackPopoverUi {
+        kind: rmac_shell_settings::DockStackKind,
+        name: String,
+        // display_as (Stack/Folder) only affects the tile's own icon style
+        // on the Mac, which this doesn't render yet -- nothing here reads
+        // it. Not stored.
+        view_content_as: rmac_shell_settings::DockStackViewContentAs,
+        /// Resting centre of the stack tile that opened this.
+        anchor: f32,
+        /// The latest directory listing, once the background scan and live
+        /// watch (`rmac_desktop::watch`/`scan`) deliver one.
+        snapshot: Option<rmac_desktop::Snapshot>,
+        /// Keeps the watch (and the background task that owns it) alive
+        /// only while the popover is open: dropping this cancels both, so
+        /// closing the popover leaves nothing watching the filesystem.
+        _watch: gpui::Task<()>,
     }
 
     /// The app's XDG autostart state behind Options ▸ Open at Login.
@@ -313,6 +430,7 @@ mod linux_wayland {
     /// Applications, minimized windows and Trash in shelf order, with the
     /// same resting centres the renderer lays out.
     fn keyboard_targets(snapshot: &rmac_dock_runtime::Snapshot) -> Vec<KeyTarget> {
+        let metrics = TileMetrics::new(snapshot.settings.tile_size);
         let entries = &snapshot.content.applications;
         let pinned = snapshot
             .model
@@ -328,24 +446,36 @@ mod linux_wayland {
                 id: entry.id.clone(),
                 name: entry.label.clone(),
                 accessible: entry.accessible_label.clone(),
-                center: SHELF_PADDING
-                    + ICON_SIZE / 2.0
-                    + index as f32 * (ICON_SIZE + ICON_GAP)
+                center: metrics.shelf_padding
+                    + metrics.icon_size / 2.0
+                    + index as f32 * (metrics.icon_size + metrics.icon_gap)
                     + if separates_running && index >= pinned {
-                        SEPARATOR_SLOT + ICON_GAP
+                        metrics.separator_slot + metrics.icon_gap
                     } else {
                         0.0
                     },
             })
             .collect();
-        let trash_center = dock_shelf_extent(snapshot) - SHELF_PADDING - ICON_SIZE / 2.0;
+        let trash_center =
+            dock_shelf_extent(snapshot) - metrics.shelf_padding - metrics.icon_size / 2.0;
+        // Shelf order past the applications is minimized windows, then
+        // folder/file stacks, then Trash (§ folder/file stacks left of the
+        // Trash; `rmac_dock::presentation::ShelfContent::project`).
         let minimized: Vec<_> = snapshot
             .content
             .places
             .iter()
             .filter(|entry| matches!(entry.id, rmac_dock::presentation::EntryId::Minimized(_)))
             .collect();
-        let count = minimized.len();
+        let stacks: Vec<_> = snapshot
+            .content
+            .places
+            .iter()
+            .filter(|entry| matches!(entry.id, rmac_dock::presentation::EntryId::Stack(_)))
+            .collect();
+        let pitch = metrics.icon_size + metrics.icon_gap;
+        let stack_count = stacks.len();
+        let trailing = minimized.len() + stack_count;
         targets.extend(
             minimized
                 .into_iter()
@@ -354,7 +484,18 @@ mod linux_wayland {
                     id: entry.id.clone(),
                     name: entry.label.clone(),
                     accessible: entry.accessible_label.clone(),
-                    center: trash_center - (count - index) as f32 * (ICON_SIZE + ICON_GAP),
+                    center: trash_center - (trailing - index) as f32 * pitch,
+                }),
+        );
+        targets.extend(
+            stacks
+                .into_iter()
+                .enumerate()
+                .map(|(index, entry)| KeyTarget {
+                    id: entry.id.clone(),
+                    name: entry.label.clone(),
+                    accessible: entry.accessible_label.clone(),
+                    center: trash_center - (stack_count - index) as f32 * pitch,
                 }),
         );
         targets.push(KeyTarget {
@@ -507,6 +648,10 @@ mod linux_wayland {
         content: rmac_dock::presentation::ShelfContent,
         /// A pressed kept app, becoming a drag once the pointer moves.
         tile_drag: Option<TileDragUi>,
+        /// A live insertion-point hint from a drag out of Apps
+        /// (`drag_endpoint::Command::Hover`, item 7): the fraction along
+        /// the kept-apps list the pointer last reported.
+        apps_drag_hover: Option<f32>,
         /// Neighbours sliding into place: (offset along the axis, start ms).
         slides: std::collections::BTreeMap<String, (f32, u64)>,
         /// Kept-app order shown until the settings watcher confirms a drop.
@@ -528,6 +673,16 @@ mod linux_wayland {
         trash_review: Option<rmac_dock_system::dispatch::ReviewedTrash>,
         /// ⌃F3: the tile with keyboard focus and the surface holding it.
         keyboard: Option<KeyboardMode>,
+        /// DockSettings::tile_size (DOCK-01), refreshed live every render.
+        tile_size: f32,
+        /// A live drag of the separator (DOCK-03), previewing a new size
+        /// before it commits to settings on release.
+        separator_drag: Option<SeparatorDragUi>,
+        /// The separator's own right-click menu (DOCK-02), independent of
+        /// `context_menu` since it has no `EntryId` of its own.
+        separator_menu: Option<SeparatorMenu>,
+        /// The open folder/file stack popover (item 1), if any.
+        stack_popover: Option<StackPopoverUi>,
     }
 
     impl Dock {
@@ -562,6 +717,7 @@ mod linux_wayland {
                 hide_generation: 0,
                 content: rmac_dock::presentation::ShelfContent::default(),
                 tile_drag: None,
+                apps_drag_hover: None,
                 slides: std::collections::BTreeMap::new(),
                 pending_pins: None,
                 removing: None,
@@ -573,7 +729,25 @@ mod linux_wayland {
                 option_held: false,
                 trash_review: None,
                 keyboard: None,
+                tile_size: surface.tile_size,
+                separator_drag: None,
+                separator_menu: None,
+                stack_popover: None,
             }
+        }
+
+        /// The runtime tile geometry (DOCK-01): the settings-driven resting
+        /// size, or a live separator-drag preview while one is in progress
+        /// (DOCK-03). The exclusive zone the compositor actually reserves
+        /// only updates once a drag commits (`open_dock`/`DockWindows`), so
+        /// this only ever affects what is drawn, never the work area, until
+        /// then.
+        fn metrics(&self) -> TileMetrics {
+            TileMetrics::new(
+                self.separator_drag
+                    .as_ref()
+                    .map_or(self.tile_size, |drag| drag.preview_size),
+            )
         }
 
         fn now_ms(&self) -> u64 {
@@ -583,8 +757,9 @@ mod linux_wayland {
         /// Distance of a surface point beyond the shelf's inner edge (towards
         /// the screen centre); negative inside the shelf.
         fn lift_of(&self, x: f32, y: f32) -> f32 {
+            let metrics = self.metrics();
             let (width, height) = self.surface_size;
-            let depth = SHELF_BOTTOM_MARGIN + SHELF_THICKNESS;
+            let depth = metrics.shelf_bottom_margin + metrics.shelf_thickness;
             match self.placement {
                 rmac_shell_settings::DockPlacement::Bottom => height - depth - y,
                 rmac_shell_settings::DockPlacement::Left => x - depth,
@@ -601,10 +776,11 @@ mod linux_wayland {
 
         /// Resting centre of kept-app tile `index` along the Dock axis.
         fn pinned_center(&self, index: usize) -> f32 {
+            let metrics = self.metrics();
             self.shelf_start
-                + SHELF_PADDING
-                + ICON_SIZE / 2.0
-                + index as f32 * (ICON_SIZE + ICON_GAP)
+                + metrics.shelf_padding
+                + metrics.icon_size / 2.0
+                + index as f32 * (metrics.icon_size + metrics.icon_gap)
         }
 
         fn begin_tile_drag(
@@ -614,6 +790,7 @@ mod linux_wayland {
             position: (f32, f32),
             cx: &mut Context<Self>,
         ) {
+            let metrics = self.metrics();
             let Some(model) = self.model_snapshot(cx) else {
                 return;
             };
@@ -640,9 +817,14 @@ mod linux_wayland {
                 .collect();
             let axis = self.axis_of(position.0, position.1);
             let lift = self.lift_of(position.0, position.1);
-            let Some(drag) =
-                rmac_dock::reorder::TileDrag::begin(source, centers, axis, lift, ICON_SIZE, true)
-            else {
+            let Some(drag) = rmac_dock::reorder::TileDrag::begin(
+                source,
+                centers,
+                axis,
+                lift,
+                metrics.icon_size,
+                true,
+            ) else {
                 return;
             };
             // Where the pointer sits inside the icon, so the lifted icon
@@ -651,16 +833,19 @@ mod linux_wayland {
             let (width, height) = self.surface_size;
             let tile_origin = match self.placement {
                 rmac_shell_settings::DockPlacement::Bottom => (
-                    center - ICON_SIZE / 2.0,
-                    height - SHELF_BOTTOM_MARGIN - SHELF_PADDING - ICON_SIZE,
+                    center - metrics.icon_size / 2.0,
+                    height
+                        - metrics.shelf_bottom_margin
+                        - metrics.shelf_padding
+                        - metrics.icon_size,
                 ),
                 rmac_shell_settings::DockPlacement::Left => (
-                    SHELF_BOTTOM_MARGIN + SHELF_PADDING,
-                    center - ICON_SIZE / 2.0,
+                    metrics.shelf_bottom_margin + metrics.shelf_padding,
+                    center - metrics.icon_size / 2.0,
                 ),
                 rmac_shell_settings::DockPlacement::Right => (
-                    width - SHELF_BOTTOM_MARGIN - SHELF_PADDING - ICON_SIZE,
-                    center - ICON_SIZE / 2.0,
+                    width - metrics.shelf_bottom_margin - metrics.shelf_padding - metrics.icon_size,
+                    center - metrics.icon_size / 2.0,
                 ),
             };
             self.tile_drag = Some(TileDragUi {
@@ -674,6 +859,7 @@ mod linux_wayland {
         }
 
         fn update_tile_drag(&mut self, position: (f32, f32), cx: &mut Context<Self>) {
+            let metrics = self.metrics();
             let axis = self.axis_of(position.0, position.1);
             let lift = self.lift_of(position.0, position.1);
             let now = self.now_ms();
@@ -695,7 +881,7 @@ mod linux_wayland {
             let after = ui.drag.preview_order();
             if before != after {
                 // Neighbours slide from where they were to their new slot.
-                let pitch = ICON_SIZE + ICON_GAP;
+                let pitch = metrics.icon_size + metrics.icon_gap;
                 for (new_slot, original) in after.iter().enumerate() {
                     if *original == ui.drag.source() {
                         continue;
@@ -908,6 +1094,278 @@ mod linux_wayland {
                     }
                 })
                 .detach();
+        }
+
+        /// A click on a stack tile: open its Fan/Grid popover, or close it
+        /// if it is already open for this stack.
+        fn toggle_stack_popover(
+            &mut self,
+            kind: rmac_shell_settings::DockStackKind,
+            anchor: f32,
+            cx: &mut Context<Self>,
+        ) {
+            if self
+                .stack_popover
+                .as_ref()
+                .is_some_and(|popover| popover.kind == kind)
+            {
+                self.close_stack_popover(cx);
+                return;
+            }
+            let Some(model) = self.status.read(cx).model().cloned() else {
+                return;
+            };
+            let (name, view_content_as, sort_by, path) = {
+                let Some(menu) = model.stack_context_menu(&kind) else {
+                    return;
+                };
+                let rmac_dock::StackActivation::OpenDirectory { path, .. } = menu.open else {
+                    // Unavailable (the stack's directory is gone): nothing
+                    // to show a popover for.
+                    return;
+                };
+                (menu.name, menu.view_content_as, menu.sort_by, path)
+            };
+            self.open_stack_popover(kind, name, path, view_content_as, sort_by, anchor, cx);
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn open_stack_popover(
+            &mut self,
+            kind: rmac_shell_settings::DockStackKind,
+            name: String,
+            path: PathBuf,
+            view_content_as: rmac_shell_settings::DockStackViewContentAs,
+            sort_by: rmac_shell_settings::DockStackSortBy,
+            anchor: f32,
+            cx: &mut Context<Self>,
+        ) {
+            let sort = stack_sort_order(sort_by);
+            let (events_tx, events_rx) = async_channel::bounded::<()>(1);
+            let watch_path = path.clone();
+            let watch = cx.spawn(async move |this, cx| {
+                let watcher = blocking::unblock(move || {
+                    rmac_desktop::watch(&watch_path, move || {
+                        let _ = events_tx.try_send(());
+                    })
+                })
+                .await;
+                let Ok(_watcher) = watcher else {
+                    return;
+                };
+                loop {
+                    let scan_path = path.clone();
+                    let result =
+                        blocking::unblock(move || rmac_desktop::scan(&scan_path, sort)).await;
+                    let updated = this.update(cx, |dock, cx| {
+                        let Some(popover) = dock.stack_popover.as_mut() else {
+                            return false;
+                        };
+                        popover.snapshot = result.ok();
+                        cx.notify();
+                        true
+                    });
+                    if !matches!(updated, Ok(true)) {
+                        return;
+                    }
+                    if events_rx.recv().await.is_err() {
+                        return;
+                    }
+                    // Coalesce a burst of filesystem events (a copy, an
+                    // extraction) into one rescan, as the Desktop watcher
+                    // does (`shell/bins/rmac-wallpaper`).
+                    async_io::Timer::after(Duration::from_millis(75)).await;
+                    while events_rx.try_recv().is_ok() {}
+                }
+            });
+            self.stack_popover = Some(StackPopoverUi {
+                kind,
+                name,
+                view_content_as,
+                anchor,
+                snapshot: None,
+                _watch: watch,
+            });
+            self.context_menu = None;
+            self.separator_menu = None;
+            cx.notify();
+        }
+
+        fn close_stack_popover(&mut self, cx: &mut Context<Self>) {
+            if self.stack_popover.take().is_some() {
+                cx.notify();
+            }
+        }
+
+        /// A click on an item inside the popover: open it with its default
+        /// handler (the Mac opens a Stack item exactly like a Finder
+        /// double-click) and close the popover, as the Mac does.
+        fn open_stack_popover_item(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+            self.close_stack_popover(cx);
+            cx.background_executor()
+                .spawn(async move {
+                    if let Err(error) = rmac_app_launch::open_item(path.clone()).await {
+                        eprintln!("could not open {path:?}: {error}");
+                    }
+                })
+                .detach();
+        }
+
+        /// The separator's right-click menu (DOCK-02): Turn Hiding On/Off,
+        /// Turn Magnification On/Off, Position on Screen ▸, Minimise Using
+        /// ▸, Dock Settings….
+        fn open_separator_menu(&mut self, anchor: f32, cx: &mut Context<Self>) {
+            let Some(dock) = self
+                .status
+                .read(cx)
+                .snapshot()
+                .map(|snapshot| snapshot.settings.clone())
+            else {
+                return;
+            };
+            self.context_menu = None;
+            self.close_stack_popover(cx);
+            self.separator_menu = Some(SeparatorMenu {
+                anchor,
+                dock,
+                submenu_open: None,
+            });
+            self.input_region = None;
+            cx.notify();
+        }
+
+        fn close_separator_menu(&mut self, cx: &mut Context<Self>) {
+            if self.separator_menu.take().is_some() {
+                self.input_region = None;
+                cx.notify();
+            }
+        }
+
+        /// A separator-menu row that flips one `DockSettings` field
+        /// directly (load, mutate, save): the same shape as
+        /// `toggle_dock_hiding` and `rmac_dock_system::backend`'s
+        /// `update_pins_in_store`, since these are plain settings writes
+        /// the live Dock already reacts to, not model-validated commands.
+        fn write_dock_settings(
+            mutate: impl FnOnce(&mut rmac_shell_settings::DockSettings) + Send + 'static,
+            cx: &mut Context<Self>,
+        ) {
+            cx.background_executor()
+                .spawn(async move {
+                    let result = blocking::unblock(move || {
+                        let store = rmac_shell_settings::ShellSettingsStore::from_environment()?;
+                        let mut settings = store.load()?.settings;
+                        mutate(&mut settings.dock);
+                        store.save(&settings)
+                    })
+                    .await;
+                    if let Err(error) = result {
+                        eprintln!("could not change the Dock's settings: {error}");
+                    }
+                })
+                .detach();
+        }
+
+        fn toggle_hiding_from_menu(&mut self, cx: &mut Context<Self>) {
+            self.close_separator_menu(cx);
+            toggle_dock_hiding(cx);
+        }
+
+        fn toggle_magnification_from_menu(&mut self, cx: &mut Context<Self>) {
+            self.close_separator_menu(cx);
+            Self::write_dock_settings(|dock| dock.magnification = !dock.magnification, cx);
+        }
+
+        fn set_placement_from_menu(
+            &mut self,
+            placement: rmac_shell_settings::DockPlacement,
+            cx: &mut Context<Self>,
+        ) {
+            self.close_separator_menu(cx);
+            Self::write_dock_settings(move |dock| dock.placement = placement, cx);
+        }
+
+        fn set_minimize_effect_from_menu(
+            &mut self,
+            effect: rmac_shell_settings::DockMinimizeEffect,
+            cx: &mut Context<Self>,
+        ) {
+            self.close_separator_menu(cx);
+            Self::write_dock_settings(move |dock| dock.minimize_effect = effect, cx);
+        }
+
+        /// Dock Settings…: open System Settings at Desktop & Dock, the way
+        /// `launcher-app`'s Settings surface bridge opens any other pane.
+        fn open_dock_settings(&mut self, cx: &mut Context<Self>) {
+            self.close_separator_menu(cx);
+            cx.background_executor()
+                .spawn(async move {
+                    let executable = std::env::current_exe()
+                        .ok()
+                        .map(|path| path.with_file_name("rmac-system-settings"))
+                        .unwrap_or_else(|| PathBuf::from("/usr/bin/rmac-system-settings"));
+                    if let Err(error) = std::process::Command::new(executable)
+                        .arg("--pane")
+                        .arg("desktop-dock")
+                        .spawn()
+                    {
+                        eprintln!("could not open Desktop & Dock settings: {error}");
+                    }
+                })
+                .detach();
+        }
+
+        /// A press on the separator's drag/resize hit target (DOCK-03).
+        fn begin_separator_drag(&mut self, position: (f32, f32), cx: &mut Context<Self>) {
+            self.close_separator_menu(cx);
+            self.close_stack_popover(cx);
+            self.context_menu = None;
+            let lift = self.lift_of(position.0, position.1);
+            let size = self.tile_size;
+            self.separator_drag = Some(SeparatorDragUi {
+                start_lift: lift,
+                start_size: size,
+                preview_size: size,
+            });
+            self.input_region = None;
+            cx.notify();
+        }
+
+        /// A pointer move while the separator is held: live-preview a new
+        /// tile size (rendering only -- the compositor's reserved work
+        /// area updates once the drag commits, same as any other Dock
+        /// settings change).
+        fn update_separator_drag(&mut self, position: (f32, f32), cx: &mut Context<Self>) {
+            let lift = self.lift_of(position.0, position.1);
+            let Some(drag) = self.separator_drag.as_mut() else {
+                return;
+            };
+            let delta = lift - drag.start_lift;
+            // Shelf thickness is icon_size * 1.3125 (the tile plus 2x its
+            // own padding ratio, TileMetrics::new), so resizing the shelf
+            // by `delta` moves the tile size by roughly that much.
+            let next = (drag.start_size + delta / 1.3125).clamp(
+                rmac_shell_settings::MIN_DOCK_TILE_SIZE,
+                rmac_shell_settings::MAX_DOCK_TILE_SIZE,
+            );
+            if (next - drag.preview_size).abs() > f32::EPSILON {
+                drag.preview_size = next;
+                cx.notify();
+            }
+        }
+
+        /// Release: commit the previewed size to settings, unless it never
+        /// moved enough to count as a resize rather than a click.
+        fn finish_separator_drag(&mut self, cx: &mut Context<Self>) {
+            let Some(drag) = self.separator_drag.take() else {
+                return;
+            };
+            cx.notify();
+            if (drag.preview_size - drag.start_size).abs() < 0.5 {
+                return;
+            }
+            let size = drag.preview_size;
+            Self::write_dock_settings(move |dock| dock.tile_size = size, cx);
         }
 
         /// Keep an application dragged out of Apps (crates/app-drawer) in
@@ -1751,6 +2209,11 @@ mod linux_wayland {
             };
             let keyboard_focus_id = keyboard_focus.as_ref().map(|target| target.id.clone());
             self.content = content;
+            // DOCK-01: the settings-driven resting tile size, live-reactive
+            // like every other Dock setting; a separator drag (DOCK-03)
+            // previews a different size on top of it without touching this.
+            self.tile_size = dock_settings.tile_size;
+            let metrics = self.metrics();
             // Launch and attention bounces follow the authoritative model:
             // a window appearing ends a launch, urgency asks for attention.
             let now = self.now_ms();
@@ -1791,6 +2254,16 @@ mod linux_wayland {
                 .places
                 .iter()
                 .filter(|entry| matches!(entry.id, rmac_dock::presentation::EntryId::Minimized(_)))
+                .cloned()
+                .collect();
+            // Folder/file stacks (§ folder/file stacks left of the Trash):
+            // between the minimized group and Trash, newest-kept first, the
+            // order `rmac_dock::presentation::ShelfContent::project` gives.
+            let stack_entries: Vec<rmac_dock::presentation::Entry> = self
+                .content
+                .places
+                .iter()
+                .filter(|entry| matches!(entry.id, rmac_dock::presentation::EntryId::Stack(_)))
                 .cloned()
                 .collect();
             let trash = model
@@ -1866,8 +2339,9 @@ mod linux_wayland {
             }
             let separates_running = pinned_count > 0 && pinned_count < entries.len();
             let separator_count = usize::from(separates_running) + usize::from(!entries.is_empty());
-            // Minimized tiles sit between the application group and Trash.
-            let item_count = entries.len() + minimized_entries.len() + 1;
+            // Minimized tiles, then stacks, sit between the application
+            // group and Trash.
+            let item_count = entries.len() + minimized_entries.len() + stack_entries.len() + 1;
             let child_count = item_count + separator_count;
             let window_size = window.bounds().size;
             let surface_width = f32::from(window_size.width);
@@ -1878,14 +2352,14 @@ mod linux_wayland {
             } else {
                 surface_height
             };
-            let shelf_extent = ICON_SIZE * item_count as f32
-                + SEPARATOR_SLOT * separator_count as f32
-                + ICON_GAP * child_count.saturating_sub(1) as f32
-                + 2.0 * SHELF_PADDING;
+            let shelf_extent = metrics.icon_size * item_count as f32
+                + metrics.separator_slot * separator_count as f32
+                + metrics.icon_gap * child_count.saturating_sub(1) as f32
+                + 2.0 * metrics.shelf_padding;
             let shelf_start = (axis - shelf_extent) / 2.0;
             self.shelf_start = shelf_start;
             self.surface_size = (surface_width, surface_height);
-            let trash_center = shelf_extent - SHELF_PADDING - ICON_SIZE / 2.0;
+            let trash_center = shelf_extent - metrics.shelf_padding - metrics.icon_size / 2.0;
             let menu_anchor = self.context_menu.as_ref().map(|menu| menu.anchor);
             // (menu start along the Dock axis, pointer tip from that start,
             // menu width)
@@ -1900,14 +2374,17 @@ mod linux_wayland {
             let dragging = self
                 .tile_drag
                 .as_ref()
-                .is_some_and(|ui| ui.drag.is_active());
+                .is_some_and(|ui| ui.drag.is_active())
+                || self.separator_drag.is_some();
             // Keyboard mode also captures the next click anywhere, which
             // ends it, so the invisible focus surface can never keep the
             // keyboard after the user has moved on.
             let modal = menu_geometry.is_some()
                 || self.trash_review.is_some()
                 || dragging
-                || self.keyboard.is_some();
+                || self.keyboard.is_some()
+                || self.separator_menu.is_some()
+                || self.stack_popover.is_some();
             let input_region = (shelf_start, shelf_extent, self.hidden, modal);
             if self.input_region != Some(input_region) {
                 let shelf_bounds = match (self.placement, self.hidden) {
@@ -1924,19 +2401,19 @@ mod linux_wayland {
                         size: Size::new(px(2.0), px(shelf_extent)),
                     },
                     (rmac_shell_settings::DockPlacement::Bottom, false) => Bounds {
-                        origin: point(px(shelf_start), px(surface_height - EXCLUSIVE_ZONE)),
-                        size: Size::new(px(shelf_extent), px(EXCLUSIVE_ZONE)),
+                        origin: point(px(shelf_start), px(surface_height - metrics.exclusive_zone)),
+                        size: Size::new(px(shelf_extent), px(metrics.exclusive_zone)),
                     },
                     (rmac_shell_settings::DockPlacement::Left, false) => Bounds {
                         origin: point(px(0.0), px(shelf_start)),
-                        size: Size::new(px(EXCLUSIVE_ZONE), px(shelf_extent)),
+                        size: Size::new(px(metrics.exclusive_zone), px(shelf_extent)),
                     },
                     (rmac_shell_settings::DockPlacement::Right, false) => Bounds {
                         origin: point(
-                            px(f32::from(window_size.width) - EXCLUSIVE_ZONE),
+                            px(f32::from(window_size.width) - metrics.exclusive_zone),
                             px(shelf_start),
                         ),
-                        size: Size::new(px(EXCLUSIVE_ZONE), px(shelf_extent)),
+                        size: Size::new(px(metrics.exclusive_zone), px(shelf_extent)),
                     },
                 };
                 // A native menu owns pointer interaction until it is
@@ -1958,12 +2435,16 @@ mod linux_wayland {
                 .as_ref()
                 .map(|target| (target.center, target.name.clone()))
                 .or_else(|| self.hovered_item.clone());
-            let tooltip = (!self.hidden && self.context_menu.is_none() && !dragging)
+            let tooltip = (!self.hidden
+                && self.context_menu.is_none()
+                && self.separator_menu.is_none()
+                && self.stack_popover.is_none()
+                && !dragging)
                 .then_some(tooltip_item.as_ref())
                 .flatten()
                 .map(|(relative_center, label)| {
                     let icon_center = shelf_start + *relative_center;
-                    let tooltip_bottom = TOOLTIP_BOTTOM.max(
+                    let tooltip_bottom = metrics.tooltip_bottom.max(
                         magnified_icon_size(
                             *relative_center,
                             Some(*relative_center),
@@ -1993,10 +2474,10 @@ mod linux_wayland {
                             .left(px(icon_center - TOOLTIP_WIDTH / 2.0))
                             .bottom(px(tooltip_bottom)),
                         rmac_shell_settings::DockPlacement::Left => tooltip
-                            .left(px(EXCLUSIVE_ZONE + 8.0))
+                            .left(px(metrics.exclusive_zone + 8.0))
                             .top(px(icon_center - 18.0)),
                         rmac_shell_settings::DockPlacement::Right => tooltip
-                            .right(px(EXCLUSIVE_ZONE + 8.0))
+                            .right(px(metrics.exclusive_zone + 8.0))
                             .top(px(icon_center - 18.0)),
                     }
                 });
@@ -2022,7 +2503,10 @@ mod linux_wayland {
                     }
                 }))
                 .on_click(cx.listener(|this, _, _, cx| {
-                    if this.context_menu.take().is_some() {
+                    let mut changed = this.context_menu.take().is_some();
+                    changed |= this.separator_menu.take().is_some();
+                    changed |= this.stack_popover.take().is_some();
+                    if changed {
                         this.input_region = None;
                         cx.notify();
                     }
@@ -2034,6 +2518,7 @@ mod linux_wayland {
                             cx.notify();
                         }
                         this.finish_tile_drag(event.modifiers, cx);
+                        this.finish_separator_drag(cx);
                     }),
                 )
                 .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
@@ -2049,6 +2534,16 @@ mod linux_wayland {
                             this.slides.clear();
                             this.input_region = None;
                             cx.notify();
+                        }
+                    }
+                    if this.separator_drag.is_some() {
+                        if event.pressed_button == Some(MouseButton::Left) {
+                            this.update_separator_drag(
+                                (f32::from(event.position.x), f32::from(event.position.y)),
+                                cx,
+                            );
+                        } else {
+                            this.finish_separator_drag(cx);
                         }
                     }
                     if this.option_held != event.modifiers.alt {
@@ -2074,26 +2569,26 @@ mod linux_wayland {
                 rmac_shell_settings::DockPlacement::Bottom => root
                     .items_end()
                     .justify_center()
-                    .pb(px(SHELF_BOTTOM_MARGIN)),
+                    .pb(px(metrics.shelf_bottom_margin)),
                 rmac_shell_settings::DockPlacement::Left => root
                     .items_start()
                     .justify_center()
-                    .pl(px(SHELF_BOTTOM_MARGIN)),
+                    .pl(px(metrics.shelf_bottom_margin)),
                 rmac_shell_settings::DockPlacement::Right => root
                     .items_end()
                     .justify_center()
-                    .pr(px(SHELF_BOTTOM_MARGIN)),
+                    .pr(px(metrics.shelf_bottom_margin)),
             };
             let shelf = div()
                 .flex()
-                .gap(px(ICON_GAP))
-                .p(px(SHELF_PADDING))
-                .rounded(px(tokens::dock_shelf_radius(ICON_SIZE)))
+                .gap(px(metrics.icon_gap))
+                .p(px(metrics.shelf_padding))
+                .rounded(px(tokens::dock_shelf_radius(metrics.icon_size)))
                 .bg(rgba(tokens::transparent()))
                 .relative()
                 .opacity(if hide_progress >= 1.0 { 0.0 } else { 1.0 });
             // Auto-hide slides the shelf off its screen edge.
-            let slide = hide_progress * EXCLUSIVE_ZONE;
+            let slide = hide_progress * metrics.exclusive_zone;
             let shelf = match self.placement {
                 rmac_shell_settings::DockPlacement::Bottom => shelf.top(px(slide)),
                 rmac_shell_settings::DockPlacement::Left => shelf.left(px(-slide)),
@@ -2127,13 +2622,14 @@ mod linux_wayland {
                     // Trash is the rightmost item, so minimized tiles count
                     // back from it without touching application geometry.
                     let center = trash_center
-                        - (minimized_entries.len() - index) as f32 * (ICON_SIZE + ICON_GAP);
+                        - (minimized_entries.len() - index) as f32
+                            * (metrics.icon_size + metrics.icon_gap);
                     let visual_size = magnified_icon_size(
                         center,
                         self.hovered_item.as_ref().map(|(center, _)| *center),
                         &dock_settings,
                     );
-                    let visual_offset = (ICON_SIZE - visual_size) / 2.0;
+                    let visual_offset = (metrics.icon_size - visual_size) / 2.0;
                     let thumbnail = minimized_icon_path(entry);
                     let badge = minimized_badge_path(entry);
                     // Prefer the captured thumbnail; without one, show the
@@ -2148,15 +2644,15 @@ mod linux_wayland {
                         .role(Role::Button)
                         .aria_label(entry.accessible_label.clone())
                         .relative()
-                        .w(px(ICON_SIZE))
-                        .h(px(ICON_SIZE))
+                        .w(px(metrics.icon_size))
+                        .h(px(metrics.icon_size))
                         .flex()
                         .items_center()
                         .justify_center()
                         .text_color(rgba(tokens::primary_text()))
                         .text_lg()
                         .font_weight(FontWeight::BOLD)
-                        .rounded(px(tokens::dock_tile_radius(ICON_SIZE)))
+                        .rounded(px(tokens::dock_tile_radius(metrics.icon_size)))
                         .cursor_pointer()
                         .on_mouse_down(
                             MouseButton::Left,
@@ -2256,14 +2752,174 @@ mod linux_wayland {
                     Some(tile.into_any_element())
                 })
                 .collect();
+            let stack_count = stack_entries.len();
+            let stack_children: Vec<gpui::AnyElement> = stack_entries
+                .iter()
+                .enumerate()
+                .filter_map(|(index, entry)| {
+                    let kind = match &entry.id {
+                        rmac_dock::presentation::EntryId::Stack(kind) => kind.clone(),
+                        _ => return None,
+                    };
+                    // Stacks sit between the minimized group and Trash,
+                    // counting back from Trash exactly like a minimized
+                    // tile does (§ folder/file stacks left of the Trash).
+                    let center = trash_center
+                        - (stack_count - index) as f32 * (metrics.icon_size + metrics.icon_gap);
+                    let visual_size = magnified_icon_size(
+                        center,
+                        self.hovered_item.as_ref().map(|(center, _)| *center),
+                        &dock_settings,
+                    );
+                    let visual_offset = (metrics.icon_size - visual_size) / 2.0;
+                    let icon_path = stack_icon_path(&kind);
+                    let keyboard_focused = keyboard_focus_id.as_ref() == Some(&entry.id);
+                    let popover_open = self
+                        .stack_popover
+                        .as_ref()
+                        .is_some_and(|popover| popover.kind == kind);
+                    let menu_open = menu_anchor == Some(center);
+                    let tooltip_label = entry.label.clone();
+                    let mut tile = div()
+                        .id(format!("dock-stack-{}-{index}", self.display_id))
+                        .role(Role::Button)
+                        .aria_label(entry.accessible_label.clone())
+                        .relative()
+                        .w(px(metrics.icon_size))
+                        .h(px(metrics.icon_size))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(tokens::dock_tile_radius(metrics.icon_size)))
+                        .cursor_pointer()
+                        .on_mouse_down(MouseButton::Left, {
+                            let kind = kind.clone();
+                            cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                this.toggle_stack_popover(kind.clone(), center, cx);
+                            })
+                        })
+                        .on_mouse_down(MouseButton::Right, {
+                            let kind = kind.clone();
+                            cx.listener(move |this, _, _, cx| {
+                                cx.stop_propagation();
+                                let session = this.status.read(cx).model().and_then(|model| {
+                                    model.stack_context_menu(&kind).and_then(|menu| {
+                                        rmac_dock::menu::Session::stack(&menu).ok()
+                                    })
+                                });
+                                this.close_stack_popover(cx);
+                                this.context_menu = session.map(|session| DockMenu {
+                                    anchor: center,
+                                    session,
+                                    submenu_open: false,
+                                    login: None,
+                                });
+                                this.input_region = None;
+                                cx.notify();
+                            })
+                        })
+                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                            if *hovered {
+                                this.hovered_item = Some((center, tooltip_label.clone()));
+                                cx.notify();
+                            } else if this
+                                .hovered_item
+                                .as_ref()
+                                .is_some_and(|(candidate, _)| *candidate == center)
+                            {
+                                this.hovered_item = None;
+                                cx.notify();
+                            }
+                        }));
+                    let mut visual = div()
+                        .absolute()
+                        .w(px(visual_size))
+                        .h(px(visual_size))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(tokens::dock_tile_radius(visual_size)));
+                    visual = match self.placement {
+                        rmac_shell_settings::DockPlacement::Bottom => {
+                            visual.left(px(visual_offset)).bottom_0()
+                        }
+                        rmac_shell_settings::DockPlacement::Left => {
+                            visual.left_0().top(px(visual_offset))
+                        }
+                        rmac_shell_settings::DockPlacement::Right => {
+                            visual.right_0().top(px(visual_offset))
+                        }
+                    };
+                    if let Some(path) = icon_path {
+                        visual = visual.child(
+                            img(path)
+                                .w(px(visual_size * ICON_ART_SCALE))
+                                .h(px(visual_size * ICON_ART_SCALE))
+                                .rounded(px(tokens::dock_tile_radius(visual_size))),
+                        );
+                    }
+                    if popover_open || menu_open || keyboard_focused {
+                        visual = visual.child(
+                            div()
+                                .absolute()
+                                .left_0()
+                                .top_0()
+                                .size_full()
+                                .rounded(px(tokens::dock_tile_radius(visual_size)))
+                                .bg(rgba(MENU_OPEN_DIM)),
+                        );
+                    }
+                    tile = tile.child(visual);
+                    Some(tile.into_any_element())
+                })
+                .collect();
+            let separator_anchor = entries.len() as f32 * (metrics.icon_size + metrics.icon_gap)
+                + metrics.shelf_padding
+                + if separates_running {
+                    metrics.separator_slot + metrics.icon_gap
+                } else {
+                    0.0
+                };
+            // Item 7: a drag out of Apps previews where it would land as a
+            // thin insertion-point bar between the two kept apps nearest
+            // the pointer, live-updated from drag_endpoint's Hover hint.
+            let apps_drag_gap = self.apps_drag_hover.map(|fraction| {
+                const BAR_WIDTH: f32 = 3.0;
+                let index = ((fraction.clamp(0.0, 1.0) * pinned_count as f32).round() as usize)
+                    .min(pinned_count);
+                let boundary = (metrics.shelf_padding
+                    + index as f32 * (metrics.icon_size + metrics.icon_gap)
+                    - metrics.icon_gap / 2.0
+                    - BAR_WIDTH / 2.0)
+                    .max(0.0);
+                let mut bar = div()
+                    .absolute()
+                    .rounded(px(BAR_WIDTH / 2.0))
+                    .bg(rgba(tokens::accent()));
+                bar = match self.placement {
+                    rmac_shell_settings::DockPlacement::Bottom => bar
+                        .w(px(BAR_WIDTH))
+                        .h(px(metrics.icon_size))
+                        .left(px(boundary))
+                        .bottom_0(),
+                    rmac_shell_settings::DockPlacement::Left
+                    | rmac_shell_settings::DockPlacement::Right => bar
+                        .h(px(BAR_WIDTH))
+                        .w(px(metrics.icon_size))
+                        .top(px(boundary))
+                        .left_0(),
+                };
+                bar.into_any_element()
+            });
             root.child(
                 shelf
                     .children(entries.into_iter().enumerate().flat_map(|(index, entry)| {
-                        let relative_center = SHELF_PADDING
-                            + ICON_SIZE / 2.0
-                            + index as f32 * (ICON_SIZE + ICON_GAP)
+                        let relative_center = metrics.shelf_padding
+                            + metrics.icon_size / 2.0
+                            + index as f32 * (metrics.icon_size + metrics.icon_gap)
                             + if separates_running && index >= pinned_count {
-                                SEPARATOR_SLOT + ICON_GAP
+                                metrics.separator_slot + metrics.icon_gap
                             } else {
                                 0.0
                             };
@@ -2288,8 +2944,8 @@ mod linux_wayland {
                             self.hovered_item.as_ref().map(|(center, _)| *center),
                             &dock_settings,
                         );
-                        let visual_offset = (ICON_SIZE - visual_size) / 2.0;
-                        let lift = self.bounces.lift(&app_id, now, ICON_SIZE);
+                        let visual_offset = (metrics.icon_size - visual_size) / 2.0;
+                        let lift = self.bounces.lift(&app_id, now, metrics.icon_size);
                         let slide = self.slides.get(&app_id).map_or(0.0, |(offset, started)| {
                             offset
                                 * (1.0
@@ -2309,8 +2965,8 @@ mod linux_wayland {
                             .role(Role::Button)
                             .aria_label(entry.accessible_label)
                             .relative()
-                            .w(px(ICON_SIZE))
-                            .h(px(ICON_SIZE))
+                            .w(px(metrics.icon_size))
+                            .h(px(metrics.icon_size))
                             .flex()
                             .items_center()
                             .justify_center()
@@ -2471,6 +3127,10 @@ mod linux_wayland {
                         }
                         item = item.child(visual);
                         let context_app_id = app_id.clone();
+                        // The Files tile's menu matches the Mac Finder
+                        // tile's (DOCK-05): no Options, no Quit.
+                        let is_finder = context_app_id.trim_end_matches(".desktop")
+                            == rmac_apps::identity::FILES;
                         item = item.on_mouse_down(
                             MouseButton::Right,
                             cx.listener(move |this, _, _, cx| {
@@ -2478,9 +3138,15 @@ mod linux_wayland {
                                 let session = {
                                     let status = this.status.read(cx);
                                     status.model().and_then(|model| {
-                                        model.context_menu(&context_app_id).and_then(|menu| {
-                                            rmac_dock::menu::Session::context(&menu).ok()
-                                        })
+                                        if is_finder {
+                                            model.finder_context_menu().and_then(|menu| {
+                                                rmac_dock::menu::Session::finder(&menu).ok()
+                                            })
+                                        } else {
+                                            model.context_menu(&context_app_id).and_then(|menu| {
+                                                rmac_dock::menu::Session::context(&menu).ok()
+                                            })
+                                        }
                                     })
                                 };
                                 this.context_menu = session.map(|session| DockMenu {
@@ -2490,7 +3156,9 @@ mod linux_wayland {
                                     login: None,
                                 });
                                 this.input_region = None;
-                                this.load_login_state(&context_app_id, cx);
+                                if !is_finder {
+                                    this.load_login_state(&context_app_id, cx);
+                                }
                                 cx.notify();
                             }),
                         );
@@ -2512,12 +3180,12 @@ mod linux_wayland {
                             // the frontmost app gets no special mark.
                             let indicator = div()
                                 .absolute()
-                                .w(px(INDICATOR_SIZE))
-                                .h(px(INDICATOR_SIZE))
+                                .w(px(metrics.indicator_size))
+                                .h(px(metrics.indicator_size))
                                 .rounded_full()
                                 .bg(rgba(tokens::dock_indicator()));
-                            let outside = -(INDICATOR_OFFSET + INDICATOR_SIZE);
-                            let along = (ICON_SIZE - INDICATOR_SIZE) / 2.0;
+                            let outside = -(metrics.indicator_offset + metrics.indicator_size);
+                            let along = (metrics.icon_size - metrics.indicator_size) / 2.0;
                             let indicator = match self.placement {
                                 rmac_shell_settings::DockPlacement::Bottom => {
                                     indicator.bottom(px(outside)).left(px(along))
@@ -2538,12 +3206,13 @@ mod linux_wayland {
                         // only from what a running app published.
                         let published = running.then(|| launcher.get(&app_id).copied()).flatten();
                         if let Some(progress) = published.and_then(|entry| entry.progress()) {
-                            let inset = (ICON_SIZE - ICON_SIZE * ICON_SQUIRCLE) / 2.0;
-                            let width = ICON_SIZE * ICON_SQUIRCLE * 0.8;
+                            let inset =
+                                (metrics.icon_size - metrics.icon_size * ICON_SQUIRCLE) / 2.0;
+                            let width = metrics.icon_size * ICON_SQUIRCLE * 0.8;
                             item = item.child(
                                 div()
                                     .absolute()
-                                    .left(px((ICON_SIZE - width) / 2.0))
+                                    .left(px((metrics.icon_size - width) / 2.0))
                                     .bottom(px(inset + 4.0 + lift))
                                     .w(px(width))
                                     .h(px(PROGRESS_HEIGHT))
@@ -2562,7 +3231,8 @@ mod linux_wayland {
                         }
                         if let Some(badge) = published.and_then(|entry| entry.badge()) {
                             // Centred on the squircle's top-right corner.
-                            let corner = (ICON_SIZE - ICON_SIZE * ICON_SQUIRCLE) / 2.0;
+                            let corner =
+                                (metrics.icon_size - metrics.icon_size * ICON_SQUIRCLE) / 2.0;
                             item = item.child(
                                 div()
                                     .absolute()
@@ -2584,33 +3254,39 @@ mod linux_wayland {
                         }
                         let mut children: Vec<gpui::AnyElement> = Vec::with_capacity(2);
                         if separates_running && index == pinned_count {
-                            children.push(dock_separator(self.placement));
+                            children.push(dock_separator(self.placement, metrics, None));
                         }
                         children.push(item.into_any_element());
                         children
                     }))
                     .when(!model.items.is_empty(), |shelf| {
-                        shelf.child(dock_separator(self.placement))
+                        shelf.child(dock_separator(
+                            self.placement,
+                            metrics,
+                            Some((separator_anchor, cx)),
+                        ))
                     })
                     .children(minimized_children)
+                    .children(stack_children)
+                    .children(apps_drag_gap)
                     .child({
                         let visual_size = magnified_icon_size(
                             trash_center,
                             self.hovered_item.as_ref().map(|(center, _)| *center),
                             &dock_settings,
                         );
-                        let visual_offset = (ICON_SIZE - visual_size) / 2.0;
+                        let visual_offset = (metrics.icon_size - visual_size) / 2.0;
                         let mut trash = div()
                             .id(format!("dock-trash-{}", self.display_id))
                             .role(Role::Button)
                             .aria_label(trash_label)
                             .relative()
-                            .w(px(ICON_SIZE))
-                            .h(px(ICON_SIZE))
+                            .w(px(metrics.icon_size))
+                            .h(px(metrics.icon_size))
                             .flex()
                             .items_center()
                             .justify_center()
-                            .rounded(px(tokens::dock_tile_radius(ICON_SIZE)))
+                            .rounded(px(tokens::dock_tile_radius(metrics.icon_size)))
                             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                                 if *hovered {
                                     this.hovered_item = Some((trash_center, "Trash".into()));
@@ -2728,14 +3404,14 @@ mod linux_wayland {
                         let state = ui.drag.state();
                         let left = ui.pointer.0 - ui.grab.0;
                         let top = ui.pointer.1 - ui.grab.1;
-                        let art = ICON_SIZE * ICON_ART_SCALE;
-                        let inset = (ICON_SIZE - art) / 2.0;
+                        let art = metrics.icon_size * ICON_ART_SCALE;
+                        let inset = (metrics.icon_size - art) / 2.0;
                         div()
                             .absolute()
                             .left(px(left))
                             .top(px(top))
-                            .w(px(ICON_SIZE))
-                            .h(px(ICON_SIZE))
+                            .w(px(metrics.icon_size))
+                            .h(px(metrics.icon_size))
                             .children(ui.icon.clone().map(|path| {
                                 img(path)
                                     .absolute()
@@ -2748,8 +3424,8 @@ mod linux_wayland {
                                 icon.child(
                                     div()
                                         .absolute()
-                                        .left(px(ICON_SIZE / 2.0 - TOOLTIP_WIDTH / 2.0))
-                                        .bottom(px(ICON_SIZE + 12.0))
+                                        .left(px(metrics.icon_size / 2.0 - TOOLTIP_WIDTH / 2.0))
+                                        .bottom(px(metrics.icon_size + 12.0))
                                         .w(px(TOOLTIP_WIDTH))
                                         .flex()
                                         .justify_center()
@@ -2774,8 +3450,8 @@ mod linux_wayland {
                     - (now.saturating_sub(removed.started_ms) as f32
                         / rmac_dock::reorder::REMOVE_FADE_MS as f32)
                         .min(1.0);
-                let art = ICON_SIZE * ICON_ART_SCALE;
-                let inset = (ICON_SIZE - art) / 2.0;
+                let art = metrics.icon_size * ICON_ART_SCALE;
+                let inset = (metrics.icon_size - art) / 2.0;
                 div()
                     .absolute()
                     .left(px(removed.origin.0 + inset))
@@ -2803,10 +3479,27 @@ mod linux_wayland {
                 self.context_menu.as_ref(),
                 self.placement,
                 menu_geometry,
+                metrics,
                 axis,
                 self.display_id,
                 self.option_held,
                 window,
+                cx,
+            ))
+            .children(render_stack_popover(
+                self.stack_popover.as_ref(),
+                self.placement,
+                metrics,
+                shelf_start,
+                self.display_id,
+                cx,
+            ))
+            .children(render_separator_menu(
+                self.separator_menu.as_ref(),
+                self.placement,
+                metrics,
+                shelf_start,
+                self.display_id,
                 cx,
             ))
         }
@@ -3028,6 +3721,7 @@ mod linux_wayland {
         menu: Option<&DockMenu>,
         placement: rmac_shell_settings::DockPlacement,
         geometry: Option<(f32, f32, f32)>,
+        metrics: TileMetrics,
         axis_length: f32,
         display_id: u64,
         option_held: bool,
@@ -3048,7 +3742,7 @@ mod linux_wayland {
             menu.session.accessible_title().to_owned(),
             width,
         );
-        let offset = EXCLUSIVE_ZONE + MENU_SHELF_GAP;
+        let offset = metrics.exclusive_zone + MENU_SHELF_GAP;
         panel = match placement {
             rmac_shell_settings::DockPlacement::Bottom => {
                 panel.left(px(start)).bottom(px(offset)).child(
@@ -3234,6 +3928,392 @@ mod linux_wayland {
         panels
     }
 
+    /// A folder/file stack's Fan or Grid popover (item 1). `Automatic`
+    /// resolves to Fan, macOS's default for a small stack; `List` has no
+    /// distinct rmac layout yet and also falls back to Grid.
+    fn render_stack_popover(
+        popover: Option<&StackPopoverUi>,
+        placement: rmac_shell_settings::DockPlacement,
+        metrics: TileMetrics,
+        shelf_start: f32,
+        display_id: u64,
+        cx: &Context<Dock>,
+    ) -> Vec<gpui::AnyElement> {
+        let Some(popover) = popover else {
+            return Vec::new();
+        };
+        let grid = matches!(
+            popover.view_content_as,
+            rmac_shell_settings::DockStackViewContentAs::Grid
+                | rmac_shell_settings::DockStackViewContentAs::List
+        );
+        let items: Vec<&rmac_desktop::Item> = popover
+            .snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.items.iter().collect())
+            .unwrap_or_default();
+        let total = items.len();
+        let shown = &items[..total.min(STACK_POPOVER_MAX_ITEMS)];
+
+        let mut panel = div()
+            .id(format!("dock-stack-popover-{display_id}"))
+            .role(Role::Dialog)
+            .aria_label(format!("{}, stack contents", popover.name))
+            .absolute()
+            .w(px(STACK_POPOVER_WIDTH))
+            .p(px(MENU_PADDING + 6.0))
+            .rounded(px(tokens::menu_radius()))
+            .bg(rgba(tokens::regular_dark_tint()))
+            .border_1()
+            .border_color(rgba(tokens::light_border()))
+            .shadow_lg()
+            .text_color(rgba(tokens::primary_text()))
+            .occlude();
+        let offset = metrics.exclusive_zone + MENU_SHELF_GAP;
+        let along = shelf_start + popover.anchor;
+        panel = match placement {
+            rmac_shell_settings::DockPlacement::Bottom => panel
+                .left(px((along - STACK_POPOVER_WIDTH / 2.0).max(8.0)))
+                .bottom(px(offset)),
+            rmac_shell_settings::DockPlacement::Left => {
+                panel.left(px(offset)).top(px((along - 80.0).max(8.0)))
+            }
+            rmac_shell_settings::DockPlacement::Right => {
+                panel.right(px(offset)).top(px((along - 80.0).max(8.0)))
+            }
+        };
+        panel = panel.child(
+            div()
+                .text_size(px(11.0))
+                .text_color(rgba(tokens::secondary_text()))
+                .pb(px(6.0))
+                .truncate()
+                .child(popover.name.clone()),
+        );
+        panel = if popover.snapshot.is_none() {
+            panel.child(
+                div()
+                    .text_size(px(12.0))
+                    .text_color(rgba(tokens::secondary_text()))
+                    .child("Loading…"),
+            )
+        } else if shown.is_empty() {
+            panel.child(
+                div()
+                    .text_size(px(12.0))
+                    .text_color(rgba(tokens::secondary_text()))
+                    .child("Empty"),
+            )
+        } else if grid {
+            panel.child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(6.0))
+                    .children(shown.iter().map(|item| stack_popover_item(item, false, cx))),
+            )
+        } else {
+            panel.child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap(px(6.0))
+                    .overflow_hidden()
+                    .children(
+                        shown
+                            .iter()
+                            .enumerate()
+                            .map(|(index, item)| stack_popover_item(item, index == 0, cx)),
+                    ),
+            )
+        };
+        if total > shown.len() {
+            panel = panel.child(
+                div()
+                    .text_size(px(10.5))
+                    .text_color(rgba(tokens::disabled_text()))
+                    .pt(px(4.0))
+                    .child(format!("{} more…", total - shown.len())),
+            );
+        }
+        panel = panel.child(menu_separator());
+        let kind = popover.kind.clone();
+        panel = panel.child(
+            div()
+                .id("dock-stack-popover-open-in-files")
+                .role(Role::MenuItem)
+                .aria_label("Open in Files")
+                .h(px(tokens::menu_row_height()))
+                .px(px(MENU_ROW_INSET))
+                .flex()
+                .items_center()
+                .cursor_pointer()
+                .rounded(px(tokens::menu_item_radius()))
+                .child("Open in Files")
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.close_stack_popover(cx);
+                        this.dispatch_action(
+                            rmac_dock::menu::Action::ActivateEntry(
+                                rmac_dock::presentation::EntryId::Stack(kind.clone()),
+                            ),
+                            cx,
+                        );
+                    }),
+                ),
+        );
+        vec![panel.into_any_element()]
+    }
+
+    /// One popover item: icon, truncated name, click to open (and close the
+    /// popover, as the Mac does).
+    fn stack_popover_item(
+        item: &rmac_desktop::Item,
+        emphasize: bool,
+        cx: &Context<Dock>,
+    ) -> gpui::AnyElement {
+        let size = if emphasize {
+            STACK_POPOVER_ITEM
+        } else {
+            STACK_POPOVER_ITEM * 0.85
+        };
+        let path = item.path.clone();
+        let name = item.name.clone();
+        div()
+            .id(SharedString::from(format!("dock-stack-item-{name}")))
+            .role(Role::Button)
+            .aria_label(name.clone())
+            .w(px(size + 8.0))
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(px(4.0))
+            .cursor_pointer()
+            .rounded(px(tokens::menu_item_radius()))
+            .children(
+                stack_popover_item_icon_path(item)
+                    .map(|icon_path| img(icon_path).w(px(size)).h(px(size))),
+            )
+            .child(
+                div()
+                    .text_size(px(10.5))
+                    .text_color(rgba(tokens::secondary_text()))
+                    .w(px(size + 8.0))
+                    .truncate()
+                    .child(name),
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.open_stack_popover_item(path.clone(), cx);
+                }),
+            )
+            .into_any_element()
+    }
+
+    /// One row of the separator menu: a plain clickable row, optionally
+    /// checked (a leading ✓, like the model-driven Dock menus) or a
+    /// submenu parent (a trailing ›).
+    fn separator_menu_row(
+        id: SharedString,
+        label: &'static str,
+        checked: bool,
+        submenu: bool,
+        on_click: impl Fn(&mut Dock, &mut Context<Dock>) + 'static,
+        cx: &Context<Dock>,
+    ) -> gpui::AnyElement {
+        div()
+            .id(id)
+            .role(Role::MenuItem)
+            .aria_label(label)
+            .h(px(tokens::menu_row_height()))
+            .pl(px(if checked {
+                MENU_CHECK_INSET + MENU_CHECK_COLUMN
+            } else {
+                MENU_ROW_INSET
+            }))
+            .pr(px(MENU_ROW_INSET))
+            .flex()
+            .items_center()
+            .justify_between()
+            .cursor_pointer()
+            .rounded(px(tokens::menu_item_radius()))
+            .when(checked, |row| {
+                row.child(div().absolute().left(px(MENU_CHECK_INSET)).child("✓"))
+            })
+            .child(label)
+            .when(submenu, |row| row.child("›"))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    on_click(this, cx);
+                }),
+            )
+            .into_any_element()
+    }
+
+    /// The Dock separator's own menu (DOCK-02): Turn Hiding On/Off, Turn
+    /// Magnification On/Off, Position on Screen ▸, Minimise Using ▸, Dock
+    /// Settings…. Position on Screen/Minimise Using expand in place rather
+    /// than as a flyout submenu (not measured against the owner's Mac: S).
+    fn render_separator_menu(
+        menu: Option<&SeparatorMenu>,
+        placement: rmac_shell_settings::DockPlacement,
+        metrics: TileMetrics,
+        shelf_start: f32,
+        display_id: u64,
+        cx: &Context<Dock>,
+    ) -> Vec<gpui::AnyElement> {
+        let Some(menu) = menu else {
+            return Vec::new();
+        };
+        const WIDTH: f32 = 240.0;
+        let mut panel = div()
+            .id(format!("dock-separator-menu-{display_id}"))
+            .role(Role::Menu)
+            .aria_label("Dock separator menu")
+            .absolute()
+            .w(px(WIDTH))
+            .p(px(MENU_PADDING + 2.0))
+            .rounded(px(tokens::menu_radius()))
+            .bg(rgba(tokens::regular_dark_tint()))
+            .border_1()
+            .border_color(rgba(tokens::light_border()))
+            .shadow_lg()
+            .text_size(px(13.0))
+            .text_color(rgba(tokens::primary_text()))
+            .occlude();
+        let offset = metrics.exclusive_zone + MENU_SHELF_GAP;
+        let along = shelf_start + menu.anchor;
+        panel = match placement {
+            rmac_shell_settings::DockPlacement::Bottom => panel
+                .left(px((along - WIDTH / 2.0).max(8.0)))
+                .bottom(px(offset)),
+            rmac_shell_settings::DockPlacement::Left => {
+                panel.left(px(offset)).top(px((along - 80.0).max(8.0)))
+            }
+            rmac_shell_settings::DockPlacement::Right => {
+                panel.right(px(offset)).top(px((along - 80.0).max(8.0)))
+            }
+        };
+        let autohide = menu.dock.autohide;
+        panel = panel.child(separator_menu_row(
+            "dock-separator-menu-hiding".into(),
+            if autohide {
+                "Turn Hiding Off"
+            } else {
+                "Turn Hiding On"
+            },
+            false,
+            false,
+            |this, cx| this.toggle_hiding_from_menu(cx),
+            cx,
+        ));
+        let magnification = menu.dock.magnification;
+        panel = panel.child(separator_menu_row(
+            "dock-separator-menu-magnification".into(),
+            if magnification {
+                "Turn Magnification Off"
+            } else {
+                "Turn Magnification On"
+            },
+            false,
+            false,
+            |this, cx| this.toggle_magnification_from_menu(cx),
+            cx,
+        ));
+        panel = panel.child(menu_separator());
+        let position_open = menu.submenu_open == Some(SeparatorSubmenu::Position);
+        panel = panel.child(separator_menu_row(
+            "dock-separator-menu-position".into(),
+            "Position on Screen",
+            false,
+            true,
+            move |this, cx| {
+                if let Some(menu) = this.separator_menu.as_mut() {
+                    menu.submenu_open = if position_open {
+                        None
+                    } else {
+                        Some(SeparatorSubmenu::Position)
+                    };
+                    cx.notify();
+                }
+            },
+            cx,
+        ));
+        if position_open {
+            let placements = [
+                (rmac_shell_settings::DockPlacement::Left, "Left"),
+                (rmac_shell_settings::DockPlacement::Bottom, "Bottom"),
+                (rmac_shell_settings::DockPlacement::Right, "Right"),
+            ];
+            for (value, label) in placements {
+                panel = panel.child(separator_menu_row(
+                    format!("dock-separator-menu-position-{label}").into(),
+                    label,
+                    menu.dock.placement == value,
+                    false,
+                    move |this, cx| this.set_placement_from_menu(value, cx),
+                    cx,
+                ));
+            }
+        }
+        let minimize_open = menu.submenu_open == Some(SeparatorSubmenu::MinimizeUsing);
+        panel = panel.child(separator_menu_row(
+            "dock-separator-menu-minimize".into(),
+            "Minimise Using",
+            false,
+            true,
+            move |this, cx| {
+                if let Some(menu) = this.separator_menu.as_mut() {
+                    menu.submenu_open = if minimize_open {
+                        None
+                    } else {
+                        Some(SeparatorSubmenu::MinimizeUsing)
+                    };
+                    cx.notify();
+                }
+            },
+            cx,
+        ));
+        if minimize_open {
+            let effects = [
+                (
+                    rmac_shell_settings::DockMinimizeEffect::Genie,
+                    "Genie Effect",
+                ),
+                (
+                    rmac_shell_settings::DockMinimizeEffect::Scale,
+                    "Scale Effect",
+                ),
+            ];
+            for (value, label) in effects {
+                panel = panel.child(separator_menu_row(
+                    format!("dock-separator-menu-minimize-{label}").into(),
+                    label,
+                    menu.dock.minimize_effect == value,
+                    false,
+                    move |this, cx| this.set_minimize_effect_from_menu(value, cx),
+                    cx,
+                ));
+            }
+        }
+        panel = panel.child(menu_separator());
+        panel = panel.child(separator_menu_row(
+            "dock-separator-menu-settings".into(),
+            "Dock Settings…",
+            false,
+            false,
+            |this, cx| this.open_dock_settings(cx),
+            cx,
+        ));
+        vec![panel.into_any_element()]
+    }
+
     /// The 20 × 10 pointer under a bottom Dock's menu, tip on the tile
     /// centre, drawn in the panel's fill with its rim on the two slanted
     /// sides. `bounds` spans the pointer's full width and height.
@@ -3356,25 +4436,91 @@ mod linux_wayland {
             .into_any_element()
     }
 
-    fn dock_separator(placement: rmac_shell_settings::DockPlacement) -> gpui::AnyElement {
+    /// The separator between the kept/running applications and Trash's
+    /// group. `interaction` is `Some` only for that one (not the separator
+    /// between kept and running apps): its right-click menu (DOCK-02) and
+    /// drag-to-resize (DOCK-03).
+    fn dock_separator(
+        placement: rmac_shell_settings::DockPlacement,
+        metrics: TileMetrics,
+        interaction: Option<(f32, &Context<Dock>)>,
+    ) -> gpui::AnyElement {
         // Centred on the tile row (1 inside it at each end), 13 clear of the
         // tile gaps on either side.
-        let separator = div().bg(rgba(tokens::dock_separator()));
-        let inset = (ICON_SIZE - SEPARATOR_LENGTH) / 2.0;
-        match placement {
-            rmac_shell_settings::DockPlacement::Bottom => separator
-                .w(px(SEPARATOR_WIDTH))
-                .h(px(SEPARATOR_LENGTH))
-                .mx(px(SEPARATOR_MARGIN))
+        let line = div().bg(rgba(tokens::dock_separator()));
+        let inset = (metrics.icon_size - metrics.separator_length) / 2.0;
+        let Some((anchor, cx)) = interaction else {
+            return match placement {
+                rmac_shell_settings::DockPlacement::Bottom => line
+                    .w(px(SEPARATOR_WIDTH))
+                    .h(px(metrics.separator_length))
+                    .mx(px(metrics.separator_margin))
+                    .mb(px(inset))
+                    .into_any_element(),
+                rmac_shell_settings::DockPlacement::Left
+                | rmac_shell_settings::DockPlacement::Right => line
+                    .w(px(metrics.separator_length))
+                    .h(px(SEPARATOR_WIDTH))
+                    .my(px(metrics.separator_margin))
+                    .into_any_element(),
+            };
+        };
+        // A wider invisible hit/drag target around the thin visible line,
+        // like the Mac's (not separately measured: S).
+        const HIT_WIDTH: f32 = 9.0;
+        let horizontal = placement == rmac_shell_settings::DockPlacement::Bottom;
+        let mut hit = div()
+            .id("dock-separator-main")
+            .role(Role::Button)
+            .aria_label("Dock separator")
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                line.when(horizontal, |line| {
+                    line.w(px(SEPARATOR_WIDTH)).h(px(metrics.separator_length))
+                })
+                .when(!horizontal, |line| {
+                    line.w(px(metrics.separator_length)).h(px(SEPARATOR_WIDTH))
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.begin_separator_drag(
+                        (f32::from(event.position.x), f32::from(event.position.y)),
+                        cx,
+                    );
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.open_separator_menu(anchor, cx);
+                }),
+            );
+        hit = if horizontal {
+            // A bottom Dock resizes on a vertical drag (up grows it).
+            hit.w(px(HIT_WIDTH))
+                .h(px(metrics.separator_length))
+                .mx(px(
+                    metrics.separator_margin - (HIT_WIDTH - SEPARATOR_WIDTH) / 2.0
+                ))
                 .mb(px(inset))
-                .into_any_element(),
-            rmac_shell_settings::DockPlacement::Left
-            | rmac_shell_settings::DockPlacement::Right => separator
-                .w(px(SEPARATOR_LENGTH))
-                .h(px(SEPARATOR_WIDTH))
-                .my(px(SEPARATOR_MARGIN))
-                .into_any_element(),
-        }
+                .cursor_row_resize()
+        } else {
+            // A side Dock resizes on a horizontal drag (away from the edge
+            // grows it).
+            hit.w(px(metrics.separator_length))
+                .h(px(HIT_WIDTH))
+                .my(px(
+                    metrics.separator_margin - (HIT_WIDTH - SEPARATOR_WIDTH) / 2.0
+                ))
+                .cursor_col_resize()
+        };
+        hit.into_any_element()
     }
 
     fn magnified_icon_size(
@@ -3382,19 +4528,58 @@ mod linux_wayland {
         pointer: Option<f32>,
         settings: &rmac_shell_settings::DockSettings,
     ) -> f32 {
+        let metrics = TileMetrics::new(settings.tile_size);
         if !settings.magnification {
-            return ICON_SIZE;
+            return metrics.icon_size;
         }
         let config = rmac_dock::motion::MagnificationConfig {
-            icon_size: ICON_SIZE,
+            icon_size: metrics.icon_size,
             maximum_scale: settings.magnification_scale,
             ..Default::default()
         };
-        let pointer = pointer.map(|pointer| ICON_SIZE / 2.0 + pointer - center);
+        let pointer = pointer.map(|pointer| metrics.icon_size / 2.0 + pointer - center);
         rmac_dock::motion::magnified_layout(1, pointer, true, false, config)
             .ok()
             .and_then(|layout| layout.items.first().map(|item| item.size))
-            .unwrap_or(ICON_SIZE)
+            .unwrap_or(metrics.icon_size)
+    }
+
+    /// A stack's "Sort by" setting, mapped onto `rmac_desktop::SortOrder`
+    /// (Linux filesystems do not reliably distinguish "date added" from
+    /// "date modified" the way HFS+/APFS do; both fall back to `mtime`, as
+    /// `rmac_shell_settings::DockStackSortBy`'s own doc comment records).
+    fn stack_sort_order(sort_by: rmac_shell_settings::DockStackSortBy) -> rmac_desktop::SortOrder {
+        match sort_by {
+            rmac_shell_settings::DockStackSortBy::Name => rmac_desktop::SortOrder::Name,
+            rmac_shell_settings::DockStackSortBy::Kind => rmac_desktop::SortOrder::Kind,
+            rmac_shell_settings::DockStackSortBy::DateAdded
+            | rmac_shell_settings::DockStackSortBy::DateModified
+            | rmac_shell_settings::DockStackSortBy::DateCreated => {
+                rmac_desktop::SortOrder::DateModified
+            }
+        }
+    }
+
+    /// The stack's own tile artwork (original, not traced): the Downloads
+    /// glyph for the special case, a plain folder otherwise, matching
+    /// `rmac_dock::presentation::BuiltinIcon::{Downloads,Folder}`.
+    fn stack_icon_path(kind: &rmac_shell_settings::DockStackKind) -> Option<PathBuf> {
+        dock_asset_path(match kind {
+            rmac_shell_settings::DockStackKind::Downloads => "downloads.svg",
+            rmac_shell_settings::DockStackKind::Path { .. } => "folder.svg",
+        })
+    }
+
+    /// One popover item's icon: a folder for a subdirectory, a generic
+    /// document otherwise (original artwork, not traced; no per-type icon
+    /// theme lookup here, matching the Fan/Grid mock's plain shapes).
+    fn stack_popover_item_icon_path(item: &rmac_desktop::Item) -> Option<PathBuf> {
+        dock_asset_path(match item.kind {
+            rmac_desktop::ItemKind::Directory => "folder.svg",
+            rmac_desktop::ItemKind::File
+            | rmac_desktop::ItemKind::SymbolicLink
+            | rmac_desktop::ItemKind::Other => "stack-item-document.svg",
+        })
     }
 
     fn item_mark(label: &str) -> String {
@@ -3564,6 +4749,9 @@ mod linux_wayland {
         fullscreen: bool,
         overview_visible: bool,
         shelf_extent: f32,
+        /// DockSettings::tile_size (DOCK-01): a change recreates this
+        /// output's Dock windows, the same as a placement change does.
+        tile_size: f32,
         description: Option<rmac_dock::SurfaceDescription>,
     }
 
@@ -3575,7 +4763,8 @@ mod linux_wayland {
                 reserve_space: true,
                 fullscreen: false,
                 overview_visible: false,
-                shelf_extent: SHELF_THICKNESS,
+                shelf_extent: TileMetrics::default().shelf_thickness,
+                tile_size: rmac_shell_settings::DEFAULT_DOCK_TILE_SIZE,
                 description: None,
             }
         }
@@ -3586,6 +4775,7 @@ mod linux_wayland {
             surface: &rmac_dock::SurfaceDescription,
             fullscreen: bool,
             shelf_extent: f32,
+            tile_size: f32,
         ) -> Self {
             Self {
                 output: Some(surface.output.clone()),
@@ -3594,6 +4784,7 @@ mod linux_wayland {
                 fullscreen,
                 overview_visible: surface.overview_visible,
                 shelf_extent,
+                tile_size,
                 description: Some(surface.clone()),
             }
         }
@@ -3682,6 +4873,7 @@ mod linux_wayland {
         display_id: u64,
         status: Entity<DockStatus>,
         blurred: bool,
+        tile_size: f32,
     }
 
     impl Render for DockBackdrop {
@@ -3707,7 +4899,7 @@ mod linux_wayland {
             // a 1 pt rim. macOS draws no shadow under the Dock.
             div()
                 .size_full()
-                .rounded(px(tokens::dock_shelf_radius(ICON_SIZE)))
+                .rounded(px(tokens::dock_shelf_radius(self.tile_size)))
                 .bg(rgba(tokens::dock_tint()))
                 .border_1()
                 .border_color(rgba(tokens::dock_border()))
@@ -3721,21 +4913,23 @@ mod linux_wayland {
         cx: &mut App,
     ) -> AnyWindowHandle {
         let display_id = display.id();
+        let surface_tile_size = surface.tile_size;
+        let metrics = TileMetrics::new(surface_tile_size);
         let (anchor, size, margin) = match surface.placement {
             rmac_shell_settings::DockPlacement::Bottom => (
                 Anchor::BOTTOM,
-                Size::new(px(surface.shelf_extent), px(SHELF_THICKNESS)),
-                (px(0.0), px(0.0), px(SHELF_BOTTOM_MARGIN), px(0.0)),
+                Size::new(px(surface.shelf_extent), px(metrics.shelf_thickness)),
+                (px(0.0), px(0.0), px(metrics.shelf_bottom_margin), px(0.0)),
             ),
             rmac_shell_settings::DockPlacement::Left => (
                 Anchor::LEFT,
-                Size::new(px(SHELF_THICKNESS), px(surface.shelf_extent)),
-                (px(0.0), px(0.0), px(0.0), px(SHELF_BOTTOM_MARGIN)),
+                Size::new(px(metrics.shelf_thickness), px(surface.shelf_extent)),
+                (px(0.0), px(0.0), px(0.0), px(metrics.shelf_bottom_margin)),
             ),
             rmac_shell_settings::DockPlacement::Right => (
                 Anchor::RIGHT,
-                Size::new(px(SHELF_THICKNESS), px(surface.shelf_extent)),
-                (px(0.0), px(SHELF_BOTTOM_MARGIN), px(0.0), px(0.0)),
+                Size::new(px(metrics.shelf_thickness), px(surface.shelf_extent)),
+                (px(0.0), px(metrics.shelf_bottom_margin), px(0.0), px(0.0)),
             ),
         };
         cx.open_window(
@@ -3769,6 +4963,7 @@ mod linux_wayland {
                         display_id: u64::from(display_id),
                         status,
                         blurred: true,
+                        tile_size: surface_tile_size,
                     }
                 })
             },
@@ -3785,6 +4980,7 @@ mod linux_wayland {
     ) -> AnyWindowHandle {
         let display_id = display.id();
         let display_size = display.bounds().size;
+        let metrics = TileMetrics::new(surface.tile_size);
         let anchor = match surface.placement {
             rmac_shell_settings::DockPlacement::Bottom => {
                 Anchor::RIGHT | Anchor::BOTTOM | Anchor::LEFT
@@ -3794,7 +4990,7 @@ mod linux_wayland {
                 Anchor::TOP | Anchor::RIGHT | Anchor::BOTTOM
             }
         };
-        let exclusive_zone = surface.reserve_space.then_some(px(EXCLUSIVE_ZONE));
+        let exclusive_zone = surface.reserve_space.then_some(px(metrics.exclusive_zone));
         let handle = cx
             .open_window(
                 WindowOptions {
@@ -3905,6 +5101,27 @@ mod linux_wayland {
 
     /// ⌃F3 from niri: give the keyboard to the Dock on the focused output
     /// (or the first Dock when niri reports no focused output).
+    /// ⌥⌘D (DOCK-04) and the separator menu's Turn Hiding On/Off row: flip
+    /// `DockSettings::autohide`. The resident Dock picks the change up the
+    /// same way it does any other live settings change (no extra plumbing:
+    /// `rmac-dock-runtime` already watches the same store).
+    fn toggle_dock_hiding(cx: &mut App) {
+        cx.background_executor()
+            .spawn(async move {
+                let result = blocking::unblock(|| {
+                    let store = rmac_shell_settings::ShellSettingsStore::from_environment()?;
+                    let mut settings = store.load()?.settings;
+                    settings.dock.autohide = !settings.dock.autohide;
+                    store.save(&settings)
+                })
+                .await;
+                if let Err(error) = result {
+                    eprintln!("could not turn Dock hiding on or off: {error}");
+                }
+            })
+            .detach();
+    }
+
     fn focus_dock(windows: &DockWindows, status: &Entity<DockStatus>, cx: &mut App) {
         let focused_output = status.read(cx).snapshot().and_then(|snapshot| {
             snapshot
@@ -3924,19 +5141,17 @@ mod linux_wayland {
         let _ = dock.update(cx, |dock, window, cx| dock.begin_keyboard(window, cx));
     }
 
-    /// A drag out of Apps (crates/app-drawer) resolved to `Drop`: keep the
-    /// application in whichever Dock the drag reached. Hover and Cancel are
-    /// accepted but not yet rendered (§ drag from Apps, live gap preview is
-    /// a follow-up); the functional outcome — the application ends up
-    /// pinned near where it was dropped — does not depend on it.
+    /// A drag out of Apps (crates/app-drawer): `Hover` previews where it
+    /// would land (item 7's live insertion gap), `Drop` keeps the
+    /// application in whichever Dock the drag reached, `Cancel` clears the
+    /// preview. This is a hint, not an authority (drag_endpoint's own doc
+    /// comment): `Drop` still resolves and places the application through
+    /// the same catalog/PinCommand path a `.desktop` file drop uses.
     fn apply_drag_command(
         windows: &DockWindows,
         command: crate::drag_endpoint::Command,
         cx: &mut App,
     ) {
-        let crate::drag_endpoint::Command::Drop { app_id, fraction } = command else {
-            return;
-        };
         let Some(dock) = windows
             .windows
             .values()
@@ -3946,8 +5161,24 @@ mod linux_wayland {
         else {
             return;
         };
-        let _ = dock.update(cx, |dock, _window, cx| {
-            dock.keep_dragged_application(app_id, fraction, cx);
+        let _ = dock.update(cx, |dock, _window, cx| match command {
+            crate::drag_endpoint::Command::Hover { fraction, .. } => {
+                if dock.apps_drag_hover != Some(fraction) {
+                    dock.apps_drag_hover = Some(fraction);
+                    cx.notify();
+                }
+            }
+            crate::drag_endpoint::Command::Drop { app_id, fraction } => {
+                if dock.apps_drag_hover.take().is_some() {
+                    cx.notify();
+                }
+                dock.keep_dragged_application(app_id, fraction, cx);
+            }
+            crate::drag_endpoint::Command::Cancel { .. } => {
+                if dock.apps_drag_hover.take().is_some() {
+                    cx.notify();
+                }
+            }
         });
     }
 
@@ -4086,6 +5317,9 @@ mod linux_wayland {
                             crate::ipc::Command::Focus => {
                                 focus_dock(&windows.borrow(), &status, cx);
                             }
+                            crate::ipc::Command::ToggleHide => {
+                                toggle_dock_hiding(cx);
+                            }
                         });
                     }
                 })
@@ -4095,7 +5329,7 @@ mod linux_wayland {
                 let windows = windows.clone();
                 cx.spawn(async move |cx| {
                     while let Ok(command) = drag_commands.recv().await {
-                        let _ = cx.update(|cx| apply_drag_command(&windows.borrow(), command, cx));
+                        cx.update(|cx| apply_drag_command(&windows.borrow(), command, cx));
                     }
                 })
                 .detach();

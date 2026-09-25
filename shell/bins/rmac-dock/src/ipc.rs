@@ -1,8 +1,9 @@
-//! Bounded local transport from the niri ⌃F3 bind to the resident Dock.
+//! Bounded local transport from niri key bindings to the resident Dock.
 //!
-//! niri spawns `rmac-dock focus` for ⌃F3. That process sends one fixed word
-//! to a user-private datagram socket and exits; the resident Dock (started
-//! with no arguments by rmac-dock.service) then takes the keyboard.
+//! niri spawns `rmac-dock <word>` for ⌃F3 (`focus`) and ⌥⌘D (`toggle-hide`,
+//! DOCK-04). That process sends one fixed word to a user-private datagram
+//! socket and exits; the resident Dock (started with no arguments by
+//! rmac-dock.service) then acts on it.
 
 use std::fs;
 use std::io;
@@ -17,12 +18,16 @@ const MAX_WIRE_BYTES: usize = 16;
 pub enum Command {
     /// ⌃F3: move keyboard focus to the Dock.
     Focus,
+    /// ⌥⌘D: turn Dock hiding on or off (DOCK-04), as the separator menu's
+    /// Turn Hiding On/Off row also does.
+    ToggleHide,
 }
 
 impl Command {
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "focus" => Some(Self::Focus),
+            "toggle-hide" => Some(Self::ToggleHide),
             _ => None,
         }
     }
@@ -30,6 +35,7 @@ impl Command {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Focus => "focus",
+            Self::ToggleHide => "toggle-hide",
         }
     }
 }
@@ -143,6 +149,11 @@ mod tests {
         assert_eq!(
             decode(Command::Focus.as_str().as_bytes()),
             Some(Command::Focus)
+        );
+        assert_eq!(decode(b"toggle-hide"), Some(Command::ToggleHide));
+        assert_eq!(
+            decode(Command::ToggleHide.as_str().as_bytes()),
+            Some(Command::ToggleHide)
         );
         assert_eq!(decode(b"focus\n"), None);
         assert_eq!(decode(b"next"), None);

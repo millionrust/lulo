@@ -6,6 +6,7 @@ impl Settings {
     pub(super) fn apply_shell_settings_stream_update(
         &mut self,
         update: ShellSettingsStreamUpdate,
+        cx: &mut Context<Self>,
     ) -> bool {
         self.shell_settings_loading = false;
         match update {
@@ -21,11 +22,26 @@ impl Settings {
                     SpotlightAuthority::from_settings(&current.settings)
                         != SpotlightAuthority::from_settings(&snapshot.settings)
                 });
+                // DOCK-01/DOCK-07: the Dock's own separator drag or menu
+                // can change these from another process while this pane is
+                // open, so the sliders need to catch up too, not just the
+                // switches/pop-ups (which already redraw from the snapshot
+                // every render).
+                let dock_changed = self.shell_settings.as_ref().is_none_or(|current| {
+                    current.settings.dock.tile_size != snapshot.settings.dock.tile_size
+                        || current.settings.dock.magnification
+                            != snapshot.settings.dock.magnification
+                        || current.settings.dock.magnification_scale
+                            != snapshot.settings.dock.magnification_scale
+                });
                 if spotlight_changed {
                     self.spotlight_revert = None;
                 }
                 self.shell_settings = Some(*snapshot);
                 self.shell_settings_error = None;
+                if dock_changed {
+                    self.resync_dock_sliders(cx);
+                }
                 wallpaper_changed
             }
             ShellSettingsStreamUpdate::Unavailable(error) => {
@@ -34,6 +50,28 @@ impl Settings {
                 false
             }
         }
+    }
+
+    /// Rebuild the Size and Magnification sliders from the authoritative
+    /// Dock settings (DOCK-01/DOCK-07), the same way `start_snapshot_loads`
+    /// replaces `brightness_slider` once the real backlight value lands.
+    fn resync_dock_sliders(&mut self, cx: &mut Context<Self>) {
+        let Some(dock) = self
+            .shell_settings
+            .as_ref()
+            .map(|s| s.settings.dock.clone())
+        else {
+            return;
+        };
+        self.dock_size_slider = Self::dock_size_slider(cx, dock.tile_size);
+        self.dock_magnification_slider = Self::dock_magnification_slider(
+            cx,
+            if dock.magnification {
+                dock.magnification_scale
+            } else {
+                0.0
+            },
+        );
     }
 
     pub(super) fn finish_shell_settings_mutation(

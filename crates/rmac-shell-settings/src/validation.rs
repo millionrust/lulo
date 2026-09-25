@@ -54,6 +54,14 @@ pub(super) fn validate(settings: &ShellSettings, path: &Path) -> Result<(), Erro
             "Dock magnification scale must be finite and between 1.0 and 2.5",
         ));
     }
+    if !(MIN_DOCK_TILE_SIZE..=MAX_DOCK_TILE_SIZE).contains(&settings.dock.tile_size)
+        || !settings.dock.tile_size.is_finite()
+    {
+        return Err(invalid(
+            path,
+            "Dock tile size must be finite and between 32 and 128",
+        ));
+    }
     if let OutputScope::Named(output) = &settings.dock.outputs {
         validate_identifier(output, "Dock output", path)?;
     }

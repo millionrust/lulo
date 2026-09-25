@@ -69,6 +69,8 @@ fn settings() -> ShellSettings {
             repeated_click: RepeatedClickBehavior::HideApplication,
             show_running_indicators: false,
             show_recent_apps: false,
+            tile_size: 96.0,
+            minimize_effect: DockMinimizeEffect::Scale,
         },
         clock: ClockSettings {
             format: ClockFormat::TwentyFourHour,

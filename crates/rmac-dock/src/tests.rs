@@ -804,6 +804,48 @@ fn context_menu_offers_pin_for_an_unpinned_running_app() {
 }
 
 #[test]
+fn finder_context_menu_always_offers_a_new_window_and_no_options_or_quit() {
+    let catalog = [application(rmac_apps::identity::FILES, "Files")];
+    // Not running: a generic app's `context_menu().open` would still be
+    // `Some`, but Finder's `new_window` should be too either way (DOCK-05).
+    let model = Model::build(
+        &[rmac_shell_settings::AppId(
+            rmac_apps::identity::FILES.into(),
+        )],
+        &Default::default(),
+        &catalog,
+        &rmac_compositor::Snapshot::default(),
+    );
+    let menu = model
+        .finder_context_menu()
+        .expect("Files is kept in the Dock");
+    assert!(menu.new_window.is_some());
+    assert!(menu.windows.is_empty());
+    assert!(menu.show_all_windows.is_none());
+    assert!(menu.hide.is_none());
+
+    let compositor = rmac_compositor::Snapshot {
+        windows: vec![window(9, rmac_apps::identity::FILES, true, false, 1)],
+        ..Default::default()
+    };
+    let running = Model::build(
+        &[rmac_shell_settings::AppId(
+            rmac_apps::identity::FILES.into(),
+        )],
+        &Default::default(),
+        &catalog,
+        &compositor,
+    );
+    let menu = running
+        .finder_context_menu()
+        .expect("Files is kept in the Dock");
+    assert!(menu.new_window.is_some(), "always offered, unlike Open");
+    assert_eq!(menu.windows.len(), 1);
+    assert!(menu.show_all_windows.is_some());
+    assert!(menu.hide.is_some());
+}
+
+#[test]
 fn pin_mutations_are_idempotent_bounded_and_preserve_exact_ids() {
     let pinned = vec![
         rmac_shell_settings::AppId("finder.desktop".into()),

@@ -33,6 +33,9 @@ pub struct FramePercent {
 /// the working area below `top_inset` (the menu bar) and above the bottom
 /// `bottom_inset` (the Dock). `None` when the working area has no positive
 /// size.
+// Two plain rectangles (output and frame) plus the two insets read most
+// clearly as named scalars at the call sites.
+#[allow(clippy::too_many_arguments)]
 pub fn frame_to_percent(
     output_width: f64,
     output_height: f64,

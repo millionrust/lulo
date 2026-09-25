@@ -411,34 +411,38 @@ fn validation_rejects_malformed_duplicate_and_excessive_dock_stacks() {
     });
     assert!(validate(&relative, path).is_err());
 
-    let mut duplicate = ShellSettings::default();
-    duplicate.dock_stacks = vec![
-        DockStackEntry {
-            kind: DockStackKind::Downloads,
-            display_as: DockStackDisplayAs::default(),
-            view_content_as: DockStackViewContentAs::default(),
-            sort_by: DockStackSortBy::default(),
-        },
-        DockStackEntry {
-            kind: DockStackKind::Downloads,
-            display_as: DockStackDisplayAs::default(),
-            view_content_as: DockStackViewContentAs::default(),
-            sort_by: DockStackSortBy::default(),
-        },
-    ];
+    let duplicate = ShellSettings {
+        dock_stacks: vec![
+            DockStackEntry {
+                kind: DockStackKind::Downloads,
+                display_as: DockStackDisplayAs::default(),
+                view_content_as: DockStackViewContentAs::default(),
+                sort_by: DockStackSortBy::default(),
+            },
+            DockStackEntry {
+                kind: DockStackKind::Downloads,
+                display_as: DockStackDisplayAs::default(),
+                view_content_as: DockStackViewContentAs::default(),
+                sort_by: DockStackSortBy::default(),
+            },
+        ],
+        ..ShellSettings::default()
+    };
     assert!(validate(&duplicate, path).is_err());
 
-    let mut too_many = ShellSettings::default();
-    too_many.dock_stacks = (0..=MAX_DOCK_STACKS)
-        .map(|index| DockStackEntry {
-            kind: DockStackKind::Path {
-                path: format!("/home/test/stack-{index}"),
-            },
-            display_as: DockStackDisplayAs::default(),
-            view_content_as: DockStackViewContentAs::default(),
-            sort_by: DockStackSortBy::default(),
-        })
-        .collect();
+    let too_many = ShellSettings {
+        dock_stacks: (0..=MAX_DOCK_STACKS)
+            .map(|index| DockStackEntry {
+                kind: DockStackKind::Path {
+                    path: format!("/home/test/stack-{index}"),
+                },
+                display_as: DockStackDisplayAs::default(),
+                view_content_as: DockStackViewContentAs::default(),
+                sort_by: DockStackSortBy::default(),
+            })
+            .collect(),
+        ..ShellSettings::default()
+    };
     assert!(validate(&too_many, path).is_err());
 
     let mut ok = ShellSettings::default();

@@ -1565,8 +1565,11 @@ mod linux_wayland {
                     .read(cx)
                     .model()
                     .is_some_and(|model| model.authorizes_context_action(action)),
+                // Stack commands are re-validated by the dispatch layer
+                // (`prepare_stack_context_action`), like the Trash's.
                 rmac_dock::menu::Action::ActivateEntry(_)
-                | rmac_dock::menu::Action::SpecialContext(_) => true,
+                | rmac_dock::menu::Action::SpecialContext(_)
+                | rmac_dock::menu::Action::StackContext(_) => true,
             };
             if let rmac_dock::menu::Action::Context(rmac_dock::ContextAction::LaunchNew {
                 app_id,

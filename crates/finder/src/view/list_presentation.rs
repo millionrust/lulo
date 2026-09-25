@@ -238,6 +238,10 @@ impl FinderView {
 
             let name_cell: gpui::AnyElement = match &self.renaming {
                 Some((rename_path, input)) if rename_path == &e.path => div()
+                    .id("rename-field")
+                    .role(Role::TextInput)
+                    .aria_label("Name")
+                    .accessible_text_input(input, cx)
                     .pl(px(LIST_ICON_TO_NAME))
                     .flex_1()
                     .child(TextField::new(input).appearance(true))
@@ -285,7 +289,7 @@ impl FinderView {
                 accessible_item(
                     div().id(("row", ix)),
                     Role::ListBoxOption,
-                    e.name.clone(),
+                    e,
                     selected,
                     position,
                     visible_count,
@@ -495,6 +499,10 @@ impl FinderView {
                 let is_directory = e.is_dir;
                 let tile_label: gpui::AnyElement = match &self.renaming {
                     Some((rename_path, input)) if rename_path == &e.path => div()
+                        .id("rename-field")
+                        .role(Role::TextInput)
+                        .aria_label("Name")
+                        .accessible_text_input(input, cx)
                         .mt(px(ICON_LABEL_GAP - ICON_PLATE_GROW))
                         .w(px(label_width))
                         .child(TextField::new(input).appearance(true))
@@ -544,7 +552,7 @@ impl FinderView {
                     accessible_item(
                         div().id(("tile", ix)),
                         Role::ListBoxOption,
-                        e.name.clone(),
+                        e,
                         selected,
                         tile_position,
                         visible_count,

@@ -140,15 +140,14 @@ impl NotesView {
         let editable =
             self.is_interactive_ready() && !note.deleted && !self.markdown_preview_visible;
         let attachments = self.render_attachments(note, cx);
-        let body_value = self.body.read(cx).value().to_string();
         let body = if self.markdown_preview_visible {
             self.render_markdown_preview(cx)
         } else {
             div()
                 .id("notes-body")
-                .role(Role::TextInput)
+                .role(Role::MultilineTextInput)
                 .aria_label("Body")
-                .aria_value(body_value)
+                .accessible_text_input(&self.body, cx)
                 .on_a11y_action(AccessibleAction::SetValue, self.assistive_body_listener(cx))
                 .on_a11y_action(
                     AccessibleAction::ReplaceSelectedText,
@@ -197,7 +196,7 @@ impl NotesView {
                     .id("notes-title")
                     .role(Role::TextInput)
                     .aria_label("Title")
-                    .aria_value(self.title.read(cx).value().to_string())
+                    .accessible_text_input(&self.title, cx)
                     .on_a11y_action(
                         AccessibleAction::SetValue,
                         self.assistive_title_listener(cx),
@@ -236,7 +235,7 @@ impl NotesView {
                     .id("notes-tags")
                     .role(Role::TextInput)
                     .aria_label("Tags")
-                    .aria_value(self.tags.read(cx).value().to_string())
+                    .accessible_text_input(&self.tags, cx)
                     .on_a11y_action(AccessibleAction::SetValue, self.assistive_tags_listener(cx))
                     .on_a11y_action(
                         AccessibleAction::ReplaceSelectedText,

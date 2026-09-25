@@ -160,7 +160,7 @@ impl NotesView {
             .id("notes-search")
             .role(Role::SearchInput)
             .aria_label("Search")
-            .aria_value(self.search_query.read(cx).value().to_string())
+            .accessible_text_input(&self.search_query, cx)
             .on_a11y_action(
                 AccessibleAction::SetValue,
                 self.assistive_search_listener(cx),

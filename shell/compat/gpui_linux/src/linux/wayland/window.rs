@@ -1986,7 +1986,7 @@ impl PlatformWindow for WaylandWindow {
     }
 
     fn a11y_tree_update(&self, mut tree_update: accesskit::TreeUpdate) {
-        crate::linux::a11y::label_toolkit(&mut tree_update);
+        crate::linux::a11y::prepare_tree_update(&mut tree_update);
         let mut state = self.borrow_mut();
         if let Some(adapter) = state.accesskit_adapter.as_mut() {
             adapter.update_if_active(|| tree_update);
@@ -2005,7 +2005,7 @@ struct TrivialActivationHandler {
 impl accesskit::ActivationHandler for TrivialActivationHandler {
     fn request_initial_tree(&mut self) -> Option<accesskit::TreeUpdate> {
         let mut tree_update = (self.callback)()?;
-        crate::linux::a11y::label_toolkit(&mut tree_update);
+        crate::linux::a11y::prepare_tree_update(&mut tree_update);
         Some(tree_update)
     }
 }

@@ -390,7 +390,8 @@ pub(super) fn pathname_clipboard_text(paths: &[PathBuf]) -> String {
         .join("\n")
 }
 
-/// Publish one file item to assistive technology: its role, its name, whether
+/// Publish one file item to assistive technology: its role, its name, its kind
+/// (read after the name, as VoiceOver reads Finder's Kind column), whether
 /// it is selected and where it sits in its list, plus the Click and Focus
 /// actions a screen reader (or an AT-SPI test) uses to select it. `select`
 /// runs the same selection a plain click makes, and works whether or not the
@@ -400,7 +401,7 @@ pub(super) fn pathname_clipboard_text(paths: &[PathBuf]) -> String {
 pub(super) fn accessible_item(
     element: Stateful<Div>,
     role: Role,
-    name: SharedString,
+    entry: &Entry,
     selected: bool,
     position: usize,
     count: usize,
@@ -410,9 +411,9 @@ pub(super) fn accessible_item(
     let click_entity = entity.clone();
     let click_select = select.clone();
     let focus_entity = entity.clone();
-    element
+    rmac_ui::accessibility::with_description(element, entry.kind.clone())
         .role(role)
-        .aria_label(name)
+        .aria_label(entry.name.clone())
         .aria_selected(selected)
         .aria_position_in_set(position + 1)
         .aria_size_of_set(count)

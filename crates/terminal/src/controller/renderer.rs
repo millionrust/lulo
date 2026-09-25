@@ -72,7 +72,7 @@ impl Render for TerminalView {
             .when(multi, |terminal: Div| {
                 terminal.child(self.render_tabs(layout.tab_title_max_width, cx))
             })
-            .child(self.render_terminal_body(rows, ime_preedit, cx))
+            .child(self.render_terminal_body(rows, ime_preedit, window.is_a11y_active(), cx))
             .when(searching, |terminal| {
                 terminal.child(self.render_find_panel(layout.find_width, cx))
             })

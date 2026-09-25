@@ -63,7 +63,7 @@ use rmac_notes_store::{
     AttachmentId, BundleCollisionPolicy, BundleImportReview, ExportScope, FolderId, NewNote,
     NoteChanges, NoteId, NoteRecord, SortOrder,
 };
-use rmac_ui::{mac, Button, InputEvent, TextField};
+use rmac_ui::{mac, AccessibleTextInput as _, Button, InputEvent, TextField};
 
 use glyphs::glyph;
 use input_support::{

@@ -24,7 +24,7 @@ impl NotesView {
         let has_selected_folder = matches!(current, FolderSelection::Folder(_));
         let mut rows = div()
             .id("notes-folders")
-            .role(Role::List)
+            .role(Role::ListBox)
             .aria_label("Folders")
             .flex_1()
             .min_h(px(0.0))
@@ -390,7 +390,7 @@ impl NotesView {
             items.push(
                 div()
                     .id(("note", note.id.get()))
-                    .role(Role::ListItem)
+                    .role(Role::ListBoxOption)
                     .aria_label(accessible_label)
                     .aria_selected(is_selected)
                     .px(px(NOTE_ROW_INSET))
@@ -564,7 +564,7 @@ impl NotesView {
             .child(
                 div()
                     .id("notes-scroll")
-                    .role(Role::List)
+                    .role(Role::ListBox)
                     .aria_label(if search_active { "Results" } else { "Notes" })
                     .flex_1()
                     .min_h(px(0.0))

@@ -264,7 +264,7 @@ impl FinderView {
                     accessible_item(
                         div().id(("gallery-item", index)),
                         Role::ListBoxOption,
-                        entry.name.clone(),
+                        entry,
                         selected,
                         position,
                         visible_count,

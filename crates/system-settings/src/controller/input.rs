@@ -10,11 +10,23 @@ impl Settings {
     pub(super) fn finish_input_update(
         &mut self,
         result: std::result::Result<rmac_input::Snapshot, rmac_input::Error>,
+        cx: &mut Context<Self>,
     ) {
         self.input_loading = false;
         self.input_busy = false;
         match result {
             Ok(snapshot) => {
+                // Keyboard's sliders track the authoritative value (SET-101),
+                // the same way the Dock size/magnification sliders do.
+                let keyboard = &snapshot.settings.keyboard;
+                self.keyboard_repeat_rate_slider = Self::keyboard_repeat_rate_slider(
+                    cx,
+                    keyboard_rate_slider_index(keyboard.repeat_rate) as f32,
+                );
+                self.keyboard_repeat_delay_slider = Self::keyboard_repeat_delay_slider(
+                    cx,
+                    keyboard_delay_slider_index(keyboard.repeat_delay_ms) as f32,
+                );
                 self.input = snapshot;
                 self.input_error = None;
             }
@@ -38,7 +50,7 @@ impl Settings {
                 .spawn(async { rmac_input::snapshot() })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_input_update(result);
+                this.finish_input_update(result, cx);
                 this.flush_input_stream_refresh(cx);
                 cx.notify();
             });
@@ -68,7 +80,7 @@ impl Settings {
                     this.input_loading,
                     this.input_busy,
                 ) {
-                    this.finish_input_update(result);
+                    this.finish_input_update(result, cx);
                     this.flush_input_stream_refresh(cx);
                     cx.notify();
                 } else {
@@ -103,7 +115,7 @@ impl Settings {
                 .spawn(async move { rmac_input::save(&settings) })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_input_update(result);
+                this.finish_input_update(result, cx);
                 this.flush_input_stream_refresh(cx);
                 cx.notify();
             });

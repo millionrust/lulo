@@ -142,7 +142,7 @@ fn linux_hostname() -> HostnameSnapshot {
         kernel_name: None,
         kernel_release: None,
     };
-    let Ok(connection) = zbus::blocking::Connection::system() else {
+    let Ok(connection) = rmac_dbus::system_blocking() else {
         return unavailable("The system hostname service is unavailable.");
     };
     let Ok(proxy) = hostname_proxy(&connection) else {
@@ -164,7 +164,7 @@ fn linux_hostname() -> HostnameSnapshot {
 
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn system_set_static_hostname(hostname: &str) -> Result<(), Error> {
-    let connection = zbus::blocking::Connection::system().map_err(|_| {
+    let connection = rmac_dbus::system_blocking().map_err(|_| {
         Error::new(
             ErrorKind::Unavailable,
             "connect to the system hostname service",

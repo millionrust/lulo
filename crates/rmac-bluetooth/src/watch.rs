@@ -39,7 +39,7 @@ async fn watch_once(
     use futures_util::{FutureExt as _, StreamExt as _};
     use zbus::{message::Type, MatchRule, MessageStream};
 
-    let connection = zbus::Connection::system()
+    let connection = rmac_dbus::system()
         .await
         .map_err(|error| Error::new("connect Bluetooth event stream", error.to_string()))?;
     let bluez_rule = MatchRule::builder()

@@ -489,7 +489,7 @@ fn read_bounded_config(path: &str) -> Result<String, String> {
 
 #[cfg(target_os = "linux")]
 fn system_connection() -> Result<zbus::blocking::Connection, Error> {
-    zbus::blocking::Connection::system().map_err(|_| {
+    rmac_dbus::system_blocking().map_err(|_| {
         Error::new(
             ErrorKind::Unavailable,
             "the system service manager is unavailable",

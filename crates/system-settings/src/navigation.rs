@@ -265,6 +265,15 @@ pub(super) fn category_parent(name: &str) -> Option<&'static str> {
     .then_some("General")
 }
 
+/// The pane id a `--pane <id>` launch argument names, if any — read the same
+/// way at startup and when a second launch hands its arguments to the
+/// already-running window (SET-57).
+pub(super) fn requested_pane(arguments: &[String]) -> Option<String> {
+    arguments
+        .windows(2)
+        .find_map(|pair| (pair[0] == "--pane").then(|| pair[1].clone()))
+}
+
 /// A route that opens a subpage inside its pane. The system menu's "About
 /// This Lulo OS" launches `--pane about`, which lands on General › About,
 /// the summary macOS 26's About This Mac shows, rather than the General list.
@@ -394,6 +403,26 @@ mod tests {
         }
         assert_eq!(category_parent("General"), None);
         assert_eq!(category_parent("Wi-Fi"), None);
+    }
+
+    #[test]
+    fn requested_pane_reads_the_value_after_the_flag() {
+        assert_eq!(
+            requested_pane(&["--pane".to_owned(), "wifi".to_owned()]),
+            Some("wifi".to_owned())
+        );
+        // A second launch with no `--pane` (a plain relaunch, or the Dock
+        // icon) asks for nothing — the running window just comes forward.
+        assert_eq!(requested_pane(&[]), None);
+        assert_eq!(requested_pane(&["--pane".to_owned()]), None);
+        assert_eq!(
+            requested_pane(&[
+                "/usr/bin/rmac-system-settings".to_owned(),
+                "--pane".to_owned(),
+                "about".to_owned(),
+            ]),
+            Some("about".to_owned())
+        );
     }
 
     #[test]

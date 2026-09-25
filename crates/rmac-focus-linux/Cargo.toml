@@ -10,6 +10,7 @@ publish = false
 async-channel.workspace = true
 async-io.workspace = true
 futures-util.workspace = true
+rmac-dbus.workspace = true
 rmac-focus.workspace = true
 rmac-focus-runtime.workspace = true
 rmac-focus-store.workspace = true

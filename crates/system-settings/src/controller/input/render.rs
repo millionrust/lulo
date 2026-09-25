@@ -56,6 +56,39 @@ fn twin_slider(title: &'static str, slider: Div) -> Div {
         .child(slider)
 }
 
+/// A [`twin_slider`]'s track: `rmac_ui`'s own `Slider` (SET-101 -- the
+/// hand-rolled stepped track it replaces here drew with no thumb when the
+/// system's real value didn't land exactly on a preset, and Delay's ran
+/// past the card's right edge), with the preset range's end labels below
+/// it the way the stepped track's tick labels were.
+fn twin_value_slider(
+    state: &Entity<SliderState>,
+    start_label: &'static str,
+    end_label: &'static str,
+    enabled: bool,
+) -> Div {
+    div()
+        .w(px(style::TWIN_SLIDER_WIDTH))
+        .flex_none()
+        .v_flex()
+        .gap(px(4.0))
+        .child(
+            Slider::new(state)
+                .disabled(!enabled)
+                .w(px(style::TWIN_SLIDER_WIDTH)),
+        )
+        .child(
+            div()
+                .flex()
+                .justify_between()
+                .text_size(rmac_ui::text_px(11.0))
+                .line_height(px(14.0))
+                .text_color(label())
+                .child(start_label)
+                .child(end_label),
+        )
+}
+
 fn mouse_acceleration(on: bool) -> InputChange {
     InputChange::MouseAccelProfile(if on {
         rmac_input::AccelProfile::Adaptive
@@ -81,25 +114,6 @@ impl Settings {
         }
         let settings = &self.input.settings.keyboard;
         let writable = self.input.can_configure && !self.input_busy;
-        let selected_rate = KEYBOARD_RATES.iter().position(|(_, change)| {
-            matches!(change, InputChange::KeyboardRepeatRate(value) if *value == settings.repeat_rate)
-        });
-        // The Mac runs "Delay until repeat" from Long to Short.
-        let last_delay = KEYBOARD_DELAYS.len() - 1;
-        let selected_delay = KEYBOARD_DELAYS
-            .iter()
-            .position(|(_, change)| {
-                matches!(change, InputChange::KeyboardRepeatDelay(value) if *value == settings.repeat_delay_ms)
-            })
-            .map(|index| last_delay - index);
-        let delay_view = view.clone();
-        let pick_delay: IndexHandler =
-            Rc::new(move |index: usize, _: &mut Window, cx: &mut App| {
-                if let Some((_, change)) = KEYBOARD_DELAYS.get(last_delay.saturating_sub(index)) {
-                    let change = *change;
-                    delay_view.update(cx, |settings, cx| settings.apply_input_change(change, cx));
-                }
-            });
         cards.push(
             group().child(
                 div()
@@ -108,28 +122,20 @@ impl Settings {
                     .p(px(style::ROW_PADDING))
                     .child(twin_slider(
                         "Key repeat rate",
-                        stepped_slider(
-                            "keyboard-repeat-rate",
-                            KEYBOARD_RATES.len(),
-                            selected_rate,
+                        twin_value_slider(
+                            &self.keyboard_repeat_rate_slider,
                             "Slow",
                             "Fast",
-                            style::TWIN_SLIDER_WIDTH,
                             writable,
-                            input_pick(&view, &KEYBOARD_RATES),
                         ),
                     ))
                     .child(twin_slider(
                         "Delay until repeat",
-                        stepped_slider(
-                            "keyboard-repeat-delay",
-                            KEYBOARD_DELAYS.len(),
-                            selected_delay,
+                        twin_value_slider(
+                            &self.keyboard_repeat_delay_slider,
                             "Long",
                             "Short",
-                            style::TWIN_SLIDER_WIDTH,
                             writable,
-                            pick_delay,
                         ),
                     )),
             ),

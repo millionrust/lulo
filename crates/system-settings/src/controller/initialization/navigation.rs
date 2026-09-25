@@ -12,10 +12,8 @@ impl Settings {
         NavigationPersistence,
     ) {
         let sections = categories();
-        let requested_pane = std::env::args()
-            .collect::<Vec<_>>()
-            .windows(2)
-            .find_map(|arguments| (arguments[0] == "--pane").then(|| arguments[1].clone()));
+        let requested_pane =
+            crate::navigation::requested_pane(&std::env::args().collect::<Vec<_>>());
         let requested_subpage = requested_pane.as_deref().and_then(subpage_route);
         let requested_category = requested_pane.as_deref().and_then(|pane_id| {
             category_name_for_pane_id(pane_id)

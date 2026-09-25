@@ -1,15 +1,11 @@
 [package]
-name = "rmac-privacy-linux"
+name = "rmac-dbus"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
+publish = false
 
 [dependencies]
-async-channel.workspace = true
 async-io.workspace = true
-futures-util.workspace = true
-rmac-dbus.workspace = true
-rmac-privacy.workspace = true
-serde_json.workspace = true
 zbus.workspace = true

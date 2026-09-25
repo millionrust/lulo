@@ -32,6 +32,9 @@ impl Settings {
         let dock_size_slider =
             Self::dock_size_slider(cx, rmac_shell_settings::DEFAULT_DOCK_TILE_SIZE);
         let dock_magnification_slider = Self::dock_magnification_slider(cx, 0.0);
+        // Replaced once the initial input snapshot lands (finish_input_update).
+        let keyboard_repeat_rate_slider = Self::keyboard_repeat_rate_slider(cx, 0.0);
+        let keyboard_repeat_delay_slider = Self::keyboard_repeat_delay_slider(cx, 0.0);
         let (sound_policy, sound_policy_error) = match rmac_sound::load_settings() {
             Ok(settings) => (settings, None),
             Err(error) => (
@@ -139,6 +142,8 @@ impl Settings {
             storage_action_busy: None,
             audio: rmac_audio::Snapshot::default(),
             input: rmac_input::Snapshot::default(),
+            keyboard_repeat_rate_slider,
+            keyboard_repeat_delay_slider,
             gtk_text: None,
             screen_reader_toggle: None,
             privacy: None,
@@ -193,6 +198,7 @@ impl Settings {
             notifications_loading: true,
             notification_busy: None,
             notification_apps: Vec::new(),
+            notification_origins: std::collections::BTreeMap::new(),
             app_catalog: Vec::new(),
             _app_catalog_watcher: app_catalog_watcher,
 

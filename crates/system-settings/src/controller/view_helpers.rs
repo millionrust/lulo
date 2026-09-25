@@ -198,6 +198,11 @@ pub(super) fn note_card(text: impl Into<SharedString>) -> Div {
         .child(
             div()
                 .flex_1()
+                // A flex item's default min-width is its content's
+                // natural width, so a long single-line message (Language
+                // & Region's XKB warning, SET-80) ran past the card's
+                // right edge instead of wrapping.
+                .min_w_0()
                 .text_size(rmac_ui::text_px(11.5))
                 .text_color(rmac_ui::mac::warning_text())
                 .child(text.into()),

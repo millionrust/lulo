@@ -18,7 +18,7 @@ pub(super) const THRESHOLD_VERIFY_INTERVAL: std::time::Duration =
 
 #[cfg(not(target_os = "macos"))]
 pub(super) fn system_snapshot() -> Result<Snapshot, Error> {
-    let connection = zbus::blocking::Connection::system()
+    let connection = rmac_dbus::system_blocking()
         .map_err(|error| Error::new("connect to the power service", error.to_string()))?;
     system_snapshot_with_connection(&connection)
 }
@@ -396,7 +396,7 @@ pub(super) fn property_string(
 
 #[cfg(not(target_os = "macos"))]
 pub(super) fn system_set_profile(profile: PowerProfile) -> Result<(), Error> {
-    let connection = zbus::blocking::Connection::system()
+    let connection = rmac_dbus::system_blocking()
         .map_err(|error| Error::new("connect to the power profile service", error.to_string()))?;
     let mut failures = Vec::new();
     for endpoint in PROFILE_ENDPOINTS {
@@ -435,7 +435,7 @@ pub(super) fn system_set_charge_threshold(
         ));
     }
 
-    let connection = zbus::blocking::Connection::system()
+    let connection = rmac_dbus::system_blocking()
         .map_err(|error| Error::new("connect to UPower", error.to_string()))?;
     let current = revalidate_threshold_battery(&connection, identity)?;
     if current.threshold_enabled != enabled {
@@ -557,7 +557,7 @@ pub(super) async fn watch_once(
     use futures_util::{FutureExt as _, StreamExt as _};
     use zbus::{message::Type, MatchRule, MessageStream};
 
-    let connection = zbus::Connection::system()
+    let connection = rmac_dbus::system()
         .await
         .map_err(|error| Error::new("connect power event stream", error.to_string()))?;
     let upower_rule = service_signal_rule(UPOWER_SERVICE, "build UPower signal filter")?;

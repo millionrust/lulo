@@ -73,19 +73,19 @@ impl std::fmt::Debug for Snapshot {
 }
 
 pub fn state() -> Result<Snapshot, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     decode(proxy.state().map_err(|_| Error::Call)?)
 }
 
 pub fn set_enabled(enabled: bool) -> Result<Snapshot, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     ensure_persisted(decode(proxy.set_enabled(enabled).map_err(call_error)?)?)
 }
 
 pub fn activate(mode_id: &str, duration_ms: u64) -> Result<Snapshot, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     ensure_persisted(decode(
         proxy.activate(mode_id, duration_ms).map_err(call_error)?,
@@ -93,25 +93,25 @@ pub fn activate(mode_id: &str, duration_ms: u64) -> Result<Snapshot, Error> {
 }
 
 pub fn disable() -> Result<Snapshot, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     ensure_persisted(decode(proxy.disable().map_err(call_error)?)?)
 }
 
 pub fn configuration() -> Result<Config, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     decode_configuration(proxy.configuration().map_err(call_error)?).map_err(|_| Error::Protocol)
 }
 
 pub fn settings() -> Result<SettingsSnapshot, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     decode_settings(proxy.settings().map_err(call_error)?)
 }
 
 pub fn replace_configuration(configuration: &Config) -> Result<Snapshot, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = FocusProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     ensure_persisted(decode(
         proxy
@@ -121,9 +121,7 @@ pub fn replace_configuration(configuration: &Config) -> Result<Snapshot, Error> 
 }
 
 pub async fn enforce(app_id: &AppId, base: DeliveryPolicy) -> Result<DeliveryPolicy, Error> {
-    let connection = zbus::Connection::session()
-        .await
-        .map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session().await.map_err(|_| Error::Connect)?;
     enforce_with_connection(&connection, app_id, base).await
 }
 
@@ -244,9 +242,7 @@ pub async fn watch_settings(sender: Sender<Result<SettingsSnapshot, String>>) ->
 async fn watch_settings_once(
     sender: &Sender<Result<SettingsSnapshot, String>>,
 ) -> Result<(), Error> {
-    let connection = zbus::Connection::session()
-        .await
-        .map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session().await.map_err(|_| Error::Connect)?;
     let proxy = FocusProxy::new(&connection)
         .await
         .map_err(|_| Error::Connect)?;
@@ -284,9 +280,7 @@ async fn publish_settings(
 }
 
 async fn watch_configuration_once(sender: &Sender<Result<Config, String>>) -> Result<(), Error> {
-    let connection = zbus::Connection::session()
-        .await
-        .map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session().await.map_err(|_| Error::Connect)?;
     let proxy = FocusProxy::new(&connection)
         .await
         .map_err(|_| Error::Connect)?;
@@ -308,9 +302,7 @@ async fn watch_configuration_once(sender: &Sender<Result<Config, String>>) -> Re
 }
 
 async fn watch_once(sender: &Sender<Result<Projection, String>>) -> Result<(), Error> {
-    let connection = zbus::Connection::session()
-        .await
-        .map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session().await.map_err(|_| Error::Connect)?;
     let proxy = FocusProxy::new(&connection)
         .await
         .map_err(|_| Error::Connect)?;

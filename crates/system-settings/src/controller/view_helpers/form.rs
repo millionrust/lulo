@@ -712,7 +712,7 @@ fn circled_button(
         .items_center()
         .justify_center()
         .cursor_pointer()
-        .tooltip(move |window, cx| rmac_ui::tooltip_view(tooltip.clone(), window, cx))
+        .tooltip(move |window, cx| rmac_ui::tooltip_view(tooltip, window, cx))
         .on_click(move |_, window, cx| on_click(window, cx))
         .child(glyph(icon, style::INFO_BUTTON, label()))
         .into_any_element()

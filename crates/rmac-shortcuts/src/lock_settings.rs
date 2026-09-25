@@ -264,7 +264,7 @@ mod service {
     }
 
     fn suspend_capability() -> SuspendCapability {
-        let Ok(connection) = zbus::blocking::Connection::system() else {
+        let Ok(connection) = rmac_dbus::system_blocking() else {
             return SuspendCapability::Unavailable;
         };
         let Ok(manager) = LoginManagerProxyBlocking::new(&connection) else {
@@ -278,8 +278,7 @@ mod service {
     }
 
     fn perform_suspend() -> Result<(), MutationError> {
-        let connection =
-            zbus::blocking::Connection::system().map_err(|_| MutationError::Capability)?;
+        let connection = rmac_dbus::system_blocking().map_err(|_| MutationError::Capability)?;
         let manager =
             LoginManagerProxyBlocking::new(&connection).map_err(|_| MutationError::Capability)?;
         if manager
@@ -379,7 +378,7 @@ pub async fn serve(_policy_path: &std::path::Path) -> Result<(), Error> {
 
 #[cfg(target_os = "linux")]
 pub fn settings() -> Result<Snapshot, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = LockScreenProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     snapshot(proxy.settings().map_err(|_| Error::Call)?)
 }
@@ -391,7 +390,7 @@ pub fn settings() -> Result<Snapshot, Error> {
 
 #[cfg(target_os = "linux")]
 pub fn set_lock_after(seconds: Option<u32>) -> Result<Snapshot, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = LockScreenProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     snapshot(
         proxy
@@ -402,7 +401,7 @@ pub fn set_lock_after(seconds: Option<u32>) -> Result<Snapshot, Error> {
 
 #[cfg(target_os = "linux")]
 pub fn set_suspend_after(seconds: Option<u32>) -> Result<Snapshot, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = LockScreenProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     snapshot(
         proxy
@@ -428,9 +427,7 @@ pub async fn watch(sender: Sender<Result<Snapshot, String>>) -> Result<(), Error
 
         loop {
             let result = async {
-                let connection = zbus::Connection::session()
-                    .await
-                    .map_err(|_| Error::Connect)?;
+                let connection = rmac_dbus::session().await.map_err(|_| Error::Connect)?;
                 let proxy = LockScreenProxy::new(&connection)
                     .await
                     .map_err(|_| Error::Connect)?;

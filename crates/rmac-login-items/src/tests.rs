@@ -14,6 +14,15 @@ fn parser_and_session_filter_follow_xdg_keys() {
 }
 
 #[test]
+fn no_display_is_parsed_and_defaults_to_false() {
+    assert!(!parse_entry(ENTRY).unwrap().no_display);
+    let entry =
+        parse_entry("[Desktop Entry]\nType=Application\nName=Demo\nExec=demo\nNoDisplay=true\n")
+            .unwrap();
+    assert!(entry.no_display);
+}
+
+#[test]
 fn hidden_update_preserves_entry_and_is_idempotent() {
     let hidden = with_hidden(ENTRY, true, true).unwrap();
     assert!(hidden.contains("Exec=demo"));

@@ -224,8 +224,7 @@ type ManagedObjects = zbus::fdo::ManagedObjects;
 
 #[cfg(not(target_os = "macos"))]
 fn system_connection() -> Result<zbus::blocking::Connection, Error> {
-    zbus::blocking::Connection::system()
-        .map_err(|error| Error::new("connect to BlueZ", error.to_string()))
+    rmac_dbus::system_blocking().map_err(|error| Error::new("connect to BlueZ", error.to_string()))
 }
 
 #[cfg(not(target_os = "macos"))]

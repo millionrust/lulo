@@ -50,6 +50,36 @@ fn precedence_disable_and_managed_restore_follow_xdg_contract() {
 }
 
 #[test]
+fn no_display_system_entries_are_hidden_but_a_user_entry_stays() {
+    let (root, environment) = environment();
+    let system = environment.config_dirs[0].join("autostart");
+    std::fs::write(
+        system.join("at-spi-dbus-bus.desktop"),
+        "[Desktop Entry]\nType=Application\nName=AT-SPI D-Bus Bus\nExec=at-spi\nNoDisplay=true\n",
+    )
+    .unwrap();
+    let user = environment.config_home.join("autostart");
+    std::fs::create_dir_all(&user).unwrap();
+    std::fs::write(
+        user.join("chosen-helper.desktop"),
+        "[Desktop Entry]\nType=Application\nName=Chosen Helper\nExec=helper\nNoDisplay=true\n",
+    )
+    .unwrap();
+    let snapshot = discover(&environment).unwrap();
+    let names = snapshot
+        .items
+        .iter()
+        .map(|item| item.name.as_str())
+        .collect::<Vec<_>>();
+    // A distro/desktop session helper the user never asked for (SET-81).
+    assert!(!names.contains(&"AT-SPI D-Bus Bus"));
+    // Something the user put in their own autostart folder stays listed,
+    // NoDisplay or not -- they put it there.
+    assert!(names.contains(&"Chosen Helper"));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn malformed_higher_priority_entry_is_reported_and_hides_lower_entry() {
     let (root, environment) = environment();
     let user = environment.config_home.join("autostart");

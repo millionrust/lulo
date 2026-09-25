@@ -34,7 +34,7 @@ pub(super) async fn watch_wifi_once(
     use futures_util::{FutureExt as _, StreamExt as _};
     use zbus::{message::Type, MatchRule, MessageStream};
 
-    let connection = zbus::Connection::system()
+    let connection = rmac_dbus::system()
         .await
         .map_err(|error| Error::new("connect Wi-Fi event stream", error.to_string()))?;
     let network_rule = MatchRule::builder()
@@ -1560,7 +1560,7 @@ pub(super) fn read_ip_configuration(
 pub(super) fn system_connection(
     operation: &'static str,
 ) -> Result<zbus::blocking::Connection, Error> {
-    zbus::blocking::Connection::system().map_err(|error| Error::new(operation, error.to_string()))
+    rmac_dbus::system_blocking().map_err(|error| Error::new(operation, error.to_string()))
 }
 
 #[cfg(not(target_os = "macos"))]

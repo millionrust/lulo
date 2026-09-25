@@ -188,13 +188,13 @@ impl std::fmt::Debug for ApplicationPolicy {
 }
 
 pub fn applications() -> Result<Vec<ApplicationPolicy>, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = CenterProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     decode_applications(proxy.applications().map_err(call_error)?)
 }
 
 pub fn snapshot() -> Result<Snapshot, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = CenterProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     let (history, applications) = proxy.snapshot().map_err(call_error)?;
     let mut snapshot = decode_snapshot(history, applications)?;
@@ -345,7 +345,7 @@ pub fn invoke(
     selection: ActionSelection,
     activation_token: Option<&str>,
 ) -> Result<(), Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = CenterProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     let (kind, index) = match selection {
         ActionSelection::Default => (0, 0),
@@ -359,7 +359,7 @@ pub fn invoke(
 fn mutate(
     operation: impl FnOnce(&CenterProxyBlocking<'_>) -> zbus::Result<(u32, bool)>,
 ) -> Result<Indicator, Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session_blocking().map_err(|_| Error::Connect)?;
     let proxy = CenterProxyBlocking::new(&connection).map_err(|_| Error::Connect)?;
     let (unread_count, has_urgent) = operation(&proxy).map_err(call_error)?;
     Ok(Indicator {
@@ -444,9 +444,7 @@ pub async fn watch_snapshot(sender: Sender<Result<Snapshot, String>>) -> Result<
 }
 
 async fn watch_snapshot_once(sender: &Sender<Result<Snapshot, String>>) -> Result<(), Error> {
-    let connection = zbus::Connection::session()
-        .await
-        .map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session().await.map_err(|_| Error::Connect)?;
     let proxy = CenterProxy::new(&connection)
         .await
         .map_err(|_| Error::Connect)?;
@@ -487,9 +485,7 @@ async fn publish_snapshot_error(
 async fn watch_applications_once(
     sender: &Sender<Result<Vec<ApplicationPolicy>, String>>,
 ) -> Result<(), Error> {
-    let connection = zbus::Connection::session()
-        .await
-        .map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session().await.map_err(|_| Error::Connect)?;
     let proxy = CenterProxy::new(&connection)
         .await
         .map_err(|_| Error::Connect)?;
@@ -540,9 +536,7 @@ async fn publish_applications_error(
 }
 
 async fn watch_once(sender: &Sender<Result<Indicator, String>>) -> Result<(), Error> {
-    let connection = zbus::Connection::session()
-        .await
-        .map_err(|_| Error::Connect)?;
+    let connection = rmac_dbus::session().await.map_err(|_| Error::Connect)?;
     let proxy = CenterProxy::new(&connection)
         .await
         .map_err(|_| Error::Connect)?;

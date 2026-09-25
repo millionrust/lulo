@@ -18,6 +18,7 @@ serde_json.workspace = true
 ashpd.workspace = true
 blocking.workspace = true
 libc.workspace = true
+rmac-dbus.workspace = true
 zbus.workspace = true
 
 [[bin]]

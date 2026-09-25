@@ -27,7 +27,7 @@ async fn watch_once(sender: &async_channel::Sender<WatchEvent>) -> Result<(), Er
     use futures_util::{FutureExt as _, StreamExt as _};
     use zbus::{message::Type, MatchRule, MessageStream};
 
-    let connection = zbus::Connection::system().await.map_err(|_| {
+    let connection = rmac_dbus::system().await.map_err(|_| {
         Error::new(
             ErrorKind::Unavailable,
             "watch system information",

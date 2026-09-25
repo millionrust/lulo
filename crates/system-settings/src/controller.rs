@@ -72,9 +72,10 @@ use crate::focus::{
     DAYS as FOCUS_DAYS,
 };
 use crate::input::{
-    compositor_event_affects_input, compositor_input_config_failed, speed_index, InputChange,
-    InputOption, KEYBOARD_DELAYS, KEYBOARD_RATES, KEYBOARD_RESPONSE_PRESETS,
-    MOUSE_PRECISION_PRESETS, MOUSE_SPEEDS, TOUCHPAD_SPEEDS,
+    compositor_event_affects_input, compositor_input_config_failed, keyboard_delay_slider_index,
+    keyboard_rate_slider_index, speed_index, InputChange, InputOption, KEYBOARD_DELAYS,
+    KEYBOARD_RATES, KEYBOARD_RESPONSE_PRESETS, MOUSE_PRECISION_PRESETS, MOUSE_SPEEDS,
+    TOUCHPAD_SPEEDS,
 };
 use crate::navigation::{
     categories, category_has_dedicated_renderer, category_name_for_pane_id, category_parent,
@@ -175,6 +176,14 @@ actions!(
     ]
 );
 
+/// A second `rmac-system-settings --pane <id>` launch's request, handed to
+/// the already-running window instead of starting another process (SET-57).
+#[derive(Clone, PartialEq, gpui::Action)]
+#[action(namespace = system_settings, no_json)]
+pub(crate) struct NavigateToPane {
+    pub(crate) pane: String,
+}
+
 fn hsl(h: u32) -> Hsla {
     gpui::rgb(h).into()
 }
@@ -269,11 +278,16 @@ const WALLPAPER_FIT_OPTIONS: [(&str, rmac_shell_settings::WallpaperFit); 5] = [
 ];
 
 pub(crate) fn run() {
-    rmac_ui::boot_unified_app_with_assets(
+    // Passed on to a running instance's window (SET-57) exactly as this
+    // process would read them at startup (`initial_navigation`); the
+    // program path itself is not part of that.
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    rmac_ui::boot_unified_single_window_app_with_assets(
         rmac_ui::app_id::SYSTEM_SETTINGS,
         CombinedAssets,
         style::WINDOW_WIDTH,
         style::WINDOW_HEIGHT,
+        arguments,
         |window, cx| {
             cx.bind_keys([
                 KeyBinding::new(
@@ -302,6 +316,13 @@ pub(crate) fn run() {
                 KeyBinding::new("cmd-m", Minimize, Some("SystemSettings")),
             ]);
             Settings::new(window, cx)
+        },
+        |arguments, cx| {
+            // A later `--pane <id>` launch: land on that pane instead of
+            // just bringing the window forward with whatever was showing.
+            if let Some(pane) = crate::navigation::requested_pane(&arguments) {
+                rmac_ui::dispatch_to_app_window(Box::new(NavigateToPane { pane }), cx);
+            }
         },
     );
 }

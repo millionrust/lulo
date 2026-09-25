@@ -96,6 +96,12 @@ pub(super) struct Settings {
     pub(super) storage_action_busy: Option<String>,
     pub(super) audio: rmac_audio::Snapshot,
     pub(super) input: rmac_input::Snapshot,
+    /// Keyboard's Key repeat rate and Delay until repeat sliders
+    /// (SET-101): `rmac_ui::Slider` over the preset index, the same
+    /// draggable-slider widget every other pane's slider uses, rather than
+    /// the hand-rolled stepped track that drew with no thumb.
+    pub(super) keyboard_repeat_rate_slider: Entity<SliderState>,
+    pub(super) keyboard_repeat_delay_slider: Entity<SliderState>,
     pub(super) gtk_text: Option<rmac_gtk_settings::Snapshot>,
     pub(super) screen_reader_toggle: Option<rmac_screen_reader::Snapshot>,
     pub(super) privacy: Option<rmac_privacy::Snapshot>,
@@ -165,6 +171,11 @@ pub(super) struct Settings {
     pub(super) notifications_loading: bool,
     pub(super) notification_busy: Option<String>,
     pub(super) notification_apps: Vec<rmac_notifications_linux::center::ApplicationPolicy>,
+    /// The most recent history record's origin seen for each app ID, kept
+    /// from the last full snapshot load so a raw D-Bus sender name never
+    /// has to be shown while its real name and icon resolve (SET-94).
+    pub(super) notification_origins:
+        std::collections::BTreeMap<String, rmac_notifications_linux::origin::Origin>,
     pub(super) app_catalog: Vec<rmac_apps::Application>,
     pub(super) _app_catalog_watcher: Option<rmac_apps::CatalogWatcher>,
 

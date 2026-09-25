@@ -174,7 +174,7 @@ pub(super) fn preserve_disabled_after_removal(
 pub(super) fn systemd_background_services(
     environment: &Environment,
 ) -> Result<(Vec<BackgroundService>, bool), Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| {
+    let connection = rmac_dbus::session_blocking().map_err(|_| {
         Error::new(
             ErrorKind::Unavailable,
             "the systemd user manager is unavailable on the session bus",
@@ -220,7 +220,13 @@ pub(super) fn systemd_background_services(
                 .map(|directory| directory.join(id))
                 .find(|candidate| std::fs::symlink_metadata(candidate).is_ok())
         };
-        if let Some(service) = rmac_login_items::background_service(id, &state, user_owned, source)?
+        // One oddly-named unit (a template instance, a generator's
+        // output, ...) used to fail `validate_service_id` and abort the
+        // whole list with "the systemd user service identifier is
+        // invalid" — every other service disappeared behind one unit's
+        // name. Skip just that unit instead (SET-81).
+        if let Ok(Some(service)) =
+            rmac_login_items::background_service(id, &state, user_owned, source)
         {
             services.insert(id.to_owned(), service);
         }
@@ -256,7 +262,7 @@ pub(super) fn user_unit_names(directories: &[PathBuf]) -> HashSet<String> {
 
 #[cfg(target_os = "linux")]
 pub(super) fn systemd_set_enabled(id: &str, enabled: bool) -> Result<(), Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| {
+    let connection = rmac_dbus::session_blocking().map_err(|_| {
         Error::new(
             ErrorKind::Unavailable,
             "the systemd user manager is unavailable",
@@ -388,12 +394,21 @@ pub(super) fn discover(environment: &Environment) -> Result<Snapshot, Error> {
             };
             match rmac_login_items::parse_entry(contents) {
                 Ok(parsed) => {
+                    let user_owned = path.starts_with(&user_dir);
+                    // NoDisplay entries are session helpers a distro or the
+                    // desktop autostarts (AT-SPI's bus, Geoclue's demo
+                    // agent, ...), not something the user chose to run at
+                    // login; the Mac's Open at Login never lists these
+                    // (SET-81). A user-owned entry stays listed even if it
+                    // sets NoDisplay, since the user put it there.
+                    if parsed.no_display && !user_owned {
+                        continue;
+                    }
                     let try_exec_available =
                         parsed.try_exec.as_deref().is_none_or(executable_exists);
                     let applies =
                         rmac_login_items::applies_to_session(&parsed, &environment.desktops)
                             && try_exec_available;
-                    let user_owned = path.starts_with(&user_dir);
                     items.push(Item {
                         id: id.to_owned(),
                         name: parsed.name,

@@ -113,7 +113,7 @@ pub(crate) fn system_set_time(_time_usec: u64) -> Result<(), Error> {
 
 #[cfg(target_os = "linux")]
 fn system_connection() -> Result<zbus::blocking::Connection, Error> {
-    zbus::blocking::Connection::system().map_err(|_| {
+    rmac_dbus::system_blocking().map_err(|_| {
         Error::new(
             ErrorKind::Unavailable,
             "the system date and time service is unavailable",

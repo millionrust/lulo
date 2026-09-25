@@ -328,7 +328,6 @@ class Run:
                 subprocess.run([self.args.niri, "msg", "action", "focus-window", "--id", str(window["id"])],
                                env=self.env, capture_output=True, check=False)
                 time.sleep(1)
-                print("calculator before ⌘M:", json.dumps(self.window(window["id"])), flush=True)
                 self.keys.key("alt-m")
                 self.check("⌘M parks an rmac app", self.wait_for(lambda: self.parked(window["id"]), 15))
                 pictures = self.thumbnails(window["id"])

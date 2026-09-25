@@ -324,24 +324,12 @@ impl FinderView {
     #[cfg(any(target_os = "linux", test))]
     fn accessible_delete_dialog(&self) -> Option<AccessibleDialog> {
         let confirmation = self.delete_confirmation.as_ref()?;
-        let count = confirmation.items.len();
-        let name = confirmation
-            .items
-            .first()
-            .and_then(|item| item.original_path.file_name())
-            .map(|name| sanitize_dialog_name(&name.to_string_lossy()));
+        let count = delete_confirmation_count(confirmation);
+        let name = delete_confirmation_first_name(confirmation);
         let (title, description) = if confirmation.empty_trash {
             empty_trash_prompt(self.file_words.bin())
         } else {
-            (
-                if count == 1 {
-                    "Delete Item Permanently?"
-                } else {
-                    "Delete Items Permanently?"
-                }
-                .to_string(),
-                permanent_delete_prompt(count, name.as_deref()),
-            )
+            permanent_delete_prompt(count, name.as_deref())
         };
         Some(AccessibleDialog {
             kind: DialogKind::PermanentDelete,

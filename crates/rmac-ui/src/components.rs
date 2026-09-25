@@ -291,12 +291,28 @@ pub fn dialog(id: impl Into<ElementId>, content: impl IntoElement) -> Dialog {
 ///
 /// Render this as the LAST child of the app root, gated on the app's
 /// "is a dialog open?" state.
+/// Returns the underlying [`Dialog`] (rather than an opaque `impl
+/// IntoElement`) so a caller that needs it — e.g. Text Editor's Save sheet,
+/// where Esc must cancel — can chain [`Dialog::capture_key_down`].
 pub fn alert(
     title: impl Into<SharedString>,
     message: impl Into<SharedString>,
     buttons: Vec<AnyElement>,
-) -> impl IntoElement {
-    alert_with_icon(None, title, message, buttons)
+) -> Dialog {
+    alert_impl(None, title, message, buttons, true)
+}
+
+/// Like [`alert`], but the *first* (leftmost, "Cancel") button carries the
+/// keyboard default instead of the last. Apple's caution-alert pattern for
+/// an irreversible action (Finder's Delete Immediately, TextEdit's discard
+/// sheet, …): the destructive button is still styled red, but an errant
+/// Return does not trigger it — Cancel does.
+pub fn alert_cancel_default(
+    title: impl Into<SharedString>,
+    message: impl Into<SharedString>,
+    buttons: Vec<AnyElement>,
+) -> Dialog {
+    alert_impl(None, title, message, buttons, false)
 }
 
 /// [`alert`] with the app icon drawn 64 pt at the top left, as macOS does.
@@ -305,7 +321,17 @@ pub fn alert_with_icon(
     title: impl Into<SharedString>,
     message: impl Into<SharedString>,
     buttons: Vec<AnyElement>,
-) -> impl IntoElement {
+) -> Dialog {
+    alert_impl(icon, title, message, buttons, true)
+}
+
+fn alert_impl(
+    icon: Option<AnyElement>,
+    title: impl Into<SharedString>,
+    message: impl Into<SharedString>,
+    buttons: Vec<AnyElement>,
+    default_last: bool,
+) -> Dialog {
     let title: SharedString = title.into();
     let message: SharedString = message.into();
     // NSAlert's accessible name is its title, falling back to the message for
@@ -388,9 +414,12 @@ pub fn alert_with_icon(
     dialog("rmac-alert", card)
         .role(Role::AlertDialog)
         .when_some(accessible_name, |el, name| el.aria_label(name))
-        // macOS puts the default action rightmost; land initial (and
-        // wrapped) focus there instead of the leftmost/Cancel button.
-        .initial_focus_last()
+        // macOS puts most alerts' default action rightmost, so land initial
+        // (and wrapped) focus there instead of the leftmost/Cancel button —
+        // unless the caller asked for `alert_cancel_default`'s caution-alert
+        // behavior, where Cancel (the dialog's own first tab stop) stays
+        // the default so an errant Return can't trigger a destructive one.
+        .when(default_last, |dialog| dialog.initial_focus_last())
 }
 
 // ---- Context menu ---------------------------------------------------------

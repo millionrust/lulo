@@ -674,6 +674,13 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
         items: &[
             item!("Open…", "preview::OpenFile", "⌘O"),
             item!("Close Window", "preview::CloseWindow", "⌘W", separator),
+            // PREV-15: the Mac's File menu also has New from Clipboard,
+            // Open Recent ▸, Close All, Save, Save As…, Duplicate, Rename…,
+            // Move To…, Revert To ▸, Enter Password…, Edit Permissions…,
+            // Import from Camera/Scanner, Take Screenshot ▸, Export…,
+            // Share ▸ — none of those has a working implementation to wire
+            // up yet, so none is listed rather than adding a dead item.
+            item!("Export as PDF…", "preview::ExportAsPdf", "", separator),
             item!("Print…", "preview::PrintDocument", "⌘P", separator),
         ],
     },

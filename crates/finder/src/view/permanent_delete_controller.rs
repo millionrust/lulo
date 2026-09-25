@@ -1,13 +1,11 @@
 use super::*;
 
 impl FinderView {
+    /// File ▸ Delete Immediately… (⌥⌘⌫): works on any selection in any
+    /// folder, not just inside the Bin — matching the Mac, where the command
+    /// is available everywhere and asks once before permanently erasing the
+    /// selection (bypassing a normal move to Trash).
     pub(super) fn request_permanent_delete(&mut self, cx: &mut Context<Self>) {
-        if !self.trash_view {
-            self.operation_error =
-                Some("Permanent deletion is available for items in Trash".into());
-            cx.notify();
-            return;
-        }
         #[cfg(any(target_os = "linux", test))]
         {
             if self.transfer.is_some()
@@ -41,17 +39,31 @@ impl FinderView {
                 cx.notify();
                 return;
             }
-            let items = self.selected_trash_items();
-            if items.is_empty() {
-                return;
-            }
+            let confirmation = if self.trash_view {
+                let items = self.selected_trash_items();
+                if items.is_empty() {
+                    return;
+                }
+                DeleteConfirmation {
+                    items,
+                    paths: Vec::new(),
+                    empty_trash: false,
+                }
+            } else {
+                let paths = self.selected_paths();
+                if paths.is_empty() {
+                    return;
+                }
+                DeleteConfirmation {
+                    items: Vec::new(),
+                    paths,
+                    empty_trash: false,
+                }
+            };
             self.menu_at = None;
             self.operation_error = None;
             self.operation_notice = None;
-            self.delete_confirmation = Some(DeleteConfirmation {
-                items,
-                empty_trash: false,
-            });
+            self.delete_confirmation = Some(confirmation);
             let _ = rmac_sound::play_alert();
             cx.notify();
         }
@@ -115,6 +127,7 @@ impl FinderView {
                             this.operation_notice = None;
                             this.delete_confirmation = Some(DeleteConfirmation {
                                 items,
+                                paths: Vec::new(),
                                 empty_trash: true,
                             });
                             let _ = rmac_sound::play_alert();
@@ -169,7 +182,8 @@ impl FinderView {
         }
         let empty_trash = confirmation.empty_trash;
         let items = confirmation.items;
-        let total = items.len();
+        let paths = confirmation.paths;
+        let total = items.len() + paths.len();
         if total == 0 {
             return;
         }
@@ -224,6 +238,41 @@ impl FinderView {
                     }
                     processed += 1;
                     let _ = events.try_send(TrashEvent::Progress { processed, total });
+                }
+                // A selection outside the Bin: not trashed yet, so route
+                // through the trash-then-delete-permanently pipeline
+                // (`delete_immediately`) instead — see its doc comment.
+                if !cancelled {
+                    for path in paths {
+                        if cancel.load(Ordering::Acquire) {
+                            cancelled = true;
+                            break;
+                        }
+                        match store.delete_immediately(&path, &cancel) {
+                            Ok(()) => completed += 1,
+                            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                                cancelled = true;
+                                break;
+                            }
+                            Err(error) => {
+                                let blocked = error.kind() == std::io::ErrorKind::WouldBlock;
+                                failures.push(file_ops::Failure::message(
+                                    file_ops::Operation::PermanentDelete,
+                                    &path,
+                                    None,
+                                    error.to_string(),
+                                ));
+                                if blocked {
+                                    processed += 1;
+                                    let _ =
+                                        events.try_send(TrashEvent::Progress { processed, total });
+                                    break;
+                                }
+                            }
+                        }
+                        processed += 1;
+                        let _ = events.try_send(TrashEvent::Progress { processed, total });
+                    }
                 }
                 let recovery = store.recover_and_review();
                 let undo_availability = store.undo_store().latest();

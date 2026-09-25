@@ -163,16 +163,21 @@ fn recursive_copy_refuses_special_files_without_opening_them() {
 
 #[test]
 fn permanent_delete_prompt_is_explicitly_irreversible_and_path_free() {
-    let single = permanent_delete_prompt(1, Some("report.txt"));
-    let multiple = permanent_delete_prompt(3, None);
+    let (single_title, single_message) = permanent_delete_prompt(1, Some("report.txt"));
+    let (multiple_title, multiple_message) = permanent_delete_prompt(3, None);
 
-    assert!(single.contains("“report.txt”"));
-    assert!(single.contains("cannot be undone"));
-    assert!(!single.contains("/home/"));
+    assert!(single_title.contains("“report.txt”"));
+    assert!(single_message.contains("can’t undo"));
+    assert!(!single_title.contains("/home/"));
+    assert!(!single_message.contains("/home/"));
     assert_eq!(
-            multiple,
-            "3 items will be deleted immediately. This action cannot be undone. Deletion of an item cannot be cancelled once it begins."
-        );
+        multiple_title,
+        "Are you sure you want to delete these 3 items?"
+    );
+    assert_eq!(
+        multiple_message,
+        "These items will be deleted immediately. You can’t undo this action."
+    );
 }
 
 #[test]

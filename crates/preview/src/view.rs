@@ -51,9 +51,9 @@ use rmac_preview::zoom::{self, ContentKind, Zoom};
 use rmac_ui::{mac, InputEvent, InputState};
 
 use crate::{
-    ActualSize, CloseWindow, Copy, Find, FindNext, FindPrevious, GoToPage, HideSidebar, NextItem,
-    PreviousItem, PrintDocument, RotateLeft, RotateRight, SelectAll, ShowInspector, ShowThumbnails,
-    ZoomIn, ZoomOut, ZoomToFit,
+    ActualSize, CloseWindow, Copy, ExportAsPdf, Find, FindNext, FindPrevious, GoToPage,
+    HideSidebar, NextItem, PreviousItem, PrintDocument, RotateLeft, RotateRight, SelectAll,
+    ShowInspector, ShowThumbnails, ZoomIn, ZoomOut, ZoomToFit,
 };
 use rmac_preview::render::{self, Content, Loaded};
 
@@ -322,6 +322,8 @@ pub(crate) struct PreviewView {
     /// versa). Shared with the async print/export task as `current`.
     document_generation: Arc<std::sync::atomic::AtomicU64>,
     print_busy: bool,
+    /// File ▸ Export as PDF… (PREV-15) in progress.
+    export_busy: bool,
 }
 
 impl PreviewView {
@@ -394,6 +396,7 @@ impl PreviewView {
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             document_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             print_busy: false,
+            export_busy: false,
         };
         for index in 0..view.slots.len() {
             view.start_load(index, cx);
@@ -789,6 +792,60 @@ impl PreviewView {
     #[cfg(not(target_os = "linux"))]
     fn print_document(&mut self, _window: &mut Window, _cx: &mut Context<Self>) {
         eprintln!("rmac-preview: printing is implemented for the supported Linux session");
+    }
+
+    // ---- export -------------------------------------------------------------
+
+    /// File ▸ Export as PDF… (PREV-15): the PDF's own bytes go straight to
+    /// the chosen destination — the same "send the file, don't re-render
+    /// it" approach `print_document` above already uses, so what's exported
+    /// matches what's on screen exactly. Exporting an image isn't
+    /// implemented yet (see `crate::pdfwriter` for the building block a
+    /// later pass would use to wrap one in a page first).
+    fn export_as_pdf(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.export_busy {
+            return;
+        }
+        let Some(slot) = self.slot() else { return };
+        if slot.kind() != Some(Kind::Pdf) {
+            eprintln!("rmac-preview: exporting an image as PDF isn't supported yet");
+            return;
+        }
+        let source = slot.path.clone();
+        let directory = source
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let suggested_name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(str::to_owned)
+            .unwrap_or_else(|| "Untitled.pdf".to_owned());
+        self.export_busy = true;
+        cx.notify();
+        let receiver = cx.prompt_for_new_path(&directory, Some(&suggested_name));
+        cx.spawn_in(window, async move |this, cx| {
+            let picker = receiver.await;
+            let Ok(Ok(Some(destination))) = picker else {
+                let _ = this.update_in(cx, |this, _, cx| {
+                    this.export_busy = false;
+                    cx.notify();
+                });
+                return;
+            };
+            let result = cx
+                .background_executor()
+                .spawn(async move { std::fs::copy(&source, &destination).map(|_| ()) })
+                .await;
+            let _ = this.update_in(cx, |this, _, cx| {
+                this.export_busy = false;
+                if let Err(error) = result {
+                    eprintln!("rmac-preview: could not export as PDF: {error}");
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     // ---- PDF text selection -------------------------------------------------
@@ -2343,6 +2400,9 @@ impl Render for PreviewView {
             }))
             .on_action(cx.listener(|this, _: &PrintDocument, window, cx| {
                 this.print_document(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ExportAsPdf, window, cx| {
+                this.export_as_pdf(window, cx);
             }))
             .on_action(cx.listener(|this, _: &Find, window, cx| {
                 if this.slot().and_then(Slot::kind) == Some(Kind::Pdf) {

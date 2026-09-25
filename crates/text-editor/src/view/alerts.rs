@@ -4,6 +4,16 @@ use super::*;
 
 impl EditorView {
     /// If the buffer is dirty, ask before discarding; otherwise act immediately.
+    ///
+    /// TE-18: this matches the Mac exactly only for a document that has
+    /// never been saved (`self.path` is `None`, so there is no file to
+    /// autosave into) — that one still needs the person's choice, since
+    /// "save" first has to ask where. A document that already has a path
+    /// autosaves there and closes without asking, the same as the Mac (which
+    /// autosaves continuously and reopens "with unsaved changes" instead of
+    /// ever prompting on close for a saved document). The RTF preview
+    /// (`rtf_runs.is_some()`) is read-only and was never written to its own
+    /// path by this window, so it still needs the sheet.
     pub(super) fn guarded(
         &mut self,
         pending: Pending,
@@ -17,6 +27,10 @@ impl EditorView {
             if self.clear_recovery(cx) {
                 self.perform(pending, window, cx);
             }
+            return;
+        }
+        if self.path.is_some() && self.rtf_runs.is_none() {
+            self.save_with(Some(pending), window, cx);
             return;
         }
         self.alert = Some(ActiveAlert::ConfirmSave(pending));
@@ -73,7 +87,8 @@ impl EditorView {
         cx.notify();
     }
 
-    /// Secondary button: Discard (recover) / Don't Save (confirm).
+    /// Secondary button: Discard (recover) / Delete (confirm — the document
+    /// was never saved, so there is nothing on disk to keep).
     pub(super) fn alert_secondary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         match self.alert.take() {
             Some(ActiveAlert::Recover(prompt)) => {

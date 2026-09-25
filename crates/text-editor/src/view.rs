@@ -85,7 +85,9 @@ enum AssistiveEdit {
 enum ActiveAlert {
     /// A recovery file was found — Restore (load it) or Discard.
     Recover(RecoveryPrompt),
-    /// The buffer is dirty before `Pending` — Save / Don't Save / Cancel.
+    /// The buffer is dirty before `Pending` on a document that has never
+    /// been saved (a path-backed one autosaves instead, see `guarded`) —
+    /// the Mac's Save sheet: Delete / Cancel / Save.
     ConfirmSave(Pending),
     /// The opened document no longer matches its retained exact revision.
     Conflict,

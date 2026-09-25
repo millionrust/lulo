@@ -726,29 +726,17 @@ impl ClockView {
             .w_full()
             .bottom_0();
         if self.state.alarms.is_empty() {
-            return body
-                .child(
-                    svg()
-                        .absolute()
-                        .top(px(m::EMPTY_GLYPH_TOP - m::TOOLBAR_HEIGHT))
-                        .left(px(0.0))
-                        .w_full()
-                        .h(px(m::EMPTY_GLYPH))
-                        .path("icons/clock/alarm.svg")
-                        .text_color(rgb(m::EMPTY_GLYPH_FILL)),
-                )
-                .child(
-                    div()
-                        .absolute()
-                        .top(px(m::EMPTY_LABEL_TOP - m::TOOLBAR_HEIGHT))
-                        .w_full()
-                        .flex()
-                        .justify_center()
-                        .text_size(px(13.0))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(rgb(m::EMPTY_LABEL))
-                        .child("No Alarms"),
-                );
+            // CLOCK-08: the Mac's empty Alarms tab shows only "No Alarms",
+            // centered — no icon. (The old giant glyph here was a `w_full()`
+            // SVG stretched across the whole window instead of the small
+            // icon design-lab measured.)
+            return body.flex().items_center().justify_center().child(
+                div()
+                    .text_size(px(13.0))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(m::EMPTY_LABEL))
+                    .child("No Alarms"),
+            );
         }
         let utc = (now / 1000) as i64;
         let zone = self.zone.clone();

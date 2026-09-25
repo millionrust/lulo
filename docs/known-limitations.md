@@ -34,11 +34,30 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   still uses the older rmac pill rather than the measured bubble in
   design-lab/dock.html (scene 3); Fn may be needed for F3 on keyboards
   whose top row defaults to media keys.
-- Control-F2 (move focus to the menu bar) is not implemented. The top bar's
-  surface is on-demand (niri focuses it only on click) and its key handling
-  runs only while a menu is open, so it needs the Dock's invisible focus
-  surface, a command endpoint, a "title highlighted, no menu open" state
-  and its accessible focus -- the same mechanism, but not a small addition.
+- Control-F2 (move focus to the menu bar) is implemented: niri's bind
+  spawns `rmac-shortcut-dispatch menu-bar-focus` (the same command-endpoint
+  mechanism the power key uses) to a `menu-bar-focus` dispatch socket the
+  menu bar watches; the bar takes the keyboard through its own invisible
+  1x1 overlay surface (`MenuKeyboard`), the same technique ⌃F3 uses for the
+  Dock, since the bar's own layer surface only takes keyboard on a click.
+  Left/Right moves the highlighted title, Down/Return opens it, Esc backs
+  out one level at a time (an open menu closes to the highlight; the
+  highlight then leaves), and typing a letter jumps to a title starting
+  with it. `MenuKeyboard`'s single accessible node carries AccessKit focus
+  for the highlighted title and, once a menu opens, the highlighted row.
+  Verified by compiling, `cargo clippy -D warnings`, `niri validate`, and
+  new unit tests covering the dispatch socket and the shell.kdl bind;
+  **not yet verified live or nested with Orca/AT-SPI** -- doing that needs
+  either a visible nested-niri window on the reference laptop's real
+  screen (niri has no headless backend to test its own keybindings and
+  layer-shell keyboard-interactivity in isolation) or toggling Full
+  Keyboard Access on the owner's own Mac to record a behaviour-suite
+  scenario, and this pass avoided both rather than disturb the owner's
+  live session or its physical Mac's system settings without asking.
+  Known scope limit: only the bar's own menu titles (the Lulo/system menu,
+  the bold app menu, and the app's declared menus) are reachable this way;
+  the status items on the right (Wi-Fi, Battery, the clock) are not part
+  of this ⌃F2 pass, matching the brief's own "titles" wording.
 - AT-SPI's `EditableText` interface (needed to type into Spotlight's search
   field without a keyboard injector) is not implemented by the pinned
   `accesskit_unix`/`accesskit_atspi_common` versions at all -- confirmed

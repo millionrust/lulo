@@ -26,7 +26,7 @@ mod linux_wayland {
         App, AssetSource, Bounds, BoxShadow, ClickEvent, Context, DisplayId, Entity, FocusHandle,
         FontWeight, KeyDownEvent, ModifiersChangedEvent, PlatformDisplay, QuitMode, Role,
         SharedString, Size, Subscription, Window, WindowBackgroundAppearance, WindowBounds,
-        WindowKind, WindowOptions,
+        WindowHandle, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use rmac_shell_ui::tokens;
@@ -451,6 +451,183 @@ mod linux_wayland {
         active_app_id: Option<String>,
     }
 
+    /// ⌃F2 keyboard mode (ACC-05, `docs/known-limitations.md`): the
+    /// invisible focus surface holding the real keyboard, and the title
+    /// highlighted while no menu is open. Mirrors the Dock's own ⌃F3
+    /// `KeyboardMode` (`shell/bins/rmac-dock/src/main.rs`).
+    struct KeyboardMode {
+        surface: WindowHandle<MenuKeyboard>,
+        /// The window that had the keyboard before ⌃F2; Esc refocuses it.
+        previous_window: Option<rmac_compositor::WindowId>,
+        /// The highlighted title while no menu is open. Once a menu opens
+        /// (Down/Return), `open_menu`'s own index stands in for it; this
+        /// still holds the title a later Esc (backing fully out of the
+        /// menu) should return the highlight to.
+        title: Option<usize>,
+    }
+
+    /// What the ⌃F2 focus surface exposes as the focused accessible node.
+    #[derive(Clone, PartialEq)]
+    struct KeyboardAnnouncement {
+        role: Role,
+        label: SharedString,
+        key: usize,
+    }
+
+    const KEYBOARD_MENU_ANNOUNCEMENT_KEY: usize = 1 << 20;
+
+    /// Never keep an invisible exclusive surface that never got the keyboard.
+    const KEYBOARD_ACTIVATION_TIMEOUT: Duration = Duration::from_millis(1_000);
+
+    /// One title in the bar, in order: the rmac menu, the bold app menu,
+    /// then the app's own menus (see `TopBar::bar_menus`/`bar_menus`'s own
+    /// doc comment on ordering).
+    struct TitleTarget {
+        app_id: String,
+        accessible_label: SharedString,
+        /// First letter of the title's own text, lowercased, for the
+        /// typeahead jump; `None` for the system menu, which has no text
+        /// (just the Lulo mark).
+        letter: Option<char>,
+    }
+
+    /// The invisible surface that holds the keyboard while the menu bar is
+    /// focused through ⌃F2. It draws nothing and takes no pointer input;
+    /// see `shell/bins/rmac-dock/src/main.rs`'s `DockKeyboard`, which this
+    /// mirrors.
+    struct MenuKeyboard {
+        top_bar: WindowHandle<TopBar>,
+        focus: FocusHandle,
+        announcement: KeyboardAnnouncement,
+        was_active: bool,
+        closing: bool,
+        input_region_set: bool,
+    }
+
+    impl MenuKeyboard {
+        fn new(
+            top_bar: WindowHandle<TopBar>,
+            announcement: KeyboardAnnouncement,
+            window: &mut Window,
+            cx: &mut Context<Self>,
+        ) -> Self {
+            let focus = cx.focus_handle();
+            focus.focus(window, cx);
+            cx.observe_window_activation(window, |this, window, cx| {
+                if window.is_window_active() {
+                    this.was_active = true;
+                } else if this.was_active {
+                    // Another surface took the keyboard (a menu bar click
+                    // elsewhere, ⌘Tab, the lock screen): leave without
+                    // refocusing.
+                    this.close(false, window, cx);
+                }
+            })
+            .detach();
+            cx.spawn_in(window, async move |this, cx| {
+                cx.background_executor()
+                    .timer(KEYBOARD_ACTIVATION_TIMEOUT)
+                    .await;
+                let _ = this.update_in(cx, |this, window, cx| {
+                    if !this.was_active {
+                        this.close(false, window, cx);
+                    }
+                });
+            })
+            .detach();
+            Self {
+                top_bar,
+                focus,
+                announcement,
+                was_active: false,
+                closing: false,
+                input_region_set: false,
+            }
+        }
+
+        fn close(&mut self, restore: bool, window: &mut Window, cx: &mut Context<Self>) {
+            if self.closing {
+                return;
+            }
+            self.closing = true;
+            let _ = self.top_bar.update(cx, |top_bar, _window, cx| {
+                top_bar.leave_menu_keyboard(restore, cx);
+            });
+            window.remove_window();
+        }
+
+        fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+            cx.stop_propagation();
+            if self.closing {
+                return;
+            }
+            let next = self
+                .top_bar
+                .update(cx, |top_bar, window, cx| {
+                    top_bar.keyboard_key(event, window, cx)
+                })
+                .ok()
+                .flatten();
+            match next {
+                Some(announcement) => {
+                    if announcement != self.announcement {
+                        self.announcement = announcement;
+                        cx.notify();
+                    }
+                }
+                None => {
+                    // The bar already left keyboard mode (or is gone).
+                    self.closing = true;
+                    window.remove_window();
+                }
+            }
+        }
+    }
+
+    impl Render for MenuKeyboard {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            if !self.input_region_set {
+                self.input_region_set = true;
+                window.set_input_region(Some(&[]));
+            }
+            // The container holds real focus; the child stands for the
+            // highlighted title (or menu row) through aria-activedescendant,
+            // so Orca reads "File, menu item" (or similar) on every move.
+            div()
+                .id("menubar-keyboard")
+                .track_focus(&self.focus)
+                .role(Role::MenuBar)
+                .aria_label("menu bar")
+                .size_full()
+                .on_key_down(cx.listener(Self::key_down))
+                .child(
+                    div()
+                        .id(("menubar-keyboard-focus", self.announcement.key))
+                        .role(self.announcement.role)
+                        .aria_label(self.announcement.label.clone())
+                        .aria_active_descendant()
+                        .size_full(),
+                )
+        }
+    }
+
+    /// The next title, cycling from `current`, whose own text starts with
+    /// `letter` (case-insensitive); `None` if nothing matches.
+    fn next_title_starting_with(
+        titles: &[TitleTarget],
+        current: usize,
+        letter: &str,
+    ) -> Option<usize> {
+        let letter = letter.chars().next()?.to_ascii_lowercase();
+        let len = titles.len();
+        if len == 0 {
+            return None;
+        }
+        (1..=len)
+            .map(|offset| (current + offset) % len)
+            .find(|&index| titles[index].letter == Some(letter))
+    }
+
     /// An open submenu's panel.
     struct SubmenuPanel {
         /// 1 for a submenu of the menu under its title.
@@ -661,6 +838,10 @@ mod linux_wayland {
         parking: rmac_compositor::ParkingStore,
         backdrop_panels: Option<Vec<MenuBackdropPanel>>,
         backdrop_tx: async_channel::Sender<MenuBackdropUpdate>,
+        /// ⌃F2 keyboard mode (ACC-05): `Some` from the first `Ctrl+F2`
+        /// press until Esc, an activation, or something else takes the
+        /// keyboard away.
+        keyboard: Option<KeyboardMode>,
         focus: FocusHandle,
         /// Evidence capture: `RMAC_CAPTURE_MENU=<index>` opens that menu on
         /// the first frame so screenshots can compare it with macOS.
@@ -736,6 +917,7 @@ mod linux_wayland {
                 capture_status: std::env::var("RMAC_CAPTURE_STATUS_MENU")
                     .ok()
                     .and_then(|value| menu_model::parse_capture_status(&value)),
+                keyboard: None,
                 focus,
                 _blur: blur,
             }
@@ -855,6 +1037,17 @@ mod linux_wayland {
             window: &mut Window,
             cx: &mut Context<Self>,
         ) {
+            self.open_menu_content(index, app_id, cx);
+            window.focus(&self.focus, cx);
+            window.refresh();
+        }
+
+        /// Everything `open_menu` does except taking the bar's own window
+        /// focus: ⌃F2 keyboard mode (`begin_menu_keyboard`) keeps the
+        /// keyboard on its own invisible focus surface instead, the same
+        /// way `handle_key`'s own Left/Right between titles never re-opens
+        /// through a fresh `window.focus` either.
+        fn open_menu_content(&mut self, index: usize, app_id: String, cx: &mut Context<Self>) {
             let first_open = self.open_menu.is_none();
             self.status_menu = None;
             self.status_selected = None;
@@ -894,8 +1087,6 @@ mod linux_wayland {
             }
             self.load_menu_windows(app_id.clone(), cx);
             self.open_app_id = Some(app_id);
-            window.focus(&self.focus, cx);
-            window.refresh();
             cx.notify();
         }
 
@@ -2128,6 +2319,11 @@ mod linux_wayland {
                     self.submenu_rows.clear();
                     self.help_query.clear();
                     self.recent_submenu_open = false;
+                    if let Some(mode) = self.keyboard.as_mut() {
+                        // Keeps the ⌃F2 highlight in step, so Esc later
+                        // returns it to whichever title is open now.
+                        mode.title = Some(next);
+                    }
                     if next > 0 {
                         // Coming from the rmac menu, the menus belong to the
                         // app again.
@@ -2170,6 +2366,294 @@ mod linux_wayland {
                 }
                 _ => {}
             }
+        }
+
+        /// True while `index`'s title should show the highlighted
+        /// background: its menu is open, or (⌃F2, no menu open yet) it's
+        /// the keyboard highlight.
+        fn title_highlighted(&self, index: usize) -> bool {
+            self.open_menu == Some(index)
+                || self
+                    .keyboard
+                    .as_ref()
+                    .is_some_and(|mode| mode.title == Some(index))
+        }
+
+        /// Every title in the bar, in the same order `bar_menus`'s own
+        /// `menus` does, with the app id `open_menu`/`open_menu_content`
+        /// need to open it and the letter a typeahead press should jump to
+        /// it on.
+        fn keyboard_titles(&self, cx: &App) -> Vec<TitleTarget> {
+            let bar = self.bar_menus(cx);
+            let app_id_for_extra = self.status.read(cx).menu_app_id.clone().unwrap_or_default();
+            bar.menus
+                .iter()
+                .enumerate()
+                .map(|(index, menu)| match index {
+                    0 => TitleTarget {
+                        app_id: SYSTEM_MENU_ID.to_owned(),
+                        accessible_label: "menu".into(),
+                        letter: None,
+                    },
+                    1 => TitleTarget {
+                        app_id: bar.active_app_id.clone().unwrap_or_default(),
+                        accessible_label: format!("{} menu", bar.active_app).into(),
+                        letter: bar
+                            .active_app
+                            .chars()
+                            .next()
+                            .map(|c| c.to_ascii_lowercase()),
+                    },
+                    _ => TitleTarget {
+                        app_id: app_id_for_extra.clone(),
+                        accessible_label: format!("{} menu", menu.label).into(),
+                        letter: menu.label.chars().next().map(|c| c.to_ascii_lowercase()),
+                    },
+                })
+                .collect()
+        }
+
+        fn set_keyboard_title(&mut self, index: usize) {
+            if let Some(mode) = self.keyboard.as_mut() {
+                mode.title = Some(index);
+            }
+        }
+
+        /// `Ctrl+F2` (ACC-05, `docs/known-limitations.md`): highlight the
+        /// first title and take the keyboard through the same invisible
+        /// focus surface technique ⌃F3 uses for the Dock
+        /// (`shell/bins/rmac-dock/src/main.rs`'s `begin_keyboard`). The
+        /// bar's own layer surface only takes keyboard on a click, so a
+        /// bare key bind can't reach it directly.
+        fn begin_menu_keyboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            if self.keyboard.is_some() || self.open_menu.is_some() || self.status_menu.is_some() {
+                return;
+            }
+            let titles = self.keyboard_titles(cx);
+            if titles.is_empty() {
+                return;
+            }
+            let Some(top_bar) = window.window_handle().downcast::<TopBar>() else {
+                return;
+            };
+            let previous_window = self
+                .status
+                .read(cx)
+                .update
+                .snapshot
+                .status
+                .focused
+                .window_id;
+            let announcement = KeyboardAnnouncement {
+                role: Role::MenuItem,
+                label: titles[0].accessible_label.clone(),
+                key: 0,
+            };
+            let options = WindowOptions {
+                titlebar: None,
+                focus: true,
+                show: true,
+                window_bounds: Some(WindowBounds::Windowed(Bounds {
+                    origin: point(px(0.0), px(0.0)),
+                    size: Size::new(px(1.0), px(1.0)),
+                })),
+                display_id: window.display(cx).map(|display| display.id()),
+                app_id: Some("dev.rmac.MenuBarKeyboard".to_owned()),
+                window_background: WindowBackgroundAppearance::Transparent,
+                kind: WindowKind::LayerShell(LayerShellOptions {
+                    namespace: "rmac-menubar-keyboard".to_owned(),
+                    layer: Layer::Overlay,
+                    keyboard_interactivity: KeyboardInteractivity::Exclusive,
+                    ..Default::default()
+                }),
+                is_movable: false,
+                is_resizable: false,
+                is_minimizable: false,
+                ..Default::default()
+            };
+            let surface = match cx.open_window(options, move |window, cx| {
+                cx.new(|cx| MenuKeyboard::new(top_bar, announcement, window, cx))
+            }) {
+                Ok(surface) => surface,
+                Err(error) => {
+                    eprintln!("could not move keyboard focus to the menu bar: {error}");
+                    return;
+                }
+            };
+            self.keyboard = Some(KeyboardMode {
+                surface,
+                previous_window,
+                title: Some(0),
+            });
+            cx.notify();
+        }
+
+        /// Leave ⌃F2 keyboard mode. `restore` (Esc, or the invisible
+        /// surface never getting the keyboard) hands the keyboard back to
+        /// the window that had it before ⌃F2 started; an activation does
+        /// not, because whatever it opened takes focus on its own.
+        fn leave_menu_keyboard(&mut self, restore: bool, cx: &mut Context<Self>) {
+            let Some(mode) = self.keyboard.take() else {
+                return;
+            };
+            // Fails harmlessly when the focus surface is the caller; it
+            // then removes itself.
+            let _ = mode.surface.update(cx, |surface, window, _| {
+                surface.closing = true;
+                window.remove_window();
+            });
+            if self.status_menu.take().is_some() {
+                self.status_selected = None;
+                self.status_option = false;
+                self.status_generation = self.status_generation.saturating_add(1);
+            }
+            if self.open_menu.take().is_some() {
+                self.open_app_id = None;
+                self.recent_submenu_open = false;
+                self.recent_selected_item = 0;
+                self.pending_system_action = None;
+                self.confirmation_generation = self.confirmation_generation.saturating_add(1);
+                self.confirmation_started_at = None;
+                self.selected_item = NO_ITEM;
+                self.submenu_rows.clear();
+                self.hover_generation = self.hover_generation.saturating_add(1);
+                self.menu_window = None;
+                self.help_query.clear();
+            }
+            if let (true, Some(window)) = (restore, mode.previous_window) {
+                cx.spawn(async move |_, _| {
+                    let action = rmac_compositor::Action::FocusWindow { window };
+                    if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                        eprintln!("could not return focus from the menu bar: {error:?}");
+                    }
+                })
+                .detach();
+            }
+            cx.notify();
+        }
+
+        /// One key from the ⌃F2 focus surface. While no menu is open this
+        /// only moves the highlighted title (`Left`/`Right`/a first-letter
+        /// jump), opens it (`Down`/`Return`) or leaves (`Esc`); once a menu
+        /// is open it defers to `handle_key`, the same logic a mouse-opened
+        /// menu uses (which already moves Left/Right between titles with a
+        /// menu open too). Returns the accessible node the focus surface
+        /// should announce next, or `None` once keyboard mode has ended.
+        fn keyboard_key(
+            &mut self,
+            event: &KeyDownEvent,
+            window: &mut Window,
+            cx: &mut Context<Self>,
+        ) -> Option<KeyboardAnnouncement> {
+            self.keyboard.as_ref()?;
+            if self.open_menu.is_some() || self.status_menu.is_some() {
+                self.handle_key(event, window, cx);
+                let still_open = self.open_menu.is_some() || self.status_menu.is_some();
+                if !still_open {
+                    if event.keystroke.key == "escape" {
+                        // Back out of the menu; the highlight stays (see
+                        // `KeyboardMode::title`'s doc comment).
+                        cx.notify();
+                        return self.keyboard_announcement(cx);
+                    }
+                    // An item ran (or a confirmation did): whatever it
+                    // opened takes the keyboard from here, same as the
+                    // Dock's own `Outcome::Activate`.
+                    self.leave_menu_keyboard(false, cx);
+                    return None;
+                }
+                return self.keyboard_announcement(cx);
+            }
+            let titles = self.keyboard_titles(cx);
+            if titles.is_empty() {
+                self.leave_menu_keyboard(true, cx);
+                return None;
+            }
+            let current = self
+                .keyboard
+                .as_ref()
+                .and_then(|mode| mode.title)
+                .unwrap_or(0)
+                .min(titles.len() - 1);
+            match event.keystroke.key.as_str() {
+                "left" => {
+                    let next = current.checked_sub(1).unwrap_or(titles.len() - 1);
+                    self.set_keyboard_title(next);
+                }
+                "right" => {
+                    let next = (current + 1) % titles.len();
+                    self.set_keyboard_title(next);
+                }
+                "escape" => {
+                    self.leave_menu_keyboard(true, cx);
+                    return None;
+                }
+                "down" | "enter" | "space" => {
+                    let app_id = titles[current].app_id.clone();
+                    self.open_menu_content(current, app_id, cx);
+                    self.set_keyboard_title(current);
+                }
+                letter
+                    if !event.keystroke.modifiers.platform
+                        && !event.keystroke.modifiers.control
+                        && letter.chars().count() == 1
+                        && letter
+                            .chars()
+                            .next()
+                            .is_some_and(|c| c.is_ascii_alphabetic()) =>
+                {
+                    if let Some(next) = next_title_starting_with(&titles, current, letter) {
+                        self.set_keyboard_title(next);
+                    }
+                }
+                _ => {}
+            }
+            cx.notify();
+            self.keyboard_announcement(cx)
+        }
+
+        /// The accessible node the ⌃F2 focus surface should announce for
+        /// the current state: the highlighted row (or the menu itself,
+        /// nothing highlighted yet) while a menu is open, else the
+        /// highlighted title.
+        fn keyboard_announcement(&self, cx: &App) -> Option<KeyboardAnnouncement> {
+            self.keyboard.as_ref()?;
+            if let Some(menu_index) = self.open_menu {
+                let menus = self.bar_menus(cx).menus;
+                let menu = menus.get(menu_index)?;
+                let depth = self.submenu_rows.len();
+                let highlighted = self
+                    .level_items(menu, depth)
+                    .filter(|(_, row)| *row != NO_ITEM)
+                    .and_then(|(items, row)| items.get(row).map(|item| (row, item.label.clone())));
+                return Some(match highlighted {
+                    Some((row, label)) => KeyboardAnnouncement {
+                        role: Role::MenuItem,
+                        label: label.into(),
+                        key: KEYBOARD_MENU_ANNOUNCEMENT_KEY + menu_index * 4096 + depth * 256 + row,
+                    },
+                    None => KeyboardAnnouncement {
+                        role: Role::Menu,
+                        label: menu.label.clone().into(),
+                        key: KEYBOARD_MENU_ANNOUNCEMENT_KEY + menu_index,
+                    },
+                });
+            }
+            let titles = self.keyboard_titles(cx);
+            if titles.is_empty() {
+                return None;
+            }
+            let index = self
+                .keyboard
+                .as_ref()
+                .and_then(|mode| mode.title)
+                .unwrap_or(0)
+                .min(titles.len() - 1);
+            titles.get(index).map(|title| KeyboardAnnouncement {
+                role: Role::MenuItem,
+                label: title.accessible_label.clone(),
+                key: index,
+            })
         }
     }
 
@@ -2459,7 +2943,7 @@ mod linux_wayland {
                 .skip(2)
                 .map(|(index, menu)| {
                     let app_id = app_id_for_buttons.clone().unwrap_or_default();
-                    let open = self.open_menu == Some(index);
+                    let open = self.title_highlighted(index);
                     div()
                         .id(format!("app-menu-{}-{index}", self.display_id))
                         .role(Role::Button)
@@ -2894,7 +3378,7 @@ mod linux_wayland {
                                 .justify_center()
                                 .rounded(px(tokens::menu_item_radius()))
                                 .cursor_pointer()
-                                .when(self.open_menu == Some(0), |style| {
+                                .when(self.title_highlighted(0), |style| {
                                     style.bg(rgba(tokens::light_selection()))
                                 })
                                 .hover(|style| style.bg(rgba(tokens::light_hover())))
@@ -2915,7 +3399,7 @@ mod linux_wayland {
                         )
                         .child({
                             let app_id = active_app_id.clone().unwrap_or_default();
-                            let open = self.open_menu == Some(1);
+                            let open = self.title_highlighted(1);
                             div()
                                 .id(format!("app-menu-name-{}", self.display_id))
                                 .role(Role::Button)
@@ -4272,6 +4756,7 @@ mod linux_wayland {
             crate::unsaved_guard::start(cx);
             watch_power_dialog_requests(cx);
             watch_restart_to_update_requests(cx);
+            watch_menu_focus_requests(cx);
             let (backdrop_tx, backdrop_rx) = async_channel::bounded(16);
             cx.spawn(async move |cx| {
                 let mut tracker = MenuBackdropTracker::default();
@@ -4414,6 +4899,47 @@ mod linux_wayland {
             }
         })
         .detach();
+    }
+
+    /// `Ctrl+F2` (ACC-05, `docs/known-limitations.md`): niri's bind spawns
+    /// `rmac-shortcut-dispatch menu-bar-focus`, the same command-endpoint
+    /// mechanism the power key uses, through the `menu-bar-focus` dispatch
+    /// socket. The watch waits on the socket; nothing polls.
+    fn watch_menu_focus_requests(cx: &mut App) {
+        let (sender, requests) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                let id = rmac_shortcuts::ShortcutId("menu-bar-focus".to_owned());
+                if let Err(error) = rmac_shortcuts::watch_dispatches(id, sender).await {
+                    eprintln!("Ctrl+F2 cannot move keyboard focus to the menu bar: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |cx| {
+            while let Ok(event) = requests.recv().await {
+                if matches!(event, rmac_shortcuts::Event::Activated { .. }) {
+                    cx.update(begin_menu_keyboard_on_first_bar);
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Starts ⌃F2 keyboard mode on the first menu bar that can take it (see
+    /// `show_power_dialog`, the same one-instance-per-output pattern).
+    fn begin_menu_keyboard_on_first_bar(cx: &mut App) {
+        for handle in cx.windows() {
+            let Some(bar) = handle.downcast::<TopBar>() else {
+                continue;
+            };
+            if bar
+                .update(cx, |bar, window, cx| bar.begin_menu_keyboard(window, cx))
+                .is_ok()
+            {
+                return;
+            }
+        }
+        eprintln!("Ctrl+F2 has no menu bar to move keyboard focus to");
     }
 
     /// Shows the dialog on the first menu bar that can take it.

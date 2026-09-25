@@ -708,6 +708,13 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     ));
     assert!(shell.contains("{ spawn \"/usr/libexec/rmac/rmac-app-switcher\" \"previous\"; }"));
     assert!(shell.contains("Mod+grave { next-window filter=\"app-id\"; }"));
+    // ⌃F2 (ACC-05) asks the resident menu bar to take keyboard focus,
+    // through the same command-endpoint mechanism as the power key, not a
+    // direct spawn like the Dock's ⌃F3 below (the menu bar has no command
+    // IPC of its own).
+    assert!(shell.contains(
+        "Ctrl+F2 repeat=false hotkey-overlay-title=\"Move Focus to the Menu Bar\" { spawn \"/usr/libexec/rmac/rmac-shortcut-dispatch\" \"menu-bar-focus\"; }"
+    ));
     // ⌃F3 asks the resident Dock to take keyboard focus.
     assert!(shell.contains(
         "Ctrl+F3 repeat=false hotkey-overlay-title=\"Move Focus to the Dock\" { spawn \"/usr/libexec/rmac/rmac-dock\" \"focus\"; }"

@@ -48,6 +48,11 @@ contract every app menu is built from (`crates/rmac-app-menu`,
 | BAR-06 | P2 | S | Partial | Mac: the App Store… row shows the pending count ("App Store…, 6 updates"). / Lulo: "Software Center" with no count and no "…". | `shell/bins/rmac-menubar/src/main.rs:2518` |
 | BAR-07 | P2 | S | Partial | Mac: the app menu's About "App" is enabled and opens an About window. / Lulo: always disabled. | `shell/bins/rmac-menubar/src/main.rs:2601` |
 | BAR-08 | P2 | M | Missing | Mac: ⌘-dragging a status item reorders it; dragging it out removes it. / Lulo: the order is fixed. | `shell/bins/rmac-menubar/src/main.rs:2140` |
+| SESSION-01 | P1 | M | Fixed dfea462a | Mac: Shut Down…/Restart…/Log Out "Name"… open a 264×288 floating panel centred on screen — the desktop and every other window stay exactly as they were behind it. / Lulo anchored the same panel under the logo menu like a dropdown, 248×150 (the owner's own example: "clicking Shut Down on the Mac and in Lulo gives different results"). | `shell/bins/rmac-menubar/src/main.rs` (confirmation `menu_left`/`panel_top`) |
+| SESSION-02 | P1 | S | Fixed dfea462a | Mac: title/body read "Are you sure you want to shut down your computer now?" / "If you do nothing, the computer will shut down automatically in NN seconds." (Restart and Log Out have their own wording, design-lab/session-dialogs.html), the NN counting down live once a second; a "Reopen windows when logging in" checkbox sits below, off by default. / Lulo showed an invented line ("Each app is asked to quit first, so you can save your work."), no countdown and no checkbox. | `shell/bins/rmac-menubar/src/menu_model.rs` (`system_confirmation`, `confirmation_body`) |
+| SESSION-03 | P2 | S | Fixed dfea462a | Mac: a ≈68 pt grey-disc glyph sits above the title (power/restart/person per action). / Lulo showed no icon at all. | `shell/bins/rmac-menubar/src/main.rs` (confirmation `icon_badge`) |
+| SESSION-04 | P2 | S | Fixed dfea462a | Mac (K, not pressed live — see AGENTS.md/audit-brief safety rule): the ⌃power Restart/Sleep/Cancel/Shut Down dialog has no default/blue button, so a stray power-key press can't Return its way into a shutdown. / Lulo had Shut Down wired as the default button. | `shell/bins/rmac-menubar/src/menu_model.rs` (`POWER_DIALOG_ACTION` branch) |
+| SESSION-05 | P2 | M | Partial | Mac: the "Reopen windows when logging in" checkbox does what it says. / Lulo's checkbox now exists and toggles (SESSION-02), but rmac has no window-session-restore mechanism yet, so checking it does nothing on the next login — UI-only. | `shell/bins/rmac-menubar/src/main.rs` (`confirmation_reopen`); needs a session-restore feature |
 | MENU-01 | P1 | M | Fixed 44f223ee | Mac: every app has a Window menu (Minimise ⌘M, Zoom, Fill fn⌃F, Centre fn⌃C, Move & Resize ›, the open-window list). / Lulo: only Files exports one, with just two tab items. | `shell/bins/rmac-menubar/src/main.rs` `dispatch_app_menu_action` |
 | MENU-02 | P1 | M | Fixed 96d75f4b (not Terminal/Calculator) | Mac: every app has a standard Edit menu (Undo/Redo/Cut/Copy/Paste/Select All, plus Find/Spelling for text apps). / Lulo: Text Editor's Edit has only Find items; Notes only Find…; Settings/System Monitor/Clock have none. | `crates/rmac-app-menu/src/lib.rs`; `crates/rmac-ui/src/text_keys.rs` |
 | MENU-03 | P1 | M | Fixed 1b265871 | Mac: menu items grey out when they don't apply. / Lulo: `definition_for_vocabulary` sets `enabled: true` on everything; there's no republish signal on the D-Bus interface. | `crates/rmac-app-menu/src/lib.rs` |
@@ -458,3 +463,28 @@ gates, packaging, CI, versioning) for shipping a specific build, not a
 Mac-parity gap list. Its accessibility findings that are genuine, concrete
 Mac-parity gaps (Terminal/Notes/Files/Spotlight having no accessible
 surface, ⌃F2 not implemented) are folded into Shell → Accessibility above.
+
+---
+
+## Coverage
+
+What has and hasn't been compared, area by area. Only rows with a gap go
+in the surface tables above; a "checked, no gap" state only lives here.
+
+| Area | State | Mac checked | Lulo checked | Row IDs |
+|---|---|---|---|---|
+| Apple (logo) menu | About This Mac (window) | 2026-09-25, live capture | not this pass | — |
+| Apple (logo) menu | System Settings… | 2026-09-25, item present; opening not re-audited | not this pass | — |
+| Apple (logo) menu | App Store… (substitute) | 2026-09-25, live capture ("App Store…, 6 updates") | 2026-09-19 capture (BAR-06) | BAR-06 |
+| Apple (logo) menu | Recent Items ▸ | 2026-09-25, live capture (Applications/Documents/Servers, Clear Menu) | not this pass | — |
+| Apple (logo) menu | Force Quit… (window) | 2026-09-25, live capture (Relaunch label on Finder's row) | fe3efada capture only, not re-diffed this pass | — |
+| Apple (logo) menu | Sleep | 2026-09-25, item present; not clicked (instant action, no dialog — SAFETY) | not this pass | — |
+| Apple (logo) menu | Restart… (dialog) | 2026-09-25, live capture, opened + Cancelled | dfea462a (unit-tested; laptop UI capture not attempted this pass) | SESSION-01..04 |
+| Apple (logo) menu | Shut Down… (dialog) | 2026-09-25, live capture ×3 (open, +2s countdown, after Escape), opened + Cancelled | dfea462a (unit-tested; laptop UI capture not attempted this pass) | SESSION-01..04 |
+| Apple (logo) menu | Lock Screen | 2026-09-25, item present; not clicked (instant action, would lock the owner's session — SAFETY) | not this pass | — |
+| Apple (logo) menu | Log Out "Name"… (dialog) | 2026-09-25, live capture, opened + Cancelled | dfea462a (unit-tested; laptop UI capture not attempted this pass) | SESSION-01..04 |
+| Apple (logo) menu | ⌥ alternates (Force Quit "App", System Information, no-confirm Restart/Shut Down/Log Out) | 2026-09-25, live capture (hidden AX items confirm they exist) | not this pass | BAR-04 (pre-existing) |
+| Session dialogs | ⌃power dialog (Restart/Sleep/Cancel/Shut Down) | not pressed (K only — SAFETY: physical power key) | dfea462a (default-button fix only; not run live) | SESSION-04 |
+| Session dialogs | ⌥⌘⎋ Force Quit Applications | 2026-09-25, live capture | fe3efada capture only, not re-diffed this pass | — |
+| Session dialogs | "An app is preventing shutdown" sheet | not reached (K only — no hung app to trigger it) | not this pass | — |
+| Session dialogs | Log Out with unsaved documents | not reached (K only — SAFETY: would risk real data) | `quit_all_interrupted_copy` exists, Lulo-invented wording per its own doc comment | pre-existing, not re-audited |

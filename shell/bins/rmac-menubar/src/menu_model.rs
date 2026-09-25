@@ -1116,12 +1116,38 @@ pub struct Confirmation {
     pub buttons: Vec<ConfirmationButton>,
     pub width: f32,
     pub height: f32,
+    /// One of the `menu/*.svg` glyphs, shown large in a grey disc above the
+    /// title, as on the Mac.
+    pub icon: &'static str,
+    /// Log Out, Restart and Shut Down show a live "If you do nothing…"
+    /// countdown and the "Reopen windows…" checkbox in place of `detail`;
+    /// the power-button dialog has neither (measured on macOS 26.2: it
+    /// never auto-runs, so unlike the menu items it carries no countdown).
+    pub countdown: bool,
 }
 
-/// Width of the Log Out / Restart / Shut Down confirmation.
-pub const CONFIRMATION_WIDTH: f32 = 248.0;
-/// The power-button dialog has four buttons. S: not measured on the Mac.
+/// Width of the Log Out / Restart / Shut Down confirmation, measured on
+/// macOS 26.2 (scanning a Retina capture for the panel's opaque edges:
+/// ~531 px / 2 = ~265 pt, rounded).
+pub const CONFIRMATION_WIDTH: f32 = 264.0;
+/// Height of the same dialog (icon + two-line title + countdown body +
+/// checkbox + buttons), measured the same way.
+pub const CONFIRMATION_HEIGHT: f32 = 288.0;
+/// The power-button dialog has four buttons. S: not measured on the Mac
+/// (reachable only by holding the physical power key, which this audit
+/// does not press); width kept at its prior estimate.
 pub const POWER_DIALOG_WIDTH: f32 = 360.0;
+/// S: not measured; the dialog has a title, no countdown body, and one
+/// button row, so it should need less height than the timed ones.
+pub const POWER_DIALOG_HEIGHT: f32 = 150.0;
+/// How long a menu-triggered Log Out, Restart or Shut Down waits before it
+/// runs on its own, as on the Mac (measured on macOS 26.2: starts at 60
+/// and counts down one per second).
+pub const CONFIRMATION_COUNTDOWN: Duration = Duration::from_secs(60);
+/// Label of the checkbox Log Out, Restart and Shut Down all show, unchecked
+/// by default (measured on macOS 26.2 — note it reads "logging in", not
+/// "logging back in").
+pub const REOPEN_WINDOWS_LABEL: &str = "Reopen windows when logging in";
 
 const fn button(
     label: &'static str,
@@ -1139,53 +1165,101 @@ const fn button(
 /// confirmation. Log Out, Restart and Shut Down each ask every app to quit
 /// first (`quit_all_then`), and so do the power dialog's Restart and
 /// Shut Down, so no path from the power button skips the Save alerts.
+/// Wording and layout are transcribed from macOS 26.2 (see
+/// design-lab/session-dialogs.html for the capture notes).
 pub fn system_confirmation(action: &str) -> Confirmation {
-    const QUIT_FIRST: &str = "Each app is asked to quit first, so you can save your work.";
-    let simple = |title, confirm, confirm_action| Confirmation {
+    let timed = |title, confirm, confirm_action, icon| Confirmation {
         title,
-        detail: QUIT_FIRST,
+        // Replaced at render time by `confirmation_body`, which formats
+        // the live countdown; kept here as the text at zero seconds left,
+        // e.g. for anything that reads `detail` directly (tests, S callers).
+        detail: "",
         buttons: vec![
             button("Cancel", None, false),
             button(confirm, Some(confirm_action), true),
         ],
         width: CONFIRMATION_WIDTH,
-        height: 150.0,
+        height: CONFIRMATION_HEIGHT,
+        icon,
+        countdown: true,
     };
     match action {
-        "system::restart" => simple("Restart this computer?", "Restart", "system::restart"),
-        "system::shutdown" => simple("Shut down this computer?", "Shut Down", "system::shutdown"),
-        "system::logout" => simple("Log out now?", "Log Out", "system::logout"),
-        // The Mac's wording for its power-button dialog. Its 60-second
-        // countdown is left out rather than shutting down unattended.
+        "system::restart" => timed(
+            "Are you sure you want to restart your computer now?",
+            "Restart",
+            "system::restart",
+            "restart",
+        ),
+        "system::shutdown" => timed(
+            "Are you sure you want to shut down your computer now?",
+            "Shut Down",
+            "system::shutdown",
+            "power",
+        ),
+        "system::logout" => timed(
+            "Are you sure you want to quit all applications and log out now?",
+            "Log Out",
+            "system::logout",
+            "person",
+        ),
+        // The Mac's wording for its power-button dialog. S: the button
+        // labels and order are measured (screenshot, pre-2026-09-25
+        // capture); no button is the blue/default one and Return does
+        // nothing there (K: this is Apple's guard against an accidental
+        // press of the physical power key triggering a shutdown), and it
+        // carries no countdown or "Reopen windows" checkbox — holding the
+        // key does not arm an unattended shutdown the way the menu items
+        // do.
         POWER_DIALOG_ACTION => Confirmation {
             title: "Are you sure you want to shut down your computer now?",
-            detail: QUIT_FIRST,
+            detail: "",
             buttons: vec![
                 button("Restart", Some("system::restart"), false),
                 button("Sleep", Some("system::sleep"), false),
                 button("Cancel", None, false),
-                button("Shut Down", Some("system::shutdown"), true),
+                button("Shut Down", Some("system::shutdown"), false),
             ],
             width: POWER_DIALOG_WIDTH,
-            height: 150.0,
+            height: POWER_DIALOG_HEIGHT,
+            icon: "power",
+            countdown: false,
         },
         _ => Confirmation {
             title: "Continue?",
             detail: "Confirm this system action.",
             buttons: vec![button("Cancel", None, false)],
             width: CONFIRMATION_WIDTH,
-            height: 150.0,
+            height: POWER_DIALOG_HEIGHT,
+            icon: "power",
+            countdown: false,
         },
     }
 }
 
-/// The action Return runs in `action`'s confirmation.
+/// The action Return runs in `action`'s confirmation (`None` when no
+/// button is default, as on the power dialog: Return does nothing there).
 pub fn confirmation_default_action(action: &str) -> Option<&'static str> {
     system_confirmation(action)
         .buttons
         .into_iter()
         .find(|button| button.default)
         .and_then(|button| button.action)
+}
+
+/// The live body text of a timed confirmation (Log Out, Restart, Shut
+/// Down), given how long it has been open. `elapsed` is clamped to the
+/// 60-second countdown, matching the Mac; past that the caller is expected
+/// to have already run the default action.
+pub fn confirmation_body(action: &str, elapsed: Duration) -> String {
+    let verb = match action {
+        "system::restart" => "the computer will restart",
+        "system::shutdown" => "the computer will shut down",
+        "system::logout" => "you will be logged out",
+        _ => return system_confirmation(action).detail.to_owned(),
+    };
+    let remaining = CONFIRMATION_COUNTDOWN.saturating_sub(elapsed).as_secs();
+    let plural = if remaining == 1 { "" } else { "s" };
+    format!("If you do nothing, {verb} automatically in {remaining} second{plural}.")
 }
 
 // ---- Low battery ----
@@ -2251,11 +2325,12 @@ mod tests {
         assert_eq!(dialog.buttons[1].action, Some("system::sleep"));
         assert_eq!(dialog.buttons[2].action, None);
         assert_eq!(dialog.buttons[3].action, Some("system::shutdown"));
-        assert_eq!(
-            confirmation_default_action(POWER_DIALOG_ACTION),
-            Some("system::shutdown")
-        );
+        // On the Mac none of the four buttons is the blue/default one, so a
+        // stray Return from the physical power key does nothing (K).
+        assert!(dialog.buttons.iter().all(|button| !button.default));
+        assert_eq!(confirmation_default_action(POWER_DIALOG_ACTION), None);
         assert!(dialog.width > CONFIRMATION_WIDTH);
+        assert!(!dialog.countdown);
     }
 
     #[test]
@@ -2268,10 +2343,55 @@ mod tests {
             let confirmation = system_confirmation(action);
             assert_eq!(confirmation.buttons.len(), 2);
             assert_eq!(confirmation.buttons[0].label, "Cancel");
+            assert!(!confirmation.buttons[0].default);
             assert_eq!(confirmation.buttons[1].label, confirm);
             assert_eq!(confirmation.buttons[1].action, Some(action));
+            assert!(confirmation.buttons[1].default);
             assert_eq!(confirmation_default_action(action), Some(action));
+            assert!(confirmation.countdown);
+            assert_eq!(confirmation.width, CONFIRMATION_WIDTH);
+            assert_eq!(confirmation.height, CONFIRMATION_HEIGHT);
         }
         assert_eq!(confirmation_default_action("system::unknown"), None);
+    }
+
+    #[test]
+    fn menu_confirmations_match_the_macos_26_wording() {
+        assert_eq!(
+            system_confirmation("system::shutdown").title,
+            "Are you sure you want to shut down your computer now?"
+        );
+        assert_eq!(
+            system_confirmation("system::restart").title,
+            "Are you sure you want to restart your computer now?"
+        );
+        assert_eq!(
+            system_confirmation("system::logout").title,
+            "Are you sure you want to quit all applications and log out now?"
+        );
+        assert_eq!(system_confirmation("system::shutdown").icon, "power");
+        assert_eq!(system_confirmation("system::restart").icon, "restart");
+        assert_eq!(system_confirmation("system::logout").icon, "person");
+    }
+
+    #[test]
+    fn the_countdown_body_counts_down_from_sixty_and_pluralises_one() {
+        assert_eq!(
+            confirmation_body("system::shutdown", Duration::ZERO),
+            "If you do nothing, the computer will shut down automatically in 60 seconds."
+        );
+        assert_eq!(
+            confirmation_body("system::restart", Duration::from_secs(55)),
+            "If you do nothing, the computer will restart automatically in 5 seconds."
+        );
+        assert_eq!(
+            confirmation_body("system::logout", Duration::from_secs(59)),
+            "If you do nothing, you will be logged out automatically in 1 second."
+        );
+        // Never goes negative if a render lags past the deadline.
+        assert_eq!(
+            confirmation_body("system::shutdown", Duration::from_secs(90)),
+            "If you do nothing, the computer will shut down automatically in 0 seconds."
+        );
     }
 }

@@ -571,7 +571,7 @@ Shell states audit, 2026-09-25. Mac: macOS 26.2 on the owner's Mac, read live th
 | Accessibility | Shell surfaces in the accessibility tree | live | live | ACC-07 |
 | Apple (logo) menu | About This Mac (window) | 2026-09-25, live capture | not this pass | — |
 | Apple (logo) menu | System Settings… | 2026-09-25, item present; opening not re-audited | `b144988c` count capsule, unit-tested only | BAR-06 |
-| Settings | General ▸ Software Update (pane, More Info sheet, Automatically sheet) | 2026-09-25, live capture (sheets opened, Cancel/Esc; nothing installed or changed) | `b144988c` unit-tested; pane not captured on the laptop | SWU-01..08 |
+| Settings | General ▸ Software Update (pane, More Info sheet, Automatically sheet) | 2026-09-25, live capture (sheets opened, Cancel/Esc; nothing installed or changed) | `b144988c`, `e5fc582b`: pane, More Info and Automatically sheets captured on the laptop with real PackageKit data (temporary XDG dirs; opened and cancelled only) | SWU-01..08 |
 | Apple (logo) menu | App Store… (substitute) | 2026-09-25, live capture ("App Store…, 6 updates") | 2026-09-19 capture (BAR-06) | BAR-06 |
 | Apple (logo) menu | Recent Items ▸ | 2026-09-25, live capture (Applications/Documents/Servers, Clear Menu) | not this pass | — |
 | Apple (logo) menu | Force Quit… (window) | 2026-09-25, live capture (Relaunch label on Finder's row) | fe3efada capture only, not re-diffed this pass | — |

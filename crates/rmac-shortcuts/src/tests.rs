@@ -160,6 +160,20 @@ fn the_power_button_and_its_dialog_have_their_own_endpoints() {
 }
 
 #[test]
+fn ctrl_f2_moves_menu_bar_focus_through_its_own_endpoint() {
+    let runtime = Path::new("/tmp/rmac-shortcuts-test");
+    let focus = ShortcutId("menu-bar-focus".into());
+    assert!(known_action(&focus));
+    assert!(shortcut_socket_path_in(runtime, &focus)
+        .unwrap()
+        .ends_with("shortcut-menu-bar-focus.sock"));
+    // Not a user shortcut: niri binds Ctrl+F2 itself in shell.kdl, the same
+    // way it binds the power key, so this isn't offered to the
+    // GlobalShortcuts portal or the fallback either.
+    assert!(!default_shortcuts().iter().any(|spec| spec.id == focus));
+}
+
+#[test]
 fn software_update_restarts_through_its_own_endpoint() {
     let runtime = Path::new("/tmp/rmac-shortcuts-test");
     let restart = ShortcutId(power_key::RESTART_TO_UPDATE_SHORTCUT.into());

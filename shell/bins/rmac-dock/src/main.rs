@@ -1221,6 +1221,163 @@ mod linux_wayland {
                 .detach();
         }
 
+        /// The separator's right-click menu (DOCK-02): Turn Hiding On/Off,
+        /// Turn Magnification On/Off, Position on Screen ▸, Minimise Using
+        /// ▸, Dock Settings….
+        fn open_separator_menu(&mut self, anchor: f32, cx: &mut Context<Self>) {
+            let Some(dock) = self
+                .status
+                .read(cx)
+                .snapshot()
+                .map(|snapshot| snapshot.settings.clone())
+            else {
+                return;
+            };
+            self.context_menu = None;
+            self.close_stack_popover(cx);
+            self.separator_menu = Some(SeparatorMenu {
+                anchor,
+                dock,
+                submenu_open: None,
+            });
+            self.input_region = None;
+            cx.notify();
+        }
+
+        fn close_separator_menu(&mut self, cx: &mut Context<Self>) {
+            if self.separator_menu.take().is_some() {
+                self.input_region = None;
+                cx.notify();
+            }
+        }
+
+        /// A separator-menu row that flips one `DockSettings` field
+        /// directly (load, mutate, save): the same shape as
+        /// `toggle_dock_hiding` and `rmac_dock_system::backend`'s
+        /// `update_pins_in_store`, since these are plain settings writes
+        /// the live Dock already reacts to, not model-validated commands.
+        fn write_dock_settings(
+            mutate: impl FnOnce(&mut rmac_shell_settings::DockSettings) + Send + 'static,
+            cx: &mut Context<Self>,
+        ) {
+            cx.background_executor()
+                .spawn(async move {
+                    let result = blocking::unblock(move || {
+                        let store = rmac_shell_settings::ShellSettingsStore::from_environment()?;
+                        let mut settings = store.load()?.settings;
+                        mutate(&mut settings.dock);
+                        store.save(&settings)
+                    })
+                    .await;
+                    if let Err(error) = result {
+                        eprintln!("could not change the Dock's settings: {error}");
+                    }
+                })
+                .detach();
+        }
+
+        fn toggle_hiding_from_menu(&mut self, cx: &mut Context<Self>) {
+            self.close_separator_menu(cx);
+            toggle_dock_hiding(cx);
+        }
+
+        fn toggle_magnification_from_menu(&mut self, cx: &mut Context<Self>) {
+            self.close_separator_menu(cx);
+            Self::write_dock_settings(|dock| dock.magnification = !dock.magnification, cx);
+        }
+
+        fn set_placement_from_menu(
+            &mut self,
+            placement: rmac_shell_settings::DockPlacement,
+            cx: &mut Context<Self>,
+        ) {
+            self.close_separator_menu(cx);
+            Self::write_dock_settings(move |dock| dock.placement = placement, cx);
+        }
+
+        fn set_minimize_effect_from_menu(
+            &mut self,
+            effect: rmac_shell_settings::DockMinimizeEffect,
+            cx: &mut Context<Self>,
+        ) {
+            self.close_separator_menu(cx);
+            Self::write_dock_settings(move |dock| dock.minimize_effect = effect, cx);
+        }
+
+        /// Dock Settings…: open System Settings at Desktop & Dock, the way
+        /// `launcher-app`'s Settings surface bridge opens any other pane.
+        fn open_dock_settings(&mut self, cx: &mut Context<Self>) {
+            self.close_separator_menu(cx);
+            cx.background_executor()
+                .spawn(async move {
+                    let executable = std::env::current_exe()
+                        .ok()
+                        .map(|path| path.with_file_name("rmac-system-settings"))
+                        .unwrap_or_else(|| PathBuf::from("/usr/bin/rmac-system-settings"));
+                    if let Err(error) = std::process::Command::new(executable)
+                        .arg("--pane")
+                        .arg("desktop-dock")
+                        .spawn()
+                    {
+                        eprintln!("could not open Desktop & Dock settings: {error}");
+                    }
+                })
+                .detach();
+        }
+
+        /// A press on the separator's drag/resize hit target (DOCK-03).
+        fn begin_separator_drag(&mut self, position: (f32, f32), cx: &mut Context<Self>) {
+            self.close_separator_menu(cx);
+            self.close_stack_popover(cx);
+            self.context_menu = None;
+            let lift = self.lift_of(position.0, position.1);
+            let size = self.tile_size;
+            self.separator_drag = Some(SeparatorDragUi {
+                start_lift: lift,
+                start_size: size,
+                preview_size: size,
+            });
+            self.input_region = None;
+            cx.notify();
+        }
+
+        /// A pointer move while the separator is held: live-preview a new
+        /// tile size (rendering only -- the compositor's reserved work
+        /// area updates once the drag commits, same as any other Dock
+        /// settings change).
+        fn update_separator_drag(&mut self, position: (f32, f32), cx: &mut Context<Self>) {
+            let lift = self.lift_of(position.0, position.1);
+            let Some(drag) = self.separator_drag.as_mut() else {
+                return;
+            };
+            let delta = lift - drag.start_lift;
+            // Shelf thickness is icon_size * 1.3125 (the tile plus 2x its
+            // own padding ratio, TileMetrics::new), so resizing the shelf
+            // by `delta` moves the tile size by roughly that much.
+            let next = (drag.start_size + delta / 1.3125).clamp(
+                rmac_shell_settings::MIN_DOCK_TILE_SIZE,
+                rmac_shell_settings::MAX_DOCK_TILE_SIZE,
+            );
+            if (next - drag.preview_size).abs() > f32::EPSILON {
+                drag.preview_size = next;
+                cx.notify();
+            }
+        }
+
+        /// Release: commit the previewed size to settings, unless it never
+        /// moved enough to count as a resize rather than a click.
+        fn finish_separator_drag(&mut self, cx: &mut Context<Self>) {
+            let Some(drag) = self.separator_drag.take() else {
+                return;
+            };
+            cx.notify();
+            if (drag.preview_size - drag.start_size).abs() < 0.5 {
+                return;
+            }
+            let size = drag.preview_size;
+            Self::write_dock_settings(move |dock| dock.tile_size = size, cx);
+        }
+
         /// Keep an application dragged out of Apps (crates/app-drawer) in
         /// the Dock, at roughly the position it was dropped. This is the
         /// Dock command endpoint `drag_endpoint` documents: GPUI's Linux
@@ -2227,7 +2384,8 @@ mod linux_wayland {
             let dragging = self
                 .tile_drag
                 .as_ref()
-                .is_some_and(|ui| ui.drag.is_active());
+                .is_some_and(|ui| ui.drag.is_active())
+                || self.separator_drag.is_some();
             // Keyboard mode also captures the next click anywhere, which
             // ends it, so the invisible focus surface can never keep the
             // keyboard after the user has moved on.
@@ -2370,6 +2528,7 @@ mod linux_wayland {
                             cx.notify();
                         }
                         this.finish_tile_drag(event.modifiers, cx);
+                        this.finish_separator_drag(cx);
                     }),
                 )
                 .on_mouse_move(cx.listener(|this, event: &gpui::MouseMoveEvent, _, cx| {
@@ -2385,6 +2544,16 @@ mod linux_wayland {
                             this.slides.clear();
                             this.input_region = None;
                             cx.notify();
+                        }
+                    }
+                    if this.separator_drag.is_some() {
+                        if event.pressed_button == Some(MouseButton::Left) {
+                            this.update_separator_drag(
+                                (f32::from(event.position.x), f32::from(event.position.y)),
+                                cx,
+                            );
+                        } else {
+                            this.finish_separator_drag(cx);
                         }
                     }
                     if this.option_held != event.modifiers.alt {
@@ -2715,6 +2884,13 @@ mod linux_wayland {
                     Some(tile.into_any_element())
                 })
                 .collect();
+            let separator_anchor = entries.len() as f32 * (metrics.icon_size + metrics.icon_gap)
+                + metrics.shelf_padding
+                + if separates_running {
+                    metrics.separator_slot + metrics.icon_gap
+                } else {
+                    0.0
+                };
             root.child(
                 shelf
                     .children(entries.into_iter().enumerate().flat_map(|(index, entry)| {
@@ -3057,13 +3233,17 @@ mod linux_wayland {
                         }
                         let mut children: Vec<gpui::AnyElement> = Vec::with_capacity(2);
                         if separates_running && index == pinned_count {
-                            children.push(dock_separator(self.placement, metrics));
+                            children.push(dock_separator(self.placement, metrics, None));
                         }
                         children.push(item.into_any_element());
                         children
                     }))
                     .when(!model.items.is_empty(), |shelf| {
-                        shelf.child(dock_separator(self.placement, metrics))
+                        shelf.child(dock_separator(
+                            self.placement,
+                            metrics,
+                            Some((separator_anchor, cx)),
+                        ))
                     })
                     .children(minimized_children)
                     .children(stack_children)
@@ -3286,6 +3466,14 @@ mod linux_wayland {
             ))
             .children(render_stack_popover(
                 self.stack_popover.as_ref(),
+                self.placement,
+                metrics,
+                shelf_start,
+                self.display_id,
+                cx,
+            ))
+            .children(render_separator_menu(
+                self.separator_menu.as_ref(),
                 self.placement,
                 metrics,
                 shelf_start,
@@ -3904,6 +4092,206 @@ mod linux_wayland {
             .into_any_element()
     }
 
+    /// One row of the separator menu: a plain clickable row, optionally
+    /// checked (a leading ✓, like the model-driven Dock menus) or a
+    /// submenu parent (a trailing ›).
+    fn separator_menu_row(
+        id: SharedString,
+        label: &'static str,
+        checked: bool,
+        submenu: bool,
+        on_click: impl Fn(&mut Dock, &mut Context<Dock>) + 'static,
+        cx: &Context<Dock>,
+    ) -> gpui::AnyElement {
+        div()
+            .id(id)
+            .role(Role::MenuItem)
+            .aria_label(label)
+            .h(px(tokens::menu_row_height()))
+            .pl(px(if checked {
+                MENU_CHECK_INSET + MENU_CHECK_COLUMN
+            } else {
+                MENU_ROW_INSET
+            }))
+            .pr(px(MENU_ROW_INSET))
+            .flex()
+            .items_center()
+            .justify_between()
+            .cursor_pointer()
+            .rounded(px(tokens::menu_item_radius()))
+            .when(checked, |row| {
+                row.child(div().absolute().left(px(MENU_CHECK_INSET)).child("✓"))
+            })
+            .child(label)
+            .when(submenu, |row| row.child("›"))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    on_click(this, cx);
+                }),
+            )
+            .into_any_element()
+    }
+
+    /// The Dock separator's own menu (DOCK-02): Turn Hiding On/Off, Turn
+    /// Magnification On/Off, Position on Screen ▸, Minimise Using ▸, Dock
+    /// Settings…. Position on Screen/Minimise Using expand in place rather
+    /// than as a flyout submenu (not measured against the owner's Mac: S).
+    fn render_separator_menu(
+        menu: Option<&SeparatorMenu>,
+        placement: rmac_shell_settings::DockPlacement,
+        metrics: TileMetrics,
+        shelf_start: f32,
+        display_id: u64,
+        cx: &Context<Dock>,
+    ) -> Vec<gpui::AnyElement> {
+        let Some(menu) = menu else {
+            return Vec::new();
+        };
+        const WIDTH: f32 = 240.0;
+        let mut panel = div()
+            .id(format!("dock-separator-menu-{display_id}"))
+            .role(Role::Menu)
+            .aria_label("Dock separator menu")
+            .absolute()
+            .w(px(WIDTH))
+            .p(px(MENU_PADDING + 2.0))
+            .rounded(px(tokens::menu_radius()))
+            .bg(rgba(tokens::regular_dark_tint()))
+            .border_1()
+            .border_color(rgba(tokens::light_border()))
+            .shadow_lg()
+            .text_size(px(13.0))
+            .text_color(rgba(tokens::primary_text()))
+            .occlude();
+        let offset = metrics.exclusive_zone + MENU_SHELF_GAP;
+        let along = shelf_start + menu.anchor;
+        panel = match placement {
+            rmac_shell_settings::DockPlacement::Bottom => panel
+                .left(px((along - WIDTH / 2.0).max(8.0)))
+                .bottom(px(offset)),
+            rmac_shell_settings::DockPlacement::Left => {
+                panel.left(px(offset)).top(px((along - 80.0).max(8.0)))
+            }
+            rmac_shell_settings::DockPlacement::Right => {
+                panel.right(px(offset)).top(px((along - 80.0).max(8.0)))
+            }
+        };
+        let autohide = menu.dock.autohide;
+        panel = panel.child(separator_menu_row(
+            "dock-separator-menu-hiding".into(),
+            if autohide {
+                "Turn Hiding Off"
+            } else {
+                "Turn Hiding On"
+            },
+            false,
+            false,
+            |this, cx| this.toggle_hiding_from_menu(cx),
+            cx,
+        ));
+        let magnification = menu.dock.magnification;
+        panel = panel.child(separator_menu_row(
+            "dock-separator-menu-magnification".into(),
+            if magnification {
+                "Turn Magnification Off"
+            } else {
+                "Turn Magnification On"
+            },
+            false,
+            false,
+            |this, cx| this.toggle_magnification_from_menu(cx),
+            cx,
+        ));
+        panel = panel.child(menu_separator());
+        let position_open = menu.submenu_open == Some(SeparatorSubmenu::Position);
+        panel = panel.child(separator_menu_row(
+            "dock-separator-menu-position".into(),
+            "Position on Screen",
+            false,
+            true,
+            move |this, cx| {
+                if let Some(menu) = this.separator_menu.as_mut() {
+                    menu.submenu_open = if position_open {
+                        None
+                    } else {
+                        Some(SeparatorSubmenu::Position)
+                    };
+                    cx.notify();
+                }
+            },
+            cx,
+        ));
+        if position_open {
+            let placements = [
+                (rmac_shell_settings::DockPlacement::Left, "Left"),
+                (rmac_shell_settings::DockPlacement::Bottom, "Bottom"),
+                (rmac_shell_settings::DockPlacement::Right, "Right"),
+            ];
+            for (value, label) in placements {
+                panel = panel.child(separator_menu_row(
+                    format!("dock-separator-menu-position-{label}").into(),
+                    label,
+                    menu.dock.placement == value,
+                    false,
+                    move |this, cx| this.set_placement_from_menu(value, cx),
+                    cx,
+                ));
+            }
+        }
+        let minimize_open = menu.submenu_open == Some(SeparatorSubmenu::MinimizeUsing);
+        panel = panel.child(separator_menu_row(
+            "dock-separator-menu-minimize".into(),
+            "Minimise Using",
+            false,
+            true,
+            move |this, cx| {
+                if let Some(menu) = this.separator_menu.as_mut() {
+                    menu.submenu_open = if minimize_open {
+                        None
+                    } else {
+                        Some(SeparatorSubmenu::MinimizeUsing)
+                    };
+                    cx.notify();
+                }
+            },
+            cx,
+        ));
+        if minimize_open {
+            let effects = [
+                (
+                    rmac_shell_settings::DockMinimizeEffect::Genie,
+                    "Genie Effect",
+                ),
+                (
+                    rmac_shell_settings::DockMinimizeEffect::Scale,
+                    "Scale Effect",
+                ),
+            ];
+            for (value, label) in effects {
+                panel = panel.child(separator_menu_row(
+                    format!("dock-separator-menu-minimize-{label}").into(),
+                    label,
+                    menu.dock.minimize_effect == value,
+                    false,
+                    move |this, cx| this.set_minimize_effect_from_menu(value, cx),
+                    cx,
+                ));
+            }
+        }
+        panel = panel.child(menu_separator());
+        panel = panel.child(separator_menu_row(
+            "dock-separator-menu-settings".into(),
+            "Dock Settings…",
+            false,
+            false,
+            |this, cx| this.open_dock_settings(cx),
+            cx,
+        ));
+        vec![panel.into_any_element()]
+    }
+
     /// The 20 × 10 pointer under a bottom Dock's menu, tip on the tile
     /// centre, drawn in the panel's fill with its rim on the two slanted
     /// sides. `bounds` spans the pointer's full width and height.
@@ -4026,28 +4414,91 @@ mod linux_wayland {
             .into_any_element()
     }
 
+    /// The separator between the kept/running applications and Trash's
+    /// group. `interaction` is `Some` only for that one (not the separator
+    /// between kept and running apps): its right-click menu (DOCK-02) and
+    /// drag-to-resize (DOCK-03).
     fn dock_separator(
         placement: rmac_shell_settings::DockPlacement,
         metrics: TileMetrics,
+        interaction: Option<(f32, &Context<Dock>)>,
     ) -> gpui::AnyElement {
         // Centred on the tile row (1 inside it at each end), 13 clear of the
         // tile gaps on either side.
-        let separator = div().bg(rgba(tokens::dock_separator()));
+        let line = div().bg(rgba(tokens::dock_separator()));
         let inset = (metrics.icon_size - metrics.separator_length) / 2.0;
-        match placement {
-            rmac_shell_settings::DockPlacement::Bottom => separator
-                .w(px(SEPARATOR_WIDTH))
+        let Some((anchor, cx)) = interaction else {
+            return match placement {
+                rmac_shell_settings::DockPlacement::Bottom => line
+                    .w(px(SEPARATOR_WIDTH))
+                    .h(px(metrics.separator_length))
+                    .mx(px(metrics.separator_margin))
+                    .mb(px(inset))
+                    .into_any_element(),
+                rmac_shell_settings::DockPlacement::Left
+                | rmac_shell_settings::DockPlacement::Right => line
+                    .w(px(metrics.separator_length))
+                    .h(px(SEPARATOR_WIDTH))
+                    .my(px(metrics.separator_margin))
+                    .into_any_element(),
+            };
+        };
+        // A wider invisible hit/drag target around the thin visible line,
+        // like the Mac's (not separately measured: S).
+        const HIT_WIDTH: f32 = 9.0;
+        let horizontal = placement == rmac_shell_settings::DockPlacement::Bottom;
+        let mut hit = div()
+            .id("dock-separator-main")
+            .role(Role::Button)
+            .aria_label("Dock separator")
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                line.when(horizontal, |line| {
+                    line.w(px(SEPARATOR_WIDTH)).h(px(metrics.separator_length))
+                })
+                .when(!horizontal, |line| {
+                    line.w(px(metrics.separator_length)).h(px(SEPARATOR_WIDTH))
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.begin_separator_drag(
+                        (f32::from(event.position.x), f32::from(event.position.y)),
+                        cx,
+                    );
+                }),
+            )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.open_separator_menu(anchor, cx);
+                }),
+            );
+        hit = if horizontal {
+            // A bottom Dock resizes on a vertical drag (up grows it).
+            hit.w(px(HIT_WIDTH))
                 .h(px(metrics.separator_length))
-                .mx(px(metrics.separator_margin))
+                .mx(px(
+                    metrics.separator_margin - (HIT_WIDTH - SEPARATOR_WIDTH) / 2.0
+                ))
                 .mb(px(inset))
-                .into_any_element(),
-            rmac_shell_settings::DockPlacement::Left
-            | rmac_shell_settings::DockPlacement::Right => separator
-                .w(px(metrics.separator_length))
-                .h(px(SEPARATOR_WIDTH))
-                .my(px(metrics.separator_margin))
-                .into_any_element(),
-        }
+                .cursor_row_resize()
+        } else {
+            // A side Dock resizes on a horizontal drag (away from the edge
+            // grows it).
+            hit.w(px(metrics.separator_length))
+                .h(px(HIT_WIDTH))
+                .my(px(
+                    metrics.separator_margin - (HIT_WIDTH - SEPARATOR_WIDTH) / 2.0
+                ))
+                .cursor_col_resize()
+        };
+        hit.into_any_element()
     }
 
     fn magnified_icon_size(

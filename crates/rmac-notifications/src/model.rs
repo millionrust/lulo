@@ -389,7 +389,7 @@ impl Default for TimeoutPolicy {
     fn default() -> Self {
         Self {
             low_ms: 5_000,
-            normal_ms: 7_000,
+            normal_ms: 5_000,
             high_ms: 10_000,
         }
     }

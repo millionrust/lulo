@@ -200,7 +200,7 @@ fn default_expiry_respects_priority_and_explicit_protocol_values() {
     let policy = TimeoutPolicy::default();
     assert_eq!(
         expiry_for(Timeout::Default, Priority::Normal, Time(10), policy),
-        Some(Time(7_010))
+        Some(Time(5_010))
     );
     assert_eq!(
         expiry_for(Timeout::Default, Priority::Urgent, Time(10), policy),
@@ -225,9 +225,9 @@ fn expiration_leaves_history_and_actions_close_unless_persistent() {
             DeliveryPolicy::default(),
         )
         .unwrap();
-    assert!(server.expire(Time(6_999)).is_empty());
+    assert!(server.expire(Time(4_999)).is_empty());
     assert_eq!(
-        server.expire(Time(7_000)),
+        server.expire(Time(5_000)),
         vec![Closed {
             id: posted.id,
             reason: CloseReason::Expired

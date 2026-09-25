@@ -1168,6 +1168,133 @@ impl Panel {
         )
     }
 
+    /// ⇧⌘N / the New Folder button: "Name of new folder inside “…”:" before
+    /// anything is created, 320×158 on the Mac (OTHER-10).
+    fn render_new_folder(
+        &self,
+        width: f32,
+        height: f32,
+        colors: Colors,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let sheet = self.new_folder_sheet.as_ref()?;
+        let folder_name = rmac_file_chooser::browser::display_name(&sheet.folder);
+        let card_width = (width - 32.0).min(m::NEW_FOLDER_SHEET_WIDTH);
+        let card_height = (height - 8.0).min(m::NEW_FOLDER_SHEET_HEIGHT);
+        Some(
+            div()
+                .absolute()
+                .inset_0()
+                .bg(gpui::black().opacity(0.1))
+                .child(
+                    at(
+                        (width - card_width) / 2.0,
+                        ((height - card_height) / 2.0).max(4.0),
+                        card_width,
+                        card_height,
+                    )
+                    .id("new-folder-sheet")
+                    .occlude()
+                    .rounded(px(m::SAVE_RADIUS / 2.0))
+                    .bg(colors.sheet)
+                    .border_1()
+                    .border_color(colors.hairline)
+                    .p(px(m::NEW_FOLDER_SHEET_PADDING))
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.0))
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(13.0))
+                            .font_weight(rmac_ui::mac::BOLD)
+                            .text_color(colors.text)
+                            .child("New Folder"),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(13.0))
+                            .text_color(colors.label)
+                            .child(format!("Name of new folder inside “{folder_name}”:")),
+                    )
+                    .child({
+                        let field_width = card_width - 2.0 * m::NEW_FOLDER_SHEET_PADDING;
+                        div()
+                            .relative()
+                            .flex_none()
+                            .w(px(field_width))
+                            .h(px(m::CONTROL_HEIGHT))
+                            .rounded(px(m::PLATE_RADIUS))
+                            .border_1()
+                            .border_color(colors.focus_ring)
+                            .shadow(vec![gpui::BoxShadow {
+                                color: colors.focus_ring,
+                                offset: gpui::point(px(0.0), px(0.0)),
+                                blur_radius: px(0.0),
+                                spread_radius: px(2.0),
+                                inset: false,
+                            }])
+                            .child(
+                                at(4.0, 1.0, field_width - 8.0, 24.0).child(
+                                    TextField::new(&sheet.input)
+                                        .appearance(false)
+                                        .text_size(rmac_ui::text_px(13.0)),
+                                ),
+                            )
+                    })
+                    .when(sheet.error, |column| {
+                        column.child(
+                            div()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .text_color(colors.label)
+                                .child("That name can’t be used here."),
+                        )
+                    })
+                    .child(
+                        div()
+                            .mt_auto()
+                            .flex()
+                            .justify_end()
+                            .gap(px(6.0))
+                            .child(
+                                div()
+                                    .id("new-folder-cancel")
+                                    .relative()
+                                    .w(px(m::BUTTON_WIDTH))
+                                    .h(px(m::CONTROL_HEIGHT))
+                                    .child(
+                                        plate(colors.control)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .child(label("Cancel", 13.0, colors.text)),
+                                    )
+                                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                                        this.cancel(window, cx)
+                                    })),
+                            )
+                            .child(
+                                div()
+                                    .id("new-folder-create")
+                                    .relative()
+                                    .w(px(m::BUTTON_WIDTH))
+                                    .h(px(m::CONTROL_HEIGHT))
+                                    .child(
+                                        plate(colors.default)
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .child(label("Create", 13.0, colors.on_selection)),
+                                    )
+                                    .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
+                                        this.new_folder_commit(window, cx)
+                                    })),
+                            ),
+                    ),
+                )
+                .into_any_element(),
+        )
+    }
+
     fn render_replace(
         &self,
         width: f32,
@@ -1180,8 +1307,12 @@ impl Panel {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let card_width = (width - 32.0).min(300.0);
-        let card_height = 104.0f32.min(height - 8.0);
+        let folder = target
+            .parent()
+            .map(rmac_file_chooser::browser::display_name)
+            .unwrap_or_default();
+        let card_width = (width - 32.0).min(m::REPLACE_WIDTH);
+        let card_height = (height - 8.0).min(m::REPLACE_HEIGHT);
         Some(
             div()
                 .absolute()
@@ -1200,10 +1331,10 @@ impl Panel {
                     .bg(colors.sheet)
                     .border_1()
                     .border_color(colors.hairline)
-                    .p(px(14.0))
+                    .p(px(m::REPLACE_PADDING))
                     .flex()
                     .flex_col()
-                    .gap(px(4.0))
+                    .gap(px(8.0))
                     .child(
                         div()
                             .text_size(rmac_ui::text_px(13.0))
@@ -1211,6 +1342,16 @@ impl Panel {
                             .text_color(colors.text)
                             .child(format!(
                                 "“{name}” already exists. Do you want to replace it?"
+                            )),
+                    )
+                    .child(
+                        div()
+                            .text_size(rmac_ui::text_px(11.0))
+                            .text_color(colors.label)
+                            .child(format!(
+                                "A file or folder with the same name already exists in the \
+                                 folder “{folder}”. Replacing it will overwrite its current \
+                                 contents."
                             )),
                     )
                     .child(
@@ -1223,14 +1364,14 @@ impl Panel {
                                 div()
                                     .id("replace-no")
                                     .relative()
-                                    .w(px(m::BUTTON_WIDTH))
-                                    .h(px(m::CONTROL_HEIGHT))
+                                    .w(px(m::REPLACE_BUTTON_WIDTH))
+                                    .h(px(m::REPLACE_BUTTON_HEIGHT))
                                     .child(
-                                        plate(colors.default)
+                                        plate(colors.control)
                                             .flex()
                                             .items_center()
                                             .justify_center()
-                                            .child(label("Cancel", 13.0, colors.on_selection)),
+                                            .child(label("Cancel", 13.0, colors.text)),
                                     )
                                     .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                                         this.dismiss_replace(cx)
@@ -1240,14 +1381,14 @@ impl Panel {
                                 div()
                                     .id("replace-yes")
                                     .relative()
-                                    .w(px(m::BUTTON_WIDTH))
-                                    .h(px(m::CONTROL_HEIGHT))
+                                    .w(px(m::REPLACE_BUTTON_WIDTH))
+                                    .h(px(m::REPLACE_BUTTON_HEIGHT))
                                     .child(
-                                        plate(colors.control)
+                                        plate(colors.default)
                                             .flex()
                                             .items_center()
                                             .justify_center()
-                                            .child(label("Replace", 13.0, colors.text)),
+                                            .child(label("Replace", 13.0, colors.on_selection)),
                                     )
                                     .on_click(cx.listener(|this, _: &ClickEvent, window, cx| {
                                         this.confirm_replace(window, cx)
@@ -1341,7 +1482,9 @@ impl Panel {
                     true,
                     colors,
                 )
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.new_folder(cx)))
+                .on_click(
+                    cx.listener(|this, _: &ClickEvent, window, cx| this.new_folder(window, cx)),
+                )
                 .into_any_element(),
             );
         } else {
@@ -1424,9 +1567,14 @@ impl Panel {
 impl Render for Panel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = Colors::current();
-        let viewport = window.viewport_size();
-        let width = f32::from(viewport.width);
-        let height = f32::from(viewport.height);
+        // Not `window.viewport_size()`: that is the outer GPUI surface,
+        // which `main.rs` inflates by the client-frame margin `Root`
+        // reserves for its Linux shadow/resize edges. The panel's own
+        // layout must fill the smaller box Root actually gives it, or the
+        // bottom row and right-edge controls draw past the visible window.
+        let content = rmac_ui::window_content_size(window);
+        let width = f32::from(content.width);
+        let height = f32::from(content.height);
         let content_width = width - m::CONTENT_LEFT;
         let background = if self.mode() == Mode::Save {
             colors.sheet
@@ -1440,6 +1588,7 @@ impl Render for Panel {
         };
         let menu = self.render_menu(width, height, colors, cx);
         let goto = self.render_goto(width, height, colors, cx);
+        let new_folder_sheet = self.render_new_folder(width, height, colors, cx);
         let replace = self.render_replace(width, height, colors, cx);
         let home = self.home.clone();
         div()
@@ -1483,7 +1632,7 @@ impl Render for Panel {
             .on_action(
                 cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)),
             )
-            .on_action(cx.listener(|this, _: &NewFolder, _, cx| this.new_folder(cx)))
+            .on_action(cx.listener(|this, _: &NewFolder, window, cx| this.new_folder(window, cx)))
             .on_action(cx.listener(|this, _: &SelectAllItems, window, cx| {
                 if this.focus.is_focused(window) {
                     let multiple = this.request.multiple;
@@ -1509,6 +1658,7 @@ impl Render for Panel {
             .children(elements)
             .children(menu)
             .children(goto)
+            .children(new_folder_sheet)
             .children(replace)
     }
 }

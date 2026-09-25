@@ -253,8 +253,16 @@ mod linux_wayland {
                             // The compositor projection can momentarily report no
                             // focused window during unrelated events; keep the
                             // last known app's menus rather than clearing them.
+                            // The Open/Save panel is a real, separate window
+                            // with its own app id, but on the Mac it is a
+                            // sheet or panel of the app that opened it, never
+                            // a frontmost application in its own right — so
+                            // it taking niri's focus must not switch (and
+                            // clear) the menu bar away from that app either
+                            // (OTHER-04, docs/parity.md).
                             if let Some(app_id) = focused_app
                                 .filter(|app_id| Some(app_id) != this.menu_app_id.as_ref())
+                                .filter(|app_id| !rmac_apps::identity::is_transient_panel(app_id))
                             {
                                 this.menu_app_id = Some(app_id.clone());
                                 this.menus.clear();
@@ -953,10 +961,18 @@ mod linux_wayland {
             // status runtime reported (kept across those blips) for the app
             // menu, and name it rather than letting the desktop identity take
             // over. The same holds while the bar still shows the menus of an
-            // app that has no focused window: name that app, not the desktop,
-            // so the name, its app menu and the menus beside it agree.
+            // app that has no focused window, or whose focused window is a
+            // transient panel like the Open/Save panel (OTHER-04): name that
+            // app, not the panel, so the name, its app menu and the menus
+            // beside it agree with what `menu_app_id` above kept showing.
+            let focus_is_panel = snapshot
+                .focused
+                .app_id
+                .as_deref()
+                .is_some_and(rmac_apps::identity::is_transient_panel);
             let keep_menu_app = self.open_menu.is_some()
-                || (snapshot.focused.app_id.is_none() && !status.menus.is_empty());
+                || ((snapshot.focused.app_id.is_none() || focus_is_panel)
+                    && !status.menus.is_empty());
             let active_app_id = if keep_menu_app {
                 status
                     .menu_app_id

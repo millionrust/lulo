@@ -90,6 +90,24 @@ pub const EXPANDED_TOOLBAR_BELOW_HEADER: f32 = 44.0;
 /// Tags, File Format); each omitted row removes one pitch.
 pub const EXPANDED_HEIGHT_THREE_ROWS: f32 = 448.0;
 
+/// The "already exists, do you want to replace it?" alert: a 260 pt NSAlert
+/// sheet with two sentences (title + explanation) and 112×30 buttons —
+/// larger than the panel's own 76×26 controls (OTHER-11).
+pub const REPLACE_WIDTH: f32 = 260.0;
+pub const REPLACE_PADDING: f32 = 20.0;
+pub const REPLACE_BUTTON_WIDTH: f32 = 112.0;
+pub const REPLACE_BUTTON_HEIGHT: f32 = 30.0;
+/// Generous headroom for the two-line title and up to three lines of body
+/// text at `REPLACE_WIDTH`; the card does not grow past this.
+pub const REPLACE_HEIGHT: f32 = 172.0;
+
+/// The New Folder sheet: "New Folder" / "Name of new folder inside
+/// “<folder>”:" / a field defaulted to "untitled folder" / Cancel · Create,
+/// 320×158 on the Mac (OTHER-10).
+pub const NEW_FOLDER_SHEET_WIDTH: f32 = 320.0;
+pub const NEW_FOLDER_SHEET_HEIGHT: f32 = 158.0;
+pub const NEW_FOLDER_SHEET_PADDING: f32 = 20.0;
+
 pub const GOTO_WIDTH: f32 = 460.0;
 pub const GOTO_HEIGHT: f32 = 183.0;
 pub const GOTO_RADIUS: f32 = 24.0;

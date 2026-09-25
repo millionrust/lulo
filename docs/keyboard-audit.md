@@ -9,7 +9,8 @@ live-confirmed AT-SPI gaps documented in `docs/journey-suite.md`
 those are **not** repeated as journey-8 failures here unless the same control
 is also unreachable from a real keyboard, independent of AT-SPI. This
 document complements, and does not replace, `docs/accessibility-audit.md`
-(shared-component roles/focus) and `docs/known-limitations.md` (the ⌃F2 gap).
+(shared-component roles/focus) and `docs/known-limitations.md` (⌃F2's
+implementation note and its remaining live-verification gap).
 
 Status key: **Works** (does what macOS does from the keyboard alone),
 **Fixed** (this pass changed it), **Partial** (works but with a caveat —
@@ -39,7 +40,7 @@ Files marked "excluded" below are other agents' territory this pass
 | ⌘Tab app switcher | Esc / ⌘. cancels | Works | `main.rs:297-298` |
 | ⌘Tab app switcher | ⌘Q/⌘H act on the selected app | Works | `main.rs:300-301` |
 | ⌃F3 Dock (`shell/bins/rmac-dock`, `crates/rmac-dock/src/keyboard.rs`) | Focus transfer, navigate, activate, open menu, Esc | Works (pre-existing) | `crates/rmac-dock/src/keyboard.rs` `Navigator`/`Key`, wired to niri's `Ctrl+F3` in `shell.kdl:263`; documented and scoped in `docs/known-limitations.md` |
-| ⌃F2 menu bar | Move focus to the menu bar | **Missing** | Confirmed absent: no `Ctrl+F2` bind anywhere in `packaging/rmac-session/shell.kdl`'s `binds { }` block (only `Ctrl+F3` exists at line 263). `docs/known-limitations.md` already documents why it's not a small addition (needs the Dock's invisible-overlay-surface trick, a command endpoint, and a new "title highlighted, no menu open" state in `shell/bins/rmac-menubar`, which is excluded from this pass — menus agent's territory). **Not implemented here; left as the known limitation.** |
+| ⌃F2 menu bar | Move focus to the menu bar | **Fixed** | `Ctrl+F2` now binds in `packaging/rmac-session/shell.kdl` (spawns `rmac-shortcut-dispatch menu-bar-focus`, registered in `crates/rmac-shortcuts/src/model.rs`'s `known_action`). `shell/bins/rmac-menubar/src/main.rs`'s `MenuKeyboard`/`KeyboardMode`/`begin_menu_keyboard`/`keyboard_key` add the Dock's invisible-overlay-surface trick, the command endpoint, and the "title highlighted, no menu open" state: Left/Right moves the highlight, Down/Return opens it, Esc backs out one level (open menu → highlight → gone), a letter jumps to a title. Verified by compiling, `cargo clippy -D warnings`, `niri validate`, and new unit tests (`crates/rmac-shortcuts/src/tests.rs`, `crates/rmac-session/src/tests.rs`); **not live/Orca-verified this pass** — see `docs/known-limitations.md`'s updated ⌃F2 note for why. |
 | Control Centre (`crates/quick-settings-app`) | Open from the keyboard | **Missing** | No niri bind and no `default_shortcuts()` entry for `"quick-settings"` (`crates/rmac-shortcuts/src/model.rs:19-24` only ships `launcher` and `lock`); the app does listen for `ShortcutId("quick-settings")` (`crates/quick-settings-app/src/main.rs:270`) but nothing ever sends it. Mouse-click-on-the-top-bar-icon is the only path today. Not just an unfilled `default_shortcuts()` entry: `packaging/rmac-session/shell.kdl:230-234`'s own comment says niri deliberately leaves every `Mod+<letter>` unbound so it passes through as the focused app's own Cmd+`<letter>` (Copy, New, …), so any letter chord here would shadow an app shortcut. macOS itself has no default keyboard shortcut for Control Center either (click/trackpad-only), so which non-conflicting chord to reserve is a product decision, not a mechanical one — same root cause for Notification Centre below |
 | Control Centre | Tab/arrow between toggles and sliders once open | **Fixed** (`2a0ef183`: arrows/Tab move, ←→ adjust a focused slider, Return/Space activate, Esc backs out of a list). Earlier finding: | `crates/quick-settings-app/src/render.rs:189-195`'s root `capture_key_down` only handles `"escape"`; every pill/toggle/circle in `crates/quick-settings-app/src/render/{cards,controls}.rs` is built with a bare `.on_click(...)` and no `.track_focus`/`tab_index` anywhere in the crate (`grep` for both returns nothing). The brightness/volume sliders are drag-only (`render.rs:195-206`, `on_mouse_move`/`on_mouse_up`) with no arrow-key equivalent. This is a real "no pointer-only controls" violation, structurally larger than a binding fix — it needs the same kind of `div()`-rewrite-with-real-focus the shared-component audit already did for `Toggle`/`Checkbox` |
 | Control Centre | Esc closes | Works | `render.rs:191-194` |
@@ -233,9 +234,6 @@ name:
 
 ## Larger gaps (not fixed here, listed per the brief)
 
-- **⌃F2 (menu bar focus)**: known limitation, needs the Dock's invisible-
-  overlay-surface mechanism plus a new menu-bar state; `shell/bins/rmac-menubar`
-  is excluded from this pass.
 - **Control Centre keyboard operation**: needs (a) a default global shortcut
   + niri bind + activation wiring to open it at all, and (b) rewriting its
   toggles/pills/sliders off bare `on_click` onto real `track_focus`/keyboard

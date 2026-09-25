@@ -304,6 +304,14 @@ binds {
     // the keyboard and activates the selection when ⌘ is released.
     Mod+Tab hotkey-overlay-title="Switch Applications" { spawn "/usr/libexec/rmac/rmac-app-switcher" "next"; }
     Mod+Shift+Tab hotkey-overlay-title="Switch Applications Backwards" { spawn "/usr/libexec/rmac/rmac-app-switcher" "previous"; }
+    // ⌃F2 moves keyboard focus to the menu bar, as on macOS (ACC-05,
+    // docs/known-limitations.md). The menu bar's own layer surface only
+    // takes keyboard on a click, so this goes through the same invisible-
+    // focus-surface technique ⌃F3 uses for the Dock below, reached through
+    // a command endpoint -- rmac-shortcut-dispatch, as the power key uses
+    // -- rather than a direct spawn, since the menu bar (unlike the Dock)
+    // has no command IPC of its own yet.
+    Ctrl+F2 repeat=false hotkey-overlay-title="Move Focus to the Menu Bar" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "menu-bar-focus"; }
     // ⌃F3 moves keyboard focus to the Dock, as on macOS. The resident Dock
     // holds the keyboard until Esc, an activation or a click.
     Ctrl+F3 repeat=false hotkey-overlay-title="Move Focus to the Dock" { spawn "/usr/libexec/rmac/rmac-dock" "focus"; }

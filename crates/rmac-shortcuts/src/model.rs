@@ -37,6 +37,7 @@ pub fn known_action(id: &ShortcutId) -> bool {
             | "power-key"
             | "shutdown-dialog"
             | "restart-to-update"
+            | "menu-bar-focus"
     )
 }
 

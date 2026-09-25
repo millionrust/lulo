@@ -727,6 +727,14 @@ impl TableDelegate for ProcessTableDelegate {
     /// assistive technology (ACC, journey 6) — the default implementation
     /// returns an empty string, which would leave every unpainted process
     /// row unnamed.
+    ///
+    /// The Name column returns `"{name} (PID {pid})"`, matching
+    /// `accessibility.rs::project_process_table`'s `AccessibleProcessRow.
+    /// label` and `render_tr`'s own `aria_label` exactly, rather than the
+    /// bare process name: more than one process can share a name, and a
+    /// screen reader (or `run-journey-monitor.py`, which looks up its own
+    /// disposable row by this exact prefix) needs the PID to tell them
+    /// apart, whether the row happens to be painted or not.
     fn cell_text(&self, row_index: usize, column_index: usize, _cx: &App) -> String {
         let Some(row) = self.rows.get(row_index) else {
             return String::new();
@@ -736,6 +744,9 @@ impl TableDelegate for ProcessTableDelegate {
             .get(column_index)
             .copied()
             .unwrap_or(ColKey::Name);
+        if key == ColKey::Name {
+            return format!("{} (PID {})", row.name, row.pid);
+        }
         row.cell_text(key)
     }
 }

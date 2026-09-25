@@ -282,10 +282,15 @@ class Run:
             point = self.minimized_tile_point("dock-after-set-minimized")
             self.check("the Dock shows a minimised tile left of the Bin", point, str(point))
             # Restore it from the keyboard, as a Mac user can: ⌃F3 moves focus
-            # to the Dock, End selects the Bin, ← the tile before it, Return.
-            for key in ("ctrl-f3", "end", "left", "enter"):
+            # to the Dock, → stops on the Bin (the last item), ← selects the
+            # tile before it, Return.
+            self.keys.key("ctrl-f3")
+            time.sleep(1.0)
+            for key in ["right"] * 30 + ["left"]:
                 self.keys.key(key)
-                time.sleep(0.6)
+                time.sleep(0.1)
+            time.sleep(0.5)
+            self.keys.key("enter")
         restored = self.wait_for(lambda: (self.window(wid) or {}).get("workspace_id") == origin, 10)
         self.check("the Dock restores it to its workspace", restored)
         self.check("restoring forgets the record", restored and not self.entry(wid))

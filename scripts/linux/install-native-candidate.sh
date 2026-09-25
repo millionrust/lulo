@@ -149,8 +149,21 @@ if [[ ${#niri_packages[@]} -eq 1 ]]; then
   satellite_package=${satellite_packages[0]}
   niri_version="$(dpkg-deb --field "$niri_package" Version)"
   satellite_version="$(dpkg-deb --field "$satellite_package" Version)"
-  install_packages+=("$niri_package" "$satellite_package")
-  third_party_label="niri $niri_version, xwayland-satellite $satellite_version"
+  third_party_label=""
+  # A newer build from another archive (a PPA shipping the next upstream
+  # release) already satisfies rmac-session's ">= pinned" Depends; apt
+  # refuses the downgrade, so keep it rather than fail the whole install.
+  for spec in "niri $niri_version $niri_package" \
+    "xwayland-satellite $satellite_version $satellite_package"; do
+    read -r package version file <<<"$spec"
+    current="$(dpkg-query --show --showformat='${Version}' "$package" 2>/dev/null || true)"
+    if [[ -n "$current" ]] && dpkg --compare-versions "$current" gt "$version"; then
+      third_party_label+="$package $current (installed, newer than $version; kept) "
+    else
+      install_packages+=("$file")
+      third_party_label+="$package $version "
+    fi
+  done
 fi
 
 cat <<EOF
@@ -198,8 +211,9 @@ if [[ ${#niri_packages[@]} -eq 1 ]]; then
     package=${spec% *}
     version=${spec#* }
     installed="$(dpkg-query --show --showformat='${Status}\t${Version}' "$package")"
-    [[ "$installed" == "install ok installed${tab}${version}" ]] \
-      || fail "$package is not installed at the exact candidate version"
+    [[ "$installed" == "install ok installed${tab}"* ]] \
+      && dpkg --compare-versions "${installed#*${tab}}" ge "$version" \
+      || fail "$package is not installed at the candidate version or newer"
   done
 fi
 python3 "$repo_root/scripts/linux/verify-session-package.py" \

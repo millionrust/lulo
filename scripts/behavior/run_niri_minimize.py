@@ -248,7 +248,7 @@ class Run:
         if tile is not None:
             tile.queryAction().doAction(0)
         restored = self.wait_for(lambda: (self.window(wid) or {}).get("workspace_id") == origin, 10)
-        self.check("the Dock restores it to its workspace", restored)
+        self.check("the Dock restores it to its workspace", tile is not None and restored)
         self.check("restoring forgets the record", restored and not self.entry(wid))
 
         # 3. ⌘M on the focused third-party window.

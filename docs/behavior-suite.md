@@ -125,3 +125,17 @@ virtual-pointer protocols this suite injects through, and is what CI's nested sm
 uses. niri has no headless backend and no virtual-input protocols. A scenario that needs
 niri-specific behaviour should say so in its title and stay a live AT-SPI journey
 (`docs/journey-suite.md`).
+
+The one exception is minimising, which only niri can do (the parking workspace, the
+`WindowMinimizeRequested` event, the ⌘M bind; ADR 0021). `scripts/behavior/run_niri_minimize.py`
+runs niri *nested inside* the headless Sway, with the shipped `shell.kdl` and this branch's Dock
+and Mission Control service. Keys go to Sway, because a virtual keyboard on niri itself bypasses
+niri's binds, and niri reads Mod as Alt when it is nested. It uses `run_lulo.py`'s isolation, and
+it checks a GTK window's own minimise, the Dock tile and restore, ⌘M, and the clean-up when a
+parked window closes. Pass `--calculator` to include an rmac app. Checks 1 and 2 need Lulo's
+patched niri (`--niri`, 26.04+lulo1-2).
+
+```sh
+python3 scripts/behavior/run_niri_minimize.py --niri ~/rmac-niri-build/target/release/niri \
+  --bin-dir $CARGO_TARGET_DIR/iterate [--calculator $CARGO_TARGET_DIR/iterate/rmac-calculator]
+```

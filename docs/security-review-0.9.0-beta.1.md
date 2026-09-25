@@ -7,12 +7,15 @@ This is the I6 security and privacy review
 as [security-review-0.9.0-beta.1.json](security-review-0.9.0-beta.1.json).
 
 **Gate status: Fail.** The source review is done: every one of the 10 domains
-was read, 9 findings were fixed during the review and 15 more after it (the
+was read, 9 findings were fixed during the review and 17 more after it (the
 tables below give each fix's commit), with regression tests wherever code changed, and nothing
 Critical or High is open. Three things still block the gate:
 
-- 3 findings are still open, all Low (two of them only partly fixed).
-- 25 checks need native execution on real stations.
+- 3 findings are still open, all Low, each accepted for Beta with a
+  documented risk and mitigation ("Beta decision" below) and a note in
+  [known-limitations.md](known-limitations.md). Accepted is not closed: the
+  verifier still counts them.
+- 24 checks need native execution on real stations.
 - None of the three Beta H8 stations has been run. `amd64-nvidia-desktop`
   does not exist yet.
 
@@ -27,9 +30,10 @@ python3 scripts/verify-security-review.py \
 
 ## Scope and method
 
-- **Reviewed tree:** `dev` at 5bea40ca, plus the fix commits listed below. The
-  JSON's `revision` is the last fix commit (`21c1234e`, before this record was
-  updated). The post-review fixes were checked with the repository's Python
+- **Reviewed tree:** `dev` at 5bea40ca, plus the fix commits listed below,
+  plus a fresh pass over the privileged code added on 2026-09-24/25 (see
+  "Fresh pass, 2026-09-25"). The JSON's `revision` is the last fix commit
+  (`af238a44`). The post-review fixes were checked with the repository's Python
   suites and `rustfmt`, with `rustc` unit-test builds of the changed pure
   modules on macOS, and with Linux-configuration type checks of
   `rmac-keyboard`, `rmac-network` and `rmac-bluetooth` against local rlibs. No
@@ -49,7 +53,7 @@ python3 scripts/verify-security-review.py \
   native or station evidence, or has an open finding. `pass` never claims
   native proof. `stations` all remain `pending`.
 
-Of the 80 checks, 53 are `pass` and 27 are `pending`.
+Of the 80 checks, 56 are `pass` and 24 are `pending` (the JSON is canonical).
 
 ## Findings fixed in this review
 
@@ -93,13 +97,11 @@ accepts the stored names (dev `b31c3e2c` and earlier; tests `f7d482f3`:
 | SR-25 | Low | dbus-polkit | The notification, clipboard, Focus, FileChooser and Wallpaper portal service connections and both system-bus agents set a 5-second `method_timeout`. Guard: `test_service_connections_bound_outgoing_calls`. | `4ee32bd5` |
 | SR-26 | Low | dbus-polkit | pkexec 127 is reported as "not authorised" and 126 as "cancelled" (`rmac_keyboard::command_failure`). Test: `pkexec_denial_is_not_reported_as_cancellation`. | `1ef3b352` |
 | SR-27 | Low (documentation) | lock-boundary | `secure-lock-recovery.md` and `secure-lock.md` describe `rmac-lock-provider`, its watchdog and start limit, and the `OnFailure=` swaylock fallback, including how to restart the fallback from a TTY. Station proof is still owed (`tty-recovery-proven` stays pending). | `21c1234e` |
+| SR-17 | Low (must-fix for Beta: update trust, and `--from-release` is the only install path until the archive key exists) | packages | `install.sh --from-release` refuses before downloading anything when `gh` is missing, because the packages' maintainer scripts run as root. `--allow-unattested` accepts `SHA256SUMS` alone and says what was not checked; it never skips a failing attestation and is refused outside `--from-release`. With `gh` the attestation stays mandatory and bound to `release.yml` (`072ccc09`). `docs/install.md` updated. Tests: `InstallReleaseAttestationTests` (refuses without gh and downloads nothing; the flag installs and warns; the flag cannot skip a failed attestation), `test_allow_unattested_applies_only_to_a_release_download`. | `65414a77` |
+| SR-28 | Low (new, fresh pass) | lock-boundary | The lock provider read its picture caches (`~/.cache/rmac/lock-*.rgb`, LOCK-01) by checking the path with `symlink_metadata` and then `fs::read`ing it. A FIFO swapped in between would block the locker while it builds its surfaces; a file swapped in at another size was read in full. It now opens with `O_NOFOLLOW`, `O_NONBLOCK` and `O_NOCTTY`, checks the opened descriptor is a regular file of exactly the expected size, and reads at most one byte more (`crates/rmac-lock-provider-linux/src/picture.rs` `read_exact_plain_file`). Only the same user can write there, so this hardens the lock boundary rather than closing a cross-user hole. Tests: five `picture::tests` (exact size, other sizes, symlink, FIFO without a writer, directory). | `b49028c8`, `af238a44` |
 
 Partly fixed; the rest stays open below:
 
-- **SR-17** (`072ccc09`): when `gh` is installed, the attestation is mandatory
-  and must be signed by `millionrust/lulo/.github/workflows/release.yml`
-  (`--signer-workflow`). Without `gh`, `install.sh` now says what it did not
-  check. Tests: `InstallReleaseAttestationTests`.
 - **SR-18** (`e16f8d5c`): the application and session package verifiers accept
   only the modes `0644` and `0755`. Tests:
   `test_manifest_cannot_claim_a_privileged_mode` (both packages). (`7121c7ff`):
@@ -114,8 +116,23 @@ Partly fixed; the rest stays open below:
 | ID | Severity | Boundary | Evidence | Exploit scenario | Recommended fix |
 |---|---|---|---|---|---|
 | SR-15 | Low | packages | There is no `--remap-path-prefix`. Panic locations keep `$CARGO_HOME/…` and `../crates/*` absolute paths (`Cargo.toml:162-167` strips symbols only). | Local and reference-PC builds embed `/home/<user>/…`. `check-native-reproducibility.sh` builds twice on one host, so it cannot catch this. | Remap `$CARGO_HOME` and the repository root in `build-native-inputs.sh`, and scan packaged binaries for `/home/` and `/Users/`. Not done here: it changes every release binary and needs a build to verify. |
-| SR-17 | Low (partly fixed) | packages | Without `gh`, `install.sh --from-release` still checks only `SHA256SUMS`, which comes from the same release. It now says so. The default `install.sh` path is now the signed APT repository; `--from-release` remains the offline path. | Authenticity then rests on HTTPS and GitHub account security. | Require `gh attestation verify` unless an explicit `--allow-unattested` is passed. That changes the documented install path, so it is left for a decision. |
 | SR-18 | Low (partly fixed) | packages | rustup is installed by `curl \| sh`, the `ubuntu:26.04` container is pinned by tag, and `cargo install` is pinned by version only (`release.yml`). | Supply-chain drift. | Pin by digest or hash. (The manifest mode check and the publisher's keyring source are fixed.) |
+| SR-29 | Low (new, fresh pass) | updates | `scripts/linux/rmac-update-check` schedules the automatic set (Lulo OS and security updates) as a PackageKit offline update with a download-only `UpdatePackages` and `offline_trigger`, without a `SIMULATE` pass. System Settings' Update Now simulates and stops a plan with removals for confirmation (`rmac-updates-linux` `packagekit_prepare_offline`); the daily run does not. | An update whose dependencies need a removal is applied unattended at the next restart. It is still a trusted, signed package from a configured archive, so this is data safety, not an authenticity gap. | Simulate the automatic set with `ONLY_TRUSTED \| SIMULATE` first and leave it for review in System Settings when the plan removes or obsoletes anything. |
+
+### Beta decision
+
+Every open finding was classified against the Beta must-fix bar: exploitable
+by another local user, network input, privilege escalation, secret or
+password exposure, unsafe file handling on user data, or update trust.
+SR-17 met it (update trust) and is fixed above. The rest are accepted for
+Beta with this risk and mitigation; each has a Known issues note in
+[known-limitations.md](known-limitations.md).
+
+| ID | Severity | Decision | Risk | Mitigation until fixed |
+|---|---|---|---|---|
+| SR-15 | Low | Accept for Beta | A binary built on a person's machine names that machine's home directory in panic locations; nothing else leaks. | Release `.deb`s are built only by `release.yml` on GitHub runners, whose paths name no person; locally built packages are not distributed. |
+| SR-18 | Low | Accept for Beta | A compromised rustup script, `ubuntu:26.04` tag or crates.io release of a build tool could reach a release build. | Actions are pinned by commit SHA (SR-16), builds use `Cargo.lock` with `--locked`, `cargo-deny` gates advisories and licences (SR-05), outputs carry a workflow-bound provenance attestation that `install.sh` now requires (SR-17), and the APT publisher re-verifies every input (SR-12). |
+| SR-29 | Low | Accept for Beta | An automatic update that needs a package removal happens at restart without a confirmation. | Only `ONLY_TRUSTED` packages from signed archives are scheduled; the automatic set is limited to Lulo OS's five packages and packages PackageKit marks as security updates; turning off the Automatic Updates switches (or the timer) stops it; Update Now in System Settings simulates and asks. |
 
 **Informational, no severity:**
 
@@ -129,6 +146,24 @@ Partly fixed; the rest stays open below:
 - The Wallpaper portal backend has no `.portal` routing file (a functional gap).
 - The lock provider leaves wrong-password throttling to PAM (pam_unix delay and faillock).
 - The panic-containment tests in the lock provider do not match the release `panic = "abort"`.
+- Release notes (`crates/rmac-updates/src/notes.rs`) are read from any APT list whose InRelease says `Origin: rmac` and `Label: rmac`; another signed archive could claim those strings and supply notes for the exact offered `rmac-session` version. The text is bounded, has no control characters and is shown as plain text only.
+- ⌘F5 toggles the screen reader while locked (as GNOME's lock screen and the Mac's login window allow). Orca then runs with the session's rights; the lock surface is exclusive, so only the lock screen is shown.
+- The wallpaper process decodes the account picture (`~/.face` or AccountsService's `IconFile`) with no pixel cap; it is the user's own file and is never decoded by the lock provider.
+
+## Fresh pass, 2026-09-25
+
+Source review of the privileged or root-run code added on 2026-09-24/25:
+
+| Area | Result |
+|---|---|
+| `packaging/rmac-session/system-sleep/rmac-input-resume` (root, on every resume) | No finding. Absolute tool paths, no environment or user input, reads only `/proc` and `/sys`, acts only in the `post` phase, each `modprobe` bounded by `timeout 5`. A device name a user could influence (for example through `uinput`) can at most make it skip the reload. |
+| `packaging/rmac-session/debian/postinst`, `postrm` | Unchanged since the review; they touch only `/etc/keyd/rmac.conf` and only a file carrying rmac's header. |
+| Power-key inhibitor (`rmac-session-supervisor hold-power-key`, `rmac-wayland-session`) and the coordinator's `power_key` | No finding. A logind `handle-power-key` block inhibitor tied to the wrapper by `PR_SET_PDEATHSIG` (parent re-checked after `prctl`) and stopped with the session; poweroff, restart and critical-battery actions are not blocked. A press locks before it sleeps; an unreadable `LockedHint` counts as unlocked, which is the safe side. |
+| `rmac-process` (`bind_to_parent`) | No finding. The `pre_exec` closure makes only async-signal-safe calls, runs after std has set up stdio, and marks every descriptor from 3 up close-on-exec (`close_range`, `fcntl` fallback), which closes a descriptor leak into helpers. |
+| Update flow (`rmac-updates`, `rmac-updates-linux`, `rmac-update-check`) | SR-29 (above). Download-only and offline-trigger calls need no polkit prompt under PackageKit's own policy; every transaction keeps `ONLY_TRUSTED`; Settings re-simulates and compares the plan before downloading; the settings file is read with `O_NOFOLLOW`, bounded and defaulting on; the status file is written private and atomic; error lines carry classes, not messages. Release notes: informational note above. |
+| `rmac-dbus` shared connection | No finding. Only client calls use the shared connections; every exported service (portals, agents, notifications, clipboard, Focus) still builds its own connection with a 5-second `method_timeout` (SR-25), and the sender checks (SR-22, SR-23) read each message's header, so sharing does not widen who can call them. |
+| Lock screen pictures (LOCK-01) | SR-28, fixed. |
+| `install-native-candidate.sh`, `install.sh` niri version changes | No finding: install scripts that compare versions with `dpkg --compare-versions` and keep a newer package instead of downgrading. |
 
 ## Per-check verdicts
 
@@ -227,7 +262,7 @@ Legend:
 | license-inventory-complete | pending (native) | Rust dependencies are covered; non-Rust assets are not established |
 | native-and-sandbox-boundaries-explicit | pass | Flatpak `finish-args` are `--socket=wayland --device=dri` only; maintainer scripts touch only `/etc/keyd/rmac.conf` (`packaging/rmac-session/debian/postinst`, `postrm`) |
 | rollback-and-uninstall-tested | pending (native) | |
-| signature-and-origin-claims-bounded | pending (SR-17) | SR-14 fixed; with `gh` the release attestation is mandatory and workflow-bound |
+| signature-and-origin-claims-bounded | pass | SR-14 and SR-17 fixed: the release attestation is mandatory and workflow-bound; without `gh` only an explicit `--allow-unattested` installs |
 | unpackaged-executables-rejected | pass | `verify-native-packages.py:430-436`; no setuid in source |
 
 ### updates

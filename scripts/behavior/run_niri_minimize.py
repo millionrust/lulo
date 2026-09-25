@@ -281,7 +281,13 @@ class Run:
             point = self.minimized_tile_point("dock-after-set-minimized")
             self.check("the Dock shows a minimised tile left of the Bin", point, str(point))
             if point:
+                # Hover first: the Dock magnifies under the pointer.
+                self.keys.move(point[0], point[1], *self.output_size)
+                time.sleep(0.8)
                 self.keys.click(point[0], point[1], *self.output_size)
+                time.sleep(0.5)
+                subprocess.run(["grim", "-c", "-o", str(self.output), str(self.out / "after-tile-click.png")],
+                               env=self.env, capture_output=True, check=False)
         restored = self.wait_for(lambda: (self.window(wid) or {}).get("workspace_id") == origin, 10)
         self.check("the Dock restores it to its workspace", restored)
         self.check("restoring forgets the record", restored and not self.entry(wid))

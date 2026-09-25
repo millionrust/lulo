@@ -9,10 +9,17 @@ impl EditorView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         // Rich text opens in TextEdit's Helvetica 12 (UI font here), one
-        // point above the plain-text Menlo 11 default.
+        // point above the plain-text Menlo 11 default — unless the document
+        // itself declares a size (`\fsN`), which every run shares here: GPUI's
+        // `TextRun` carries no per-run size, so bold/italic/underline/colour
+        // vary run by run but the block's size is the document's own first
+        // explicit one.
         let base = rmac_ui::UI_FONT;
-        let size = self.font_size + 1.0;
         let runs = self.rtf_runs.as_deref().unwrap_or(&[]);
+        let size = runs
+            .iter()
+            .find_map(|run| run.size)
+            .unwrap_or(self.font_size + 1.0);
 
         let mut text = String::new();
         let mut text_runs: Vec<TextRun> = Vec::new();

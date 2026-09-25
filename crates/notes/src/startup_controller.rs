@@ -6,6 +6,7 @@ pub(super) struct NotesInputs {
     pub(super) title: Entity<InputState>,
     pub(super) tags: Entity<InputState>,
     pub(super) body: Entity<InputState>,
+    pub(super) note_find: Entity<InputState>,
     pub(super) focus: FocusHandle,
 }
 
@@ -15,7 +16,16 @@ impl NotesView {
             KeyBinding::new("cmd-n", ComposeNote, Some("Notes")),
             KeyBinding::new("shift-cmd-n", CreateFolder, Some("Notes")),
             KeyBinding::new("cmd-backspace", TrashOrRestore, Some("Notes")),
-            KeyBinding::new("cmd-f", FocusSearch, Some("Notes")),
+            // Plain ⌫, as on the Mac, removes the selected note from the
+            // list; a focused text field consumes the key itself first, so
+            // this only fires when the list holds the keyboard.
+            KeyBinding::new("backspace", DeleteSelectedNote, Some("Notes")),
+            KeyBinding::new("cmd-d", DuplicateNote, Some("Notes")),
+            // ⌘F is in-note Find; ⌥⌘F is the Mac's Note List Search.
+            KeyBinding::new("cmd-f", FindInNote, Some("Notes")),
+            KeyBinding::new("cmd-alt-f", FocusSearch, Some("Notes")),
+            KeyBinding::new("cmd-g", FindInNoteNext, Some("Notes")),
+            KeyBinding::new("shift-cmd-g", FindInNotePrevious, Some("Notes")),
             KeyBinding::new("cmd-shift-e", ExportNotes, Some("Notes")),
             KeyBinding::new(
                 rmac_ui::shortcuts::PRINT.keystroke,
@@ -23,6 +33,8 @@ impl NotesView {
                 Some("Notes"),
             ),
             KeyBinding::new("cmd-shift-l", InsertChecklist, Some("Notes")),
+            KeyBinding::new("cmd-b", ToggleBold, Some("Notes")),
+            KeyBinding::new("cmd-i", ToggleItalic, Some("Notes")),
             // ⌘W closes the window through the same review as the red
             // button (pending changes, open choosers, running imports).
             KeyBinding::new(
@@ -37,6 +49,7 @@ impl NotesView {
         let title = cx.new(|cx| InputState::new(window, cx).placeholder("Title"));
         let tags = cx.new(|cx| InputState::new(window, cx).placeholder("Add Tags"));
         let body = rmac_editor::multiline("Note", window, cx);
+        let note_find = cx.new(|cx| InputState::new(window, cx).placeholder("Find in Note"));
         cx.subscribe(&title, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 this.schedule_current_edit(cx);
@@ -67,6 +80,14 @@ impl NotesView {
             }
         })
         .detach();
+        cx.subscribe(&note_find, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.note_find_current = 0;
+                this.recompute_note_find_matches(cx);
+                cx.notify();
+            }
+        })
+        .detach();
 
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
@@ -76,6 +97,7 @@ impl NotesView {
             title,
             tags,
             body,
+            note_find,
             focus,
         }
     }

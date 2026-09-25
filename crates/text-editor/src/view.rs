@@ -38,8 +38,8 @@ use rmac_ui::{InputEvent, InputState, Position, Rope, RopeExt as _};
 use crate::PrintFile;
 use crate::{document, long_lines, recovery, rtf, storage};
 use crate::{
-    CloseBar, CloseWindow, DecreaseFont, FindNext, FindPrev, IncreaseFont, NewFile, OpenFile,
-    SaveFile, SaveFileAs, ToggleFind, ToggleMono, ToggleReplace,
+    CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, FindNext, FindPrev, IncreaseFont,
+    NewFile, OpenFile, SaveFile, SaveFileAs, ToggleFind, ToggleMono, ToggleReplace,
 };
 
 use document_io::{
@@ -48,7 +48,7 @@ use document_io::{
     SaveFailure,
 };
 use recovery_state::{recovery_failure_message, startup_recovery, RecoveryClock, RecoveryPrompt};
-use startup::open_editor_window;
+use startup::{open_duplicate_window, open_editor_window};
 
 pub(crate) use startup::run;
 
@@ -58,6 +58,17 @@ const CTX: &str = "TextEditor";
 #[derive(Clone, Copy)]
 enum Pending {
     Close,
+}
+
+/// The content a duplicate window ([`startup::open_duplicate_window`]) opens
+/// with: TextEdit's File ▸ Duplicate copies the buffer exactly, formatting
+/// included, into a new window with no path.
+pub(super) struct DuplicateContent {
+    pub(super) text: String,
+    pub(super) format: document::TextFormat,
+    pub(super) mono: bool,
+    pub(super) font_size: f32,
+    pub(super) rtf_runs: Option<Vec<rtf::RtfRun>>,
 }
 
 /// An edit an assistive technology asks of the document body.
@@ -80,6 +91,9 @@ enum ActiveAlert {
     Conflict,
     /// The external bytes reviewed immediately before an explicit overwrite.
     ConfirmOverwrite { reviewed_revision: Vec<u8> },
+    /// Edit as Plain Text (the RTF preview's only way to edit): confirms
+    /// before discarding the document's formatting, as TextEdit does.
+    ConfirmPlainTextConversion,
     /// A document open/save error — title + message + OK.
     Error {
         title: &'static str,

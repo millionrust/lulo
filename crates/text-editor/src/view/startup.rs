@@ -73,6 +73,33 @@ pub(super) fn open_editor_window(cx: &mut App, initial_path: Option<PathBuf>) ->
     .map_err(|_| ())
 }
 
+/// TextEdit's File ▸ Duplicate: a new untitled window seeded with `content`,
+/// already marked unsaved (a duplicate has never been written to disk). The
+/// new window has no path, so its own Save behaves like Save As.
+pub(super) fn open_duplicate_window(
+    cx: &mut App,
+    content: super::DuplicateContent,
+) -> Result<(), ()> {
+    let options = rmac_ui::window_options_for_app(
+        rmac_ui::app_id::TEXT_EDITOR,
+        WINDOW_WIDTH,
+        WINDOW_HEIGHT,
+        cx,
+    );
+    cx.open_window(options, |window, cx| {
+        rmac_ui::prepare_surface_window(window, cx);
+        let view = cx.new(|cx| {
+            rmac_ui::observe_window_state(rmac_ui::app_id::TEXT_EDITOR, window, cx);
+            let mut view = EditorView::new_with_path(None, window, cx);
+            view.seed_duplicate_content(content, window, cx);
+            view
+        });
+        cx.new(|cx| Root::new(view, window, cx))
+    })
+    .map(|_| ())
+    .map_err(|_| ())
+}
+
 /// The windows a launch asks for, as the running process's `OpenWindow`
 /// arguments: one list per window, paths made absolute because the running
 /// process has its own working directory. `None` when a path cannot travel

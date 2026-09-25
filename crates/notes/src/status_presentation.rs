@@ -4,6 +4,7 @@ use super::*;
 enum BannerActions {
     Pending,
     OrphanCleanup,
+    UndoTrash,
 }
 
 impl NotesView {
@@ -26,7 +27,11 @@ impl NotesView {
             _ => match &self.message {
                 Some(message) => (
                     message.to_string(),
-                    orphan_waiting.then_some(BannerActions::OrphanCleanup),
+                    if self.pending_undo_trash.is_some() {
+                        Some(BannerActions::UndoTrash)
+                    } else {
+                        orphan_waiting.then_some(BannerActions::OrphanCleanup)
+                    },
                 ),
                 None if orphan_waiting => (
                     "A removed photo is still stored until its managed copy is cleaned up."
@@ -72,6 +77,13 @@ impl NotesView {
                     Button::new("review-orphan-cleanup", "Clean Up…")
                         .xsmall()
                         .on_click(cx.listener(|this, _, _, cx| this.begin_orphan_cleanup(cx))),
+                );
+            }
+            Some(BannerActions::UndoTrash) => {
+                banner = banner.child(
+                    Button::new("undo-trash-note", "Undo")
+                        .xsmall()
+                        .on_click(cx.listener(|this, _, _, cx| this.undo_delete_note(cx))),
                 );
             }
             None => {}

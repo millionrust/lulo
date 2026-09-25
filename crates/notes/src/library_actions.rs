@@ -174,6 +174,93 @@ impl NotesView {
         cx.notify();
     }
 
+    /// Plain ⌫ on the note list, as on the Mac: move the selected note to
+    /// Recently Deleted and offer Undo in the status banner. Unlike ⌘⌫
+    /// ([`Self::trash_or_restore`]), this never restores an already-deleted
+    /// note — Trash has its own permanent-delete commands for that.
+    pub(super) fn delete_selected_note_with_undo(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(note) = self.session.selected_note().filter(|note| !note.deleted) else {
+            return;
+        };
+        let note_id = note.id;
+        let expected_revision = note.revision;
+        self.pending_undo_trash = Some((note_id, expected_revision));
+        self.message = Some("Note deleted.".into());
+        self.send_action(LibraryAction::TrashNote {
+            note_id,
+            expected_revision,
+        }, cx);
+        cx.notify();
+        // Undo stays offered for a few seconds, like a Mac toast, then the
+        // banner clears itself — unless a newer delete already replaced it.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(6))
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.pending_undo_trash == Some((note_id, expected_revision)) {
+                    this.pending_undo_trash = None;
+                    this.message = None;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// The status banner's Undo button after [`Self::delete_selected_note_with_undo`]:
+    /// restore the note it just trashed, using the library's current
+    /// revision for it (the trash itself already advanced the revision
+    /// once).
+    pub(super) fn undo_delete_note(&mut self, cx: &mut Context<Self>) {
+        let Some((note_id, _)) = self.pending_undo_trash.take() else {
+            return;
+        };
+        let Some(current_revision) = self.session.snapshot().and_then(|snapshot| {
+            snapshot
+                .notes
+                .iter()
+                .find(|note| note.id == note_id)
+                .map(|note| note.revision)
+        }) else {
+            self.message = Some("That note is no longer available to restore.".into());
+            cx.notify();
+            return;
+        };
+        self.message = None;
+        self.send_action(
+            LibraryAction::RestoreNote {
+                note_id,
+                expected_revision: current_revision,
+            },
+            cx,
+        );
+    }
+
+    /// File ▸ Duplicate Note (⌘D): a new note with the same title, body,
+    /// tags and folder. Attachments are not copied.
+    pub(super) fn duplicate_note(&mut self, cx: &mut Context<Self>) {
+        if !self.is_interactive_ready() {
+            return;
+        }
+        let Some(note) = self.session.selected_note() else {
+            return;
+        };
+        self.send_action(
+            LibraryAction::CreateNote(NewNote {
+                created_unix_ms: now_unix_ms(),
+                title: note.title.clone(),
+                body: note.body.clone(),
+                tags: note.tags.clone(),
+                folder_id: note.folder_id,
+            }),
+            cx,
+        );
+    }
+
     pub(super) fn trash_or_restore(&mut self, cx: &mut Context<Self>) {
         if !self.is_interactive_ready() {
             return;
@@ -380,6 +467,27 @@ impl NotesView {
             if pinned { "Unpin Note" } else { "Pin Note" },
             cx,
         );
+        rmac_ui::set_menu_enabled("notes::DuplicateNote", ready && has_note, cx);
+        let body_editable = ready
+            && !self.markdown_preview_visible
+            && self
+                .session
+                .selected_note()
+                .is_some_and(|note| !note.deleted);
+        for action in [
+            "notes::ToggleBold",
+            "notes::ToggleItalic",
+            "notes::SetStyleTitle",
+            "notes::SetStyleHeading",
+            "notes::SetStyleSubheading",
+            "notes::SetStyleBody",
+            "notes::SetStyleMonospaced",
+            "notes::InsertBulletedList",
+            "notes::InsertNumberedList",
+        ] {
+            rmac_ui::set_menu_enabled(action, body_editable, cx);
+        }
+        rmac_ui::set_menu_enabled("notes::FindInNote", ready && has_note, cx);
         rmac_ui::set_menu_enabled("notes::PrintNote", has_note, cx);
         rmac_ui::set_menu_enabled("notes::ExportNotePdf", has_note, cx);
         rmac_ui::set_menu_enabled(

@@ -50,6 +50,11 @@ impl EditorView {
             KeyBinding::new(rmac_ui::shortcuts::OPEN.keystroke, OpenFile, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::SAVE.keystroke, SaveFile, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::SAVE_AS.keystroke, SaveFileAs, Some(CTX)),
+            KeyBinding::new(
+                rmac_ui::shortcuts::DUPLICATE_DOCUMENT.keystroke,
+                DuplicateDocument,
+                Some(CTX),
+            ),
             KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, ToggleFind, Some(CTX)),
             KeyBinding::new(
                 rmac_ui::shortcuts::REPLACE.keystroke,

@@ -24,10 +24,45 @@ impl EditorView {
         self.do_open(window, cx);
     }
 
-    /// Leave the read-only RTF preview and continue editing the extracted text
-    /// as a new untitled plain-text document — the original `.rtf` is never
-    /// overwritten.
+    /// TextEdit's File ▸ Duplicate: a new window with this document's exact
+    /// content, unsaved. Unlike Save As, the window this was invoked from
+    /// keeps its own path and dirty state untouched.
+    pub(super) fn duplicate_document(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_busy || self.file_action_blocked() {
+            return;
+        }
+        let content = super::DuplicateContent {
+            text: self.document_text(cx),
+            format: self.text_format,
+            mono: self.mono,
+            font_size: self.font_size,
+            rtf_runs: self.rtf_runs.clone(),
+        };
+        if open_duplicate_window(cx, content).is_err() {
+            self.alert = Some(ActiveAlert::Error {
+                title: "Could not open a duplicate window.",
+                message: "Text Editor could not create another window. This document remains open."
+                    .into(),
+            });
+            cx.notify();
+        }
+    }
+
+    /// Leave the read-only RTF preview and continue editing the extracted
+    /// text as a new untitled plain-text document — the original `.rtf` is
+    /// never overwritten. TextEdit always warns before a rich document loses
+    /// its formatting this way, so this only asks; [`Self::alert_confirm`]
+    /// calls [`Self::perform_edit_as_plain_text`] once the user agrees.
     pub(super) fn edit_as_plain_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.file_action_blocked() || self.rtf_runs.is_none() {
+            return;
+        }
+        self.alert = Some(ActiveAlert::ConfirmPlainTextConversion);
+        cx.notify();
+    }
+
+    /// The confirmed conversion itself — see [`Self::edit_as_plain_text`].
+    pub(super) fn perform_edit_as_plain_text(&mut self, cx: &mut Context<Self>) {
         if self.rtf_runs.take().is_some() {
             self.path = None;
             self.saved_bytes = None;

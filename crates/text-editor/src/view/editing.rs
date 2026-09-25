@@ -15,11 +15,46 @@ fn accessible_value_fits(len_bytes: usize) -> bool {
     len_bytes <= MAX_ACCESSIBLE_VALUE_BYTES
 }
 
-/// Byte offset of every non-overlapping, case-sensitive match of `needle`.
+/// Byte offset of every non-overlapping match of `needle`, case-insensitive
+/// as the Mac's Find is by default. Comparing ASCII-lowercased copies keeps
+/// every byte offset valid in the original text: lowercasing never changes a
+/// UTF-8 string's byte length.
 fn match_offsets(hay: &str, needle: &str) -> Vec<usize> {
-    hay.match_indices(needle)
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    let hay_lower = hay.to_ascii_lowercase();
+    let needle_lower = needle.to_ascii_lowercase();
+    hay_lower
+        .match_indices(&needle_lower)
         .map(|(offset, _)| offset)
         .collect()
+}
+
+/// Whether the bytes at `offset..offset+needle.len()` in `hay` are still the
+/// same case-insensitive match `match_offsets` found there.
+fn matches_needle_at(hay: &str, offset: usize, needle: &str) -> bool {
+    offset + needle.len() <= hay.len()
+        && hay.is_char_boundary(offset)
+        && hay.is_char_boundary(offset + needle.len())
+        && hay[offset..offset + needle.len()].eq_ignore_ascii_case(needle)
+}
+
+/// `hay` with every `needle_len`-byte span at `offsets` (as `match_offsets`
+/// found them) replaced by `replacement`, left to right.
+fn replace_at_offsets(hay: &str, offsets: &[usize], needle_len: usize, replacement: &str) -> String {
+    let mut result = String::with_capacity(hay.len());
+    let mut cursor = 0;
+    for &offset in offsets {
+        if offset < cursor {
+            continue;
+        }
+        result.push_str(&hay[cursor..offset]);
+        result.push_str(replacement);
+        cursor = offset + needle_len;
+    }
+    result.push_str(&hay[cursor..]);
+    result
 }
 
 impl EditorView {
@@ -123,9 +158,7 @@ impl EditorView {
         let needle = self.find_input.read(cx).value().to_string();
         let replacement = self.replace_input.read(cx).value().to_string();
         let mut hay = self.input.read(cx).text().to_string();
-        if offset + needle.len() <= hay.len()
-            && &hay[offset..offset + needle.len()] == needle.as_str()
-        {
+        if matches_needle_at(&hay, offset, &needle) {
             hay.replace_range(offset..offset + needle.len(), &replacement);
             self.input
                 .update(cx, |state, cx| state.set_value(hay, window, cx));
@@ -145,10 +178,11 @@ impl EditorView {
         }
         let replacement = self.replace_input.read(cx).value().to_string();
         let hay = self.input.read(cx).text().to_string();
-        if !hay.contains(&needle) {
+        let offsets = match_offsets(&hay, &needle);
+        if offsets.is_empty() {
             return;
         }
-        let value = hay.replace(&needle, &replacement);
+        let value = replace_at_offsets(&hay, &offsets, needle.len(), &replacement);
         self.input
             .update(cx, |state, cx| state.set_value(value, window, cx));
         self.current = 0;
@@ -292,5 +326,28 @@ mod tests {
         assert!(accessible_value_fits(0));
         assert!(accessible_value_fits(MAX_ACCESSIBLE_VALUE_BYTES));
         assert!(!accessible_value_fits(MAX_ACCESSIBLE_VALUE_BYTES + 1));
+    }
+
+    #[test]
+    fn find_matches_ignore_case_by_default_as_on_the_mac() {
+        assert_eq!(match_offsets("Hello HELLO hello", "hello"), vec![0, 6, 12]);
+        assert_eq!(match_offsets("Straße", "STRASSE"), Vec::<usize>::new());
+        assert!(match_offsets("no query", "").is_empty());
+    }
+
+    #[test]
+    fn a_stale_match_offset_is_rejected_before_replace() {
+        let hay = "Hello world";
+        assert!(matches_needle_at(hay, 0, "hello"));
+        assert!(matches_needle_at(hay, 6, "WORLD"));
+        assert!(!matches_needle_at(hay, 0, "world"));
+        assert!(!matches_needle_at(hay, 100, "hello"));
+    }
+
+    #[test]
+    fn replace_all_is_case_insensitive_and_keeps_the_replacement_case() {
+        let hay = "Cat cat CATS";
+        let offsets = match_offsets(hay, "cat");
+        assert_eq!(replace_at_offsets(hay, &offsets, "cat".len(), "dog"), "dog dog dogS");
     }
 }

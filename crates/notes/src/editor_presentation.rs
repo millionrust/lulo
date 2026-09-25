@@ -227,6 +227,9 @@ impl NotesView {
             .when_some(attachments, |element, attachments| {
                 element.child(attachments)
             })
+            .when(self.note_find_open, |element| {
+                element.child(self.render_note_find_bar(cx))
+            })
             .child(body)
             .child(
                 div()

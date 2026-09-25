@@ -18,7 +18,12 @@ impl Shortcut {
 pub const NEW: Shortcut = Shortcut::new("cmd-n", "⌘N");
 pub const OPEN: Shortcut = Shortcut::new("cmd-o", "⌘O");
 pub const SAVE: Shortcut = Shortcut::new("cmd-s", "⌘S");
-pub const SAVE_AS: Shortcut = Shortcut::new("cmd-shift-s", "⇧⌘S");
+pub const SAVE_AS: Shortcut = Shortcut::new("cmd-alt-shift-s", "⌥⇧⌘S");
+/// TextEdit's File ▸ Duplicate: a new window with the document's current
+/// content, unsaved. Distinct from [`DUPLICATE`] (⌘D), Finder's file
+/// duplicate — the Mac binds this one to the key Lulo used to bind
+/// [`SAVE_AS`] to before it moved to ⌥⇧⌘S.
+pub const DUPLICATE_DOCUMENT: Shortcut = Shortcut::new("cmd-shift-s", "⇧⌘S");
 pub const PRINT: Shortcut = Shortcut::new("cmd-p", "⌘P");
 pub const CLOSE: Shortcut = Shortcut::new("cmd-w", "⌘W");
 pub const FIND: Shortcut = Shortcut::new("cmd-f", "⌘F");
@@ -83,6 +88,7 @@ mod tests {
         OPEN,
         SAVE,
         SAVE_AS,
+        DUPLICATE_DOCUMENT,
         PRINT,
         CLOSE,
         FIND,

@@ -304,7 +304,8 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
             item!("Open…", "text_editor::OpenFile", "⌘O"),
             item!("Close", "text_editor::CloseWindow", "⌘W", separator),
             item!("Save", "text_editor::SaveFile", "⌘S", separator),
-            item!("Save As…", "text_editor::SaveFileAs", "⇧⌘S"),
+            item!("Duplicate", "text_editor::DuplicateDocument", "⇧⌘S"),
+            item!("Save As…", "text_editor::SaveFileAs", "⌥⇧⌘S"),
             item!("Export as PDF…", "text_editor::ExportPdf", "", separator),
             item!("Print…", "text_editor::PrintFile", "⌘P", separator),
         ],
@@ -431,6 +432,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
             ),
             item!("Export Notes…", "notes::ExportNotes", "⇧⌘E"),
             item!("Pin Note", "notes::TogglePin", "", separator),
+            item!("Duplicate Note", "notes::DuplicateNote", "⌘D"),
             item!("Print…", "notes::PrintNote", "⌘P", separator),
         ],
     },
@@ -447,14 +449,41 @@ const NOTES_MENUS: &[MenuSpec] = &[
             submenu!(
                 "Find",
                 "notes::FindMenu",
-                [item!("Note List Search…", "notes::FocusSearch", "⌘F")],
+                [
+                    item!("Find…", "notes::FindInNote", "⌘F"),
+                    item!("Note List Search…", "notes::FocusSearch", "⌥⌘F"),
+                ],
                 separator
             ),
         ],
     },
     MenuSpec {
         label: "Format",
-        items: &[item!("Checklist", "notes::InsertChecklist", "⇧⌘L")],
+        items: &[
+            item!("Bold", "notes::ToggleBold", "⌘B"),
+            item!("Italic", "notes::ToggleItalic", "⌘I", separator),
+            submenu!(
+                "Paragraph Style",
+                "notes::ParagraphStyleMenu",
+                [
+                    item!("Title", "notes::SetStyleTitle", ""),
+                    item!("Heading", "notes::SetStyleHeading", ""),
+                    item!("Subheading", "notes::SetStyleSubheading", ""),
+                    item!("Body", "notes::SetStyleBody", ""),
+                    item!("Monospaced", "notes::SetStyleMonospaced", ""),
+                ],
+                separator
+            ),
+            item!("Checklist", "notes::InsertChecklist", "⇧⌘L"),
+            submenu!(
+                "Lists",
+                "notes::ListsMenu",
+                [
+                    item!("Bulleted List", "notes::InsertBulletedList", ""),
+                    item!("Numbered List", "notes::InsertNumberedList", ""),
+                ]
+            ),
+        ],
     },
     MenuSpec {
         label: "View",

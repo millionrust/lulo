@@ -347,7 +347,7 @@ mod tests {
     fn keypad_geometry_matches_the_measured_grid() {
         let (left, top) = key_origin(0, 0);
         assert_eq!((left, top), (KEYPAD_LEFT, KEYPAD_TOP));
-        let (right_col, bottom_row) = key_origin(ROWS - 1, COLUMNS - 1);
+        let (right_col, _bottom_row) = key_origin(ROWS - 1, COLUMNS - 1);
         assert_eq!(
             WINDOW_WIDTH,
             right_col + KEY_WIDTH + KEYPAD_LEFT,
@@ -357,17 +357,13 @@ mod tests {
         assert_eq!(KEY_PITCH_X - KEY_WIDTH, 6.0, "keeps a 6 pt column gap");
         assert_eq!(KEY_PITCH_Y - KEY_HEIGHT, 6.0, "keeps Basic's 6 pt row gap");
         assert_eq!(WINDOW_WIDTH, 674.0, "measured on the Mac");
-        let _ = bottom_row; // exercised via WINDOW_HEIGHT's reuse of Basic's.
     }
 
     #[test]
     fn the_rightmost_four_columns_are_exactly_basics_grid() {
-        for row in 0..ROWS {
-            for column in 0..4 {
-                assert_eq!(
-                    LAYOUT[row][6 + column],
-                    basic_key_to_scientific(keypad::LAYOUT[row][column])
-                );
+        for (sci_row, basic_row) in LAYOUT.iter().zip(keypad::LAYOUT.iter()) {
+            for (column, basic_key) in basic_row.iter().enumerate() {
+                assert_eq!(sci_row[6 + column], basic_key_to_scientific(*basic_key));
             }
         }
     }

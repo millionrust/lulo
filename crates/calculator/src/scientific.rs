@@ -273,11 +273,15 @@ impl ScientificCalculator {
             Key::MemoryAdd => {
                 if !self.error {
                     self.memory += self.current();
+                    self.entry = None;
+                    self.entry_active = false;
                 }
             }
             Key::MemorySubtract => {
                 if !self.error {
                     self.memory -= self.current();
+                    self.entry = None;
+                    self.entry_active = false;
                 }
             }
             Key::MemoryRecall => self.insert_constant(self.memory, &format_value(self.memory)),
@@ -1041,11 +1045,8 @@ fn eval_terms(terms: &[Term]) -> Option<f64> {
 
 fn eval_expr(terms: &[Term], pos: &mut usize, min_precedence: u8) -> Option<f64> {
     let mut left = eval_atom(terms, pos)?;
-    loop {
-        let operator = match terms.get(*pos) {
-            Some(Term::Op(op)) => *op,
-            _ => break,
-        };
+    while let Some(Term::Op(operator)) = terms.get(*pos) {
+        let operator = *operator;
         let precedence = operator.precedence();
         if precedence < min_precedence {
             break;
@@ -1436,21 +1437,24 @@ mod tests {
         press_digits(&mut calculator, "1");
         calculator.press(Key::Cosh);
         calculator.press(Equals);
-        assert_eq!(calculator.display(), "1.5430806");
+        assert_eq!(calculator.display(), "1.54308063");
 
+        // acosh(1) = 0 exactly, unlike acosh(cosh(1)) which would round-trip
+        // through a truncated 9-digit display and land a floating-point
+        // hair off 1.
         let mut calculator = calc();
-        press_digits(&mut calculator, "1.5430806");
+        press_digits(&mut calculator, "1");
         calculator.press(Second);
         calculator.press(Key::Cosh);
         calculator.press(Equals);
-        assert_eq!(calculator.display(), "1");
+        assert_eq!(calculator.display(), "0");
 
         let mut calculator = calc();
         press_digits(&mut calculator, "0.5");
         calculator.press(Second);
         calculator.press(Key::Tanh);
         calculator.press(Equals);
-        assert_eq!(calculator.display(), "0.5493061");
+        assert_eq!(calculator.display(), "0.549306144");
 
         let mut calculator = calc();
         press_digits(&mut calculator, "2");

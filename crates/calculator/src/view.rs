@@ -747,38 +747,28 @@ impl CalculatorView {
     }
 }
 
-/// Replace Unicode superscript digits with their plain ASCII equivalents,
-/// for the accessible text only (the visible glyph keeps the real
-/// superscript). Measured on the Mac (macOS 26.2, 2026-09-25,
+/// Replace a plain exponent's Unicode superscript digit with its ASCII
+/// equivalent, for the accessible text only (the visible glyph keeps the
+/// real superscript). Measured on the Mac (macOS 26.2, 2026-09-25,
 /// `tests/behavior/calculator/scientific.json`): Scientific's `x²` shows a
 /// raised "2" on screen, but AX reads the display's value as the plain
 /// digits "22", not "2²" — Calculator's exponent is a baseline-offset
 /// attribute on an ordinary digit, not a distinct character, and AX drops
 /// text attributes. Lulo's engine (`scientific.rs`) uses the real Unicode
 /// superscript characters for on-screen formula text (`format!("{d}²")`,
-/// `"sin⁻¹({d})"`, …) since GPUI has no per-character baseline offset; this
-/// flattens the same way only where it was actually measured — plain
-/// exponent digits (`⁰`–`⁹`) — leaving other superscript glyphs (`⁻¹`, `ʸ`,
-/// …) alone, since no capture exists yet to say how those read on the Mac.
+/// `format!("{d}³")`) since GPUI has no per-character baseline offset; this
+/// flattens the same way only where it was actually measured — `²` and `³`
+/// as bare exponents. `¹` is deliberately excluded even though it is also a
+/// superscript digit: this codebase only ever uses it inside `⁻¹`
+/// (`"sin⁻¹({d})"` and friends), which is not an exponent and has no
+/// capture saying it should flatten too; every other superscript glyph
+/// (`ʸ`, `ᵧ`, …) is left alone for the same reason.
 fn flatten_superscript_digits(text: &str) -> String {
-    const SUPERSCRIPTS: [(char, char); 10] = [
-        ('⁰', '0'),
-        ('¹', '1'),
-        ('²', '2'),
-        ('³', '3'),
-        ('⁴', '4'),
-        ('⁵', '5'),
-        ('⁶', '6'),
-        ('⁷', '7'),
-        ('⁸', '8'),
-        ('⁹', '9'),
-    ];
     text.chars()
-        .map(|c| {
-            SUPERSCRIPTS
-                .iter()
-                .find_map(|(super_digit, plain)| (c == *super_digit).then_some(*plain))
-                .unwrap_or(c)
+        .map(|c| match c {
+            '²' => '2',
+            '³' => '3',
+            other => other,
         })
         .collect()
 }

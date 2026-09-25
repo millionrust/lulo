@@ -9,5 +9,6 @@
     {"key": "escape", "settle": 1.0},
     {"observe": "cancelled", "facts": ["dialog", "windows"]}
   ],
+  "tolerance": {"panel.dialog.title": "ignore"},
   "omit": ["panel.dialog.texts"]
 }

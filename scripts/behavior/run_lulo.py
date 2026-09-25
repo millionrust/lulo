@@ -50,6 +50,7 @@ APP_BINARIES = {
 KEEP_ENV = {"PATH", "LANG", "LC_ALL", "TERM", "USER", "LOGNAME", "SHELL", "CARGO_TARGET_DIR", "RUST_BACKTRACE", "RUST_LOG"}
 TEXT_ROLES = {"text-field", "text-area", "search-field", "combo-box"}
 DIALOG_ROLES = {"dialog", "alert", "file chooser"}
+HELPER_APPS = {"rmac-file-chooser"}
 
 
 class Unsupported(RuntimeError):
@@ -84,7 +85,7 @@ def isolated_environment(work: Path) -> dict[str, str]:
         "XDG_STATE_HOME": str(home / ".local/state"),
         "XDG_CACHE_HOME": str(home / ".cache"),
         "XDG_SESSION_TYPE": "wayland",
-        "XDG_CURRENT_DESKTOP": "Lulo",
+        "XDG_CURRENT_DESKTOP": "rmac:niri",  # as rmac-wayland-session sets it
         # The Mac reference is en-GB (docs/parity.md), so Lulo runs in en-GB.
         "LANG": "en_GB.UTF-8",
         "GSETTINGS_BACKEND": "memory",
@@ -109,6 +110,41 @@ def refuse_live_session(environ: dict[str, str]) -> None:
         raise SystemExit("refusing to run: this environment is the live session (wayland-1 or /run/user)")
 
 
+def reap(runtime: Path) -> list[int]:
+    """Stop every process still using this run's runtime dir: D-Bus services
+    the private bus activated (rmac-focus-service, rmac-notification-center,
+    portals) outlive dbus-run-session, and each holds a system-bus
+    connection."""
+
+    needle = f"XDG_RUNTIME_DIR={runtime}".encode()
+    killed = []
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit() or int(entry.name) == os.getpid():
+            continue
+        try:
+            environ = (entry / "environ").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        if needle in environ:
+            try:
+                os.kill(int(entry.name), signal.SIGTERM)
+                killed.append(int(entry.name))
+            except OSError:
+                pass
+    return killed
+
+
+def remove_tree(path: Path) -> None:
+    # The document portal leaves read-only directories in the runtime dir.
+    for root, dirs, _files in os.walk(path):
+        for name in dirs:
+            try:
+                os.chmod(os.path.join(root, name), 0o700)
+            except OSError:
+                pass
+    shutil.rmtree(path, ignore_errors=True)
+
+
 def outer(args: argparse.Namespace, argv: list[str]) -> int:
     for tool in ("sway", "swaymsg", "dbus-run-session"):
         if shutil.which(tool) is None:
@@ -117,7 +153,47 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
     try:
         env = isolated_environment(work)
         refuse_live_session(env)
-        command = ["dbus-run-session", "--", sys.executable, str(Path(__file__).resolve()), "--inner", str(work), *argv]
+        # A session bus that can activate only the AT-SPI bus launcher: the
+        # installed rmac services (focus, notifications) and portals stay
+        # out of the run, so nothing it starts holds a system-bus connection.
+        services = work / "dbus-services"
+        services.mkdir()
+        for name in ("org.a11y.Bus.service", "org.freedesktop.portal.Desktop.service"):
+            source = Path("/usr/share/dbus-1/services") / name
+            if source.exists():
+                shutil.copy(source, services / name)
+        # Save and Open panels: xdg-desktop-portal with only the branch's own
+        # rmac-file-chooser behind it (GPUI asks the portal for them).
+        chooser = next((Path(d) / "rmac-file-chooser" for d in args.bin_dir
+                        if (Path(d) / "rmac-file-chooser").is_file()), None)
+        if chooser is not None:
+            (services / "org.freedesktop.impl.portal.desktop.rmac.filechooser.service").write_text(
+                "[D-BUS Service]\nName=org.freedesktop.impl.portal.desktop.rmac.filechooser\n"
+                f"Exec={chooser}\n"
+            )
+            portals = work / "portals"
+            portals.mkdir()
+            (portals / "rmac-file-chooser.portal").write_text(
+                "[portal]\nDBusName=org.freedesktop.impl.portal.desktop.rmac.filechooser\n"
+                "Interfaces=org.freedesktop.impl.portal.FileChooser;\nUseIn=rmac\n"
+            )
+            env["XDG_DESKTOP_PORTAL_DIR"] = str(portals)
+            conf = Path(env["XDG_CONFIG_HOME"]) / "xdg-desktop-portal"
+            conf.mkdir(parents=True, exist_ok=True)
+            (conf / "rmac-portals.conf").write_text(
+                "[preferred]\ndefault=none\norg.freedesktop.impl.portal.FileChooser=rmac-file-chooser\n"
+            )
+        config = work / "session.conf"
+        config.write_text(
+            "<!DOCTYPE busconfig PUBLIC \"-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN\"\n"
+            " \"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd\">\n"
+            "<busconfig><type>session</type>"
+            f"<listen>unix:dir={work}</listen><auth>EXTERNAL</auth>"
+            f"<servicedir>{services}</servicedir>"
+            "<policy context=\"default\"><allow send_destination=\"*\" eavesdrop=\"true\"/>"
+            "<allow eavesdrop=\"true\"/><allow own=\"*\"/></policy></busconfig>\n"
+        )
+        command = ["dbus-run-session", f"--config-file={config}", "--", sys.executable, str(Path(__file__).resolve()), "--inner", str(work), *argv]
         # The private bus daemon and the services it activates are chatty on
         # stderr; the inner runner reports on stdout.
         (work / "logs").mkdir(exist_ok=True)
@@ -127,8 +203,11 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
             print((work / "logs" / "session.log").read_text()[-3000:], file=sys.stderr)
         return status
     finally:
+        if reap(work / "runtime"):
+            time.sleep(1.0)
+            reap(work / "runtime")
         if not args.keep:
-            shutil.rmtree(work, ignore_errors=True)
+            remove_tree(work)
         else:
             print(f"kept {work}", file=sys.stderr)
 
@@ -193,6 +272,13 @@ class Nested:
         self.env["SWAYSOCK"] = str(ipc)
         os.environ.update({"WAYLAND_DISPLAY": display.name, "SWAYSOCK": str(ipc)})
         wlinput.assert_nested(self.env)
+        # Services the private bus starts later (the portal's file chooser)
+        # must reach this Sway too.
+        subprocess.run(
+            ["busctl", "--user", "call", "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+             "UpdateActivationEnvironment", "a{ss}", "2", "WAYLAND_DISPLAY", display.name, "SWAYSOCK", str(ipc)],
+            env=self.env, check=False, capture_output=True, timeout=10,
+        )
         self.input = wlinput.Wayland(self.env)
         self.enable_accessibility()
         import pyatspi  # noqa: F401  (imported only on the private bus)
@@ -461,8 +547,28 @@ class LuloRun:
                 out.append(child)
         return out
 
+    def helper_frames(self) -> list:
+        """Windows of the portal's file chooser: a Save panel on Lulo is its
+        own process, where the Mac shows a sheet on the document window."""
+
+        pyatspi = atspi()
+        desktop = pyatspi.Registry.getDesktop(0)
+        out = []
+        for index in range(desktop.childCount):
+            try:
+                app = desktop.getChildAtIndex(index)
+                if app is None or name(app) not in HELPER_APPS:
+                    continue
+                out.extend(app.getChildAtIndex(i) for i in range(app.childCount))
+            except Exception:
+                continue
+        return [frame for frame in out if frame is not None]
+
     def active_frame(self):
         pyatspi = atspi()
+        for frame in self.helper_frames():
+            if has_state(frame, pyatspi.STATE_ACTIVE):
+                return frame
         frames = self.frames()
         for frame in frames:
             if has_state(frame, pyatspi.STATE_ACTIVE):
@@ -512,7 +618,7 @@ class LuloRun:
         frame = self.active_frame()
         if frame is None:
             return None
-        if role(frame) in DIALOG_ROLES:
+        if role(frame) in DIALOG_ROLES or any(frame == helper for helper in self.helper_frames()):
             return frame
         for node in descendants(frame, limit=3000):
             if node is not frame and role(node) in DIALOG_ROLES and has_state(node, pyatspi.STATE_SHOWING):
@@ -647,9 +753,11 @@ class LuloRun:
         x, y = ox + box[0] + min(40, box[2] // 2), oy + box[1] + box[3] // 2
         self.nested.input.click(x, y, OUTPUT_W, OUTPUT_H, button=button)
 
-    def run_steps(self) -> dict[str, Any]:
+    def run_steps(self, limit: Optional[int] = None) -> dict[str, Any]:
         observations: dict[str, Any] = {}
         for index, step in enumerate(self.scenario["steps"]):
+            if limit is not None and index >= limit:
+                break
             self.ensure_alive()
             if "key" in step:
                 self.nested.input.key(step["key"])
@@ -727,12 +835,7 @@ def inner(args: argparse.Namespace) -> int:
                 run.setup()
                 run.launch()
                 if args.explore:
-                    for step in scenario["steps"][: args.explore_steps]:
-                        if "key" in step:
-                            nested.input.key(step["key"])
-                        elif "type" in step:
-                            nested.input.type_text(step["type"])
-                        time.sleep(float(step.get("settle", args.settle)))
+                    run.run_steps(limit=args.explore_steps)
                     explore(run)
                     continue
                 actual["observations"] = run.run_steps()
@@ -780,6 +883,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
     if not sys.platform.startswith("linux"):
         parser.error("run_lulo.py runs on Linux (the reference laptop or CI)")
+    # A timeout's SIGTERM still runs the cleanup (reap, then remove the tree).
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     if args.inner:
         return inner(args)
     if not args.bin_dir:

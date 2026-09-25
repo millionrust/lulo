@@ -76,7 +76,7 @@ pub(super) fn folder_row(
     );
     div()
         .id(id)
-        .role(Role::ListItem)
+        .role(Role::ListBoxOption)
         .aria_label(accessible_label)
         .aria_selected(selected)
         .h(px(SIDEBAR_ROW_HEIGHT))

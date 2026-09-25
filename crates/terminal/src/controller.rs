@@ -49,7 +49,7 @@ use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::term::Term;
 use alacritty_terminal::term::TermMode;
 use gpui::{
-    accesskit, canvas, div, prelude::FluentBuilder as _, px, A11ySubtreeBuilder, AppContext as _,
+    canvas, div, prelude::FluentBuilder as _, px, A11ySubtreeBuilder, AppContext as _,
     ClipboardItem, Context, Div, ElementInputHandler, Entity, ExternalPaths, FocusHandle,
     Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyBinding,
     KeyDownEvent, KeyUpEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
@@ -167,11 +167,13 @@ enum PendingClose {
 /// command can't turn every redraw into a full re-walk of the grid: idle
 /// windows never hit this path (nothing calls `cx.notify()`), but an active
 /// one (e.g. `yes`, a build log) can call it far more often than a screen
-/// reader needs a fresh text snapshot.
+/// reader needs a fresh text snapshot. A redraw served from the cache
+/// schedules one trailing redraw, so the last output is always published.
 struct TerminalAccessibilityCache {
     tab_id: u64,
     computed_at: std::time::Instant,
     snapshot: TerminalAccessibilitySnapshot,
+    refresh_scheduled: bool,
 }
 
 pub(super) struct TerminalView {

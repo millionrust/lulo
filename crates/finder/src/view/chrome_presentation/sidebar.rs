@@ -70,7 +70,7 @@ impl FinderView {
         // without needing the row to be on screen.
         let mut row = div()
             .id(SharedString::from(format!("place-{key}")))
-            .role(Role::ListItem)
+            .role(Role::ListBoxOption)
             .aria_label(p.name.clone())
             .aria_selected(selected)
             .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
@@ -335,7 +335,7 @@ impl FinderView {
                     .child(
                         div()
                             .id("sidebar-places")
-                            .role(Role::List)
+                            .role(Role::ListBox)
                             .aria_label("Sidebar")
                             .flex_1()
                             .min_h(px(0.0))

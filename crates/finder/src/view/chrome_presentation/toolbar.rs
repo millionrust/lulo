@@ -195,11 +195,12 @@ impl FinderView {
             || !self.query.read(cx).value().is_empty()
             || self.search_summary.is_some();
         let search: gpui::AnyElement = if search_open {
-            // The pinned text field publishes an unnamed text node; the
-            // search landmark around it carries the name.
+            // The capsule is the named search field assistive technology
+            // sees, with the query's text and caret.
             capsule("search")
-                .role(Role::Search)
+                .role(Role::SearchInput)
                 .aria_label("Search")
+                .accessible_text_input(&self.query, cx)
                 .w(px(layout.search_width))
                 .gap(px(6.0))
                 .pl(px(10.0))

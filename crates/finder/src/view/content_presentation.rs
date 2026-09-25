@@ -140,6 +140,10 @@ impl FinderView {
                 let accessible_entry = e.clone();
                 let name_cell: gpui::AnyElement = match &self.renaming {
                     Some((rename_path, input)) if rename_path == &e.path => div()
+                        .id("rename-field")
+                        .role(Role::TextInput)
+                        .aria_label("Name")
+                        .accessible_text_input(input, cx)
                         .flex_1()
                         .min_w(px(0.0))
                         .child(TextField::new(input).appearance(true))
@@ -173,7 +177,7 @@ impl FinderView {
                     accessible_item(
                         div().id(SharedString::from(format!("colrow-{ci}-{}", e.name))),
                         Role::TreeItem,
-                        e.name.clone(),
+                        &e,
                         is_sel,
                         position,
                         column_count,
@@ -330,7 +334,7 @@ impl FinderView {
                 accessible_item(
                     div().id(("application-column-row", index)),
                     Role::ListBoxOption,
-                    entry.name.clone(),
+                    entry,
                     selected,
                     index,
                     count,

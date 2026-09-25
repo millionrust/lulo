@@ -4,6 +4,7 @@
 //! window chrome, a common live theme, fonts, and application boot helpers.
 
 mod about;
+pub mod accessibility;
 mod app_menu;
 mod assets;
 mod chrome;
@@ -21,6 +22,10 @@ mod text_keys;
 pub mod theme;
 mod window;
 
+pub use accessibility::AccessibleTextInput;
+pub use app_menu::{
+    set_menu_checked, set_menu_enabled, set_menu_label, set_menu_mixed, ShowAboutPanel,
+};
 pub use assets::{layered_assets, LayeredAssets};
 pub use chrome::{
     body_bg, minimize_focused_window, page, title_bar, title_bar_content, toolbar, toolbar_group,
@@ -43,9 +48,6 @@ pub use feedback::{
     ToastKind, Tooltip,
 };
 pub use gpui_component::{ActiveTheme, StyledExt};
-pub use app_menu::{
-    set_menu_checked, set_menu_enabled, set_menu_label, set_menu_mixed, ShowAboutPanel,
-};
 pub use menu_target::{register_menu_target, track_key_window};
 pub use runtime::{
     defer_content_ready, init_application, install_app_instance, install_app_menu,

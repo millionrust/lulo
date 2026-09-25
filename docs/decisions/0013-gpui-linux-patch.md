@@ -212,6 +212,48 @@ that only needed the *icon* reused. The Downloads stack instead reuses
 a new `BuiltinIcon::Folder` (original artwork,
 `crates/rmac-dock/assets/icons/folder.svg`) covers every other stack.
 
+### Text fields and text surfaces over AT-SPI (amended 2026-09-25)
+
+What `accesskit_atspi_common` 0.19.1 (with `accesskit_consumer` 0.38) does
+with text, traced in `~/.cargo/registry/src/*/accesskit_atspi_common-0.19.1`:
+
+- A node gets the AT-SPI `Text` interface only when
+  `Node::supports_text_ranges()` holds: a text-input role (`TextInput`,
+  `MultilineTextInput`, `SearchInput`, …) or `Label`/`Document`/`Terminal`,
+  *and* at least one `Role::TextRun` child. A `value` alone is invisible
+  over AT-SPI; there is no string `Value` interface.
+- Line navigation is by run: each `TextRun` is one line. Offsets are Unicode
+  scalar values. `TextSelection` on the node becomes the caret and
+  selection; `text-inserted`/`text-removed` events come from diffing the
+  runs' text between two trees, and `text-caret-moved` fires only while
+  that node is the focused one.
+- `Text.setCaretOffset`/`setSelection` send `Action::SetTextSelection`;
+  `Component.grabFocus` sends `Action::Focus`.
+- The `Action` interface has exactly one action, `click`
+  (`Action::Click`). Custom actions and a second named action are not
+  exposed, so "open" or "rename" can't be separate AT-SPI actions.
+- `EditableText` is not implemented, so text can't be inserted or replaced
+  over AT-SPI. Typing still works for a screen-reader user, whose keyboard
+  goes to the focused field; only synthetic AT-SPI typing (and so pure
+  AT-SPI test scripts) can't.
+
+GPUI publishes text runs through `a11y_synthetic_children`. rmac's helper
+is `rmac_ui::accessibility` (`push_text_runs`, and
+`AccessibleTextInput::accessible_text_input` for an `InputState` field).
+Terminal publishes its screen on its `Role::Terminal` node.
+
+The pinned gpui-component `Input` already gives its own node a text role and
+keyboard focus, but no label and no runs, and it has no hook to add them.
+A named proxy node around it with the runs left AT-SPI showing a readable
+field that never gets focus, holding an unnamed, empty one that does, so
+Orca announced "entry" with nothing to read. `gpui_linux` now folds the two
+together before the tree reaches `accesskit_unix`
+(`collapse_text_proxies` in `src/linux/a11y.rs`, next to the toolkit
+label): a node with the class name `rmac-text-proxy` absorbs its text-input
+child's children, the inner node is dropped, and focus moves to the proxy.
+Frames without a proxy aren't touched. The proxy handles `Focus` and
+`SetTextSelection` itself, since the dropped node can't receive actions.
+
 ## Consequences
 
 - A GPUI bump now also means re-importing `gpui_linux` and re-applying the

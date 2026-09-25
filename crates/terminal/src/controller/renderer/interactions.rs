@@ -7,6 +7,7 @@ impl TerminalView {
         &mut self,
         rows: Vec<gpui::AnyElement>,
         ime_preedit: Option<Div>,
+        a11y_active: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let input_view = cx.entity().clone();
@@ -28,7 +29,7 @@ impl TerminalView {
             .id("terminal-grid")
             .role(Role::Terminal)
             .aria_label("Terminal")
-            .a11y_synthetic_children(self.render_terminal_accessibility())
+            .a11y_synthetic_children(self.render_terminal_accessibility(a11y_active, cx))
             .track_focus(&self.focus)
             .key_context("Terminal")
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {

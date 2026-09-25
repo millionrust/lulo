@@ -89,6 +89,40 @@ pyatspi. This needs `accesskit_unix` 0.22 or later in the vendored
 `gpui_linux`; older releases waited for `ScreenReaderEnabled` and left Lulo
 invisible to AT-SPI clients (ADR 0013).
 
+## Text, lists and files for screen readers
+
+AT-SPI reads text only from AccessKit text runs, so every rmac text surface
+publishes its text through `rmac_ui::accessibility`: one run per line, the
+caret and selection as the node's text selection, and word starts for word
+navigation. The platform layer folds each text field's inner input node
+into the named field around it, so the focused node is the one with the
+name and the text (ADR 0013, "Text fields and text surfaces over AT-SPI").
+Text is capped at 512 KiB per field, and nothing is built while no
+assistive technology is listening.
+
+- **Terminal**: the grid is one `terminal` node with the visible screen as
+  text, one line per logical line (soft-wrapped rows joined), and the caret
+  at the shell's insertion point. Output and caret changes raise
+  text-changed and caret-moved events; under heavy output the text is
+  republished at most every 120 ms, with a trailing update when output
+  stops. Scrollback is read by scrolling the view; the caret is withheld
+  while scrolled back.
+- **Notes**: the folder sidebar and note list are list boxes of named,
+  clickable list items with selection. Search, Title, Body and Tags are
+  named entries with their text and caret; Focus and caret moves from the
+  screen reader work.
+- **Files**: every item in Icon, List, Gallery and Column view is a list
+  or tree item named after the file, described by its kind, with position,
+  selection and a click that selects it and focuses the file view. The
+  sidebar is a list box of clickable places. Search and the rename field
+  are named entries with text and caret.
+
+What AT-SPI can't do here, because `accesskit_unix` 0.22.1 doesn't
+implement it: insert or replace text (`EditableText`), and expose any
+action other than `click`. A screen-reader user still types, opens (⌘↓ or
+⌘O) and renames (Return) with the keyboard once an item is selected; only
+AT-SPI-driven automation can't.
+
 ## Screen Reader on/off
 
 Accessibility > Screen Reader shows a real on/off switch, not just readiness:

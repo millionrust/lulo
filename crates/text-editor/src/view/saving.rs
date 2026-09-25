@@ -88,12 +88,16 @@ impl EditorView {
             .map(Path::to_path_buf)
             .or_else(|| std::env::current_dir().ok())
             .unwrap_or_else(|| PathBuf::from("."));
+        // TextEdit's Save panel shows a never-saved document's name as plain
+        // "Untitled" — no extension — because the extension is implied by
+        // the format, not typed; a saved document's own name (with its
+        // extension) is suggested as-is.
         let suggested_name = self
             .path
             .as_deref()
             .and_then(Path::file_name)
             .and_then(|name| name.to_str())
-            .unwrap_or("Untitled.txt");
+            .unwrap_or("Untitled");
         self.file_busy = true;
         cx.notify();
         let receiver = cx.prompt_for_new_path(&directory, Some(suggested_name));
@@ -114,6 +118,14 @@ impl EditorView {
                 });
                 return;
             };
+            // A name typed (or accepted) with no extension gets this plain
+            // document's own, the same way the hidden extension in the
+            // Save panel's Format popup would on the Mac.
+            let path = if path.extension().is_none() {
+                path.with_extension("txt")
+            } else {
+                path
+            };
             let result = cx
                 .background_executor()
                 .spawn({
@@ -131,6 +143,7 @@ impl EditorView {
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
                 if result.is_ok() {
+                    this.release_untitled_slot();
                     this.path = Some(path);
                 }
                 this.finish_document_save(result, content, then, window, cx);

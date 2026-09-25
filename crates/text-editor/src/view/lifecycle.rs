@@ -13,6 +13,15 @@ impl EditorView {
         let input = rmac_editor::multiline("", window, cx);
         let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
+
+        // TextEdit-style untitled numbering: only a window that opens with
+        // no path (never one about to load a file) claims a number, freed
+        // by `release_untitled_slot` once it gets a path or closes.
+        let untitled_slot = initial_path.is_none().then(Self::claim_untitled_slot);
+        if let Some(slot) = untitled_slot {
+            cx.on_release(move |_, _cx| Self::release_untitled_slot_number(slot))
+                .detach();
+        }
         let (document_events, document_event_rx) = async_channel::bounded(4);
         let document_watcher =
             notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
@@ -230,6 +239,7 @@ impl EditorView {
             alert: None,
             input,
             path: None,
+            untitled_slot,
             saved_bytes: None,
             text_format: document::TextFormat::default(),
             saved_format: document::TextFormat::default(),

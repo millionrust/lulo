@@ -105,6 +105,7 @@ actions!(
         NewFolder,
         RenameItem,
         Duplicate,
+        MakeAlias,
         MoveToTrash,
         RestoreItems,
         DeletePermanently,

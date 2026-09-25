@@ -172,6 +172,9 @@ impl Settings {
         let compact = layout.compact;
         let search = div()
             .id(rmac_system_settings::accessibility::SEARCH_ID)
+            .role(Role::SearchInput)
+            .aria_label("Search")
+            .accessible_text_input(&self.search, cx)
             .mx(px(style::SIDEBAR_ROW_INSET))
             .h(px(style::SEARCH_HEIGHT))
             .flex_none()

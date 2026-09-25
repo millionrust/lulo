@@ -147,6 +147,9 @@ impl FinderView {
                                     this.operation_notice =
                                         Some(format!("{} completed", outcome.label).into());
                                     this.operation_error = None;
+                                    // Select the item Undo just put back, as
+                                    // Finder does (FILES-46).
+                                    this.pending_select = outcome.restored_to;
                                 }
                                 Ok(None) => {
                                     this.operation_notice =

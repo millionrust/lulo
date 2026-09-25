@@ -172,6 +172,7 @@ impl EditorView {
                             window,
                             cx,
                         );
+                        this.release_untitled_slot();
                         this.path = Some(path);
                         this.saved_bytes = Some(document.original_bytes);
                         this.text_format = document.format;
@@ -185,6 +186,7 @@ impl EditorView {
                         this.input
                             .update(cx, |state, cx| state.set_value(text, window, cx));
                         this.text_revision = this.text_revision.wrapping_add(1);
+                        this.release_untitled_slot();
                         this.path = Some(path);
                         this.saved_bytes = None;
                         this.text_format = document::TextFormat::default();

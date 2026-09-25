@@ -118,6 +118,10 @@ enum DocumentWatchEvent {
 struct EditorView {
     input: Entity<InputState>,
     path: Option<PathBuf>,
+    /// This window's TextEdit-style untitled number ("Untitled", "Untitled
+    /// 2", …), held while `path` is `None`. `None` once the document has a
+    /// path — it never had a number, or gave its number back.
+    untitled_slot: Option<u32>,
     /// Complete bytes read at open or exact successful save readback. Existing
     /// document saves must still match this revision immediately before write.
     saved_bytes: Option<Vec<u8>>,

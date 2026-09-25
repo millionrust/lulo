@@ -93,6 +93,14 @@ impl EditorView {
     }
 
     pub(super) fn close_bar(&mut self, cx: &mut Context<Self>) {
+        // Escape is bound to this action globally (`Some(CTX)`), so it wins
+        // over the Save sheet's own `capture_key_down` — GPUI matches key
+        // bindings before raw key-down listeners run. Cancel the sheet here
+        // instead of falling through to the find bar (TE-19).
+        if matches!(self.alert, Some(ActiveAlert::ConfirmSave(_))) {
+            self.alert_cancel(cx);
+            return;
+        }
         self.find_open = false;
         self.replace_mode = false;
         cx.notify();

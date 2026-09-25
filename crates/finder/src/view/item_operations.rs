@@ -36,6 +36,7 @@ impl FinderView {
     pub(super) fn duplicate(&mut self, cx: &mut Context<Self>) {
         let mut tasks = Vec::new();
         let mut destinations = BTreeSet::new();
+        let mut first_destination = None;
         for src in self.selected_paths() {
             let stem = src
                 .file_stem()
@@ -49,13 +50,58 @@ impl FinderView {
             let destination_dir = src.parent().unwrap_or(self.cwd.as_path());
             let dst = unique_path_avoiding(destination_dir.join(copy_name), &destinations);
             destinations.insert(dst.clone());
+            first_destination.get_or_insert_with(|| dst.clone());
             tasks.push(file_ops::TransferTask {
                 kind: file_ops::TransferKind::Copy,
                 source: src,
                 destination: dst,
             });
         }
+        // Select the new copy once it lands, as Finder does.
+        self.pending_select = first_destination;
         self.start_transfer("Duplicating", tasks, false, cx);
+    }
+
+    /// File ▸ Make Alias: a symbolic link next to each selected item, named
+    /// "<name> alias" as Finder names a fresh alias. Selects the last alias
+    /// made, as Duplicate selects its copy.
+    pub(super) fn make_alias(&mut self, cx: &mut Context<Self>) {
+        if self.block_mutation_during_transfer(cx) {
+            return;
+        }
+        let paths = self.selected_paths();
+        if paths.is_empty() {
+            return;
+        }
+        let mut destinations = BTreeSet::new();
+        let mut failures = Vec::new();
+        let mut last_destination = None;
+        for src in paths {
+            let stem = src
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let ext = src.extension().map(|e| e.to_string_lossy().into_owned());
+            let alias_name = match &ext {
+                Some(e) => format!("{stem} alias.{e}"),
+                None => format!("{stem} alias"),
+            };
+            let destination_dir = src.parent().unwrap_or(self.cwd.as_path());
+            let dst = unique_path_avoiding(destination_dir.join(alias_name), &destinations);
+            destinations.insert(dst.clone());
+            match std::os::unix::fs::symlink(&src, &dst) {
+                Ok(()) => last_destination = Some(dst),
+                Err(error) => failures.push(file_ops::Failure::message(
+                    file_ops::Operation::CreateAlias,
+                    &src,
+                    Some(&dst),
+                    error.to_string(),
+                )),
+            }
+        }
+        self.pending_select = last_destination;
+        self.record_operation_failures(failures, cx);
+        self.reload(cx);
     }
 
     /// "Delete Immediately" skips Trash entirely, so — like macOS — it must

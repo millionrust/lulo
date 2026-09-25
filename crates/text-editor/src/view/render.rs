@@ -10,7 +10,7 @@ use gpui::{
     TextRun, UnderlineStyle, Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
-use rmac_ui::{mac, Button, SearchField, TextField};
+use rmac_ui::{mac, AccessibleTextInput as _, Button, SearchField, TextField};
 
 use crate::{
     document, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, ExportPdf, FindNext,
@@ -303,6 +303,7 @@ impl Render for EditorView {
                     .role(Role::MultilineTextInput)
                     .aria_label(filename.clone())
                     .when_some(accessible_value, |body, value| body.aria_value(value))
+                    .accessible_text_input(&self.input, cx)
                     .flex_1()
                     .min_h(px(0.0))
                     .bg(text_background())

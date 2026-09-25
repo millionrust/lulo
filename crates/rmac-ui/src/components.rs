@@ -667,6 +667,8 @@ impl ContextMenu {
                 MenuEntry::Separator => {
                     panel = panel.child(
                         div()
+                            .id(("rmac-context-menu-separator", i))
+                            .role(Role::Splitter)
                             .my(px(4.0))
                             .mx(px(8.0))
                             .h(px(1.0))

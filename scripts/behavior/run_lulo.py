@@ -168,6 +168,14 @@ class Nested:
             ["sway", "--unsupported-gpu", "--config", str(config)],
             stdout=open(self.logs / "sway.log", "w"), stderr=subprocess.STDOUT, env=self.env, close_fds=True,
         )
+        try:
+            self._connect()
+        except BaseException:
+            self.sway.kill()
+            self.sway.wait(5)
+            raise
+
+    def _connect(self) -> None:
         runtime = Path(self.env["XDG_RUNTIME_DIR"])
         deadline = time.monotonic() + 20
         display = ipc = None

@@ -329,6 +329,31 @@ mod linux_wayland {
         Some(Arc::new(RenderImage::new(vec![image::Frame::new(buffer)])))
     }
 
+    /// The laid-out width of one title line in the capsule's font, so the
+    /// capsule can be centred under its thumbnail and sized to its text.
+    fn title_width(window: &Window, title: &str) -> f32 {
+        if title.is_empty() {
+            return 0.0;
+        }
+        let mut font = gpui::font("Inter");
+        font.weight = FontWeight::MEDIUM;
+        let run = gpui::TextRun {
+            len: title.len(),
+            font,
+            color: rgba(WHITE),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let line = window.text_system().shape_line(
+            gpui::SharedString::from(title.to_owned()),
+            px(model::TITLE_SIZE),
+            &[run],
+            None,
+        );
+        f32::from(line.width())
+    }
+
     /// How much of each window stays on screen: the Mac leaves 12 pt, but
     /// niri will not move a floating window further than 75 px from the
     /// working area.
@@ -758,6 +783,7 @@ mod linux_wayland {
             index: usize,
             rect: Rect,
             progress: f32,
+            window: &Window,
             cx: &mut Context<Self>,
         ) -> AnyElement {
             let scene_window = &self.scene.windows[index];
@@ -859,32 +885,30 @@ mod linux_wayland {
                     .filter(|title| !title.is_empty())
                     .or_else(|| item.map(|item| item.name.clone()))
                     .unwrap_or_default();
+                let capsule = model::title_capsule_frame(
+                    rect,
+                    title_width(window, &title) + 2.0 * model::TITLE_PADDING,
+                    self.scene.width,
+                );
                 element = element.child(
                     div()
                         .absolute()
-                        .top_0()
-                        .left_0()
-                        .size_full()
+                        .left(px(capsule.x - rect.x))
+                        .top(px(capsule.y - rect.y))
+                        .w(px(capsule.width))
+                        .h(px(capsule.height))
+                        .px(px(model::TITLE_PADDING))
+                        .rounded(px(model::TITLE_HEIGHT / 2.0))
+                        .bg(rgba(TITLE_FILL))
                         .flex()
                         .items_center()
-                        .justify_center()
-                        .child(
-                            div()
-                                .h(px(model::TITLE_HEIGHT))
-                                .max_w(px(rect.width))
-                                .px(px(model::TITLE_PADDING))
-                                .rounded(px(model::TITLE_HEIGHT / 2.0))
-                                .bg(rgba(TITLE_FILL))
-                                .flex()
-                                .items_center()
-                                .font_family("Inter")
-                                .text_size(px(model::TITLE_SIZE))
-                                .line_height(px(model::TITLE_HEIGHT))
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(rgba(TITLE_TEXT))
-                                .truncate()
-                                .child(title),
-                        ),
+                        .font_family("Inter")
+                        .text_size(px(model::TITLE_SIZE))
+                        .line_height(px(model::TITLE_HEIGHT))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(rgba(TITLE_TEXT))
+                        .truncate()
+                        .child(title),
                 );
             }
             element.into_any_element()
@@ -1221,7 +1245,7 @@ mod linux_wayland {
     }
 
     impl Render for Overlay {
-        fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
             let progress = self.progress();
             let targets = self.targets_now();
             let rects: Vec<Rect> = self
@@ -1234,7 +1258,7 @@ mod linux_wayland {
             let windows: Vec<AnyElement> = rects
                 .iter()
                 .enumerate()
-                .map(|(index, rect)| self.window_element(index, *rect, progress, cx))
+                .map(|(index, rect)| self.window_element(index, *rect, progress, window, cx))
                 .collect();
             let captions: Vec<AnyElement> = if self.mode == Mode::AppWindows {
                 rects

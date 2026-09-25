@@ -80,6 +80,19 @@ fn read_exact_plain_file(path: &Path, expected: usize) -> Option<Vec<u8>> {
     (bytes.len() == expected).then_some(bytes)
 }
 
+/// The current wallpaper, blurred (LOCK-01). `None` when the resident
+/// wallpaper process has not written the cache yet, or wrote something this
+/// process will not trust — the caller keeps the Aurora gradient either way.
+pub(crate) fn background() -> Option<PictureRaster> {
+    load_fixed(BACKGROUND_FILE, BACKGROUND_WIDTH, BACKGROUND_HEIGHT)
+}
+
+/// The signed-in user's account picture (LOCK-01). `None` keeps the
+/// monogram disc.
+pub(crate) fn avatar() -> Option<PictureRaster> {
+    load_fixed(AVATAR_FILE, AVATAR_DIAMETER, AVATAR_DIAMETER)
+}
+
 #[cfg(test)]
 mod tests {
     use super::read_exact_plain_file;
@@ -150,17 +163,4 @@ mod tests {
         std::fs::create_dir(&directory).unwrap();
         assert_eq!(read_exact_plain_file(&directory, 0), None);
     }
-}
-
-/// The current wallpaper, blurred (LOCK-01). `None` when the resident
-/// wallpaper process has not written the cache yet, or wrote something this
-/// process will not trust — the caller keeps the Aurora gradient either way.
-pub(crate) fn background() -> Option<PictureRaster> {
-    load_fixed(BACKGROUND_FILE, BACKGROUND_WIDTH, BACKGROUND_HEIGHT)
-}
-
-/// The signed-in user's account picture (LOCK-01). `None` keeps the
-/// monogram disc.
-pub(crate) fn avatar() -> Option<PictureRaster> {
-    load_fixed(AVATAR_FILE, AVATAR_DIAMETER, AVATAR_DIAMETER)
 }

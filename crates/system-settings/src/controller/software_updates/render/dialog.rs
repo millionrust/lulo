@@ -42,7 +42,7 @@ fn info_rows(snapshot: &rmac_updates::Snapshot) -> Vec<InfoRow> {
     rows.extend(catalog.other.iter().map(|update| InfoRow {
         key: update.package_id.clone(),
         name: update.name.clone(),
-        version: rmac_updates::display_version(&update.version),
+        version: update.version.clone(),
         size: snapshot.download_sizes.get(&update.package_id).copied(),
     }));
     rows

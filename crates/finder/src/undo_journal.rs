@@ -471,6 +471,9 @@ pub(crate) struct UndoAvailability {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UndoOutcome {
     pub(crate) label: String,
+    /// Where undoing a Move to Trash put the file back, so Files can select
+    /// it there, as Finder does. `None` for every other kind of undo.
+    pub(crate) restored_to: Option<PathBuf>,
 }
 
 impl UndoStore {
@@ -616,7 +619,10 @@ impl UndoStore {
         let label = undo_label(&record);
         self.resume_inferred(&mut record)?;
         if !self.record_path(&record.id).exists() {
-            return Ok(Some(UndoOutcome { label }));
+            return Ok(Some(UndoOutcome {
+                label,
+                restored_to: None,
+            }));
         }
         if cancel.load(Ordering::Acquire) {
             return Err(interrupted());
@@ -629,7 +635,12 @@ impl UndoStore {
             UndoKind::Trash => self.undo_trash(&mut record, cancel, progress)?,
             UndoKind::Restore => self.undo_restore(&mut record, cancel, progress)?,
         }
-        Ok(Some(UndoOutcome { label }))
+        // Only undoing a Move to Trash puts an item back where Files can
+        // select it by a path it already knows; the other kinds either
+        // remove something (Copy) or restore it to a destination the
+        // caller already has selected (Move, Replace).
+        let restored_to = matches!(record.kind, UndoKind::Trash).then(|| record.source());
+        Ok(Some(UndoOutcome { label, restored_to }))
     }
 
     #[cfg(test)]

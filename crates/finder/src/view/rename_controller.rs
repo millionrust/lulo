@@ -37,6 +37,7 @@ impl FinderView {
         .detach();
         let focus = input.read(cx).focus_handle(cx);
         window.focus(&focus, cx);
+        let field = input.clone();
         self.renaming = Some((path, input));
         cx.notify();
         // Select on the field itself once it exists, as Finder does: the
@@ -44,7 +45,6 @@ impl FinderView {
         // of a file ("report" in "report.txt"), so typing replaces it. A
         // dispatched SelectAll would reach Files' own Select All (every
         // file) instead of the field.
-        let field = input.clone();
         window.on_next_frame(move |window, cx| {
             window.focus(&focus, cx);
             field.update(cx, |state, cx| state.set_selected_range(selection, cx));
@@ -168,7 +168,7 @@ fn rename_unavailable_reason(
 
 #[cfg(test)]
 mod tests {
-    use super::rename_unavailable_reason;
+    use super::{rename_selection, rename_unavailable_reason};
 
     #[test]
     fn rename_selects_a_folder_whole_and_a_file_up_to_its_extension() {

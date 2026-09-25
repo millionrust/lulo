@@ -62,6 +62,11 @@ impl Settings {
                         div()
                             .flex_1()
                             .min_w_0()
+                            // A long name wrapped onto a second line inside
+                            // this fixed-height row, which then drew over
+                            // the row below it; keep it to one line with an
+                            // ellipsis instead (SET-81).
+                            .truncate()
                             .text_size(rmac_ui::text_px(13.0))
                             .text_color(label())
                             .child(item.name.clone()),
@@ -70,6 +75,7 @@ impl Settings {
                         div()
                             .w(px(KIND_COLUMN_X - 2.0 * style::ROW_PADDING - 20.0))
                             .flex_none()
+                            .truncate()
                             .text_size(rmac_ui::text_px(13.0))
                             .text_color(label())
                             .child(if busy { "Saving…".to_string() } else { kind }),

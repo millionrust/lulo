@@ -105,6 +105,7 @@ pub fn parse_entry(contents: &str) -> Result<ParsedEntry, Error> {
     let mut entry_type = None;
     let mut name = None;
     let mut hidden = false;
+    let mut no_display = false;
     let mut only = Vec::new();
     let mut not = Vec::new();
     let mut managed = false;
@@ -132,6 +133,7 @@ pub fn parse_entry(contents: &str) -> Result<ParsedEntry, Error> {
                 name.get_or_insert(value);
             }
             "Hidden" => hidden = value.eq_ignore_ascii_case("true"),
+            "NoDisplay" => no_display = value.eq_ignore_ascii_case("true"),
             "OnlyShowIn" => only = split_list(value),
             "NotShowIn" => not = split_list(value),
             "TryExec" => {
@@ -178,6 +180,7 @@ pub fn parse_entry(contents: &str) -> Result<ParsedEntry, Error> {
         name: name.to_owned(),
         command,
         hidden,
+        no_display,
         only_show_in: only,
         not_show_in: not,
         try_exec: try_exec.map(str::to_owned),

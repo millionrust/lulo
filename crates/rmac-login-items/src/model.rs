@@ -166,6 +166,12 @@ pub struct ParsedEntry {
     pub name: String,
     pub command: String,
     pub hidden: bool,
+    /// `NoDisplay=true`: a session helper (AT-SPI's bus, Geoclue's demo
+    /// agent, ...) that a distro or the desktop itself autostarts, not
+    /// something the user chose. The Mac's Open at Login lists only what
+    /// the user added; a non-user entry with this set is excluded rather
+    /// than shown as a mystery row (SET-81).
+    pub no_display: bool,
     pub only_show_in: Vec<String>,
     pub not_show_in: Vec<String>,
     pub try_exec: Option<String>,

@@ -4,7 +4,7 @@
     "niri": {
       "upstream_version": "26.04",
       "lulo_suffix": "lulo1",
-      "debian_revision": "1",
+      "debian_revision": "2",
       "tag": "v26.04",
       "commit": "8ed0da44d974c32c6877d2f4630c314da0717ecb",
       "tarball_url": "https://github.com/niri-wm/niri/archive/refs/tags/v26.04.tar.gz",

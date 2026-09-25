@@ -4844,6 +4844,7 @@ dependencies = [
  "async-channel",
  "async-io",
  "futures-util",
+ "image",
  "rmac-compositor",
  "serde",
  "serde_json",

@@ -4,7 +4,9 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::*;
-use crate::backend::{reorder_pins_in_store, update_pins_in_store, update_stacks_in_store};
+use crate::backend::{
+    reorder_pins_in_store, restore_target, update_pins_in_store, update_stacks_in_store,
+};
 
 #[derive(Default)]
 struct FakeBackend {
@@ -622,4 +624,40 @@ fn a_failed_launch_names_the_app_and_the_reason() {
     assert!(denied.contains("permission"), "{denied}");
     let (_, other) = launch_failure_notice("Notes", FailureKind::Other);
     assert_eq!(other, "It could not be started.");
+}
+
+#[test]
+fn an_unrecorded_parked_window_restores_to_the_space_in_view() {
+    let workspace =
+        |id: u64, name: Option<&str>, active: bool, focused: bool| rmac_compositor::Workspace {
+            id: rmac_compositor::WorkspaceId(id),
+            index: id as u8,
+            name: name.map(str::to_owned),
+            output: Some(rmac_compositor::OutputId::from("eDP-1")),
+            urgent: false,
+            active,
+            focused,
+            active_window: None,
+        };
+    let mut snapshot = rmac_compositor::Snapshot {
+        workspaces: vec![
+            workspace(1, None, false, false),
+            workspace(2, None, true, true),
+            workspace(9, Some(rmac_compositor::PARKING_WORKSPACE), false, false),
+        ],
+        ..Default::default()
+    };
+    assert_eq!(
+        restore_target(&snapshot),
+        Some(rmac_compositor::WorkspaceId(2))
+    );
+    // Focus on the parking Space itself never makes it a target.
+    snapshot.workspaces[1].focused = false;
+    snapshot.workspaces[2].focused = true;
+    assert_eq!(
+        restore_target(&snapshot),
+        Some(rmac_compositor::WorkspaceId(2))
+    );
+    snapshot.workspaces.truncate(0);
+    assert_eq!(restore_target(&snapshot), None);
 }

@@ -193,7 +193,8 @@ hand with the current phase to recover).
 Ubuntu 26.04 archive (the reference laptop got them from the third-party
 `avengemedia/danklinux` PPA: `niri 26.04ppa3`, `xwayland-satellite
 0.8.2ppa1`). So Lulo OS builds and ships the exact releases rmac is tested
-against, unmodified, in every GitHub Release.
+against in every GitHub Release. xwayland-satellite is unmodified; niri
+carries one small patch series (see "Patches" below).
 
 ### What is pinned
 
@@ -412,7 +413,7 @@ thin LTO; 2 jobs keep the 6.7 GB machine out of swap). Then:
   `.deb` (check `Depends`, the file list above, and that nothing lands
   outside `/usr`), `lintian` if available;
 - to try one, it is `sudo apt-get install
-  ./niri_26.04+lulo1-1_amd64.deb ./xwayland-satellite_0.8.2+lulo1-1_amd64.deb`
+  ./niri_26.04+lulo1-2_amd64.deb ./xwayland-satellite_0.8.2+lulo1-1_amd64.deb`
   (Lulo OS's build sorts above the PPA's, so this is an ordinary install,
   not a downgrade), and `sudo apt-get install --allow-downgrades
   niri=26.04ppa3 xwayland-satellite=0.8.2ppa1` goes back. Both need the
@@ -422,14 +423,55 @@ To combine them with a native rmac package set for `install.sh --from-dir`,
 copy both directories' `.deb` files into one directory and run `sha256sum
 -- *.deb > SHA256SUMS` there.
 
+### Patches
+
+A package's patches live in `packaging/third-party/<name>/debian/patches`,
+listed in order in `series`. It is an ordinary 3.0 (quilt) series:
+`dpkg-buildpackage` applies it (`dpkg-source --before-build`) before
+`cargo build --frozen`, and the source package ships it in
+`.debian.tar.xz`, so the GPL source offer includes it. niri carries one:
+
+| Patch | What it does | Decision |
+|---|---|---|
+| `0001-ipc-report-minimize-requests.patch` | reports `xdg_toplevel.set_minimized` as the `WindowMinimizeRequested { id }` event-stream event, so the Dock can minimise third-party windows | ADR 0021 |
+
+The rules for a patch (`scripts/test_third_party_packages.py` checks the
+first three):
+
+- it carries a DEP-3 header (`Description`, `Author`, `Forwarded`,
+  `Last-Update`) and applies with `-p1` to the pristine upstream tree;
+- it touches only upstream sources: never `debian/`, `vendor/` or
+  `Cargo.lock`, so the vendored dependency graph and `vendor_sha256` stay as
+  pinned (a patch that needs a new crate is a new vendor tarball, which means
+  a new `vendor_sha256` review);
+- every file in `patches/` is in `series`, and every `series` entry exists;
+- it is small and has an ADR that says why it exists and what upstream
+  change would retire it;
+- it has a unit test in the patched crate where one is possible (the niri
+  patch adds `window_minimize_requested_wire_format` to `niri-ipc`); run it
+  with `cargo test -p niri-ipc` in `~/rmac-niri-build/sources/niri/niri-26.04`
+  after a build.
+
+Adding, changing or dropping a patch of the same upstream release is a
+Debian-only change: bump `debian_revision` in `upstreams.json` (`1` -> `2`)
+and add a `debian/changelog` entry for the new `-N` version. The orig and
+vendor tarballs do not change. `build-niri-packages.sh` dates the vendor
+tarball from the *first* changelog entry of the upstream version
+(`third_party_packages.py vendor-epoch`), not the newest, so its SHA-256
+stays the pinned `vendor_sha256`, as Debian requires of an orig tarball
+across revisions. `rmac-session`'s `Depends` floor follows the pin, so the
+new revision becomes its minimum automatically.
+
 ### Updating to a new upstream release
 
 Change the tag, commit, tarball URL/SHA-256, directory, and
 `upstream_version` in `upstreams.json`; set `vendor_sha256` to `null`; add a
 `debian/changelog` entry (`<upstream_version>+lulo1-1`); update
 `UPSTREAM_SHORT_COMMIT` in niri's `debian/rules` and the file list if
-upstream's packaging changed; run the laptop build, record the vendor hash,
-and re-run the tests. `rmac-session`'s `Depends` floors
+upstream's packaging changed; rebase every patch in `debian/patches` onto
+the new tree (drop one that upstream has made unnecessary, and say so in its
+ADR), reset `debian_revision` to `1`; run the laptop build, record the vendor
+hash, and re-run the tests. `rmac-session`'s `Depends` floors
 (`native_package_contract.py`) are read straight from `upstreams.json`'s
 pins, so they never need a separate manual bump. A rebuild of the same
 upstream bumps the ordinary Debian revision (`debian_revision`: `1` -> `2`);

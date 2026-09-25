@@ -1475,7 +1475,28 @@ mod linux_wayland {
                 close_overlay(service, cx);
                 tile_focused_window(service, command, cx);
             }
+            Command::Minimize => {
+                close_overlay(service, cx);
+                minimize_focused_window(service, cx);
+            }
         }
+    }
+
+    /// ⌘M for every application (packaging/rmac-session/shell.kdl): the
+    /// focused window goes through the same record, picture and park path
+    /// as an rmac app's yellow traffic light, so its Dock tile and restore
+    /// behave identically.
+    fn minimize_focused_window(service: &Entity<Service>, cx: &mut App) {
+        let snapshot = service.read(cx).compositor.snapshot();
+        let Some(window) = snapshot.focus.window else {
+            return;
+        };
+        cx.spawn(async move |_cx: &mut AsyncApp| {
+            if let Err(error) = rmac_compositor_niri::minimize_window_in(snapshot, window).await {
+                eprintln!("could not minimize the focused window: {error}");
+            }
+        })
+        .detach();
     }
 
     /// Window ▸ Move & Resize, WIN-01: Fill, Centre, a half, or Return to
@@ -1806,7 +1827,7 @@ mod linux_wayland {
                     .map_err(|error| format!("Mission Control is not running: {error}"))
             }
             _ => Err(
-                "usage: mission-control --service | mission-control | app-windows | show-desktop | wallpaper-click | next-space | previous-space | cancel"
+                "usage: mission-control --service | mission-control | app-windows | show-desktop | wallpaper-click | next-space | previous-space | cancel | minimize"
                     .to_owned(),
             ),
         }

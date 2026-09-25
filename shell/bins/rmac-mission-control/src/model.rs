@@ -43,6 +43,9 @@ pub enum Command {
     TileBottom,
     /// 🌐⌃R: put the window back where Fill, Centre or a half left it from.
     RestoreSize,
+    /// ⌘M: minimize the focused window of any application into the Dock,
+    /// the same way the yellow traffic light does.
+    Minimize,
 }
 
 impl Command {
@@ -62,6 +65,7 @@ impl Command {
             "tile-top" => Self::TileTop,
             "tile-bottom" => Self::TileBottom,
             "restore-size" => Self::RestoreSize,
+            "minimize" => Self::Minimize,
             _ => return None,
         })
     }
@@ -82,6 +86,7 @@ impl Command {
             Self::TileTop => "tile-top",
             Self::TileBottom => "tile-bottom",
             Self::RestoreSize => "restore-size",
+            Self::Minimize => "minimize",
         }
     }
 }
@@ -887,6 +892,7 @@ mod tests {
             Command::TileTop,
             Command::TileBottom,
             Command::RestoreSize,
+            Command::Minimize,
         ] {
             assert_eq!(Command::parse(command.as_str()), Some(command));
             assert!(command.as_str().len() <= 16);

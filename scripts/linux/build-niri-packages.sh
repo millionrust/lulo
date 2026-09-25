@@ -10,10 +10,11 @@
 #   2. runs `cargo vendor --locked` once, packs vendor/ into a deterministic
 #      <name>_<version>.orig-vendor.tar.xz, and checks it against the pinned
 #      vendor SHA-256 once one is recorded;
-#   3. adds packaging/third-party/<name>/debian plus the vendored crates'
-#      licence notices, and runs dpkg-buildpackage (unsigned). The build
-#      itself is offline (`cargo build --frozen`) and produces the .deb and a
-#      complete 3.0 (quilt) source package (.dsc, both orig tarballs,
+#   3. adds packaging/third-party/<name>/debian (with its quilt patch series
+#      in debian/patches, which dpkg-source applies before the build) plus
+#      the vendored crates' licence notices, and runs dpkg-buildpackage
+#      (unsigned). The build itself is offline (`cargo build --frozen`) and
+#      produces the .deb and a complete 3.0 (quilt) source package (.dsc, both orig tarballs,
 #      .debian.tar.xz, .buildinfo, .changes) -- the GPL/MPL source offer;
 #   4. writes a CycloneDX SBOM and a SHA256SUMS for the output directory.
 #
@@ -301,7 +302,10 @@ with tarfile.open(sys.argv[1], "r:gz") as archive:
     || fail "cargo vendor did not print the expected source replacement"
   mv "$parent/cargo-vendor-config.toml" "$source_dir/vendor/.lulo-cargo-config.toml"
 
-  epoch="$(dpkg-parsechangelog -l "$repo_root/packaging/third-party/$PIN_NAME/debian/changelog" -STimestamp)"
+  # The first changelog entry of this upstream version dates the vendor
+  # tarball, so a Debian-only revision (a new patch) keeps it identical.
+  epoch="$(python3 "$contract" vendor-epoch --name "$PIN_NAME")" \
+    || fail "packaging/third-party/$PIN_NAME/debian/changelog has no entry for this version"
   (cd "$source_dir" && tar --format=gnu --sort=name --mtime="@$epoch" \
       --owner=0 --group=0 --numeric-owner --mode=go-w -cf - vendor) \
     | xz -T1 -6 -c >"$parent/$PIN_VENDOR_TARBALL"

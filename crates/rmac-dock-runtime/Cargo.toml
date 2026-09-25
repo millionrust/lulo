@@ -27,3 +27,4 @@ rmac-theme.workspace = true
 
 [dev-dependencies]
 image = { workspace = true, features = ["png"] }
+serde_json.workspace = true

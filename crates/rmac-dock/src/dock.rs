@@ -639,7 +639,7 @@ pub(super) fn minimized_items(
                 app_id: window.app_id.clone(),
                 title: window.title.clone(),
                 icon: application.and_then(|application| application.icon.clone()),
-                thumbnail: rmac_compositor::ParkingStore::default_thumbnail_path(window.id),
+                thumbnail: rmac_compositor::ParkingStore::current_thumbnail(window.id),
             }
         })
         .collect();

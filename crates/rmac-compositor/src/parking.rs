@@ -123,14 +123,19 @@ impl ParkingStore {
     }
 
     /// Drop entries whose window is gone from the compositor or no longer
-    /// parked, so a niri restart cannot restore a stale window id.
-    pub fn prune(&mut self, snapshot: &Snapshot) {
-        self.parked.retain(|entry| {
-            snapshot
-                .windows
-                .iter()
-                .any(|window| window.id == entry.window && window_is_parked(snapshot, window))
-        });
+    /// parked, so a niri restart cannot restore a stale window id. Returns
+    /// the dropped entries so a caller can delete their thumbnails.
+    pub fn prune(&mut self, snapshot: &Snapshot) -> Vec<ParkedWindow> {
+        let (kept, dropped) =
+            std::mem::take(&mut self.parked)
+                .into_iter()
+                .partition(|entry: &ParkedWindow| {
+                    snapshot.windows.iter().any(|window| {
+                        window.id == entry.window && window_is_parked(snapshot, window)
+                    })
+                });
+        self.parked = kept;
+        dropped
     }
 
     /// Forget and expand restore actions for the ids that were parked here.
@@ -171,19 +176,55 @@ impl ParkingStore {
         Some(PathBuf::from(runtime).join("rmac").join("parking.json"))
     }
 
-    /// Where a minimized window's thumbnail is cached, next to the store so the
-    /// runtime directory owns the lifetime of both.
-    pub fn default_thumbnail_path(window: WindowId) -> Option<PathBuf> {
-        Self::default_path().map(|store| Self::thumbnail_path_beside(&store, window))
+    /// The directory minimized-window thumbnails are cached in, next to the
+    /// store so the runtime directory owns the lifetime of both.
+    pub fn default_thumbnail_dir() -> Option<PathBuf> {
+        Self::default_path().map(|store| Self::thumbnail_dir_beside(&store))
     }
 
-    /// [`Self::default_thumbnail_path`] for an explicit store path.
-    pub fn thumbnail_path_beside(store_path: &Path, window: WindowId) -> PathBuf {
+    /// [`Self::default_thumbnail_dir`] for an explicit store path.
+    pub fn thumbnail_dir_beside(store_path: &Path) -> PathBuf {
         store_path
             .parent()
             .unwrap_or_else(|| Path::new("."))
             .join("thumbnails")
-            .join(format!("{}.png", window.0))
+    }
+
+    /// The file one capture of `window` goes to: `<window>-<stamp>.png`.
+    /// Every capture gets its own name because the Dock's image cache is
+    /// keyed by path, so reusing a name would show the previous picture the
+    /// next time the same window is minimized.
+    pub fn thumbnail_path_in(dir: &Path, window: WindowId, stamp: u128) -> PathBuf {
+        dir.join(format!("{}-{stamp}.png", window.0))
+    }
+
+    /// The newest thumbnail captured for `window` in the default directory.
+    pub fn current_thumbnail(window: WindowId) -> Option<PathBuf> {
+        Self::newest_thumbnail_in(&Self::default_thumbnail_dir()?, window)
+    }
+
+    /// The newest `<window>-<stamp>.png` in `dir`.
+    pub fn newest_thumbnail_in(dir: &Path, window: WindowId) -> Option<PathBuf> {
+        thumbnail_files(dir)
+            .into_iter()
+            .filter(|(owner, _, _)| *owner == window)
+            .max_by_key(|(_, stamp, _)| *stamp)
+            .map(|(_, _, path)| path)
+    }
+
+    /// Delete every thumbnail of `window` in `dir`. Missing files are fine.
+    pub fn remove_thumbnails_in(dir: &Path, window: WindowId) {
+        Self::sweep_thumbnails_in(dir, |owner| owner != window);
+    }
+
+    /// Delete every thumbnail in `dir` whose window `keep` rejects, such as
+    /// windows that no longer exist after a crash or a niri restart.
+    pub fn sweep_thumbnails_in(dir: &Path, keep: impl Fn(WindowId) -> bool) {
+        for (owner, _, path) in thumbnail_files(dir) {
+            if !keep(owner) {
+                let _ = fs::remove_file(path);
+            }
+        }
     }
 
     pub fn load_default() -> Self {
@@ -201,6 +242,27 @@ impl ParkingStore {
             )),
         }
     }
+}
+
+/// `(window, stamp, path)` for every `<window>-<stamp>.png` in `dir`.
+fn thumbnail_files(dir: &Path) -> Vec<(WindowId, u128, PathBuf)> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let (window, stamp) = parse_thumbnail_name(name.to_str()?)?;
+            Some((window, stamp, entry.path()))
+        })
+        .collect()
+}
+
+pub(crate) fn parse_thumbnail_name(name: &str) -> Option<(WindowId, u128)> {
+    let stem = name.strip_suffix(".png")?;
+    let (window, stamp) = stem.split_once('-')?;
+    Some((WindowId(window.parse().ok()?), stamp.parse().ok()?))
 }
 
 fn workspace_name(snapshot: &Snapshot, workspace: WorkspaceId) -> Option<String> {

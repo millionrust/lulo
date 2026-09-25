@@ -1,3 +1,14 @@
+niri (26.04+lulo1-2) resolute; urgency=medium
+
+  * Lulo OS build of upstream niri v26.04
+    (commit 8ed0da44d974c32c6877d2f4630c314da0717ecb) with one patch,
+    debian/patches/0001-ipc-report-minimize-requests.patch: report
+    xdg_toplevel.set_minimized on the IPC event stream as
+    WindowMinimizeRequested, so the Dock can minimize third-party windows
+    (rmac docs/decisions/0021-niri-minimize-request.md).
+
+ -- Jacob Samas <samasjacob@icloud.com>  Fri, 25 Sep 2026 22:00:00 +0000
+
 niri (26.04+lulo1-1) resolute; urgency=medium
 
   * Lulo OS build of upstream niri v26.04

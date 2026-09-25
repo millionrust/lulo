@@ -370,14 +370,64 @@ fn parked_entries_carry_the_metadata_a_minimized_tile_needs() {
 }
 
 #[test]
-fn thumbnails_are_cached_beside_the_store() {
+fn thumbnails_are_cached_beside_the_store_one_file_per_capture() {
+    let dir = ParkingStore::thumbnail_dir_beside(std::path::Path::new(
+        "/run/user/1000/rmac/parking.json",
+    ));
     assert_eq!(
-        ParkingStore::thumbnail_path_beside(
-            std::path::Path::new("/run/user/1000/rmac/parking.json"),
-            WindowId(7)
-        ),
-        std::path::PathBuf::from("/run/user/1000/rmac/thumbnails/7.png")
+        dir,
+        std::path::PathBuf::from("/run/user/1000/rmac/thumbnails")
     );
+    assert_eq!(
+        ParkingStore::thumbnail_path_in(&dir, WindowId(7), 1234),
+        std::path::PathBuf::from("/run/user/1000/rmac/thumbnails/7-1234.png")
+    );
+    assert_eq!(
+        crate::parking::parse_thumbnail_name("7-1234.png"),
+        Some((WindowId(7), 1234))
+    );
+    assert_eq!(crate::parking::parse_thumbnail_name("7.png"), None);
+    assert_eq!(crate::parking::parse_thumbnail_name("7-1234.png.tmp"), None);
+}
+
+#[test]
+fn thumbnail_files_are_found_newest_first_and_swept_per_window() {
+    let dir = std::env::temp_dir().join(format!(
+        "rmac-thumbnails-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    for (window, stamp) in [(7, 10), (7, 30), (7, 20), (8, 5), (9, 1)] {
+        std::fs::write(
+            ParkingStore::thumbnail_path_in(&dir, WindowId(window), stamp),
+            b"png",
+        )
+        .unwrap();
+    }
+    std::fs::write(dir.join("unrelated.txt"), b"keep").unwrap();
+
+    assert_eq!(
+        ParkingStore::newest_thumbnail_in(&dir, WindowId(7)),
+        Some(ParkingStore::thumbnail_path_in(&dir, WindowId(7), 30))
+    );
+    assert_eq!(ParkingStore::newest_thumbnail_in(&dir, WindowId(42)), None);
+
+    // A closed window loses every picture it had, and only those.
+    ParkingStore::remove_thumbnails_in(&dir, WindowId(7));
+    assert_eq!(ParkingStore::newest_thumbnail_in(&dir, WindowId(7)), None);
+    assert!(ParkingStore::newest_thumbnail_in(&dir, WindowId(8)).is_some());
+
+    // A sweep after a restart keeps only the windows that still exist.
+    ParkingStore::sweep_thumbnails_in(&dir, |window| window == WindowId(9));
+    assert_eq!(ParkingStore::newest_thumbnail_in(&dir, WindowId(8)), None);
+    assert!(ParkingStore::newest_thumbnail_in(&dir, WindowId(9)).is_some());
+    assert!(dir.join("unrelated.txt").exists());
+
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -491,8 +541,12 @@ fn parking_store_prunes_windows_the_compositor_no_longer_parks() {
         windows: vec![window(1, Some(9)), window(2, Some(1))],
         ..Default::default()
     };
-    store.prune(&snapshot);
+    let dropped = store.prune(&snapshot);
 
+    assert_eq!(
+        dropped.iter().map(|entry| entry.window).collect::<Vec<_>>(),
+        vec![WindowId(99)]
+    );
     assert_eq!(store.entries().len(), 1);
     assert_eq!(store.origin(WindowId(1)), Some(WorkspaceId(1)));
     assert_eq!(store.origin(WindowId(99)), None);

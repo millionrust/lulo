@@ -27,7 +27,6 @@ enum WindowAction {
 /// window. Minimize parks the window on `rmac-parking` and records where it
 /// came from so the app menu's Show All can restore it (§2.2).
 fn send_window_action(action: WindowAction, cx: &mut App) {
-    let executor = cx.background_executor().clone();
     cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
         let pid = std::process::id() as i32;
         let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
@@ -47,27 +46,13 @@ fn send_window_action(action: WindowAction, cx: &mut App) {
             WindowAction::Fill => rmac_compositor::Action::FillWindow { window },
             WindowAction::Tile(region) => rmac_compositor::Action::TileWindow { window, region },
             WindowAction::Minimize => {
-                let mut store = rmac_compositor::ParkingStore::load_default();
-                store.record_from(&snapshot, &[window]);
-                // Capture the tile thumbnail while the window is still on
-                // screen; the Dock shows it for the parked window (§4.11).
-                match (
-                    rmac_compositor::window_logical_rect(&snapshot, window),
-                    rmac_compositor::ParkingStore::default_thumbnail_path(window),
-                ) {
-                    (Some(rect), Some(path)) => {
-                        if capture_thumbnail(&executor, rect, &path).await {
-                            store.set_thumbnail(window, path);
-                        }
-                    }
-                    (rect, path) => {
-                        eprintln!("no minimized-tile geometry: rect={rect:?} path={path:?}");
-                    }
+                // The one minimize path every app shares: record the origin,
+                // picture the window for its Dock tile, then park it.
+                if let Err(error) = rmac_compositor_niri::minimize_window_in(snapshot, window).await
+                {
+                    eprintln!("could not minimize: {error}");
                 }
-                if let Err(error) = store.save_default() {
-                    eprintln!("could not save the parking set: {error}");
-                }
-                rmac_compositor::Action::MinimizeWindow { window }
+                return;
             }
         };
         let _ = rmac_compositor_niri::execute_action(&action).await;
@@ -187,51 +172,6 @@ fn hidden_windows(
         })
         .map(|window| window.id)
         .collect()
-}
-
-/// Capture a logical rectangle into `path` for a minimized-window thumbnail.
-/// `grim` scales the region to the output's physical pixels; if the tool is
-/// missing or fails the tile simply falls back to the application icon.
-async fn capture_thumbnail(
-    executor: &gpui::BackgroundExecutor,
-    rect: rmac_compositor::LogicalRect,
-    path: &std::path::Path,
-) -> bool {
-    let geometry = format!(
-        "{:.0},{:.0} {:.0}x{:.0}",
-        rect.x.round(),
-        rect.y.round(),
-        rect.width.round(),
-        rect.height.round()
-    );
-    if let Some(parent) = path.parent() {
-        if let Err(error) = std::fs::create_dir_all(parent) {
-            eprintln!("could not create the thumbnail directory: {error}");
-            return false;
-        }
-    }
-    let path = path.to_path_buf();
-    let captured = path.clone();
-    let status = executor
-        .spawn(async move {
-            std::process::Command::new("grim")
-                .arg("-g")
-                .arg(&geometry)
-                .arg(&path)
-                .status()
-        })
-        .await;
-    match status {
-        Ok(status) if status.success() => true,
-        Ok(status) => {
-            eprintln!("grim failed for {captured:?}: {status}");
-            false
-        }
-        Err(error) => {
-            eprintln!("could not run grim: {error}");
-            false
-        }
-    }
 }
 
 /// The glyph a traffic light reveals while the pointer is over the group.

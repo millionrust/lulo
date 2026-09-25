@@ -32,7 +32,12 @@ pub(super) async fn consume(
             event = compositor_event => {
                 let event = event.map_err(|_| Error::new("receive Dock compositor state", "watcher stopped"))?;
                 let refresh_displays = compositor_event_affects_displays(&event);
+                let parking = parking_work(&event);
                 coordinator.apply_compositor(event);
+                if let Some(work) = parking {
+                    let snapshot = coordinator.compositor.snapshot();
+                    run_parking_work(work, snapshot).await;
+                }
                 if refresh_displays {
                     let primary = blocking::unblock(primary_output).await;
                     coordinator.apply_primary_output(primary);
@@ -110,6 +115,74 @@ pub(super) fn save_recents(recents: &[String]) -> std::io::Result<()> {
     let temporary = path.with_extension("tmp");
     std::fs::write(&temporary, rmac_dock::recents::encode(recents))?;
     std::fs::rename(&temporary, &path)
+}
+
+/// Parking-set upkeep a compositor event asks of the Dock, the one shell
+/// process that always watches niri's windows.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ParkingWork {
+    /// A third-party window pressed its own minimize button; Lulo's niri
+    /// reports it (docs/decisions/0021-niri-minimize-request.md).
+    Minimize(rmac_compositor::WindowId),
+    /// A window closed: forget it and delete its thumbnails, so its
+    /// minimized tile cannot outlive it.
+    Forget(rmac_compositor::WindowId),
+    /// The Dock (re)connected to niri: drop whatever the parking set and the
+    /// thumbnail directory still hold for windows that are gone.
+    Prune,
+}
+
+pub(super) fn parking_work(event: &rmac_compositor::Event) -> Option<ParkingWork> {
+    match event {
+        rmac_compositor::Event::WindowRemoved { id } => Some(ParkingWork::Forget(*id)),
+        rmac_compositor::Event::Snapshot { .. } => Some(ParkingWork::Prune),
+        event => rmac_compositor_niri::minimize_request(event).map(ParkingWork::Minimize),
+    }
+}
+
+pub(super) async fn run_parking_work(work: ParkingWork, snapshot: rmac_compositor::Snapshot) {
+    match work {
+        ParkingWork::Minimize(window) => {
+            if let Err(error) = rmac_compositor_niri::minimize_window_in(snapshot, window).await {
+                eprintln!("could not minimize window {}: {error}", window.0);
+            }
+        }
+        ParkingWork::Forget(window) => {
+            blocking::unblock(move || forget_parked(window)).await;
+        }
+        ParkingWork::Prune => {
+            blocking::unblock(move || prune_parked(&snapshot)).await;
+        }
+    }
+}
+
+fn forget_parked(window: rmac_compositor::WindowId) {
+    if let Some(dir) = rmac_compositor::ParkingStore::default_thumbnail_dir() {
+        rmac_compositor::ParkingStore::remove_thumbnails_in(&dir, window);
+    }
+    let mut store = rmac_compositor::ParkingStore::load_default();
+    if store.forget(window).is_some() {
+        if let Err(error) = store.save_default() {
+            eprintln!("could not save the parking set: {error}");
+        }
+    }
+}
+
+fn prune_parked(snapshot: &rmac_compositor::Snapshot) {
+    let mut store = rmac_compositor::ParkingStore::load_default();
+    if !store.prune(snapshot).is_empty() {
+        if let Err(error) = store.save_default() {
+            eprintln!("could not save the parking set: {error}");
+        }
+    }
+    if let Some(dir) = rmac_compositor::ParkingStore::default_thumbnail_dir() {
+        let live = snapshot
+            .windows
+            .iter()
+            .map(|window| window.id)
+            .collect::<std::collections::BTreeSet<_>>();
+        rmac_compositor::ParkingStore::sweep_thumbnails_in(&dir, |window| live.contains(&window));
+    }
 }
 
 pub(super) fn compositor_event_affects_displays(event: &rmac_compositor::Event) -> bool {

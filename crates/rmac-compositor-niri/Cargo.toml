@@ -10,6 +10,8 @@ publish = false
 async-channel.workspace = true
 async-io.workspace = true
 futures-util.workspace = true
+# PPM in from grim, PNG out for the Dock's minimized-window thumbnails.
+image = { workspace = true, features = ["png", "pnm"] }
 rmac-compositor.workspace = true
 serde.workspace = true
 serde_json.workspace = true

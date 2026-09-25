@@ -407,7 +407,7 @@ mod tests {
     #[test]
     fn toolbar_buttons_stay_inside_the_window_with_basic_spacing() {
         assert_eq!(MODE_BUTTON_CENTER_X - SIDEBAR_BUTTON_CENTER_X, 80.0);
-        assert!(MODE_BUTTON_CENTER_X + TOOLBAR_BUTTON_DIAMETER / 2.0 < WINDOW_WIDTH);
-        assert!(SIDEBAR_BUTTON_CENTER_X - TOOLBAR_BUTTON_DIAMETER / 2.0 > 0.0);
+        const { assert!(MODE_BUTTON_CENTER_X + TOOLBAR_BUTTON_DIAMETER / 2.0 < WINDOW_WIDTH) };
+        const { assert!(SIDEBAR_BUTTON_CENTER_X - TOOLBAR_BUTTON_DIAMETER / 2.0 > 0.0) };
     }
 }

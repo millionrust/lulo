@@ -646,6 +646,10 @@ mod linux_wayland {
         content: rmac_dock::presentation::ShelfContent,
         /// A pressed kept app, becoming a drag once the pointer moves.
         tile_drag: Option<TileDragUi>,
+        /// A live insertion-point hint from a drag out of Apps
+        /// (`drag_endpoint::Command::Hover`, item 7): the fraction along
+        /// the kept-apps list the pointer last reported.
+        apps_drag_hover: Option<f32>,
         /// Neighbours sliding into place: (offset along the axis, start ms).
         slides: std::collections::BTreeMap<String, (f32, u64)>,
         /// Kept-app order shown until the settings watcher confirms a drop.
@@ -711,6 +715,7 @@ mod linux_wayland {
                 hide_generation: 0,
                 content: rmac_dock::presentation::ShelfContent::default(),
                 tile_drag: None,
+                apps_drag_hover: None,
                 slides: std::collections::BTreeMap::new(),
                 pending_pins: None,
                 removing: None,
@@ -2891,6 +2896,37 @@ mod linux_wayland {
                 } else {
                     0.0
                 };
+            // Item 7: a drag out of Apps previews where it would land as a
+            // thin insertion-point bar between the two kept apps nearest
+            // the pointer, live-updated from drag_endpoint's Hover hint.
+            let apps_drag_gap = self.apps_drag_hover.map(|fraction| {
+                const BAR_WIDTH: f32 = 3.0;
+                let index = ((fraction.clamp(0.0, 1.0) * pinned_count as f32).round() as usize)
+                    .min(pinned_count);
+                let boundary = (metrics.shelf_padding
+                    + index as f32 * (metrics.icon_size + metrics.icon_gap)
+                    - metrics.icon_gap / 2.0
+                    - BAR_WIDTH / 2.0)
+                    .max(0.0);
+                let mut bar = div()
+                    .absolute()
+                    .rounded(px(BAR_WIDTH / 2.0))
+                    .bg(rgba(tokens::accent()));
+                bar = match self.placement {
+                    rmac_shell_settings::DockPlacement::Bottom => bar
+                        .w(px(BAR_WIDTH))
+                        .h(px(metrics.icon_size))
+                        .left(px(boundary))
+                        .bottom_0(),
+                    rmac_shell_settings::DockPlacement::Left
+                    | rmac_shell_settings::DockPlacement::Right => bar
+                        .h(px(BAR_WIDTH))
+                        .w(px(metrics.icon_size))
+                        .top(px(boundary))
+                        .left_0(),
+                };
+                bar.into_any_element()
+            });
             root.child(
                 shelf
                     .children(entries.into_iter().enumerate().flat_map(|(index, entry)| {
@@ -3247,6 +3283,7 @@ mod linux_wayland {
                     })
                     .children(minimized_children)
                     .children(stack_children)
+                    .children(apps_drag_gap)
                     .child({
                         let visual_size = magnified_icon_size(
                             trash_center,
@@ -5119,19 +5156,17 @@ mod linux_wayland {
         let _ = dock.update(cx, |dock, window, cx| dock.begin_keyboard(window, cx));
     }
 
-    /// A drag out of Apps (crates/app-drawer) resolved to `Drop`: keep the
-    /// application in whichever Dock the drag reached. Hover and Cancel are
-    /// accepted but not yet rendered (§ drag from Apps, live gap preview is
-    /// a follow-up); the functional outcome — the application ends up
-    /// pinned near where it was dropped — does not depend on it.
+    /// A drag out of Apps (crates/app-drawer): `Hover` previews where it
+    /// would land (item 7's live insertion gap), `Drop` keeps the
+    /// application in whichever Dock the drag reached, `Cancel` clears the
+    /// preview. This is a hint, not an authority (drag_endpoint's own doc
+    /// comment): `Drop` still resolves and places the application through
+    /// the same catalog/PinCommand path a `.desktop` file drop uses.
     fn apply_drag_command(
         windows: &DockWindows,
         command: crate::drag_endpoint::Command,
         cx: &mut App,
     ) {
-        let crate::drag_endpoint::Command::Drop { app_id, fraction } = command else {
-            return;
-        };
         let Some(dock) = windows
             .windows
             .values()
@@ -5141,8 +5176,24 @@ mod linux_wayland {
         else {
             return;
         };
-        let _ = dock.update(cx, |dock, _window, cx| {
-            dock.keep_dragged_application(app_id, fraction, cx);
+        let _ = dock.update(cx, |dock, _window, cx| match command {
+            crate::drag_endpoint::Command::Hover { fraction, .. } => {
+                if dock.apps_drag_hover != Some(fraction) {
+                    dock.apps_drag_hover = Some(fraction);
+                    cx.notify();
+                }
+            }
+            crate::drag_endpoint::Command::Drop { app_id, fraction } => {
+                if dock.apps_drag_hover.take().is_some() {
+                    cx.notify();
+                }
+                dock.keep_dragged_application(app_id, fraction, cx);
+            }
+            crate::drag_endpoint::Command::Cancel { .. } => {
+                if dock.apps_drag_hover.take().is_some() {
+                    cx.notify();
+                }
+            }
         });
     }
 

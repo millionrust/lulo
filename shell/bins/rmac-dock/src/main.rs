@@ -1179,7 +1179,7 @@ mod linux_wayland {
                         cx.notify();
                         true
                     });
-                    if updated != Ok(true) {
+                    if !matches!(updated, Ok(true)) {
                         return;
                     }
                     if events_rx.recv().await.is_err() {

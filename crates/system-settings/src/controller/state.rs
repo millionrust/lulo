@@ -96,6 +96,12 @@ pub(super) struct Settings {
     pub(super) storage_action_busy: Option<String>,
     pub(super) audio: rmac_audio::Snapshot,
     pub(super) input: rmac_input::Snapshot,
+    /// Keyboard's Key repeat rate and Delay until repeat sliders
+    /// (SET-101): `rmac_ui::Slider` over the preset index, the same
+    /// draggable-slider widget every other pane's slider uses, rather than
+    /// the hand-rolled stepped track that drew with no thumb.
+    pub(super) keyboard_repeat_rate_slider: Entity<SliderState>,
+    pub(super) keyboard_repeat_delay_slider: Entity<SliderState>,
     pub(super) gtk_text: Option<rmac_gtk_settings::Snapshot>,
     pub(super) screen_reader_toggle: Option<rmac_screen_reader::Snapshot>,
     pub(super) privacy: Option<rmac_privacy::Snapshot>,

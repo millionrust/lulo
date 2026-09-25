@@ -246,10 +246,12 @@ impl Settings {
         let view = cx.entity();
         let policy = application.policy;
         let busy = self.notification_busy.as_deref() == Some(app_id);
-        let name = self
-            .notification_identity(app_id)
-            .map(|(name, _)| name)
+        let identity = self.notification_identity(app_id);
+        let name = identity
+            .as_ref()
+            .map(|(name, _)| name.clone())
             .unwrap_or_else(|| app_id.to_owned());
+        let icon = identity.and_then(|(_, icon)| icon);
         let mut body = div().v_flex();
         if busy {
             body = body.child(
@@ -283,7 +285,7 @@ impl Settings {
             group().child(
                 large_row(
                     app_icon(
-                        identity.and_then(|identity| identity.icon.as_ref()),
+                        icon.as_ref(),
                         "icons/app-window.svg",
                         secondary(),
                         style::LARGE_ICON,

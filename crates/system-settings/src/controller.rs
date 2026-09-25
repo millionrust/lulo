@@ -72,9 +72,10 @@ use crate::focus::{
     DAYS as FOCUS_DAYS,
 };
 use crate::input::{
-    compositor_event_affects_input, compositor_input_config_failed, speed_index, InputChange,
-    InputOption, KEYBOARD_DELAYS, KEYBOARD_RATES, KEYBOARD_RESPONSE_PRESETS,
-    MOUSE_PRECISION_PRESETS, MOUSE_SPEEDS, TOUCHPAD_SPEEDS,
+    compositor_event_affects_input, compositor_input_config_failed, keyboard_delay_slider_index,
+    keyboard_rate_slider_index, speed_index, InputChange, InputOption, KEYBOARD_DELAYS,
+    KEYBOARD_RATES, KEYBOARD_RESPONSE_PRESETS, MOUSE_PRECISION_PRESETS, MOUSE_SPEEDS,
+    TOUCHPAD_SPEEDS,
 };
 use crate::navigation::{
     categories, category_has_dedicated_renderer, category_name_for_pane_id, category_parent,

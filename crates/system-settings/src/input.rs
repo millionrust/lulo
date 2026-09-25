@@ -79,6 +79,39 @@ pub(super) const KEYBOARD_RATES: [InputOption; 5] = [
     ("Fast", InputChange::KeyboardRepeatRate(60)),
 ];
 
+/// The `options` index whose preset is closest to `value`, so the
+/// Keyboard sliders always show a thumb (SET-101) even when the system's
+/// real repeat rate/delay doesn't land exactly on a preset.
+fn nearest_option(options: &[InputOption], value: u32) -> usize {
+    options
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, (_, change))| {
+            let preset = match change {
+                InputChange::KeyboardRepeatRate(value)
+                | InputChange::KeyboardRepeatDelay(value) => *value,
+                _ => 0,
+            };
+            preset.abs_diff(value)
+        })
+        .map(|(index, _)| index)
+        .unwrap_or(0)
+}
+
+/// The Key repeat rate slider's index for `rate` (0 = Slow ... last = Fast,
+/// `KEYBOARD_RATES`' own order).
+pub(super) fn keyboard_rate_slider_index(rate: u32) -> usize {
+    nearest_option(&KEYBOARD_RATES, rate)
+}
+
+/// The Delay until repeat slider's index for `delay_ms` (0 = Long ... last
+/// = Short -- the Mac runs this slider in the opposite order from
+/// `KEYBOARD_DELAYS`).
+pub(super) fn keyboard_delay_slider_index(delay_ms: u32) -> usize {
+    let last = KEYBOARD_DELAYS.len() - 1;
+    last - nearest_option(&KEYBOARD_DELAYS, delay_ms)
+}
+
 pub(super) const KEYBOARD_RESPONSE_PRESETS: [InputOption; 3] = [
     (
         "Standard",
@@ -210,5 +243,26 @@ mod tests {
         assert_eq!(changed.mouse.accel_profile, rmac_input::AccelProfile::Flat);
         assert_eq!(changed.keyboard, original.keyboard);
         assert_eq!(changed.touchpad, original.touchpad);
+    }
+
+    /// SET-101: the Keyboard sliders position their thumb from the
+    /// *nearest* preset rather than requiring an exact match, so a real
+    /// value the presets don't cover exactly (unlike these round numbers)
+    /// still draws a thumb instead of an empty track.
+    #[test]
+    fn keyboard_slider_indices_pick_the_nearest_preset() {
+        assert_eq!(keyboard_rate_slider_index(10), 0); // Slow
+        assert_eq!(keyboard_rate_slider_index(60), KEYBOARD_RATES.len() - 1); // Fast
+        assert_eq!(keyboard_rate_slider_index(26), 2); // nearer 30 (index 2) than 20 (index 1)
+
+        // Delay runs the opposite way from KEYBOARD_DELAYS: index 0 is the
+        // Mac's "Long" end (1000 ms, KEYBOARD_DELAYS' last entry) and the
+        // last index is "Short" (200 ms, KEYBOARD_DELAYS' first entry).
+        assert_eq!(keyboard_delay_slider_index(1_000), 0); // Long
+        assert_eq!(
+            keyboard_delay_slider_index(200),
+            KEYBOARD_DELAYS.len() - 1 // Short
+        );
+        assert_eq!(keyboard_delay_slider_index(600), 2); // between 500 and 750
     }
 }

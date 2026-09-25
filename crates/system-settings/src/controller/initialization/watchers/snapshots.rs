@@ -126,7 +126,7 @@ impl Settings {
                 .spawn(async { rmac_input::snapshot() })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_input_update(result);
+                this.finish_input_update(result, cx);
                 this.flush_input_stream_refresh(cx);
                 cx.notify();
             });

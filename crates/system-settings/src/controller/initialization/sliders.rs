@@ -130,4 +130,61 @@ impl Settings {
         .detach();
         slider
     }
+
+    /// Keyboard's Key repeat rate slider (SET-101): index 0 = Slow ... last
+    /// = Fast, `KEYBOARD_RATES`' own order. `index` positions the thumb;
+    /// [`crate::input::keyboard_rate_slider_index`] finds the nearest one
+    /// for the system's real rate.
+    pub(in crate::controller) fn keyboard_repeat_rate_slider(
+        cx: &mut Context<Self>,
+        index: f32,
+    ) -> Entity<SliderState> {
+        let max = (KEYBOARD_RATES.len() - 1) as f32;
+        let slider = cx.new(|_| {
+            SliderState::new()
+                .min(0.0)
+                .max(max)
+                .step(1.0)
+                .default_value(index)
+        });
+        cx.subscribe(&slider, move |this, _, event: &SliderEvent, cx| {
+            if let SliderEvent::Change(value) = event {
+                let index = value.start().round().clamp(0.0, max) as usize;
+                if let Some((_, change)) = KEYBOARD_RATES.get(index) {
+                    let change = *change;
+                    this.apply_input_change(change, cx);
+                }
+            }
+        })
+        .detach();
+        slider
+    }
+
+    /// Keyboard's Delay until repeat slider (SET-101): index 0 = Long ...
+    /// last = Short, the Mac's own reversed order over `KEYBOARD_DELAYS`.
+    pub(in crate::controller) fn keyboard_repeat_delay_slider(
+        cx: &mut Context<Self>,
+        index: f32,
+    ) -> Entity<SliderState> {
+        let last = KEYBOARD_DELAYS.len() - 1;
+        let max = last as f32;
+        let slider = cx.new(|_| {
+            SliderState::new()
+                .min(0.0)
+                .max(max)
+                .step(1.0)
+                .default_value(index)
+        });
+        cx.subscribe(&slider, move |this, _, event: &SliderEvent, cx| {
+            if let SliderEvent::Change(value) = event {
+                let index = value.start().round().clamp(0.0, max) as usize;
+                if let Some((_, change)) = KEYBOARD_DELAYS.get(last - index) {
+                    let change = *change;
+                    this.apply_input_change(change, cx);
+                }
+            }
+        })
+        .detach();
+        slider
+    }
 }

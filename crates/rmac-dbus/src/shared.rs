@@ -68,9 +68,16 @@ mod tests {
             let lock: &'static OnceLock<Mutex<Option<zbus::Connection>>> =
                 Box::leak(Box::new(OnceLock::new()));
             let attempts = AtomicUsize::new(0);
-            let attempt = || {
+            let attempts = &attempts;
+            // An async block, not a plain call: its body (the counter)
+            // only runs once this future is actually polled, which
+            // `shared` skips for a cache hit -- unlike calling
+            // `zbus::Connection::system()` directly, whose caller-side
+            // work (none here, but in general) always runs when the
+            // argument expression is evaluated, cache hit or not.
+            let attempt = || async {
                 attempts.fetch_add(1, Ordering::SeqCst);
-                zbus::Connection::system()
+                zbus::Connection::system().await
             };
             let first = shared(lock, attempt()).await;
             let second = shared(lock, attempt()).await;

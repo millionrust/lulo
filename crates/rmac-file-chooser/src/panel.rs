@@ -113,6 +113,14 @@ pub struct GoToSheet {
     pub error: bool,
 }
 
+/// The Mac's New Folder sheet: a name field defaulted to "untitled folder",
+/// asked before anything is created (OTHER-10).
+pub struct NewFolderSheet {
+    pub input: Entity<InputState>,
+    pub folder: PathBuf,
+    pub error: bool,
+}
+
 pub struct Panel {
     pub(crate) request: Request,
     reply: Option<Sender<Outcome>>,
@@ -125,6 +133,7 @@ pub struct Panel {
     pub(crate) name: Option<Entity<InputState>>,
     pub(crate) search: Entity<InputState>,
     pub(crate) goto: Option<GoToSheet>,
+    pub(crate) new_folder_sheet: Option<NewFolderSheet>,
     pub(crate) menu: Option<MenuKind>,
     pub(crate) replace: Option<PathBuf>,
     pub(crate) notice: Option<SharedString>,
@@ -137,6 +146,16 @@ pub struct Panel {
     /// Quick Look opened with Space from the file list.
     quick_look: Option<rmac_quick_look::Handle>,
     _subscriptions: Vec<Subscription>,
+}
+
+/// The byte range of `name`'s base name, excluding a trailing extension —
+/// Finder's Save As selection. A leading dot (`dot == 0`, a dotfile) has no
+/// extension to protect, so the whole name is selected instead.
+fn base_name_selection(name: &str) -> std::ops::Range<usize> {
+    match name.rfind('.') {
+        Some(dot) if dot > 0 => 0..dot,
+        _ => 0..name.len(),
+    }
 }
 
 fn home_directory() -> PathBuf {
@@ -159,9 +178,14 @@ fn sidebar_sections(home: &Path) -> Vec<SidebarSection> {
         icon: "icons/clock.svg",
     }];
     first.extend(rmac_finder::places::shared_folder(home).map(place));
-    let favourites = rmac_finder::places::favourite_folders(home)
+    // The Mac's Favourites opens with Applications, then the user's folders.
+    let favourites = rmac_finder::places::applications_folder()
         .into_iter()
-        .filter(|spec| spec.path.is_dir())
+        .chain(
+            rmac_finder::places::favourite_folders(home)
+                .into_iter()
+                .filter(|spec| spec.path.is_dir()),
+        )
         .map(place)
         .collect();
     let mut locations: Vec<SidebarPlace> = rmac_finder::places::standard_locations(home)
@@ -175,6 +199,10 @@ fn sidebar_sections(home: &Path) -> Vec<SidebarSection> {
             icon: "icons/hard-drive.svg",
         }));
     }
+    let media = rmac_finder::places::media_folders(home)
+        .into_iter()
+        .map(place)
+        .collect();
     vec![
         SidebarSection {
             title: SharedString::default(),
@@ -187,6 +215,12 @@ fn sidebar_sections(home: &Path) -> Vec<SidebarSection> {
         SidebarSection {
             title: "Locations".into(),
             places: locations,
+        },
+        // Tags is omitted here: Linux has no tag store rmac can write
+        // (docs/decisions/0012-file-chooser-portal.md).
+        SidebarSection {
+            title: "Media".into(),
+            places: media,
         },
     ]
 }
@@ -258,9 +292,16 @@ impl Panel {
             Some(name) => {
                 let name_focus = name.read(cx).focus_handle(cx);
                 window.focus(&name_focus, cx);
+                let name = name.clone();
                 window.on_next_frame(move |window, cx| {
                     window.focus(&name_focus, cx);
-                    window.dispatch_action(Box::new(rmac_ui::SelectAll), cx);
+                    // Finder's Save As convention: select only the base
+                    // name ("Untitled", not "Untitled.txt"), so typing
+                    // replaces it and leaves the extension alone (OTHER-09).
+                    name.update(cx, |state, cx| {
+                        let selection = base_name_selection(&state.value());
+                        state.set_selected_range(selection, cx);
+                    });
                 });
             }
             None => window.focus(&focus, cx),
@@ -292,6 +333,7 @@ impl Panel {
             name,
             search,
             goto: None,
+            new_folder_sheet: None,
             menu: None,
             replace: None,
             quick_look: None,
@@ -578,6 +620,10 @@ impl Panel {
 
     pub fn accept(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.menu = None;
+        if self.new_folder_sheet.is_some() {
+            self.new_folder_commit(window, cx);
+            return;
+        }
         if self.goto.is_some() {
             self.goto_commit(window, cx);
             return;
@@ -680,6 +726,11 @@ impl Panel {
             cx.notify();
             return;
         }
+        if self.new_folder_sheet.take().is_some() {
+            window.focus(&self.focus, cx);
+            cx.notify();
+            return;
+        }
         if self.goto.take().is_some() {
             window.focus(&self.focus, cx);
             cx.notify();
@@ -711,7 +762,11 @@ impl Panel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if !self.focus.is_focused(window) || self.goto.is_some() || self.replace.is_some() {
+        if !self.focus.is_focused(window)
+            || self.goto.is_some()
+            || self.replace.is_some()
+            || self.new_folder_sheet.is_some()
+        {
             return false;
         }
         let keystroke = &event.keystroke;
@@ -964,32 +1019,70 @@ impl Panel {
         self.expanded = !self.expanded;
         self.menu = None;
         let (width, height) = self.window_size();
-        window.resize(size(px(width), px(height)));
+        // `Window::resize` sets the outer platform surface, the same units
+        // as `window.viewport_size()` — not the smaller box `Root` hands
+        // the panel's own content (`rmac_ui::window_content_size`); see the
+        // matching comment in `main.rs::open_panel`.
+        let (outer_width, outer_height) = rmac_ui::outer_window_size(width, height);
+        window.resize(size(px(outer_width), px(outer_height)));
         cx.notify();
     }
 
-    /// Creates “untitled folder” (numbered if taken) in the current folder
-    /// and opens it, like the Mac panel's New Folder after naming.
-    pub fn new_folder(&mut self, cx: &mut Context<Self>) {
-        if self.request.mode == Mode::Open {
+    /// ⇧⌘N / the New Folder button: asks the name first, like the Mac's
+    /// "Name of new folder inside “…”:" sheet, instead of silently creating
+    /// “untitled folder” (OTHER-10).
+    pub fn new_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.request.mode == Mode::Open || self.new_folder_sheet.is_some() {
             return;
         }
         let Some(folder) = self.browser.location().folder().map(Path::to_path_buf) else {
             return;
         };
-        let mut name = "untitled folder".to_owned();
-        let mut number = 2;
-        while folder.join(&name).symlink_metadata().is_ok() && number < 10_000 {
-            name = format!("untitled folder {number}");
-            number += 1;
-        }
-        match std::fs::create_dir(folder.join(&name)) {
-            Ok(()) => self.navigate(Location::Folder(folder.join(name)), cx),
-            Err(_) => {
-                self.notice = Some("The folder can’t be created here.".into());
-                cx.notify();
+        self.menu = None;
+        let default_name = "untitled folder";
+        let input = cx.new(|cx| InputState::new(window, cx).default_value(default_name));
+        let subscription = cx.subscribe_in(
+            &input,
+            window,
+            |this: &mut Self, _input, event: &InputEvent, window, cx| {
+                if let InputEvent::PressEnter { .. } = event {
+                    this.new_folder_commit(window, cx);
+                }
+            },
+        );
+        self._subscriptions.push(subscription);
+        let focus = input.read(cx).focus_handle(cx);
+        window.focus(&focus, cx);
+        input.update(cx, |state, cx| {
+            state.set_selected_range(0..default_name.len(), cx);
+        });
+        self.new_folder_sheet = Some(NewFolderSheet {
+            input,
+            folder,
+            error: false,
+        });
+        cx.notify();
+    }
+
+    pub fn new_folder_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(sheet) = self.new_folder_sheet.as_ref() else {
+            return;
+        };
+        let folder = sheet.folder.clone();
+        let name = sheet.input.read(cx).value().trim().to_owned();
+        if !rmac_file_chooser::request::valid_file_name(&name)
+            || folder.join(&name).symlink_metadata().is_ok()
+            || std::fs::create_dir(folder.join(&name)).is_err()
+        {
+            if let Some(sheet) = self.new_folder_sheet.as_mut() {
+                sheet.error = true;
             }
+            cx.notify();
+            return;
         }
+        self.new_folder_sheet = None;
+        window.focus(&self.focus, cx);
+        self.navigate(Location::Folder(folder.join(name)), cx);
     }
 
     // ---- Go to Folder -------------------------------------------------------
@@ -1113,5 +1206,21 @@ impl Drop for Panel {
         if let Some(cancel) = self.search_cancel.take() {
             cancel.store(true, Ordering::Relaxed);
         }
+    }
+}
+
+#[cfg(test)]
+mod panel_tests {
+    use super::base_name_selection;
+
+    #[test]
+    fn base_name_selection_stops_before_the_last_extension() {
+        assert_eq!(base_name_selection("Untitled.txt"), 0..8);
+        // Only the last extension is excluded, as Finder does.
+        assert_eq!(base_name_selection("Archive.tar.gz"), 0..11);
+        assert_eq!(base_name_selection("Untitled"), 0..8);
+        // A dotfile's leading dot is not an extension to protect.
+        assert_eq!(base_name_selection(".bashrc"), 0..7);
+        assert_eq!(base_name_selection(""), 0..0);
     }
 }

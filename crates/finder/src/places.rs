@@ -60,6 +60,33 @@ pub fn favourite_folders(home: &Path) -> Vec<PlaceSpec> {
     favourites
 }
 
+/// The Mac's `/Applications`, offered whenever a like-named real folder
+/// exists on this machine. Linux has no bundle-app folder for a file panel
+/// to browse; `/usr/share/applications` is the closest real directory (the
+/// desktop entries every installed app publishes), so it stands in rather
+/// than leaving the section out entirely.
+pub fn applications_folder() -> Option<PlaceSpec> {
+    let path = PathBuf::from("/usr/share/applications");
+    path.is_dir()
+        .then(|| place("Applications", path, "icons/layout-grid.svg", false))
+}
+
+/// `~/Music`, `~/Pictures` and `~/Movies`, the Mac's Media section, shown
+/// only for folders that exist (as `favourite_folders` already does).
+pub fn media_folders(home: &Path) -> Vec<PlaceSpec> {
+    [
+        ("Music", "Music", "icons/music.svg"),
+        ("Photos", "Pictures", "icons/photo.svg"),
+        ("Movies", "Movies", "icons/movie.svg"),
+    ]
+    .into_iter()
+    .filter_map(|(name, folder, icon)| {
+        let path = home.join(folder);
+        path.is_dir().then(|| place(name, path, icon, false))
+    })
+    .collect()
+}
+
 /// iCloud Drive (when synced here) and the home folder.
 pub fn standard_locations(home: &Path) -> Vec<PlaceSpec> {
     let mut locations = Vec::new();
@@ -91,5 +118,40 @@ mod tests {
         assert_eq!(locations.len(), 1);
         assert_eq!(locations[0].name, "jake");
         assert!(shared_folder(home).is_none());
+    }
+
+    #[test]
+    fn media_folders_are_offered_only_when_they_exist() {
+        let home = Path::new("/nonexistent-rmac-home/jake");
+        assert!(media_folders(home).is_empty());
+    }
+
+    #[test]
+    fn media_folders_use_the_mac_names_in_the_mac_order() {
+        let home = std::env::temp_dir().join(format!(
+            "rmac-places-media-test-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        for folder in ["Music", "Pictures", "Movies"] {
+            std::fs::create_dir_all(home.join(folder)).unwrap();
+        }
+        let names: Vec<_> = media_folders(&home)
+            .into_iter()
+            .map(|place| place.name)
+            .collect();
+        assert_eq!(names, ["Music", "Photos", "Movies"]);
+        std::fs::remove_dir_all(&home).ok();
+    }
+
+    #[test]
+    fn applications_folder_is_offered_only_when_real() {
+        // `/usr/share/applications` exists on every mainstream Linux desktop
+        // (including CI containers); this only checks the function agrees
+        // with the filesystem, not that the folder is present everywhere.
+        assert_eq!(
+            applications_folder().is_some(),
+            Path::new("/usr/share/applications").is_dir()
+        );
     }
 }

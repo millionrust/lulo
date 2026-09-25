@@ -76,13 +76,13 @@ fn open_panel(panel: PanelRequest, database: Arc<MimeDatabase>, cx: &mut App) {
     } else {
         APP_ID_OPEN
     };
-    let title = if request.title.is_empty() {
-        match request.mode {
-            Mode::Open => "Open".to_owned(),
-            _ => "Save".to_owned(),
-        }
-    } else {
-        request.title.clone()
+    // The Mac's Open panel is always titled "Open"; its Save sheet has no
+    // title at all (it hangs under the document window's own title bar).
+    // The app's `title` argument is GTK/Qt boilerplate ("Open File", "Save
+    // File") that the Mac panel never shows, so it is not used here.
+    let title = match request.mode {
+        Mode::Open => "Open".to_owned(),
+        Mode::Save | Mode::SaveFiles => String::new(),
     };
     // The first frame is laid out at the final size; see Panel::window_size.
     let (width, height) = match request.mode {
@@ -97,15 +97,24 @@ fn open_panel(panel: PanelRequest, database: Arc<MimeDatabase>, cx: &mut App) {
             rmac_file_chooser::metrics::PANEL_HEIGHT,
         ),
     };
+    // `Root` (gpui-component) always reserves a client-frame margin for its
+    // Linux shadow/resize edges, whether or not the platform was told about
+    // it (`rmac_ui::reserve_client_frame`'s doc). Every other rmac window
+    // opener inflates its outer bounds by that margin so Root's content box
+    // comes out at exactly the size asked for; this one has to do the same,
+    // or the panel's own bottom row and right-edge controls draw past the
+    // usable window and are clipped by it (OTHER-03).
+    let (outer_width, outer_height) = rmac_ui::outer_window_size(width, height);
     let mut options: WindowOptions =
-        rmac_ui::window_options_for_app_with_title(app_id, title, width, height, cx);
-    let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
+        rmac_ui::window_options_for_app_with_title(app_id, title, outer_width, outer_height, cx);
+    let bounds = Bounds::centered(None, size(px(outer_width), px(outer_height)), cx);
     options.window_bounds = Some(WindowBounds::Windowed(bounds));
     options.window_min_size = Some(size(px(width.min(640.0)), px(height.min(360.0))));
     // A modal xdg_dialog_v1 window; see ADR 0012 for parent handling.
     options.kind = WindowKind::Dialog;
     options.is_minimizable = false;
     let opened = cx.open_window(options, |window, cx| {
+        rmac_ui::reserve_client_frame(window);
         rmac_ui::prepare_surface_window(window, cx);
         let view = cx.new(|cx| Panel::new(request, reply, closed, database, window, cx));
         cx.new(|cx| Root::new(view, window, cx))

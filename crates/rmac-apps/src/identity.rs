@@ -12,6 +12,13 @@ pub const PREVIEW: &str = "org.rmac.Preview";
 pub const CLOCK: &str = "org.rmac.Clock";
 pub const WEATHER: &str = "org.rmac.Weather";
 pub const PLAYER: &str = "org.rmac.Player";
+/// The Open panel (`crates/rmac-file-chooser`, `org.freedesktop.impl.portal.FileChooser`'s
+/// `OpenFile`). Not a launchable app — never added to `ALL` — but its window
+/// still needs a stable identity for [`is_transient_panel`].
+pub const FILE_CHOOSER: &str = "org.rmac.FileChooser";
+/// The Save panel; a separate app id so niri can clip it at the sheet radius
+/// (docs/decisions/0012-file-chooser-portal.md).
+pub const FILE_CHOOSER_SAVE: &str = "org.rmac.FileChooser.Save";
 
 pub const ALL: [&str; 12] = [
     FILES,
@@ -56,6 +63,16 @@ pub fn is_document_application(app_id: &str) -> bool {
     matches!(app_id, FILES | NOTES | TEXT_EDITOR)
 }
 
+/// A window that borrows its owner's spot in the menu bar rather than being
+/// switched to as an application in its own right. On the Mac the Open/Save
+/// panel is a sheet or a panel of the app that asked for it — never a
+/// separate frontmost application — so its own window taking niri's focus
+/// must not make the menu bar switch away from (and clear) the app that
+/// opened it (OTHER-04, docs/parity.md).
+pub fn is_transient_panel(app_id: &str) -> bool {
+    matches!(app_id, FILE_CHOOSER | FILE_CHOOSER_SAVE)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,5 +108,18 @@ mod tests {
             assert!(window_title(app_id).is_some_and(|title| !title.trim().is_empty()));
         }
         assert_eq!(window_title("org.example.Unknown"), None);
+    }
+
+    /// The Open/Save panel is a real window with its own compositor
+    /// identity (`crates/rmac-file-chooser/src/main.rs`), but it is not a
+    /// launchable application and must never join `ALL`'s switcher/dock
+    /// enumeration.
+    #[test]
+    fn the_file_chooser_panel_is_transient_but_not_a_launchable_app() {
+        assert!(is_transient_panel(FILE_CHOOSER));
+        assert!(is_transient_panel(FILE_CHOOSER_SAVE));
+        assert!(!is_transient_panel(FILES));
+        assert!(!ALL.contains(&FILE_CHOOSER));
+        assert!(!ALL.contains(&FILE_CHOOSER_SAVE));
     }
 }

@@ -84,7 +84,7 @@ const CLIENT_FRAME_INSET: f32 = 12.0;
 const CLIENT_FRAME_INSET: f32 = 0.0;
 
 /// Outer window bounds for a visible window of `width` × `height`.
-pub(crate) fn outer_window_size(width: f32, height: f32) -> (f32, f32) {
+pub fn outer_window_size(width: f32, height: f32) -> (f32, f32) {
     (
         width + 2.0 * CLIENT_FRAME_INSET,
         height + 2.0 * CLIENT_FRAME_INSET,
@@ -93,8 +93,14 @@ pub(crate) fn outer_window_size(width: f32, height: f32) -> (f32, f32) {
 
 /// Tell the platform about the client frame before the first configure, so
 /// the compositor's first window geometry already excludes it and a new
-/// window opens at exactly the size the app asked for.
-fn reserve_client_frame(window: &mut Window) {
+/// window opens at exactly the size the app asked for. Every window built
+/// with a `Root` (see the re-export above) needs this: Root reserves the
+/// same margin for its client-side shadow and resize edges regardless of
+/// whether the platform was told about it, so skipping this call leaves
+/// Root's content box smaller than the window the caller asked for and the
+/// edges of that content — often exactly the bottom row of buttons — clip
+/// against the visible window instead of sitting inside it.
+pub fn reserve_client_frame(window: &mut Window) {
     if CLIENT_FRAME_INSET > 0.0 {
         window.set_client_inset(px(CLIENT_FRAME_INSET));
     }

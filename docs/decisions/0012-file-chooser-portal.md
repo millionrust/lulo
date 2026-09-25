@@ -64,6 +64,23 @@ What differs from the Mac: the panel is not attached to its parent as a sheet an
 parent is not blocked. When GPUI gains an xdg-foreign import hook this becomes a
 `set_parent_of` call in `open_panel`; nothing else changes.
 
+**The limit, recorded (OTHER-02):** the fallback the Mac panel description
+asks for — "a modal child window centred on the parent" rather than centred
+on the whole output — needs the parent's on-screen geometry, which xdg-foreign
+does not hand back (it is a one-way, opaque *export* handle; the importer
+gets a token it can hand to `set_parent_of`, never a position or size). The
+only other source for that geometry on this compositor is niri's own IPC
+(`rmac_compositor_niri::snapshot()`), matching a window by `app_id`/`pid` and
+then asking niri to move the panel with `MoveFloatingWindow` after it opens —
+which is exactly the shape of Wayland-adjacent, compositor-specific plumbing
+ADR 0013 already flagged as too risky to land without interactive
+verification on the reference PC (see its cross-process drag-source
+amendment). It was not attempted in the OTHER-02 pass that added the other
+fixes on this page; the panel still opens `WindowKind::Dialog`, modal,
+centred on the active output. A future pass that lands this should reuse
+`rmac_compositor_niri::snapshot()` (already a dependency of `rmac-ui` for
+`fit_to_display_after_first_frame`) rather than add a new IPC client.
+
 ## Security: only what the user chose
 
 - Only the current owner of `org.freedesktop.portal.Desktop` may call the backend
@@ -108,7 +125,23 @@ parent is not blocked. When GPUI gains an xdg-foreign import hook this becomes a
 - **Column and Gallery views**: the panel ships Icons and List; Columns needs the Files
   column browser extracted from the Files binary first.
 - **Thumbnails and the image-dimensions line** under icons: not wired yet.
-- **New Folder name sheet**: New Folder creates “untitled folder” (numbered) and opens it.
+- **Applications and Media (Music, Photos, Movies)** are now in the sidebar
+  (OTHER-06): Applications points at `/usr/share/applications` — Linux has no
+  bundle-app folder like the Mac's `/Applications` for a file panel to browse,
+  so the closest real directory stands in; Media uses `~/Music`, `~/Pictures`
+  and `~/Movies` directly, matching `favourite_folders`' existing convention
+  of not reading `XDG_*_DIR` from `user-dirs.dirs` (`crates/finder/src/places.rs`).
+- **New Folder** now asks the name first, in a sheet, before creating anything
+  (OTHER-10, `panel.rs::new_folder`/`new_folder_commit`).
 - **Pop-up menus are drawn inside the panel window**, so a long Where menu in the
   compact Save sheet scrolls instead of extending past the window.
 - **Light mode colours** are the shared rmac tokens, not measured panel values.
+- **Show Options / Hide Options and the app's accessory view** (OTHER-08):
+  the portal's `choices` are already drawn where the Mac puts the app's
+  accessory, but the spec gives no way to tell which choices the Mac would
+  hide behind "Show Options" versus show unconditionally, so there is nothing
+  principled to toggle; left open.
+- **Columns ⌘3, Hide Sidebar and a combined Group/Sort control** (OTHER-07):
+  Hide Sidebar alone would still need every toolbar/content x-position that
+  assumes the 127 pt sidebar gutter to re-flow, which is real, coordinated
+  layout work; left open along with Columns.

@@ -123,6 +123,15 @@
                   align-items: center; justify-content: center; color: var(--text); }
   .btn.def > .plate { background: var(--default); color: #fff; }
   .btn.off > .plate { background: var(--default-off); color: var(--text-off); }
+  .btn.big { width: 112px; height: 30px; }
+  .sheet-card { position: absolute; border-radius: 12px; background: var(--sheet);
+                box-shadow: inset 0 0 0 1px var(--rim), 0 12px 32px rgba(0,0,0,.45);
+                padding: 20px; box-sizing: border-box; }
+  .sheet-title { font: 700 13px var(--font); color: var(--text); }
+  .sheet-body { font-size: 11px; color: var(--label); margin-top: 8px; line-height: 15px; }
+  .sheet-field { position: absolute; left: 20px; right: 20px; height: 26px; border-radius: 6px;
+                 box-shadow: 0 0 0 3px var(--ring); line-height: 26px; padding-left: 7px;
+                 box-sizing: border-box; color: #fff; font-size: 13px; }
   .tile { position: absolute; width: 112px; text-align: center; }
   .tile .ico { width: 64px; height: 64px; color: var(--folder); }
   .tile .ico.file { color: #9B9BA1; }
@@ -149,6 +158,10 @@
 <div class="stage" id="save"></div>
 <h2>4 · Save — expanded (list view) — 880 × 412</h2>
 <div class="stage" id="savex"></div>
+<h2>5 · "Already exists" alert — 260 pt sheet, 112×30 buttons (OTHER-11)</h2>
+<div class="stage" id="replace"></div>
+<h2>6 · New Folder sheet — 320 × 158 (OTHER-10)</h2>
+<div class="stage" id="newfolder"></div>
 
 <script>
 const I = n => `url(../crates/finder/assets/icons/${n}.svg)`;
@@ -163,9 +176,13 @@ const FILES = [
 function sidebar(height, selected) {
   const sections = [
     ['', [['Recents', 'clock'], ['Shared', 'users']]],
-    ['Favourites', [['Documents', 'folder'], ['Downloads', 'download'], ['Desktop', 'folder'],
-                    ['Movies', 'folder'], ['Projects', 'folder']]],
-    ['Locations', [['jake', 'house'], ['Computer', 'hard-drive']]]];
+    // Applications first, like the Mac (rmac: /usr/share/applications — no
+    // real bundle-app folder exists on Linux to point at instead).
+    ['Favourites', [['Applications', 'layout-grid'], ['Downloads', 'download'],
+                    ['Documents', 'folder'], ['Desktop', 'folder'], ['Projects', 'folder']]],
+    ['Locations', [['jake', 'house'], ['Computer', 'hard-drive']]],
+    // Tags omitted: no Linux tag store (docs/decisions/0012-file-chooser-portal.md).
+    ['Media', [['Music', 'music'], ['Photos', 'image'], ['Movies', 'movie']]]];
   let y = 10, html = '';
   sections.forEach(([title, rows], i) => {
     if (i > 0) { y += 13; html += `<div class="hdr" style="top:${y}px">${title}</div>`; y += 19; }
@@ -295,6 +312,37 @@ document.getElementById('savex').innerHTML = `<div class="panel sheet" style="wi
   <div class="hair" style="left:127px;right:0;top:${XH - 65}px"></div>
   ${button(146, XH - 45, 'New Folder', '', 95)}
   ${button(703, XH - 45, 'Cancel')}${button(785, XH - 45, 'Save', 'def')}
+</div>`;
+
+// 5 — "already exists" alert, floated over the compact Save panel
+const RW = 260, RH = 172;
+document.getElementById('replace').innerHTML = `<div class="panel sheet" style="width:${SW}px;height:${SH}px">
+  ${document.getElementById('save').innerHTML}
+  <div class="abs" style="left:0;top:0;width:${SW}px;height:${SH}px;background:rgba(0,0,0,.1)"></div>
+  <div class="abs sheet-card" style="left:${(SW - RW) / 2}px;top:${Math.max(4, (SH - RH) / 2)}px;width:${RW}px;height:${RH}px">
+    <div class="sheet-title">“test.rtf” already exists. Do you want to replace it?</div>
+    <div class="sheet-body">A file or folder with the same name already exists in the
+      folder “lulo-audit”. Replacing it will overwrite its current contents.</div>
+    <div class="abs" style="right:20px;bottom:20px;display:flex;gap:6px">
+      <div class="btn big" style="position:relative"><div class="plate">Cancel</div></div>
+      <div class="btn big def" style="position:relative"><div class="plate">Replace</div></div>
+    </div>
+  </div>
+</div>`;
+
+// 6 — New Folder sheet, floated over the expanded Save browser
+const NW = 320, NH = 158;
+document.getElementById('newfolder').innerHTML = `<div class="panel sheet" style="width:${W}px;height:${XH}px">
+  ${document.getElementById('savex').innerHTML}
+  <div class="abs" style="left:0;top:0;width:${W}px;height:${XH}px;background:rgba(0,0,0,.1)"></div>
+  <div class="abs sheet-card" style="left:${(W - NW) / 2}px;top:${Math.max(4, (XH - NH) / 2)}px;width:${NW}px;height:${NH}px">
+    <div class="sheet-title">New Folder</div>
+    <div class="sheet-body">Name of new folder inside “lulo-audit”:</div>
+    <div class="sheet-field" style="top:74px"><span class="selx">untitled folder</span></div>
+    <div class="abs" style="right:20px;bottom:20px;display:flex;gap:6px">
+      ${button(0, 0, 'Cancel')}${button(82, 0, 'Create', 'def')}
+    </div>
+  </div>
 </div>`;
 </script>
 </body>

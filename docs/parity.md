@@ -35,7 +35,6 @@ Sizes/positions/colours: see FEEL_SPEC.md §4.7 and docs/macos-parity-spec.md
 | DOCK-18 | P2 | S | Missing | Mac: dragging a kept tile off the Dock shows a "Remove" label above it before the poof. / Lulo: the tile arms removal after 1.5 tiles with a fade, but no "Remove" label is drawn. | `crates/rmac-dock/src/reorder.rs:9`, `shell/bins/rmac-dock/src/main.rs` |
 | DOCK-19 | P2 | M | Fixed `5b94eb20` | Mac: clicking a folder stack opens its Fan, Grid or List popover. / Lulo: the stack menu, sort and view settings exist, but the renderer draws no stack tile and no popover (no `EntryId::Stack` in the Dock binary). Now: the shelf renders stack tiles (`9ae44cae`) and a left click opens a Fan (plain row, GPUI has no rotate transform) or Grid popover with a live `rmac_desktop::watch`, newest first, plus an "Open in Files" row. | `shell/bins/rmac-dock/src/main.rs` (`StackPopoverUi`, `render_stack_popover`) |
 | DOCK-20 | P2 | S | Missing | Mac: a minimised-window tile (right of the separator) has its own right-click menu. / Lulo: minimised tiles are drawn, but `menu.rs` has no menu for them, so right-click does nothing. Mac contents not captured: no window was minimised during the audit. | `crates/rmac-dock/src/menu.rs`, `crates/rmac-dock/src/model.rs:442` |
-| DOCK-21 | P2 | S | Fixed | Mac: a folder stack popover is titled with the folder name. / Lulo: it said "stack". | shell/bins/rmac-dock/src/main.rs |
 
 ### Menu bar
 

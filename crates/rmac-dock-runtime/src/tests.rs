@@ -419,6 +419,40 @@ fn place_changes_rebuild_special_items_and_failures_keep_last_known_good() {
 }
 
 #[test]
+fn snapshot_resolves_configured_stacks_against_the_live_filesystem() {
+    // Regression: Coordinator::snapshot() only ever called
+    // Model::build_with_places, so model.stacks stayed empty no matter what
+    // dock_stacks held (§ folder/file stacks left of the Trash).
+    let mut coordinator = Coordinator::default();
+    coordinator.apply_places(Ok(places_report("/home/alex/Downloads", 0)));
+    let mut settings = rmac_shell_settings::ShellSettings::default();
+    settings.dock_stacks = vec![
+        rmac_shell_settings::DockStackEntry {
+            kind: rmac_shell_settings::DockStackKind::Downloads,
+            display_as: rmac_shell_settings::DockStackDisplayAs::default(),
+            view_content_as: rmac_shell_settings::DockStackViewContentAs::default(),
+            sort_by: rmac_shell_settings::DockStackSortBy::default(),
+        },
+        rmac_shell_settings::DockStackEntry {
+            kind: rmac_shell_settings::DockStackKind::Path {
+                path: "/home/alex/does-not-exist".into(),
+            },
+            display_as: rmac_shell_settings::DockStackDisplayAs::default(),
+            view_content_as: rmac_shell_settings::DockStackViewContentAs::default(),
+            sort_by: rmac_shell_settings::DockStackSortBy::default(),
+        },
+    ];
+    coordinator.apply_settings(Ok(settings));
+    let snapshot = coordinator.snapshot();
+    assert_eq!(snapshot.model.stacks.len(), 2);
+    assert!(snapshot.model.stacks[0].available, "Downloads exists");
+    assert!(
+        !snapshot.model.stacks[1].available,
+        "the configured path does not exist"
+    );
+}
+
+#[test]
 fn display_refresh_hints_are_narrow_and_forward_compatible() {
     assert!(compositor_event_affects_displays(
         &rmac_compositor::Event::OutputsReplaced {

@@ -341,7 +341,9 @@ mod linux_wayland {
     struct StackPopoverUi {
         kind: rmac_shell_settings::DockStackKind,
         name: String,
-        display_as: rmac_shell_settings::DockStackDisplayAs,
+        // display_as (Stack/Folder) only affects the tile's own icon style
+        // on the Mac, which this doesn't render yet -- nothing here reads
+        // it. Not stored.
         view_content_as: rmac_shell_settings::DockStackViewContentAs,
         /// Resting centre of the stack tile that opened this.
         anchor: f32,
@@ -1113,7 +1115,7 @@ mod linux_wayland {
             let Some(model) = self.status.read(cx).model().cloned() else {
                 return;
             };
-            let (name, display_as, view_content_as, sort_by, path) = {
+            let (name, view_content_as, sort_by, path) = {
                 let Some(menu) = model.stack_context_menu(&kind) else {
                     return;
                 };
@@ -1122,24 +1124,9 @@ mod linux_wayland {
                     // to show a popover for.
                     return;
                 };
-                (
-                    menu.name,
-                    menu.display_as,
-                    menu.view_content_as,
-                    menu.sort_by,
-                    path,
-                )
+                (menu.name, menu.view_content_as, menu.sort_by, path)
             };
-            self.open_stack_popover(
-                kind,
-                name,
-                path,
-                display_as,
-                view_content_as,
-                sort_by,
-                anchor,
-                cx,
-            );
+            self.open_stack_popover(kind, name, path, view_content_as, sort_by, anchor, cx);
         }
 
         #[allow(clippy::too_many_arguments)]
@@ -1148,7 +1135,6 @@ mod linux_wayland {
             kind: rmac_shell_settings::DockStackKind,
             name: String,
             path: PathBuf,
-            display_as: rmac_shell_settings::DockStackDisplayAs,
             view_content_as: rmac_shell_settings::DockStackViewContentAs,
             sort_by: rmac_shell_settings::DockStackSortBy,
             anchor: f32,
@@ -1195,7 +1181,6 @@ mod linux_wayland {
             self.stack_popover = Some(StackPopoverUi {
                 kind,
                 name,
-                display_as,
                 view_content_as,
                 anchor,
                 snapshot: None,
@@ -5344,7 +5329,7 @@ mod linux_wayland {
                 let windows = windows.clone();
                 cx.spawn(async move |cx| {
                     while let Ok(command) = drag_commands.recv().await {
-                        let _ = cx.update(|cx| apply_drag_command(&windows.borrow(), command, cx));
+                        cx.update(|cx| apply_drag_command(&windows.borrow(), command, cx));
                     }
                 })
                 .detach();

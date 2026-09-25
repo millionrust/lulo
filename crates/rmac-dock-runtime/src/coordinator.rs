@@ -15,12 +15,14 @@ impl Coordinator {
                 )
             },
             |places| {
-                rmac_dock::Model::build_with_places(
+                let stacks = resolve_stacks(&self.settings.dock_stacks, places);
+                rmac_dock::Model::build_with_stacks(
                     &self.settings.pinned_apps,
                     &self.settings.dock,
                     &self.catalog,
                     &compositor,
                     places,
+                    &stacks,
                 )
             },
         );

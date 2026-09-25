@@ -24,6 +24,9 @@ mod overlays;
 
 impl Render for MonitorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if window.is_window_active() {
+            self.publish_menu_state(cx);
+        }
         let layout =
             super::responsive_layout::toolbar_layout(f32::from(window.bounds().size.width));
         let persistence_error = self.persistence_error.clone();

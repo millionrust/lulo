@@ -99,10 +99,12 @@ impl EditorView {
 
         // A close request from outside the window (the Dock's or the menu
         // bar's Quit, ⌘Tab's Q, or logging out) takes the same unsaved-changes
-        // path as ⌘W, as on the Mac: a clean document closes, a dirty one
-        // comes forward with Save / Don't Save / Cancel (or with the alert or
-        // save already in progress). The guard removes the window itself when
-        // it may close, so the compositor's request is always declined here.
+        // path as ⌘W, as on the Mac (TE-18): a clean document closes, a
+        // dirty saved one autosaves and closes, and a dirty Untitled one
+        // comes forward with the Save sheet (Delete / Cancel / Save) — or
+        // with the alert or save already in progress. The guard removes the
+        // window itself when it may close, so the compositor's request is
+        // always declined here.
         let view = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
             view.update(cx, |this, cx| {

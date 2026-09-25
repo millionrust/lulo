@@ -41,10 +41,15 @@ fn selected_tab_fill() -> gpui::Hsla {
 /// inner button keeps its own mouse click, hover, focus ring, and disabled
 /// styling exactly as before; `activate` runs the identical state change a
 /// mouse click already runs, so both input paths do the same thing.
+/// `enabled` mirrors the wrapped `button`'s own `.disabled()` state (MON-12):
+/// a disabled toolbar icon must refuse an AT-SPI Click the same way it
+/// refuses a mouse click, or a screen reader / accessibility client could
+/// still trigger it — e.g. quitting a process with nothing selected.
 fn accessible_icon_button(
     id: &'static str,
     name: &'static str,
     expanded: Option<bool>,
+    enabled: bool,
     button: impl IntoElement,
     view: Entity<MonitorView>,
     activate: fn(&mut MonitorView, &mut Window, &mut Context<MonitorView>),
@@ -56,8 +61,10 @@ fn accessible_icon_button(
         .when_some(expanded, |element, expanded| {
             element.aria_expanded(expanded)
         })
-        .on_a11y_action(AccessibleAction::Click, move |_data, window, cx| {
-            view.update(cx, |this, cx| activate(this, window, cx));
+        .when(enabled, |element| {
+            element.on_a11y_action(AccessibleAction::Click, move |_data, window, cx| {
+                view.update(cx, |this, cx| activate(this, window, cx));
+            })
         })
         .child(button)
 }
@@ -359,6 +366,7 @@ impl MonitorView {
                                 "stop",
                                 "Quit Process",
                                 None,
+                                has_selection,
                                 self.toolbar_icon(
                                     "stop",
                                     IconName::CircleX,
@@ -381,6 +389,7 @@ impl MonitorView {
                                 "inspect",
                                 "Inspect Process",
                                 None,
+                                has_selection,
                                 self.toolbar_icon(
                                     "inspect",
                                     IconName::Info,
@@ -408,6 +417,7 @@ impl MonitorView {
                             "columns",
                             "Columns",
                             Some(self.cols_menu_open),
+                            self.tab.has_process_table(),
                             Button::new("columns", "")
                                 .icon(Icon::new(IconName::Ellipsis).text_color(mac::text()))
                                 .ghost()

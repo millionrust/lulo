@@ -81,7 +81,12 @@ pub(super) struct ActiveTrash {
 #[cfg(any(target_os = "linux", test))]
 #[derive(Clone)]
 pub(super) struct DeleteConfirmation {
+    /// Populated for a Bin-view Delete Immediately or an Empty Trash — the
+    /// items already live in the Trash.
     pub(super) items: Vec<trash_store::TrashedItem>,
+    /// Populated instead of `items` for Delete Immediately on a selection
+    /// outside the Bin: live paths that have not been trashed yet.
+    pub(super) paths: Vec<std::path::PathBuf>,
     /// Finder ▸ Empty Trash… rather than Delete Immediately on a selection.
     pub(super) empty_trash: bool,
 }

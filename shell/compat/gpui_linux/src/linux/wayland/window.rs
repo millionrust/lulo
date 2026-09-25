@@ -1564,15 +1564,30 @@ impl PlatformWindow for WaylandWindow {
 
         // Keep window geometry consistent with configure handling. On Wayland, window geometry is
         // surface-local: resizing should not attempt to translate the window; the compositor
-        // controls placement. We also account for client-side decoration insets and tiling.
-        let window_geometry = inset_by_tiling(
-            Bounds {
-                origin: Point::default(),
-                size,
-            },
-            state.inset(),
-            state.tiling,
-        )
+        // controls placement.
+        //
+        // `size` here is the caller's desired *content* size — the same convention
+        // `WindowOptions`'s own initial size uses, and initial sizing is exact (CALC-02):
+        // `state.bounds` (the buffer) is created at exactly the requested size, with no inset
+        // adjustment, because no decoration inset has been negotiated yet at that point. The
+        // configure handler's `window_geometry` (see `handle_configure`) is computed the other
+        // way round: the compositor hands it an *outer* size, `compute_outer_size` adds the CSD
+        // inset back to get the content size actually rendered into `state.bounds`, and *then*
+        // `inset_by_tiling` subtracts the inset again from that (outer) `state.bounds` to recover
+        // the geometry it reports back — a round trip that cancels out.
+        //
+        // This runtime path has no such compositor-supplied outer size to round-trip through:
+        // `size` is already the exact content size the caller wants (as at creation), so the
+        // geometry announced here must be `size` unchanged. Running it through
+        // `inset_by_tiling` anyway shrank the announced geometry by the (by then
+        // already-negotiated, non-zero) inset with nothing upstream to cancel it — niri then
+        // clipped the surface to that too-small geometry, so a runtime resize (e.g. Calculator
+        // switching to Scientific) settled about 2×inset short in each dimension even though the
+        // buffer itself was rendered at the requested size.
+        let window_geometry = Bounds {
+            origin: Point::default(),
+            size,
+        }
         .map(|v| f32::from(v) as i32)
         .map_size(|v| if v <= 0 { 1 } else { v });
 

@@ -55,11 +55,7 @@ pub const CARD_TEXT_SIZE: f32 = 13.0;
 pub const CARD_SECONDARY: u32 = 0xB9B9B9;
 pub const SECOND_HAND: u32 = 0xF09748;
 
-/// Alarms empty state.
-pub const EMPTY_GLYPH: f32 = 53.0;
-pub const EMPTY_GLYPH_TOP: f32 = 339.5;
-pub const EMPTY_GLYPH_FILL: u32 = 0x9A9A9A;
-pub const EMPTY_LABEL_TOP: f32 = 414.0;
+/// Alarms empty state (CLOCK-08): centered text only, no icon.
 pub const EMPTY_LABEL: u32 = 0xDDDDDD;
 /// Alarm rows (S).
 pub const ALARM_ROW_HEIGHT: f32 = 84.0;

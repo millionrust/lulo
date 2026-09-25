@@ -10,18 +10,43 @@ pub(super) fn empty_trash_prompt(bin: &str) -> (String, String) {
     )
 }
 
+/// File ▸ Delete Immediately…'s alert, in the Mac's exact wording: the
+/// question is the title, the irreversibility warning is the message.
 #[cfg(any(target_os = "linux", test))]
-pub(super) fn permanent_delete_prompt(count: usize, name: Option<&str>) -> String {
+pub(super) fn permanent_delete_prompt(count: usize, name: Option<&str>) -> (String, String) {
     if count == 1 {
-        format!(
-            "“{}” will be deleted immediately. This action cannot be undone. Deletion of an item cannot be cancelled once it begins.",
-            name.unwrap_or("This item")
+        (
+            format!(
+                "Are you sure you want to delete “{}”?",
+                name.unwrap_or("this item")
+            ),
+            "This item will be deleted immediately. You can’t undo this action.".to_owned(),
         )
     } else {
-        format!(
-            "{count} items will be deleted immediately. This action cannot be undone. Deletion of an item cannot be cancelled once it begins."
+        (
+            format!("Are you sure you want to delete these {count} items?"),
+            "These items will be deleted immediately. You can’t undo this action.".to_owned(),
         )
     }
+}
+
+/// Item count for a delete confirmation, whichever of its two sources
+/// (already-trashed `items`, or live `paths` outside the Bin) is populated.
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn delete_confirmation_count(confirmation: &DeleteConfirmation) -> usize {
+    confirmation.items.len() + confirmation.paths.len()
+}
+
+/// The sanitized file name of the first item in a delete confirmation, for
+/// the single-item alert wording.
+#[cfg(any(target_os = "linux", test))]
+pub(super) fn delete_confirmation_first_name(confirmation: &DeleteConfirmation) -> Option<String> {
+    let name = confirmation
+        .items
+        .first()
+        .and_then(|item| item.original_path.file_name())
+        .or_else(|| confirmation.paths.first().and_then(|path| path.file_name()))?;
+    Some(sanitize_dialog_name(&name.to_string_lossy()))
 }
 
 pub(super) fn unique_path(path: PathBuf) -> PathBuf {

@@ -138,25 +138,14 @@ impl FinderView {
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
         let confirmation = self.delete_confirmation.as_ref()?;
-        let count = confirmation.items.len();
-        let name = confirmation
-            .items
-            .first()
-            .and_then(|item| item.original_path.file_name())
-            .map(|name| sanitize_dialog_name(&name.to_string_lossy()));
+        let count = delete_confirmation_count(confirmation);
+        let name = delete_confirmation_first_name(confirmation);
         let (title, message, confirm) = if confirmation.empty_trash {
             let (title, message) = empty_trash_prompt(self.file_words.bin());
             (title, message, format!("Empty {}", self.file_words.bin()))
         } else {
-            (
-                if count == 1 {
-                    "Delete Item Permanently?".to_owned()
-                } else {
-                    "Delete Items Permanently?".to_owned()
-                },
-                permanent_delete_prompt(count, name.as_deref()),
-                "Delete".to_owned(),
-            )
+            let (title, message) = permanent_delete_prompt(count, name.as_deref());
+            (title, message, "Delete".to_owned())
         };
         let buttons = vec![
             rmac_ui::dialog_button(
@@ -174,6 +163,9 @@ impl FinderView {
             .on_click(cx.listener(|this, _, _, cx| this.confirm_permanent_delete(cx)))
             .into_any_element(),
         ];
-        Some(rmac_ui::alert(title, message, buttons).into_any_element())
+        // Mac's caution alert keeps Cancel as the keyboard default so an
+        // errant Return does not delete anything; Delete is red but not the
+        // blue "default" button.
+        Some(rmac_ui::alert_cancel_default(title, message, buttons).into_any_element())
     }
 }

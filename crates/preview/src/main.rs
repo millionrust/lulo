@@ -37,6 +37,7 @@ gpui::actions!(
         SelectAll,
         GoToPage,
         PrintDocument,
+        ExportAsPdf,
     ]
 );
 

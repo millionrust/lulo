@@ -5,9 +5,9 @@ mod rtf;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    div, font, px, AccessibleAction, Context, InteractiveElement as _, IntoElement, ParentElement,
-    Render, Role, SharedString, StatefulInteractiveElement as _, Styled, StyledText, TextRun,
-    UnderlineStyle, Window,
+    div, font, px, AccessibleAction, Context, InteractiveElement as _, IntoElement, KeyDownEvent,
+    ParentElement, Render, Role, SharedString, StatefulInteractiveElement as _, Styled, StyledText,
+    TextRun, UnderlineStyle, Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_ui::{mac, Button, SearchField, TextField};

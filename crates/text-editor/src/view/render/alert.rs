@@ -9,9 +9,14 @@ impl EditorView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
-        let (title, message, buttons): (&str, String, Vec<gpui::AnyElement>) = match alert {
+        // TE-18: Esc must cancel the Save sheet (only) — every other alert
+        // here already has an unambiguous Cancel button reachable by mouse,
+        // and several (Recover, Conflict) have no safe "this is Cancel"
+        // default, so Esc is left to do nothing for them rather than guess.
+        let escape_cancels = matches!(&alert, ActiveAlert::ConfirmSave(_));
+        let (title, message, buttons): (String, String, Vec<gpui::AnyElement>) = match alert {
             ActiveAlert::Recover(prompt) => (
-                "Recover unsaved changes?",
+                "Recover unsaved changes?".to_owned(),
                 format!(
                     "An autosaved draft for “{}” was found.{}",
                     prompt.document_label,
@@ -41,16 +46,23 @@ impl EditorView {
                 ],
             ),
             ActiveAlert::ConfirmSave(_) => (
-                "Do you want to save the changes you made?",
-                "Your changes will be lost if you don't save them.".into(),
+                // TE-18: this only ever fires for a document that has never
+                // been saved (`guarded` autosaves a path-backed one instead)
+                // — the Mac's Save sheet for a new "Untitled" document.
+                format!(
+                    "Do you want to keep this new document “{}”?",
+                    self.filename()
+                ),
+                "You can choose to save your changes, or delete this document immediately."
+                    .to_owned(),
                 vec![
-                    rmac_ui::dialog_button("alert-cancel", "Cancel", Normal)
-                        .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
-                        .into_any_element(),
-                    rmac_ui::dialog_button("alert-dontsave", "Don't Save", Destructive)
+                    rmac_ui::dialog_button("alert-delete", "Delete", Destructive)
                         .on_click(
                             cx.listener(|this, _, window, cx| this.alert_secondary(window, cx)),
                         )
+                        .into_any_element(),
+                    rmac_ui::dialog_button("alert-cancel", "Cancel", Normal)
+                        .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
                         .into_any_element(),
                     rmac_ui::dialog_button("alert-save", "Save", Primary)
                         .on_click(cx.listener(|this, _, window, cx| this.alert_confirm(window, cx)))
@@ -58,7 +70,7 @@ impl EditorView {
                 ],
             ),
             ActiveAlert::Conflict => (
-                "The document changed in another application.",
+                "The document changed in another application.".to_owned(),
                 "Text Editor did not overwrite the external version. Reload discards this local buffer, Save a Copy preserves it at a new location, and Overwrite requires a fresh review plus another exact preflight."
                     .into(),
                 vec![
@@ -87,7 +99,7 @@ impl EditorView {
                 ],
             ),
             ActiveAlert::ConfirmOverwrite { .. } => (
-                "Overwrite the external document?",
+                "Overwrite the external document?".to_owned(),
                 "Text Editor reread the complete external revision. Overwrite will run a second exact preflight and stop if the document changes again. This cannot preserve the external edits."
                     .into(),
                 vec![
@@ -106,7 +118,7 @@ impl EditorView {
                 ],
             ),
             ActiveAlert::ConfirmPlainTextConversion => (
-                "Convert to plain text?",
+                "Convert to plain text?".to_owned(),
                 "This document's formatting — bold, italic, underline, fonts, sizes and colour — will be lost. This cannot be undone, though the original file is never changed unless you save over it."
                     .into(),
                 vec![
@@ -119,13 +131,25 @@ impl EditorView {
                 ],
             ),
             ActiveAlert::Error { title, message } => (
-                title,
+                title.to_owned(),
                 message,
                 vec![rmac_ui::dialog_button("alert-ok", "OK", Primary)
                     .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
                     .into_any_element()],
             ),
         };
-        rmac_ui::alert(title, message, buttons)
+        let dialog = rmac_ui::alert(title, message, buttons);
+        if escape_cancels {
+            dialog
+                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                    if event.keystroke.key.as_str() == "escape" {
+                        cx.stop_propagation();
+                        this.alert_cancel(cx);
+                    }
+                }))
+                .into_any_element()
+        } else {
+            dialog.into_any_element()
+        }
     }
 }

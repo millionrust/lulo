@@ -2387,6 +2387,28 @@ impl TrashStore {
         self.trash_in_layout(&source, &layout, Local::now(), Some(cancel))
     }
 
+    /// File ▸ Delete Immediately… (⌥⌘⌫) on a selection anywhere, not just
+    /// inside the Bin: Mac deletes the item outright, but rmac has no
+    /// crash-safe "delete a live path" journal entry, only a "delete a
+    /// Trash record" one. Route the item through the existing trash/
+    /// delete-permanently pipeline instead of adding a second one, so the
+    /// same crash-recovery guarantees apply; the net effect on disk and to
+    /// the user is identical — the item is gone with nothing left in the
+    /// Bin.
+    #[cfg(any(target_os = "linux", test))]
+    pub(crate) fn delete_immediately(&self, source: &Path, cancel: &AtomicBool) -> io::Result<()> {
+        let canonical = canonical_source_path(source)?;
+        self.trash(source, cancel)?;
+        let items = self.list()?;
+        let item = items
+            .into_iter()
+            .find(|item| item.original_path == canonical)
+            .ok_or_else(|| {
+                invalid_data("item vanished from the Bin before it could be deleted permanently")
+            })?;
+        self.delete_permanently(&item, cancel)
+    }
+
     #[cfg(any(target_os = "linux", test))]
     pub(crate) fn restore(&self, item: &TrashedItem, cancel: &AtomicBool) -> io::Result<PathBuf> {
         let _lock = self.lock()?;

@@ -24,6 +24,7 @@ pub enum SortOrder {
     Name,
     Kind,
     DateModified,
+    DateCreated,
     Size,
 }
 
@@ -42,6 +43,7 @@ pub struct Item {
     pub kind: ItemKind,
     pub size_bytes: u64,
     pub modified_millis: u128,
+    pub created_millis: u128,
 }
 
 impl fmt::Debug for Item {
@@ -53,6 +55,7 @@ impl fmt::Debug for Item {
             .field("kind", &self.kind)
             .field("size_bytes", &self.size_bytes)
             .field("modified_millis", &self.modified_millis)
+            .field("created_millis", &self.created_millis)
             .finish()
     }
 }
@@ -192,6 +195,12 @@ pub fn scan(directory: &Path, sort: SortOrder) -> Result<Snapshot, Error> {
                 .modified()
                 .ok()
                 .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+                .map_or(0, |duration| duration.as_millis()),
+            created_millis: metadata
+                .created()
+                .or_else(|_| metadata.modified())
+                .ok()
+                .and_then(|created| created.duration_since(UNIX_EPOCH).ok())
                 .map_or(0, |duration| duration.as_millis()),
         });
         if items.len() > MAX_DESKTOP_ITEMS {
@@ -424,6 +433,7 @@ pub fn sort_items(items: &mut [Item], sort: SortOrder) {
             SortOrder::Name => left.name.to_lowercase().cmp(&right.name.to_lowercase()),
             SortOrder::Kind => stacks::kind_label(left).cmp(stacks::kind_label(right)),
             SortOrder::DateModified => left.modified_millis.cmp(&right.modified_millis).reverse(),
+            SortOrder::DateCreated => left.created_millis.cmp(&right.created_millis).reverse(),
             SortOrder::Size => left.size_bytes.cmp(&right.size_bytes).reverse(),
         };
         order.then_with(|| left.name.cmp(&right.name))
@@ -608,5 +618,32 @@ mod tests {
             root.join("untitled folder 1")
         );
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn sort_by_date_created_orders_newest_first() {
+        let item = |name: &str, modified: u128, created: u128| Item {
+            path: PathBuf::from("/desk").join(name),
+            name: name.to_owned(),
+            kind: ItemKind::File,
+            size_bytes: 1,
+            modified_millis: modified,
+            created_millis: created,
+        };
+        // Creation times deliberately differ from modification times so the
+        // assertion can only pass by reading `created_millis`.
+        let mut items = vec![
+            item("a.txt", 999, 10),
+            item("b.txt", 1, 30),
+            item("c.txt", 1, 20),
+        ];
+        sort_items(&mut items, SortOrder::DateCreated);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.name.as_str())
+                .collect::<Vec<_>>(),
+            ["b.txt", "c.txt", "a.txt"]
+        );
     }
 }

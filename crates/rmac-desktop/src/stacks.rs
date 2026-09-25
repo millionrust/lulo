@@ -180,6 +180,7 @@ mod tests {
             kind,
             size_bytes: 1,
             modified_millis: modified,
+            created_millis: 0,
         }
     }
 

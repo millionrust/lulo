@@ -255,6 +255,7 @@ pub(crate) fn submenu_rows(
             ("Name", SortOrder::Name),
             ("Kind", SortOrder::Kind),
             ("Date Modified", SortOrder::DateModified),
+            ("Date Created", SortOrder::DateCreated),
             ("Size", SortOrder::Size),
         ]
         .into_iter()

@@ -174,7 +174,7 @@ pub(super) fn preserve_disabled_after_removal(
 pub(super) fn systemd_background_services(
     environment: &Environment,
 ) -> Result<(Vec<BackgroundService>, bool), Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| {
+    let connection = rmac_dbus::session_blocking().map_err(|_| {
         Error::new(
             ErrorKind::Unavailable,
             "the systemd user manager is unavailable on the session bus",
@@ -256,7 +256,7 @@ pub(super) fn user_unit_names(directories: &[PathBuf]) -> HashSet<String> {
 
 #[cfg(target_os = "linux")]
 pub(super) fn systemd_set_enabled(id: &str, enabled: bool) -> Result<(), Error> {
-    let connection = zbus::blocking::Connection::session().map_err(|_| {
+    let connection = rmac_dbus::session_blocking().map_err(|_| {
         Error::new(
             ErrorKind::Unavailable,
             "the systemd user manager is unavailable",

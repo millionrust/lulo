@@ -17,4 +17,5 @@ trash.workspace = true
 async-io.workspace = true
 futures-util.workspace = true
 libc.workspace = true
+rmac-dbus.workspace = true
 zbus.workspace = true

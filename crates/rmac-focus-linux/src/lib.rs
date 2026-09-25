@@ -99,7 +99,7 @@ async fn watch_once(sender: &Sender<Event>) -> Result<(), Error> {
     use futures_util::{FutureExt as _, StreamExt as _};
     use zbus::{message::Type, MatchRule, MessageStream};
 
-    let connection = zbus::Connection::system().await.map_err(|_| Error {
+    let connection = rmac_dbus::system().await.map_err(|_| Error {
         kind: ErrorKind::Connect,
     })?;
     let rule = |path: &'static str| -> Result<_, Error> {

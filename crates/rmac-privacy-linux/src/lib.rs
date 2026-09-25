@@ -10,7 +10,7 @@ use std::fmt;
 use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
-use zbus::blocking::{Connection, Proxy};
+use zbus::blocking::Proxy;
 use zbus::zvariant::OwnedValue;
 
 mod portal;

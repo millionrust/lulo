@@ -117,7 +117,7 @@ pub(super) async fn watch_systemd_once(
     use futures_util::{FutureExt as _, StreamExt as _};
     use zbus::{message::Type, MatchRule, MessageStream};
 
-    let connection = zbus::Connection::session().await.map_err(|_| {
+    let connection = rmac_dbus::session().await.map_err(|_| {
         Error::new(
             ErrorKind::Unavailable,
             "systemd user event stream is unavailable",

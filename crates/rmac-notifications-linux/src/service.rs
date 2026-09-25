@@ -51,7 +51,7 @@ impl HistoryAuthority {
         let store = rmac_notifications_store::Store::from_environment()
             .map_err(|_| ServiceError::History)?;
         let center = store.load().map_err(|_| ServiceError::History)?.center;
-        let focus_connection = Connection::session().await.map_err(|_| ServiceError::Bus)?;
+        let focus_connection = rmac_dbus::session().await.map_err(|_| ServiceError::Bus)?;
         Ok(Self {
             center: Arc::new(Mutex::new(center)),
             store,

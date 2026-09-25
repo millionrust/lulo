@@ -21,6 +21,7 @@ rmac-audio.workspace = true
 rmac-compositor.workspace = true
 rmac-focus-linux.workspace = true
 rmac-icon.workspace = true
+rmac-dbus.workspace = true
 rmac-notifications.workspace = true
 rmac-notifications-runtime.workspace = true
 rmac-notifications-store.workspace = true

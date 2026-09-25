@@ -90,7 +90,7 @@ impl Store for Proxy<'_> {
 }
 
 pub fn snapshot() -> Result<Snapshot, Error> {
-    let connection = match Connection::session() {
+    let connection = match rmac_dbus::session_blocking() {
         Ok(connection) => connection,
         Err(_) => {
             return Ok(Snapshot {
@@ -113,7 +113,7 @@ pub fn snapshot() -> Result<Snapshot, Error> {
 
 pub fn reset_decision(expected: &PortalDecision) -> Result<Snapshot, Error> {
     validate_decision(expected)?;
-    let connection = Connection::session().map_err(|_| {
+    let connection = rmac_dbus::session_blocking().map_err(|_| {
         Error::new(
             "connect to the portal PermissionStore",
             "session D-Bus is unavailable",
@@ -164,7 +164,7 @@ pub(super) async fn watch_once(
     use futures_util::{FutureExt as _, StreamExt as _};
     use zbus::{message::Type, MatchRule, MessageStream};
 
-    let connection = zbus::Connection::session()
+    let connection = rmac_dbus::session()
         .await
         .map_err(|error| Error::new("watch portal permissions", error.to_string()))?;
     let changed_rule = MatchRule::builder()

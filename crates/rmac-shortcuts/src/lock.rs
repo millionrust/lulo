@@ -282,7 +282,7 @@ pub(crate) fn restart_idle_manager() -> Result<(), Error> {
 pub async fn coordinate(policy_path: &Path) -> Result<(), Error> {
     use futures_util::StreamExt as _;
 
-    let connection = zbus::Connection::system()
+    let connection = rmac_dbus::system()
         .await
         .map_err(|_| Error::failed(Operation::ConnectLogind))?;
     let manager = LoginManagerProxy::new(&connection)
@@ -657,7 +657,7 @@ fn terminate(locker: &mut Child) {
 #[cfg(target_os = "linux")]
 fn set_locked_hint(locked: bool) -> Result<(), Error> {
     let session_id = session_id_from_environment()?;
-    let connection = zbus::blocking::Connection::system()
+    let connection = rmac_dbus::system_blocking()
         .map_err(|error| Error::io(Operation::UpdateLockedHint, io::Error::other(error)))?;
     let manager = LoginManagerProxyBlocking::new(&connection)
         .map_err(|error| Error::io(Operation::ResolveSession, io::Error::other(error)))?;

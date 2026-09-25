@@ -16,4 +16,5 @@ async-channel.workspace = true
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 async-io.workspace = true
 futures-util.workspace = true
+rmac-dbus.workspace = true
 zbus.workspace = true

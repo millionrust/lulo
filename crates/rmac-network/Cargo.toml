@@ -20,7 +20,9 @@ zeroize.workspace = true
 async-io.workspace = true
 futures-util.workspace = true
 libloading.workspace = true
+rmac-dbus.workspace = true
 zbus.workspace = true
 
 [dev-dependencies]
+rmac-dbus.workspace = true
 zbus.workspace = true

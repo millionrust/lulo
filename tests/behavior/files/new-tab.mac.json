@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "scenario": "files/new-tab",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "tabbed": {
+      "windows": {
+        "count": 1
+      },
+      "tabs": {
+        "count": 2
+      }
+    }
+  }
+}

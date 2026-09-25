@@ -1,0 +1,36 @@
+{
+  "format": 1,
+  "scenario": "settings/search",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "focused": {
+      "focus": {
+        "role": "search-field",
+        "label": "Search"
+      }
+    },
+    "typed": {
+      "focus": {
+        "role": "search-field",
+        "value": "wallpaper",
+        "selection": [
+          9,
+          9
+        ],
+        "selected_text": "",
+        "selected_all": false,
+        "label": "Search"
+      }
+    },
+    "opened": {
+      "windows": {
+        "count": 1,
+        "front": "Wallpaper",
+        "titles": [
+          "Wallpaper"
+        ]
+      }
+    }
+  }
+}

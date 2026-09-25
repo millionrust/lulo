@@ -1,0 +1,13 @@
+{
+  "title": "Save (⌘S) on an Untitled document opens the Save panel with the name selected",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {"type": "Hello"},
+    {"key": "cmd-s", "settle": 1.5},
+    {"observe": "panel", "facts": ["focus", "dialog"]},
+    {"key": "escape", "settle": 1.0},
+    {"observe": "cancelled", "facts": ["dialog", "windows"]}
+  ],
+  "omit": ["panel.dialog.texts"]
+}

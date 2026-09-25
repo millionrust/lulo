@@ -1,0 +1,23 @@
+{
+  "format": 1,
+  "scenario": "calculator/keypad",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "sum": {
+      "display": {
+        "value": "19"
+      }
+    },
+    "product": {
+      "display": {
+        "value": "57"
+      }
+    },
+    "cleared": {
+      "display": {
+        "value": "0"
+      }
+    }
+  }
+}

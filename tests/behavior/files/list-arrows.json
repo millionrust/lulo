@@ -1,0 +1,16 @@
+{
+  "title": "↓ and ↑ move the selection in list view and stop at the ends",
+  "app": "files",
+  "setup": {"files": {"a.txt": "Behaviour-suite fixture. Safe to delete.\n", "b.txt": "Behaviour-suite fixture. Safe to delete.\n", "c.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"reveal": "a.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "down"},
+    {"observe": "down", "facts": ["selection"]},
+    {"key": "down"},
+    {"key": "down"},
+    {"observe": "bottom", "facts": ["selection"]},
+    {"key": "up"},
+    {"observe": "up", "facts": ["selection"]}
+  ]
+}

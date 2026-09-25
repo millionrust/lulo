@@ -1,0 +1,15 @@
+{
+  "title": "Calculator: typed keys update the display; Escape clears",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {"key": "escape"},
+    {"key": "escape"},
+    {"type": "12+7="},
+    {"observe": "sum", "facts": ["display"]},
+    {"type": "*3="},
+    {"observe": "product", "facts": ["display"]},
+    {"key": "escape"},
+    {"observe": "cleared", "facts": ["display"]}
+  ]
+}

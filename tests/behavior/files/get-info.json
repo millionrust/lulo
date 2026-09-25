@@ -1,0 +1,11 @@
+{
+  "title": "Get Info (⌘I) opens an “<name> Info” window",
+  "app": "files",
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"reveal": "report.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "cmd-i", "settle": 1.2},
+    {"observe": "info", "facts": ["windows"]}
+  ]
+}

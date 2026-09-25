@@ -1,0 +1,27 @@
+{
+  "format": 1,
+  "scenario": "files/quick-look",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "previewing": {
+      "windows": {
+        "count": 2,
+        "front": "Quick Look",
+        "titles": [
+          "Quick Look",
+          "sandbox"
+        ]
+      }
+    },
+    "closed": {
+      "windows": {
+        "count": 1,
+        "front": "sandbox",
+        "titles": [
+          "sandbox"
+        ]
+      }
+    }
+  }
+}

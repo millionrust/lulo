@@ -1,0 +1,9 @@
+{
+  "title": "New (⌘N) opens a second Untitled window with the text area focused",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {"key": "cmd-n", "settle": 1.2},
+    {"observe": "new", "facts": ["windows", "focus"]}
+  ]
+}

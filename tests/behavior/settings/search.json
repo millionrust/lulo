@@ -1,0 +1,15 @@
+{
+  "title": "Settings search: ⌘F focuses search, typing filters, ↓ then Return opens the first match",
+  "app": "settings",
+  "launch": {},
+  "steps": [
+    {"key": "cmd-f"},
+    {"observe": "focused", "facts": ["focus"]},
+    {"type": "wallpaper", "settle": 1.5},
+    {"observe": "typed", "facts": ["focus"]},
+    {"key": "down"},
+    {"key": "return", "settle": 1.5},
+    {"observe": "opened", "facts": ["windows"]}
+  ],
+  "omit": ["focused.focus.value", "focused.focus.selection", "focused.focus.selected_text", "focused.focus.selected_all"]
+}

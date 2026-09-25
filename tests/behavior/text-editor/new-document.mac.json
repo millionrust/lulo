@@ -1,0 +1,29 @@
+{
+  "format": 1,
+  "scenario": "text-editor/new-document",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "new": {
+      "windows": {
+        "count": 2,
+        "front": "Untitled 2",
+        "titles": [
+          "Untitled 2",
+          "Untitled"
+        ]
+      },
+      "focus": {
+        "role": "text-area",
+        "value": "",
+        "selection": [
+          0,
+          0
+        ],
+        "selected_text": "",
+        "selected_all": false,
+        "label": null
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "title": "New Folder (⇧⌘N) leaves the new folder's whole name selected for editing",
+  "app": "files",
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "cmd-shift-n"},
+    {"observe": "created", "facts": ["focus", "files"]}
+  ]
+}

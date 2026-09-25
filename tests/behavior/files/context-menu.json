@@ -1,0 +1,13 @@
+{
+  "title": "Right-clicking a file shows Finder's item menu",
+  "app": "files",
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"reveal": "report.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"context": "report.txt", "settle": 1.0},
+    {"observe": "menu", "facts": ["menu"]},
+    {"key": "escape"}
+  ],
+  "menu_until": "Quick Actions"
+}

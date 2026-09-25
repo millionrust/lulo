@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "scenario": "files/move-to-trash",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "trashed": {
+      "files": {
+        "entries": [
+          "keep.txt"
+        ]
+      },
+      "dialog": {
+        "present": false
+      }
+    },
+    "restored": {
+      "files": {
+        "entries": [
+          "keep.txt",
+          "report.txt"
+        ]
+      },
+      "selection": {
+        "items": [
+          "report.txt"
+        ]
+      }
+    }
+  }
+}

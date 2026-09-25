@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "scenario": "files/context-menu",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "menu": {
+      "menu": {
+        "present": true,
+        "items": [
+          "Open",
+          "Open With",
+          "-",
+          "Move to Bin",
+          "-",
+          "Get Info",
+          "Rename",
+          "Compress “report.txt”",
+          "Duplicate",
+          "Make Alias",
+          "Quick Look",
+          "-",
+          "Copy",
+          "Share…",
+          "-",
+          "label",
+          "-",
+          "Quick Actions"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "format": 1,
+  "scenario": "files/rename-escape",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "cancelled": {
+      "files": {
+        "entries": [
+          "report.txt"
+        ]
+      },
+      "selection": {
+        "items": [
+          "report.txt"
+        ]
+      },
+      "focus": {
+        "role": "list",
+        "value": null,
+        "selection": null,
+        "selected_text": null,
+        "selected_all": null,
+        "label": "list view"
+      }
+    }
+  }
+}

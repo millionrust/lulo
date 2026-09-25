@@ -1,0 +1,11 @@
+{
+  "title": "New Window (⌘N) opens a second window",
+  "app": "files",
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "cmd-n", "settle": 1.2},
+    {"observe": "opened", "facts": ["windows"]}
+  ],
+  "omit": ["opened.windows.front", "opened.windows.titles"]
+}

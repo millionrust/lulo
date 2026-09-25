@@ -1,0 +1,29 @@
+{
+  "format": 1,
+  "scenario": "files/new-folder-name",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "named": {
+      "focus": {
+        "role": "list",
+        "value": null,
+        "selection": null,
+        "selected_text": null,
+        "selected_all": null,
+        "label": "list view"
+      },
+      "files": {
+        "entries": [
+          "Plans/",
+          "report.txt"
+        ]
+      },
+      "selection": {
+        "items": [
+          "Plans"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "title": "Return renames a folder with its whole name selected",
+  "app": "files",
+  "setup": {"files": {"Projects/": null, "report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"reveal": "Projects"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "return"},
+    {"observe": "editing", "facts": ["focus"]},
+    {"type": "Plans"},
+    {"key": "return"},
+    {"observe": "renamed", "facts": ["files", "selection"]}
+  ]
+}

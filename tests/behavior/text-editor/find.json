@@ -1,0 +1,13 @@
+{
+  "title": "Find (⌘F) focuses the find field; typing searches",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {"type": "hello world hello"},
+    {"key": "cmd-f"},
+    {"observe": "find", "facts": ["focus"]},
+    {"type": "hello"},
+    {"observe": "typed", "facts": ["focus"]}
+  ],
+  "omit": ["find.focus.value", "find.focus.selection", "find.focus.selected_text", "find.focus.selected_all"]
+}

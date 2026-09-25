@@ -1,0 +1,11 @@
+{
+  "title": "Duplicate (⌘D) makes “name copy.ext” next to the file and selects it",
+  "app": "files",
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"reveal": "report.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "cmd-d", "settle": 1.2},
+    {"observe": "duplicated", "facts": ["files", "selection"]}
+  ]
+}

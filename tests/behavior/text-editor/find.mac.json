@@ -1,0 +1,27 @@
+{
+  "format": 1,
+  "scenario": "text-editor/find",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "find": {
+      "focus": {
+        "role": "search-field",
+        "label": "Find"
+      }
+    },
+    "typed": {
+      "focus": {
+        "role": "search-field",
+        "value": "hello",
+        "selection": [
+          5,
+          5
+        ],
+        "selected_text": "",
+        "selected_all": false,
+        "label": "Find"
+      }
+    }
+  }
+}

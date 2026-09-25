@@ -1,0 +1,11 @@
+{
+  "title": "New Tab (⌘T) adds a tab to the same window",
+  "app": "files",
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "cmd-t", "settle": 1.2},
+    {"observe": "tabbed", "facts": ["windows", "tabs"]}
+  ],
+  "omit": ["tabbed.windows.front", "tabbed.windows.titles", "tabbed.tabs.titles"]
+}

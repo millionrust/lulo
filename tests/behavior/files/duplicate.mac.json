@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "scenario": "files/duplicate",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "duplicated": {
+      "files": {
+        "entries": [
+          "report copy.txt",
+          "report.txt"
+        ]
+      },
+      "selection": {
+        "items": [
+          "report copy.txt"
+        ]
+      }
+    }
+  }
+}

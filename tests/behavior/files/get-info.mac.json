@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "files/get-info",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "info": {
+      "windows": {
+        "count": 2,
+        "front": "report.txt Info",
+        "titles": [
+          "report.txt Info",
+          "sandbox"
+        ]
+      }
+    }
+  }
+}

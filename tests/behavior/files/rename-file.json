@@ -1,0 +1,14 @@
+{
+  "title": "Return renames a file with only the name before the extension selected",
+  "app": "files",
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n", "other.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"reveal": "report.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "return"},
+    {"observe": "editing", "facts": ["focus"]},
+    {"type": "notes"},
+    {"key": "return"},
+    {"observe": "renamed", "facts": ["files", "selection"]}
+  ]
+}

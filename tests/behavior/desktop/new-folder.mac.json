@@ -1,0 +1,26 @@
+{
+  "format": 1,
+  "scenario": "desktop/new-folder",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "created": {
+      "focus": {
+        "role": "text-field",
+        "value": "untitled folder",
+        "selection": [
+          0,
+          15
+        ],
+        "selected_text": "untitled folder",
+        "selected_all": true,
+        "label": null
+      },
+      "files": {
+        "entries": [
+          "untitled folder/"
+        ]
+      }
+    }
+  }
+}

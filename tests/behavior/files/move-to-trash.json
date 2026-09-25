@@ -1,0 +1,13 @@
+{
+  "title": "Move to Trash (⌘⌫) removes the file without asking, and Undo (⌘Z) puts it back",
+  "app": "files",
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n", "keep.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"reveal": "report.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "cmd-backspace", "settle": 1.2},
+    {"observe": "trashed", "facts": ["files", "dialog"]},
+    {"key": "cmd-z", "settle": 1.2},
+    {"observe": "restored", "facts": ["files", "selection"]}
+  ]
+}

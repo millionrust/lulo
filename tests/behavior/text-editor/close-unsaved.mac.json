@@ -1,0 +1,39 @@
+{
+  "format": 1,
+  "scenario": "text-editor/close-unsaved",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "asked": {
+      "dialog": {
+        "present": true,
+        "title": "Do you want to keep this new document “Untitled”?",
+        "texts": [
+          "Where:",
+          "Do you want to keep this new document “Untitled”?",
+          "You can choose to save your changes or delete this document immediately. You can’t undo this action.",
+          "Save As:",
+          "Tags:",
+          "File Format:"
+        ],
+        "buttons": [
+          "Delete",
+          "Cancel",
+          "Save"
+        ]
+      }
+    },
+    "cancelled": {
+      "dialog": {
+        "present": false
+      },
+      "windows": {
+        "count": 1,
+        "front": "Untitled",
+        "titles": [
+          "Untitled"
+        ]
+      }
+    }
+  }
+}

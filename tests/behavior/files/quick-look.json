@@ -1,0 +1,13 @@
+{
+  "title": "Space opens Quick Look on the selected file and Space closes it",
+  "app": "files",
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"reveal": "report.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "space", "settle": 1.5},
+    {"observe": "previewing", "facts": ["windows"]},
+    {"key": "space", "settle": 1.0},
+    {"observe": "closed", "facts": ["windows"]}
+  ]
+}

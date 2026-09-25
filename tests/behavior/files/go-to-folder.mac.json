@@ -1,0 +1,33 @@
+{
+  "format": 1,
+  "scenario": "files/go-to-folder",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "open": {
+      "focus": {
+        "role": "text-field",
+        "selected_all": false
+      },
+      "dialog": {
+        "present": true,
+        "title": "Go to Folder",
+        "buttons": [
+          "Close"
+        ]
+      }
+    },
+    "closed": {
+      "dialog": {
+        "present": false
+      },
+      "windows": {
+        "count": 1,
+        "front": "sandbox",
+        "titles": [
+          "sandbox"
+        ]
+      }
+    }
+  }
+}

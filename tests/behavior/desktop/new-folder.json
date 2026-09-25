@@ -1,0 +1,11 @@
+{
+  "title": "New Folder (⇧⌘N) on the desktop starts renaming it with the whole name selected",
+  "app": "desktop",
+  "launch": {},
+  "steps": [
+    {"focus_desktop": true},
+    {"key": "cmd-shift-n", "settle": 1.5},
+    {"observe": "created", "facts": ["focus", "files"]},
+    {"key": "escape"}
+  ]
+}

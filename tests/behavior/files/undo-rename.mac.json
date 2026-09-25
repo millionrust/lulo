@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "scenario": "files/undo-rename",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "undone": {
+      "files": {
+        "entries": [
+          "report.txt"
+        ]
+      },
+      "selection": {
+        "items": [
+          "report.txt"
+        ]
+      }
+    }
+  }
+}

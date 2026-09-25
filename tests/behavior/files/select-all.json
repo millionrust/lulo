@@ -1,0 +1,11 @@
+{
+  "title": "Select All (⌘A) selects every item in the folder",
+  "app": "files",
+  "setup": {"files": {"a.txt": "Behaviour-suite fixture. Safe to delete.\n", "b.txt": "Behaviour-suite fixture. Safe to delete.\n", "Folder/": null}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "cmd-a"},
+    {"observe": "all", "facts": ["selection"]}
+  ]
+}

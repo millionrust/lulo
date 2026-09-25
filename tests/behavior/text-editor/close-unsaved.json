@@ -1,0 +1,12 @@
+{
+  "title": "Closing (⌘W) an edited Untitled document asks to save; Escape cancels",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {"type": "Hello"},
+    {"key": "cmd-w", "settle": 1.2},
+    {"observe": "asked", "facts": ["dialog"]},
+    {"key": "escape"},
+    {"observe": "cancelled", "facts": ["dialog", "windows"]}
+  ]
+}

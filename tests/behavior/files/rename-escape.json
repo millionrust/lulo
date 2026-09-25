@@ -1,0 +1,14 @@
+{
+  "title": "Escape during a rename keeps the old name",
+  "app": "files",
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"reveal": "report.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "return"},
+    {"type": "draft"},
+    {"key": "escape"},
+    {"observe": "cancelled", "facts": ["files", "selection", "focus"]}
+  ],
+  "tolerance": {"cancelled.focus.value": "ignore"}
+}

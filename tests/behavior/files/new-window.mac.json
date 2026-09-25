@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "scenario": "files/new-window",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "opened": {
+      "windows": {
+        "count": 2
+      }
+    }
+  }
+}

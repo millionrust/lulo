@@ -1,0 +1,14 @@
+{
+  "title": "Go to Folder (⇧⌘G) opens a path field with its text selected; Escape closes it",
+  "app": "files",
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "cmd-shift-g", "settle": 1.0},
+    {"observe": "open", "facts": ["focus", "dialog"]},
+    {"key": "escape"},
+    {"observe": "closed", "facts": ["dialog", "windows"]}
+  ],
+  "tolerance": {"open.dialog.title": "ignore"},
+  "omit": ["open.focus.value", "open.focus.selection", "open.focus.selected_text", "open.focus.label", "open.dialog.texts"]
+}

@@ -1,0 +1,14 @@
+{
+  "title": "Undo (⌘Z) after a rename restores the old name",
+  "app": "files",
+  "setup": {"files": {"report.txt": "Behaviour-suite fixture. Safe to delete.\n"}},
+  "launch": {"reveal": "report.txt"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "return"},
+    {"type": "notes"},
+    {"key": "return"},
+    {"key": "cmd-z", "settle": 1.2},
+    {"observe": "undone", "facts": ["files", "selection"]}
+  ]
+}

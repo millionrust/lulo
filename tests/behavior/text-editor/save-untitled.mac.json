@@ -1,0 +1,41 @@
+{
+  "format": 1,
+  "scenario": "text-editor/save-untitled",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "panel": {
+      "focus": {
+        "role": "text-field",
+        "value": "Untitled",
+        "selection": [
+          0,
+          8
+        ],
+        "selected_text": "Untitled",
+        "selected_all": true,
+        "label": null
+      },
+      "dialog": {
+        "present": true,
+        "title": null,
+        "buttons": [
+          "Cancel",
+          "Save"
+        ]
+      }
+    },
+    "cancelled": {
+      "dialog": {
+        "present": false
+      },
+      "windows": {
+        "count": 1,
+        "front": "Untitled",
+        "titles": [
+          "Untitled"
+        ]
+      }
+    }
+  }
+}

@@ -125,6 +125,22 @@ def normalize_atspi_role(role: Optional[str]) -> Optional[str]:
     return ATSPI_ROLES.get(role, role.replace(" ", "-"))
 
 
+LULO_TITLE_SUFFIXES = re.compile(
+    r"( — (Files|Text Editor|System Settings|Settings|Calculator))?( — Edited)?( — (Files|Text Editor|System Settings|Settings|Calculator))?$"
+)
+
+
+def lulo_window_title(title: Optional[str]) -> Optional[str]:
+    """The title a Mac AX client would read. Lulo's toplevel titles carry the
+    app name ("sandbox — Files") and an edited mark for the Dock, Mission
+    Control and the switcher; the Mac's AXTitle has neither (the title bar
+    draws "— Edited" separately)."""
+
+    if title is None:
+        return None
+    return LULO_TITLE_SUFFIXES.sub("", title) or title
+
+
 def selection_facts(value: Optional[str], start: Optional[int], end: Optional[int]) -> dict[str, Any]:
     """The selection part of a focus fact, derived identically on both sides."""
 

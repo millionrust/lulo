@@ -137,6 +137,11 @@ class CompareTests(unittest.TestCase):
         self.assertTrue(sc.field_matches("text", "Don’t save “A”…", "Don't save \"A\"..."))
         self.assertFalse(sc.field_matches("text", "Move to Bin", "Move to Trash"))
 
+    def test_lulo_titles_drop_the_app_name_and_edited_mark(self):
+        self.assertEqual(sc.lulo_window_title("sandbox — Files"), "sandbox")
+        self.assertEqual(sc.lulo_window_title("Untitled — Edited — Text Editor"), "Untitled")
+        self.assertEqual(sc.lulo_window_title("Quick Look"), "Quick Look")
+
     def test_selection_facts(self):
         self.assertEqual(sc.selection_facts("report.txt", 0, 6),
                          {"selection": [0, 6], "selected_text": "report", "selected_all": False})

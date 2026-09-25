@@ -326,7 +326,24 @@ class LuloRun:
         self.app = scenario["app"]
         self.settle = settle
         self.bins = bins
-        home = Path(nested.env["HOME"])
+        # A fresh home per scenario: apps keep state (Text Editor's unsaved
+        # work, Files' window state) that must not leak into the next one.
+        home = nested.work / "homes" / sid.replace("/", "-")
+        if home.exists():
+            shutil.rmtree(home)
+        for sub in (".config", ".local/share", ".local/state", ".cache", "Desktop", "Documents"):
+            (home / sub).mkdir(parents=True, exist_ok=True)
+        (home / ".config/user-dirs.dirs").write_text(
+            'XDG_DESKTOP_DIR="$HOME/Desktop"\nXDG_DOCUMENTS_DIR="$HOME/Documents"\n'
+        )
+        self.env = dict(nested.env)
+        self.env.update({
+            "HOME": str(home),
+            "XDG_CONFIG_HOME": str(home / ".config"),
+            "XDG_DATA_HOME": str(home / ".local/share"),
+            "XDG_STATE_HOME": str(home / ".local/state"),
+            "XDG_CACHE_HOME": str(home / ".cache"),
+        })
         self.sandbox = home / "lulo-behavior" / sid.replace("/", "-") / "sandbox"
         self.files_root = home / "Desktop" if self.app == "desktop" else self.sandbox
         self.before: set[str] = set()
@@ -366,7 +383,7 @@ class LuloRun:
                 command += ["--path", str(self.sandbox / launch.get("folder", "."))]
         self.log = open(self.nested.logs / f"{self.sid.replace('/', '-')}.log", "w")
         self.process = subprocess.Popen(
-            command, env=self.nested.env, stdout=self.log, stderr=subprocess.STDOUT, close_fds=True,
+            command, env=self.env, stdout=self.log, stderr=subprocess.STDOUT, close_fds=True,
             cwd=str(self.sandbox),
         )
         deadline = time.monotonic() + 30
@@ -475,8 +492,8 @@ class LuloRun:
         plain = [f for f in self.frames() if role(f) not in DIALOG_ROLES
                  and (role(f) == "frame" or has_state(f, pyatspi.STATE_SHOWING))]
         active = self.active_frame()
-        titles = [name(f) for f in plain]
-        front = name(active) if active is not None and role(active) not in DIALOG_ROLES else None
+        titles = [sc.lulo_window_title(name(f)) for f in plain]
+        front = sc.lulo_window_title(name(active)) if active is not None and role(active) not in DIALOG_ROLES else None
         if front in titles:
             titles.remove(front)
             titles.insert(0, front)

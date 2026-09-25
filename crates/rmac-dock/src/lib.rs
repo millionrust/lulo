@@ -18,6 +18,7 @@ mod surfaces;
 #[cfg(test)]
 mod tests;
 
+pub use dock::ResolvedStack;
 use dock::*;
 pub use model::*;
 pub use pins::*;

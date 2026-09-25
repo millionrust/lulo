@@ -225,3 +225,26 @@ impl Coordinator {
         before != self.snapshot()
     }
 }
+
+/// Resolve persisted `DockStackEntry` configuration against the live
+/// filesystem (existence only, no directory listing). A folder/file
+/// stack's path comes from the resolved Downloads place for the special
+/// case, or straight from the persisted path otherwise.
+fn resolve_stacks(
+    stacks: &[rmac_shell_settings::DockStackEntry],
+    places: &rmac_places::Snapshot,
+) -> Vec<rmac_dock::ResolvedStack> {
+    stacks
+        .iter()
+        .map(|entry| {
+            let path = match &entry.kind {
+                rmac_shell_settings::DockStackKind::Downloads => places.downloads.path.clone(),
+                rmac_shell_settings::DockStackKind::Path { path } => std::path::PathBuf::from(path),
+            };
+            rmac_dock::ResolvedStack {
+                entry: entry.clone(),
+                available: path.is_dir(),
+            }
+        })
+        .collect()
+}

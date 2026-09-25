@@ -67,7 +67,7 @@ docs/macos-parity-spec.md §4.9.
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| CC-01 | P1 | S | Broken | Mac: modules are frosted glass, so nothing behind them can be read. / Lulo: modules are translucent without blur — the desktop folder icon and its "untitled folder" label show sharply through the Bluetooth module. | `crates/quick-settings-app/src/main.rs:108` (Blurred background), `render/cards.rs` |
+| CC-01 | P1 | S | Fixed 918aaa38 (niri blur; verify live) | Mac: modules are frosted glass, so nothing behind them can be read. / Lulo: modules are translucent without blur — the desktop folder icon and its "untitled folder" label show sharply through the Bluetooth module. | `crates/quick-settings-app/src/main.rs:108` (Blurred background), `render/cards.rs` |
 | CC-02 | P2 | S | Partial | Mac: Now Playing is always shown as a 2×2 tile, reading "Not Playing" with dimmed transport controls. / Lulo: the tile is hidden when no MPRIS player exists, so the grid is shorter (4 rows vs the Mac's 5). | `crates/quick-settings-app/src/view.rs:33`, `render.rs:179` |
 | CC-03 | P2 | M | Missing | Mac: an "Edit Controls" pill under the modules adds, removes and rearranges controls. / Lulo: the set is fixed. | `crates/quick-settings-app/src/render.rs` |
 | CC-04 | P2 | S | Missing | Mac: panel 287 px wide (spec). / Lulo: panel rendered 380 px wide (≈93 px too wide), top ≈43 px too low, as of the 2026-09-19 capture — not re-measured since. | `crates/quick-settings-app` |
@@ -108,7 +108,7 @@ contract.
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| APPS-01 | P1 | S | Missing | Mac: Apps opens with a row of 7 recently used/suggested apps above a divider, then A–Z. / Lulo: A–Z only. | `crates/app-drawer/src/view.rs:52` |
+| APPS-01 | P1 | S | Fixed b8179d99 | Mac: Apps opens with a row of 7 recently used/suggested apps above a divider, then A–Z. / Lulo: A–Z only. | `crates/app-drawer/src/view.rs:52` |
 | APPS-02 | P2 | M | Partial | Mac: panel 842 × 576 pt, top at 20% of screen height, 60 pt icons on a 115 pt pitch, placeholder "Applications" with a ⋯ menu. / Lulo: 760 × 520 pt, top at 16.5%, 54 pt icons on a 96 pt pitch, placeholder "Search Apps", and a non-Mac grid/list segmented control. | `crates/app-drawer/src/view.rs:19-22`, `view/lifecycle.rs:11` |
 | APPS-03 | P2 | S | Partial | Mac: category chips with no "All" chip; the unfiltered view is the default. / Lulo: the first chip is an "All" pill, and Ubuntu tools (IBus Preferences, Firmware Updater, Sysprof, Logs, Advanced Network…) sit in the main grid. | `crates/app-drawer/src/view.rs:52` |
 
@@ -134,7 +134,7 @@ docs/macos-parity-spec.md §4; those pass their measured comparisons as of the
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| DESK-01 | P1 | M | Partial | Mac: a desktop item's menu has Open, Open With ▸, Move to Bin, Get Info, Rename, Compress "X", Duplicate, Make Alias, Quick Look, Copy, Share…, tag colours and Tags…. / Lulo: Open, Move to Trash, Get Info, Rename and Duplicate only. | `shell/bins/rmac-wallpaper/src/linux_wayland/menu.rs:156` |
+| DESK-01 | P1 | M | Fixed (Share/Tags skipped) | Mac: a desktop item's menu has Open, Open With ▸, Move to Bin, Get Info, Rename, Compress "X", Duplicate, Make Alias, Quick Look, Copy, Share…, tag colours and Tags…. / Lulo: Open, Move to Trash, Get Info, Rename and Duplicate only. | `shell/bins/rmac-wallpaper/src/linux_wayland/menu.rs:156` |
 | DESK-02 | P2 | S | Partial | Mac: Sort By offers None, Snap to Grid, Name, Kind, Date Last Opened, Date Added, Date Modified, Date Created, Size, Tags. / Lulo: Date Last Opened, Date Added, Date Created and Tags are missing. | `shell/bins/rmac-wallpaper/src/linux_wayland/menu.rs:178` |
 | WIN-02 | P1 | M | Fixed b4a81749 | Mac: new windows are clamped between the menu bar and the Dock. / Lulo: System Settings opens 832 pt tall on an 864 pt output, so its bottom 70 pt sits under the Dock even with Reserve screen space on. | `crates/system-settings/src/controller/settings_style.rs:24` |
 | WIN-03 | P2 | M | Missing | Mac's Desktop & Dock › Windows has Prefer tabs when opening documents, Ask to keep changes when closing documents, Close windows when quitting an application, Drag windows to left/right edge to tile, Drag windows to menu bar to fill screen, Hold ⌥ while dragging to tile, Tiled windows have margins. / Lulo: none of these. | `crates/system-settings/src/controller/desktop_dock.rs:201` |
@@ -149,7 +149,7 @@ Lock-screen require-password delay is tracked as SET-08 in Settings.
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| LOCK-01 | P1 | M | Partial | Mac: the lock screen shows the user's own wallpaper and account picture. / Lulo: paints the built-in Aurora gradient under a 20% veil and a grey monogram disc, whatever the wallpaper or AccountsService icon actually is. | `crates/rmac-lock-provider-linux/src/paint.rs:97`, `:476`, `:484` |
+| LOCK-01 | P1 | M | Fixed 126baaf8 | Mac: the lock screen shows the user's own wallpaper and account picture. / Lulo: paints the built-in Aurora gradient under a 20% veil and a grey monogram disc, whatever the wallpaper or AccountsService icon actually is. | `crates/rmac-lock-provider-linux/src/paint.rs:97`, `:476`, `:484` |
 | LOCK-02 | P2 | S | Missing | Mac: the lock screen keeps battery, Wi-Fi and input-source items at top right. / Lulo: only the date, clock, avatar, name and password field. | `crates/rmac-lock-provider-linux/src/paint.rs:23` |
 | PWR-01 | P1 | S | Fixed 77ae35cd + d3d4e833 (fail-safe) | Mac: a short press of the power key sleeps or locks, and never powers off. / Lulo: logind's `HandlePowerKey=poweroff` (the Ubuntu default) shuts down at once; nothing in rmac overrides it. | `docs/decisions/0020-unsaved-work-at-session-end.md:117`, `packaging/rmac-session` |
 | PWR-02 | P2 | S | Partial | Mac: "Are you sure you want to shut down your computer now?" / "…restart…" / "…quit all applications and log out now?". / Lulo: "Shut down this computer?" / "Restart this computer?" / "Log out now?" — plus no countdown and no reopen-windows checkbox (LOGIN-03). | `shell/bins/rmac-menubar/src/main.rs:2653` |

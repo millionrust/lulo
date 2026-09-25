@@ -281,10 +281,13 @@ class Run:
             point = self.minimized_tile_point("dock-after-set-minimized")
             self.check("the Dock shows a minimised tile left of the Bin", point, str(point))
             if point:
-                # Hover first: the Dock magnifies under the pointer.
-                self.keys.move(point[0], point[1], *self.output_size)
+                # niri routes a virtual pointer through its own input path
+                # (unlike a virtual keyboard), so the click goes to niri.
+                pointer = wlinput.Wayland({**self.env, "RMAC_BEHAVIOR_NESTED": "1"})
+                pointer.move(point[0], point[1], *self.output_size)
                 time.sleep(0.8)
-                self.keys.click(point[0], point[1], *self.output_size)
+                pointer.click(point[0], point[1], *self.output_size)
+                pointer.close()
                 time.sleep(0.5)
                 subprocess.run(["grim", "-c", "-o", str(self.output), str(self.out / "after-tile-click.png")],
                                env=self.env, capture_output=True, check=False)

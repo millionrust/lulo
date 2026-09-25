@@ -867,11 +867,7 @@ impl FinderView {
                         "down" => this.column_move_vertical(1, cx),
                         "right" => this.column_move_right(cx),
                         "left" => this.column_move_left(cx),
-                        "escape" => {
-                            if this.info.take().is_some() {
-                                cx.notify();
-                            }
-                        }
+                        "escape" if this.info.take().is_some() => cx.notify(),
                         _ => {}
                     }
                     return;

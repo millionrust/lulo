@@ -7,7 +7,7 @@ use sysinfo::Networks;
 use crate::cpu_ticks;
 use crate::host_stats;
 use crate::metrics::{Aggregates, History, NetIface, REFRESH_SECS};
-use crate::process_table::{resync_selection, ProcessTableDelegate};
+use crate::process_table::{is_thread_group_leader, resync_selection, ProcessTableDelegate};
 use crate::view::MonitorView;
 
 pub(crate) struct Sampler {
@@ -79,13 +79,20 @@ impl Sampler {
             aggregates.mem_total = delegate.system.total_memory();
             aggregates.swap_used = delegate.system.used_swap();
 
-            let (read, write) = delegate.system.processes().values().fold(
-                (0u64, 0u64),
-                |(read, write), process| {
+            // MON-01: fold over thread-group leaders only, matching the
+            // process table. Per-task I/O accounting means a thread's own
+            // entry can double-count its leader's already-whole-process
+            // total, and unfiltered rows would inflate this sum the same
+            // way they inflated the Processes/Threads counts.
+            let (read, write) = delegate
+                .system
+                .processes()
+                .values()
+                .filter(|process| is_thread_group_leader(process))
+                .fold((0u64, 0u64), |(read, write), process| {
                     let usage = process.disk_usage();
                     (read + usage.read_bytes, write + usage.written_bytes)
-                },
-            );
+                });
             aggregates.disk_read_rate = read as f64 / REFRESH_SECS;
             aggregates.disk_write_rate = write as f64 / REFRESH_SECS;
 

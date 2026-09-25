@@ -121,6 +121,54 @@ impl MonitorView {
             }))
     }
 
+    /// The View filter dropdown (MON-03), opened from the window subtitle.
+    /// Positioned the same way as `render_columns_menu`, just left-anchored
+    /// under the title block instead of the ⋯ button.
+    pub(super) fn render_filter_menu(&self, cx: &Context<Self>) -> impl IntoElement {
+        let current = self.view_filter(cx);
+        div()
+            .id("filter-menu")
+            .role(Role::Menu)
+            .aria_label("View filter")
+            .absolute()
+            .top(px(mac::toolbar_height() + 4.0))
+            .left(px(TITLE_X - TOOLBAR_CONTENT_INSET))
+            .w(px(220.0))
+            .bg(mac::material_popover())
+            .rounded(px(mac::radius_menu()))
+            .border_1()
+            .border_color(mac::separator())
+            .shadow_lg()
+            .py_1()
+            .children(
+                crate::view_filter::ViewFilter::ALL
+                    .into_iter()
+                    .map(|filter| {
+                        let on = filter == current;
+                        div()
+                            .id(SharedString::from(filter.label()))
+                            .role(Role::MenuItem)
+                            .aria_label(filter.label())
+                            .aria_selected(on)
+                            .h_flex()
+                            .items_center()
+                            .gap_2()
+                            .h(px(24.0))
+                            .mx_1()
+                            .px_2()
+                            .rounded(px(mac::radius_menu_item()))
+                            .text_size(rmac_ui::text_px(13.0))
+                            .text_color(mac::text())
+                            .hover(|hover| hover.bg(mac::accent()).text_color(mac::on_accent()))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.set_view_filter(filter, cx);
+                            }))
+                            .child(div().w(px(14.0)).child(if on { "✓" } else { "" }))
+                            .child(div().flex_1().child(filter.label()))
+                    }),
+            )
+    }
+
     fn toolbar_icon(
         &self,
         id: &'static str,
@@ -273,10 +321,15 @@ impl MonitorView {
             .when(!layout.compact, |row| {
                 row.child(
                     div()
+                        .id("filter-subtitle")
+                        .role(Role::Button)
                         .w(px(STOP_GROUP_X - TITLE_X))
                         .min_w_0()
                         .v_flex()
                         .justify_center()
+                        .aria_label("View filter")
+                        .aria_expanded(self.filter_menu_open)
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_filter_menu(cx)))
                         .child(
                             div()
                                 .truncate()
@@ -290,7 +343,9 @@ impl MonitorView {
                                 .truncate()
                                 .text_size(rmac_ui::text_px(11.0))
                                 .text_color(mac::text_secondary())
-                                .child("All Processes"),
+                                // MON-03: the subtitle follows the View
+                                // filter rather than a fixed "All Processes".
+                                .child(self.view_filter(cx).label()),
                         ),
                 )
             })

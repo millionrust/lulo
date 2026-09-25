@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Calculator — Basic (exact) and Scientific (estimated)</title>
+<!--
+  Calculator, dark appearance. Render with --allow-file-access-from-files:
+  this page fetches the same SVG glyphs the Rust app embeds
+  (crates/calculator/assets/icons/calculator).
+
+  BASIC — measured on the owner's Mac (macOS 26.2, 2026-09-23; AX frames +
+  Retina pixels ÷ 2, docs/parity-audit-2026-09-24-apps.md "5. Calculator").
+  Window 230 × 408, 52 pt toolbar, two 36 pt glass toolbar buttons (sidebar
+  history, mode). Keys are 48 pt circles on a 54 pt pitch (6 pt gap), keypad
+  origin (10, 132). Expression line 22 pt at top 57.5, result up to 31 pt at
+  top 88, right inset 11. This mock's numbers are copied into
+  crates/calculator/src/keypad.rs, whose own WINDOW_HEIGHT is 406, not 408 —
+  a pre-existing 2 pt discrepancy from before this task, left alone here.
+
+  SCIENTIFIC — CALC-02, estimated (S), not measured. The audit never opened
+  Scientific mode (grep the audit for "Scientific": it appears only in the
+  Mac menu list and the CALC-02 gap row, no pixel measurements). The key set
+  is the standard nine-column, five-row macOS Scientific layout (2nd,
+  x²/x³/xʸ, eˣ/10ˣ, trig, 1/x, x!, π, e, Rand, EE, Rad/Deg, mc/m+/m-/mr,
+  parentheses) built from the task's own key list, laid over Basic's measured
+  four-column digit/operator grid extended by five function columns to its
+  left.
+
+  The brief asked for this to land in the same ~330–350 pt width AND
+  Basic's ~406–408 pt height. Both can't hold at once with Basic's actual
+  54 pt pitch: nine columns of 54 pt keys are 524 pt wide. This mock instead
+  keeps a *uniform* grid — every key shrinks to 30 pt circles on a 36 pt
+  pitch (still a 6 pt gap, same ratio as Basic) — which hits the width
+  target (338 pt) but gives up on the height target (316 pt, not ~406). The
+  alternative (keep 48/54 pt keys, accept ~524 pt width) was rejected as too
+  wide for a calculator. Toolbar geometry (toolbar height, traffic lights,
+  36 pt buttons, the two-line display) is reused unchanged from Basic; only
+  the two toolbar buttons' x position and the keypad move. Every estimated
+  number below is marked S in the mapping table and in
+  crates/calculator/src/scientific_keypad.rs.
+
+  Try the 2nd and Rad/Deg toggles below the Scientific window — they flip
+  the same key labels crates/calculator/src/scientific_keypad.rs::key_face
+  flips.
+-->
+<style>
+  :root {
+    --window: #22252d; --expression: #9b9da0; --result: #ddedef;
+    --function-key: #727479; --function-label: #f6f6f6;
+    --digit-key: #46494e; --digit-label: #f6f6f6;
+    --operator-key: #ff8b00; --operator-label: #fffaf2;
+    --toolbar-button: #1c1e23; --toolbar-glyph: #e8e8e8;
+    --rim: rgba(255,255,255,.10); --accent: #5ac8fa;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b0b0c; font-family: -apple-system, "SF Pro Text", Inter, sans-serif; color: #fff; }
+  .stage { padding: 28px; display: flex; flex-direction: column; gap: 28px; }
+  .row { display: flex; gap: 32px; align-items: flex-start; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .label { font-size: 12px; color: #9a9aa2; }
+  .label b { color: #e8e8ea; }
+  .win { position: relative; overflow: hidden; border-radius: 16px; background: var(--window);
+         box-shadow: 0 0 0 1px #0e0e10, inset 0 0 0 1px #3a3b42; }
+  .abs { position: absolute; box-sizing: border-box; }
+  .light { position: absolute; width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box; }
+  .toolbar-btn { position: absolute; border-radius: 50%; background: var(--toolbar-button);
+                 border: 1px solid var(--rim); display: flex; align-items: center; justify-content: center; }
+  .toolbar-btn svg, .toolbar-btn .glyph { width: 20px; height: 20px; color: var(--toolbar-glyph); }
+  .key { position: absolute; border-radius: 50%; border: 1px solid var(--rim);
+         display: flex; align-items: center; justify-content: center; font-weight: 500;
+         user-select: none; cursor: default; line-height: 1; text-align: center; }
+  .key.fn { background: var(--function-key); color: var(--function-label); }
+  .key.digit { background: var(--digit-key); color: var(--digit-label); }
+  .key.op { background: var(--operator-key); color: var(--operator-label); }
+  .key .glyph { width: 24px; height: 24px; }
+  .line { position: absolute; display: flex; align-items: center; justify-content: flex-end;
+          white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+  .controls { display: flex; gap: 16px; font-size: 12px; color: #c9c9d1; align-items: center; }
+  .controls label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+  table.map { border-collapse: collapse; font-size: 12px; margin-top: 6px; width: 100%; max-width: 980px; }
+  table.map td, table.map th { border: 1px solid #26262c; padding: 5px 9px; text-align: left; vertical-align: top; }
+  table.map th { color: #9a9aa2; font-weight: 500; background: #151519; }
+  table.map code { color: #7fd1ff; }
+  table.map .s { color: #ffb454; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  p.note { color: #9a9aa2; font-size: 13px; max-width: 900px; line-height: 1.6; }
+  p.note code { color: #7fd1ff; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <h1>Calculator</h1>
+  <p class="note">Basic (left) is <b>measured</b> from the Mac at 230 × 408. Scientific (right) is
+     <b class="s" style="color:#ffb454">estimated</b> — CALC-02, no Mac capture exists for it. Read the
+     header comment in this file's source for the reasoning, then
+     <code>crates/calculator/src/keypad.rs</code> and
+     <code>crates/calculator/src/scientific_keypad.rs</code> for the ported values.</p>
+
+  <div class="row">
+    <div class="col">
+      <div class="label"><b>Basic</b> — 230 × 408, measured</div>
+      <div id="basic-win" class="win" style="width:230px;height:408px"></div>
+    </div>
+    <div class="col">
+      <div class="label"><b>Scientific</b> — 338 × 316, estimated (S)</div>
+      <div id="sci-win" class="win" style="width:338px;height:316px"></div>
+      <div class="controls">
+        <label><input type="checkbox" id="toggle-second"> 2nd</label>
+        <label><input type="checkbox" id="toggle-rad"> Radians (else Degrees)</label>
+      </div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="label"><b>Geometry map</b> — copy these into Rust; S rows are estimates, not measurements</div>
+    <table class="map">
+      <tr><th>Value</th><th>Basic (measured)</th><th>Scientific (S)</th><th>Rust field</th></tr>
+      <tr><td>Window</td><td><code>230 × 408</code></td><td><code>338 × 316</code></td>
+          <td><code>keypad::WINDOW_WIDTH/HEIGHT</code>, <code>scientific_keypad::WINDOW_WIDTH/HEIGHT</code></td></tr>
+      <tr><td>Key diameter / pitch</td><td><code>48 / 54</code></td><td class="s"><code>30 / 36</code></td>
+          <td><code>KEY_DIAMETER</code>, <code>KEY_PITCH</code></td></tr>
+      <tr><td>Keypad origin</td><td><code>(10, 132)</code></td><td class="s"><code>(10, 132)</code> reused</td>
+          <td><code>KEYPAD_LEFT</code>, <code>KEYPAD_TOP</code></td></tr>
+      <tr><td>Grid</td><td><code>4 × 5</code></td><td class="s"><code>9 × 5</code> (5 function cols + Basic's 4)</td>
+          <td><code>LAYOUT</code></td></tr>
+      <tr><td>Toolbar button diameter</td><td><code>36</code></td><td><code>36</code> reused</td>
+          <td><code>TOOLBAR_BUTTON_DIAMETER</code></td></tr>
+      <tr><td>Sidebar / mode button x</td><td><code>124 / 204</code></td><td class="s"><code>232 / 312</code></td>
+          <td><code>SIDEBAR_BUTTON_CENTER_X</code>, <code>MODE_BUTTON_CENTER_X</code></td></tr>
+      <tr><td>Display insets, line sizes</td><td>right 11, expr top 57.5/22pt, result top 88/31pt</td>
+          <td>reused unchanged</td>
+          <td><code>DISPLAY_RIGHT_INSET</code>, <code>EXPRESSION_*</code>, <code>RESULT_*</code></td></tr>
+      <tr><td>Function-key label size</td><td>22 (digits)</td><td class="s"><code>15</code></td>
+          <td><code>LABEL_SIZE</code> / <code>DIGIT_LABEL_SIZE</code></td></tr>
+    </table>
+  </div>
+
+  <p class="note">
+    Scientific's 22 function keys (after the <code>2nd</code> toggle folds sin/sin⁻¹, cos/cos⁻¹, tan/tan⁻¹,
+    x²/√x, x³/∛x, xʸ/ʸ√x, eˣ/ln and 10ˣ/log₁₀ into one key each) fill 22 of the 25 function-column slots;
+    the bottom-left panel's last three cells are unused. See
+    <code>crates/calculator/src/scientific_keypad.rs::LAYOUT</code> for the exact placement and
+    <code>crates/calculator/src/scientific.rs</code> for the engine behind each key.
+  </p>
+</div>
+
+<script>
+const ASSETS = "../crates/calculator/assets/";
+const cache = {};
+async function svg(path) {
+  if (!cache[path]) cache[path] = await (await fetch(ASSETS + path)).text();
+  return cache[path];
+}
+async function glyph(path, size) {
+  const markup = await svg(path);
+  return `<span class="glyph" style="width:${size}px;height:${size}px">${markup}</span>`;
+}
+function lights(container) {
+  const specs = [["#ff5f57", "#e2463f"], ["#febc2e", "#e1a116"], ["#28c840", "#1aab29"]];
+  specs.forEach(([fill, border], i) => {
+    const el = document.createElement("div");
+    el.className = "light";
+    el.style.left = (14 + i * 23) + "px";
+    el.style.top = "19px";
+    el.style.background = fill;
+    el.style.border = `.5px solid ${border}`;
+    container.appendChild(el);
+  });
+}
+
+// ---- Basic: crates/calculator/src/keypad.rs ----
+const BASIC_DIAM = 48, BASIC_PITCH = 54, BASIC_LEFT = 10, BASIC_TOP = 132;
+// [tier, textLabel | null, iconPath | undefined]
+const BASIC_ROWS = [
+  [["fn", null, "backspace.svg"], ["fn", "AC"], ["fn", "%"], ["op", null, "divide.svg"]],
+  [["digit", "7"], ["digit", "8"], ["digit", "9"], ["op", null, "multiply.svg"]],
+  [["digit", "4"], ["digit", "5"], ["digit", "6"], ["op", null, "minus.svg"]],
+  [["digit", "1"], ["digit", "2"], ["digit", "3"], ["op", null, "plus.svg"]],
+  [["digit", null, "plus-minus.svg"], ["digit", "0"], ["digit", "."], ["op", null, "equals.svg"]],
+];
+
+async function buildBasic() {
+  const win = document.getElementById("basic-win");
+  lights(win);
+  const toolbar = document.createElement("div");
+  toolbar.className = "abs";
+  toolbar.style.cssText = "left:0;top:0;width:230px;height:52px";
+  win.appendChild(toolbar);
+  for (const [id, cx] of [["basic-sidebar", 124], ["basic-mode", 204]]) {
+    const b = document.createElement("div");
+    b.className = "toolbar-btn abs";
+    b.style.cssText = `left:${cx - 18}px;top:${25 - 18}px;width:36px;height:36px`;
+    b.innerHTML = id === "basic-sidebar" ? await glyph("icons/calculator/sidebar.svg", 20)
+                                          : await glyph("icons/calculator/calculator.svg", 20);
+    win.appendChild(b);
+  }
+  const expr = document.createElement("div");
+  expr.className = "line abs";
+  expr.style.cssText = "left:10px;right:11px;top:57.5px;height:28px;font-size:22px;color:var(--expression)";
+  expr.textContent = "3.66+3.59";
+  win.appendChild(expr);
+  const result = document.createElement("div");
+  result.className = "line abs";
+  result.style.cssText = "left:10px;right:11px;top:88px;height:38px;font-size:31px;font-weight:300;color:var(--result)";
+  result.textContent = "7.25";
+  win.appendChild(result);
+  for (let row = 0; row < BASIC_ROWS.length; row++) {
+    for (let col = 0; col < 4; col++) {
+      const [tier, text, iconPath] = BASIC_ROWS[row][col];
+      const key = document.createElement("div");
+      key.className = `key ${tier} abs`;
+      const x = BASIC_LEFT + col * BASIC_PITCH, y = BASIC_TOP + row * BASIC_PITCH;
+      key.style.cssText = `left:${x}px;top:${y}px;width:${BASIC_DIAM}px;height:${BASIC_DIAM}px;font-size:22px`;
+      key.innerHTML = iconPath ? await glyph("icons/calculator/" + iconPath, 24) : text;
+      win.appendChild(key);
+    }
+  }
+}
+
+// ---- Scientific: crates/calculator/src/scientific_keypad.rs (S) ----
+const SCI_DIAM = 30, SCI_PITCH = 36, SCI_LEFT = 10, SCI_TOP = 132;
+// [tier, glyphPath | null, plainLabel, secondLabel | null]
+function sciLayout(second, rad) {
+  const radLabel = rad ? "Deg" : "Rad";
+  return [
+    [["fn", null, "mc"], ["fn", null, "m+"], ["fn", null, "m-"], ["fn", null, "mr"], ["fn", null, "("],
+     ["fn", "backspace.svg"], ["fn", null, "AC"], ["fn", null, "%"], ["op", "divide.svg"]],
+    [["fn", null, "2nd"], ["fn", null, second ? "√x" : "x²"], ["fn", null, second ? "∛x" : "x³"],
+     ["fn", null, second ? "ʸ√x" : "xʸ"], ["fn", null, second ? "ln" : "eˣ"],
+     ["digit", null, "7"], ["digit", null, "8"], ["digit", null, "9"], ["op", "multiply.svg"]],
+    [["fn", null, second ? "log₁₀" : "10ˣ"], ["fn", null, second ? "sin⁻¹" : "sin"],
+     ["fn", null, second ? "cos⁻¹" : "cos"], ["fn", null, second ? "tan⁻¹" : "tan"], ["fn", null, "1/x"],
+     ["digit", null, "4"], ["digit", null, "5"], ["digit", null, "6"], ["op", "minus.svg"]],
+    [["fn", null, "x!"], ["fn", null, "π"], ["fn", null, "e"], ["fn", null, "Rand"], ["fn", null, "EE"],
+     ["digit", null, "1"], ["digit", null, "2"], ["digit", null, "3"], ["op", "plus.svg"]],
+    [["fn", null, radLabel], ["fn", null, ")"], null, null, null,
+     ["digit", "plus-minus.svg"], ["digit", null, "0"], ["digit", null, "."], ["op", "equals.svg"]],
+  ];
+}
+
+async function buildScientific(second, rad) {
+  const win = document.getElementById("sci-win");
+  win.innerHTML = "";
+  lights(win);
+  const toolbar = document.createElement("div");
+  toolbar.className = "abs";
+  toolbar.style.cssText = "left:0;top:0;width:338px;height:52px";
+  win.appendChild(toolbar);
+  for (const [id, cx] of [["sci-sidebar", 232], ["sci-mode", 312]]) {
+    const b = document.createElement("div");
+    b.className = "toolbar-btn abs";
+    b.style.cssText = `left:${cx - 18}px;top:${25 - 18}px;width:36px;height:36px`;
+    b.innerHTML = id === "sci-sidebar" ? await glyph("icons/calculator/sidebar.svg", 20)
+                                        : await glyph("icons/calculator/calculator.svg", 20);
+    win.appendChild(b);
+  }
+  const expr = document.createElement("div");
+  expr.className = "line abs";
+  expr.style.cssText = "left:10px;right:11px;top:57.5px;height:28px;font-size:22px;color:var(--expression)";
+  expr.textContent = "2+";
+  win.appendChild(expr);
+  const result = document.createElement("div");
+  result.className = "line abs";
+  result.style.cssText = "left:10px;right:11px;top:88px;height:38px;font-size:31px;font-weight:300;color:var(--result)";
+  result.textContent = "2";
+  win.appendChild(result);
+  const layout = sciLayout(second, rad);
+  for (let row = 0; row < layout.length; row++) {
+    for (let col = 0; col < 9; col++) {
+      const cell = layout[row][col];
+      if (!cell) continue;
+      const [tier, iconPath, text] = cell;
+      const key = document.createElement("div");
+      key.className = `key ${tier} abs`;
+      const x = SCI_LEFT + col * SCI_PITCH, y = SCI_TOP + row * SCI_PITCH;
+      const fontSize = tier === "digit" || tier === "op" ? 22 : 15;
+      key.style.cssText = `left:${x}px;top:${y}px;width:${SCI_DIAM}px;height:${SCI_DIAM}px;font-size:${fontSize}px`;
+      key.innerHTML = iconPath ? await glyph("icons/calculator/" + iconPath, 20) : text;
+      win.appendChild(key);
+    }
+  }
+}
+
+const secondToggle = document.getElementById("toggle-second");
+const radToggle = document.getElementById("toggle-rad");
+function rerenderScientific() { buildScientific(secondToggle.checked, radToggle.checked); }
+secondToggle.addEventListener("change", rerenderScientific);
+radToggle.addEventListener("change", rerenderScientific);
+
+buildBasic();
+buildScientific(false, false);
+</script>
+</body>
+</html>

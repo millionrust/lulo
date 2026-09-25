@@ -10,6 +10,7 @@ mod process_table;
 mod sampling;
 mod storage;
 mod view;
+mod view_filter;
 
 use view::MonitorView;
 

@@ -1,4 +1,4 @@
-//! rmac Calculator: macOS Calculator's Basic mode.
+//! rmac Calculator: macOS Calculator's Basic and Scientific modes.
 
 mod view;
 
@@ -14,7 +14,17 @@ use rmac_ui::app_id::CALCULATOR;
 
 use crate::view::CalculatorView;
 
-gpui::actions!(calculator, [Copy, Paste, ShowBasic, CloseWindow]);
+gpui::actions!(
+    calculator,
+    [
+        Copy,
+        Paste,
+        ShowBasic,
+        ShowScientific,
+        ShowHistory,
+        CloseWindow
+    ]
+);
 
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets"]
@@ -56,6 +66,8 @@ fn main() {
                     Some("Calculator"),
                 ),
                 KeyBinding::new("cmd-1", ShowBasic, Some("Calculator")),
+                KeyBinding::new("cmd-2", ShowScientific, Some("Calculator")),
+                KeyBinding::new("ctrl-cmd-s", ShowHistory, Some("Calculator")),
                 KeyBinding::new(
                     rmac_ui::shortcuts::CLOSE.keystroke,
                     CloseWindow,

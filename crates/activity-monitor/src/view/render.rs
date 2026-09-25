@@ -181,6 +181,9 @@ impl Render for MonitorView {
                 self.cols_menu_open && self.tab.has_process_table(),
                 |monitor| monitor.child(self.render_columns_menu(layout, cx)),
             )
+            .when(self.filter_menu_open, |monitor| {
+                monitor.child(self.render_filter_menu(cx))
+            })
             .children(self.render_confirm(cx))
             .children(self.render_inspector(cx))
     }

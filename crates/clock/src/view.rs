@@ -23,7 +23,7 @@ use rmac_clock::stopwatch::{self, LapMark, Phase};
 use rmac_clock::store::{self, State};
 use rmac_clock::tz::{self, Zone};
 use rmac_clock::{now_millis, schedule};
-use rmac_ui::{mac, InputEvent, InputState, SearchField, TextField, Toggle};
+use rmac_ui::{mac, InputEvent, InputState, SearchField, StyledExt as _, TextField, Toggle};
 
 use crate::{
     CloseWindow, LapReset, NewItem, ShowAlarms, ShowStopwatch, ShowTimers, ShowWorldClock,
@@ -1052,18 +1052,21 @@ impl ClockView {
         let watch = &self.state.stopwatch;
         let phase = watch.phase();
         let table_left = ((width - m::LAP_TABLE_WIDTH) / 2.0).round();
-        let rows = watch.rows(now).into_iter().enumerate().map(|(index, row)| {
+        // Laid out in normal flow (not `.absolute()`), so the scroll
+        // container below can measure their combined height and actually
+        // scroll (CLOCK-01): an out-of-flow absolutely positioned child
+        // never counts toward a scroll container's content size, on the Mac
+        // or here, so the old per-row `top` offset left nothing to scroll.
+        let rows = watch.rows(now).into_iter().map(|row| {
             let color: Hsla = match row.mark {
                 LapMark::Plain => mac::text(),
                 LapMark::Fastest => rgb(m::LAP_FASTEST).into(),
                 LapMark::Slowest => rgb(m::LAP_SLOWEST).into(),
             };
-            let top = m::LAP_RULE_TOP + 1.0 + index as f32 * m::LAP_ROW_HEIGHT;
             div()
-                .absolute()
-                .left(px(table_left))
-                .top(px(top))
-                .w(px(m::LAP_TABLE_WIDTH))
+                .relative()
+                .flex_none()
+                .w_full()
                 .h(px(m::LAP_ROW_HEIGHT))
                 .border_b_1()
                 .border_color(rgb(m::ALARM_SEPARATOR))
@@ -1151,11 +1154,12 @@ impl ClockView {
                 div()
                     .id("clock-laps")
                     .absolute()
-                    .top_0()
-                    .left_0()
-                    .w_full()
-                    .h(px((buttons_top - 12.0).max(0.0)))
-                    .overflow_hidden()
+                    .top(px(m::LAP_RULE_TOP + 1.5))
+                    .left(px(table_left))
+                    .w(px(m::LAP_TABLE_WIDTH))
+                    .h(px((buttons_top - 12.0 - (m::LAP_RULE_TOP + 1.5)).max(0.0)))
+                    .v_flex()
+                    .overflow_y_scroll()
                     .children(rows),
             )
             .child(button_pair(

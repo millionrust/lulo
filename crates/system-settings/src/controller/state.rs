@@ -81,6 +81,10 @@ pub(super) struct Settings {
     pub(super) brightness_slider: Entity<SliderState>,
     pub(super) brightness_generation: u32,
     pub(super) brightness_error: Option<SharedString>,
+    /// Desktop & Dock's Size slider (DOCK-01).
+    pub(super) dock_size_slider: Entity<SliderState>,
+    /// Desktop & Dock's Magnification slider (DOCK-07).
+    pub(super) dock_magnification_slider: Entity<SliderState>,
     pub(super) network: rmac_network::NetworkSnapshot,
     pub(super) storage: Vec<rmac_mounts::Volume>,
     pub(super) storage_busy: bool,

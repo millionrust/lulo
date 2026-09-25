@@ -12,7 +12,7 @@ impl Settings {
             while let Ok(update) = shell_settings_update_rx.recv().await {
                 if this
                     .update(cx, |this: &mut Settings, cx| {
-                        if this.apply_shell_settings_stream_update(update) {
+                        if this.apply_shell_settings_stream_update(update, cx) {
                             this.refresh_wallpaper_preview(cx);
                         }
                         cx.notify();

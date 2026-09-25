@@ -210,7 +210,7 @@ fn dock_changes_touch_only_the_selected_policy() {
     );
 
     let mut dock = original.clone();
-    DockChange::Magnification(false).apply(&mut dock);
+    DockChange::MagnificationLevel(0.0).apply(&mut dock);
     assert_eq!(
         dock,
         rmac_shell_settings::DockSettings {
@@ -220,11 +220,22 @@ fn dock_changes_touch_only_the_selected_policy() {
     );
 
     let mut dock = original.clone();
-    DockChange::MagnificationScale(2.0).apply(&mut dock);
+    DockChange::MagnificationLevel(2.0).apply(&mut dock);
     assert_eq!(
         dock,
         rmac_shell_settings::DockSettings {
+            magnification: true,
             magnification_scale: 2.0,
+            ..original.clone()
+        }
+    );
+
+    let mut dock = original.clone();
+    DockChange::TileSize(96.0).apply(&mut dock);
+    assert_eq!(
+        dock,
+        rmac_shell_settings::DockSettings {
+            tile_size: 96.0,
             ..original.clone()
         }
     );

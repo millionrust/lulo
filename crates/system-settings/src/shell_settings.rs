@@ -8,12 +8,18 @@ pub(super) enum DockChange {
     Placement(rmac_shell_settings::DockPlacement),
     Outputs(rmac_shell_settings::OutputScope),
     Autohide(bool),
-    Magnification(bool),
-    MagnificationScale(f32),
     ReserveSpace(bool),
     RepeatedClick(rmac_shell_settings::RepeatedClickBehavior),
     ShowRunningIndicators(bool),
     ShowRecentApps(bool),
+    /// Desktop & Dock's Size slider (DOCK-01).
+    TileSize(f32),
+    /// Desktop & Dock's Magnification slider (DOCK-07): a single continuous
+    /// control, "Off · Small … Large" like the Mac's, replacing a separate
+    /// on/off switch and preset picker. 0.0 is Off; any other value is On
+    /// at that scale, so this always sets both `magnification` and
+    /// `magnification_scale` together.
+    MagnificationLevel(f32),
 }
 
 impl DockChange {
@@ -22,12 +28,17 @@ impl DockChange {
             Self::Placement(value) => dock.placement = value,
             Self::Outputs(value) => dock.outputs = value,
             Self::Autohide(value) => dock.autohide = value,
-            Self::Magnification(value) => dock.magnification = value,
-            Self::MagnificationScale(value) => dock.magnification_scale = value,
             Self::ReserveSpace(value) => dock.reserve_space = value,
             Self::RepeatedClick(value) => dock.repeated_click = value,
             Self::ShowRunningIndicators(value) => dock.show_running_indicators = value,
             Self::ShowRecentApps(value) => dock.show_recent_apps = value,
+            Self::TileSize(value) => dock.tile_size = value,
+            Self::MagnificationLevel(value) => {
+                dock.magnification = value > 0.0;
+                if value > 0.0 {
+                    dock.magnification_scale = value;
+                }
+            }
         }
     }
 }

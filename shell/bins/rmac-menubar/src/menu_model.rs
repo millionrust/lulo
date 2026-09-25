@@ -45,6 +45,12 @@ pub const CHEVRON_RIGHT: f32 = 17.0;
 pub const CHEVRON_WIDTH: f32 = 5.0;
 /// Minimum space between a title and its shortcut or chevron.
 pub const SHORTCUT_GAP: f32 = 24.0;
+/// A count capsule ("1 update") sits this far after its title.
+pub const BADGE_GAP: f32 = 24.0;
+/// The capsule's padding (8.5 each side) and its 11 pt text against the
+/// 13 pt menu text `label_width` measures.
+const BADGE_PADDING: f32 = 17.0;
+const BADGE_TEXT_SCALE: f32 = 11.0 / 13.0;
 /// Exported and synthesized menus mark a submenu with this shortcut.
 pub const SUBMENU_MARK: &str = "›";
 const MODIFIERS: [char; 5] = ['⌃', '⌥', '⇧', '⌘', '🌐'];
@@ -474,7 +480,12 @@ pub fn app_menu_width(
             } else {
                 SHORTCUT_GAP + shortcut_width(&item.shortcut) + KEY_RIGHT
             };
-            column.text_x() + checks + label_width(&item.label) + trailing
+            let badge = if item.badge.is_empty() {
+                0.0
+            } else {
+                BADGE_GAP + label_width(&item.badge) * BADGE_TEXT_SCALE + BADGE_PADDING
+            };
+            column.text_x() + checks + label_width(&item.label) + badge + trailing
         })
         .fold(0.0, f32::max);
     content.ceil().max(min_width)
@@ -1372,6 +1383,18 @@ mod tests {
             (2.0 * APP_TEXT_INSET + 40.0 + CHECK_COLUMN).ceil()
         );
         assert!(has_checks(&checked) && !has_checks(&plain));
+    }
+
+    #[test]
+    fn an_update_badge_widens_its_row_by_the_capsule() {
+        let plain = vec![item("System Settings…", "", false)];
+        let badged = vec![item("System Settings…", "", false).badge("1 update")];
+        let width = |items: &[Item]| app_menu_width(items, IconColumn::None, 0.0, |_| 26.0);
+        assert_eq!(width(&plain), (2.0 * APP_TEXT_INSET + 26.0).ceil());
+        assert_eq!(
+            width(&badged),
+            (2.0 * APP_TEXT_INSET + 26.0 + BADGE_GAP + 22.0 + BADGE_PADDING).ceil()
+        );
     }
 
     #[test]

@@ -171,10 +171,15 @@ impl Settings {
             return;
         }
         let measure_storage = matches!(sub, SubPage::Storage);
+        // The Mac checks for updates each time Software Update opens.
+        let check_updates = matches!(sub, SubPage::SoftwareUpdate);
         self.nav.push(sub);
         self.forward.clear();
         if measure_storage {
             self.measure_storage_categories(cx);
+        }
+        if check_updates {
+            self.refresh_update_status(cx);
         }
         self.sidebar_focused = false;
         cx.notify();

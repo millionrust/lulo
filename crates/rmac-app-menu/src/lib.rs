@@ -99,6 +99,10 @@ pub struct Item {
     pub separator_before: bool,
     pub checked: CheckState,
     pub children: Vec<Item>,
+    /// A trailing count capsule, like the Mac's "System Settings…, 1
+    /// update". Drawn by the shell's own menus only; never sent over the
+    /// menu wire.
+    pub badge: String,
 }
 
 impl Item {
@@ -127,6 +131,12 @@ impl Item {
             children,
             ..Self::new(label, action, "")
         }
+    }
+
+    /// Show `badge` in a trailing capsule (empty for none).
+    pub fn badge(mut self, badge: impl Into<String>) -> Self {
+        self.badge = badge.into();
+        self
     }
 
     pub fn separated(mut self) -> Self {
@@ -980,6 +990,7 @@ fn resolve_items(
             separator_before: separate && !items.is_empty(),
             checked: CheckState::Off,
             children,
+            badge: String::new(),
         });
         separate = false;
     }
@@ -2205,13 +2216,8 @@ mod tests {
         assert_eq!(terminal["terminal::ResetTerminal"], "⌥⌘R");
         assert_eq!(terminal["terminal::HardResetTerminal"], "⌃⌥⌘R");
         assert_eq!(terminal["terminal::ShowSettings"], "⌘,");
-        let preview = hints(
-            &definition(
-                rmac_apps::identity::PREVIEW,
-                &spec_actions(PREVIEW_MENUS),
-            )
-            .unwrap(),
-        );
+        let preview =
+            hints(&definition(rmac_apps::identity::PREVIEW, &spec_actions(PREVIEW_MENUS)).unwrap());
         assert_eq!(preview["preview::GoToPage"], "⌥⌘G");
         assert_eq!(preview["preview::PrintDocument"], "⌘P");
         assert_eq!(preview["preview::SelectAll"], "⌘A");

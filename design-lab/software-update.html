@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Software Update — macOS 26 pane, exact</title>
+<!--
+  System Settings ▸ General ▸ Software Update, 1:1 logical points, measured on
+  the owner's Mac (macOS 26.2 Tahoe, dark, 2026-09-25) from AX frames (System
+  Events, window at 700,33, 723 × 832) and Retina pixels ÷ 2. Only the Mac's
+  geometry and colours are copied: every word is Lulo OS's, every glyph is
+  original (no Apple artwork). Rust ports this into
+  crates/system-settings/src/controller/software_updates/render.rs and reads
+  the shared numbers from settings_style.rs. The window, sidebar, toolbar,
+  group fill, separator, section-head, push-button, switch and ⓘ values are
+  the ones design-lab/settings.html already documents; they are repeated
+  here only where this pane uses them.
+
+  All numbers are points. "card y" is from the card's top edge, "sheet y"
+  from the sheet's top edge. S = estimated, not measured.
+
+  Detail column  x 223, 500 wide; cards 460 wide at x 243 (20 inset); the
+                 first card's top is the toolbar's bottom, y 52
+  Card           radius 12, fill rgb(39,40,51), no border; 10 between cards
+  Primary card   (the Mac's "macOS 27") 491 tall with the notes shown:
+    header row   icon 32 × 32 at (8, 10); title 13/16 rgb(222,222,224) at
+                 (46, 10); subtitle 11/14 rgb(158,158,163) at (46, 27)
+                 ("27 — 14.73 GB" → Lulo "0.9.1 — 42.3 MB")
+    buttons      24 tall, radius 6 (S), fill rgb(55,56,67), label 13
+                 rgb(224,225,226), padding 12 each side (from 99 / 107 / 117
+                 / 125 wide labels, S); 9 apart; y 14; the last one ends 9
+                 before the ⓘ
+    ⓘ            15 × 15 outline at (433, 18), rgb(158,158,163), 12 from the
+                 card's right edge
+    rule         1 pt rgb(49,50,61) at card y 51, inset 10 both sides
+    lead         13/16 rgb(222,222,224) at (10, 62), 440 wide
+    sections     heading 11/14 bold rgb(222,222,224), body 11/14
+                 rgb(158,158,163) right under it; 16 between the lead and the
+                 first heading and between sections
+    link         11/14 rgb(63,143,247), "…  ›", 16 under the last section
+    rule         second 1 pt rule 10 under the link (S: 454 − 444)
+    footnote     11/14 rgb(158,158,163), 11 under the rule, 11 bottom pad
+  Section head   "Also Available" 13/16 bold rgb(221,221,223) at x 253, 30
+                 under the card above, 10 above its card
+  Other Updates  card 65 tall: icon 32 at (8, 17); title 13/16 at (46, 10);
+                 subtitle 11/14 at (46, 28) wrapping at 124 wide on the Mac
+                 (two lines; 132 here so the web font also wraps to two);
+                 buttons y 21; ⓘ 15 at (433, 26)
+  Installed row  card 36 tall: label 13 at (10, 10); value 13
+                 rgb(158,158,163) right-aligned, 11 from the right edge
+  Automatic Upd. card 38 tall: label at (10, 10); value "On" 13 secondary
+                 ending 12 before the ⓘ; ⓘ 17 × 17 at (431, 9)
+  Legal card     48 tall: 11/14 secondary, 440 wide, padding 10; the link
+                 rgb(63,143,247)
+
+  More Info sheet (the ⓘ on a card)
+    sheet        589 × 588, centred on the window (x 67, y 122), radius 26
+                 (S, = settings sheet), fill rgb(32,34,45), 1 pt edge
+                 rgba(255,255,255,.10) (S), dimmed window behind
+    title        13/16 bold rgb(222,222,224) at (30, 21)
+    table        x 20, y 46, 549 wide, radius 10 (S), rows 27 tall, stripes
+                 rgb(50,52,61) / rgb(39,41,51), selected rgb(36,88,202) white
+                 text; checkbox 16 at x 29 (on: accent #3478F6 with a white
+                 tick, off: rgb(70,72,80)); name 13 at x 66; version 13
+                 right-aligned ending x 452; size 13 right-aligned ending 10
+                 from the table's right edge
+    detail card  x 20, y 165, 549 × 306, radius 12, fill rgb(39,41,51);
+                 title 15 bold (S) + " — Restart Required" 15 regular
+                 rgb(158,158,163) at (20, 20); notes 13/16 rgb(222,222,224)
+                 (headings 13 bold) 16 below, scrolling; rule at card y 270;
+                 footnote 13 secondary under it
+    footer       rule rgb(54,56,66) at sheet y 525; buttons 24 tall, radius
+                 6 (S), 19 from the bottom: Cancel at x 20 (fill
+                 rgb(48,50,61)); secondary then primary right-aligned, 8.5
+                 apart (S: 8), the primary ending 20 from the right, fill
+                 rgb(52,120,246), label white
+  Automatic Updates sheet
+    sheet        470 × 274, centred (x 127, y 279), fill rgb(31,34,44),
+                 radius 26 (S)
+    heading      "Automatically" 13/16 bold at (30, 20)
+    card 1       x 20, y 46, 430 × 74 (two 37 rows), fill rgb(38,41,50),
+                 radius 12 (S), separator rgb(48,51,60) inset 10; labels 13 at
+                 x 30; switches 36 × 16 ending 10 from the card's right
+    card 2       x 20, y 130, 430 × 36, one row
+    footer       1 pt rule rgb(53,55,65) at sheet y 209 (the scroll area's
+                 bottom); Done 64 × 24 primary at (386, 230): 20 from the
+                 right and the bottom
+    Lulo copy    "Install macOS updates" → "Install Lulo OS updates"; the
+                 other two are the Mac's words. The Mac 26.2 sheet has only
+                 these three switches (no "Check for updates", no App Store
+                 switch): checking is always on.
+  Apple menu     "System Settings…" gets the menus.html count capsule:
+                 16 tall, radius 8, padding 8.5, fill rgba(255,255,255,.10),
+                 600 11/16 rgba(255,255,255,.86), 24 after the label
+                 ("1 update", "2 updates")
+
+  Lulo states not seen on the Mac this pass (all S): downloading (a 6 pt
+  progress bar under the header row and a "Downloading… x of y" subtitle
+  instead of the buttons), ready ("Restart Now" + "Ready to install —
+  restart to finish"), up to date. The Mac's "Update Tonight" /
+  "Upgrade Tonight" button is not drawn: Lulo has no scheduled overnight
+  install yet (docs/parity.md SWU row).
+-->
+<style>
+  :root{
+    --win:rgb(32,33,45); --panel:rgb(29,29,40); --panel-edge:rgba(255,255,255,.10);
+    --group:rgb(39,40,51); --sep:rgb(49,50,61); --label:rgb(222,222,224); --sec:rgb(158,158,163);
+    --head:rgb(221,221,223); --side:rgb(244,244,244); --title:rgb(232,232,234);
+    --search:rgb(46,47,58); --ph:rgb(150,151,156); --sel-grey:rgb(70,70,70);
+    --ctl:rgb(55,56,67); --btn-text:rgb(224,225,226); --link:rgb(63,143,247);
+    --accent:#397CF7; --push:rgb(52,120,246); --off:rgb(60,61,71); --knob:rgb(226,226,228);
+    --cap:rgb(39,40,56); --cap-edge:rgb(56,58,84);
+    --sheet:rgb(32,34,45); --sheet-rule:rgb(54,56,66); --sheet-btn:rgb(48,50,61);
+    --stripe-a:rgb(50,52,61); --stripe-b:rgb(39,41,51); --row-sel:rgb(36,88,202);
+    --auto-sheet:rgb(31,34,44); --auto-card:rgb(38,41,50); --auto-sep:rgb(48,51,60); --auto-rule:rgb(53,55,65);
+    --font:-apple-system,"SF Pro Text",Inter,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#111;font:13px var(--font);color:var(--label);-webkit-font-smoothing:antialiased}
+  h1{font:600 15px var(--font);color:#ddd;margin:24px 24px 0}
+  .stage{padding:24px;display:flex;flex-wrap:wrap;gap:28px}
+  .frame{display:flex;flex-direction:column;gap:8px}
+  .cap-label{font:600 12px var(--font);color:#8b8b93}
+  .win{position:relative;width:723px;height:832px;background:var(--win);border-radius:27px;overflow:hidden;flex:none;
+       box-shadow:0 0 0 .5px rgba(0,0,0,.9),inset 0 0 0 1px rgba(255,255,255,.14)}
+  .panel{position:absolute;left:8px;top:8px;width:215px;bottom:8px;border-radius:19px;background:var(--panel);
+       box-shadow:inset 0 0 0 1px var(--panel-edge);overflow:hidden}
+  .tl{position:absolute;top:19px;left:19px;display:flex;gap:9px;z-index:3}
+  .tl i{width:14px;height:14px;border-radius:50%;display:block}
+  .tl i:nth-child(1){background:#EC6765}.tl i:nth-child(2){background:#F2CA44}.tl i:nth-child(3){background:#65C466}
+  .search{position:absolute;left:10px;top:53px;width:195px;height:28px;border-radius:14px;background:var(--search);
+       display:flex;align-items:center;color:var(--ph);padding-left:28px}
+  .list{position:absolute;left:10px;top:98px;width:195px}
+  .row{height:32px;border-radius:8px;position:relative;display:flex;align-items:center;color:var(--side)}
+  .row.sel{background:var(--sel-grey)}
+  .row i{position:absolute;left:6px;width:20px;height:20px;border-radius:5.5px;background:rgb(142,142,147)}
+  .row span{position:absolute;left:31px}
+  .gap{height:13px}
+  .capsule{position:absolute;left:231px;top:8px;width:73px;height:36px;border-radius:18px;background:var(--cap);
+       box-shadow:inset 0 0 0 1px var(--cap-edge);display:flex;align-items:center;justify-content:space-around;color:rgb(233,233,235);font-size:17px}
+  .capsule b.off{color:rgb(105,106,121)}
+  .title{position:absolute;left:316px;top:16px;font:700 15px/20px var(--font);color:var(--title)}
+  .detail{position:absolute;left:223px;top:52px;width:500px;padding:0 20px;bottom:0;overflow:hidden}
+
+  /* ---- pane ---- */
+  .card{position:relative;width:460px;background:var(--group);border-radius:12px;margin-bottom:10px;overflow:hidden}
+  .hdr{position:relative;height:52px}
+  .hdr .icon{position:absolute;left:8px;top:10px;width:32px;height:32px}
+  .hdr .t{position:absolute;left:46px;top:10px;font:400 13px/16px var(--font);color:var(--label)}
+  .hdr .s{position:absolute;left:46px;top:27px;font:400 11px/14px var(--font);color:var(--sec)}
+  .hdr .acts{position:absolute;right:36px;top:14px;display:flex;gap:9px}
+  .hdr .ii{position:absolute;right:12px;top:18px;width:15px;height:15px}
+  .pb{height:24px;padding:0 12px;border-radius:6px;background:var(--ctl);display:inline-flex;align-items:center;
+      font:400 13px/16px var(--font);color:var(--btn-text);white-space:nowrap}
+  .pb.primary{background:var(--push);color:#fff}
+  .pb.sheet{background:var(--sheet-btn)}
+  .rule{height:1px;background:var(--sep);margin:0 10px}
+  .notes{padding:10px 10px 0}
+  .notes .lead{font:400 13px/16px var(--font);color:var(--label);margin:0}
+  .notes h4{margin:16px 0 0;font:700 11px/14px var(--font);color:var(--label)}
+  .notes p{margin:0;font:400 11px/14px var(--font);color:var(--sec)}
+  .notes .link{display:block;margin:16px 0 10px;font:400 11px/14px var(--font);color:var(--link)}
+  .foot{padding:11px 10px;font:400 11px/14px var(--font);color:var(--sec)}
+  .progress{margin:0 10px 12px;height:6px;border-radius:3px;background:var(--off);position:relative;overflow:hidden}
+  .progress i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--accent)}
+  .h{font:700 13px/16px var(--font);color:var(--head);padding:0 10px;margin:30px 0 10px}
+  .other{height:65px}
+  .other .icon{top:17px} .other .acts{top:21px} .other .ii{top:26px}
+  .other .s{top:28px;width:132px}
+  .vrow{display:flex;align-items:center;padding:0 10px;font:400 13px/16px var(--font)}
+  .vrow .v{margin-left:auto;color:var(--sec)}
+  .vrow.inst{height:36px;padding-right:11px}
+  .vrow.auto{height:38px}
+  .vrow.auto .ii{width:17px;height:17px;margin-left:12px;margin-right:2px}
+  .legal{padding:10px;font:400 11px/14px var(--font);color:var(--sec)}
+  .legal a{color:var(--link);text-decoration:none}
+  .uptodate{height:52px}
+  svg.info circle{fill:none;stroke:currentColor;stroke-width:1.1}
+  .ii{color:var(--sec)}
+
+  /* ---- sheets ---- */
+  .dim{position:absolute;inset:0;background:rgba(0,0,0,.35)}
+  .sheet{position:absolute;border-radius:26px;background:var(--sheet);box-shadow:inset 0 0 0 1px rgba(255,255,255,.10),0 20px 60px rgba(0,0,0,.5);overflow:hidden}
+  .more{left:67px;top:122px;width:589px;height:588px}
+  .more .st{position:absolute;left:30px;top:21px;font:700 13px/16px var(--font);color:var(--label)}
+  .table{position:absolute;left:20px;top:46px;width:549px;border-radius:10px;overflow:hidden}
+  .tr{height:27px;display:flex;align-items:center;position:relative;font:400 13px/16px var(--font);color:var(--label)}
+  .tr:nth-child(odd){background:var(--stripe-a)} .tr:nth-child(even){background:var(--stripe-b)}
+  .tr.sel{background:var(--row-sel);color:#fff}
+  .tr .cb{position:absolute;left:9px;top:5.5px;width:16px;height:16px;border-radius:4px;background:rgb(70,72,80)}
+  .tr .cb.on{background:#3478F6;box-shadow:inset 0 0 0 .5px rgba(255,255,255,.35)}
+  .tr .cb.on::after{content:"";position:absolute;left:5px;top:2px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+  .tr .n{position:absolute;left:46px}
+  .tr .ver{position:absolute;right:117px;text-align:right}
+  .tr .sz{position:absolute;right:10px;text-align:right}
+  .dcard{position:absolute;left:20px;top:165px;width:549px;height:306px;border-radius:12px;background:var(--stripe-b);overflow:hidden}
+  .dcard .dt{position:absolute;left:20px;top:20px;font:700 15px/18px var(--font);color:var(--label)}
+  .dcard .dt span{font-weight:400;color:var(--sec)}
+  .dcard .dn{position:absolute;left:20px;right:20px;top:54px;height:196px;overflow:hidden;font:400 13px/16px var(--font);color:var(--label)}
+  .dcard .dn h4{margin:14px 0 0;font:700 13px/16px var(--font)}
+  .dcard .dn p{margin:0}
+  .dcard .drule{position:absolute;left:20px;right:20px;top:270px;height:1px;background:var(--sep)}
+  .dcard .df{position:absolute;left:20px;top:280px;font:400 13px/16px var(--font);color:var(--sec)}
+  .sfoot{position:absolute;left:0;right:0;bottom:0;height:64px;border-top:1px solid var(--sheet-rule)}
+  .sfoot .l{position:absolute;left:20px;bottom:19px}
+  .sfoot .r{position:absolute;right:20px;bottom:19px;display:flex;gap:8px}
+  .auto{left:127px;top:279px;width:470px;height:274px;background:var(--auto-sheet)}
+  .auto .st{position:absolute;left:30px;top:20px;font:700 13px/16px var(--font);color:var(--label)}
+  .acard{position:absolute;left:20px;width:430px;border-radius:12px;background:var(--auto-card)}
+  .arow{height:37px;display:flex;align-items:center;padding:0 10px;position:relative;font:400 13px/16px var(--font)}
+  .arow + .arow{border-top:1px solid var(--auto-sep);height:37px}
+  .arow.off-look{color:rgba(222,222,224,.4)}
+  .arow .sw{margin-left:auto}
+  .auto .afoot{position:absolute;left:0;right:0;top:209px;height:65px;border-top:1px solid var(--auto-rule)}
+  .auto .done{position:absolute;right:20px;bottom:20px;width:64px;justify-content:center}
+  .sw{width:36px;height:16px;border-radius:8px;background:var(--off);position:relative;flex:none}
+  .sw::after{content:"";position:absolute;left:1.5px;top:1.5px;width:21px;height:13px;border-radius:7px;background:var(--knob)}
+  .sw.on{background:var(--accent)} .sw.on::after{left:13.5px;background:#E1EBFE}
+  .sw.dis{opacity:.4}
+
+  /* ---- Apple menu row (menus.html grammar) ---- */
+  .menu{position:relative;width:295px;padding:5px 0;border-radius:12px;color:rgba(255,255,255,.85);
+        background:rgba(33,33,38,.84);box-shadow:inset 0 0 0 1px rgba(255,255,255,.30),0 0 0 .5px rgba(0,0,0,.85),0 10px 32px rgba(0,0,0,.35)}
+  .menu .mrow{height:24px;margin:0 5px;padding:0 9px 0 11.5px;display:flex;align-items:center;border-radius:7px;white-space:nowrap}
+  .menu .mrow .ico{width:16px;height:16px;margin:0 8.5px 0 .5px;border-radius:4px;background:rgba(255,255,255,.55);flex:none}
+  .menu .mrow .label{flex:1}
+  .menu .badge{height:16px;padding:0 8.5px;margin:0 -.5px 0 24px;border-radius:8px;background:rgba(255,255,255,.10);
+               font:600 11px/16px var(--font);color:rgba(255,255,255,.86)}
+  .menu .sep{height:1px;margin:5px 16px;background:rgba(255,255,255,.14)}
+</style>
+</head>
+<body>
+<h1>Software Update — Lulo OS as one item (macOS 26.2 geometry)</h1>
+<div class="stage" id="stage"></div>
+<script>
+// Original artwork only: the Lulo OS disc and a neutral package disc.
+const LULO=`<svg class="icon" viewBox="0 0 32 32"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7a5cff"/><stop offset=".55" stop-color="#3b82f6"/><stop offset="1" stop-color="#22c3a6"/></linearGradient></defs><circle cx="16" cy="16" r="16" fill="url(#lg)"/><path d="M12 9v14h9" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const PKG=`<svg class="icon" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="rgb(88,90,104)"/><path d="M9 12l7-4 7 4v8l-7 4-7-4z M9 12l7 4 7-4 M16 16v8" fill="none" stroke="#e6e6ea" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+const INFO=(cls='ii')=>`<svg class="${cls} info" viewBox="0 0 17 17"><circle cx="8.5" cy="8.5" r="7.9"/><rect x="7.8" y="7.2" width="1.4" height="5.2" rx=".7" fill="currentColor"/><circle cx="8.5" cy="5" r=".9" fill="currentColor"/></svg>`;
+const sidebar=()=>`<div class="panel"><div class="search">Search</div><div class="list">
+  <div class="row" style="height:46px"><span style="left:52px">Lulo User</span></div>
+  <div class="gap"></div>${['Wi‑Fi','Bluetooth','Network','Battery'].map(n=>`<div class="row"><i></i><span>${n}</span></div>`).join('')}
+  <div class="gap"></div>${['General','Accessibility','Appearance','Desktop & Dock','Displays','Menu Bar','Spotlight','Wallpaper'].map(n=>`<div class="row${n=='General'?' sel':''}"><i></i><span>${n}</span></div>`).join('')}
+  </div></div><div class="tl"><i></i><i></i><i></i></div>
+  <div class="capsule"><b>‹</b><b class="off">›</b></div><div class="title">Software Update</div>`;
+const NOTES=`<div class="notes">
+  <p class="lead">Lulo OS 0.9.1 makes Files faster on large folders, adds Automatic Updates to Software Update, and fixes a number of issues reported during the beta.</p>
+  <h4>Software Update</h4><p>Lulo OS updates now appear as one item with their size and release notes, and can be downloaded and installed automatically.</p>
+  <h4>Files</h4><p>Folders with thousands of items open and scroll faster, and Quick Look previews appear sooner.</p>
+  <h4>Fixes</h4><p>The Dock no longer flickers when a window is minimised, and Text Editor keeps its window size between launches.</p>
+  <span class="link">See more about what’s new in Lulo OS 0.9.1 ›</span></div>`;
+const tail=(auto='On')=>`<div class="card"><div class="vrow inst">Installed<span class="v">Lulo OS 0.9.0</span></div></div>
+  <div class="card"><div class="vrow auto">Automatic Updates<span class="v">${auto}</span>${INFO('ii')}</div></div>
+  <div class="card legal">Lulo OS is free software; each package keeps its own licence, listed in its documentation. <a>Learn more…</a></div>`;
+const other=`<div class="h">Also Available</div>
+  <div class="card"><div class="hdr other">${PKG}<div class="t">Other Updates</div><div class="s">firefox, libc6 and 12 more…</div>
+  <div class="acts"><span class="pb">Update Now</span></div>${INFO()}</div></div>`;
+const primary=(sub,acts,body)=>`<div class="card"><div class="hdr">${LULO}<div class="t">Lulo OS 0.9.1</div><div class="s">${sub}</div>
+  <div class="acts">${acts}</div>${INFO()}</div>${body}</div>`;
+const FOOT=`<div class="rule"></div><div class="foot">Once downloaded, this update will be installed when you restart.</div>`;
+const frames={
+ 'a · Lulo OS update + Other Updates': primary('0.9.1 — 42.3 MB','<span class="pb">Update Now</span>',`<div class="rule"></div>${NOTES}${FOOT}`)+other+tail(),
+ 'b · Downloading (S)': primary('Downloading… 12.4 MB of 42.3 MB — about 1 minute','',`<div class="progress"><i style="width:29%"></i></div><div class="rule"></div>${NOTES}${FOOT}`)+other+tail(),
+ 'c · Ready: Restart Now (S)': primary('Ready to install — restart to finish','<span class="pb">Restart Now</span>',`<div class="rule"></div>${NOTES}<div class="rule"></div><div class="foot">Lulo OS will install this update while it restarts.</div>`)+tail(),
+ 'd · Up to date (S)': `<div class="card"><div class="hdr uptodate">${LULO}<div class="t">Lulo OS is up to date</div><div class="s">Lulo OS 0.9.1 — checked today at 09:12</div></div></div>`+tail(),
+};
+const MORE=`<div class="dim"></div><div class="sheet more"><div class="st">Updates are available for your computer</div>
+  <div class="table">${[['Lulo OS 0.9.1','0.9.1','42.3 MB',1,1],['firefox','143.0','78.4 MB',1,0],['libc6','2.42-0ubuntu4','3.2 MB',1,0],['linux-firmware','20260918','412 MB',0,0]]
+    .map(([n,v,s,on,sel])=>`<div class="tr${sel?' sel':''}"><i class="cb${on?' on':''}"></i><span class="n">${n}</span><span class="ver">${v}</span><span class="sz">${s}</span></div>`).join('')}</div>
+  <div class="dcard"><div class="dt">Lulo OS 0.9.1 <span>— Restart Required</span></div>
+    <div class="dn"><p>Lulo OS 0.9.1 makes Files faster on large folders, adds Automatic Updates to Software Update, and fixes a number of issues reported during the beta.</p>
+    <h4>Software Update</h4><p>Lulo OS updates now appear as one item with their size and release notes.</p><h4>Files</h4><p>Folders with thousands of items open and scroll faster.</p></div>
+    <div class="drule"></div><div class="df">Once downloaded, this update will be installed when you restart.</div></div>
+  <div class="sfoot"><span class="pb sheet l">Cancel</span><div class="r"><span class="pb primary">Update Now</span></div></div></div>`;
+const AUTO=`<div class="dim"></div><div class="sheet auto"><div class="st">Automatically</div>
+  <div class="acard" style="top:46px"><div class="arow">Download new updates when available<i class="sw on"></i></div><div class="arow">Install Lulo OS updates<i class="sw on"></i></div></div>
+  <div class="acard" style="top:130px"><div class="arow" style="height:36px">Install system data files and security updates<i class="sw on"></i></div></div>
+  <div class="afoot"></div><span class="pb primary done">Done</span></div>`;
+let out='';
+for(const [name,body] of Object.entries(frames))
+  out+=`<div class="frame"><div class="cap-label">${name}</div><div class="win">${sidebar()}<div class="detail">${body}</div></div></div>`;
+out+=`<div class="frame"><div class="cap-label">e · More Info sheet</div><div class="win">${sidebar()}<div class="detail">${frames['a · Lulo OS update + Other Updates']}</div>${MORE}</div></div>`;
+out+=`<div class="frame"><div class="cap-label">f · Automatic Updates sheet</div><div class="win">${sidebar()}<div class="detail">${frames['a · Lulo OS update + Other Updates']}</div>${AUTO}</div></div>`;
+out+=`<div class="frame"><div class="cap-label">g · Apple menu: System Settings… with the update count</div><div class="menu">
+  <div class="mrow"><span class="ico"></span><span class="label">About This Lulo OS</span></div><div class="sep"></div>
+  <div class="mrow"><span class="ico"></span><span class="label">System Settings…</span><span class="badge">1 update</span></div>
+  <div class="mrow"><span class="ico"></span><span class="label">Software Center</span></div><div class="sep"></div>
+  <div class="mrow"><span class="ico"></span><span class="label">Recent Items</span></div></div></div>`;
+document.getElementById('stage').innerHTML=out;
+</script>
+</body>
+</html>

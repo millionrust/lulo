@@ -25,6 +25,17 @@ MAINTAINER = "Jacob Samas <samasjacob@icloud.com>"
 MAINTAINER_SCRIPT_NAMES = ("postinst", "prerm", "postrm")
 MAX_MAINTAINER_SCRIPT_BYTES = 64 * 1024
 
+# Signed release notes (System Settings > Software Update, "Lulo OS <version>").
+# packaging/release-notes/<upstream version>.txt becomes rmac-session's
+# Lulo-Release-Notes control field, which stage-apt-snapshot.py copies into
+# the Packages index that the archive's InRelease signs. See
+# docs/release-process.md "Release notes".
+REPO_ROOT = Path(__file__).resolve().parents[2]
+RELEASE_NOTES_DIRECTORY = Path("packaging/release-notes")
+RELEASE_NOTES_FIELD = "Lulo-Release-Notes"
+RELEASE_NOTES_PACKAGE = "rmac-session"
+MAX_RELEASE_NOTES_BYTES = 4096
+
 # rmac-session's floor on each of Lulo OS's own third-party builds (niri,
 # xwayland-satellite): read straight from packaging/third-party/upstreams.json
 # so it can never drift from what build-niri-packages.sh actually produces.
@@ -421,14 +432,83 @@ def maintainer_scripts(repo_root: Path, spec: PackageSpec) -> dict[str, bytes]:
     return scripts
 
 
+def validate_release_notes(raw: bytes) -> list[str]:
+    """Return the release-notes lines, or fail on anything non-canonical.
+
+    UTF-8, at most MAX_RELEASE_NOTES_BYTES, no control characters but the
+    line feed, one optional final line feed, no leading, trailing, or
+    doubled blank lines, and no trailing whitespace. A line may not start
+    with "." because a deb822 continuation line " ." is the encoded blank
+    line. Lines starting "# " are section headings for System Settings.
+    """
+    if len(raw) > MAX_RELEASE_NOTES_BYTES:
+        raise ContractError("release notes are too large")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ContractError("release notes are not UTF-8") from error
+    if text.endswith("\n"):
+        text = text[:-1]
+    if any(
+        (ord(character) < 0x20 and character != "\n")
+        or ord(character) == 0x7F
+        or 0x80 <= ord(character) <= 0x9F
+        or character in "\u2028\u2029"
+        for character in text
+    ):
+        raise ContractError("release notes contain a control character")
+    lines = text.split("\n")
+    if not text.strip() or not lines[0] or not lines[-1]:
+        raise ContractError("release notes must start and end with text")
+    for previous, line in zip([None] + lines, lines):
+        if line != line.rstrip():
+            raise ContractError("release notes contain trailing whitespace")
+        if line.startswith("."):
+            raise ContractError("release notes lines cannot start with a period")
+        if not line and previous == "":
+            raise ContractError("release notes contain a doubled blank line")
+    return lines
+
+
+def release_notes_lines(
+    spec: PackageSpec, version: str, notes_root: Path
+) -> list[str] | None:
+    """The reviewed notes for `version` of rmac-session, or None when absent."""
+    if spec.name != RELEASE_NOTES_PACKAGE:
+        return None
+    upstream = version.rsplit("-", 1)[0]
+    path = notes_root / RELEASE_NOTES_DIRECTORY / f"{upstream}.txt"
+    try:
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise ContractError("release notes could not be inspected") from error
+    if not stat.S_ISREG(metadata.st_mode):
+        raise ContractError("release notes are not a regular file")
+    if metadata.st_size > MAX_RELEASE_NOTES_BYTES:
+        raise ContractError("release notes are too large")
+    try:
+        raw = path.read_bytes()
+    except OSError as error:
+        raise ContractError("release notes could not be read") from error
+    return validate_release_notes(raw)
+
+
 def control_bytes(
     spec: PackageSpec,
     *,
     version: str,
     architecture: str,
     dependencies: tuple[str, ...],
+    notes_root: Path = REPO_ROOT,
 ) -> bytes:
-    """Render one canonical binary-package control stanza."""
+    """Render one canonical binary-package control stanza.
+
+    rmac-session carries its release notes, when the release has them, as
+    the multi-line Lulo-Release-Notes field: an empty first line, then one
+    continuation line per notes line, a blank line encoded as " .".
+    """
     if architecture not in ARCHITECTURES:
         raise ContractError("unsupported Debian architecture")
     if not re.fullmatch(
@@ -451,6 +531,10 @@ def control_bytes(
     if spec.recommends:
         recommends = dependency_entries(", ".join(spec.recommends))
         lines.append(f"Recommends: {', '.join(recommends)}")
+    notes = release_notes_lines(spec, version, notes_root)
+    if notes is not None:
+        lines.append(f"{RELEASE_NOTES_FIELD}:")
+        lines.extend(f" {line}" if line else " ." for line in notes)
     lines.extend(
         [
             f"Description: {spec.summary}",

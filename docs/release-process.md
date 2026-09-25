@@ -490,6 +490,34 @@ do not, since a two-architecture APT repository needs both.
    provenance attestation should all be attached, and after publication an
    `apt-snapshot-<id>.tar`.
 
+### Release notes
+
+System Settings > General > Software Update shows the Lulo OS update as
+one item, "Lulo OS <version>", with its release notes (the Mac's inline
+notes and More Info… sheet). Before tagging, commit the notes as
+`packaging/release-notes/<upstream version>.txt`, where the upstream
+version is the Debian version without its `-N` revision: `0.9.1.txt`, or
+`0.9.0~beta.1.txt` for the `v0.9.0-beta.1` tag. The file is optional; a
+release without one shows no notes.
+
+The format is plain UTF-8 text of at most 4 KiB: the first paragraph is the
+lead, a line starting `# ` is a section heading, and single blank lines
+separate paragraphs. No tabs or other control characters, no trailing
+whitespace, no leading, trailing or doubled blank lines, and no line
+starting with `.`. `scripts/test_native_packages.py` checks every committed
+file.
+
+`native_package_contract.control_bytes` puts the notes into rmac-session's
+`DEBIAN/control` as the multi-line `Lulo-Release-Notes` field (one
+continuation line per notes line, a blank line as ` .`), so the build and
+`verify-native-packages.py` render the same bytes. `stage-apt-snapshot.py`
+already copies every control field into the `Packages` index, and the
+archive's clearsigned `InRelease` binds that index by SHA-256 and SHA-512.
+APT only moves a downloaded index into `/var/lib/apt/lists` after checking
+it against the signed `InRelease`, so System Settings reads notes that the
+archive key signed, without any new file or `Release` field. Nothing else
+in the publication pipeline changes.
+
 ## Tagging a pre-release (Alpha/Beta/RC)
 
 A tag whose name is not exactly `vX.Y.Z` (for example `v0.9.0-beta.1`,

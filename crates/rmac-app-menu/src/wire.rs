@@ -308,6 +308,7 @@ fn decode_level(
             separator_before: bits & flags::SEPARATOR_BEFORE != 0,
             checked,
             children,
+            badge: String::new(),
         });
     }
     Ok(level)

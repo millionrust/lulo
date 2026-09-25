@@ -159,6 +159,18 @@ fn the_power_button_and_its_dialog_have_their_own_endpoints() {
         .any(|spec| spec.id == press || spec.id == dialog));
 }
 
+#[test]
+fn software_update_restarts_through_its_own_endpoint() {
+    let runtime = Path::new("/tmp/rmac-shortcuts-test");
+    let restart = ShortcutId(power_key::RESTART_TO_UPDATE_SHORTCUT.into());
+    assert!(known_action(&restart));
+    assert!(shortcut_socket_path_in(runtime, &restart)
+        .unwrap()
+        .ends_with("shortcut-restart-to-update.sock"));
+    // Only System Settings sends it; no key or portal shortcut does.
+    assert!(!default_shortcuts().iter().any(|spec| spec.id == restart));
+}
+
 #[cfg(unix)]
 #[test]
 fn configuration_request_is_session_scoped_acknowledged_and_cleans_up() {

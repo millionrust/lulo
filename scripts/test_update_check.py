@@ -31,6 +31,7 @@ FILTER_NONE = 1
 INFO_NORMAL = 5
 INFO_SECURITY = 8
 INFO_BLOCKED = 9
+INFO_CRITICAL = 26
 OFFLINE_REBOOT = 1
 OFFLINE_UNSET = 3
 CLIENT_DOMAIN = "pk-client-error-quark"
@@ -112,7 +113,7 @@ FAKE_REPOSITORY = textwrap.dedent(
         ALLOW_REINSTALL=4, JUST_REINSTALL=5, ALLOW_DOWNGRADE=6,
     )
     Pk.FilterEnum = _Enum(UNKNOWN=0, NONE=1, INSTALLED=2)
-    Pk.InfoEnum = _Enum(NORMAL=5, SECURITY=8, BLOCKED=9)
+    Pk.InfoEnum = _Enum(NORMAL=5, SECURITY=8, BLOCKED=9, CRITICAL=26)
     Pk.ExitEnum = _Enum(UNKNOWN=0, SUCCESS=1, FAILED=2, CANCELLED=3)
     Pk.OfflineAction = _Enum(UNKNOWN=0, REBOOT=1, POWER_OFF=2, UNSET=3)
     Pk.ErrorEnum = _Enum(NO_NETWORK=2, GPG_FAILURE=5, NOT_AUTHORIZED=48)
@@ -294,11 +295,17 @@ def updates(ids, info=INFO_NORMAL):
 
 
 class Run:
-    def __init__(self, result: subprocess.CompletedProcess, calls: list):
+    def __init__(
+        self,
+        result: subprocess.CompletedProcess,
+        calls: list,
+        status: "str | None" = None,
+    ):
         self.returncode = result.returncode
         self.stdout = result.stdout
         self.stderr = result.stderr
         self.calls = calls
+        self.status = status
 
     def named(self, call: str) -> list:
         return [entry for entry in self.calls if entry["call"] == call]
@@ -311,7 +318,12 @@ class Run:
         ]
 
 
-def run_program(scenario: dict, *, with_packagekit: bool = True) -> Run:
+def run_program(
+    scenario: dict,
+    *,
+    with_packagekit: bool = True,
+    config: "str | bytes | None" = None,
+) -> Run:
     with tempfile.TemporaryDirectory() as temporary:
         root = Path(temporary)
         package = root / "gi"
@@ -330,6 +342,12 @@ def run_program(scenario: dict, *, with_packagekit: bool = True) -> Run:
         scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
         log_path = root / "calls.jsonl"
         log_path.write_text("", encoding="utf-8")
+        if config is not None:
+            config_path = root / ".config" / "rmac" / "software-update.conf"
+            config_path.parent.mkdir(parents=True)
+            if isinstance(config, str):
+                config = config.encode("utf-8")
+            config_path.write_bytes(config)
         environment = {
             "PATH": "/usr/bin:/bin",
             "HOME": str(root),
@@ -351,7 +369,13 @@ def run_program(scenario: dict, *, with_packagekit: bool = True) -> Run:
             for line in log_path.read_text(encoding="utf-8").splitlines()
             if line
         ]
-    return Run(result, calls)
+        status_path = root / ".local" / "state" / "rmac" / "software-update-status"
+        status = None
+        if status_path.exists():
+            if stat.S_IMODE(status_path.stat().st_mode) != 0o600:
+                raise AssertionError("status file is not private")
+            status = status_path.read_text(encoding="utf-8")
+    return Run(result, calls, status)
 
 
 class ProgramFileTests(unittest.TestCase):
@@ -408,7 +432,19 @@ class UpdateCheckTests(unittest.TestCase):
     def test_only_other_updates_send_a_count_notification(self):
         run = run_program({"updates": updates(OTHER_IDS)})
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assert_no_offline_work(run)
+        # Downloaded for later (the Mac's "Download new updates"), never
+        # scheduled: nothing is triggered.
+        self.assertEqual(
+            run.named("update_packages"),
+            [
+                {
+                    "call": "update_packages",
+                    "flags": DOWNLOAD_FLAGS,
+                    "package_ids": sorted(OTHER_IDS),
+                }
+            ],
+        )
+        self.assertEqual(run.named("offline_trigger"), [])
         [notification] = run.notifications()
         self.assertEqual(notification["name"], "org.freedesktop.Notifications")
         self.assertEqual(notification["path"], "/org/freedesktop/Notifications")
@@ -446,14 +482,21 @@ class UpdateCheckTests(unittest.TestCase):
         )
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assert_refreshed_non_interactively(run)
+        # The other updates are cached first; the Lulo OS set is downloaded
+        # last, so it is exactly what PackageKit records as prepared.
         self.assertEqual(
             run.named("update_packages"),
             [
                 {
                     "call": "update_packages",
                     "flags": DOWNLOAD_FLAGS,
+                    "package_ids": sorted(OTHER_IDS),
+                },
+                {
+                    "call": "update_packages",
+                    "flags": DOWNLOAD_FLAGS,
                     "package_ids": LULO_IDS,
-                }
+                },
             ],
         )
         self.assertEqual(
@@ -461,7 +504,11 @@ class UpdateCheckTests(unittest.TestCase):
             [{"call": "offline_trigger", "action": OFFLINE_REBOOT}],
         )
         order = [entry["call"] for entry in run.calls]
-        self.assertLess(order.index("update_packages"), order.index("offline_trigger"))
+        last_download = len(order) - 1 - order[::-1].index("update_packages")
+        self.assertLess(last_download, order.index("offline_trigger"))
+        self.assertEqual(
+            run.status, "version=1\nupdates=2\nrestart-required=1\n"
+        )
         [notification] = run.notifications()
         summary, body = notification["parameters"][3:5]
         self.assertEqual(summary, "Lulo OS update ready")
@@ -496,7 +543,9 @@ class UpdateCheckTests(unittest.TestCase):
         lookalikes = [pk_id("niri-git"), pk_id("rmac-apps-dbg"), pk_id("xniri")]
         run = run_program({"updates": updates(lookalikes)})
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assert_no_offline_work(run)
+        self.assertEqual(run.named("offline_trigger"), [])
+        [cache] = run.named("update_packages")
+        self.assertEqual(cache["package_ids"], sorted(lookalikes))
         [notification] = run.notifications()
         self.assertTrue(
             notification["parameters"][4].startswith("3 updates are available")
@@ -513,7 +562,8 @@ class UpdateCheckTests(unittest.TestCase):
         )
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(
-            run.named("update_packages")[0]["package_ids"], LULO_IDS[1:2]
+            [call["package_ids"] for call in run.named("update_packages")],
+            [OTHER_IDS[1:], LULO_IDS[1:2]],
         )
         [notification] = run.notifications()
         self.assertIn("1 other update is available", notification["parameters"][4])
@@ -630,7 +680,8 @@ class UpdateCheckTests(unittest.TestCase):
         # Non-zero: the automatic path did not happen and the unit should
         # say so, but the person still gets an actionable notification.
         self.assertEqual(run.returncode, 1)
-        self.assertEqual(len(run.named("update_packages")), 1)
+        # The caching download and the Lulo OS download are both refused.
+        self.assertEqual(len(run.named("update_packages")), 2)
         self.assertEqual(run.named("offline_trigger"), [])
         self.assertIn("download failed: not-authorized", run.stderr)
         self.assertIn("System Settings > Software Update", run.stderr)
@@ -723,6 +774,227 @@ class UpdateCheckTests(unittest.TestCase):
         )
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("notification not shown", run.stderr)
+
+
+
+SECURITY_IDS = [pk_id("openssl", "3.5.1-1ubuntu0.1", "ubuntu-resolute-security-main")]
+ALL_OFF = "download-updates=false\ninstall-lulo-os=false\ninstall-security=false\n"
+
+
+class AutomaticUpdatesTests(unittest.TestCase):
+    """System Settings > Software Update > Automatic Updates (macOS 26.2)."""
+
+    def downloads(self, run: Run) -> list:
+        return [call["package_ids"] for call in run.named("update_packages")]
+
+    def test_missing_settings_file_means_every_switch_is_on(self):
+        run = run_program(
+            {"updates": updates(LULO_IDS) + updates(SECURITY_IDS, INFO_SECURITY)}
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(self.downloads(run), [sorted(LULO_IDS + SECURITY_IDS)])
+        self.assertEqual(len(run.named("offline_trigger")), 1)
+
+    def test_download_off_downloads_and_schedules_nothing(self):
+        run = run_program(
+            {"updates": updates(LULO_IDS) + updates(OTHER_IDS)},
+            config="download-updates=false\n",
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertEqual(run.named("offline_get_action"), [])
+        [notification] = run.notifications()
+        self.assertEqual(notification["parameters"][3], "Updates available")
+        self.assertEqual(
+            notification["parameters"][4],
+            "7 updates are available — open System Settings to review "
+            "and install them.",
+        )
+        self.assertEqual(
+            run.status, "version=1\nupdates=2\nrestart-required=0\n"
+        )
+
+    def test_install_switches_have_no_effect_without_download(self):
+        run = run_program(
+            {"updates": updates(LULO_IDS)},
+            config="download-updates=false\ninstall-lulo-os=true\n",
+        )
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+
+    def test_lulo_os_install_off_only_caches(self):
+        run = run_program(
+            {"updates": updates(LULO_IDS) + updates(OTHER_IDS)},
+            config="install-lulo-os=false\n",
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(self.downloads(run), [sorted(LULO_IDS + OTHER_IDS)])
+        self.assertEqual(run.named("offline_trigger"), [])
+        [notification] = run.notifications()
+        self.assertTrue(
+            notification["parameters"][4].startswith("7 updates are available")
+        )
+        self.assertEqual(
+            run.status, "version=1\nupdates=2\nrestart-required=0\n"
+        )
+
+    def test_security_updates_are_prepared_last_and_triggered(self):
+        run = run_program(
+            {
+                "updates": updates(OTHER_IDS[:1])
+                + updates(SECURITY_IDS, INFO_SECURITY)
+            },
+            config="install-lulo-os=false\ninstall-security=true\n",
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(self.downloads(run), [OTHER_IDS[:1], SECURITY_IDS])
+        self.assertEqual(
+            run.named("offline_trigger"),
+            [{"call": "offline_trigger", "action": OFFLINE_REBOOT}],
+        )
+        [notification] = run.notifications()
+        summary, body = notification["parameters"][3:5]
+        self.assertEqual(summary, "Updates ready")
+        self.assertEqual(
+            body,
+            "Security updates are ready — they will be installed the next "
+            "time you restart. 1 other update is available — open System "
+            "Settings to review and install them.",
+        )
+        self.assertEqual(
+            run.status, "version=1\nupdates=1\nrestart-required=1\n"
+        )
+
+    def test_critical_updates_count_as_security(self):
+        critical = [pk_id("linux-firmware", "20260901-0ubuntu1", "ubuntu")]
+        run = run_program(
+            {"updates": updates(critical, INFO_CRITICAL)},
+            config="install-security=true\n",
+        )
+        self.assertEqual(self.downloads(run), [critical])
+        self.assertEqual(len(run.named("offline_trigger")), 1)
+
+    def test_security_install_off_leaves_security_updates_for_review(self):
+        run = run_program(
+            {"updates": updates(LULO_IDS) + updates(SECURITY_IDS, INFO_SECURITY)},
+            config="install-security=false\n",
+        )
+        self.assertEqual(self.downloads(run), [SECURITY_IDS, LULO_IDS])
+        [notification] = run.notifications()
+        self.assertIn("1 other update is available", notification["parameters"][4])
+
+    def test_scheduled_automatic_set_is_never_replaced_by_a_cache_download(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS) + updates(OTHER_IDS),
+                "prepared_ids": LULO_IDS,
+                "offline_action": OFFLINE_REBOOT,
+            }
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assert_no_downloads_or_trigger(run)
+        self.assertEqual(
+            run.status, "version=1\nupdates=2\nrestart-required=1\n"
+        )
+
+    def test_update_scheduled_elsewhere_is_not_replaced_when_nothing_is_automatic(self):
+        run = run_program(
+            {
+                "updates": updates(OTHER_IDS),
+                "prepared_ids": OTHER_IDS[:1],
+                "offline_action": OFFLINE_REBOOT,
+            },
+            config="install-lulo-os=false\ninstall-security=false\n",
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assert_no_downloads_or_trigger(run)
+        self.assertEqual(
+            run.status, "version=1\nupdates=1\nrestart-required=1\n"
+        )
+
+    def test_a_settings_scheduled_update_keeps_its_packages_when_lulo_os_joins(self):
+        # System Settings' Update Now scheduled one other update; the next
+        # Lulo OS release must be prepared alongside it, not instead of it.
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS) + updates(OTHER_IDS),
+                "prepared_ids": OTHER_IDS[:1],
+                "offline_action": OFFLINE_REBOOT,
+            }
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        downloads = self.downloads(run)
+        self.assertEqual(downloads[-1], sorted(LULO_IDS + OTHER_IDS[:1]))
+        self.assertEqual(len(run.named("offline_trigger")), 1)
+
+    def assert_no_downloads_or_trigger(self, run: Run) -> None:
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+
+    def test_all_off_still_checks_and_notifies(self):
+        run = run_program({"updates": updates(OTHER_IDS)}, config=ALL_OFF)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(len(run.named("refresh_cache")), 1)
+        self.assert_no_downloads_or_trigger(run)
+        self.assertEqual(len(run.notifications()), 1)
+
+    def test_malformed_values_keep_the_default(self):
+        run = run_program(
+            {"updates": updates(LULO_IDS)},
+            config="# comment\ndownload-updates=no\ninstall-lulo-os\nunknown=false\n"
+            " install-lulo-os = maybe \n",
+        )
+        self.assertEqual(self.downloads(run), [LULO_IDS])
+        self.assertEqual(len(run.named("offline_trigger")), 1)
+
+    def test_whitespace_and_comments_are_accepted(self):
+        run = run_program(
+            {"updates": updates(LULO_IDS)},
+            config="# Lulo OS Software Update\n  download-updates = false  \n",
+        )
+        self.assert_no_downloads_or_trigger(run)
+
+    def test_oversized_settings_file_is_ignored(self):
+        run = run_program(
+            {"updates": updates(LULO_IDS)},
+            config="download-updates=false\n" + "#" * 5000 + "\n",
+        )
+        self.assertEqual(self.downloads(run), [LULO_IDS])
+
+    def test_undecodable_settings_file_is_ignored(self):
+        run = run_program(
+            {"updates": updates(LULO_IDS)},
+            config=b"download-updates=false\n\xff\xfe\n",
+        )
+        self.assertEqual(self.downloads(run), [LULO_IDS])
+
+    def test_no_updates_writes_a_zero_status(self):
+        run = run_program({"updates": []})
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(run.named("offline_get_action"), [])
+        self.assertEqual(
+            run.status, "version=1\nupdates=0\nrestart-required=0\n"
+        )
+
+    def test_failed_check_leaves_the_status_file_alone(self):
+        run = run_program(
+            {"refresh_error": {"domain": CLIENT_DOMAIN, "code": 5}}
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertIsNone(run.status)
+
+    def test_failed_preparation_is_not_reported_as_restart_required(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS),
+                "trigger_error": {"domain": OFFLINE_DOMAIN, "code": 0},
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(
+            run.status, "version=1\nupdates=1\nrestart-required=0\n"
+        )
 
 
 if __name__ == "__main__":

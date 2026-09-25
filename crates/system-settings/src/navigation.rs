@@ -280,6 +280,7 @@ pub(super) fn requested_pane(arguments: &[String]) -> Option<String> {
 pub(super) fn subpage_route(pane_id: &str) -> Option<(&'static str, SubPage)> {
     match pane_id {
         "about" => Some(("General", SubPage::About)),
+        "software-update" => Some(("General", SubPage::SoftwareUpdate)),
         _ => None,
     }
 }

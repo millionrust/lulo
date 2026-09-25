@@ -130,8 +130,15 @@ impl PlanCollector {
                 "the complete update set is too large to confirm safely",
             ));
         }
-        let mut requested = snapshot.installable_updates().cloned().collect::<Vec<_>>();
+        Self::for_updates(snapshot.installable_updates().cloned().collect())
+    }
+
+    /// A plan for exactly `requested` (a Software Update selection).
+    /// Blocked updates are never requested.
+    pub fn for_updates(mut requested: Vec<Update>) -> Result<Self, Error> {
+        requested.retain(|update| update.kind != UpdateKind::Blocked);
         requested.sort_by(|left, right| left.package_id.cmp(&right.package_id));
+        requested.dedup_by(|left, right| left.package_id == right.package_id);
         if requested.is_empty() {
             return Err(Error::new(
                 ErrorKind::Stale,
@@ -145,6 +152,14 @@ impl PlanCollector {
             backend_error: None,
             finished: false,
         })
+    }
+
+    /// The sorted package IDs this plan simulates.
+    pub fn requested_ids(&self) -> Vec<String> {
+        self.requested
+            .iter()
+            .map(|update| update.package_id.clone())
+            .collect()
     }
 
     pub fn apply(&mut self, event: Event) -> Result<(), Error> {

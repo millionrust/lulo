@@ -36,6 +36,7 @@ pub fn known_action(id: &ShortcutId) -> bool {
             | "lock"
             | "power-key"
             | "shutdown-dialog"
+            | "restart-to-update"
     )
 }
 

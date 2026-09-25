@@ -27,8 +27,15 @@ pub(super) struct Settings {
     pub(super) updates_cancellation: Option<rmac_updates::Cancellation>,
     pub(super) updates_plan: Option<rmac_updates::InstallPlan>,
     pub(super) updates_progress: Option<rmac_updates::InstallProgress>,
-    pub(super) updates_result: Option<rmac_updates::InstallResult>,
     pub(super) updates: Option<rmac_updates::Snapshot>,
+    /// Which pane item the running Update Now belongs to.
+    pub(super) updates_target: Option<software_updates::UpdateTarget>,
+    /// The More Info (ⓘ) sheet: the selected table row and the unticked
+    /// items.
+    pub(super) updates_info_sheet: Option<software_updates::InfoSheet>,
+    pub(super) updates_auto_sheet: bool,
+    pub(super) updates_auto: rmac_updates::AutomaticUpdates,
+    pub(super) updates_auto_error: Option<SharedString>,
     pub(super) time_loading: bool,
     pub(super) time_busy: bool,
     pub(super) time_error: Option<SharedString>,

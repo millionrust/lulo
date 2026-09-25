@@ -10,19 +10,40 @@ Everything goes through PackageKit's own client library (PackageKitGlib via
 GObject introspection) and the org.freedesktop.Notifications D-Bus service.
 No command-line output is parsed.
 
+The person's choices come from System Settings > General > Software Update >
+Automatic Updates, stored in $XDG_CONFIG_HOME/rmac/software-update.conf
+(`download-updates`, `install-lulo-os`, `install-security`, all on by
+default, like the Mac's three switches).
+
 1. Refresh the package metadata and read the available updates as
-   structured PackageKit packages. Blocked updates are ignored.
-2. Lulo OS's own packages (rmac-apps, rmac-session, rmac-archive-keyring,
-   niri, xwayland-satellite) are prepared as a PackageKit offline update:
-   a trusted-only, download-only UpdatePackages for exactly those package
-   IDs, then an offline-update trigger with the reboot action. PackageKit's
-   pk-offline-update installs them from system-update.target on the next
-   restart. PackageKit does not ask for authorization for download-only
-   transactions, and the default polkit policy allows the trigger for the
+   structured PackageKit packages. Blocked updates are ignored. Checking
+   always happens, as on macOS 26.
+2. The updates split by exact package name and PackageKit info:
+   Lulo OS's own packages (rmac-apps, rmac-session, rmac-archive-keyring,
+   niri, xwayland-satellite), security updates (SECURITY or CRITICAL), and
+   everything else. The automatic set is the Lulo OS updates when
+   `install-lulo-os` is on, plus the security updates when
+   `install-security` is on.
+3. With `download-updates` off nothing is downloaded or scheduled. With it
+   on, the updates outside the automatic set are downloaded first (a
+   trusted-only, download-only UpdatePackages, so System Settings can
+   install them quickly later), then the automatic set is prepared as a
+   PackageKit offline update: a download-only UpdatePackages for exactly
+   those package IDs -- last, because PackageKit records the latest
+   download-only transaction as the prepared update -- and an offline-update
+   trigger with the reboot action. pk-offline-update installs them from
+   system-update.target on the next restart. A caching download never runs
+   while an offline update is already scheduled and the automatic set is
+   empty, so it cannot replace an update System Settings prepared.
+   PackageKit does not ask for authorization for download-only
+   transactions, and Ubuntu's polkit policy allows the trigger for the
    active user, so no password prompt is involved. This program never
    requests interaction; if PackageKit refuses anyway, the updates fall back
    to the "open System Settings" notification.
-3. At most one desktop notification per run says what is ready and how
+4. The status file $XDG_STATE_HOME/rmac/software-update-status
+   (`updates=<N>`, `restart-required=<0|1>`) tells the menu bar how many
+   update items System Settings shows.
+5. At most one desktop notification per run says what is ready and how
    many other updates wait for review in System Settings > Software Update.
 
 Failures (PackageKit unavailable, metadata refresh, download, trigger) print
@@ -34,8 +55,11 @@ Turn both the nudge and the automatic preparation off with
 `systemctl --user disable --now rmac-update-check.timer`.
 """
 
+import os
 import re
+import stat
 import sys
+import tempfile
 
 LULO_PACKAGES = frozenset(
     (
@@ -50,6 +74,12 @@ LULO_PACKAGES = frozenset(
 APP_NAME = "Software Update"
 ICON = "software-update-available"
 NOTIFICATION_TIMEOUT_MS = 25_000
+
+# System Settings > General > Software Update > Automatic Updates.
+SETTINGS_RELATIVE = ("rmac", "software-update.conf")
+SETTINGS_KEYS = ("download-updates", "install-lulo-os", "install-security")
+MAX_SETTINGS_BYTES = 4096
+STATUS_RELATIVE = ("rmac", "software-update-status")
 
 EXIT_OK = 0
 EXIT_FAILED = 1
@@ -215,12 +245,17 @@ def _plural(count, singular, plural):
     return singular if count == 1 else plural
 
 
-def notification_text(lulo_ready, review_count, review_is_other):
+def notification_text(lulo_ready, review_count, review_is_other, security_ready=False):
     """Summary and body for this run, or None when there is nothing to say."""
     sentences = []
     if lulo_ready:
         sentences.append(
             "Lulo OS updates are ready — they will be installed the next "
+            "time you restart."
+        )
+    elif security_ready:
+        sentences.append(
+            "Security updates are ready — they will be installed the next "
             "time you restart."
         )
     if review_count:
@@ -233,8 +268,122 @@ def notification_text(lulo_ready, review_count, review_is_other):
         )
     if not sentences:
         return None
-    summary = "Lulo OS update ready" if lulo_ready else "Updates available"
+    if lulo_ready:
+        summary = "Lulo OS update ready"
+    elif security_ready:
+        summary = "Updates ready"
+    else:
+        summary = "Updates available"
     return summary, " ".join(sentences)
+
+
+def _base_directory(variable, fallback):
+    """An XDG base directory: absolute $variable, else $HOME/<fallback>."""
+    value = os.environ.get(variable, "")
+    if value and os.path.isabs(value):
+        return value
+    home = os.environ.get("HOME", "")
+    if not home or not os.path.isabs(home):
+        return None
+    return os.path.join(home, fallback)
+
+
+def parse_settings(text):
+    """The three Automatic Updates switches; anything unreadable is on.
+
+    `key=true|false` lines, `#` comments. Unknown keys are ignored and a
+    malformed value keeps that switch's default (on), like the Mac.
+    """
+    settings = {key: True for key in SETTINGS_KEYS}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, separator, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if not separator or key not in settings:
+            continue
+        if value == "true":
+            settings[key] = True
+        elif value == "false":
+            settings[key] = False
+    return settings
+
+
+def load_settings():
+    """Read the settings file without following links; defaults on any error."""
+    base = _base_directory("XDG_CONFIG_HOME", ".config")
+    if base is None:
+        return parse_settings("")
+    path = os.path.join(base, *SETTINGS_RELATIVE)
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return parse_settings("")
+    try:
+        with os.fdopen(descriptor, "rb") as file:
+            if not stat.S_ISREG(os.fstat(file.fileno()).st_mode):
+                return parse_settings("")
+            raw = file.read(MAX_SETTINGS_BYTES + 1)
+    except OSError:
+        return parse_settings("")
+    if len(raw) > MAX_SETTINGS_BYTES:
+        return parse_settings("")
+    try:
+        return parse_settings(raw.decode("utf-8"))
+    except UnicodeDecodeError:
+        return parse_settings("")
+
+
+def status_text(update_items, restart_required):
+    return (
+        "version=1\n"
+        f"updates={int(update_items)}\n"
+        f"restart-required={1 if restart_required else 0}\n"
+    )
+
+
+def write_status(update_items, restart_required):
+    """Atomically replace the menu bar's status file; failures are reported."""
+    base = _base_directory("XDG_STATE_HOME", os.path.join(".local", "state"))
+    if base is None:
+        print("rmac-update-check: status not written: no-home", file=sys.stderr, flush=True)
+        return
+    directory = os.path.join(base, SETTINGS_RELATIVE[0])
+    temporary = None
+    try:
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=".software-update-status.", dir=directory
+        )
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            os.fchmod(file.fileno(), 0o600)
+            file.write(status_text(update_items, restart_required))
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, os.path.join(directory, STATUS_RELATIVE[1]))
+        temporary = None
+    except OSError as error:
+        print(
+            f"rmac-update-check: status not written: {_token(type(error).__name__)}",
+            file=sys.stderr,
+            flush=True,
+        )
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+
+
+def offline_reboot_pending(Pk, GLib):
+    """True when an offline update is already scheduled for the next restart."""
+    try:
+        return int(Pk.offline_get_action()) == int(Pk.OfflineAction.REBOOT)
+    except GLib.Error:
+        return False
 
 
 def notify(Gio, GLib, summary, body):
@@ -265,7 +414,27 @@ def notify(Gio, GLib, summary, body):
         )
 
 
+def _security_infos(Pk):
+    values = set()
+    for name in ("SECURITY", "CRITICAL"):
+        value = getattr(Pk.InfoEnum, name, None)
+        if value is not None:
+            values.add(int(value))
+    return values
+
+
+def _authorization_hint(error):
+    if error.authorization:
+        print(
+            "rmac-update-check: PackageKit asked for authorization; "
+            "install from System Settings > Software Update",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
 def run(Pk, Gio, GLib):
+    settings = load_settings()
     try:
         client = Pk.Client.new()
         client.set_interactive(False)
@@ -288,39 +457,84 @@ def run(Pk, Gio, GLib):
         return EXIT_FAILED
 
     blocked = int(Pk.InfoEnum.BLOCKED)
+    security = _security_infos(Pk)
     lulo_ids = set()
+    security_ids = set()
     other_ids = set()
     for package in results.get_package_array() or ():
-        if int(package.get_info()) == blocked:
+        info = int(package.get_info())
+        if info == blocked:
             continue
         package_id = package.get_id()
         if package.get_name() in LULO_PACKAGES:
             lulo_ids.add(package_id)
+        elif info in security:
+            security_ids.add(package_id)
         else:
             other_ids.add(package_id)
+    installable = lulo_ids | security_ids | other_ids
+
+    auto_set = set()
+    if settings["download-updates"]:
+        if settings["install-lulo-os"]:
+            auto_set |= lulo_ids
+        if settings["install-security"]:
+            auto_set |= security_ids
 
     status = EXIT_OK
-    lulo_ready = False
-    review_count = len(other_ids)
-    if lulo_ids:
-        try:
-            prepare_offline_update(Pk, GLib, client, lulo_ids)
-            lulo_ready = True
-        except StageError as error:
-            report(error.stage, error.error_class)
-            if error.authorization:
-                print(
-                    "rmac-update-check: PackageKit asked for authorization; "
-                    "install from System Settings > Software Update",
-                    file=sys.stderr,
-                    flush=True,
+    ready = False
+    reboot_pending = False
+    if settings["download-updates"] and installable:
+        reboot_pending = offline_reboot_pending(Pk, GLib)
+        # An update System Settings scheduled (Update Now) stays scheduled:
+        # its still-offered packages join the automatic set, because a new
+        # download-only transaction replaces PackageKit's prepared list.
+        scheduled = prepared_ids(Pk, GLib) if reboot_pending else frozenset()
+        keep = scheduled & installable
+        already = bool(auto_set) and reboot_pending and auto_set <= scheduled
+        cache_ids = installable - auto_set
+        # PackageKit records the latest download-only transaction as the
+        # prepared update, so a caching download must come first and may
+        # never replace an update that is already scheduled.
+        if cache_ids and not already and (auto_set or not reboot_pending):
+            try:
+                _call(
+                    Pk,
+                    GLib,
+                    "download",
+                    client.update_packages,
+                    bitfield(
+                        Pk.TransactionFlagEnum.ONLY_TRUSTED,
+                        Pk.TransactionFlagEnum.ONLY_DOWNLOAD,
+                    ),
+                    sorted(cache_ids),
                 )
-            # The automatic path did not happen: offer the Lulo OS updates
-            # for review in System Settings instead, and still fail the unit.
-            review_count += len(lulo_ids)
-            status = EXIT_FAILED
+            except StageError as error:
+                report(error.stage, error.error_class)
+                _authorization_hint(error)
+                status = EXIT_FAILED
+        if auto_set:
+            try:
+                if not already:
+                    prepare_offline_update(Pk, GLib, client, auto_set | keep)
+                ready = True
+                reboot_pending = True
+            except StageError as error:
+                report(error.stage, error.error_class)
+                _authorization_hint(error)
+                # The automatic path did not happen: offer these updates for
+                # review in System Settings instead, and still fail the unit.
+                status = EXIT_FAILED
 
-    text = notification_text(lulo_ready, review_count, review_is_other=lulo_ready)
+    lulo_ready = ready and bool(lulo_ids & auto_set)
+    security_ready = ready and bool(security_ids & auto_set)
+    review_count = len(installable - auto_set) if ready else len(installable)
+    update_items = (1 if lulo_ids else 0) + (1 if security_ids or other_ids else 0)
+    write_status(update_items, reboot_pending)
+
+    text = notification_text(
+        lulo_ready, review_count, review_is_other=ready, security_ready=security_ready
+    )
     if text is not None:
         notify(Gio, GLib, *text)
     return status

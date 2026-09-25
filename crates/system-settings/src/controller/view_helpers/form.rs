@@ -712,6 +712,8 @@ fn circled_button(
         .items_center()
         .justify_center()
         .cursor_pointer()
+        .role(gpui::Role::Button)
+        .aria_label(tooltip)
         .tooltip(move |window, cx| rmac_ui::tooltip_view(tooltip, window, cx))
         .on_click(move |_, window, cx| on_click(window, cx))
         .child(glyph(icon, style::INFO_BUTTON, label()))

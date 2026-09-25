@@ -360,7 +360,8 @@ jobs:
             libxkbcommon-x11-dev \
             mesa-vulkan-drivers \
             python3-pyatspi \
-            sway
+            sway \
+            xdg-desktop-portal
 
       - name: Install pinned Rust toolchain
         run: rustup show active-toolchain
@@ -377,8 +378,8 @@ jobs:
 
       - name: Build the apps under test
         run: |
-          cargo build --locked -p rmac-finder --bin rmac-files \
-            -p rmac-text-editor -p rmac-system-settings -p rmac-calculator
+          cargo build --locked --bins -p rmac-finder -p rmac-text-editor \
+            -p rmac-system-settings -p rmac-calculator -p rmac-file-chooser
           (cd shell && cargo build --locked -p rmac-shell-wallpaper --bin wallpaper --features wayland)
 
       - name: Play the scenarios in a nested compositor

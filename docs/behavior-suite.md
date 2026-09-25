@@ -68,7 +68,11 @@ runner plays the same scenario inside a private nested compositor and diffs the 
    ```
 
 3. Run it on Lulo. Do this on the laptop, under the screen lock, with binaries built from the
-   branch under test:
+   branch under test. Build them with
+   `cargo build --profile iterate --bins -p rmac-finder -p rmac-text-editor
+   -p rmac-system-settings -p rmac-calculator -p rmac-file-chooser`, plus the shell's
+   `wallpaper` binary. Don't use `--bin`: it restricts every `-p` to that one binary, which leaves
+   the others stale.
 
    ```sh
    exec 9>/tmp/lulo-journey.lock; flock 9
@@ -100,7 +104,12 @@ runner plays the same scenario inside a private nested compositor and diffs the 
 **Lulo**
 
 - `run_lulo.py` re-executes itself under `dbus-run-session` with a temporary HOME,
-  XDG_RUNTIME_DIR and every XDG_* directory, and `GSETTINGS_BACKEND=memory`.
+  XDG_RUNTIME_DIR and every XDG_* directory, and `GSETTINGS_BACKEND=memory`. Each scenario gets
+  a fresh HOME.
+- The private bus can start only three services: the AT-SPI bus, `xdg-desktop-portal`, and the
+  `rmac-file-chooser` from `--bin-dir`, which is what opens Save panels. The installed rmac
+  services never start. At the end the runner stops every process still using its runtime
+  directory.
 - It starts its own headless Sway and holds `wayland-0`/`wayland-1`'s lock files so its socket
   is never named `wayland-1`.
 - It injects input only through `wlinput.py`. That script is a pure-Python virtual keyboard and

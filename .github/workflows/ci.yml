@@ -319,3 +319,72 @@ jobs:
       - name: Run nested Wayland smoke checks
         working-directory: shell
         run: dbus-run-session -- bash scripts/nested-wayland-smoke.sh
+
+  behavior-parity:
+    name: Mac behaviour parity (non-blocking)
+    # Plays every tests/behavior scenario that has a recorded .mac.json
+    # against this commit's Files, Text Editor, System Settings, Calculator
+    # and desktop inside a private headless Sway, and compares what AT-SPI
+    # reports with what the Mac did (docs/behavior-suite.md). Non-blocking
+    # until the known gaps it reports are fixed.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    continue-on-error: true
+    env:
+      CARGO_BUILD_JOBS: 2
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install GPUI, Sway and AT-SPI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            at-spi2-core \
+            clang \
+            dbus \
+            libfontconfig1-dev \
+            libfreetype-dev \
+            libglib2.0-bin \
+            libpam0g-dev \
+            libssl-dev \
+            libvulkan-dev \
+            libwayland-dev \
+            libx11-xcb-dev \
+            libxcb1-dev \
+            libxcb-render0-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            mesa-vulkan-drivers \
+            python3-pyatspi \
+            sway
+
+      - name: Install pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Cache Cargo data
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            shell/target
+          key: ${{ runner.os }}-behavior-${{ hashFiles('Cargo.lock', 'shell/Cargo.lock', 'rust-toolchain.toml') }}
+
+      - name: Build the apps under test
+        run: |
+          cargo build --locked -p rmac-finder --bin rmac-files \
+            -p rmac-text-editor -p rmac-system-settings -p rmac-calculator
+          (cd shell && cargo build --locked -p rmac-shell-wallpaper --bin wallpaper --features wayland)
+
+      - name: Play the scenarios in a nested compositor
+        run: |
+          /usr/bin/python3 scripts/behavior/run_lulo.py \
+            --bin-dir target/debug --shell-bin-dir shell/target/debug \
+            --output behavior-results.json || true
+          /usr/bin/python3 scripts/behavior/compare.py behavior-results.json --markdown >> "$GITHUB_STEP_SUMMARY" || true
+          /usr/bin/python3 scripts/behavior/compare.py behavior-results.json --emit-parity-rows

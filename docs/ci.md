@@ -25,6 +25,7 @@ detail), `docs/journey-suite.md` (the package-scoped fixture runner).
 | `linux-2604` | `linux`'s formatting/Clippy/tests/Python-suite steps (not its repo-specific boundary scripts) on `ubuntu-26.04` instead of `ubuntu-24.04`. **Non-blocking** (`continue-on-error: true`) — see [Ubuntu 26.04](#ubuntu-2604) | Same `cargo`/`python3` commands as `linux`, below |
 | `macos` | Clippy, tests, and the Python suite on `macos-15` | Same commands as `linux`, minus the Linux-only boundary scripts |
 | `upstream-gpui-linux` | The separately locked `shell/` workspace: formatting, its own `cargo deny`, `cargo test --lib`, Clippy on the `wayland` feature, and a nested-Wayland smoke check | See `shell/` steps below |
+| `behavior-parity` | Plays every `tests/behavior` scenario with a recorded `.mac.json` against this commit's apps in a private headless Sway and compares with the Mac; the pass/fail table goes to the job summary. **Non-blocking** | [docs/behavior-suite.md](behavior-suite.md) |
 
 To run what `linux`/`macos` run, from the repo root:
 

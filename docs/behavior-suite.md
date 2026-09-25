@@ -1,0 +1,118 @@
+# Behaviour-parity suite
+
+Finds places where Lulo *behaves* differently from the Mac, without anyone testing by hand. A
+scenario is data. The Mac recorder plays it on the owner's Mac and saves what macOS did. The Lulo
+runner plays the same scenario inside a private nested compositor and diffs the two.
+
+| Piece | Where | Runs on |
+|---|---|---|
+| Scenarios | `tests/behavior/<area>/<name>.json` | — |
+| Mac expectations | `tests/behavior/<area>/<name>.mac.json` (words and numbers only) | written by the recorder |
+| Recorder | `scripts/behavior/record_mac.py` (+ `mac_observe.js`, `mac_click.py`) | the owner's Mac |
+| Runner | `scripts/behavior/run_lulo.py` (+ `wlinput.py`) | the laptop, or CI's `behavior-parity` job |
+| Comparator | `scripts/behavior/compare.py`, rules in `scripts/behavior/scenario.py` | anywhere |
+
+## Add a scenario
+
+1. Write `tests/behavior/<area>/<name>.json`. `area` is `files`, `text-editor`, `settings`,
+   `calculator` or `desktop`.
+
+   ```json
+   {
+     "title": "New Folder (⇧⌘N) leaves the new folder's whole name selected for editing",
+     "app": "files",
+     "setup": {"files": {"report.txt": "text", "Projects/": null}},
+     "launch": {"folder": "."},
+     "steps": [
+       {"key": "cmd-2"},
+       {"key": "cmd-shift-n"},
+       {"observe": "created", "facts": ["focus", "files"]}
+     ]
+   }
+   ```
+
+   - **launch**: `{"folder": "."}` or `{"reveal": "report.txt"}` for Files. The other apps start
+     with no arguments. Text Editor starts with one Untitled document.
+   - **Steps**:
+     - `key`: a chord like `cmd-shift-n` or `⇧⌘N`. ⌘ is Super on Lulo (ADR 0017), ⌥ is Alt,
+       ⌃ is Control.
+     - `type`: ASCII text.
+     - `wait`: seconds.
+     - `select` or `context`: click or right-click the item with that name.
+     - `focus_desktop`.
+     - `observe`: records facts.
+     - Any step can take `settle` (seconds to wait after it; the default is 0.8).
+     - `menu` (a menu-bar path) works on the Mac only for now: the nested runner has no top bar.
+   - **facts**:
+     - `focus`: the focused element's role, value, selection, selected_text and selected_all.
+     - `windows`: count, front title and titles.
+     - `dialog`: whether one is present, its title, texts, buttons in reading order and its default
+       button.
+     - `menu`: the open menu's items, with ✓ and [disabled].
+     - `selection`: the selected item names.
+     - `files`: the entries under the sandbox.
+     - `tabs`.
+     - `display`: Calculator.
+   - **tolerance**: `{"<observation>.<fact>.<field>": rule}`. The rules are `exact`, `set`,
+     `text` (normalizes quotes, ellipses and spacing), `role-class`, `subset`, `present`, `count`
+     and `ignore`. The defaults are in `DEFAULT_RULES`. Pixel sizes are never recorded.
+   - **omit**: fields the recorder must not save. Use it for anything that depends on the owner's
+     machine, such as a new Finder window's home folder or the Go to Folder path. `menu_until`
+     cuts a menu after an item, which drops the owner's own Services.
+2. Record it on the Mac. The recorder holds `/tmp/lulo-mac-gui.lock` and uses a
+   `/tmp/lulo-behavior/…/sandbox` folder:
+
+   ```sh
+   python3 scripts/behavior/record_mac.py files/new-folder --dry-run   # look first
+   python3 scripts/behavior/record_mac.py files/new-folder             # writes .mac.json
+   ```
+
+3. Run it on Lulo. Do this on the laptop, under the screen lock, with binaries built from the
+   branch under test:
+
+   ```sh
+   exec 9>/tmp/lulo-journey.lock; flock 9
+   python3 scripts/behavior/run_lulo.py --bin-dir $CARGO_TARGET_DIR/iterate \
+     --shell-bin-dir $CARGO_TARGET_DIR/iterate --output /tmp/behavior.json files/new-folder 9>&-
+   python3 scripts/behavior/compare.py /tmp/behavior.json --emit-parity-rows
+   ```
+
+   `--explore --explore-steps N` prints the app's AT-SPI tree after the first N steps. Use it when
+   a fact reads `nothing` on Lulo. `--emit-parity-rows` proposes `docs/parity.md` rows, which cite
+   `behavior:<area>/<name>`. Copy the real ones into parity.md; the tool never edits it.
+
+## Safety
+
+**Mac**
+
+- Before every key press, the recorder checks two things: the frontmost app is the scenario's
+  app, and the focused window is one the scenario opened. Otherwise it stops.
+- It never quits an app that was already running. It closes only the windows and documents it
+  opened, without saving.
+- TextEdit autosaves an edited Untitled document to iCloud. The recorder moves only such copies,
+  created during the run, to the Bin.
+- The Desktop scenario needs Finder to have no open windows. It removes its folder with
+  `rmdir`, which only removes an empty folder.
+- Calculator must not be running when the scenario starts. System Settings is reused if it is
+  open and left open.
+- Nothing destructive outside the sandbox is ever confirmed.
+
+**Lulo**
+
+- `run_lulo.py` re-executes itself under `dbus-run-session` with a temporary HOME,
+  XDG_RUNTIME_DIR and every XDG_* directory, and `GSETTINGS_BACKEND=memory`.
+- It starts its own headless Sway and holds `wayland-0`/`wayland-1`'s lock files so its socket
+  is never named `wayland-1`.
+- It injects input only through `wlinput.py`. That script is a pure-Python virtual keyboard and
+  pointer, and it refuses `WAYLAND_DISPLAY=wayland-1`, any `/run/user/*` runtime directory, and
+  any environment without `RMAC_BEHAVIOR_NESTED=1`.
+- One app instance runs at a time. It is stopped by PID and waited for.
+
+## Why headless Sway, not nested niri
+
+Scenarios test app behaviour: focus, selection, dialogs, files. They do not test window
+management. Sway's headless backend needs no GPU or seat, offers the wlroots virtual-keyboard and
+virtual-pointer protocols this suite injects through, and is what CI's nested smoke test already
+uses. niri has no headless backend and no virtual-input protocols. A scenario that needs
+niri-specific behaviour should say so in its title and stay a live AT-SPI journey
+(`docs/journey-suite.md`).

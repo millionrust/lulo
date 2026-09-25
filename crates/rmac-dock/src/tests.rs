@@ -785,6 +785,57 @@ fn only_authoritatively_nonempty_trash_offers_destructive_review() {
 }
 
 #[test]
+fn a_stack_popover_is_titled_with_the_stack_folder_name() {
+    let stacks = vec![
+        ResolvedStack {
+            entry: rmac_shell_settings::DockStackEntry {
+                kind: rmac_shell_settings::DockStackKind::Downloads,
+                display_as: Default::default(),
+                view_content_as: Default::default(),
+                sort_by: Default::default(),
+            },
+            available: true,
+        },
+        ResolvedStack {
+            entry: rmac_shell_settings::DockStackEntry {
+                kind: rmac_shell_settings::DockStackKind::Path {
+                    path: "/home/alex/Projects".into(),
+                },
+                display_as: Default::default(),
+                view_content_as: Default::default(),
+                sort_by: Default::default(),
+            },
+            available: true,
+        },
+    ];
+    let model = Model::build_with_stacks(
+        &[],
+        &Default::default(),
+        &[],
+        &Default::default(),
+        &places("/home/alex/Downloads", true, 0),
+        &stacks,
+    );
+
+    assert_eq!(
+        model
+            .stack_context_menu(&rmac_shell_settings::DockStackKind::Downloads)
+            .expect("Downloads stack resolves")
+            .name,
+        "Downloads"
+    );
+    assert_eq!(
+        model
+            .stack_context_menu(&rmac_shell_settings::DockStackKind::Path {
+                path: "/home/alex/Projects".into(),
+            })
+            .expect("path stack resolves")
+            .name,
+        "Projects"
+    );
+}
+
+#[test]
 fn context_menu_offers_pin_for_an_unpinned_running_app() {
     let catalog = [application("music.desktop", "Music")];
     let compositor = rmac_compositor::Snapshot {

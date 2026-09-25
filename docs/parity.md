@@ -29,6 +29,12 @@ Sizes/positions/colours: see FEEL_SPEC.md §4.7 and docs/macos-parity-spec.md
 | DOCK-12 | P2 | S | Missing | Mac: recently-quit apps (up to 3) sit in the Dock without a running dot. / Lulo: no recent-but-closed tiles. | `crates/rmac-dock` |
 | DOCK-13 | P2 | S | Missing | Mac: shelf ≈72 px tall, ≈18 px above the screen bottom (FEEL_SPEC.md). / Lulo: shelf rendered 92 px (≈20 px too tall), bottom inset 22 px (≈4 px too high) as of the 2026-09-19 capture — not re-measured since. | `shell/bins/rmac-dock` |
 | DOCK-14 | P2 | S | Missing | Mac: an item's right-click menu is ≈165 px wide, 24 px item pitch, with a triangular pointer to the tile. / Lulo: menu 309 px wide (≈144 px too wide), ≈45 px item pitch, no pointer. | `crates/rmac-dock/src/menu.rs` |
+| DOCK-15 | P2 | S | Missing | Mac: a running or kept app's tile menu lists that app's recent documents under its open windows (TextEdit: test.rtf, Untitled; Zed: rmac). / Lulo: windows and desktop-file actions only; no recent-documents section, though `rmac-recent-documents` exists. | `crates/rmac-dock/src/menu.rs:259` |
+| DOCK-16 | P2 | S | Missing | Mac: every app tile's Options ▸ is Keep in Dock (or Remove from Dock), Open at Login, Show in Finder. / Lulo: Keep in Dock/Remove from Dock and Show in Files only; no Open at Login, although `rmac-login-items` exists. | `crates/rmac-dock/src/menu.rs:318` |
+| DOCK-17 | P2 | S | Partial | Mac (en-GB): the Trash tile is "Bin" and its menu is Open, Empty Bin (greyed when empty). / Lulo: "Trash" and Empty Trash, while the rest of the shell already uses en-GB spellings (Centre, Minimise). | `crates/rmac-dock/src/menu.rs:468` |
+| DOCK-18 | P2 | S | Missing | Mac: dragging a kept tile off the Dock shows a "Remove" label above it before the poof. / Lulo: the tile arms removal after 1.5 tiles with a fade, but no "Remove" label is drawn. | `crates/rmac-dock/src/reorder.rs:9`, `shell/bins/rmac-dock/src/main.rs` |
+| DOCK-19 | P2 | M | Missing | Mac: clicking a folder stack opens its Fan, Grid or List popover. / Lulo: the stack menu, sort and view settings exist, but the renderer draws no stack tile and no popover (no `EntryId::Stack` in the Dock binary). | `shell/bins/rmac-dock/src/main.rs`, `crates/rmac-dock/src/model.rs:112` |
+| DOCK-20 | P2 | S | Missing | Mac: a minimised-window tile (right of the separator) has its own right-click menu. / Lulo: minimised tiles are drawn, but `menu.rs` has no menu for them, so right-click does nothing. Mac contents not captured: no window was minimised during the audit. | `crates/rmac-dock/src/menu.rs`, `crates/rmac-dock/src/model.rs:442` |
 
 ### Menu bar
 
@@ -48,6 +54,7 @@ contract every app menu is built from (`crates/rmac-app-menu`,
 | BAR-06 | P2 | S | Partial | Mac: the App Store… row shows the pending count ("App Store…, 6 updates"). / Lulo: "Software Center" with no count and no "…". | `shell/bins/rmac-menubar/src/main.rs:2518` |
 | BAR-07 | P2 | S | Partial | Mac: the app menu's About "App" is enabled and opens an About window. / Lulo: always disabled. | `shell/bins/rmac-menubar/src/main.rs:2601` |
 | BAR-08 | P2 | M | Missing | Mac: ⌘-dragging a status item reorders it; dragging it out removes it. / Lulo: the order is fixed. | `shell/bins/rmac-menubar/src/main.rs:2140` |
+| BAR-09 | P2 | M | Missing | Mac: when an app has used the camera, microphone or screen recording, a dot shows in the menu bar and Control Centre opens with a pill at the top ("Zed recently"). / Lulo: there's no privacy indicator in the bar or in Control Centre. | `shell/bins/rmac-menubar`, `crates/quick-settings-app`, `crates/rmac-privacy` |
 | MENU-01 | P1 | M | Fixed 44f223ee | Mac: every app has a Window menu (Minimise ⌘M, Zoom, Fill fn⌃F, Centre fn⌃C, Move & Resize ›, the open-window list). / Lulo: only Files exports one, with just two tab items. | `shell/bins/rmac-menubar/src/main.rs` `dispatch_app_menu_action` |
 | MENU-02 | P1 | M | Fixed 96d75f4b (not Terminal/Calculator) | Mac: every app has a standard Edit menu (Undo/Redo/Cut/Copy/Paste/Select All, plus Find/Spelling for text apps). / Lulo: Text Editor's Edit has only Find items; Notes only Find…; Settings/System Monitor/Clock have none. | `crates/rmac-app-menu/src/lib.rs`; `crates/rmac-ui/src/text_keys.rs` |
 | MENU-03 | P1 | M | Fixed 1b265871 | Mac: menu items grey out when they don't apply. / Lulo: `definition_for_vocabulary` sets `enabled: true` on everything; there's no republish signal on the D-Bus interface. | `crates/rmac-app-menu/src/lib.rs` |
@@ -73,6 +80,11 @@ docs/macos-parity-spec.md §4.9.
 | CC-04 | P2 | S | Missing | Mac: panel 287 px wide (spec). / Lulo: panel rendered 380 px wide (≈93 px too wide), top ≈43 px too low, as of the 2026-09-19 capture — not re-measured since. | `crates/quick-settings-app` |
 | CC-05 | P1 | M | Missing | Mac: date/time click and a keyboard path both open Control Centre / Notification Centre. / Lulo: only the click path works; no key opens either. | `shell/bins/rmac-menubar`, `crates/rmac-quick-settings` |
 | CC-06 | P2 | L | Missing | Mac: Control Centre has Screen Mirroring. / Lulo: absent — niri has no mirroring protocol yet. | `crates/quick-settings-app` |
+| CC-07 | P2 | M | Missing | Mac: the default modules include AirDrop (expands to Off/Contacts Only/Everyone for 10 Minutes), Stage Manager, and an appearance (Dark Mode) toggle. / Lulo: none of the three. Instead it shows a Low Power circle, which the Mac only offers through Edit Controls. | `crates/quick-settings-app/src/view.rs:254` |
+| CC-08 | P2 | S | Missing | Mac: clicking Focus expands to the Focus list (Do Not Disturb, Sleep, …, each with a ⋯ timer menu) and Focus Settings…. / Lulo: Focus is an on/off toggle only; no detail view. | `crates/rmac-quick-settings/src/detail.rs:12` |
+| CC-09 | P2 | S | Missing | Mac: the monitor button on the Display module expands to Dark Mode, Night Shift and True Tone toggles, the display list and Displays Settings…. / Lulo: Display is slider-only; the monitor glyph opens nothing. | `crates/rmac-quick-settings/src/detail.rs:12` |
+| CC-10 | P2 | S | Missing | Mac: an expanded module grows out of its tile with a short spring, and collapses back into it. / Lulo: `open_detail`/`close_detail` swap the grid and the detail instantly, with no transition. | `crates/quick-settings-app/src/view.rs:185` |
+| CC-11 | P1 | S | Broken (live build) | Mac: Control Centre is frosted glass. / Lulo, installed build 0.9.0~beta.1-38 (2026-09-24): the desktop's "untitled folder" icon and label still show sharply through the Bluetooth module. That build predates 918aaa38 (CC-01), so check again after reinstalling. | `crates/quick-settings-app/src/main.rs:108` |
 
 ### Notification Center
 
@@ -88,6 +100,10 @@ docs/macos-parity-spec.md §4.10.
 | NC-05 | P2 | S | Partial | Mac: banner glass blurs the desktop. / Lulo: the desktop folder icon shows through the 344 pt banner card; width and position match. | `crates/notification-center-app/src/daemon/surface.rs:115` |
 | NC-06 | P2 | S | Missing | Mac: panel 346 × 418 px, floating card stack. / Lulo: panel rendered 450 × 877 px (≈104 px too wide, ≈459 px too tall) with an opaque rail rather than floating cards, as of the 2026-09-19 capture — not re-measured since. | `crates/notification-center-app` |
 | NC-07 | P1 | M | Missing | Mac: a key opens Notification Centre. / Lulo: no key does (see CC-05). | `crates/notification-center-app` |
+| NC-08 | P2 | S | Missing | Mac: right-clicking a notification opens "<App> Notifications" with Mute for 1 Hour, Mute for Today, Turn Off and Notification Settings…. / Lulo: no context menu. Turn Off and Settings exist only as AT-SPI actions, and there's no mute-for-a-while at all. | `crates/notification-center-app/src/render/history.rs`, `accessibility.rs` |
+| NC-09 | P2 | S | Missing | Mac: the list has a "Notification Centre" heading with a clear button. Under the list sit an Edit Widgets pill and an ✕ menu button ("Clear Notifications…" ▸ Clear All Notifications). / Lulo: no heading, no Clear All control, and Edit Widgets appears only when widgets exist. Clear All is AT-SPI-only. | `crates/notification-center-app/src/render.rs:1`, `:108` |
+| NC-10 | P2 | S | Partial | Mac: a banner with several actions shows an Options ▾ button that opens a drop-down menu, and a Reply action opens an inline text field. / Lulo: Options expands the actions as a row of pills inside the banner, and Reply is a plain button with no text field. | `crates/notification-center-app/src/daemon/host.rs:649`, `surface.rs:266` |
+| NC-11 | P2 | S | Partial | Mac: Notification Centre slides in from the right edge and out again, and a normal banner stays ≈5 s. / Lulo: the panel appears and disappears instantly (no open/close animation), and a normal-priority banner stays 7 s (low 5 s, high 10 s). | `crates/notification-center-app/src/render.rs:238`, `crates/rmac-notifications/src/model.rs:382` |
 
 ### Spotlight
 
@@ -99,6 +115,8 @@ AI/assistant row — that's a design rule, not a gap.
 |---|---|---|---|---|---|
 | SPOT-01 | P2 | S | Partial | Mac: the empty bar (637 pt wide, top at 20% of screen height) matches; typing "cal" completes inline to "calculator — Open" and the top hit shows "Search Calculator ⇥". / Lulo: geometry matches (640 pt, 20%); the ⇥ search-in-app hint wasn't found in code, and typed-query behaviour couldn't be driven live to confirm inline completion. | `crates/launcher-app/src/view/completion.rs`, `view/render/results.rs` |
 | SPOT-02 | P2 | M | Missing | Mac: a per-app chips row under the field ("Calculator", "Photos") and Quick Keys. / Lulo: neither exists. (Siri Suggestions and web results are intentionally never added — see design rule above.) | `crates/launcher-app` |
+| SPOT-03 | P2 | S | Partial | Mac: file results are grouped by kind (Documents, Folders, PDF Documents, Images, …), and ⌘I shows Get Info for the selected file. / Lulo: every file result goes under one "Files" section, and ⌘I does nothing. (⌘B web search is intentionally absent: design rule above.) | `crates/rmac-launcher/src/model.rs:11`, `crates/launcher-app/src/view/render.rs:763` |
+| SPOT-04 | P2 | S | Broken | Mac: Apps (Launchpad) and Spotlight are one panel, so opening Apps replaces Spotlight. / Lulo, seen live: dispatching app-drawer while Spotlight was open drew Apps on top of the still-open Spotlight field, with both overlays visible. | `crates/app-drawer`, `crates/launcher-app` |
 
 ### Launchpad
 
@@ -124,6 +142,9 @@ contract.
 | WIN-04 | P2 | S–M | Missing | Mac's Mission Control section has Automatically rearrange Spaces, Switch to a Space with the app's windows, Group windows by application, Displays have separate Spaces, Drag windows to top to enter Mission Control, plus Shortcuts…. / Lulo: only Hot Corners is exposed. | `crates/system-settings/src/controller/desktop_dock.rs:229` |
 | MC-03 | P2 | M | Missing | Mac: the overview preview is ≈1033 px wide with a titled Spaces pill (75 × 24 px) per Space. / Lulo: preview rendered 945 × 450 px (≈507 px too short, ≈88 px too narrow), top ≈256 px too low, no Spaces title pill, as of the 2026-09-19 capture — not re-measured since. | `shell/bins/rmac-mission-control` |
 | MC-04 | P2 | M | Missing | Mac: windows can be dragged between Spaces, the Dock stays visible in Mission Control, and a three-finger swipe opens it. / Lulo: no cross-Space drag; three-finger gestures are owned by niri and unwired (thumbnail accuracy itself is MC-01). | `shell/bins/rmac-mission-control` |
+| MC-05 | P2 | S | Broken | Mac: hovering a window in Mission Control outlines it in blue and shows its full title in a capsule under the window. / Lulo, seen live: the title capsule sits over the middle of the thumbnail and cuts its text off ("Sound — Sett"). | `shell/bins/rmac-mission-control/src/main.rs:855` |
+| MC-06 | P2 | S | Missing | Mac: App Exposé (⌃↓) shows the app's minimised windows in a separate row under a divider. / Lulo: parked (minimised) windows are filtered out, so App Exposé can't bring one back. | `shell/bins/rmac-mission-control/src/model.rs:461` |
+| MC-07 | P2 | S | Missing | Mac: in ⌘Tab, ↑ or ↓ on the selected app opens App Exposé for it. / Lulo: the switcher handles Tab, ⇧Tab, `, ←/→, Q, H, Esc and Return, but not ↑/↓. | `shell/bins/rmac-app-switcher/src/main.rs:337` |
 
 ### Desktop
 
@@ -142,6 +163,13 @@ docs/macos-parity-spec.md §4; those pass their measured comparisons as of the
 | DESK-04 | P2 | M | Missing | Mac: desktop icons support rename, Quick Look, video posters, dragging onto the Dock/Trash/Files, a label text shadow. / Lulo: none of these — dragging out to other surfaces is blocked by a GPUI limitation (no drag-out between windows), and GPUI text has no shadow support. | `crates/rmac-desktop`, `shell/bins/rmac-wallpaper` |
 | DESK-05 | P2 | S–M | Missing | Mac: desktop/Notification-Centre widgets come in Small/Medium/Large, include Reminders/Photos/Notes/Calendar Up Next, and the gallery has a search field. / Lulo: small size only, Clock/Calendar/Weather/Batteries only (no data source for the rest), and the widget gallery has no search field (no shell text field there yet). | `crates/rmac-desktop-widgets` |
 | DESK-06 | P2 | M | Missing | Mac: toolbar windows (Finder, Settings, Activity Monitor, Calculator, Preview) use a ≈27 pt corner radius; title-bar-only windows (TextEdit) use 16 pt. / Lulo: one radius (16) for every window type, as of the 2026-09-23 measurement. | `crates/rmac-design` |
+| DESK-07 | P2 | S | Partial | Mac: desktop Clean Up By ▸ offers Name, Kind, Date Modified, Date Created, Size, Tags. / Lulo: Name, Kind, Date Modified, Size (Sort By is DESK-02). | `shell/bins/rmac-wallpaper/src/linux_wayland/menu.rs:254` |
+| DESK-08 | P2 | S | Partial | Mac: the desktop's Show View Options (⌘J) has Sort By, Icon size, Grid spacing, Text size, Label position (Bottom/Right), Show item info and Show icon preview. / Lulo: Icon size, Grid spacing and Text size only. | `shell/bins/rmac-wallpaper/src/linux_wayland/desktop.rs:1946`, `crates/rmac-desktop/src/grid.rs:23` |
+| DESK-09 | P2 | S | Missing | Mac: arrow keys move the selection between desktop icons, and typing a name selects the matching icon. / Lulo: the desktop key handler has no arrow navigation and no type-to-select. | `shell/bins/rmac-wallpaper/src/linux_wayland/desktop.rs:786` |
+| SHOT-01 | P2 | L | Missing | Mac: the ⇧⌘5 bar is ✕, Capture Entire Screen/Window/Selection, then Record Entire Screen/Selection (plus window), then Options ▾ and Capture. / Lulo, seen live: the three capture modes, Options and Capture only; there's no screen recorder. | `shell/bins/rmac-screenshot/src/model.rs:24` |
+| SHOT-02 | P2 | S | Partial | Mac: ⇧⌘5 Options ▸ Save to lists Desktop, Documents, Clipboard, Mail, Messages, Preview and Other Location…. / Lulo: Desktop, Documents, Downloads and Clipboard; no Preview (Lulo has a Preview app) and no Other Location…. | `shell/bins/rmac-screenshot/src/model.rs:704` |
+| WIN-05 | P2 | S | Missing | Mac: Desktop & Dock › "Double-click a window's title bar to" Zoom, Minimise or Do Nothing. / Lulo: a double-click always zooms, with no setting. | `crates/rmac-ui/src/chrome.rs:732` |
+| WIN-06 | P2 | M | Missing | Mac: Enter Full Screen zooms the window into its own Space (shown in the Spaces bar), and exit zooms it back. / Lulo: niri full-screens the window in place, with no Space of its own and no dedicated full-screen animation. | `crates/rmac-compositor-niri/src/runtime.rs:152`, `packaging/rmac-session/shell.kdl:71` |
 
 ### Lock/Login
 
@@ -169,6 +197,7 @@ and working (`crates/rmac-ui/src/text_keys.rs`).
 | KB-02 | P2 | L | Missing | Mac: ⌃⌘Space / fn E opens the emoji & symbol picker. / Lulo: the binding exists but GPUI's Linux `show_character_palette` does nothing — no overlay exists. | `crates/rmac-ui/src/text_keys.rs` |
 | KB-03 | P2 | S | Missing | Mac: ⌃Y yanks the kill ring; ⌃N/⌃P move by line, in every text field. / Lulo: absent (the other Emacs keys were added already). | text field key handling |
 | KB-04 | P2 | S–M | Missing | Mac: keyboard-backlight keys (`XF86KbdBrightnessUp/Down`) are bound and show an OSD row. / Lulo: not bound; no OSD row. | `crates/rmac-osd/src/lib.rs`, `linux.rs` |
+| KB-06 | P2 | M | Missing | Mac's Keyboard Shortcuts list binds ⌃F1 keyboard access, ⌃F4 next window, ⌃F5 toolbar, ⌃F6 floating window, ⌃F7 Tab-moves-focus, ⌃F8 status menus, ⌥⌘Space Finder search window, ⌃⌥⌘8 Invert Colours, ⌥⌘F5 Accessibility Shortcuts and ⌃Space/⌃⌥Space input source. / Lulo's shell.kdl binds none of these (⌃F2 is ACC-05, ⌥⌘D DOCK-04, ⇧⌘Q KB-01, Notification Centre CC-05). Bound and matching: ⌘Space, ⌘Tab/⇧⌘Tab, ⌘`, ⌃↑/⌃↓/⌃←/⌃→, F11, ⇧⌘3/4/5 with ⌃ variants, ⌃F3, ⌥⌘Esc, ⌘F5, ⌃⌘Q, the window-tiling keys (Super+Ctrl for 🌐⌃), and the media, volume and brightness keys. | `packaging/rmac-session/shell.kdl:236` |
 
 ### Accessibility
 
@@ -187,6 +216,7 @@ only.
 | ACC-05 | P1 | M | Missing | Mac: Control-F2 moves keyboard focus to the menu bar. / Lulo: explicitly not implemented (`docs/known-limitations.md`). | `shell/bins/rmac-menubar` |
 | ACC-06 | P2 | L | Missing | Mac: Zoom (⌃-scroll) magnifies the screen. / Lulo: no screen zoom — niri has no zoom API yet. | `crates/system-settings/.../screen_reader.rs:124` |
 | A11Y-01 | P2 | S | Partial | Mac: VoiceOver announces the app as "Calculator". / Lulo: AT-SPI `Application.Name` is the executable file name ("rmac-calculator"), because `accesskit_unix`'s private `app_name()` uses `current_exe()`; toolkit identity is now fixed (gpui_linux 0.1.0). Fix: a minimal `[patch]` fork of `accesskit_unix` that reads the name from an env var set by `rmac_ui` before the first window. See the ADR 0013 amendment for details. | `shell/compat/gpui_linux`, `accesskit_unix 0.22.1 context.rs` |
+| ACC-07 | P1 | S | Missing (verify) | Mac: the menu bar, Dock, Control Centre, Notification Centre and Spotlight are all in the accessibility tree. / Lulo, installed build 0.9.0~beta.1-38: with toolkit-accessibility on and the a11y bus enabled, AT-SPI lists only niri and ordinary apps. No shell surface registers, so a screen reader (and the journey scripts) can't reach any shell control. Check again after the 8de9528a AT-SPI build is installed. | `shell/bins/*`, `crates/quick-settings-app`, `crates/notification-center-app` |
 
 ---
 
@@ -449,6 +479,83 @@ similar — no plan, not tracked as rows here).
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
 | OTHER-01 | P1 | L | Missing | Mac's Open/Save panel is a Finder-style sheet (sidebar, view switcher, New Folder, tags). / Lulo is a portal *client* only; `rmac-portals.conf` resolves to `default=gnome;gtk;*`, so the GNOME file chooser appears in every app, which is the single most visible "this is GNOME" moment in the product. | needs an rmac `org.freedesktop.impl.portal.FileChooser` implementation |
+
+---
+
+## Coverage
+
+Shell states audit, 2026-09-25. Mac: macOS 26.2 on the owner's Mac, read live through System Events AX and screencapture unless marked *ref*. *ref* means taken from the standard macOS 26 behaviour because the state needs a real pointer hover or drag, which AX can't produce. Lulo: the laptop's installed build 0.9.0~beta.1-38 (2026-09-24 16:44), which predates d3a8f776, 918aaa38, 0fad56ed and 44f223ee. *live* means dispatched and grabbed on the laptop. *code* means read from source, because the installed shell registers no AT-SPI (ACC-07) and there's no key or pointer injector, so its menus can't be clicked remotely.
+
+| Area | State | Mac checked | Lulo checked | Row IDs |
+|---|---|---|---|---|
+| Menu bar | Status item order (Battery, Wi-Fi, Spotlight, Control Centre, Clock) | live | live | — |
+| Menu bar | Wi-Fi menu: switch, Weak Security…, Personal Hotspot, Known Networks, Other Networks ▸, Wi-Fi Settings… | live | code | — (Hotspot is Continuity) |
+| Menu bar | Wi-Fi ⌥-click details | ref | code | — |
+| Menu bar | Battery menu: %, Power Source, Energy Mode ▸ Low Power, Using Significant Energy, Battery Settings… | live | code | BAR-05 |
+| Menu bar | Bluetooth / Sound / Focus items | live (not in the owner's bar) | code (not in bar) | BAR-03 |
+| Menu bar | Clock opens Notification Centre; second click closes; Esc closes | live | code + live (dispatch) | — |
+| Menu bar | Privacy indicator dot/pill | live | code | BAR-09 |
+| Control Centre | Default grid (Wi-Fi, Bluetooth, AirDrop, Now Playing, Stage Manager, Screen Mirroring, appearance, Screenshot, Focus, Display, Sound, Edit Controls) | live | live | CC-02, CC-03, CC-06, CC-07 |
+| Control Centre | Wi-Fi expanded | live (menu) | code | — |
+| Control Centre | Bluetooth expanded | ref | code | — |
+| Control Centre | AirDrop expanded | ref | code | CC-07 |
+| Control Centre | Focus expanded | ref | code | CC-08 |
+| Control Centre | Display expanded | ref | code | CC-09 |
+| Control Centre | Sound outputs expanded | ref | code | — |
+| Control Centre | Now Playing | live | code | CC-02 |
+| Control Centre | Screen Mirroring | live | code | CC-06 |
+| Control Centre | Edit Controls | live | code | CC-03 |
+| Control Centre | Expand/collapse animation, Esc, second click | ref | code + live | CC-10 |
+| Control Centre | Glass over the desktop | live | live | CC-11 |
+| Notification Centre | List, heading, clear button, Edit Widgets pill, ✕ Clear All menu | live | live + code | NC-09, NC-04 |
+| Notification Centre | Card right-click menu (Mute 1 h/Today, Turn Off, Settings…) | live | code | NC-08 |
+| Notification Centre | Widget gallery (search, category sidebar, sizes) | live | code | DESK-05 |
+| Notification Centre | Group stack, Show Less, hover ✕ | ref | code + live (installed build still lists every card singly) | NC-03 |
+| Notification Centre | Banner hover ✕, Options, Reply, timing, alert (persistent) style | ref | code | NC-10, NC-11 |
+| Notification Centre | Open/close slide | ref | code | NC-11 |
+| Dock | Running app menu | live | code | DOCK-15, DOCK-16 |
+| Dock | Kept closed app menu | live | code | DOCK-16 |
+| Dock | Finder/Files tile menu | live | code | DOCK-05 |
+| Dock | Apps tile menu | live | code | DOCK-06 |
+| Dock | Trash menu (empty) | live | code | DOCK-17 |
+| Dock | Trash menu (with items) | ref | code | DOCK-17 |
+| Dock | Recent-app tile menu | live | code | DOCK-12, DOCK-15 |
+| Dock | Separator menu | live | code | DOCK-02 |
+| Dock | Folder stack click and menu | ref (no stack in the owner's Dock) | code | DOCK-19 |
+| Dock | Minimised-window tile | ref | code | DOCK-20 |
+| Dock | Hover label (instant on both) | ref | code | — |
+| Dock | Magnification (off by default on both) | live (separator menu) | code | DOCK-07 |
+| Dock | Drag reorder, drag out to remove | ref | code | DOCK-18 |
+| Dock | Launch bounce, attention bounce | ref | code | — |
+| ⌘Tab | Hold, Tab/⇧Tab, Esc | live | code | — |
+| ⌘Tab | Q quit, H hide, ` backwards, ↑/↓ App Exposé | ref | code | MC-07 |
+| ⌘Tab | ⌘` between an app's windows | ref | code (niri recent-windows) | — |
+| Mission Control | Overview, spaces bar, + add Space | live | live | MC-03, MC-04, MC-05 |
+| Mission Control | Spaces bar hover, remove ✕, drag a window to a Space | ref | code | MC-04 |
+| Mission Control | App Exposé (⌃↓) | live | live | MC-01, MC-06 |
+| Mission Control | Show Desktop (F11) | ref | live (installed build hides the windows) | MC-02 |
+| Spotlight | Empty field, placeholder | live (earlier audit) | live | SPOT-01 |
+| Spotlight | Result categories, ⌘↑/⌘↓, ⌘Return, ⌘C, ⌘I, Esc clears then closes | ref | code | SPOT-03 |
+| Spotlight | Calculator, unit and currency conversion, dictionary | ref | code | — |
+| Spotlight | Preview pane (none in Tahoe; ⌘Y Quick Look) | ref | code | — |
+| Spotlight | ⌘B web search | ref | code | — (excluded by design rule) |
+| Apps | Grid, search field, chips, scrolling (Tahoe has no folders, pages or jiggle mode) | ref | live + code | APPS-02, APPS-03 |
+| Apps | Opening Apps over Spotlight | ref | live | SPOT-04 |
+| Desktop | Empty-space menu (New Folder … Show View Options) | ref (AX exposes no desktop menu) | code | DESK-02, DESK-07 |
+| Desktop | View Options panel | ref | code | DESK-08 |
+| Desktop | Drag-select rectangle, rename in place | ref | code | — |
+| Desktop | Keyboard navigation between icons | ref | code | DESK-09 |
+| Screenshot | ⇧⌘5 bar | live | live | SHOT-01 |
+| Screenshot | ⇧⌘5 Options menu | ref | code | SHOT-02 |
+| Screenshot | ⇧⌘3/⇧⌘4 (+Space window mode), floating thumbnail, file name | ref (no file taken) | code | — |
+| Window chrome | Traffic-light hover glyphs, ⌥-click green | ref | code | — |
+| Window chrome | Green-button hover menu | ref | code | DESK-03 |
+| Window chrome | Title-bar double-click | ref | code | WIN-05 |
+| Window chrome | Edge-drag snapping | ref | code | DESK-03 |
+| Window chrome | Full-screen enter/exit | ref | code | WIN-06 |
+| Window chrome | Tab bar (⌘T in Files) | ref | code | — |
+| Keyboard | Every System Settings ▸ Keyboard Shortcuts entry against shell.kdl | live (symbolichotkeys overrides) + ref (defaults) | code | KB-06, ACC-05, DOCK-04, KB-01, CC-05, NC-07 |
+| Accessibility | Shell surfaces in the accessibility tree | live | live | ACC-07 |
 
 ---
 

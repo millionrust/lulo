@@ -1,0 +1,100 @@
+Description: Report xdg_toplevel.set_minimized on the IPC event stream
+ niri has no minimized state and ignores a client's minimize request, so
+ the minimize button of Firefox, GTK, Qt and every other third-party app
+ does nothing. This adds one event-stream event, WindowMinimizeRequested
+ { id }, sent when a mapped toplevel asks to be minimized. niri itself
+ still leaves the window where it is: the Lulo OS Dock hears the event and
+ minimizes the window the way the yellow traffic light of an rmac app
+ does (record where it was, take its thumbnail while it is on screen, move
+ it to the hidden "rmac-parking" workspace). The event is transient (not
+ in the replicated state), and clients that match on event names, as rmac
+ does, ignore it when they do not know it.
+ .
+ See docs/decisions/0021-niri-minimize-request.md in the rmac repository.
+Author: Jacob Samas <samasjacob@icloud.com>
+Forwarded: no
+Last-Update: 2026-09-25
+---
+--- a/niri-ipc/src/lib.rs
++++ b/niri-ipc/src/lib.rs
+@@ -1705,6 +1705,16 @@
+         /// Stream ID of the stopped screencast.
+         stream_id: u64,
+     },
++    /// A window asked to be minimized (`xdg_toplevel.set_minimized`).
++    ///
++    /// niri has no minimized state and leaves the window where it is; a desktop shell listening
++    /// on the event stream decides what minimizing means, for example moving the window to a
++    /// hidden workspace. This event is not part of the replicated state: it is only sent to
++    /// clients connected when the request arrives. (Lulo OS patch.)
++    WindowMinimizeRequested {
++        /// Id of the window.
++        id: u64,
++    },
+ }
+ 
+ impl From<Duration> for Timestamp {
+@@ -2044,6 +2054,15 @@
+ #[cfg(test)]
+ mod tests {
+     use super::*;
++
++    #[test]
++    fn window_minimize_requested_wire_format() {
++        // Lulo OS patch: the shell matches on this exact JSON line.
++        let line = serde_json::to_string(&Event::WindowMinimizeRequested { id: 7 }).unwrap();
++        assert_eq!(line, r#"{"WindowMinimizeRequested":{"id":7}}"#);
++        let event: Event = serde_json::from_str(&line).unwrap();
++        assert!(matches!(event, Event::WindowMinimizeRequested { id: 7 }));
++    }
+ 
+     #[test]
+     fn parse_size_change() {
+--- a/src/handlers/xdg_shell.rs
++++ b/src/handlers/xdg_shell.rs
+@@ -488,6 +488,17 @@
+         }
+     }
+ 
++    fn minimize_request(&mut self, toplevel: ToplevelSurface) {
++        // niri has no minimized state, so the window stays put. Report the request on the IPC
++        // event stream and let the desktop shell decide what to do with it. (Lulo OS patch.)
++        let Some((mapped, _)) = self.niri.layout.find_window_and_output(toplevel.wl_surface())
++        else {
++            return;
++        };
++        let id = mapped.id().get();
++        self.ipc_window_minimize_requested(id);
++    }
++
+     fn unmaximize_request(&mut self, toplevel: ToplevelSurface) {
+         if let Some((mapped, _)) = self
+             .niri
+--- a/src/ipc/client.rs
++++ b/src/ipc/client.rs
+@@ -506,6 +506,9 @@
+                     Event::CastStopped { stream_id } => {
+                         println!("Cast stopped: stream id {stream_id}");
+                     }
++                    Event::WindowMinimizeRequested { id } => {
++                        println!("Window minimize requested: {id}");
++                    }
+                 }
+             }
+         }
+--- a/src/ipc/server.rs
++++ b/src/ipc/server.rs
+@@ -942,4 +942,13 @@
+         state.apply(event.clone());
+         server.send_event(event);
+     }
++
++    /// Tell event-stream clients that a window asked to be minimized. (Lulo OS patch.)
++    pub fn ipc_window_minimize_requested(&mut self, id: u64) {
++        let Some(server) = &self.niri.ipc_server else {
++            return;
++        };
++
++        server.send_event(Event::WindowMinimizeRequested { id });
++    }
+ }

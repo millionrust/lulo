@@ -708,6 +708,10 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     ));
     assert!(shell.contains("{ spawn \"/usr/libexec/rmac/rmac-app-switcher\" \"previous\"; }"));
     assert!(shell.contains("Mod+grave { next-window filter=\"app-id\"; }"));
+    // ⌘M minimises the focused window of every app, not only rmac's own.
+    assert!(shell.contains(
+        "Mod+M repeat=false hotkey-overlay-title=\"Minimise\" { spawn \"/usr/libexec/rmac/rmac-mission-control\" \"minimize\"; }"
+    ));
     // ⌃F3 asks the resident Dock to take keyboard focus.
     assert!(shell.contains(
         "Ctrl+F3 repeat=false hotkey-overlay-title=\"Move Focus to the Dock\" { spawn \"/usr/libexec/rmac/rmac-dock\" \"focus\"; }"

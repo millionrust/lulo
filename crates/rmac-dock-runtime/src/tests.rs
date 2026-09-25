@@ -473,3 +473,39 @@ fn display_refresh_hints_are_narrow_and_forward_compatible() {
         }
     ));
 }
+
+#[test]
+fn parking_upkeep_follows_window_close_minimize_requests_and_reconnects() {
+    let window = rmac_compositor::WindowId(12);
+    // A closed window's parked entry and thumbnails go with it.
+    assert_eq!(
+        parking_work(&rmac_compositor::Event::WindowRemoved { id: window }),
+        Some(ParkingWork::Forget(window))
+    );
+    // A third-party minimize button, reported by Lulo's niri.
+    assert_eq!(
+        parking_work(&rmac_compositor::Event::Unknown {
+            source_kind: "WindowMinimizeRequested".into(),
+            payload: serde_json::json!({ "id": 12 }),
+        }),
+        Some(ParkingWork::Minimize(window))
+    );
+    assert_eq!(
+        parking_work(&rmac_compositor::Event::Snapshot {
+            snapshot: rmac_compositor::Snapshot::default(),
+        }),
+        Some(ParkingWork::Prune)
+    );
+    // Everything else, including events a future niri adds, is ignored.
+    assert_eq!(
+        parking_work(&rmac_compositor::Event::Unknown {
+            source_kind: "ConfigLoaded".into(),
+            payload: Default::default(),
+        }),
+        None
+    );
+    assert_eq!(
+        parking_work(&rmac_compositor::Event::OverviewChanged { visible: true }),
+        None
+    );
+}

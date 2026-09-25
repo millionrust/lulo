@@ -53,15 +53,29 @@ impl Backend for SystemBackend {
     ) -> BackendFuture<'_, Result<(), BackendError>> {
         Box::pin(async move {
             let mut store = rmac_compositor::ParkingStore::load_default();
-            let Some(workspace) = store.forget(window) else {
-                return Err(BackendError::new(
-                    FailureKind::Unsupported,
-                    "the shell did not park this window",
-                ));
+            let workspace = match store.forget(window) {
+                Some(workspace) => {
+                    if let Err(error) = store.save_default() {
+                        eprintln!("could not save the parking set: {error}");
+                    }
+                    workspace
+                }
+                // Parked without a record (its minimize lost a race with
+                // another writer of the set): bring it to the Space in view,
+                // which is where a Mac restores a window whose Space is gone.
+                None => {
+                    let snapshot = blocking::unblock(|| {
+                        futures_lite::future::block_on(rmac_compositor_niri::snapshot())
+                    })
+                    .await
+                    .map_err(|error| {
+                        BackendError::new(FailureKind::Unavailable, format!("{error:?}"))
+                    })?;
+                    restore_target(&snapshot).ok_or_else(|| {
+                        BackendError::new(FailureKind::Unsupported, "no Space to restore to")
+                    })?
+                }
             };
-            if let Err(error) = store.save_default() {
-                eprintln!("could not save the parking set: {error}");
-            }
             rmac_compositor_niri::execute(rmac_compositor::ActionRequest {
                 id: request_id,
                 action: rmac_compositor::Action::RestoreWindow { window, workspace },
@@ -329,4 +343,27 @@ fn action_error_kind(kind: rmac_compositor::ActionErrorKind) -> FailureKind {
         rmac_compositor::ActionErrorKind::Rejected => FailureKind::Rejected,
         rmac_compositor::ActionErrorKind::Unsupported => FailureKind::Unsupported,
     }
+}
+
+/// Where a parked window with no recorded origin goes back to: the focused
+/// Space, or failing that any Space in view that is not the parking one.
+pub(crate) fn restore_target(
+    snapshot: &rmac_compositor::Snapshot,
+) -> Option<rmac_compositor::WorkspaceId> {
+    let usable = |workspace: &&rmac_compositor::Workspace| {
+        workspace.name.as_deref() != Some(rmac_compositor::PARKING_WORKSPACE)
+    };
+    snapshot
+        .workspaces
+        .iter()
+        .filter(usable)
+        .find(|workspace| workspace.focused)
+        .or_else(|| {
+            snapshot
+                .workspaces
+                .iter()
+                .filter(usable)
+                .find(|workspace| workspace.active)
+        })
+        .map(|workspace| workspace.id)
 }

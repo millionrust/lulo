@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wire::{Event as NiriEvent, Reply, Request, Response};
 
+mod minimize;
 mod model;
 mod runtime;
 #[cfg(test)]
@@ -26,6 +27,7 @@ mod transport;
 // deserialize into the real wire types.
 pub mod wire;
 
+pub use minimize::*;
 pub use model::*;
 pub use runtime::*;
 use translate::*;

@@ -26,6 +26,7 @@ or a tilde; see docs/release-process.md
 from __future__ import annotations
 
 import argparse
+import email.utils
 from dataclasses import dataclass
 import hashlib
 import json
@@ -382,6 +383,44 @@ def cyclonedx_sbom(
     }
 
 
+_CHANGELOG_HEADER = re.compile(r"^(?P<name>[a-z0-9][a-z0-9+.-]*) \((?P<version>[^)]+)\) ")
+_CHANGELOG_TRAILER = re.compile(r"^ -- .+?  (?P<date>.+)$")
+
+
+def vendor_epoch(changelog: str, upstream_version_component: str) -> int:
+    """The mtime every file in the vendor tarball gets.
+
+    It is the date of the *first* changelog entry for this upstream version
+    (the ``-1`` revision), not the newest one: a Debian-only change such as a
+    new patch bumps the revision but must not change the ``.orig-vendor``
+    tarball, which Debian requires to stay byte-identical across revisions of
+    the same upstream version (and whose SHA-256 ``upstreams.json`` pins).
+    """
+
+    entries = []
+    version = None
+    for line in changelog.splitlines():
+        header = _CHANGELOG_HEADER.match(line)
+        if header:
+            version = header.group("version")
+            continue
+        trailer = _CHANGELOG_TRAILER.match(line)
+        if trailer and version is not None:
+            entries.append((version, trailer.group("date").strip()))
+            version = None
+    matching = [
+        date for version, date in entries if version.startswith(f"{upstream_version_component}-")
+    ]
+    if not matching:
+        raise ThirdPartyError(
+            f"debian/changelog has no entry for {upstream_version_component}"
+        )
+    try:
+        return int(email.utils.parsedate_to_datetime(matching[-1]).timestamp())
+    except (TypeError, ValueError) as error:
+        raise ThirdPartyError(f"debian/changelog date {matching[-1]!r} is invalid") from error
+
+
 def shell_assignments(pin: Pin) -> str:
     values = {
         "PIN_NAME": pin.name,
@@ -420,6 +459,8 @@ def main(argv: list[str] | None = None) -> int:
     sbom.add_argument("--vendor-sha256", required=True)
     sbom.add_argument("--output", required=True, type=Path)
     sbom.add_argument("--artifact", action="append", default=[], type=Path)
+    epoch = commands.add_parser("vendor-epoch")
+    epoch.add_argument("--name", required=True, choices=PACKAGE_NAMES)
     check = commands.add_parser("check-vendor")
     check.add_argument("--name", required=True, choices=PACKAGE_NAMES)
     check.add_argument("--sha256", required=True)
@@ -447,6 +488,9 @@ def main(argv: list[str] | None = None) -> int:
             arguments.output.write_text(
                 json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
             )
+        elif arguments.command == "vendor-epoch":
+            changelog = REPO_ROOT / "packaging" / "third-party" / pin.name / "debian" / "changelog"
+            print(vendor_epoch(changelog.read_text(encoding="utf-8"), pin.upstream_version_component))
         elif arguments.command == "check-vendor":
             if pin.vendor_sha256 is None:
                 print(

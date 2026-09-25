@@ -260,6 +260,11 @@ binds {
     Mod+Ctrl+Up repeat=false hotkey-overlay-title="Top" { spawn "/usr/libexec/rmac/rmac-mission-control" "tile-top"; }
     Mod+Ctrl+Down repeat=false hotkey-overlay-title="Bottom" { spawn "/usr/libexec/rmac/rmac-mission-control" "tile-bottom"; }
     Mod+Ctrl+R repeat=false hotkey-overlay-title="Return to Previous Size" { spawn "/usr/libexec/rmac/rmac-mission-control" "restore-size"; }
+    // ⌘M minimises the focused window of any app into the Dock, through the
+    // same record, thumbnail and park path as an rmac app's yellow button
+    // (docs/decisions/0021-niri-minimize-request.md). keyd leaves M
+    // untranslated in every profile (ADR 0017), so it always reaches niri.
+    Mod+M repeat=false hotkey-overlay-title="Minimise" { spawn "/usr/libexec/rmac/rmac-mission-control" "minimize"; }
     // Screenshots are the resident rmac-screenshot service
     // (docs/decisions/0010): ⇧⌘3 screen, ⇧⌘4 selection (Space: window),
     // ⇧⌘5 toolbar; adding ⌃ copies to the clipboard instead of saving.

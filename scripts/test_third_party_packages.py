@@ -92,6 +92,76 @@ class PinTests(unittest.TestCase):
         self.assertIn("/usr/bin/niri-session", session)
         self.assertIn("niri.service", session)
 
+    def test_patch_series_lists_documented_patches_that_touch_only_upstream_files(self):
+        for name in third_party.PACKAGE_NAMES:
+            patches = PACKAGING / name / "debian" / "patches"
+            if not patches.exists():
+                continue
+            series = [
+                line.strip()
+                for line in (patches / "series").read_text(encoding="utf-8").splitlines()
+                if line.strip() and not line.startswith("#")
+            ]
+            self.assertTrue(series, f"{name}: empty patch series")
+            self.assertEqual(
+                sorted(series),
+                sorted(path.name for path in patches.glob("*.patch")),
+                f"{name}: every patch is in the series and every series entry exists",
+            )
+            for patch in series:
+                text = (patches / patch).read_text(encoding="utf-8")
+                header = text.split("\n---\n", 1)[0]
+                # DEP-3: what it does, who wrote it, whether it went upstream.
+                for field in ("Description:", "Author:", "Forwarded:", "Last-Update:"):
+                    self.assertIn(field, header, f"{patch}: {field}")
+                touched = re.findall(r"(?m)^\+\+\+ b/(\S+)", text)
+                self.assertTrue(touched, f"{patch}: no files")
+                for path in touched:
+                    self.assertFalse(path.startswith(("debian/", "vendor/")), path)
+                    self.assertNotEqual(
+                        path, "Cargo.lock", "a patch must not change the vendored graph"
+                    )
+
+    def test_niri_minimize_patch_matches_the_event_rmac_listens_for(self):
+        patch = (
+            PACKAGING / "niri" / "debian" / "patches" / "0001-ipc-report-minimize-requests.patch"
+        ).read_text(encoding="utf-8")
+        self.assertIn("fn minimize_request(&mut self, toplevel: ToplevelSurface)", patch)
+        self.assertIn("WindowMinimizeRequested {", patch)
+        adapter = (
+            REPO_ROOT / "crates" / "rmac-compositor-niri" / "src" / "minimize.rs"
+        ).read_text(encoding="utf-8")
+        self.assertIn('MINIMIZE_REQUEST_EVENT: &str = "WindowMinimizeRequested"', adapter)
+        self.assertIn(
+            "debian/patches/0001-ipc-report-minimize-requests.patch",
+            (PACKAGING / "niri" / "debian" / "changelog").read_text(encoding="utf-8"),
+        )
+
+    def test_vendor_epoch_stays_on_the_first_entry_of_an_upstream_version(self):
+        changelog = (
+            "niri (26.04+lulo1-2) resolute; urgency=medium\n\n  * Patch.\n\n"
+            " -- A <a@example.org>  Fri, 25 Sep 2026 22:00:00 +0000\n\n"
+            "niri (26.04+lulo1-1) resolute; urgency=medium\n\n  * First.\n\n"
+            " -- A <a@example.org>  Thu, 24 Sep 2026 04:00:00 +0000\n\n"
+            "niri (25.11+lulo1-1) resolute; urgency=medium\n\n  * Older.\n\n"
+            " -- A <a@example.org>  Mon, 01 Dec 2025 00:00:00 +0000\n"
+        )
+        # A new Debian revision leaves the vendor tarball byte-identical ...
+        self.assertEqual(third_party.vendor_epoch(changelog, "26.04+lulo1"), 1790222400)
+        # ... and each upstream version keeps its own date.
+        self.assertEqual(third_party.vendor_epoch(changelog, "25.11+lulo1"), 1764547200)
+        with self.assertRaises(third_party.ThirdPartyError):
+            third_party.vendor_epoch(changelog, "27.01+lulo1")
+        # The real changelogs still date the pinned vendor tarballs.
+        for name, pin in third_party.load_pins(REPO_ROOT).items():
+            text = (PACKAGING / name / "debian" / "changelog").read_text(encoding="utf-8")
+            self.assertEqual(
+                third_party.vendor_epoch(text, pin.upstream_version_component), 1790222400
+            )
+        script = BUILD_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('vendor-epoch --name "$PIN_NAME"', script)
+        self.assertNotIn("-STimestamp", script)
+
     def test_niri_depends_on_the_satellite_and_dlopened_libraries(self):
         depends = _field(_control("niri"), "Depends")
         self.assertIn("xwayland-satellite (>= 0.8.2)", depends)
@@ -192,7 +262,7 @@ class VersionPolicyTests(unittest.TestCase):
             architecture="amd64",
             dependencies=native.resolved_static_dependencies(session, "0.9.0~beta.1-38"),
         ).decode("utf-8")
-        self.assertIn("niri (>= 26.04+lulo1-1)", control)
+        self.assertIn("niri (>= 26.04+lulo1-2)", control)
         self.assertIn("xwayland-satellite (>= 0.8.2+lulo1-1)", control)
 
 

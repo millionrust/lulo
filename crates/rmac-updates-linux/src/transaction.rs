@@ -11,10 +11,12 @@ use crate::api::{
     PACKAGEKIT_INTERFACE, PACKAGEKIT_PATH, POLL_INTERVAL, ROLE_UPDATE_PACKAGES, SIMULATION_TIMEOUT,
     TRANSACTION_INTERFACE,
 };
+#[cfg(any(target_os = "linux", test))]
 use crate::api::{FLAG_ONLY_DOWNLOAD, FLAG_ONLY_TRUSTED};
 
 /// `UpdatePackages` flags for an offline update's download: trusted packages
 /// only, downloaded but not installed.
+#[cfg(any(target_os = "linux", test))]
 pub(crate) const fn offline_update_flags() -> u64 {
     FLAG_ONLY_TRUSTED | FLAG_ONLY_DOWNLOAD
 }

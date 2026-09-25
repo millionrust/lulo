@@ -316,11 +316,13 @@ pub(crate) struct PreviewView {
     go_to_page_open: bool,
     recent_documents: Vec<PathBuf>,
     /// This window's stable identity for the print portal transaction.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     window_generation: u64,
     /// Bumped whenever the selected document changes, so a print or export
     /// started before that never lands on the newer document (or vice
     /// versa). Shared with the async print/export task as `current`.
     document_generation: Arc<std::sync::atomic::AtomicU64>,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     print_busy: bool,
     /// File ▸ Export as PDF… (PREV-15) in progress.
     export_busy: bool,

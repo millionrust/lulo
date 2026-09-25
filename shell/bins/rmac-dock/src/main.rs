@@ -2930,6 +2930,10 @@ mod linux_wayland {
                         }
                         item = item.child(visual);
                         let context_app_id = app_id.clone();
+                        // The Files tile's menu matches the Mac Finder
+                        // tile's (DOCK-05): no Options, no Quit.
+                        let is_finder = context_app_id.trim_end_matches(".desktop")
+                            == rmac_apps::identity::FILES;
                         item = item.on_mouse_down(
                             MouseButton::Right,
                             cx.listener(move |this, _, _, cx| {
@@ -2937,9 +2941,15 @@ mod linux_wayland {
                                 let session = {
                                     let status = this.status.read(cx);
                                     status.model().and_then(|model| {
-                                        model.context_menu(&context_app_id).and_then(|menu| {
-                                            rmac_dock::menu::Session::context(&menu).ok()
-                                        })
+                                        if is_finder {
+                                            model.finder_context_menu().and_then(|menu| {
+                                                rmac_dock::menu::Session::finder(&menu).ok()
+                                            })
+                                        } else {
+                                            model.context_menu(&context_app_id).and_then(|menu| {
+                                                rmac_dock::menu::Session::context(&menu).ok()
+                                            })
+                                        }
                                     })
                                 };
                                 this.context_menu = session.map(|session| DockMenu {
@@ -2949,7 +2959,9 @@ mod linux_wayland {
                                     login: None,
                                 });
                                 this.input_region = None;
-                                this.load_login_state(&context_app_id, cx);
+                                if !is_finder {
+                                    this.load_login_state(&context_app_id, cx);
+                                }
                                 cx.notify();
                             }),
                         );

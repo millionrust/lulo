@@ -4,8 +4,9 @@ use std::fmt;
 
 use crate::presentation::{EntryId, OverflowGroup};
 use crate::{
-    ContextAction, ContextMenu, PinCommand, SpecialActivation, SpecialContextAction,
-    SpecialContextMenu, SpecialItemKind, StackActivation, StackCommand, StackContextMenu,
+    ContextAction, ContextMenu, FinderContextMenu, PinCommand, SpecialActivation,
+    SpecialContextAction, SpecialContextMenu, SpecialItemKind, StackActivation, StackCommand,
+    StackContextMenu,
 };
 
 pub const MAX_MENU_ROWS: usize = 512;
@@ -24,6 +25,8 @@ pub enum RowId {
     Quit,
     OpenSpecial(SpecialItemKind),
     EmptyTrash,
+    /// The Files tile's menu (DOCK-05): always offered, unlike `Open`.
+    NewFinderWindow,
     OpenStack,
     StackSortBy(rmac_shell_settings::DockStackSortBy),
     StackDisplayAs(rmac_shell_settings::DockStackDisplayAs),
@@ -446,6 +449,105 @@ impl Session {
         )
     }
 
+    /// The Files tile's menu (DOCK-05): windows, New Finder Window, Show
+    /// All Windows, Hide/Hide Others -- no Options ▸, no Quit.
+    pub fn finder(menu: &FinderContextMenu) -> Result<Self, MenuError> {
+        let row_count = menu.windows.len()
+            + usize::from(menu.new_window.is_some())
+            + usize::from(menu.show_all_windows.is_some())
+            + usize::from(menu.hide.is_some());
+        if row_count > MAX_MENU_ROWS {
+            return Err(MenuError::TooManyRows { count: row_count });
+        }
+        let mut rows = Vec::new();
+        rows.extend(menu.windows.iter().map(|window| {
+            let title = bounded(&window.title);
+            let mut accessible = vec![title.clone()];
+            if window.focused {
+                accessible.push("focused".into());
+            }
+            if window.urgent {
+                accessible.push("needs attention".into());
+            }
+            accessible.push("alternate action closes window".into());
+            Row {
+                id: RowId::Window(window.id),
+                section: Section::Windows,
+                label: title,
+                accessible_label: bounded(&accessible.join(", ")),
+                enabled: true,
+                checked: window.focused,
+                urgent: window.urgent,
+                destructive: false,
+                primary: Some(Action::Context(window.focus.clone())),
+                secondary: Some(Action::Context(window.close.clone())),
+                alternate_label: None,
+                submenu: None,
+            }
+        }));
+        if let Some(action) = &menu.new_window {
+            rows.push(Row {
+                id: RowId::NewFinderWindow,
+                section: Section::Lifecycle,
+                label: "New Finder Window".into(),
+                accessible_label: "New Finder Window".into(),
+                enabled: true,
+                checked: false,
+                urgent: false,
+                destructive: false,
+                primary: Some(Action::Context(action.clone())),
+                secondary: None,
+                alternate_label: None,
+                submenu: None,
+            });
+        }
+        if let Some(action) = &menu.show_all_windows {
+            rows.push(Row {
+                id: RowId::ShowAllWindows,
+                section: Section::Lifecycle,
+                label: "Show All Windows".into(),
+                accessible_label: bounded(&format!(
+                    "Show All Windows of {}",
+                    bounded(&menu.application_name)
+                )),
+                enabled: true,
+                checked: false,
+                urgent: false,
+                destructive: false,
+                primary: Some(Action::Context(action.clone())),
+                secondary: None,
+                alternate_label: None,
+                submenu: None,
+            });
+        }
+        if let Some(action) = &menu.hide {
+            let hide_others = menu.hide_others.clone().map(Action::Context);
+            rows.push(Row {
+                id: RowId::Hide,
+                section: Section::Lifecycle,
+                label: "Hide".into(),
+                accessible_label: bounded(&format!(
+                    "Hide {}, hold Option to Hide Others",
+                    bounded(&menu.application_name)
+                )),
+                enabled: true,
+                checked: false,
+                urgent: false,
+                destructive: false,
+                primary: Some(Action::Context(action.clone())),
+                alternate_label: hide_others.as_ref().map(|_| "Hide Others".to_owned()),
+                secondary: hide_others,
+                submenu: None,
+            });
+        }
+        Self::new(
+            EntryId::Application(menu.app_id.clone()),
+            bounded(&menu.application_name),
+            format!("{} Dock menu", bounded(&menu.application_name)),
+            rows,
+        )
+    }
+
     /// The macOS Trash menu: Open, a separator, then Empty Trash, which stays
     /// visible but disabled while the Trash is empty.
     pub fn special(menu: &SpecialContextMenu) -> Result<Self, MenuError> {
@@ -836,7 +938,7 @@ fn bounded(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::presentation::{ActivityIndicator, BuiltinIcon, Entry, Icon};
-    use crate::{ContextMenu, WindowMenu};
+    use crate::{ContextMenu, FinderContextMenu, WindowMenu};
 
     fn entry(id: &str, enabled: bool) -> Entry {
         Entry {
@@ -973,6 +1075,56 @@ mod tests {
                 restore_focus: EntryId::Application("terminal.desktop".into()),
             }
         );
+    }
+
+    #[test]
+    fn finder_menu_has_a_new_window_row_and_no_options_or_quit() {
+        let menu = FinderContextMenu {
+            app_id: "org.rmac.Files".into(),
+            application_name: "Files".into(),
+            windows: vec![WindowMenu {
+                id: rmac_compositor::WindowId(3),
+                title: "Documents".into(),
+                focused: true,
+                urgent: false,
+                focus: focus("org.rmac.Files", 3),
+                close: close("org.rmac.Files", 3),
+            }],
+            new_window: Some(ContextAction::LaunchNew {
+                app_id: "org.rmac.Files".into(),
+                spec: rmac_apps::LaunchSpec::Command {
+                    program: "rmac-files".into(),
+                    args: Vec::new(),
+                    working_dir: None,
+                    terminal: false,
+                },
+            }),
+            show_all_windows: Some(ContextAction::ShowAllWindows {
+                app_id: "org.rmac.Files".into(),
+                window: rmac_compositor::WindowId(3),
+            }),
+            hide: Some(ContextAction::HideApplication {
+                app_id: "org.rmac.Files".into(),
+                windows: vec![rmac_compositor::WindowId(3)],
+            }),
+            hide_others: Some(ContextAction::HideOthers {
+                app_id: "org.rmac.Files".into(),
+                windows: Vec::new(),
+            }),
+        };
+        let session = Session::finder(&menu).unwrap();
+        let ids: Vec<_> = session.rows().iter().map(|row| row.id.clone()).collect();
+        assert_eq!(
+            ids,
+            [
+                RowId::Window(rmac_compositor::WindowId(3)),
+                RowId::NewFinderWindow,
+                RowId::ShowAllWindows,
+                RowId::Hide,
+            ]
+        );
+        assert!(!ids.contains(&RowId::Pin));
+        assert!(!ids.contains(&RowId::Quit));
     }
 
     #[test]

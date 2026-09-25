@@ -101,6 +101,7 @@ tinting, scrolling physics, foreign dialogs and wording are all rmac's own code
 
 - 1.0 keeps its schedule and its honest support statement: "rmac runs on niri".
 - The Dock's minimize remains a parking hack until `rmac-comp`; document it in
-  `docs/known-limitations.md` rather than hiding it.
+  `docs/known-limitations.md` rather than hiding it. Amended by ADR 0021: Lulo's niri carries one
+  patch that reports third-party minimize requests, so the parking covers every app.
 - After the cleanup, adding a backend is bounded work that one person can start without stopping the
   product.

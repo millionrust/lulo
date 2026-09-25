@@ -161,6 +161,32 @@ impl CalculatorView {
             ),
         };
         window.resize(size(px(width), px(height)));
+        // niri can reconfigure a floating window after a client-driven
+        // resize (the same behaviour `rmac_ui::window`'s own post-map
+        // fit-to-display retry works around), so a single `resize` call can
+        // settle at a size a few points off from what was requested here.
+        // Reassert it briefly until it sticks, rather than leave the keypad
+        // laid out for a canvas the window didn't actually end up with.
+        cx.spawn(async move |this, cx| {
+            for _ in 0..10 {
+                cx.background_executor()
+                    .timer(Duration::from_millis(100))
+                    .await;
+                let settled = this.update_in(cx, |_, window, _| {
+                    let current = window.bounds().size;
+                    let matches = (f32::from(current.width) - width).abs() < 0.5
+                        && (f32::from(current.height) - height).abs() < 0.5;
+                    if !matches {
+                        window.resize(size(px(width), px(height)));
+                    }
+                    matches
+                });
+                if settled.unwrap_or(true) {
+                    break;
+                }
+            }
+        })
+        .detach();
         cx.notify();
     }
 

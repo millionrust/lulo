@@ -4616,6 +4616,27 @@ mod linux_wayland {
 
     /// ⌃F3 from niri: give the keyboard to the Dock on the focused output
     /// (or the first Dock when niri reports no focused output).
+    /// ⌥⌘D (DOCK-04) and the separator menu's Turn Hiding On/Off row: flip
+    /// `DockSettings::autohide`. The resident Dock picks the change up the
+    /// same way it does any other live settings change (no extra plumbing:
+    /// `rmac-dock-runtime` already watches the same store).
+    fn toggle_dock_hiding(cx: &mut App) {
+        cx.background_executor()
+            .spawn(async move {
+                let result = blocking::unblock(|| {
+                    let store = rmac_shell_settings::ShellSettingsStore::from_environment()?;
+                    let mut settings = store.load()?.settings;
+                    settings.dock.autohide = !settings.dock.autohide;
+                    store.save(&settings)
+                })
+                .await;
+                if let Err(error) = result {
+                    eprintln!("could not turn Dock hiding on or off: {error}");
+                }
+            })
+            .detach();
+    }
+
     fn focus_dock(windows: &DockWindows, status: &Entity<DockStatus>, cx: &mut App) {
         let focused_output = status.read(cx).snapshot().and_then(|snapshot| {
             snapshot
@@ -4796,6 +4817,9 @@ mod linux_wayland {
                         cx.update(|cx| match command {
                             crate::ipc::Command::Focus => {
                                 focus_dock(&windows.borrow(), &status, cx);
+                            }
+                            crate::ipc::Command::ToggleHide => {
+                                toggle_dock_hiding(cx);
                             }
                         });
                     }

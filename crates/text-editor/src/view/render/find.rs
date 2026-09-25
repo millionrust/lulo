@@ -23,6 +23,10 @@ impl EditorView {
             .gap_2()
             .child(
                 div()
+                    .id("find-field")
+                    .role(Role::SearchInput)
+                    .aria_label("Find")
+                    .accessible_text_input(&self.find_input, cx)
                     .w(px(layout.find_input_width))
                     .child(SearchField::new(&self.find_input).appearance(true)),
             )
@@ -78,6 +82,10 @@ impl EditorView {
                     .gap_2()
                     .child(
                         div()
+                            .id("replace-field")
+                            .role(Role::TextInput)
+                            .aria_label("Replace with")
+                            .accessible_text_input(&self.replace_input, cx)
                             .w(px(layout.find_input_width))
                             .child(TextField::new(&self.replace_input).appearance(true)),
                     )

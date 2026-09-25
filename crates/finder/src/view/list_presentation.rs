@@ -799,6 +799,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &CutItems, _, cx| this.cut(cx)))
             .on_action(cx.listener(|this, _: &PasteItems, _, cx| this.paste(cx)))
             .on_action(cx.listener(|this, _: &UndoOperation, _, cx| this.start_undo(cx)))
+            .on_action(cx.listener(|this, _: &MakeAlias, _, cx| this.make_alias(cx)))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
             .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
             .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
@@ -862,8 +863,11 @@ impl FinderView {
                 this.help_open = true;
                 cx.notify();
             }))
-            .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, _, cx| {
+            .on_key_down(cx.listener(move |this, ev: &KeyDownEvent, window, cx| {
                 if this.renaming.is_some() {
+                    if ev.keystroke.key.as_str() == "escape" {
+                        this.rename_cancel(window, cx);
+                    }
                     return;
                 }
                 // Column view is a browser: ↑/↓ move within the focused

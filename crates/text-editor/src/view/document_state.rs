@@ -1,8 +1,55 @@
 //! Text Editor document generations, dirty state, recovery, watching, and Recents.
 
 use super::*;
+use std::collections::BTreeSet;
+use std::sync::{Mutex, OnceLock};
+
+/// Untitled-document numbers (1 = plain "Untitled") currently held by an
+/// open window in this process, as TextEdit numbers simultaneous new
+/// documents ("Untitled", "Untitled 2", …). A window claims the lowest free
+/// number when it opens untitled and releases it once it gets a path or
+/// closes, so a later "Untitled" reuses a number a closed window freed.
+fn untitled_slots() -> &'static Mutex<BTreeSet<u32>> {
+    static SLOTS: OnceLock<Mutex<BTreeSet<u32>>> = OnceLock::new();
+    SLOTS.get_or_init(|| Mutex::new(BTreeSet::new()))
+}
+
+fn claim_untitled_slot() -> u32 {
+    let mut slots = untitled_slots()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let mut candidate = 1;
+    while slots.contains(&candidate) {
+        candidate += 1;
+    }
+    slots.insert(candidate);
+    candidate
+}
+
+fn release_untitled_slot(slot: u32) {
+    if let Ok(mut slots) = untitled_slots().lock() {
+        slots.remove(&slot);
+    }
+}
 
 impl EditorView {
+    pub(super) fn claim_untitled_slot() -> u32 {
+        claim_untitled_slot()
+    }
+
+    /// Frees an untitled number a window claimed, once it gets a real path
+    /// or closes, so another window's "Untitled" can reuse it.
+    pub(super) fn release_untitled_slot_number(slot: u32) {
+        release_untitled_slot(slot);
+    }
+
+    /// Frees this window's own untitled number, if it is holding one.
+    pub(super) fn release_untitled_slot(&mut self) {
+        if let Some(slot) = self.untitled_slot.take() {
+            Self::release_untitled_slot_number(slot);
+        }
+    }
+
     pub(super) fn filename(&self) -> SharedString {
         match &self.path {
             Some(path) => path
@@ -10,7 +57,10 @@ impl EditorView {
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_else(|| "Untitled".to_string())
                 .into(),
-            None => "Untitled".into(),
+            None => match self.untitled_slot {
+                Some(slot) if slot > 1 => format!("Untitled {slot}").into(),
+                _ => "Untitled".into(),
+            },
         }
     }
 

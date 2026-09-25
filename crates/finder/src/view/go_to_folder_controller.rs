@@ -197,6 +197,7 @@ impl FinderView {
             .id("go-to-folder")
             .role(Role::Dialog)
             .aria_label("Go to Folder")
+            .relative()
             .w(px(GO_TO_WIDTH))
             .v_flex()
             .gap(px(6.0))
@@ -206,7 +207,34 @@ impl FinderView {
             .border_1()
             .border_color(sep())
             .shadow_lg()
-            .child(TextField::new(&sheet.input))
+            .child(
+                div()
+                    .id("go-to-close")
+                    .role(Role::Button)
+                    .aria_label("Close")
+                    .absolute()
+                    .top(px(6.0))
+                    .right(px(6.0))
+                    .size(px(16.0))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .cursor_pointer()
+                    .hover(|h| h.bg(rmac_ui::mac::hover()))
+                    .child(Icon::new(IconName::Close).text_color(rmac_ui::mac::text_secondary()))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.close_go_to_folder(window, cx);
+                    })),
+            )
+            .child(
+                div()
+                    .id("go-to-field")
+                    .role(Role::TextInput)
+                    .aria_label("Go to Folder")
+                    .accessible_text_input(&sheet.input, cx)
+                    .child(TextField::new(&sheet.input)),
+            )
             .when(sheet.error, |panel| {
                 panel.child(
                     div()

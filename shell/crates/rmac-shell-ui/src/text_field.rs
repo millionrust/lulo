@@ -10,11 +10,12 @@
 use std::ops::Range;
 
 use gpui::{
-    div, fill, point, prelude::*, px, rgba, size, App, Bounds, ClipboardItem, Context, ElementId,
-    ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable,
-    GlobalElementId, Hsla, InspectorElementId, KeyDownEvent, LayoutId, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, Role, SharedString, Style,
-    Subscription, TextAlign, TextRun, UTF16Selection, UnderlineStyle, Window, WrappedLine,
+    accesskit, div, fill, point, prelude::*, px, rgba, size, A11ySubtreeBuilder, App, Bounds,
+    ClipboardItem, Context, ElementId, ElementInputHandler, Entity, EntityInputHandler,
+    EventEmitter, FocusHandle, Focusable, GlobalElementId, Hsla, InspectorElementId, KeyDownEvent,
+    LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
+    Role, SharedString, Style, Subscription, TextAlign, TextRun, UTF16Selection, UnderlineStyle,
+    Window, WrappedLine,
 };
 
 use crate::text_edit::{self, Motion, TextEdit};
@@ -252,15 +253,79 @@ impl TextField {
     }
 }
 
+/// Character offset of byte offset `byte` in `text` (rounded down to a
+/// character boundary), for translating [`TextEdit`]'s byte-offset
+/// selection into the character offsets AccessKit's text positions use.
+fn char_offset(text: &str, byte: usize) -> usize {
+    let mut byte = byte.min(text.len());
+    while !text.is_char_boundary(byte) {
+        byte -= 1;
+    }
+    text[..byte].chars().count()
+}
+
+/// Publish `text` as one AccessKit text run under this node (the field
+/// never holds a newline: Return submits instead of inserting one), with
+/// `anchor`/`focus` as character offsets into it. Mirrors
+/// `rmac_ui::accessibility::AccessibleTextInput` for gpui-component's
+/// `InputState` fields, which this crate cannot depend on (ADR 0015 keeps
+/// shell surfaces off the app-level `gpui-component` dependency graph).
+fn accessible_text_children(
+    text: String,
+    anchor: usize,
+    focus: usize,
+) -> impl FnOnce(&mut A11ySubtreeBuilder) + 'static {
+    move |builder| {
+        let id = builder.synthetic_node_id(("text-run", 0usize));
+        let mut node = accesskit::Node::new(accesskit::Role::TextRun);
+        node.set_value(text.clone());
+        node.set_character_lengths(text.chars().map(|c| c.len_utf8() as u8).collect::<Vec<_>>());
+        let mut word_starts = Vec::new();
+        let mut previous_space = true;
+        for (index, character) in text.chars().enumerate().take(256) {
+            let space = character.is_whitespace();
+            if index == 0 || (previous_space && !space) {
+                word_starts.push(index as u8);
+            }
+            previous_space = space;
+        }
+        node.set_word_starts(word_starts);
+        builder.push_child(id, node);
+        let position = |character_index: usize| accesskit::TextPosition {
+            node: id,
+            character_index,
+        };
+        builder
+            .parent_node()
+            .set_text_selection(accesskit::TextSelection {
+                anchor: position(anchor),
+                focus: position(focus),
+            });
+    }
+}
+
 impl Render for TextField {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let style = self.style;
         let is_focused = self.focus.is_focused(window);
+        let text = self.edit.text().to_owned();
+        let selection = self.edit.selection();
+        let head = self.edit.head();
+        let (anchor_byte, focus_byte) = if head == selection.start {
+            (selection.end, selection.start)
+        } else {
+            (selection.start, selection.end)
+        };
+        let (anchor_char, focus_char) = (
+            char_offset(&text, anchor_byte),
+            char_offset(&text, focus_byte),
+        );
         div()
             .id(ElementId::Name(self.id.clone()))
             .role(Role::TextInput)
             .aria_label(self.name.clone())
-            .aria_value(SharedString::from(self.edit.text().to_owned()))
+            .aria_value(SharedString::from(text.clone()))
+            .a11y_synthetic_children(accessible_text_children(text, anchor_char, focus_char))
             .track_focus(&self.focus)
             .cursor_text()
             .px(px(style.padding_x))

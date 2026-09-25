@@ -42,7 +42,12 @@ fn matches_needle_at(hay: &str, offset: usize, needle: &str) -> bool {
 
 /// `hay` with every `needle_len`-byte span at `offsets` (as `match_offsets`
 /// found them) replaced by `replacement`, left to right.
-fn replace_at_offsets(hay: &str, offsets: &[usize], needle_len: usize, replacement: &str) -> String {
+fn replace_at_offsets(
+    hay: &str,
+    offsets: &[usize],
+    needle_len: usize,
+    replacement: &str,
+) -> String {
     let mut result = String::with_capacity(hay.len());
     let mut cursor = 0;
     for &offset in offsets {
@@ -88,6 +93,14 @@ impl EditorView {
     }
 
     pub(super) fn close_bar(&mut self, cx: &mut Context<Self>) {
+        // Escape is bound to this action globally (`Some(CTX)`), so it wins
+        // over the Save sheet's own `capture_key_down` — GPUI matches key
+        // bindings before raw key-down listeners run. Cancel the sheet here
+        // instead of falling through to the find bar (TE-19).
+        if matches!(self.alert, Some(ActiveAlert::ConfirmSave(_))) {
+            self.alert_cancel(cx);
+            return;
+        }
         self.find_open = false;
         self.replace_mode = false;
         cx.notify();
@@ -348,6 +361,9 @@ mod tests {
     fn replace_all_is_case_insensitive_and_keeps_the_replacement_case() {
         let hay = "Cat cat CATS";
         let offsets = match_offsets(hay, "cat");
-        assert_eq!(replace_at_offsets(hay, &offsets, "cat".len(), "dog"), "dog dog dogS");
+        assert_eq!(
+            replace_at_offsets(hay, &offsets, "cat".len(), "dog"),
+            "dog dog dogS"
+        );
     }
 }

@@ -60,6 +60,16 @@ impl FinderView {
         self.reload(cx);
     }
 
+    /// Escape while renaming: cancel, discard the typed text and return
+    /// focus to the list, as Finder does. The list's own key handler skips
+    /// its navigation while `renaming` is set, so it calls this instead.
+    pub(super) fn rename_cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.renaming.take().is_some() {
+            window.focus(&self.focus, cx);
+            cx.notify();
+        }
+    }
+
     /// Rename `path` to `new_name` in its own folder, reporting a failure or
     /// a name clash visibly. Returns the new path when the item was renamed.
     fn rename_path_to(

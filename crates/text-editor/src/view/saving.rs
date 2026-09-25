@@ -131,6 +131,7 @@ impl EditorView {
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
                 if result.is_ok() {
+                    this.release_untitled_slot();
                     this.path = Some(path);
                 }
                 this.finish_document_save(result, content, then, window, cx);

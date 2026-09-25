@@ -89,8 +89,11 @@ impl FinderView {
                 rmac_ui::shortcuts::OPEN_SELECTION,
                 Box::new(OpenItems),
             );
+            // "Open With" is a submenu on the Mac (its handlers, per file
+            // type, live under it); rmac_ui::ContextMenu has no submenu
+            // primitive yet, so this stays one item, named to match.
             if can_open_with {
-                m = m.item("Open With…", Box::new(OpenWith));
+                m = m.item("Open With", Box::new(OpenWith));
             }
             m = m
                 .separator()
@@ -99,6 +102,7 @@ impl FinderView {
                     rmac_ui::shortcuts::DELETE,
                     Box::new(MoveToTrash),
                 )
+                .separator()
                 .command_item("Get Info", rmac_ui::shortcuts::INFO, Box::new(GetInfo))
                 .command_item("Rename", rmac_ui::shortcuts::ENTER, Box::new(RenameItem));
             if let Some(label) = compress_label {
@@ -110,6 +114,7 @@ impl FinderView {
                     rmac_ui::shortcuts::DUPLICATE,
                     Box::new(Duplicate),
                 )
+                .item("Make Alias", Box::new(MakeAlias))
                 .command_item("Quick Look", rmac_ui::shortcuts::SPACE, Box::new(QuickLook))
                 .separator()
                 .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(CopyItems));
@@ -151,6 +156,9 @@ impl FinderView {
 
     pub(in crate::view) fn render_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let mut bar = div()
+            .id("finder-tabs")
+            .role(Role::TabList)
+            .aria_label("Finder window tabs")
             .h(px(30.0))
             .flex_none()
             .flex()
@@ -170,6 +178,9 @@ impl FinderView {
             bar = bar.child(
                 div()
                     .id(SharedString::from(format!("tab-{i}")))
+                    .role(Role::Tab)
+                    .aria_label(name.clone())
+                    .aria_selected(active)
                     .flex()
                     .items_center()
                     .gap_1()

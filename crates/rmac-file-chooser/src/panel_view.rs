@@ -6,14 +6,14 @@ use std::path::PathBuf;
 use gpui::{
     div, prelude::FluentBuilder as _, px, svg, AnyElement, ClickEvent, Context, Div,
     Focusable as _, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton,
-    MouseDownEvent, ParentElement as _, Render, SharedString, StatefulInteractiveElement as _,
-    Styled, Svg, Window,
+    MouseDownEvent, ParentElement as _, Render, Role, SharedString,
+    StatefulInteractiveElement as _, Styled, Svg, Window,
 };
 use rmac_file_chooser::browser::{Location, ViewMode};
 use rmac_file_chooser::metrics::{self as m, dark};
 use rmac_file_chooser::request::Mode;
 use rmac_finder::listing::SortKey;
-use rmac_ui::TextField;
+use rmac_ui::{AccessibleTextInput as _, TextField};
 
 use crate::panel::*;
 
@@ -201,13 +201,17 @@ impl Panel {
             (true, false) => (colors.default_disabled, colors.text_disabled),
             (false, _) => (colors.control, colors.text),
         };
-        at(x, y, width, m::CONTROL_HEIGHT).id(id).child(
-            plate(fill)
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(label(text, 13.0, ink)),
-        )
+        at(x, y, width, m::CONTROL_HEIGHT)
+            .id(id)
+            .role(Role::Button)
+            .aria_label(text.clone())
+            .child(
+                plate(fill)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(label(text, 13.0, ink)),
+            )
     }
 
     fn render_sidebar(&self, height: f32, colors: Colors, cx: &mut Context<Self>) -> AnyElement {
@@ -529,6 +533,9 @@ impl Panel {
         };
         let focused = name.read(cx).focus_handle(cx).is_focused(window);
         at(x, y, m::FIELD_WIDTH, m::CONTROL_HEIGHT)
+            .id("save-name-field")
+            .role(Role::TextInput)
+            .accessible_text_input(name, cx)
             .rounded(px(m::PLATE_RADIUS))
             .border_1()
             .border_color(colors.field_rim)

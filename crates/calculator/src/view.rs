@@ -4,10 +4,10 @@
 use std::time::Duration;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, rgb, rgba, size, svg, AnyElement, ClipboardItem, Context,
-    FocusHandle, FontWeight, InteractiveElement as _, IntoElement, KeyDownEvent,
-    ParentElement as _, Render, Role, SharedString, StatefulInteractiveElement as _, Styled as _,
-    Window, WindowControlArea,
+    accesskit, div, prelude::FluentBuilder as _, px, rgb, rgba, size, svg, A11ySubtreeBuilder,
+    AnyElement, ClipboardItem, Context, FocusHandle, FontWeight, InteractiveElement as _,
+    IntoElement, KeyDownEvent, ParentElement as _, Render, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
 };
 use rmac_calculator::engine::{fitted_font_size, Calculator, HistoryEntry, Key as BasicKey};
 use rmac_calculator::keypad::{
@@ -505,6 +505,23 @@ impl CalculatorView {
             .child(body)
     }
 
+    /// One AccessKit text run publishing `text` under this node: AccessKit
+    /// (and so AT-SPI's Text interface) only reads a node's text from
+    /// `Role::TextRun` children, never a plain `value`/`aria_value` string
+    /// (see `rmac_ui::accessibility`, which this read-only display cannot
+    /// use since it names an `InputState` field, not a static result).
+    fn accessible_display_text(text: String) -> impl FnOnce(&mut A11ySubtreeBuilder) + 'static {
+        move |builder| {
+            let id = builder.synthetic_node_id(("display-text", 0usize));
+            let mut node = accesskit::Node::new(accesskit::Role::TextRun);
+            node.set_value(text.clone());
+            node.set_character_lengths(
+                text.chars().map(|c| c.len_utf8() as u8).collect::<Vec<_>>(),
+            );
+            builder.push_child(id, node);
+        }
+    }
+
     fn render_display(&self, palette: Palette) -> impl IntoElement {
         let inset = keypad::DISPLAY_RIGHT_INSET;
         let width = self.window_width() - inset * 2.0;
@@ -549,6 +566,9 @@ impl CalculatorView {
             .child(
                 line(keypad::RESULT_TOP, keypad::RESULT_LINE)
                     .id("calculator-result")
+                    .role(Role::Label)
+                    .aria_label("Display")
+                    .a11y_synthetic_children(Self::accessible_display_text(result.clone()))
                     .text_size(px(result_size))
                     .font_weight(FontWeight::LIGHT)
                     .text_color(rgb(palette.result))
@@ -602,6 +622,8 @@ impl CalculatorView {
                 "key-{}",
                 keypad::key_name(key).replace(' ', "-")
             )))
+            .role(Role::Button)
+            .aria_label(keypad::key_name(key))
             .absolute()
             .left(px(x))
             .top(px(y))
@@ -699,6 +721,8 @@ impl CalculatorView {
                 "sci-key-{}",
                 scientific_keypad::key_name(key)
             )))
+            .role(Role::Button)
+            .aria_label(scientific_keypad::key_name(key))
             .absolute()
             .left(px(x))
             .top(px(y))

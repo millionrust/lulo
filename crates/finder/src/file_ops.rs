@@ -15,6 +15,7 @@ const MAX_FREE_SPACE_RESERVE: u64 = 512 * 1024 * 1024;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Operation {
     Copy,
+    CreateAlias,
     CreateFolder,
     Move,
     Rename,
@@ -30,6 +31,7 @@ impl Operation {
     fn verb(self) -> &'static str {
         match self {
             Self::Copy => "copy",
+            Self::CreateAlias => "create an alias of",
             Self::CreateFolder => "create folder",
             Self::Move => "move",
             Self::Rename => "rename",

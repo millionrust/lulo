@@ -128,14 +128,14 @@ use gpui::{
     actions, div, img, prelude::FluentBuilder as _, px, svg, AnyElement, App, AppContext as _,
     AssetSource, ClipboardItem, Context, Div, ElementId, Entity, FocusHandle, Focusable as _, Hsla,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, ObjectFit,
-    ParentElement, Render, Result, SharedString, StatefulInteractiveElement as _, Styled,
+    ParentElement, Render, Result, Role, SharedString, StatefulInteractiveElement as _, Styled,
     StyledImage as _, Svg, Window,
 };
 use gpui_component::{menu::PopupMenuItem, Icon, IconName, StyledExt as _};
 use navigation_persistence::NavigationPersistence;
 use rmac_ui::{
-    Button, Checkbox, EmptyState, InputState, ListRow, PopUpButton, Progress, SearchField, Slider,
-    SliderEvent, SliderState, TextField, Toast, ToastKind, Toggle,
+    AccessibleTextInput as _, Button, Checkbox, EmptyState, InputState, ListRow, PopUpButton,
+    Progress, SearchField, Slider, SliderEvent, SliderState, TextField, Toast, ToastKind, Toggle,
 };
 
 #[derive(rust_embed::RustEmbed)]

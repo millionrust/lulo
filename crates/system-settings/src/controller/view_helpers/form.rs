@@ -548,9 +548,7 @@ pub(in crate::controller) fn value_slider_row(
                 .id(id.into())
                 .w(px(style::SLIDER_WIDTH))
                 .flex_none()
-                .tooltip(move |window, cx| {
-                    gpui_component::tooltip::Tooltip::new(value.clone()).build(window, cx)
-                })
+                .tooltip(move |window, cx| rmac_ui::tooltip_view(value.clone(), window, cx))
                 .child(Slider::new(state).w_full()),
         )
         .into_any_element()
@@ -714,7 +712,7 @@ fn circled_button(
         .items_center()
         .justify_center()
         .cursor_pointer()
-        .tooltip(move |window, cx| gpui_component::tooltip::Tooltip::new(tooltip).build(window, cx))
+        .tooltip(move |window, cx| rmac_ui::tooltip_view(tooltip.clone(), window, cx))
         .on_click(move |_, window, cx| on_click(window, cx))
         .child(glyph(icon, style::INFO_BUTTON, label()))
         .into_any_element()

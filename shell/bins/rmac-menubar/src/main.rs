@@ -614,6 +614,16 @@ mod linux_wayland {
         recent_submenu_open: bool,
         recent_selected_item: usize,
         pending_system_action: Option<String>,
+        /// When the open confirmation's 60-second countdown started, for
+        /// Log Out, Restart and Shut Down.
+        confirmation_started_at: Option<Instant>,
+        /// Bumped whenever a confirmation opens or is dismissed, so a
+        /// stale countdown tick or auto-timeout from a closed dialog never
+        /// fires.
+        confirmation_generation: u64,
+        /// "Reopen windows when logging in" checkbox state; unchecked by
+        /// default, as on the Mac.
+        confirmation_reopen: bool,
         /// The Wi-Fi or Battery menu, open under its status item.
         status_menu: Option<StatusMenuKind>,
         status_selected: Option<usize>,
@@ -687,6 +697,9 @@ mod linux_wayland {
                 recent_submenu_open: false,
                 recent_selected_item: 0,
                 pending_system_action: None,
+                confirmation_started_at: None,
+                confirmation_generation: 0,
+                confirmation_reopen: false,
                 status_menu: None,
                 status_selected: None,
                 status_option: false,
@@ -729,6 +742,8 @@ mod linux_wayland {
                 self.recent_submenu_open = false;
                 self.recent_selected_item = 0;
                 self.pending_system_action = None;
+                self.confirmation_generation = self.confirmation_generation.saturating_add(1);
+                self.confirmation_started_at = None;
                 self.selected_item = NO_ITEM;
                 self.submenu_rows.clear();
                 self.hover_generation = self.hover_generation.saturating_add(1);
@@ -745,6 +760,8 @@ mod linux_wayland {
         /// Cancel in a confirmation: back to the menu it came from, or, for
         /// the power button's dialog, which has no menu behind it, closed.
         fn cancel_confirmation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+            self.confirmation_generation = self.confirmation_generation.saturating_add(1);
+            self.confirmation_started_at = None;
             if self.pending_system_action.as_deref() == Some(menu_model::POWER_DIALOG_ACTION) {
                 self.close_menu(window, cx);
             } else {
@@ -753,13 +770,69 @@ mod linux_wayland {
             }
         }
 
+        /// Opens a Log Out / Restart / Shut Down confirmation and, for the
+        /// three timed ones, starts its 60-second auto-timeout, exactly as
+        /// on the Mac: with no interaction the dialog's own default action
+        /// runs on its own.
+        fn start_confirmation(&mut self, action: String, cx: &mut Context<Self>) {
+            self.pending_system_action = Some(action.clone());
+            self.confirmation_reopen = false;
+            self.confirmation_generation = self.confirmation_generation.saturating_add(1);
+            let generation = self.confirmation_generation;
+            let confirmation = menu_model::system_confirmation(&action);
+            if confirmation.countdown {
+                self.confirmation_started_at = Some(Instant::now());
+                cx.spawn(async move |this, cx| loop {
+                    cx.background_executor().timer(Duration::from_secs(1)).await;
+                    let keep_going = this.update(cx, |this, cx| {
+                        if this.confirmation_generation != generation {
+                            return false;
+                        }
+                        let elapsed = this
+                            .confirmation_started_at
+                            .map(|started| started.elapsed())
+                            .unwrap_or_default();
+                        if elapsed >= menu_model::CONFIRMATION_COUNTDOWN {
+                            this.confirmation_generation =
+                                this.confirmation_generation.saturating_add(1);
+                            this.confirmation_started_at = None;
+                            this.pending_system_action = None;
+                            this.open_menu = None;
+                            this.open_app_id = None;
+                            this.recent_submenu_open = false;
+                            this.recent_selected_item = 0;
+                            this.selected_item = NO_ITEM;
+                            this.submenu_rows.clear();
+                            this.hover_generation = this.hover_generation.saturating_add(1);
+                            this.menu_window = None;
+                            this.help_query.clear();
+                            cx.notify();
+                            if let Some(confirmed) = menu_model::confirmation_default_action(&action)
+                            {
+                                dispatch_system_menu(confirmed.to_owned(), cx);
+                            }
+                            return false;
+                        }
+                        cx.notify();
+                        true
+                    });
+                    if !matches!(keep_going, Ok(true)) {
+                        break;
+                    }
+                })
+                .detach();
+            } else {
+                self.confirmation_started_at = None;
+            }
+            cx.notify();
+        }
+
         /// A second press of the power button (see
         /// `rmac_shortcuts::power_key`): the Restart / Sleep / Cancel /
         /// Shut Down dialog, shown where the system menu opens.
         fn open_power_dialog(&mut self, window: &mut Window, cx: &mut Context<Self>) {
             self.open_menu(0, SYSTEM_MENU_ID.to_owned(), window, cx);
-            self.pending_system_action = Some(menu_model::POWER_DIALOG_ACTION.to_owned());
-            cx.notify();
+            self.start_confirmation(menu_model::POWER_DIALOG_ACTION.to_owned(), cx);
         }
 
         fn open_menu(
@@ -1197,8 +1270,7 @@ mod linux_wayland {
                                 this.recent_selected_item = 0;
                                 cx.notify();
                             } else if system && system_action_needs_confirmation(&action) {
-                                this.pending_system_action = Some(action.clone());
-                                cx.notify();
+                                this.start_confirmation(action.clone(), cx);
                             } else {
                                 this.close_menu(window, cx);
                                 dispatch_menu_action(
@@ -1883,9 +1955,13 @@ mod linux_wayland {
             if let Some(action) = self.pending_system_action.clone() {
                 match event.keystroke.key.as_str() {
                     "escape" => self.cancel_confirmation(window, cx),
+                    // No button is default on the power dialog (see
+                    // `system_confirmation`), so Return does nothing there,
+                    // as on the Mac (K) — a stray press of the physical
+                    // power key should never shut anything down on its own.
                     "enter" | "space" => {
-                        self.close_menu(window, cx);
                         if let Some(confirmed) = menu_model::confirmation_default_action(&action) {
+                            self.close_menu(window, cx);
                             dispatch_system_menu(confirmed.to_owned(), cx);
                         }
                     }
@@ -2049,8 +2125,7 @@ mod linux_wayland {
                     } else if app_id == SYSTEM_MENU_ID
                         && system_action_needs_confirmation(&item.action)
                     {
-                        self.pending_system_action = Some(item.action);
-                        cx.notify();
+                        self.start_confirmation(item.action, cx);
                     } else if item.action != menu_model::HELP_SEARCH_ACTION {
                         let app_id = if menu_index == 0 {
                             SYSTEM_MENU_ID.to_owned()
@@ -2145,17 +2220,29 @@ mod linux_wayland {
                     .map(|menu| menu_panel_width(menu, window))
             };
             let screen_width = f32::from(window.bounds().size.width);
-            let menu_left = self
-                .open_menu
-                .map(|index| menu_anchor_x(&active_app, &menus, index, window))
-                .zip(menu_width)
-                .map(|(left, width)| left.min(screen_width - width - 4.0).max(4.0));
+            let screen_height = f32::from(window.bounds().size.height);
+            // A confirmation is a floating panel centred on screen, not a
+            // dropdown anchored under the logo menu, as on the Mac.
+            let menu_left = if let Some(confirmation) = &confirmation {
+                self.open_menu
+                    .map(|_| ((screen_width - confirmation.width) / 2.0).max(4.0))
+            } else {
+                self.open_menu
+                    .map(|index| menu_anchor_x(&active_app, &menus, index, window))
+                    .zip(menu_width)
+                    .map(|(left, width)| left.min(screen_width - width - 4.0).max(4.0))
+            };
             let menu_height = if let Some(confirmation) = &confirmation {
                 Some(confirmation.height)
             } else {
                 self.open_menu
                     .and_then(|index| menus.get(index))
                     .map(|menu| app_menu_height(&menu.items))
+            };
+            let panel_top = if let Some(confirmation) = &confirmation {
+                ((screen_height - confirmation.height) / 2.0).max(menu_top)
+            } else {
+                menu_top
             };
             let recent_submenu_top = self.recent_submenu_open.then(|| {
                 menus
@@ -2384,7 +2471,7 @@ mod linux_wayland {
                     .role(Role::Menu)
                     .aria_label(format!("{} menu", menu.label))
                     .absolute()
-                    .top(px(menu_top))
+                    .top(px(panel_top))
                     .left(px(left))
                     .w(px(width))
                     .pt(px(menu_model::APP_MENU_PADDING - EDGE))
@@ -2400,6 +2487,16 @@ mod linux_wayland {
                 if let Some(action) = self.pending_system_action.clone() {
                     let confirmation = menu_model::system_confirmation(&action);
                     let display_id = self.display_id;
+                    let body_text = if confirmation.countdown {
+                        let elapsed = self
+                            .confirmation_started_at
+                            .map(|started| started.elapsed())
+                            .unwrap_or_default();
+                        menu_model::confirmation_body(&action, elapsed)
+                    } else {
+                        confirmation.detail.to_owned()
+                    };
+                    let reopen_checked = self.confirmation_reopen;
                     let buttons = confirmation
                         .buttons
                         .iter()
@@ -2438,23 +2535,93 @@ mod linux_wayland {
                                 .child(button.label)
                         })
                         .collect::<Vec<_>>();
-                    panel = panel.child(
+                    // The large grey-disc icon above the title, as on the
+                    // Mac (measured ≈68 pt across, S: proportion from a
+                    // Retina capture, not the SVG's own metrics).
+                    let icon_badge = div().flex().justify_center().child(
                         div()
-                            .p_3()
+                            .w(px(68.0))
+                            .h(px(68.0))
+                            .rounded(px(34.0))
+                            .bg(rgba(0xAEAEB2FF))
                             .flex()
-                            .flex_col()
-                            .gap_2()
+                            .items_center()
+                            .justify_center()
                             .child(
-                                div()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(confirmation.title),
-                            )
-                            .child(
-                                div()
-                                    .text_color(rgba(tokens::secondary_text()))
-                                    .child(confirmation.detail),
-                            )
-                            .child(div().flex().justify_end().gap_2().mt_2().children(buttons)),
+                                svg()
+                                    .w(px(36.0))
+                                    .h(px(36.0))
+                                    .path(menu_icon_path(confirmation.icon))
+                                    .text_color(rgba(0x3A3A3CFF)),
+                            ),
+                    );
+                    let mut body = div()
+                        .p_3()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap_2()
+                        .child(icon_badge)
+                        .child(
+                            div()
+                                .w_full()
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(confirmation.title),
+                        );
+                    if !body_text.is_empty() {
+                        body = body.child(
+                            div()
+                                .w_full()
+                                .text_color(rgba(tokens::secondary_text()))
+                                .child(body_text),
+                        );
+                    }
+                    if confirmation.countdown {
+                        let check_id =
+                            format!("system-confirmation-{display_id}-{action}-reopen");
+                        body = body.child(
+                            div()
+                                .id(check_id)
+                                .role(Role::Switch)
+                                .aria_label(menu_model::REOPEN_WINDOWS_LABEL)
+                                .w_full()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .cursor_pointer()
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    this.confirmation_reopen = !this.confirmation_reopen;
+                                    cx.notify();
+                                }))
+                                .child(
+                                    div()
+                                        .w(px(16.0))
+                                        .h(px(16.0))
+                                        .rounded(px(8.0))
+                                        .border_1()
+                                        .border_color(rgba(tokens::separator()))
+                                        .when(reopen_checked, |style| {
+                                            style.bg(rgba(tokens::accent()))
+                                        })
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .children(reopen_checked.then(|| {
+                                            svg()
+                                                .w(px(10.0))
+                                                .h(px(10.0))
+                                                .path(menu_icon_path("checkmark"))
+                                                .text_color(rgba(0xFFFFFFFF))
+                                        })),
+                                )
+                                .child(menu_model::REOPEN_WINDOWS_LABEL),
+                        );
+                    }
+                    panel = panel.child(
+                        body.child(div().w_full().flex().justify_end().gap_2().mt_2().children(
+                            buttons,
+                        )),
                     );
                     return Some(panel);
                 }

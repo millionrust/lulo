@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Session dialogs — exact</title>
+<!--
+  The Apple (rmac logo) menu's Shut Down…, Restart… and Log Out "Name"…
+  confirmations, at 1:1 logical points, measured on the owner's Mac
+  (macOS 26.2, dark mode, 2026-09-25) from Retina captures (screen scale
+  2×, logical resolution 1470 × 956) taken via System Events UI scripting,
+  cancelled every time with Escape — never confirmed. Evidence lives only
+  in the audit's scratchpad, per AGENTS.md and the parity-audit brief.
+  Rust copies these numbers: shell/bins/rmac-menubar/src/menu_model.rs
+  (`system_confirmation`, `confirmation_body`) and
+  shell/bins/rmac-menubar/src/main.rs (the `pending_system_action` render
+  branch).
+
+  All three share one template:
+
+  panel        264 × 288 (S: scanned from the panel's opaque edges in the
+               capture, ±a few pt — the panel is vibrancy-translucent, so a
+               flat colour scan only bounds it loosely), radius ~13,
+               centred on screen (not anchored under the logo menu — this
+               was the owner's example of a Lulo/Mac mismatch), a floating
+               panel, not a sheet: the desktop and every other window stay
+               exactly as they were behind it, un-dimmed
+  icon         a 68 pt grey disc, horizontally centred, ~16 pt from the
+               panel top; a big monochrome glyph inside, S grey values
+               (⏻ power for Shut Down, ⟲ restart for Restart, silhouette
+               for Log Out)
+  title        bold, left-aligned under the icon, wraps to two lines
+  body         regular weight, secondary/dimmed colour, left-aligned,
+               "If you do nothing, …, automatically in NN seconds.";
+               NN starts at 60 and counts down live, one per second,
+               confirmed by two captures ~2 s apart (60 → 58)
+  checkbox     "Reopen windows when logging in" (not "…back in" — the
+               owner's Mac dropped "back" some time before 26.2), a small
+               circular checkbox, off by default, left-aligned under the
+               body
+  buttons      Cancel (left, plain) then the affirmative action (right,
+               blue, the default/Return button), bottom-right, 28 pt tall
+               capsule rows; Cancel is never default
+  keyboard     Return runs the blue button; Esc always cancels (confirmed
+               live — dialog closes, nothing else on screen changes)
+  timeout (K)  reaching 0 without measuring it, since letting it fire was
+               not attempted: the default action should run on its own,
+               the same as clicking the blue button
+
+  Shut Down    title "Are you sure you want to shut down your computer
+               now?"; body "…the computer will shut down automatically…";
+               confirm button "Shut Down"
+  Restart      title "Are you sure you want to restart your computer
+               now?"; body "…the computer will restart automatically…";
+               confirm button "Restart"
+  Log Out      title "Are you sure you want to quit all applications and
+               log out now?"; body "…you will be logged out
+               automatically…"; confirm button "Log Out"
+
+  Power dialog (⌃⏏ / a second press of the power key) — design-lab has no
+  separate mock; Lulo's own version is at 360 × 150 (S, unmeasured: this
+  audit does not press the physical power key). It shares the same panel
+  chrome but: no checkbox, no countdown body, four buttons (Restart, Sleep,
+  Cancel, Shut Down) and — unlike the three above — NO button is default
+  (K): Apple's guard against a stray key press triggering a shutdown, so
+  Return does nothing until Tab/click picks a button.
+-->
+<style>
+  :root { --font: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif; }
+  html, body { margin: 0; background: #171a2b; }
+  body { font-family: var(--font); -webkit-font-smoothing: antialiased; padding: 40px;
+         display: flex; gap: 28px; flex-wrap: wrap; }
+  .win { position: relative; width: 264px; height: 288px; border-radius: 13px;
+         background: rgba(30,32,42,.86); backdrop-filter: blur(30px);
+         box-shadow: 0 20px 46px rgba(0,0,0,.6); outline: 1px solid rgba(255,255,255,.1);
+         outline-offset: -1px; color: #f0f0f2; padding: 12px; box-sizing: border-box; }
+  .icon { width: 68px; height: 68px; border-radius: 50%; background: #aeaeb2;
+          margin: 4px auto 10px; display: flex; align-items: center; justify-content: center;
+          font-size: 32px; color: #3a3a3c; }
+  .title { font-size: 13px; font-weight: 600; line-height: 17px; }
+  .body { font-size: 13px; line-height: 17px; color: #a9a9ae; margin-top: 8px; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; }
+  .check i { width: 16px; height: 16px; border-radius: 8px; border: 1px solid #6b6b70;
+             display: inline-block; }
+  .buttons { position: absolute; left: 12px; right: 12px; bottom: 12px;
+             display: flex; justify-content: flex-end; gap: 8px; }
+  .btn { height: 28px; padding: 0 14px; border-radius: 14px; font-size: 13px;
+         display: flex; align-items: center; }
+  .cancel { background: #48484c; }
+  .confirm { background: #3478f6; color: #fff; }
+</style>
+</head>
+<body>
+  <div class="win" role="dialog" aria-label="Shut Down">
+    <div class="icon">⏻</div>
+    <div class="title">Are you sure you want to shut down your computer now?</div>
+    <div class="body">If you do nothing, the computer will shut down automatically in 60 seconds.</div>
+    <div class="check"><i></i>Reopen windows when logging in</div>
+    <div class="buttons"><div class="btn cancel">Cancel</div><div class="btn confirm">Shut Down</div></div>
+  </div>
+  <div class="win" role="dialog" aria-label="Restart">
+    <div class="icon">⟲</div>
+    <div class="title">Are you sure you want to restart your computer now?</div>
+    <div class="body">If you do nothing, the computer will restart automatically in 60 seconds.</div>
+    <div class="check"><i></i>Reopen windows when logging in</div>
+    <div class="buttons"><div class="btn cancel">Cancel</div><div class="btn confirm">Restart</div></div>
+  </div>
+  <div class="win" role="dialog" aria-label="Log Out">
+    <div class="icon">◡</div>
+    <div class="title">Are you sure you want to quit all applications and log out now?</div>
+    <div class="body">If you do nothing, you will be logged out automatically in 60 seconds.</div>
+    <div class="check"><i></i>Reopen windows when logging in</div>
+    <div class="buttons"><div class="btn cancel">Cancel</div><div class="btn confirm">Log Out</div></div>
+  </div>
+</body>
+</html>

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Calculator — Basic (exact) and Scientific (estimated)</title>
+<title>Calculator — Basic and Scientific (both measured)</title>
 <!--
   Calculator, dark appearance. Render with --allow-file-access-from-files:
   this page fetches the same SVG glyphs the Rust app embeds
@@ -17,31 +17,44 @@
   crates/calculator/src/keypad.rs, whose own WINDOW_HEIGHT is 406, not 408 —
   a pre-existing 2 pt discrepancy from before this task, left alone here.
 
-  SCIENTIFIC — CALC-02, estimated (S), not measured. The audit never opened
-  Scientific mode (grep the audit for "Scientific": it appears only in the
-  Mac menu list and the CALC-02 gap row, no pixel measurements). The key set
-  is the standard nine-column, five-row macOS Scientific layout (2nd,
-  x²/x³/xʸ, eˣ/10ˣ, trig, 1/x, x!, π, e, Rand, EE, Rad/Deg, mc/m+/m-/mr,
-  parentheses) built from the task's own key list, laid over Basic's measured
-  four-column digit/operator grid extended by five function columns to its
-  left.
+  SCIENTIFIC — CALC-02, now measured live (macOS 26.2, 2026-09-25): opened
+  Calculator, View ▸ Scientific, read every button's `position`/`size` from
+  the AX tree with System Events (`click at` to press real keys) and cross
+  checked against a `screencapture -x` capture read pixel-for-pixel. This
+  replaced an earlier *estimated* 9-column/30 pt-key guess that turned out
+  wrong on every count once measured:
 
-  The brief asked for this to land in the same ~330–350 pt width AND
-  Basic's ~406–408 pt height. Both can't hold at once with Basic's actual
-  54 pt pitch: nine columns of 54 pt keys are 524 pt wide. This mock instead
-  keeps a *uniform* grid — every key shrinks to 30 pt circles on a 36 pt
-  pitch (still a 6 pt gap, same ratio as Basic) — which hits the width
-  target (338 pt) but gives up on the height target (316 pt, not ~406). The
-  alternative (keep 48/54 pt keys, accept ~524 pt width) was rejected as too
-  wide for a calculator. Toolbar geometry (toolbar height, traffic lights,
-  36 pt buttons, the two-line display) is reused unchanged from Basic; only
-  the two toolbar buttons' x position and the keypad move. Every estimated
-  number below is marked S in the mapping table and in
-  crates/calculator/src/scientific_keypad.rs.
+    - Window is 674 × 408 (height reuses Basic's own 406/408 constant —
+      same toolbar, same 5 rows, same row pitch).
+    - The grid is **10 columns × 5 rows**, all 50 cells filled. The
+      rightmost 4 columns are *exactly* Basic's own digit/operator grid
+      (⌫ AC % ÷ / 7 8 9 × / 4 5 6 − / 1 2 3 + / ± 0 . =), with 6 function
+      columns prepended.
+    - Keys are 60 × 48 pt **stadium-rounded pills** (corner radius 24 = one
+      half of the height — full round top/bottom, straight sides), not
+      circles, on a 66 × 54 pt pitch (still a 6 pt gap on both axes). Row
+      pitch (54) and keypad origin (10, 132) are exactly Basic's; only the
+      column pitch (66) and column count (10) are new.
+    - `x²`, `x³`, `xʸ`, `²√x`, `³√x`, `ʸ√x` and `1/x` are permanent keys —
+      `2nd` does NOT fold them into pairs (the old guess assumed it did).
+      `2nd` only flips: `eˣ`↔`yˣ`, `10ˣ`↔`2ˣ`, `ln`↔`logᵧ`, `log₁₀`↔`log₂`,
+      and the trig/hyperbolic-trig rows to their inverses.
+    - Confirmed by pressing real keys: Scientific evaluates with genuine
+      operator precedence (`2+3×5=` gives 17, not 25 the way Basic mode
+      would), and the display shows the pending formula text as you type
+      (`2+3×`, `2²`, `(1÷5)`) rather than a running number — see
+      crates/calculator/src/scientific.rs's module doc comment.
+    - Toolbar geometry (height, traffic lights, 36 pt buttons, the two-line
+      display) is unchanged from Basic; only the two toolbar buttons' x
+      position moves with the new width (mode button keeps Basic's
+      measured 26 pt margin from the trailing edge, sidebar keeps Basic's
+      absolute 124 pt from the leading edge).
+    - A small "Rad" label appears just above the keypad while radians is
+      active (separate from the Rad/Deg key itself, which always names the
+      mode pressing it would switch *to*).
 
-  Try the 2nd and Rad/Deg toggles below the Scientific window — they flip
-  the same key labels crates/calculator/src/scientific_keypad.rs::key_face
-  flips.
+  Toggle 2nd and Rad/Deg below the Scientific window to see the same label
+  flips crates/calculator/src/scientific_keypad.rs::key_face makes.
 -->
 <style>
   :root {
@@ -66,13 +79,16 @@
   .toolbar-btn { position: absolute; border-radius: 50%; background: var(--toolbar-button);
                  border: 1px solid var(--rim); display: flex; align-items: center; justify-content: center; }
   .toolbar-btn svg, .toolbar-btn .glyph { width: 20px; height: 20px; color: var(--toolbar-glyph); }
-  .key { position: absolute; border-radius: 50%; border: 1px solid var(--rim);
+  .key { position: absolute; border: 1px solid var(--rim);
          display: flex; align-items: center; justify-content: center; font-weight: 500;
          user-select: none; cursor: default; line-height: 1; text-align: center; }
+  .key.round { border-radius: 50%; }
+  .key.pill { border-radius: 24px; }
   .key.fn { background: var(--function-key); color: var(--function-label); }
   .key.digit { background: var(--digit-key); color: var(--digit-label); }
   .key.op { background: var(--operator-key); color: var(--operator-label); }
   .key .glyph { width: 24px; height: 24px; }
+  .angle-indicator { position: absolute; font-size: 12px; color: var(--expression); }
   .line { position: absolute; display: flex; align-items: center; justify-content: flex-end;
           white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
   .controls { display: flex; gap: 16px; font-size: 12px; color: #c9c9d1; align-items: center; }
@@ -81,7 +97,6 @@
   table.map td, table.map th { border: 1px solid #26262c; padding: 5px 9px; text-align: left; vertical-align: top; }
   table.map th { color: #9a9aa2; font-weight: 500; background: #151519; }
   table.map code { color: #7fd1ff; }
-  table.map .s { color: #ffb454; }
   h1 { font-size: 16px; margin: 0 0 4px; }
   p.note { color: #9a9aa2; font-size: 13px; max-width: 900px; line-height: 1.6; }
   p.note code { color: #7fd1ff; }
@@ -90,10 +105,9 @@
 <body>
 <div class="stage">
   <h1>Calculator</h1>
-  <p class="note">Basic (left) is <b>measured</b> from the Mac at 230 × 408. Scientific (right) is
-     <b class="s" style="color:#ffb454">estimated</b> — CALC-02, no Mac capture exists for it. Read the
-     header comment in this file's source for the reasoning, then
-     <code>crates/calculator/src/keypad.rs</code> and
+  <p class="note">Basic (left) and Scientific (right) are both <b>measured</b> from the Mac now —
+     Basic at 230 × 408, Scientific at 674 × 408. Read the header comment in this file's source for
+     how Scientific was measured, then <code>crates/calculator/src/keypad.rs</code> and
      <code>crates/calculator/src/scientific_keypad.rs</code> for the ported values.</p>
 
   <div class="row">
@@ -102,8 +116,8 @@
       <div id="basic-win" class="win" style="width:230px;height:408px"></div>
     </div>
     <div class="col">
-      <div class="label"><b>Scientific</b> — 338 × 316, estimated (S)</div>
-      <div id="sci-win" class="win" style="width:338px;height:316px"></div>
+      <div class="label"><b>Scientific</b> — 674 × 408, measured</div>
+      <div id="sci-win" class="win" style="width:674px;height:408px"></div>
       <div class="controls">
         <label><input type="checkbox" id="toggle-second"> 2nd</label>
         <label><input type="checkbox" id="toggle-rad"> Radians (else Degrees)</label>
@@ -112,35 +126,37 @@
   </div>
 
   <div class="col">
-    <div class="label"><b>Geometry map</b> — copy these into Rust; S rows are estimates, not measurements</div>
+    <div class="label"><b>Geometry map</b> — copy these into Rust</div>
     <table class="map">
-      <tr><th>Value</th><th>Basic (measured)</th><th>Scientific (S)</th><th>Rust field</th></tr>
-      <tr><td>Window</td><td><code>230 × 408</code></td><td><code>338 × 316</code></td>
+      <tr><th>Value</th><th>Basic (measured)</th><th>Scientific (measured)</th><th>Rust field</th></tr>
+      <tr><td>Window</td><td><code>230 × 408</code></td><td><code>674 × 408</code></td>
           <td><code>keypad::WINDOW_WIDTH/HEIGHT</code>, <code>scientific_keypad::WINDOW_WIDTH/HEIGHT</code></td></tr>
-      <tr><td>Key diameter / pitch</td><td><code>48 / 54</code></td><td class="s"><code>30 / 36</code></td>
-          <td><code>KEY_DIAMETER</code>, <code>KEY_PITCH</code></td></tr>
-      <tr><td>Keypad origin</td><td><code>(10, 132)</code></td><td class="s"><code>(10, 132)</code> reused</td>
+      <tr><td>Key shape / size / pitch</td><td>circle, <code>48 / 54</code></td>
+          <td>60 × 48 pt stadium pill (radius 24), pitch <code>66 × 54</code></td>
+          <td><code>KEY_DIAMETER</code> / <code>KEY_WIDTH, KEY_HEIGHT, KEY_PITCH_X, KEY_PITCH_Y</code></td></tr>
+      <tr><td>Keypad origin</td><td><code>(10, 132)</code></td><td><code>(10, 132)</code> reused</td>
           <td><code>KEYPAD_LEFT</code>, <code>KEYPAD_TOP</code></td></tr>
-      <tr><td>Grid</td><td><code>4 × 5</code></td><td class="s"><code>9 × 5</code> (5 function cols + Basic's 4)</td>
+      <tr><td>Grid</td><td><code>4 × 5</code></td><td><code>10 × 5</code> (6 function cols + Basic's 4)</td>
           <td><code>LAYOUT</code></td></tr>
       <tr><td>Toolbar button diameter</td><td><code>36</code></td><td><code>36</code> reused</td>
           <td><code>TOOLBAR_BUTTON_DIAMETER</code></td></tr>
-      <tr><td>Sidebar / mode button x</td><td><code>124 / 204</code></td><td class="s"><code>232 / 312</code></td>
+      <tr><td>Sidebar / mode button x</td><td><code>124 / 204</code></td><td><code>124</code> reused / <code>648</code></td>
           <td><code>SIDEBAR_BUTTON_CENTER_X</code>, <code>MODE_BUTTON_CENTER_X</code></td></tr>
       <tr><td>Display insets, line sizes</td><td>right 11, expr top 57.5/22pt, result top 88/31pt</td>
           <td>reused unchanged</td>
           <td><code>DISPLAY_RIGHT_INSET</code>, <code>EXPRESSION_*</code>, <code>RESULT_*</code></td></tr>
-      <tr><td>Function-key label size</td><td>22 (digits)</td><td class="s"><code>15</code></td>
+      <tr><td>Function-key label size</td><td>22 (digits)</td><td>17 (not pixel-measured per glyph)</td>
           <td><code>LABEL_SIZE</code> / <code>DIGIT_LABEL_SIZE</code></td></tr>
+      <tr><td>Angle indicator</td><td>—</td><td>small "Rad" label above the keypad, radians only</td>
+          <td><code>ANGLE_INDICATOR_TOP/SIZE</code></td></tr>
     </table>
   </div>
 
   <p class="note">
-    Scientific's 22 function keys (after the <code>2nd</code> toggle folds sin/sin⁻¹, cos/cos⁻¹, tan/tan⁻¹,
-    x²/√x, x³/∛x, xʸ/ʸ√x, eˣ/ln and 10ˣ/log₁₀ into one key each) fill 22 of the 25 function-column slots;
-    the bottom-left panel's last three cells are unused. See
+    All 50 Scientific cells are filled — no unused slots. See
     <code>crates/calculator/src/scientific_keypad.rs::LAYOUT</code> for the exact placement and
-    <code>crates/calculator/src/scientific.rs</code> for the engine behind each key.
+    <code>crates/calculator/src/scientific.rs</code> for the engine (including the real operator
+    precedence and formula-first display) behind each key.
   </p>
 </div>
 
@@ -208,7 +224,7 @@ async function buildBasic() {
     for (let col = 0; col < 4; col++) {
       const [tier, text, iconPath] = BASIC_ROWS[row][col];
       const key = document.createElement("div");
-      key.className = `key ${tier} abs`;
+      key.className = `key round ${tier} abs`;
       const x = BASIC_LEFT + col * BASIC_PITCH, y = BASIC_TOP + row * BASIC_PITCH;
       key.style.cssText = `left:${x}px;top:${y}px;width:${BASIC_DIAM}px;height:${BASIC_DIAM}px;font-size:22px`;
       key.innerHTML = iconPath ? await glyph("icons/calculator/" + iconPath, 24) : text;
@@ -217,23 +233,25 @@ async function buildBasic() {
   }
 }
 
-// ---- Scientific: crates/calculator/src/scientific_keypad.rs (S) ----
-const SCI_DIAM = 30, SCI_PITCH = 36, SCI_LEFT = 10, SCI_TOP = 132;
+// ---- Scientific: crates/calculator/src/scientific_keypad.rs (measured) ----
+const SCI_W = 60, SCI_H = 48, SCI_PITCH_X = 66, SCI_PITCH_Y = 54, SCI_LEFT = 10, SCI_TOP = 132;
 // [tier, glyphPath | null, plainLabel, secondLabel | null]
 function sciLayout(second, rad) {
   const radLabel = rad ? "Deg" : "Rad";
   return [
-    [["fn", null, "mc"], ["fn", null, "m+"], ["fn", null, "m-"], ["fn", null, "mr"], ["fn", null, "("],
-     ["fn", "backspace.svg"], ["fn", null, "AC"], ["fn", null, "%"], ["op", "divide.svg"]],
-    [["fn", null, "2nd"], ["fn", null, second ? "√x" : "x²"], ["fn", null, second ? "∛x" : "x³"],
-     ["fn", null, second ? "ʸ√x" : "xʸ"], ["fn", null, second ? "ln" : "eˣ"],
+    [["fn", null, "("], ["fn", null, ")"], ["fn", null, "mc"], ["fn", null, "m+"], ["fn", null, "m-"],
+     ["fn", null, "mr"], ["fn", "backspace.svg"], ["fn", null, "AC"], ["fn", null, "%"], ["op", "divide.svg"]],
+    [["fn", null, "2nd"], ["fn", null, "x²"], ["fn", null, "x³"], ["fn", null, "xʸ"],
+     ["fn", null, second ? "yˣ" : "eˣ"], ["fn", null, second ? "2ˣ" : "10ˣ"],
      ["digit", null, "7"], ["digit", null, "8"], ["digit", null, "9"], ["op", "multiply.svg"]],
-    [["fn", null, second ? "log₁₀" : "10ˣ"], ["fn", null, second ? "sin⁻¹" : "sin"],
-     ["fn", null, second ? "cos⁻¹" : "cos"], ["fn", null, second ? "tan⁻¹" : "tan"], ["fn", null, "1/x"],
+    [["fn", null, "1/x"], ["fn", null, "²√x"], ["fn", null, "³√x"], ["fn", null, "ʸ√x"],
+     ["fn", null, second ? "logᵧ" : "ln"], ["fn", null, second ? "log₂" : "log₁₀"],
      ["digit", null, "4"], ["digit", null, "5"], ["digit", null, "6"], ["op", "minus.svg"]],
-    [["fn", null, "x!"], ["fn", null, "π"], ["fn", null, "e"], ["fn", null, "Rand"], ["fn", null, "EE"],
+    [["fn", null, "x!"], ["fn", null, second ? "sin⁻¹" : "sin"], ["fn", null, second ? "cos⁻¹" : "cos"],
+     ["fn", null, second ? "tan⁻¹" : "tan"], ["fn", null, "e"], ["fn", null, "EE"],
      ["digit", null, "1"], ["digit", null, "2"], ["digit", null, "3"], ["op", "plus.svg"]],
-    [["fn", null, radLabel], ["fn", null, ")"], null, null, null,
+    [["fn", null, "Rand"], ["fn", null, second ? "sinh⁻¹" : "sinh"], ["fn", null, second ? "cosh⁻¹" : "cosh"],
+     ["fn", null, second ? "tanh⁻¹" : "tanh"], ["fn", null, "π"], ["fn", null, radLabel],
      ["digit", "plus-minus.svg"], ["digit", null, "0"], ["digit", null, "."], ["op", "equals.svg"]],
   ];
 }
@@ -244,9 +262,9 @@ async function buildScientific(second, rad) {
   lights(win);
   const toolbar = document.createElement("div");
   toolbar.className = "abs";
-  toolbar.style.cssText = "left:0;top:0;width:338px;height:52px";
+  toolbar.style.cssText = "left:0;top:0;width:674px;height:52px";
   win.appendChild(toolbar);
-  for (const [id, cx] of [["sci-sidebar", 232], ["sci-mode", 312]]) {
+  for (const [id, cx] of [["sci-sidebar", 124], ["sci-mode", 648]]) {
     const b = document.createElement("div");
     b.className = "toolbar-btn abs";
     b.style.cssText = `left:${cx - 18}px;top:${25 - 18}px;width:36px;height:36px`;
@@ -257,25 +275,30 @@ async function buildScientific(second, rad) {
   const expr = document.createElement("div");
   expr.className = "line abs";
   expr.style.cssText = "left:10px;right:11px;top:57.5px;height:28px;font-size:22px;color:var(--expression)";
-  expr.textContent = "2+";
+  expr.textContent = "2+3×";
   win.appendChild(expr);
   const result = document.createElement("div");
   result.className = "line abs";
   result.style.cssText = "left:10px;right:11px;top:88px;height:38px;font-size:31px;font-weight:300;color:var(--result)";
-  result.textContent = "2";
+  result.textContent = "2+3×5";
   win.appendChild(result);
+  if (rad) {
+    const indicator = document.createElement("div");
+    indicator.className = "angle-indicator abs";
+    indicator.style.cssText = "left:10px;top:112px";
+    indicator.textContent = "Rad";
+    win.appendChild(indicator);
+  }
   const layout = sciLayout(second, rad);
   for (let row = 0; row < layout.length; row++) {
-    for (let col = 0; col < 9; col++) {
-      const cell = layout[row][col];
-      if (!cell) continue;
-      const [tier, iconPath, text] = cell;
+    for (let col = 0; col < 10; col++) {
+      const [tier, iconPath, text] = layout[row][col];
       const key = document.createElement("div");
-      key.className = `key ${tier} abs`;
-      const x = SCI_LEFT + col * SCI_PITCH, y = SCI_TOP + row * SCI_PITCH;
-      const fontSize = tier === "digit" || tier === "op" ? 22 : 15;
-      key.style.cssText = `left:${x}px;top:${y}px;width:${SCI_DIAM}px;height:${SCI_DIAM}px;font-size:${fontSize}px`;
-      key.innerHTML = iconPath ? await glyph("icons/calculator/" + iconPath, 20) : text;
+      key.className = `key pill ${tier} abs`;
+      const x = SCI_LEFT + col * SCI_PITCH_X, y = SCI_TOP + row * SCI_PITCH_Y;
+      const fontSize = tier === "digit" || tier === "op" ? 22 : 17;
+      key.style.cssText = `left:${x}px;top:${y}px;width:${SCI_W}px;height:${SCI_H}px;font-size:${fontSize}px`;
+      key.innerHTML = iconPath ? await glyph("icons/calculator/" + iconPath, 24) : text;
       win.appendChild(key);
     }
   }

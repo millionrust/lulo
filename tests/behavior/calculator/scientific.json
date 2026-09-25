@@ -1,0 +1,15 @@
+{
+  "title": "Calculator: Scientific mode computes 2 x² = with the real formula-first display",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {"key": "escape"},
+    {"key": "escape"},
+    {"key": "cmd-2"},
+    {"type": "2"},
+    {"click_key": "square", "row": 1, "col": 1},
+    {"observe": "squared_pending", "facts": ["display"]},
+    {"type": "="},
+    {"observe": "squared_result", "facts": ["display"]}
+  ]
+}

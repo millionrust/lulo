@@ -22,7 +22,17 @@ REPO = Path(__file__).resolve().parents[2]
 SCENARIO_ROOT = REPO / "tests" / "behavior"
 
 APPS = {"files", "text-editor", "settings", "calculator", "desktop"}
-STEP_KINDS = {"key", "type", "wait", "observe", "menu", "context", "select", "focus_desktop"}
+STEP_KINDS = {
+    "key",
+    "type",
+    "wait",
+    "observe",
+    "menu",
+    "context",
+    "select",
+    "click_key",
+    "focus_desktop",
+}
 FACTS = {"focus", "windows", "dialog", "menu", "selection", "files", "tabs", "display"}
 
 # Mac AX roles and AT-SPI role names, both mapped to one small vocabulary.

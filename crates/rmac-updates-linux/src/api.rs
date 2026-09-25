@@ -3,7 +3,10 @@ use rmac_updates::{
     SnapshotFuture, Source,
 };
 
-use crate::transaction::{packagekit_install, packagekit_prepare, packagekit_snapshot};
+use crate::transaction::{
+    packagekit_details_snapshot, packagekit_install, packagekit_prepare,
+    packagekit_prepare_offline, packagekit_prepare_selection, packagekit_snapshot,
+};
 
 #[cfg(any(target_os = "linux", test))]
 pub(crate) const PACKAGEKIT_DESTINATION: &str = "org.freedesktop.PackageKit";
@@ -19,6 +22,13 @@ pub(crate) const FILTER_NONE: u64 = 1 << 1;
 pub(crate) const FLAG_ONLY_TRUSTED: u64 = 1 << 1;
 #[cfg(any(target_os = "linux", test))]
 pub(crate) const FLAG_SIMULATE: u64 = 1 << 2;
+#[cfg(any(target_os = "linux", test))]
+pub(crate) const FLAG_ONLY_DOWNLOAD: u64 = 1 << 3;
+#[cfg(target_os = "linux")]
+pub(crate) const OFFLINE_INTERFACE: &str = "org.freedesktop.PackageKit.Offline";
+/// `pk-offline-update` reboots once the prepared update is installed.
+#[cfg(any(target_os = "linux", test))]
+pub(crate) const OFFLINE_ACTION_REBOOT: &str = "reboot";
 #[cfg(any(target_os = "linux", test))]
 pub(crate) const ROLE_UPDATE_PACKAGES: u64 = 1 << 22;
 #[cfg(target_os = "linux")]
@@ -49,8 +59,33 @@ impl Source for SystemSource {
     }
 }
 
+/// The update set plus what Software Update shows around it: download
+/// sizes, the Lulo OS release notes, and the update prepared for the next
+/// restart. Only the update set itself is required; the rest is best effort.
 pub async fn snapshot(request: Request) -> Result<Snapshot, Error> {
-    SystemSource.snapshot(request).await
+    packagekit_details_snapshot(request).await
+}
+
+/// Refresh, resolve `selection` (the Lulo OS item and/or package IDs, plus
+/// anything already prepared for restart), and simulate it with
+/// `ONLY_TRUSTED`. No package has been downloaded or changed on return.
+pub async fn prepare_selection(
+    selection: Vec<String>,
+    cancellation: Cancellation,
+) -> Result<(Snapshot, InstallPlan), Error> {
+    packagekit_prepare_selection(selection, cancellation).await
+}
+
+/// Revalidate `plan`, download exactly its requested updates with
+/// `ONLY_TRUSTED | ONLY_DOWNLOAD` (no authorization needed), then trigger
+/// PackageKit's offline update so `pk-offline-update` installs them from
+/// `system-update.target` on the next restart.
+pub async fn prepare_offline(
+    plan: InstallPlan,
+    cancellation: Cancellation,
+    sender: async_channel::Sender<InstallProgress>,
+) -> Result<InstallResult, Error> {
+    packagekit_prepare_offline(plan, cancellation, sender).await
 }
 
 pub async fn prepare(cancellation: Cancellation) -> Result<(Snapshot, InstallPlan), Error> {

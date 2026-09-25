@@ -34,6 +34,8 @@ impl Render for Settings {
         let vpn_secret_clear_dialog = self.render_vpn_secret_clear_dialog(cx);
         let vpn_delete_dialog = self.render_vpn_delete_dialog(cx);
         let update_install_dialog = self.render_update_install_dialog(cx);
+        let update_info_sheet = self.render_update_info_sheet(cx);
+        let update_auto_sheet = self.render_update_auto_sheet(cx);
         let keyboard_shortcuts_sheet = self.render_keyboard_shortcuts_sheet(cx);
         div()
             .id(rmac_system_settings::accessibility::ROOT_ID)
@@ -65,6 +67,12 @@ impl Render for Settings {
                 } else if event.keystroke.key == "escape" && this.updates_plan.is_some() {
                     cx.stop_propagation();
                     this.cancel_update_plan(cx);
+                } else if event.keystroke.key == "escape" && this.updates_auto_sheet {
+                    cx.stop_propagation();
+                    this.close_update_auto_sheet(cx);
+                } else if event.keystroke.key == "escape" && this.updates_info_sheet.is_some() {
+                    cx.stop_propagation();
+                    this.close_update_info_sheet(cx);
                 } else if event.keystroke.key == "escape" && this.wifi_forget_confirmation.is_some()
                 {
                     cx.stop_propagation();
@@ -180,6 +188,14 @@ impl Render for Settings {
                     return;
                 }
                 if this.updates_plan.take().is_some() {
+                    cx.notify();
+                    return;
+                }
+                if this.updates_auto_sheet {
+                    this.close_update_auto_sheet(cx);
+                    return;
+                }
+                if this.updates_info_sheet.take().is_some() {
                     cx.notify();
                     return;
                 }
@@ -321,6 +337,8 @@ impl Render for Settings {
             .when_some(vpn_secret_clear_dialog, |root, dialog| root.child(dialog))
             .when_some(vpn_delete_dialog, |root, dialog| root.child(dialog))
             .when_some(update_install_dialog, |root, dialog| root.child(dialog))
+            .when_some(update_info_sheet, |root, sheet| root.child(sheet))
+            .when_some(update_auto_sheet, |root, sheet| root.child(sheet))
             .when_some(keyboard_shortcuts_sheet, |root, sheet| root.child(sheet))
     }
 }

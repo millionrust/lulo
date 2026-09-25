@@ -613,6 +613,9 @@ mod linux_wayland {
         recent_generation: u64,
         recent_submenu_open: bool,
         recent_selected_item: usize,
+        /// "1 update" beside System Settings…, read from Software Update's
+        /// status file each time the Lulo menu opens.
+        software_update_badge: Option<String>,
         pending_system_action: Option<String>,
         /// When the open confirmation's 60-second countdown started, for
         /// Log Out, Restart and Shut Down.
@@ -696,6 +699,7 @@ mod linux_wayland {
                 recent_generation: 0,
                 recent_submenu_open: false,
                 recent_selected_item: 0,
+                software_update_badge: None,
                 pending_system_action: None,
                 confirmation_started_at: None,
                 confirmation_generation: 0,
@@ -807,7 +811,8 @@ mod linux_wayland {
                             this.menu_window = None;
                             this.help_query.clear();
                             cx.notify();
-                            if let Some(confirmed) = menu_model::confirmation_default_action(&action)
+                            if let Some(confirmed) =
+                                menu_model::confirmation_default_action(&action)
                             {
                                 dispatch_system_menu(confirmed.to_owned(), cx);
                             }
@@ -857,6 +862,10 @@ mod linux_wayland {
             self.recent_selected_item = 0;
             self.pending_system_action = None;
             if index == 0 {
+                // A few bytes, read once per open: nothing watches or polls.
+                self.software_update_badge = rmac_updates::UpdateStatus::default_path()
+                    .map(|path| rmac_updates::UpdateStatus::load(&path))
+                    .and_then(|status| status.badge());
                 self.load_recent_items(cx);
             } else {
                 // Validate the app's items as the menu opens, as AppKit does.
@@ -978,7 +987,7 @@ mod linux_wayland {
             let window_items = rmac_app_menu::take_window_items(&mut exported);
             let help_items = rmac_app_menu::take_help_items(&mut exported);
             let mut menus = vec![
-                system_menu(),
+                system_menu(self.software_update_badge.as_deref()),
                 // The bold app name is the app menu (§3.3): it is
                 // synthesized, not exported, so every app gets
                 // About/Hide/Hide Others/Show All/Quit. An app's own entries
@@ -1167,7 +1176,11 @@ mod linux_wayland {
                         self.display_id
                     ))
                     .role(Role::MenuItem)
-                    .aria_label(item.label.clone())
+                    .aria_label(if item.badge.is_empty() {
+                        item.label.clone()
+                    } else {
+                        format!("{}, {}", item.label, item.badge)
+                    })
                     .relative()
                     .h(px(menu_model::APP_ROW_HEIGHT))
                     .mx(px(menu_model::ROW_INSET - EDGE))
@@ -1217,6 +1230,9 @@ mod linux_wayland {
                             .text_color(rgba(foreground))
                     }))
                     .child(div().flex_1().whitespace_nowrap().child(item.label.clone()));
+                if !item.badge.is_empty() {
+                    row = row.child(menu_badge(&item.badge, highlighted));
+                }
                 if menu_model::opens_submenu(&item) {
                     row = row.child(
                         svg()
@@ -2577,8 +2593,7 @@ mod linux_wayland {
                         );
                     }
                     if confirmation.countdown {
-                        let check_id =
-                            format!("system-confirmation-{display_id}-{action}-reopen");
+                        let check_id = format!("system-confirmation-{display_id}-{action}-reopen");
                         body = body.child(
                             div()
                                 .id(check_id)
@@ -2619,9 +2634,15 @@ mod linux_wayland {
                         );
                     }
                     panel = panel.child(
-                        body.child(div().w_full().flex().justify_end().gap_2().mt_2().children(
-                            buttons,
-                        )),
+                        body.child(
+                            div()
+                                .w_full()
+                                .flex()
+                                .justify_end()
+                                .gap_2()
+                                .mt_2()
+                                .children(buttons),
+                        ),
                     );
                     return Some(panel);
                 }
@@ -3178,6 +3199,25 @@ mod linux_wayland {
     /// Where the chevron glyph ends inside its 16 pt icon box.
     const CHEVRON_GLYPH_RIGHT: f32 = 11.35;
 
+    /// The Mac's count capsule after a menu item ("System Settings…  1
+    /// update"): 16 tall, radius 8, 11 pt semibold, 24 after the label
+    /// (design-lab/software-update.html, frame g).
+    fn menu_badge(text: &str, highlighted: bool) -> impl IntoElement {
+        div()
+            .flex_none()
+            .ml(px(menu_model::BADGE_GAP))
+            .h(px(16.0))
+            .px(px(8.5))
+            .rounded(px(8.0))
+            .flex()
+            .items_center()
+            .bg(rgba(if highlighted { 0xFFFFFF33 } else { 0xFFFFFF1A }))
+            .text_size(px(11.0))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .text_color(rgba(0xFFFFFFDB))
+            .child(text.to_owned())
+    }
+
     /// A shortcut drawn the macOS way: each modifier centred in its own
     /// cell, the key left-aligned in the last one.
     fn shortcut_keys(shortcut: &str, color: u32) -> impl IntoElement {
@@ -3284,7 +3324,7 @@ mod linux_wayland {
             )
     }
 
-    fn system_menu() -> rmac_app_menu::Menu {
+    fn system_menu(software_update_badge: Option<&str>) -> rmac_app_menu::Menu {
         use rmac_app_menu::Item;
 
         let logout_label = account_display_name()
@@ -3294,7 +3334,9 @@ mod linux_wayland {
             label: "System".into(),
             items: vec![
                 Item::new("About This Lulo OS", "system::about", ""),
-                Item::new("System Settings…", "system::settings", "").separated(),
+                Item::new("System Settings…", "system::settings", "")
+                    .badge(software_update_badge.unwrap_or_default())
+                    .separated(),
                 Item::new("Software Center", "system::software-center", ""),
                 Item::new("Recent Items", "system::recents", menu_model::SUBMENU_MARK).separated(),
                 Item::new("Force Quit…", "system::force-quit", "⌥⌘⎋").separated(),
@@ -4209,6 +4251,7 @@ mod linux_wayland {
             let status = start_status(cx);
             crate::unsaved_guard::start(cx);
             watch_power_dialog_requests(cx);
+            watch_restart_to_update_requests(cx);
             let (backdrop_tx, backdrop_rx) = async_channel::bounded(16);
             cx.spawn(async move |cx| {
                 let mut tracker = MenuBackdropTracker::default();
@@ -4321,6 +4364,32 @@ mod linux_wayland {
             while let Ok(event) = requests.recv().await {
                 if matches!(event, rmac_shortcuts::Event::Activated { .. }) {
                     cx.update(show_power_dialog);
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Software Update's Restart Now arrives through the
+    /// `restart-to-update` dispatch socket: every app is asked to quit, as
+    /// the Lulo menu's Restart does, and the restart lets
+    /// `pk-offline-update` install the prepared update. Nothing polls.
+    fn watch_restart_to_update_requests(cx: &mut App) {
+        let (sender, requests) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                let id = rmac_shortcuts::ShortcutId(
+                    rmac_shortcuts::power_key::RESTART_TO_UPDATE_SHORTCUT.into(),
+                );
+                if let Err(error) = rmac_shortcuts::watch_dispatches(id, sender).await {
+                    eprintln!("Software Update cannot restart through the menu bar: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |cx| {
+            while let Ok(event) = requests.recv().await {
+                if matches!(event, rmac_shortcuts::Event::Activated { .. }) {
+                    cx.update(|cx| quit_all_then("system::restart".to_owned(), cx));
                 }
             }
         })

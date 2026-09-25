@@ -5325,6 +5325,7 @@ dependencies = [
  "rmac-shell-status",
  "rmac-shell-ui",
  "rmac-shortcuts",
+ "rmac-updates",
  "rmac-wallpaper",
  "rmac-wallpaper-image",
  "rmac-wallpaper-runtime",
@@ -5578,6 +5579,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "rmac-updates"
+version = "0.9.0-beta.1"
 
 [[package]]
 name = "rmac-wallpaper"

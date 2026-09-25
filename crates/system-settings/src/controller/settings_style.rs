@@ -403,6 +403,16 @@ pub(super) fn sheet_sidebar() -> Hsla {
     }
 }
 
+/// Software Update's More Info table stripes alternate this with the card
+/// fill (measured rgb 50 52 61 over 39 41 51).
+pub(super) fn info_table_stripe() -> Hsla {
+    if dark() {
+        rgb(0x32343d).into()
+    } else {
+        rmac_ui::mac::control_fill()
+    }
+}
+
 pub(super) fn sheet_edge() -> Hsla {
     if dark() {
         white(0.12)

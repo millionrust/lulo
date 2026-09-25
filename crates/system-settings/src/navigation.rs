@@ -271,6 +271,7 @@ pub(super) fn category_parent(name: &str) -> Option<&'static str> {
 pub(super) fn subpage_route(pane_id: &str) -> Option<(&'static str, SubPage)> {
     match pane_id {
         "about" => Some(("General", SubPage::About)),
+        "software-update" => Some(("General", SubPage::SoftwareUpdate)),
         _ => None,
     }
 }

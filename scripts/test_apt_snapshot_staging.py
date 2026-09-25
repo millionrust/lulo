@@ -251,5 +251,37 @@ class StageAptSnapshotTests(unittest.TestCase):
             self.assertTrue((repository / publisher.INRELEASE_PATH).is_file())
 
 
+
+class ReleaseNotesPublicationTests(unittest.TestCase):
+    def test_release_notes_field_survives_into_the_signed_packages_index(self):
+        control_text = (
+            "Package: rmac-session\n"
+            "Version: 0.9.1-38\n"
+            "Architecture: amd64\n"
+            "Maintainer: Lulo OS <lulo@example.invalid>\n"
+            "Lulo-Release-Notes:\n"
+            " Lead paragraph.\n"
+            " .\n"
+            " # Heading\n"
+            " Body text.\n"
+            "Description: Lulo OS session\n"
+            " The session.\n"
+        )
+        [control] = apt_archive.parse_deb822(control_text, "control")
+        binary = stager.Binary(Path("rmac-session.deb"), control, "rmac")
+        paragraph = stager._packages_paragraph(
+            binary,
+            "pool/main/r/rmac/rmac-session_0.9.1-38_amd64.deb",
+            (1234, "a" * 64, "b" * 128),
+            10,
+        )
+        [parsed] = apt_archive.parse_deb822(paragraph, "Packages")
+        self.assertEqual(
+            parsed["Lulo-Release-Notes"],
+            "Lead paragraph.\n.\n# Heading\nBody text.",
+        )
+        self.assertEqual(parsed["Phased-Update-Percentage"], "10")
+
+
 if __name__ == "__main__":
     unittest.main()

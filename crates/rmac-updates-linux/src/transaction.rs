@@ -6,11 +6,26 @@ use rmac_updates::{InstallCollector, PlanCollector};
 
 #[cfg(target_os = "linux")]
 use crate::api::{
-    is_progress_change_member, CHECK_TIMEOUT, FILTER_NONE, FLAG_ONLY_TRUSTED, FLAG_SIMULATE,
-    INSTALL_STALL_TIMEOUT, INSTALL_TIMEOUT, PACKAGEKIT_DESTINATION, PACKAGEKIT_INTERFACE,
-    PACKAGEKIT_PATH, POLL_INTERVAL, ROLE_UPDATE_PACKAGES, SIMULATION_TIMEOUT,
+    is_progress_change_member, CHECK_TIMEOUT, FILTER_NONE, FLAG_SIMULATE, INSTALL_STALL_TIMEOUT,
+    INSTALL_TIMEOUT, OFFLINE_ACTION_REBOOT, OFFLINE_INTERFACE, PACKAGEKIT_DESTINATION,
+    PACKAGEKIT_INTERFACE, PACKAGEKIT_PATH, POLL_INTERVAL, ROLE_UPDATE_PACKAGES, SIMULATION_TIMEOUT,
     TRANSACTION_INTERFACE,
 };
+use crate::api::{FLAG_ONLY_DOWNLOAD, FLAG_ONLY_TRUSTED};
+
+/// `UpdatePackages` flags for an offline update's download: trusted packages
+/// only, downloaded but not installed.
+pub(crate) const fn offline_update_flags() -> u64 {
+    FLAG_ONLY_TRUSTED | FLAG_ONLY_DOWNLOAD
+}
+
+/// A PackageKit `Details` size: the download size when it reports one,
+/// otherwise the package size. Zero means unknown.
+pub(crate) fn details_download_size(download: Option<u64>, size: Option<u64>) -> Option<u64> {
+    download
+        .filter(|value| *value > 0)
+        .or(size.filter(|value| *value > 0))
+}
 
 #[cfg(target_os = "linux")]
 pub(crate) async fn packagekit_snapshot(request: Request) -> Result<Snapshot, Error> {
@@ -122,10 +137,17 @@ pub(crate) async fn packagekit_prepare(
 
 #[cfg(target_os = "linux")]
 async fn simulate(snapshot: &Snapshot, cancellation: &Cancellation) -> Result<InstallPlan, Error> {
+    simulate_with(PlanCollector::new(snapshot)?, cancellation).await
+}
+
+#[cfg(target_os = "linux")]
+async fn simulate_with(
+    mut collector: PlanCollector,
+    cancellation: &Cancellation,
+) -> Result<InstallPlan, Error> {
     use futures_util::StreamExt as _;
 
-    let mut collector = PlanCollector::new(snapshot)?;
-    let ids = snapshot.installable_ids();
+    let ids = collector.requested_ids();
     let connection = packagekit_connection().await?;
     let root = packagekit_root(&connection).await?;
     let roles = root
@@ -187,8 +209,6 @@ pub(crate) async fn packagekit_install(
     cancellation: Cancellation,
     sender: async_channel::Sender<InstallProgress>,
 ) -> Result<InstallResult, Error> {
-    use futures_util::StreamExt as _;
-
     if cancellation.is_cancelled() {
         return Err(cancelled_error("update installation"));
     }
@@ -210,15 +230,114 @@ pub(crate) async fn packagekit_install(
     if cancellation.is_cancelled() {
         return Err(cancelled_error("update installation"));
     }
+    run_update(plan, FLAG_ONLY_TRUSTED, true, cancellation, sender).await
+}
+
+/// Refresh, resolve the selection against the fresh update set (keeping
+/// what is already prepared for restart), and simulate it.
+#[cfg(target_os = "linux")]
+pub(crate) async fn packagekit_prepare_selection(
+    selection: Vec<String>,
+    cancellation: Cancellation,
+) -> Result<(Snapshot, InstallPlan), Error> {
+    let mut snapshot =
+        packagekit_snapshot_with_cancellation(Request::refresh(), Some(&cancellation)).await?;
+    if let Ok(connection) = packagekit_connection().await {
+        snapshot.offline = offline_status(&connection).await.unwrap_or_default();
+    }
+    let requested = rmac_updates::resolve_selection(&snapshot, &selection)?;
+    let plan = simulate_with(PlanCollector::for_updates(requested)?, &cancellation).await?;
+    Ok((snapshot, plan))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) async fn packagekit_prepare_selection(
+    _selection: Vec<String>,
+    _cancellation: Cancellation,
+) -> Result<(Snapshot, InstallPlan), Error> {
+    Err(unsupported())
+}
+
+/// Download the reviewed plan's updates for an offline update and trigger
+/// it. Download-only transactions need no polkit authorization
+/// (`pk_transaction_obtain_authorization`), and PackageKit's policy grants
+/// the trigger to the active session's user, so no password prompt is
+/// involved (docs/software-update.md "Authorization").
+#[cfg(target_os = "linux")]
+pub(crate) async fn packagekit_prepare_offline(
+    plan: InstallPlan,
+    cancellation: Cancellation,
+    sender: async_channel::Sender<InstallProgress>,
+) -> Result<InstallResult, Error> {
+    if cancellation.is_cancelled() {
+        return Err(cancelled_error("update download"));
+    }
+    let current_snapshot =
+        packagekit_snapshot_with_cancellation(Request::refresh(), Some(&cancellation)).await?;
+    let current_ids = current_snapshot.installable_ids();
+    if plan
+        .requested_ids()
+        .iter()
+        .any(|id| current_ids.binary_search(id).is_err())
+    {
+        return Err(Error::new(
+            ErrorKind::Stale,
+            "the available update set changed; review the new updates first",
+        ));
+    }
+    let current_plan = simulate_with(
+        PlanCollector::for_updates(plan.requested.clone())?,
+        &cancellation,
+    )
+    .await?;
+    if current_plan != plan {
+        return Err(Error::new(
+            ErrorKind::Stale,
+            "the dependency plan changed; review the new updates first",
+        ));
+    }
+    if cancellation.is_cancelled() {
+        return Err(cancelled_error("update download"));
+    }
+    let result = run_update(plan, offline_update_flags(), false, cancellation, sender).await?;
+    let connection = packagekit_connection().await?;
+    offline_proxy(&connection)
+        .await?
+        .call::<_, _, ()>("Trigger", &(OFFLINE_ACTION_REBOOT,))
+        .await
+        .map_err(|error| call_error("schedule the update for restart", &error))?;
+    Ok(result)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) async fn packagekit_prepare_offline(
+    _plan: InstallPlan,
+    _cancellation: Cancellation,
+    _sender: async_channel::Sender<InstallProgress>,
+) -> Result<InstallResult, Error> {
+    Err(unsupported())
+}
+
+/// One `UpdatePackages` transaction for exactly the plan's requested IDs,
+/// with progress, bounded time, and cancellation.
+#[cfg(target_os = "linux")]
+async fn run_update(
+    plan: InstallPlan,
+    flags: u64,
+    interactive: bool,
+    cancellation: Cancellation,
+    sender: async_channel::Sender<InstallProgress>,
+) -> Result<InstallResult, Error> {
+    use futures_util::StreamExt as _;
 
     let ids = plan.requested_ids();
     let connection = packagekit_connection().await?;
     let (transaction, mut messages) = open_transaction(&connection, 4096).await?;
-    set_hints(&transaction, 0, true).await?;
+    set_hints(&transaction, 0, interactive).await?;
     let mut progress = InstallProgress::default();
     let _ = sender.try_send(progress.clone());
     transaction
-        .call::<_, _, ()>("UpdatePackages", &(FLAG_ONLY_TRUSTED, ids))
+        .call::<_, _, ()>("UpdatePackages", &(flags, ids))
         .await
         .map_err(|error| call_error("install trusted updates", &error))?;
 
@@ -321,6 +440,165 @@ pub(crate) async fn packagekit_install(
         ErrorKind::Unavailable,
         "software updates are available in the supported Linux session",
     ))
+}
+
+/// The update set with download sizes, release notes, and the offline
+/// update's state. Only the update set is required.
+#[cfg(target_os = "linux")]
+pub(crate) async fn packagekit_details_snapshot(request: Request) -> Result<Snapshot, Error> {
+    let mut snapshot = packagekit_snapshot(request).await?;
+    if let Ok(connection) = packagekit_connection().await {
+        let ids = snapshot
+            .updates
+            .iter()
+            .map(|update| update.package_id.clone())
+            .collect::<Vec<_>>();
+        if !ids.is_empty() {
+            if let Ok(sizes) = download_sizes(&connection, ids).await {
+                snapshot.download_sizes = sizes;
+            }
+        }
+        snapshot.offline = offline_status(&connection).await.unwrap_or_default();
+    }
+    snapshot.release_notes = snapshot
+        .updates
+        .iter()
+        .find(|update| update.name == "rmac-session")
+        .and_then(|update| {
+            rmac_updates::lulo_release_notes(
+                std::path::Path::new(rmac_updates::APT_LISTS_DIR),
+                update,
+            )
+        });
+    Ok(snapshot)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) async fn packagekit_details_snapshot(request: Request) -> Result<Snapshot, Error> {
+    packagekit_snapshot(request).await
+}
+
+/// `GetDetails` for `ids`: each package's download size where known.
+#[cfg(target_os = "linux")]
+async fn download_sizes(
+    connection: &zbus::Connection,
+    ids: Vec<String>,
+) -> Result<std::collections::BTreeMap<String, u64>, Error> {
+    use futures_util::StreamExt as _;
+    use zbus::zvariant::OwnedValue;
+
+    let wanted = ids
+        .iter()
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    let (transaction, mut messages) = open_transaction(connection, 2048).await?;
+    set_hints(&transaction, 3600, false).await?;
+    transaction
+        .call::<_, _, ()>("GetDetails", &(ids,))
+        .await
+        .map_err(|error| call_error("read update sizes", &error))?;
+    let timeout = futures_util::FutureExt::fuse(async_io::Timer::after(CHECK_TIMEOUT));
+    futures_util::pin_mut!(timeout);
+    let mut sizes = std::collections::BTreeMap::new();
+    loop {
+        futures_util::select! {
+            message = messages.next() => {
+                let message = message
+                    .ok_or_else(|| protocol_error("the details transaction ended unexpectedly"))?
+                    .map_err(|_| protocol_error("could not read update details"))?;
+                let header = message.header();
+                match header.member().map(|member| member.as_str().to_owned()).as_deref() {
+                    Some("Details") => {
+                        let (data,): (std::collections::HashMap<String, OwnedValue>,) = message
+                            .body()
+                            .deserialize()
+                            .map_err(|_| protocol_error("invalid update details"))?;
+                        let text = |key: &str| {
+                            data.get(key)
+                                .and_then(|value| value.try_clone().ok())
+                                .and_then(|value| String::try_from(value).ok())
+                        };
+                        let number = |key: &str| {
+                            data.get(key)
+                                .and_then(|value| value.try_clone().ok())
+                                .and_then(|value| u64::try_from(value).ok())
+                        };
+                        if let Some(id) = text("package-id").filter(|id| wanted.contains(id)) {
+                            if let Some(size) =
+                                details_download_size(number("download-size"), number("size"))
+                            {
+                                sizes.insert(id, size);
+                            }
+                        }
+                    }
+                    Some("Finished") => return Ok(sizes),
+                    _ => {}
+                }
+            }
+            _ = timeout => {
+                let _ = transaction.call::<_, _, ()>("Cancel", &()).await;
+                return Err(Error::new(ErrorKind::Timeout, "reading update sizes timed out"));
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+async fn offline_proxy(connection: &zbus::Connection) -> Result<zbus::Proxy<'_>, Error> {
+    zbus::Proxy::new(
+        connection,
+        PACKAGEKIT_DESTINATION,
+        PACKAGEKIT_PATH,
+        OFFLINE_INTERFACE,
+    )
+    .await
+    .map_err(|_| {
+        Error::new(
+            ErrorKind::Unavailable,
+            "the system update service is unavailable",
+        )
+    })
+}
+
+/// The prepared offline update. `GetPrepared` fails when nothing is
+/// prepared, which is an empty set, not an error.
+#[cfg(target_os = "linux")]
+async fn offline_status(
+    connection: &zbus::Connection,
+) -> Result<rmac_updates::OfflineStatus, Error> {
+    let proxy = offline_proxy(connection).await?;
+    let prepared_flag = proxy
+        .get_property::<bool>("UpdatePrepared")
+        .await
+        .map_err(|_| protocol_error("could not read the prepared update"))?;
+    let triggered = proxy
+        .get_property::<bool>("UpdateTriggered")
+        .await
+        .map_err(|_| protocol_error("could not read the prepared update"))?;
+    let mut prepared = if prepared_flag {
+        proxy
+            .call::<_, _, Vec<String>>("GetPrepared", &())
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    prepared.retain(|id| rmac_updates::Update::from_packagekit(0, id, "").is_some());
+    prepared.sort();
+    prepared.dedup();
+    prepared.truncate(rmac_updates::MAX_PLAN_CHANGES);
+    Ok(rmac_updates::OfflineStatus {
+        triggered: triggered && !prepared.is_empty(),
+        prepared,
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn unsupported() -> Error {
+    Error::new(
+        ErrorKind::Unavailable,
+        "software updates are available in the supported Linux session",
+    )
 }
 
 #[cfg(target_os = "linux")]

@@ -77,6 +77,33 @@ pub struct Snapshot {
     pub truncated: bool,
     pub install_supported: bool,
     pub install_unavailable_reason: Option<String>,
+    /// PackageKit's download sizes by package ID, where it reported one.
+    pub download_sizes: std::collections::BTreeMap<String, u64>,
+    /// The offered Lulo OS release's notes from the signed archive index.
+    pub release_notes: Option<ReleaseNotes>,
+    /// The update PackageKit holds for the next restart.
+    pub offline: OfflineStatus,
+}
+
+/// PackageKit's offline update (`org.freedesktop.PackageKit.Offline`):
+/// downloaded packages that `pk-offline-update` installs from
+/// `system-update.target` on the next restart once triggered.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OfflineStatus {
+    /// Package IDs of the prepared (downloaded) update, sorted.
+    pub prepared: Vec<String>,
+    /// A restart will install `prepared`.
+    pub triggered: bool,
+}
+
+impl OfflineStatus {
+    /// True when every one of `ids` is downloaded and set to install on
+    /// restart, which is when the Mac's button reads "Restart Now".
+    pub fn ready(&self, ids: &[String]) -> bool {
+        self.triggered
+            && !ids.is_empty()
+            && ids.iter().all(|id| self.prepared.binary_search(id).is_ok())
+    }
 }
 
 impl Snapshot {

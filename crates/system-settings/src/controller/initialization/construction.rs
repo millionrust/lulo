@@ -74,8 +74,14 @@ impl Settings {
             updates_cancellation: None,
             updates_plan: None,
             updates_progress: None,
-            updates_result: None,
             updates: None,
+            updates_target: None,
+            updates_info_sheet: None,
+            updates_auto_sheet: false,
+            updates_auto: rmac_updates::AutomaticUpdates::default_path()
+                .map(|path| rmac_updates::AutomaticUpdates::load(&path))
+                .unwrap_or_default(),
+            updates_auto_error: None,
             time_loading: true,
             time_busy: false,
             time_error: None,

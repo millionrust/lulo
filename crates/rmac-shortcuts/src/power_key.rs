@@ -37,6 +37,11 @@ pub const WAKE_GUARD: Duration = Duration::from_secs(2);
 pub const POWER_KEY_SHORTCUT: &str = "power-key";
 /// The dispatch socket the menu bar listens on for the shutdown dialog.
 pub const SHUTDOWN_DIALOG_SHORTCUT: &str = "shutdown-dialog";
+/// The dispatch socket the menu bar listens on for Software Update's
+/// Restart Now: it asks every app to quit, as its own Restart does, then
+/// restarts so `pk-offline-update` can install the prepared update. No key
+/// is bound to it.
+pub const RESTART_TO_UPDATE_SHORTCUT: &str = "restart-to-update";
 
 /// The logind inhibitor that leaves the button to the session. It is a
 /// *block* inhibitor on a key, not on shutdown itself: `systemctl poweroff`,

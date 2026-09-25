@@ -14,6 +14,7 @@ from unittest import mock
 LINUX_SCRIPTS = Path(__file__).parent / "linux"
 sys.path.insert(0, str(LINUX_SCRIPTS))
 
+import apt_archive
 import native_package_contract as contract
 
 
@@ -276,6 +277,127 @@ class NativePackageContractTests(unittest.TestCase):
                                 working=Path(temporary) / "analysis",
                                 base_environment={},
                             )
+
+
+
+NOTES = (
+    "Lulo OS 0.9.1 makes updates feel like the Mac.\n"
+    "\n"
+    "# Software Update\n"
+    "Update Lulo OS from System Settings, with release notes.\n"
+    "\n"
+    "# Fixes\n"
+    "The Dock no longer flickers.\n"
+)
+
+
+class ReleaseNotesFieldTests(unittest.TestCase):
+    """rmac-session's signed Lulo-Release-Notes control field."""
+
+    def control(self, root: Path, spec_index: int = 1, version: str = "0.9.1-38") -> str:
+        spec = contract.PACKAGE_SPECS[spec_index]
+        return contract.control_bytes(
+            spec,
+            version=version,
+            architecture="amd64",
+            dependencies=contract.combined_dependencies(spec, version, ()),
+            notes_root=root,
+        ).decode("utf-8")
+
+    def write_notes(self, root: Path, name: str, raw: bytes) -> Path:
+        directory = root / contract.RELEASE_NOTES_DIRECTORY
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / name
+        path.write_bytes(raw)
+        return path
+
+    def test_specs_order_is_what_these_tests_assume(self):
+        self.assertEqual(contract.PACKAGE_SPECS[1].name, "rmac-session")
+        self.assertEqual(contract.PACKAGE_SPECS[0].name, "rmac-apps")
+
+    def test_field_is_absent_without_a_notes_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertNotIn(contract.RELEASE_NOTES_FIELD, self.control(Path(temporary)))
+
+    def test_field_is_encoded_as_deb822_continuation_lines(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_notes(root, "0.9.1.txt", NOTES.encode("utf-8"))
+            control = self.control(root)
+        self.assertIn(
+            "Lulo-Release-Notes:\n"
+            " Lulo OS 0.9.1 makes updates feel like the Mac.\n"
+            " .\n"
+            " # Software Update\n"
+            " Update Lulo OS from System Settings, with release notes.\n"
+            " .\n"
+            " # Fixes\n"
+            " The Dock no longer flickers.\n"
+            "Description: ",
+            control,
+        )
+
+    def test_pre_release_notes_use_the_debian_upstream_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_notes(root, "0.9.0~beta.1.txt", b"Beta notes.\n")
+            control = self.control(root, version="0.9.0~beta.1-38")
+        self.assertIn("Lulo-Release-Notes:\n Beta notes.\n", control)
+
+    def test_only_rmac_session_carries_the_field(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_notes(root, "0.9.1.txt", NOTES.encode("utf-8"))
+            self.assertNotIn(contract.RELEASE_NOTES_FIELD, self.control(root, spec_index=0))
+
+    def test_field_round_trips_through_the_archive_parser(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.write_notes(root, "0.9.1.txt", NOTES.encode("utf-8"))
+            control = self.control(root)
+        [paragraph] = apt_archive.parse_deb822(control, "control")
+        value = paragraph[contract.RELEASE_NOTES_FIELD]
+        decoded = "\n".join("" if line == "." else line for line in value.split("\n"))
+        self.assertEqual(decoded + "\n", NOTES)
+        # stage-apt-snapshot.py re-renders the paragraph with format_paragraph;
+        # the result parses back to the same field value.
+        rendered = apt_archive.format_paragraph(list(paragraph.items()))
+        [again] = apt_archive.parse_deb822(rendered, "Packages")
+        self.assertEqual(again[contract.RELEASE_NOTES_FIELD], value)
+        self.assertEqual(again["Package"], "rmac-session")
+
+    def test_invalid_notes_are_refused(self):
+        cases = {
+            "control character": b"Bad\tnotes\n",
+            "carriage return": b"Bad\r\nnotes\n",
+            "not UTF-8": b"\xff\xfe\n",
+            "leading blank": b"\nNotes\n",
+            "trailing blank": b"Notes\n\n",
+            "doubled blank": b"One\n\n\nTwo\n",
+            "trailing whitespace": b"Notes \n",
+            "period line": b"Notes\n.\n",
+            "period start": b"Notes\n.hidden\n",
+            "empty": b"",
+            "too large": b"x" * (contract.MAX_RELEASE_NOTES_BYTES + 1),
+        }
+        for label, raw in cases.items():
+            with self.subTest(case=label):
+                with self.assertRaises(contract.ContractError):
+                    contract.validate_release_notes(raw)
+
+    def test_notes_must_be_a_regular_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = self.write_notes(root, "target.txt", b"Notes\n")
+            (root / contract.RELEASE_NOTES_DIRECTORY / "0.9.1.txt").symlink_to(target)
+            with self.assertRaisesRegex(contract.ContractError, "regular file"):
+                self.control(root)
+
+    def test_committed_notes_are_valid(self):
+        directory = contract.REPO_ROOT / contract.RELEASE_NOTES_DIRECTORY
+        for path in sorted(directory.glob("*.txt")) if directory.is_dir() else ():
+            with self.subTest(path=path.name):
+                contract.validate_release_notes(path.read_bytes())
 
 
 if __name__ == "__main__":

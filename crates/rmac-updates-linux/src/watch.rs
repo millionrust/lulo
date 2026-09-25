@@ -3,7 +3,7 @@ use rmac_updates::{Error, ErrorKind, WatchEvent};
 #[cfg(any(target_os = "linux", test))]
 use crate::api::PACKAGEKIT_DESTINATION;
 #[cfg(target_os = "linux")]
-use crate::api::{PACKAGEKIT_INTERFACE, PACKAGEKIT_PATH, RECONNECT_DELAY};
+use crate::api::{OFFLINE_INTERFACE, PACKAGEKIT_INTERFACE, PACKAGEKIT_PATH, RECONNECT_DELAY};
 #[cfg(target_os = "linux")]
 use crate::transaction::protocol_error;
 
@@ -64,6 +64,24 @@ async fn watch_once(sender: &async_channel::Sender<WatchEvent>) -> Result<(), Er
         .await
         .map_err(|_| protocol_error("could not watch PackageKit changes"))?
         .fuse();
+    // The prepared offline update changing (downloaded, triggered,
+    // cancelled, installed) flips the pane between Update Now and Restart
+    // Now; PackageKit announces it as Offline PropertiesChanged.
+    let offline_rule = MatchRule::builder()
+        .msg_type(Type::Signal)
+        .path(PACKAGEKIT_PATH)
+        .map_err(|_| protocol_error("invalid PackageKit event path"))?
+        .interface("org.freedesktop.DBus.Properties")
+        .map_err(|_| protocol_error("invalid properties interface"))?
+        .member("PropertiesChanged")
+        .map_err(|_| protocol_error("invalid properties signal"))?
+        .add_arg(OFFLINE_INTERFACE)
+        .map_err(|_| protocol_error("invalid offline update filter"))?
+        .build();
+    let mut offline = MessageStream::for_match_rule(offline_rule, &connection, Some(4))
+        .await
+        .map_err(|_| protocol_error("could not watch the prepared update"))?
+        .fuse();
     let mut owners = MessageStream::for_match_rule(owner_rule, &connection, Some(4))
         .await
         .map_err(|_| protocol_error("could not watch PackageKit restarts"))?
@@ -75,6 +93,12 @@ async fn watch_once(sender: &async_channel::Sender<WatchEvent>) -> Result<(), Er
         let event = futures_util::select! {
             message = updates.next() => update_watch_event(message)?,
             message = owners.next() => owner_watch_event(message)?,
+            message = offline.next() => {
+                message
+                    .ok_or_else(|| protocol_error("PackageKit offline stream ended"))?
+                    .map_err(|_| protocol_error("PackageKit offline stream failed"))?;
+                Some(WatchEvent::Changed)
+            }
             _ = closed => return Ok(()),
         };
         if let Some(event) = event {

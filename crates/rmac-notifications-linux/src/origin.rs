@@ -184,6 +184,41 @@ impl Origins {
     }
 }
 
+/// The display name and icon for a sending application, resolved the same
+/// way Notification Center's cards are (`resolve_origin`,
+/// `notification-center-app/src/model.rs`, NC-01): an installed
+/// application is found, in order, by the sender's `desktop-entry` hint,
+/// the kernel-reported app scope, then the service application ID itself
+/// (a portal's authenticated app ID already is one). Failing that, an
+/// unmatched sender is named by the `app_name` it gave. `None` means
+/// nothing here can label it better than `app_id` already does — the
+/// caller decides whether to fall back to `app_id` or hide the row
+/// (SET-94: `app_id` for a legacy `Notify` sender with no such hint is
+/// its raw, transient D-Bus unique name, e.g. `:1.1105`, which is never
+/// worth showing).
+pub fn resolve_identity(
+    catalog: &[rmac_apps::Application],
+    app_id: &str,
+    origin: &Origin,
+) -> Option<(String, Option<std::path::PathBuf>)> {
+    let by_id = |id: &str| rmac_apps::find_desktop_entry(catalog, id);
+    if let Some(application) = origin
+        .hinted_desktop_id
+        .as_deref()
+        .and_then(by_id)
+        .or_else(|| origin.desktop_id.as_deref().and_then(by_id))
+        .or_else(|| by_id(app_id))
+    {
+        return Some((application.name.clone(), application.icon.clone()));
+    }
+    origin.app_name.as_ref().map(|name| {
+        (
+            name.clone(),
+            origin.icon.as_ref().map(std::path::PathBuf::from),
+        )
+    })
+}
+
 pub fn unix_ms_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -271,6 +306,87 @@ mod tests {
 
     fn id(value: u32) -> NotificationId {
         NotificationId::from_protocol(value).unwrap()
+    }
+
+    fn app(id: &str, name: &str, icon: Option<&str>) -> rmac_apps::Application {
+        rmac_apps::Application {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            generic_name: None,
+            keywords: Vec::new(),
+            source: std::path::PathBuf::from("/dev/null"),
+            icon: icon.map(std::path::PathBuf::from),
+            categories: Vec::new(),
+            mime_types: Vec::new(),
+            launch: rmac_apps::LaunchSpec::Command {
+                program: "demo".into(),
+                args: Vec::new(),
+                working_dir: None,
+                terminal: false,
+            },
+            actions: Vec::new(),
+        }
+    }
+
+    /// SET-94: Settings' Application Notifications list used to show a
+    /// legacy sender's raw, transient D-Bus name (`:1.1105`) because it had
+    /// no better identity to fall back to. This resolver gives it one, in
+    /// the same priority order Notification Center's cards already use.
+    #[test]
+    fn resolve_identity_prefers_the_hinted_app_over_the_kernel_scope_and_bare_id() {
+        let catalog = vec![
+            app("org.rmac.TextEditor", "Text Editor", Some("/icons/te.png")),
+            app("org.rmac.Terminal", "Terminal", None),
+        ];
+        let hinted = Origin {
+            hinted_desktop_id: Some("org.rmac.TextEditor".into()),
+            desktop_id: Some("org.rmac.Terminal".into()),
+            ..Origin::default()
+        };
+        assert_eq!(
+            resolve_identity(&catalog, ":1.99", &hinted),
+            Some((
+                "Text Editor".to_owned(),
+                Some(std::path::PathBuf::from("/icons/te.png"))
+            ))
+        );
+        let scoped = Origin {
+            desktop_id: Some("org.rmac.Terminal".into()),
+            ..Origin::default()
+        };
+        assert_eq!(
+            resolve_identity(&catalog, ":1.99", &scoped),
+            Some(("Terminal".to_owned(), None))
+        );
+        let direct = Origin::default();
+        assert_eq!(
+            resolve_identity(&catalog, "org.rmac.TextEditor", &direct),
+            Some((
+                "Text Editor".to_owned(),
+                Some(std::path::PathBuf::from("/icons/te.png"))
+            ))
+        );
+    }
+
+    #[test]
+    fn resolve_identity_falls_back_to_the_senders_own_name_then_gives_up() {
+        let catalog: Vec<rmac_apps::Application> = Vec::new();
+        let named = Origin {
+            app_name: Some("Build Bot".into()),
+            icon: Some("/tmp/icon.png".into()),
+            ..Origin::default()
+        };
+        assert_eq!(
+            resolve_identity(&catalog, ":1.5", &named),
+            Some((
+                "Build Bot".to_owned(),
+                Some(std::path::PathBuf::from("/tmp/icon.png"))
+            ))
+        );
+        // A transient bus name with nothing else to go on resolves to
+        // nothing at all -- the caller hides it rather than showing
+        // ":1.5" (SET-94).
+        assert_eq!(resolve_identity(&catalog, ":1.5", &Origin::default()), None);
     }
 
     #[test]

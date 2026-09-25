@@ -193,6 +193,7 @@ impl Settings {
             notifications_loading: true,
             notification_busy: None,
             notification_apps: Vec::new(),
+            notification_origins: std::collections::BTreeMap::new(),
             app_catalog: Vec::new(),
             _app_catalog_watcher: app_catalog_watcher,
 

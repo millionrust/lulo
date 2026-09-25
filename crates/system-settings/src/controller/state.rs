@@ -165,6 +165,11 @@ pub(super) struct Settings {
     pub(super) notifications_loading: bool,
     pub(super) notification_busy: Option<String>,
     pub(super) notification_apps: Vec<rmac_notifications_linux::center::ApplicationPolicy>,
+    /// The most recent history record's origin seen for each app ID, kept
+    /// from the last full snapshot load so a raw D-Bus sender name never
+    /// has to be shown while its real name and icon resolve (SET-94).
+    pub(super) notification_origins:
+        std::collections::BTreeMap<String, rmac_notifications_linux::origin::Origin>,
     pub(super) app_catalog: Vec<rmac_apps::Application>,
     pub(super) _app_catalog_watcher: Option<rmac_apps::CatalogWatcher>,
 

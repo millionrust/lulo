@@ -2,19 +2,56 @@
 
 use super::*;
 
+/// For each app ID, the most recently arrived record's origin -- the
+/// desktop-entry hint, kernel-reported scope, and sender-given name/icon
+/// NC-01 (`d3a8f776`) started recording (SET-94).
+fn latest_origins(
+    records: &[rmac_notifications_linux::center::HistoryRecord],
+) -> std::collections::BTreeMap<String, rmac_notifications_linux::origin::Origin> {
+    let mut origins =
+        std::collections::BTreeMap::<String, rmac_notifications_linux::origin::Origin>::new();
+    for record in records {
+        if record.origin.is_empty() {
+            continue;
+        }
+        let newer = origins
+            .get(&record.app_id)
+            .is_none_or(|existing| record.origin.posted_unix_ms > existing.posted_unix_ms);
+        if newer {
+            origins.insert(record.app_id.clone(), record.origin.clone());
+        }
+    }
+    origins
+}
+
 impl Settings {
+    /// The name and icon to show for a policy row, resolved the same way
+    /// Notification Center's cards are (SET-94): an installed application
+    /// by the sender's hints or the app ID itself, else the name the
+    /// sender gave, else `None` -- a legacy sender's raw, transient D-Bus
+    /// name (`:1.1105`) is never worth showing.
+    pub(super) fn notification_identity(&self, app_id: &str) -> Option<(String, Option<PathBuf>)> {
+        let origin = self
+            .notification_origins
+            .get(app_id)
+            .cloned()
+            .unwrap_or_default();
+        rmac_notifications_linux::origin::resolve_identity(&self.app_catalog, app_id, &origin)
+    }
+
     pub(super) fn finish_notifications_update(
         &mut self,
         result: std::result::Result<
-            Vec<rmac_notifications_linux::center::ApplicationPolicy>,
+            rmac_notifications_linux::center::Snapshot,
             rmac_notifications_linux::center::Error,
         >,
     ) {
         self.notifications_loading = false;
         self.notification_busy = None;
         match result {
-            Ok(applications) => {
-                self.notification_apps = applications;
+            Ok(snapshot) => {
+                self.notification_origins = latest_origins(&snapshot.records);
+                self.notification_apps = snapshot.applications;
                 self.notification_error = None;
             }
             Err(error) => {
@@ -54,7 +91,7 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
-                .spawn(async { rmac_notifications_linux::center::applications() })
+                .spawn(async { rmac_notifications_linux::center::snapshot() })
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_notifications_update(result);
@@ -136,41 +173,52 @@ impl Settings {
         }
         if !self.notifications_loading {
             cards.push(section_header("Application Notifications"));
-            if self.notification_apps.is_empty() {
+            let rows: Vec<_> = self
+                .notification_apps
+                .iter()
+                .filter_map(|application| {
+                    let identity = self.notification_identity(&application.app_id);
+                    if identity.is_none() && application.app_id.starts_with(':') {
+                        // A legacy sender with no desktop-entry hint and no
+                        // app_name of its own -- its "identity" is a raw,
+                        // transient D-Bus connection name that means
+                        // nothing to a person and will never come back
+                        // once it disconnects. The Mac never shows
+                        // anything like it (SET-94).
+                        return None;
+                    }
+                    let name = identity
+                        .as_ref()
+                        .map(|(name, _)| name.clone())
+                        .unwrap_or_else(|| application.app_id.clone());
+                    let icon = identity.and_then(|(_, icon)| icon);
+                    let target_view = view.clone();
+                    let target = SubPage::NotificationApp {
+                        app_id: application.app_id.clone(),
+                    };
+                    Some(large_nav_row(
+                        SharedString::from(format!("notification-app-{}", application.app_id)),
+                        app_icon(
+                            icon.as_ref(),
+                            "icons/app-window.svg",
+                            secondary(),
+                            style::LARGE_ICON,
+                        ),
+                        name,
+                        Some(subtitle_text(notification_summary(&application.policy))),
+                        None,
+                        move |_, cx| {
+                            let target = target.clone();
+                            target_view.update(cx, |settings, cx| settings.push(target, cx));
+                        },
+                    ))
+                })
+                .collect();
+            if rows.is_empty() {
                 cards.push(group().child(group_placeholder(
                     "Applications appear here after they send a notification.",
                 )));
             } else {
-                let rows = self
-                    .notification_apps
-                    .iter()
-                    .map(|application| {
-                        let identity = self.application_identity(&application.app_id);
-                        let name = identity
-                            .map(|identity| identity.name.clone())
-                            .unwrap_or_else(|| application.app_id.clone());
-                        let target_view = view.clone();
-                        let target = SubPage::NotificationApp {
-                            app_id: application.app_id.clone(),
-                        };
-                        large_nav_row(
-                            SharedString::from(format!("notification-app-{}", application.app_id)),
-                            app_icon(
-                                identity.and_then(|identity| identity.icon.as_ref()),
-                                "icons/app-window.svg",
-                                secondary(),
-                                style::LARGE_ICON,
-                            ),
-                            name,
-                            Some(subtitle_text(notification_summary(&application.policy))),
-                            None,
-                            move |_, cx| {
-                                let target = target.clone();
-                                target_view.update(cx, |settings, cx| settings.push(target, cx));
-                            },
-                        )
-                    })
-                    .collect();
                 cards.push(card(rows));
             }
         }
@@ -198,9 +246,9 @@ impl Settings {
         let view = cx.entity();
         let policy = application.policy;
         let busy = self.notification_busy.as_deref() == Some(app_id);
-        let identity = self.application_identity(app_id);
-        let name = identity
-            .map(|identity| identity.name.clone())
+        let name = self
+            .notification_identity(app_id)
+            .map(|(name, _)| name)
             .unwrap_or_else(|| app_id.to_owned());
         let mut body = div().v_flex();
         if busy {
@@ -405,4 +453,51 @@ fn notification_preview(
                 .child(title),
         )
         .child(div().mt(px(7.0)).child(form_checkbox(checked)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rmac_notifications::{Content, NotificationId, Priority};
+    use rmac_notifications_linux::center::HistoryRecord;
+    use rmac_notifications_linux::origin::Origin;
+
+    fn record(id: u32, app_id: &str, posted_unix_ms: u64, app_name: &str) -> HistoryRecord {
+        HistoryRecord {
+            id: NotificationId::from_protocol(id).unwrap(),
+            app_id: app_id.to_owned(),
+            content: Content::new("Title", "Body").unwrap(),
+            priority: Priority::Normal,
+            unread: true,
+            actions: Vec::new(),
+            origin: Origin {
+                posted_unix_ms: Some(posted_unix_ms),
+                app_name: Some(app_name.to_owned()),
+                ..Origin::default()
+            },
+        }
+    }
+
+    /// SET-94: a sender that has posted more than once keeps its most
+    /// recent identity, not the first one seen or an empty one from a
+    /// record with nothing recorded about its origin.
+    #[test]
+    fn latest_origins_keeps_the_newest_record_per_app_and_skips_empty_ones() {
+        let records = vec![
+            record(1, ":1.5", 1_000, "Old Name"),
+            record(2, ":1.5", 5_000, "New Name"),
+            HistoryRecord {
+                origin: Origin::default(),
+                ..record(3, ":1.9", 9_000, "unused")
+            },
+        ];
+        let origins = latest_origins(&records);
+        assert_eq!(
+            origins
+                .get(":1.5")
+                .and_then(|origin| origin.app_name.as_deref()),
+            Some("New Name")
+        );
+        assert!(!origins.contains_key(":1.9"));
+    }
 }

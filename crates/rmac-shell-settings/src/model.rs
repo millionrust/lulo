@@ -50,6 +50,32 @@ fn default_show_recent_apps() -> bool {
     true
 }
 
+/// macOS Desktop & Dock ▸ Size slider's rendered range (`docs/parity.md`
+/// DOCK-01, `docs/macos-parity-spec.md` §4.5): 32–128 logical px.
+pub const MIN_DOCK_TILE_SIZE: f32 = 32.0;
+pub const MAX_DOCK_TILE_SIZE: f32 = 128.0;
+
+/// The measured default rendered tile size (FEEL_SPEC.md §C.2,
+/// `dock.tile`). `shell/scripts/nested-wayland-smoke.sh` asserts an 89
+/// logical-pixel exclusive zone at this default — never change it without
+/// updating that assertion.
+pub const DEFAULT_DOCK_TILE_SIZE: f32 = 64.0;
+
+fn default_dock_tile_size() -> f32 {
+    DEFAULT_DOCK_TILE_SIZE
+}
+
+/// macOS Desktop & Dock ▸ "Minimise windows using" (also the Dock
+/// separator's Minimise Using ▸ submenu, DOCK-02). rmac does not yet
+/// animate either effect (DOCK-11); this is only the saved preference.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DockMinimizeEffect {
+    #[default]
+    Genie,
+    Scale,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct DockSettings {
@@ -68,6 +94,13 @@ pub struct DockSettings {
     /// macOS Desktop & Dock ▸ "Show suggested and recent apps in Dock".
     #[serde(default = "default_show_recent_apps")]
     pub show_recent_apps: bool,
+    /// macOS Desktop & Dock ▸ Size slider (DOCK-01): the resting tile size
+    /// in logical px, [`MIN_DOCK_TILE_SIZE`]..=[`MAX_DOCK_TILE_SIZE`].
+    #[serde(default = "default_dock_tile_size")]
+    pub tile_size: f32,
+    /// macOS Desktop & Dock ▸ "Minimise windows using" (DOCK-02/DOCK-09).
+    #[serde(default)]
+    pub minimize_effect: DockMinimizeEffect,
 }
 
 impl Default for DockSettings {
@@ -82,6 +115,8 @@ impl Default for DockSettings {
             repeated_click: RepeatedClickBehavior::DoNothing,
             show_running_indicators: default_show_running_indicators(),
             show_recent_apps: default_show_recent_apps(),
+            tile_size: default_dock_tile_size(),
+            minimize_effect: DockMinimizeEffect::default(),
         }
     }
 }

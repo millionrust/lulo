@@ -14,6 +14,7 @@ import tempfile
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+CURSOR_THEME_DESCRIPTORS = frozenset({"index.theme", "cursor.theme"})
 PACKAGE_NAME = "rmac-session"
 PACKAGE_FORMAT = 1
 DEVELOPMENT_LIBEXEC = "%h/.local/libexec/rmac"
@@ -262,7 +263,10 @@ def package_files() -> dict[str, tuple[bytes, int]]:
     for source in sorted(cursors.iterdir(), key=lambda path: path.name):
         if source.is_symlink() or not source.is_file():
             raise PackageError("cursor theme source inventory is not regular")
-        destination = f"usr/share/icons/rmac/{source.name}"
+        # XCursor themes keep the pointer images in a cursors/ subdirectory;
+        # only the theme descriptors sit at the theme root.
+        subdir = "" if source.name in CURSOR_THEME_DESCRIPTORS else "cursors/"
+        destination = f"usr/share/icons/rmac/{subdir}{source.name}"
         if destination in files:
             raise PackageError(f"duplicate package destination: {source.name}")
         files[destination] = (_read_regular(source), 0o644)

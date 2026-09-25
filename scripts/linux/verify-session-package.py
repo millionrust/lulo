@@ -156,7 +156,9 @@ EXPECTED_PATHS = {
 } | {
     Path("usr/lib/systemd/user") / unit for unit in EXPECTED_SYSTEMD_UNITS
 } | {
-    Path("usr/share/icons/rmac") / path.name
+    Path("usr/share/icons/rmac")
+    / ("" if path.name in {"index.theme", "cursor.theme"} else "cursors")
+    / path.name
     for path in _CURSOR_THEME.iterdir()
 } | {
     Path("usr/share/themes/rmac") / path.relative_to(_GTK_THEME)

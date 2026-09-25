@@ -75,6 +75,32 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
 - Search is local, bounded, exclusion-aware, and not a promise to index every
   file format or location.
 
+## Known issues: security findings accepted for Beta
+
+Three Low findings from the
+[security review](security-review-0.9.0-beta.1.md) stay open for Beta, each
+with a mitigation. They still count against the security gate.
+
+- **SR-15, build paths in binaries.** A package built on your own machine
+  names your home directory in its panic messages. Released packages are
+  built on GitHub's runners, so this affects only packages you build
+  yourself; don't share those.
+- **SR-18, release build inputs.** The release workflow installs rustup,
+  the Ubuntu container and some build tools by tag or version rather than
+  by hash. Actions are pinned by commit, Rust dependencies are locked and
+  checked by cargo-deny, and every package carries a provenance attestation
+  that `install.sh --from-release` verifies.
+- **SR-29, automatic updates can remove a package.** The daily automatic
+  update schedules Lulo OS and security updates for the next restart
+  without first checking whether they remove anything. Only signed,
+  trusted packages are used. To review every update yourself, turn off
+  the Automatic Updates switches in System Settings > General > Software
+  Update and use Update Now, which shows any removal before it proceeds.
+
+`install.sh --from-release` now needs `gh` (and `gh auth login`) to verify
+who built the packages. Without it the install stops; `--allow-unattested`
+installs on the release's checksums alone.
+
 ## Compatibility limits
 
 Ubuntu 26.04 and niri are the selected reference environment. Other

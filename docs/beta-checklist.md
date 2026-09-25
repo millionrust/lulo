@@ -16,7 +16,7 @@ pass — that is real progress, not a projection. What is still open:
 | 5 | Journey 9 (Orca at 200%): no formal Orca pass exists; this pass only re-confirmed the AT-SPI tree stays intact at compositor scale 2 in the nested runner. A real Orca run needs the owner (screen reader must not be enabled by an agent). | **owner** | — |
 | 6 | Accessibility: `accesskit_unix` still has no `EditableText` implementation at all (upstream), so no AT-SPI client can type without a physical/virtual keyboard, in Terminal, Notes, Files' search/rename fields, or Spotlight. Not fixable in this repo. | upstream | — |
 | 7 | No real packaging install/remove/upgrade run on a clean VM or the laptop, and no exercised GitHub Actions release run. Not re-verified this pass (out of scope of this pass's evidence-gathering; still exactly as `docs/release-process.md` describes). | agent | L |
-| 8 | Security review: 18 open findings (1 High), native-station evidence still missing. Not re-run this pass. | agent | L |
+| 8 | Security review: 3 open findings, all Low and accepted for Beta with a documented risk and mitigation (SR-15, SR-18, SR-29; see `docs/security-review-0.9.0-beta.1.md` "Beta decision" and `docs/known-limitations.md`). Nothing Critical, High or Medium is open; SR-17 and the new SR-28 were fixed on 2026-09-25. 24 of 80 checks still need native-station evidence and no Beta station has run, so `verify-security-review.py` still fails closed. | agent (stations: owner) | L |
 | 9 | `docs/install.md`/`README.md` still say the product isn't ready to install. | **owner** | S |
 
 **What changed this pass, with real evidence:** journeys 2 (Files), 3
@@ -284,16 +284,17 @@ document for the current, short punch list. In order of severity:
 5. **Security review: Fail (source review done, gate not met).**
    [docs/security-review-0.9.0-beta.1.md](security-review-0.9.0-beta.1.md)
    and its canonical summary `docs/security-review-0.9.0-beta.1.json` cover
-   all 80 checks of `scripts/security-review.json`. Nine findings were fixed:
-   three High (the install.sh keyring bootstrap, a lock request that
-   reported success with nothing locked, and zip links planted outside the
-   folder), two Medium and four Low. 46 checks pass on source review. The
-   other 34 need native station evidence or have an open finding. 18
-   findings are still open: one High (development installs never install the
-   lock provider, which matters on the reference laptop), three Medium and 14
-   Low. None of the Beta stations has been run, so
-   `verify-security-review.py` fails closed, as it should. Not re-run this
-   pass.
+   all 80 checks of `scripts/security-review.json`. 26 findings are fixed
+   (9 during the review, 17 after it, including every High and Medium). 3
+   remain open, all Low, each accepted for Beta with a risk statement and a
+   mitigation (SR-15 build paths in locally built binaries, SR-18 release
+   build inputs pinned by tag, SR-29 automatic updates not simulated for
+   removals). A fresh pass on 2026-09-25 over the new root-run and
+   privileged code (system-sleep hook, power-key inhibitor, rmac-process,
+   the update flow, the shared D-Bus connection) found SR-28 (fixed) and
+   SR-29. 56 checks pass on source review; 24 need native station
+   evidence. None of the Beta stations has been run, so
+   `verify-security-review.py` fails closed, as it should.
 6. **Journey 5 has a real, reconfirmed functional bug** (Save-panel-on-
    Untitled doesn't present properly); journey 6's headline AT-SPI blackout
    is fixed but its full accept flow is unexercised; journey 7 has live

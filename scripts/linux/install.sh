@@ -11,9 +11,9 @@
 #
 #   # Offline or pinned installs: rmac-apps, rmac-session, and Lulo OS's niri
 #   # and xwayland-satellite builds straight from a tagged GitHub Release,
-#   # verified by SHA256SUMS (and, when `gh` is installed, its
-#   # build-provenance attestation). This path adds no repository, so it
-#   # receives no automatic updates.
+#   # verified by SHA256SUMS and its build-provenance attestation, which
+#   # needs `gh` (run `gh auth login` first). This path adds no repository,
+#   # so it receives no automatic updates.
 #   sh install.sh --from-release vX.Y.Z
 #
 #   # Or from a directory you already downloaded/verified yourself (for
@@ -66,7 +66,7 @@ fail() {
 
 usage() {
     cat >&2 <<'EOF'
-usage: install.sh [--from-release TAG | --from-dir DIRECTORY]
+usage: install.sh [--from-release TAG [--allow-unattested] | --from-dir DIRECTORY]
 
   (no argument)        Add the signed rmac APT repository (keyring checked
                         against the pinned archive fingerprint) and install
@@ -76,11 +76,16 @@ usage: install.sh [--from-release TAG | --from-dir DIRECTORY]
                         automatic updates): download rmac-apps, rmac-session, niri, and
                         xwayland-satellite for this machine's architecture
                         from the named GitHub Release tag (e.g. v0.5.0),
-                        verify them against the release's SHA256SUMS (and
-                        its build-provenance attestation when `gh` is
-                        installed), then install them with apt. A newer
+                        verify them against the release's SHA256SUMS and
+                        its build-provenance attestation (`gh attestation
+                        verify`; install gh and run `gh auth login`
+                        first), then install them with apt. A newer
                         niri or xwayland-satellite that is already
                         installed (for example from a PPA) is kept.
+  --allow-unattested   With --from-release on a machine without gh:
+                        install on SHA256SUMS alone. Who built the
+                        packages then rests on HTTPS and the GitHub
+                        account, not on a signature.
   --from-dir DIRECTORY Install from .deb files and a SHA256SUMS you already
                         have locally, skipping the download.
 EOF
@@ -256,11 +261,13 @@ select_release_assets() {
 # Download rmac-apps, rmac-session, niri, and xwayland-satellite for this
 # architecture from a tagged GitHub Release and verify them against that
 # release's SHA256SUMS. SHA256SUMS comes from the same release, so it proves
-# only that the download is intact, not who built it. When `gh` is installed
-# the build-provenance attestation is mandatory and must have been signed by
-# this repository's release workflow (.github/workflows/release.yml
-# "attach-release"); that is the authenticity check. Without `gh`,
-# authenticity rests on HTTPS and the GitHub account, and install.sh says so.
+# only that the download is intact, not who built it. The build-provenance
+# attestation is the authenticity check: it is mandatory and must have been
+# signed by this repository's release workflow (.github/workflows/release.yml
+# "attach-release"). Without `gh` the install refuses (SR-17), because these
+# packages' maintainer scripts run as root; only an explicit
+# --allow-unattested ($allow_unattested=true) accepts SHA256SUMS alone, and
+# then install.sh says what was not checked.
 #
 # Sets $downloaded_package_dir rather than returning the path on stdout: a
 # caller capturing this function's output with "$(...)" would run it in a
@@ -271,6 +278,11 @@ download_release_packages() {
     tag="$1"
     [ -n "$tag" ] || fail "--from-release requires a release tag, e.g. v0.5.0"
     require_command curl
+    # Refuse before downloading anything when the attestation cannot be
+    # checked and the person has not accepted that explicitly.
+    if ! command -v gh >/dev/null 2>&1 && [ "${allow_unattested:-false}" != true ]; then
+        fail "cannot check who built release $tag: 'gh' is not installed. Install it (sudo apt-get install gh), run 'gh auth login', and try again; or pass --allow-unattested to trust SHA256SUMS and HTTPS alone"
+    fi
 
     work_dir="$(mktemp -d)"
     trap 'rm -rf "$work_dir"' EXIT
@@ -297,9 +309,9 @@ download_release_packages() {
                 --signer-workflow "$RMAC_GITHUB_REPOSITORY/.github/workflows/release.yml" \
                 || fail "build provenance attestation did not verify for $name (is 'gh auth login' done?)"
         done
-    else
-        echo "install.sh: 'gh' is not installed, so the build-provenance attestation was not checked." >&2
-        echo "install.sh: SHA256SUMS only proves the download is intact; who built it rests on HTTPS and the GitHub account. Install gh and run 'gh auth login' to check it." >&2
+    elif [ "${allow_unattested:-false}" = true ]; then
+        echo "install.sh: --allow-unattested: 'gh' is not installed, so the build-provenance attestation was not checked." >&2
+        echo "install.sh: SHA256SUMS only proves the download is intact; who built it rests on HTTPS and the GitHub account." >&2
     fi
 
     downloaded_package_dir="$work_dir"
@@ -395,6 +407,7 @@ install_local_packages() {
 main() {
     mode="repo"
     release_tag=""
+    allow_unattested=false
     local_dir=""
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -403,6 +416,9 @@ main() {
                 [ $# -gt 0 ] || fail "--from-release requires a release tag"
                 mode="release"
                 release_tag="$1"
+                ;;
+            --allow-unattested)
+                allow_unattested=true
                 ;;
             --from-dir)
                 shift
@@ -421,6 +437,10 @@ main() {
         esac
         shift
     done
+
+    if [ "$allow_unattested" = true ] && [ "$mode" != release ]; then
+        fail "--allow-unattested applies only to --from-release"
+    fi
 
     check_not_root
 

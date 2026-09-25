@@ -340,7 +340,7 @@ mod linux_wayland {
         let run = gpui::TextRun {
             len: title.len(),
             font,
-            color: rgba(WHITE),
+            color: rgba(WHITE).into(),
             background_color: None,
             underline: None,
             strikethrough: None,

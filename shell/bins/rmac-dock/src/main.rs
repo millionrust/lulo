@@ -122,6 +122,13 @@ mod linux_wayland {
     const MENU_CHEVRON_COLUMN: f32 = 20.0;
     const MENU_SUBMENU_OVERLAP: f32 = 3.0;
     const TOOLTIP_WIDTH: f32 = 240.0;
+    // Stack popover (item 1, design-lab/dock-stack-popover.html, S: not
+    // measured against the owner's Mac). GPUI has no rotate/scale
+    // transform, so the Fan is a plain row rather than the Mac's fanned
+    // stagger; both views cap how many items they draw and note the rest.
+    const STACK_POPOVER_WIDTH: f32 = 260.0;
+    const STACK_POPOVER_ITEM: f32 = 56.0;
+    const STACK_POPOVER_MAX_ITEMS: usize = 8;
     // Badge bubble and progress bar published by apps (rmac values; not yet
     // measured against a Mac badge).
     const BADGE_SIZE: f32 = 20.0;
@@ -2227,7 +2234,9 @@ mod linux_wayland {
             let modal = menu_geometry.is_some()
                 || self.trash_review.is_some()
                 || dragging
-                || self.keyboard.is_some();
+                || self.keyboard.is_some()
+                || self.separator_menu.is_some()
+                || self.stack_popover.is_some();
             let input_region = (shelf_start, shelf_extent, self.hidden, modal);
             if self.input_region != Some(input_region) {
                 let shelf_bounds = match (self.placement, self.hidden) {
@@ -2278,7 +2287,11 @@ mod linux_wayland {
                 .as_ref()
                 .map(|target| (target.center, target.name.clone()))
                 .or_else(|| self.hovered_item.clone());
-            let tooltip = (!self.hidden && self.context_menu.is_none() && !dragging)
+            let tooltip = (!self.hidden
+                && self.context_menu.is_none()
+                && self.separator_menu.is_none()
+                && self.stack_popover.is_none()
+                && !dragging)
                 .then_some(tooltip_item.as_ref())
                 .flatten()
                 .map(|(relative_center, label)| {
@@ -2342,7 +2355,10 @@ mod linux_wayland {
                     }
                 }))
                 .on_click(cx.listener(|this, _, _, cx| {
-                    if this.context_menu.take().is_some() {
+                    let mut changed = this.context_menu.take().is_some();
+                    changed |= this.separator_menu.take().is_some();
+                    changed |= this.stack_popover.take().is_some();
+                    if changed {
                         this.input_region = None;
                         cx.notify();
                     }
@@ -3256,6 +3272,14 @@ mod linux_wayland {
                 window,
                 cx,
             ))
+            .children(render_stack_popover(
+                self.stack_popover.as_ref(),
+                self.placement,
+                metrics,
+                shelf_start,
+                self.display_id,
+                cx,
+            ))
         }
     }
 
@@ -3680,6 +3704,192 @@ mod linux_wayland {
         let mut panels = vec![panel.into_any_element()];
         panels.extend(submenu_panel);
         panels
+    }
+
+    /// A folder/file stack's Fan or Grid popover (item 1). `Automatic`
+    /// resolves to Fan, macOS's default for a small stack; `List` has no
+    /// distinct rmac layout yet and also falls back to Grid.
+    fn render_stack_popover(
+        popover: Option<&StackPopoverUi>,
+        placement: rmac_shell_settings::DockPlacement,
+        metrics: TileMetrics,
+        shelf_start: f32,
+        display_id: u64,
+        cx: &Context<Dock>,
+    ) -> Vec<gpui::AnyElement> {
+        let Some(popover) = popover else {
+            return Vec::new();
+        };
+        let grid = matches!(
+            popover.view_content_as,
+            rmac_shell_settings::DockStackViewContentAs::Grid
+                | rmac_shell_settings::DockStackViewContentAs::List
+        );
+        let items: Vec<&rmac_desktop::Item> = popover
+            .snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.items.iter().collect())
+            .unwrap_or_default();
+        let total = items.len();
+        let shown = &items[..total.min(STACK_POPOVER_MAX_ITEMS)];
+
+        let mut panel = div()
+            .id(format!("dock-stack-popover-{display_id}"))
+            .role(Role::Dialog)
+            .aria_label(format!("{}, stack contents", popover.name))
+            .absolute()
+            .w(px(STACK_POPOVER_WIDTH))
+            .p(px(MENU_PADDING + 6.0))
+            .rounded(px(tokens::menu_radius()))
+            .bg(rgba(tokens::regular_dark_tint()))
+            .border_1()
+            .border_color(rgba(tokens::light_border()))
+            .shadow_lg()
+            .text_color(rgba(tokens::primary_text()))
+            .occlude();
+        let offset = metrics.exclusive_zone + MENU_SHELF_GAP;
+        let along = shelf_start + popover.anchor;
+        panel = match placement {
+            rmac_shell_settings::DockPlacement::Bottom => panel
+                .left(px((along - STACK_POPOVER_WIDTH / 2.0).max(8.0)))
+                .bottom(px(offset)),
+            rmac_shell_settings::DockPlacement::Left => {
+                panel.left(px(offset)).top(px((along - 80.0).max(8.0)))
+            }
+            rmac_shell_settings::DockPlacement::Right => {
+                panel.right(px(offset)).top(px((along - 80.0).max(8.0)))
+            }
+        };
+        panel = panel.child(
+            div()
+                .text_size(px(11.0))
+                .text_color(rgba(tokens::secondary_text()))
+                .pb(px(6.0))
+                .truncate()
+                .child(popover.name.clone()),
+        );
+        panel = if popover.snapshot.is_none() {
+            panel.child(
+                div()
+                    .text_size(px(12.0))
+                    .text_color(rgba(tokens::secondary_text()))
+                    .child("Loading…"),
+            )
+        } else if shown.is_empty() {
+            panel.child(
+                div()
+                    .text_size(px(12.0))
+                    .text_color(rgba(tokens::secondary_text()))
+                    .child("Empty"),
+            )
+        } else if grid {
+            panel.child(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(6.0))
+                    .children(shown.iter().map(|item| stack_popover_item(item, false, cx))),
+            )
+        } else {
+            panel.child(
+                div()
+                    .flex()
+                    .items_end()
+                    .gap(px(6.0))
+                    .overflow_hidden()
+                    .children(
+                        shown
+                            .iter()
+                            .enumerate()
+                            .map(|(index, item)| stack_popover_item(item, index == 0, cx)),
+                    ),
+            )
+        };
+        if total > shown.len() {
+            panel = panel.child(
+                div()
+                    .text_size(px(10.5))
+                    .text_color(rgba(tokens::disabled_text()))
+                    .pt(px(4.0))
+                    .child(format!("{} more…", total - shown.len())),
+            );
+        }
+        panel = panel.child(menu_separator());
+        let kind = popover.kind.clone();
+        panel = panel.child(
+            div()
+                .id("dock-stack-popover-open-in-files")
+                .role(Role::MenuItem)
+                .aria_label("Open in Files")
+                .h(px(tokens::menu_row_height()))
+                .px(px(MENU_ROW_INSET))
+                .flex()
+                .items_center()
+                .cursor_pointer()
+                .rounded(px(tokens::menu_item_radius()))
+                .child("Open in Files")
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _, _, cx| {
+                        cx.stop_propagation();
+                        this.close_stack_popover(cx);
+                        this.dispatch_action(
+                            rmac_dock::menu::Action::ActivateEntry(
+                                rmac_dock::presentation::EntryId::Stack(kind.clone()),
+                            ),
+                            cx,
+                        );
+                    }),
+                ),
+        );
+        vec![panel.into_any_element()]
+    }
+
+    /// One popover item: icon, truncated name, click to open (and close the
+    /// popover, as the Mac does).
+    fn stack_popover_item(
+        item: &rmac_desktop::Item,
+        emphasize: bool,
+        cx: &Context<Dock>,
+    ) -> gpui::AnyElement {
+        let size = if emphasize {
+            STACK_POPOVER_ITEM
+        } else {
+            STACK_POPOVER_ITEM * 0.85
+        };
+        let path = item.path.clone();
+        let name = item.name.clone();
+        div()
+            .id(SharedString::from(format!("dock-stack-item-{name}")))
+            .role(Role::Button)
+            .aria_label(name.clone())
+            .w(px(size + 8.0))
+            .flex()
+            .flex_col()
+            .items_center()
+            .gap(px(4.0))
+            .cursor_pointer()
+            .rounded(px(tokens::menu_item_radius()))
+            .children(
+                stack_popover_item_icon_path(item)
+                    .map(|icon_path| img(icon_path).w(px(size)).h(px(size))),
+            )
+            .child(
+                div()
+                    .text_size(px(10.5))
+                    .text_color(rgba(tokens::secondary_text()))
+                    .w(px(size + 8.0))
+                    .truncate()
+                    .child(name),
+            )
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, cx| {
+                    cx.stop_propagation();
+                    this.open_stack_popover_item(path.clone(), cx);
+                }),
+            )
+            .into_any_element()
     }
 
     /// The 20 × 10 pointer under a bottom Dock's menu, tip on the tile

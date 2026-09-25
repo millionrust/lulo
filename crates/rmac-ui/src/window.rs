@@ -597,6 +597,70 @@ pub fn boot_unified_app_instance_with_assets<A, V, F>(
         });
 }
 
+/// [`boot_unified_app_with_assets`] for a single-window unified-toolbar app
+/// (System Settings): unlike [`boot_unified_app_instance_with_assets`], a
+/// second launch never opens another window. It hands `arguments` to the
+/// running process instead, which passes them to `on_reopen` — so the app
+/// can react to what was asked for (for example, navigate to a requested
+/// pane) — and then brings its one window forward, exactly as
+/// [`boot_single_window_app_with_assets`] does for a chromed window.
+pub fn boot_unified_single_window_app_with_assets<A, V, F, H>(
+    app_id: &'static str,
+    assets: A,
+    width: f32,
+    height: f32,
+    arguments: Vec<String>,
+    build: F,
+    on_reopen: H,
+) where
+    A: gpui::AssetSource,
+    V: Render + 'static,
+    F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
+    H: Fn(Vec<String>, &mut App) + 'static,
+{
+    if hand_off_to_running_instance(app_id, &[arguments]) {
+        focus_running_app(app_id);
+        return;
+    }
+    crate::application()
+        .with_assets(assets)
+        .run(move |cx: &mut App| {
+            init_application(cx);
+            crate::install_app_instance(
+                app_id,
+                move |arguments, cx| {
+                    on_reopen(arguments, cx);
+                    if let Some((window, _)) = crate::menu_target::target(cx) {
+                        let _ = window.update(cx, |_, window, _| window.activate_window());
+                    }
+                },
+                cx,
+            );
+            let options = window_options_unified_for_app(app_id, width, height, cx);
+            cx.open_window(options, move |window, cx| {
+                prepare_surface_window(window, cx);
+                fit_to_display_after_first_frame(window, cx);
+                let view = cx.new(|cx| {
+                    observe_window_state(app_id, window, cx);
+                    build(window, cx)
+                });
+                cx.new(|cx| Root::new(view, window, cx))
+            })
+            .expect("failed to open window");
+            cx.activate(true);
+        });
+}
+
+/// Send `action` to the window that owns this app's menu — the same
+/// dispatch the desktop menu bar uses — focusing its registered content
+/// first if the action would not otherwise reach it. For an `on_reopen`
+/// callback (see [`boot_unified_single_window_app_with_assets`]) to react to
+/// a second launch's arguments with something the app's own view handles
+/// through `on_action`.
+pub fn dispatch_to_app_window(action: Box<dyn gpui::Action>, cx: &mut App) {
+    crate::menu_target::dispatch_menu_action(action, cx);
+}
+
 /// Opens a small fixed-size panel of this app (the About panel), centred on
 /// the display rather than at the app's remembered window geometry.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]

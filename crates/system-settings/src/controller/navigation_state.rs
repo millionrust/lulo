@@ -180,6 +180,32 @@ impl Settings {
         cx.notify();
     }
 
+    /// Navigate this already-open window to `pane_id` — the same route a
+    /// fresh `--pane <id>` launch selects at startup
+    /// (`initial_navigation`) — for a second launch's request handed off
+    /// instead of starting another process (SET-57).
+    pub(super) fn navigate_to_pane(
+        &mut self,
+        pane_id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let requested_subpage = subpage_route(pane_id);
+        let Some(category) = category_name_for_pane_id(pane_id)
+            .or_else(|| requested_subpage.as_ref().map(|(category, _)| *category))
+        else {
+            return;
+        };
+        self.select_category(category, window, cx);
+        if let Some((subpage_category, page)) = requested_subpage {
+            if self.current().name == subpage_category {
+                self.nav = vec![page];
+                self.forward.clear();
+            }
+        }
+        cx.notify();
+    }
+
     pub(super) fn select_category(
         &mut self,
         name: &str,

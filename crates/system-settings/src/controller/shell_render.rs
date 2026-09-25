@@ -126,6 +126,9 @@ impl Render for Settings {
             }))
             .on_action(cx.listener(|t, _: &GoBack, window, cx| t.go_back(window, cx)))
             .on_action(cx.listener(|t, _: &GoForward, _, cx| t.go_forward(cx)))
+            .on_action(cx.listener(|t, action: &NavigateToPane, window, cx| {
+                t.navigate_to_pane(&action.pane, window, cx)
+            }))
             .on_action(cx.listener(|t, _: &FocusSearch, window, cx| {
                 let focus = t.search.read(cx).focus_handle(cx);
                 window.focus(&focus, cx);

@@ -27,6 +27,7 @@ impl FinderView {
         };
         let path = entry.path.clone();
         let name = entry.name.to_string();
+        let selection = rename_selection(&name, entry.is_dir);
         let input = cx.new(|cx| InputState::new(window, cx).default_value(name));
         cx.subscribe(&input, |this, _input, event: &InputEvent, cx| match event {
             InputEvent::PressEnter { .. } => this.rename_commit(cx),
@@ -38,13 +39,15 @@ impl FinderView {
         window.focus(&focus, cx);
         self.renaming = Some((path, input));
         cx.notify();
-        // The TextField action handlers exist after the next render. Select
-        // the whole generated/current name then so typing replaces it, just
-        // like Finder, regardless of whether Rename came from a menu, a name
-        // click, Return, or New Folder.
+        // Select on the field itself once it exists, as Finder does: the
+        // whole name of a folder ("untitled folder"), or only the base name
+        // of a file ("report" in "report.txt"), so typing replaces it. A
+        // dispatched SelectAll would reach Files' own Select All (every
+        // file) instead of the field.
+        let field = input.clone();
         window.on_next_frame(move |window, cx| {
             window.focus(&focus, cx);
-            window.dispatch_action(Box::new(rmac_ui::SelectAll), cx);
+            field.update(cx, |state, cx| state.set_selected_range(selection, cx));
         });
     }
 
@@ -134,6 +137,15 @@ impl FinderView {
 }
 
 /// Why File ▸ Rename cannot run for this selection, if it cannot.
+/// The part of a name Rename selects: all of a folder's name, and a file's
+/// name up to its last extension (a leading dot is part of the name).
+fn rename_selection(name: &str, is_dir: bool) -> std::ops::Range<usize> {
+    match name.rfind('.') {
+        Some(dot) if dot > 0 && !is_dir => 0..dot,
+        _ => 0..name.len(),
+    }
+}
+
 fn rename_unavailable_reason(
     selection_count: usize,
     trash_view: bool,
@@ -157,6 +169,16 @@ fn rename_unavailable_reason(
 #[cfg(test)]
 mod tests {
     use super::rename_unavailable_reason;
+
+    #[test]
+    fn rename_selects_a_folder_whole_and_a_file_up_to_its_extension() {
+        assert_eq!(rename_selection("untitled folder", true), 0..15);
+        assert_eq!(rename_selection("report.txt", false), 0..6);
+        assert_eq!(rename_selection("Archive.tar.gz", false), 0..11);
+        assert_eq!(rename_selection(".bashrc", false), 0..7);
+        assert_eq!(rename_selection("Photos.library", true), 0..14);
+        assert_eq!(rename_selection("README", false), 0..6);
+    }
 
     #[test]
     fn rename_needs_exactly_one_item_in_an_ordinary_folder() {

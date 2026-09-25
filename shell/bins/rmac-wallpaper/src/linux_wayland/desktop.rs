@@ -65,6 +65,9 @@ pub(crate) struct DeskState {
     pub expanded: BTreeSet<StackKind>,
     pub panel: Option<Panel>,
     pub rename: Option<Rename>,
+    /// A folder New Folder just created: renamed in place as soon as the
+    /// desktop listing shows it, as Finder does.
+    pub rename_when_listed: Option<PathBuf>,
     /// Counts presses and keys, so a pending click-to-rename can tell it
     /// was followed by something else (a double-click opens instead).
     pub rename_click: u64,
@@ -869,7 +872,10 @@ impl Wallpaper {
                         blocking::unblock(move || rmac_desktop::create_folder(&directory)).await;
                     let _ = this.update(cx, |this, cx| {
                         match result {
-                            Ok(path) => this.desk.selection = BTreeSet::from([path]),
+                            Ok(path) => {
+                                this.desk.selection = BTreeSet::from([path.clone()]);
+                                this.desk.rename_when_listed = Some(path);
+                            }
                             Err(_) => {
                                 this.action_error =
                                     Some("The new folder could not be created".into())
@@ -1119,6 +1125,15 @@ impl Wallpaper {
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
         let layout = self.desk_layout(window, cx);
+        // New Folder: start renaming once the watcher has listed the folder.
+        if let Some(path) = self.desk.rename_when_listed.clone() {
+            if layout.items.iter().any(|item| item.path == path) {
+                self.desk.rename_when_listed = None;
+                cx.defer_in(window, move |this, window, cx| {
+                    this.begin_rename(path, window, cx);
+                });
+            }
+        }
         let (widgets, data) = {
             let status = self.status.read(cx);
             (

@@ -110,7 +110,11 @@ fn hand_off_windows(request: &StartupRequest) -> Option<Vec<Vec<String>>> {
         windows.push(vec!["--new-document".to_owned()]);
     }
     for path in &request.paths {
-        let path = std::path::absolute(path).ok()?.into_os_string().into_string().ok()?;
+        let path = std::path::absolute(path)
+            .ok()?
+            .into_os_string()
+            .into_string()
+            .ok()?;
         windows.push(vec!["--".to_owned(), path]);
     }
     Some(windows)
@@ -148,11 +152,11 @@ pub(crate) fn run() {
             rmac_ui::init_application(cx);
             rmac_ui::install_app_instance(
                 rmac_ui::app_id::TEXT_EDITOR,
-                |arguments, cx| {
-                    match parse_startup_request(arguments.into_iter().map(OsString::from)) {
-                        Ok(request) => open_requested_windows(request, cx),
-                        Err(message) => eprintln!("Text Editor ignored a window request: {message}"),
-                    }
+                |arguments, cx| match parse_startup_request(
+                    arguments.into_iter().map(OsString::from),
+                ) {
+                    Ok(request) => open_requested_windows(request, cx),
+                    Err(message) => eprintln!("Text Editor ignored a window request: {message}"),
                 },
                 cx,
             );
@@ -196,7 +200,10 @@ mod tests {
     fn a_second_launch_hands_its_documents_to_the_running_editor() {
         let request = StartupRequest {
             open_untitled: true,
-            paths: vec![PathBuf::from("/home/user/one.txt"), PathBuf::from("two.txt")],
+            paths: vec![
+                PathBuf::from("/home/user/one.txt"),
+                PathBuf::from("two.txt"),
+            ],
         };
         let windows = hand_off_windows(&request).unwrap();
         assert_eq!(windows[0], ["--new-document"]);
@@ -207,9 +214,7 @@ mod tests {
         // What the running editor receives parses back to the same request.
         let reparsed = windows
             .iter()
-            .map(|arguments| {
-                parse_startup_request(arguments.iter().map(OsString::from)).unwrap()
-            })
+            .map(|arguments| parse_startup_request(arguments.iter().map(OsString::from)).unwrap())
             .collect::<Vec<_>>();
         assert!(reparsed[0].open_untitled && reparsed[0].paths.is_empty());
         assert_eq!(reparsed[1].paths, [PathBuf::from("/home/user/one.txt")]);

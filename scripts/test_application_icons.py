@@ -29,7 +29,16 @@ IDENTITIES = (
     "org.rmac.Weather",
     "org.rmac.Player",
 )
-DOCK_ICONS = ("application", "files", "downloads", "folder", "trash-empty", "trash-full", "more")
+DOCK_ICONS = (
+    "application",
+    "files",
+    "downloads",
+    "folder",
+    "trash-empty",
+    "trash-full",
+    "more",
+    "stack-item-document",
+)
 SVG_NAMESPACE = "http://www.w3.org/2000/svg"
 ALLOWED_ELEMENTS = {
     "svg", "defs", "g", "rect", "path", "circle", "linearGradient",

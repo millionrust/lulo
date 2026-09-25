@@ -1,5 +1,39 @@
 # Beta release checklist — 0.9.0-beta.1
 
+## Beta 1 go/no-go (updated 2026-09-25, evening pass)
+
+**Not ready today.** The three worst accessibility bugs (Terminal/Notes/Files
+having no accessible content at all) are now genuinely fixed and
+live-reconfirmed against a fresh `dev` build on the reference laptop this
+pass — that is real progress, not a projection. What is still open:
+
+| # | Blocker | Owner/agent | Size |
+|---|---|---|---|
+| 1 | CI is red on `dev` (run [36151133746](https://github.com/millionrust/lulo/actions/runs/36151133746)): a macOS-only compile error in `rmac-updates-linux` (`FLAG_ONLY_DOWNLOAD`/`FLAG_ONLY_TRUSTED` are `#[cfg(target_os = "linux")]`-gated but used unconditionally in `crates/rmac-updates-linux/src/transaction.rs:14`) and a `-D warnings` dead-code failure in `crates/preview/src/view.rs:319` (`window_generation`, `print_busy` unused under `--all-targets`). Two other causes (a stale `rustfmt` diff and a missing Dock icon in the test whitelist) are fixed in this pass's commits. | agent (needs cargo + macOS to validate) | S–M |
+| 2 | Journey 5 (Text Editor via the portal): Save on an Untitled document still doesn't present a proper Save panel (`panel.dialog.present` false, no Cancel/Save buttons) — confirmed this pass with a fresh nested run, 3/4 scenarios pass. `rmac-file-chooser` is still not deployed on the reference laptop's live session either. | agent | M |
+| 3 | Journey 6 (System Monitor): the process table's total AT-SPI blackout is fixed and reconfirmed this pass (`Role::Table`/`Role::Row` with real per-process names, live), but the full accept flow (search field, viewport paging, the Quit/Force Quit confirmation dialog) has not been exercised end to end. | agent | S |
+| 4 | Journey 8 (keyboard only): Control-F2 (menu-bar keyboard focus) is still not implemented — a real, documented, unfixed gap. | agent (M, per `docs/known-limitations.md`) | M |
+| 5 | Journey 9 (Orca at 200%): no formal Orca pass exists; this pass only re-confirmed the AT-SPI tree stays intact at compositor scale 2 in the nested runner. A real Orca run needs the owner (screen reader must not be enabled by an agent). | **owner** | — |
+| 6 | Accessibility: `accesskit_unix` still has no `EditableText` implementation at all (upstream), so no AT-SPI client can type without a physical/virtual keyboard, in Terminal, Notes, Files' search/rename fields, or Spotlight. Not fixable in this repo. | upstream | — |
+| 7 | No real packaging install/remove/upgrade run on a clean VM or the laptop, and no exercised GitHub Actions release run. Not re-verified this pass (out of scope of this pass's evidence-gathering; still exactly as `docs/release-process.md` describes). | agent | L |
+| 8 | Security review: 18 open findings (1 High), native-station evidence still missing. Not re-run this pass. | agent | L |
+| 9 | `docs/install.md`/`README.md` still say the product isn't ready to install. | **owner** | S |
+
+**What changed this pass, with real evidence:** journeys 2 (Files), 3
+(Terminal) and 4 (Notes) — see the updated journey table below — went from
+"no accessible content surface at all" to fully working live, both via the
+repo's own `scripts/assert_{terminal,notes,files}_accessibility.py` acceptance
+scripts (run live against a same-day `dev` build, `exit 0` on all three) and
+a fresh nested-compositor run with real typed keystrokes (14/16 Files
+behaviour scenarios pass, including two rename scenarios that were
+completely blocked before). Idle CPU for the shell surfaces (Dock, top bar,
+wallpaper, OSD, etc.) also measured near zero (0.0–0.6%, well under budget)
+even while another build was saturating the laptop's CPU — a big
+improvement over the 2026-09-24 numbers, though per-app idle CPU (System
+Settings, Files, System Monitor, Clock) was not independently re-measured
+this pass to avoid running extra app instances on a laptop shared with other
+agents.
+
 This is the release-blocking list for shipping **0.9.0-beta.1** as a GitHub
 Release: `.deb` packages (`rmac-apps`, `rmac-session`, Lulo OS's `niri`
 and `xwayland-satellite` builds with their source packages, and the keyring
@@ -41,14 +75,14 @@ Beta cohort") if that distinction needs to survive outside this document.
 | # | Journey | Script | Last result | Status |
 |---|---|---|---|---|
 | 1 | Log in, launch from Dock/Spotlight, switch, close | `scripts/linux/run-journey-launch.py` | Ran live on the reference laptop. Dock tiles and Spotlight rows were fixed to expose a real AT-SPI `click`/`Text` surface (see `docs/journey-suite.md`). Spotlight's search field still can't be **typed into** over AT-SPI: the pinned `accesskit_unix` bridge has no `EditableText` implementation at all (upstream gap, not fixable here). | **Fail** — one real, live, unfixable-in-repo accessibility gap (no-keyboard-injector query typing); everything else in journey 1 passes |
-| 2 | Find, preview, copy, move, rename, trash a file; undo | `scripts/linux/run-journey-files.py` | Ran live 2026-09-24. No file/folder/sidebar row is exposed over AT-SPI at all (only toolbar controls); `rename` fails for real (no Rename menu item, inline-only editing needs a keyboard injector that isn't installed); Trash and Undo pass reliably once the window has focus; Copy/Move now work after fixing the Wayland clipboard no-op. See `docs/journey-suite.md`. | **Fail** — no accessible file list, no working rename path |
-| 3 | Terminal: run, scroll, select, copy/paste, tabs | `scripts/linux/run-journey-terminal.py` | Ran live. The terminal grid publishes **no AT-SPI text, caret, or selection** — the accessibility module exists but isn't compiled into the running binary. Typing a command over AT-SPI is impossible on this build. Tab strip works (unnamed but clickable). | **Fail** — no accessible text-entry surface; this is journey 3's headline finding |
-| 4 | Notes: create, search, edit, recover after crash | `scripts/linux/run-journey-notes.py` | Ran live. Deliberately stopped before creating any note: no text entry surface at all (search/title/tags/body expose no `Text`/`EditableText`), and the note list/sidebar is entirely absent from the AT-SPI tree (not just unnamed). A test note could be created but never re-identified or cleaned up, so the script refused to risk the real Notes library. | **Fail** — same class of gap as journey 3, one step earlier |
-| 5 | Open/edit/save a text file through the portal | none | No live acceptance script exists yet. | **Not yet run** |
-| 6 | Inspect resource use, safely stop a process | none | No live acceptance script exists yet. `docs/journey-suite.md` only covers 1–4. | **Not yet run** |
-| 7 | Wi-Fi, Bluetooth, audio output, battery | none (code trace only) | `docs/journey-7-trace.md` traces every step through source reading (no cargo, no live laptop UI run in that pass) and fixed one small gap (menubar quick Wi-Fi join now shows "Connecting…"/failure state). Backends are confirmed real (`docs/settings-backend-audit.md`). | **Not yet run** as a live acceptance test — code-level trace only |
-| 8 | Journeys 1–7, keyboard only | none | No dedicated script. Partial evidence only: the Dock is keyboard-reachable via Control-F3; Control-F2 (menu bar keyboard focus) is explicitly **not implemented** (`docs/known-limitations.md`). | **Fail** — Control-F2 is a known, documented gap, and journeys 3/4 above are keyboard-blocked at the content level regardless |
-| 9 | Core of 1–7 with Orca at 200% | none | No dedicated script. The formal I3 accessibility-release audit (`docs/accessibility-release-audit.md`, `scripts/accessibility-audit.json`) requires 442 explicit Orca observations across every surface and journey; no evidence file for that audit exists in this repository. | **Not yet run** |
+| 2 | Find, preview, copy, move, rename, trash a file; undo | `scripts/linux/run-journey-files.py`, `scripts/assert_files_accessibility.py`, `scripts/behavior/run_lulo.py files/*` | **Re-run 2026-09-25** against a fresh `dev` build (`3ca78f24` + this pass's fixes, built package-scoped on the laptop). `scripts/linux/run-content-accessibility.sh ~/rmac-wt/target/iterate files` — live session, one instance, temp XDG dirs, no input injection — exits 0: "3 items with kind descriptions and click/selection, 8 sidebar places, click selects, Rename opens a focused Name entry (selection [(0, 5)]), setCaretOffset moves the caret, refocusing the row ends the rename." Separately, the nested-compositor behaviour suite (real typed keystrokes via the isolated Wayland injector, never the live session) ran all 16 Files scenarios against the same build: **14/16 pass**, including `rename-file`, `rename-folder`, `new-folder-name` and `undo-rename` — all previously blocked live by the missing injector. The 2 fails are already-tracked, non-blocking parity gaps: `context-menu` is missing Share…/Quick Actions items (FILES-23/49) and `get-info` opens a modal card instead of a separate window (FILES-15). | **Fail** — ACC-03 (no accessible file list, no working rename path) is fixed and live-reconfirmed; the one remaining gap is the same upstream `accesskit_unix` `EditableText` limitation as journey 1 (real keyboard/pointer use is unaffected); FILES-15/23/49 are tracked, non-blocking |
+| 3 | Terminal: run, scroll, select, copy/paste, tabs | `scripts/linux/run-journey-terminal.py`, `scripts/assert_terminal_accessibility.py` | **Re-run 2026-09-25.** `run-content-accessibility.sh ... terminal` exits 0 live: "62 characters over 24 lines, caret 41 after the prompt, line navigation returns single lines." Separately, a nested-compositor probe launched a fresh `rmac-terminal`, clicked the grid, typed `echo LULO_PROBE_OK` through the isolated virtual keyboard, and read the result back over AT-SPI `Text`: the grid's text included the typed command and its real output. The terminal grid now publishes real text/caret/selection (ACC-01); the tab strip is named per `docs/journey-suite.md`. | **Fail** — ACC-01 (no accessible text-entry surface) is fixed and live-reconfirmed with a real typed round-trip; the one remaining gap is the same upstream `EditableText` limitation as journey 1 (Terminal intentionally doesn't wire `SetValue` either, since a blind whole-buffer replace is the wrong model for a shell) |
+| 4 | Notes: create, search, edit, recover after crash | `scripts/linux/run-journey-notes.py`, `scripts/assert_notes_accessibility.py` | **Re-run 2026-09-25.** `run-content-accessibility.sh ... notes` exits 0 live: "2 folder items (1 selected), 1 note items (1 selected), named Search/Title/Body/Tags entries with Text, Title focus via `grabFocus`, caret 8" — all against the real Notes library's temp-XDG-isolated copy, never the owner's real data. A nested probe additionally confirmed the folder ("Folders") and note ("Notes") list boxes carry named `list item`s ("All Notes, 0 notes", "Recently Deleted, 0 notes") and the Search field's AT-SPI `Text` interface now works (`queryText()` returns a real value instead of raising). Note-content typed-round-trip (title/body) was not independently re-confirmed this pass — the toolbar's icon-only buttons (New Note, etc.) are still unnamed over AT-SPI (ACC-08, tracked separately), which blocked identifying "New Note" reliably in the nested probe. | **Fail** — ACC-02 (no text entry surface, no note list/sidebar) is fixed and live-reconfirmed; the remaining gaps are the same upstream `EditableText` limitation as journey 1, plus ACC-08 (unnamed toolbar buttons, tracked separately) |
+| 5 | Open/edit/save a text file through the portal | `scripts/linux/run-journey-textfile.py`, `scripts/behavior/run_lulo.py text-editor/*` | **Re-run 2026-09-25** in the nested compositor against a fresh `rmac-text-editor` build: 3/4 scenarios pass (`find`, `new-document`, `close-unsaved`); `save-untitled` still fails — the Save panel doesn't present properly (`panel.dialog.present` false, no Cancel/Save buttons, and the focused field still shows the typed body text instead of the filename with it selected). `rmac-file-chooser` remains undeployed on the reference laptop's live session (`systemctl --user status rmac-file-chooser.service`: unit does not exist), so the portal-driven live run still falls back to `fallback_spawn` for Open/Save As, per `docs/journey-suite.md`. | **Fail** — Save-panel-on-Untitled is a real, reconfirmed functional bug (not just an accessibility gap), plus the file-chooser deployment gap |
+| 6 | Inspect resource use, safely stop a process | `scripts/linux/run-journey-monitor.py` | **Re-run 2026-09-25** in the nested compositor against a fresh `rmac-system-monitor` build: the process table's AT-SPI blackout documented in `docs/journey-suite.md` is fixed and reconfirmed live — the table is a named `Role::Table` ("Processes") with 27 real `Role::Row` nodes, each labelled with the process name, PID, %CPU and memory (e.g. "rust-lld (PID 48343), 133.5% CPU, 1.93 GB"), plus 6 named column headers. The search field's role was not confirmed in this pass's quick probe, and the full accept flow (select-by-PID, viewport paging past ~19 rows, the Quit/Force Quit confirmation dialog) was not exercised — `run-journey-monitor.py`'s own safety rule (never invoke Quit/Force Quit without independently confirming the disposable process is selected) still applies and wasn't tested this pass. | **Fail** (improved from "Not yet run") — the headline "zero AT-SPI semantics" bug is fixed and live-reconfirmed; the full acceptance flow still needs a run |
+| 7 | Wi-Fi, Bluetooth, audio output, battery | none (code trace + read-only live checks) | `docs/journey-7-trace.md`'s source trace stands. This pass added **read-only live queries** on the laptop's real services (no toggling, no connecting): `nmcli device status`/`nmcli radio` show Wi-Fi connected and radios enabled; `bluetoothctl show` shows the controller powered on with real UUIDs; `wpctl status` shows PipeWire's real Analog Stereo sink/source (the laptop has no `pactl`/`pipewire-pulse` compat layer active, so Settings' audio backend must be the native PipeWire path, not a PulseAudio shim — matches `docs/settings-backend-audit.md`); `upower -i` on `battery_BAT0` returns real battery state (95%, fully-charged, real voltage/energy). All four backends are real, live, queryable services, not stubs. | **Not yet run** as a full live Settings-UI acceptance test — the backends themselves are confirmed real and live this pass |
+| 8 | Journeys 1–7, keyboard only | none | No dedicated script. Partial evidence only: the Dock is keyboard-reachable via Control-F3; Control-F2 (menu bar keyboard focus) is explicitly **not implemented** (`docs/known-limitations.md`). This pass's nested behaviour-suite reruns used only the isolated virtual keyboard (no mouse for typing/shortcut steps) and confirmed arrow-key list navigation (`list-arrows`), Return-to-rename, and ⌘-shortcut dispatch (Select All, Undo, New Folder, New Tab) all work by keyboard once an app has focus. | **Fail** — Control-F2 is a known, documented gap (unfixed); within-app keyboard operability is now better evidenced than before, but reaching the menu bar by keyboard alone still isn't possible |
+| 9 | Core of 1–7 with Orca at 200% | none | No dedicated script; Orca was **not enabled** this pass (per the brief, only the owner may do that). The formal I3 accessibility-release audit (`docs/accessibility-release-audit.md`, `scripts/accessibility-audit.json`) requires 442 explicit Orca observations; no evidence file exists. This pass did verify, in the nested compositor only, that the AT-SPI tree survives a compositor output scale of 2 (`swaymsg -t get_outputs` reports `scale: 2.0`; a freshly launched Files window still exposed its full 27-node tree with named sidebar items at that scale) — a narrow, positive signal that scaling doesn't collapse the accessibility tree, not a substitute for a real Orca pass. | **Owner/manual** — steps: on the reference laptop, enable Orca and 200% text scaling, then walk journeys 1–7 by ear, logging each surface against `scripts/accessibility-audit.json`'s observation list; write the result to `docs/accessibility-release-audit.md` |
 
 The package-scoped automated fixture suite (`scripts/run-journey-suite.py`,
 `docs/journey-suite.md`'s "I1", 10 journeys mapped to Cargo package tests)
@@ -63,19 +97,22 @@ JSON/parsing logic, not a live run.
 | Metric | Budget | Status |
 |---|---|---|
 | Warm launch to interactive | p95 ≤ 500 ms (900 ms Files/Terminal) | **Measured under build contention** — Notes, System Monitor, System Settings over; re-run with `rustc` at 0 |
-| Idle CPU | ≤ 0.3%/app, ≤ 1% shell combined | **Fail** — shell 2.78% (top bar 1.98%); System Settings 24.95%, Files 5.32%, System Monitor 3.13%, Clock 1.58% |
-| Idle wake-ups | none while nothing changes | **Fail** — ~4/s per visible layer window (gpui_linux idle re-check); top bar 24/s, shortcut broker 23/s |
+| Idle CPU | ≤ 0.3%/app, ≤ 1% shell combined | **Re-measured 2026-09-25** (read-only, `top -b -d 10 -n 6`, 60 s, on the live session's real shell processes): top bar averaged 0.27% (samples 0.0–0.6%), Dock 0.0–0.1%, wallpaper 0.0–0.3%, OSD/launcher/Mission Control/screenshot/shortcut-broker/focus-service/clipboard/file-chooser all 0.0% — combined well under the 1% shell budget, a large improvement on 2026-09-24's 2.78%. This held even while another build was saturating the laptop (load average ~4, 98% system CPU) — a harder test than idle. Per-app numbers (System Settings 24.95%, Files 5.32%, System Monitor 3.13%, Clock 1.58% from 2026-09-24) were **not re-measured this pass** — avoided launching extra app instances on a laptop shared with other agents; still needs a clean re-run |
+| Idle wake-ups | none while nothing changes | **Not re-measured this pass** (still the 2026-09-24 number: ~4/s per visible layer window, top bar 24/s, shortcut broker 23/s) — the near-zero CPU result above is consistent with a fix, but a wake-up count needs `strace -c -e sendmsg`, not just `top`, and the laptop was busy with a concurrent build for the whole window this pass had available |
 | Input to visible response | p95 ≤ 50 ms | **Not yet run** — no frame-timing harness exists yet |
 | 60/120 Hz animation frame budget | ≥ 99% / ≥ 95% within budget | **Not yet run** — `docs/performance-baseline.md` notes no per-frame trace is available yet |
 | Memory (8-hour soak) | per-app budget, no leak | **Not yet run** |
 | Repeat on an NVIDIA system | required before Beta | **Not yet run** — no NVIDIA station in the matrix yet |
 
 Evidence: [docs/perf/reference-laptop-2026-09-24.md](perf/reference-laptop-2026-09-24.md)
-is the first real run (system audit, 2026-09-24): shell surfaces were measured
-on an idle laptop (`rustc` at 0); applications were measured while a
-coordinator build started, so their launch times need a re-run. **Status:
-Fail** — idle CPU and idle wake-ups are over budget; see
-[docs/system-audit-2026-09-24.md](system-audit-2026-09-24.md).
+is the first real run (system audit, 2026-09-24); see
+[docs/system-audit-2026-09-24.md](system-audit-2026-09-24.md). This pass adds
+a 2026-09-25 read-only re-measurement of shell idle CPU only (see the Idle
+CPU row above) — command: `top -b -d 10 -n 6 -p <shell PIDs>` against the
+live session's own `rmac-dock`/`rmac-top-bar`/`rmac-wallpaper`/etc. processes,
+no changes made. **Status: Fail** — idle wake-ups and per-app idle CPU are
+unconfirmed this pass and were last measured over budget; shell idle CPU
+itself now measures well under budget.
 
 ## 3. Accessibility gates (todo.md)
 
@@ -83,19 +120,26 @@ Fail** — idle CPU and idle wake-ups are over budget; see
 |---|---|---|
 | Stable identity/role/name/state/actions on every `rmac-ui` control | **Fail** (partial) | `docs/accessibility-audit.md`: Toggle/Checkbox/Radio/dialogs/menus/toasts/traffic lights fixed this pass; `PopUpButton`, `ContextMenu` items, `ListRow`/`TreeRow` still wrap `gpui_component::Button` and are stuck at `Role::Button` until either an upstream `gpui-component`/`gpui-kit` change or a rewrite off `Button` (Blocked, not Gap, per that doc) |
 | Correct tab order, visible focus ring | **Fail** (partial) | Same doc: a shared 3pt focus ring now exists and is used on the rewritten controls; everything still wrapping `Button` keeps a hardcoded 1.5px ring it cannot override (Blocked) |
-| Full keyboard operation, no pointer-only controls | **Fail** | Journeys 3 and 4 above are the sharpest evidence: Terminal and Notes have **no accessible content surface** at all, live-confirmed, not merely a style gap |
+| Full keyboard operation, no pointer-only controls | **Fail** (much improved) | Terminal, Notes and Files' content surfaces were the sharpest evidence of this gate's worst failures — as of 2026-09-25 those are fixed and live-reconfirmed (ACC-01/02/03; journeys 2–4 above). The gate still fails: Control-F2 (menu-bar keyboard focus, journey 8), `accesskit_unix`'s missing `EditableText` (journeys 1–4), Notes' unnamed toolbar buttons (ACC-08), and `PopUpButton`/`ContextMenu`/`ListRow`/`TreeRow` stuck at `Role::Button` (Blocked, row above) |
 | Announcements for async status/errors | **Fail** (partial) | Toast fixed this pass; `EmptyState`'s error variant and list Loading/Empty/Error messages still have no role (Gap) |
-| No clipping at 200% | **Not yet run** (S) | `docs/accessibility-audit.md`: static read-through only, no rendered check at 200% |
+| No clipping at 200% | **Not yet run** (S) | `docs/accessibility-audit.md`: static read-through only, no rendered check at 200%. This pass separately confirmed (nested compositor only) that a compositor output scale of 2 doesn't collapse the AT-SPI tree — a Files window still exposed all 27 nodes with named items — but that isn't a visual-clipping check |
 | Usable high-contrast colours | **Pass** (token level) | Theme contrast-ratio tests pass; no shared component hardcodes a raw color |
 | Reduced motion from the Settings portal | **Pass** (plumbing) / **Not yet run** (exercised) | Portal → theme wiring is tested end to end, but no shared component currently animates anything, so the gate has nothing live to violate yet |
-| Verify every release journey with Orca | **Fail** | See journeys 1–4 above; 5–9 not run at all |
+| Verify every release journey with Orca | **Fail** | Orca itself has not been run against any journey (only the owner may enable it). Journeys 1–6 now have real, live or nested AT-SPI-tree evidence (see §1); 7 has live backend checks but no Settings-UI run; 8's Control-F2 gap is confirmed; 9 is Owner/manual |
 | Formal I3 accessibility-release audit (442 observations) | **Not yet run** | `docs/accessibility-release-audit.md` / `scripts/verify-accessibility-audit.py`; no evidence file committed |
 
 **This is the release-blocking category.** `todo.md` states accessibility
-gates are never waived. Terminal and Notes shipping with zero accessible
-content surfaces, and Files shipping with no accessible file list, are real,
-live-confirmed, user-facing accessibility failures in three of the eleven
-apps in this Beta — not measurement gaps.
+gates are never waived. As of 2026-09-25, Terminal, Notes and Files no
+longer ship with zero accessible content — ACC-01/02/03 are fixed and
+live-reconfirmed on the reference laptop, both via the repo's own
+`scripts/assert_*_accessibility.py` acceptance scripts (live session, exit 0
+on all three) and a nested-compositor run with real typed keystrokes (Files:
+14/16 behaviour scenarios, including working rename). What remains
+release-blocking in this category: the upstream `accesskit_unix`
+`EditableText` gap (not fixable in this repo, affects Spotlight, Terminal,
+Notes and Files' search/rename fields identically), Control-F2, the formal
+Orca/I3 audit, and the `Role::Button`-wrapped controls still Blocked on an
+upstream/rewrite decision.
 
 ## 4. Code rules (todo.md)
 
@@ -142,28 +186,41 @@ rules at all.
 
 `docs/known-limitations.md` is current and, cross-checked against the live
 journey evidence above, accurate. It already names the Dock/menu-bar
-keyboard gaps, the AT-SPI `EditableText` upstream gap, the placeholder
-top-bar mark, and the absence of a signed APT repository. It does **not**
-yet name Terminal's and Notes' complete absence of an accessible content
-surface, or Files' missing accessible file list — those are more severe
-than what's currently listed under "Accessibility limits" and should be
-added before this Beta ships, since `docs/known-limitations.md` is the doc
-this checklist and the release notes both point readers to.
+keyboard gaps and the AT-SPI `EditableText` upstream gap; as of 2026-09-25
+that gap description is no longer stale — Terminal, Notes and Files'
+previously undocumented "no accessible content at all" failures are now
+fixed (ACC-01/02/03, §1/§3), so `EditableText` really is the residual gap
+those sections describe, not an understatement of a bigger problem. The
+placeholder top-bar mark and the absence of a signed APT repository are
+also still named and accurate.
 
 ## 8. CI
 
-Not independently verified in this session — this environment has no `gh`/
-GitHub API access and no cargo, so "CI green on `dev`/`beta-release`" could
-not be checked directly. **Confirm on GitHub before tagging:**
-`dependency-policy`, `linux`, `macos`, `upstream-gpui-linux` on `ci.yml`, and
-`msrv`/`linux-aarch64` (non-blocking) on `ci-quality.yml`. Structural
-self-checks that *can* run without CI access all pass in this session (see
-§5/§6 tables and the pytest command below).
+**Checked directly this pass** via `ssh jacob@192.168.18.52 'gh run list -R
+millionrust/lulo --branch dev --limit 3'` (the laptop has `gh` auth). The
+`dev` HEAD at the start of this pass (`3ca78f24`, run
+[36151133746](https://github.com/millionrust/lulo/actions/runs/36151133746))
+is **red**:
 
+| Job | Result | Cause | Fixed this pass? |
+|---|---|---|---|
+| Dependency policy | success | — | — |
+| Linux checks | failure | `rustfmt --check` diff in `crates/text-editor/src/view/startup.rs` | **Yes** — reformatted, `rustfmt --edition 2021 --check` now clean |
+| Current GPUI Linux runtime gate | failure | same `rustfmt` diff | **Yes** |
+| Linux checks (Ubuntu 26.04, non-blocking) | failure | same `rustfmt` diff | **Yes** (non-blocking anyway) |
+| Release contracts | failure | `scripts/test_application_icons.py`: `crates/rmac-dock/assets/icons/stack-item-document.svg` (shipped, referenced by `shell/bins/rmac-dock/src/main.rs:4581` and the session-package staging/verify scripts) was never added to the `DOCK_ICONS` inventory whitelist | **Yes** — added to the whitelist; `python3 -m pytest scripts/test_application_icons.py` now 4/4 |
+| macOS checks | failure | `cargo clippy --workspace --all-targets --all-features -D warnings` on macOS: (1) `crates/rmac-updates-linux/src/transaction.rs:14` imports `FLAG_ONLY_DOWNLOAD`/`FLAG_ONLY_TRUSTED`, which are `#[cfg(any(target_os = "linux", test))]`-gated in `api.rs`, so they don't exist when checking on macOS outside `test`; (2) `crates/preview/src/view.rs:319` has two fields (`window_generation`, `print_busy`) unused under `--all-targets`' test-binary build, hit by `-D dead-code` | **No** — needs cargo + a macOS target to fix and validate safely; not attempted blind |
+| Mac behaviour parity (non-blocking) | failure | 6/23 behaviour scenarios match the Mac — already tracked (FILES-43–49, TE-19–20, ACC-09 in `docs/parity.md`), explicitly non-blocking | not applicable |
+
+This pass's two fixes are committed on this branch (`beta-checklist`) and
+validated locally (`rustfmt --edition 2021 --check
+crates/text-editor/src/view/startup.rs`; `python3 -m pytest
+scripts/test_application_icons.py`, 4 passed) — per `AGENTS.md`, no cargo was
+run on the Mac; both fixes were cross-checked against the laptop's own
+`rustfmt`/`pytest` too. The two macOS compile errors are real, current, and
+**not fixed** — they need an agent with cargo and a macOS build target.
 `linux-2604` (the Ubuntu 26.04 hosted-runner trial) is still explicitly
-non-blocking per `todo.md`; it has not yet replaced `linux`/
-`upstream-gpui-linux` as the plan calls for once its `apt` package list is
-verified.
+non-blocking per `todo.md`.
 
 ## 9. Versioning and release engineering (this pass)
 
@@ -200,18 +257,31 @@ versioning changes: `scripts/test_keyring_packages.py`,
 
 ## What actually blocks shipping 0.9.0-beta.1 today
 
-In order of severity:
+Updated 2026-09-25 (evening pass) with real evidence gathered on the
+reference laptop this session — see the go/no-go table at the top of this
+document for the current, short punch list. In order of severity:
 
-1. **Accessibility (never waived).** Terminal and Notes have no accessible
-   content surface at all; Files has no accessible file list or working
-   rename. These are live-confirmed on the reference laptop, not projected.
-2. **No real packaging install/remove/upgrade run** on a clean VM or the
-   reference laptop, and no exercised GitHub Actions release run — the
-   pipeline is well-gated and unit-tested but has never produced a real
-   `.deb` on real CI infrastructure.
-3. **No real performance measurement.** The only recorded numbers are an
-   explicitly-invalid smoke run taken during a concurrent build.
-4. **Security review: Fail (source review done, gate not met).**
+1. **CI is red on `dev`.** Two of the four causes found this pass are fixed
+   in this pass's commits (a stale `rustfmt` diff, a missing Dock icon in
+   the test inventory whitelist); two macOS-only compile errors remain open
+   and need an agent with cargo and a macOS target (§8).
+2. **Accessibility (never waived) — much improved, not clear.** Terminal,
+   Notes and Files no longer have the "zero accessible content" bugs that
+   made this the top blocker as of 2026-09-24: ACC-01/02/03 are fixed and
+   live-reconfirmed on the reference laptop this pass (§1, §3). What remains
+   release-blocking: the upstream `accesskit_unix` `EditableText` gap (not
+   fixable here), Control-F2 (journey 8), the formal Orca/I3 audit (journey
+   9, owner-only), and Notes' unnamed toolbar buttons (ACC-08).
+3. **No real packaging install/remove/upgrade run** on a clean VM or the
+   reference laptop, and no exercised GitHub Actions release run — not
+   re-verified this pass; the pipeline is well-gated and unit-tested but has
+   never produced a real `.deb` on real CI infrastructure.
+4. **Performance: partially re-measured.** Shell idle CPU is now confirmed
+   well under budget on the live laptop (§2), even under concurrent-build
+   load. Idle wake-ups and per-app idle CPU (System Settings, Files, System
+   Monitor, Clock) were not re-measured this pass and were last recorded
+   over budget.
+5. **Security review: Fail (source review done, gate not met).**
    [docs/security-review-0.9.0-beta.1.md](security-review-0.9.0-beta.1.md)
    and its canonical summary `docs/security-review-0.9.0-beta.1.json` cover
    all 80 checks of `scripts/security-review.json`. Nine findings were fixed:
@@ -222,14 +292,19 @@ In order of severity:
    findings are still open: one High (development installs never install the
    lock provider, which matters on the reference laptop), three Medium and 14
    Low. None of the Beta stations has been run, so
-   `verify-security-review.py` fails closed, as it should.
-5. **Journeys 5, 6, and 8/9 have no acceptance test at all**, live or
-   automated; journey 7 has only a source-code trace.
-6. **`docs/install.md`/`README.md` still say the product isn't ready to
+   `verify-security-review.py` fails closed, as it should. Not re-run this
+   pass.
+6. **Journey 5 has a real, reconfirmed functional bug** (Save-panel-on-
+   Untitled doesn't present properly); journey 6's headline AT-SPI blackout
+   is fixed but its full accept flow is unexercised; journey 7 has live
+   backend evidence but no Settings-UI run; journeys 8/9 remain Fail/
+   Owner-manual (§1).
+7. **`docs/install.md`/`README.md` still say the product isn't ready to
    install** — an owner-level messaging decision, not a mechanical fix.
 
 None of these are release-engineering plumbing problems — the tagging,
 packaging contracts, versioning, and pre-release workflow gating are ready
 (§5, §9). What's missing is the evidence that the product itself is safe
 and usable enough to hand to someone outside the project, which is exactly
-what `todo.md`'s accessibility/security/data-safety gates exist to prove.
+what `todo.md`'s accessibility/security/data-safety gates exist to prove —
+and, as of this pass, a real and growing share of that evidence now exists.

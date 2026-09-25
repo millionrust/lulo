@@ -36,6 +36,29 @@ Fractional scaling, mixed displays, 60/120 Hz motion, hotplug, dock/lid events,
 Bluetooth and USB devices, suspend/resume, lock recovery, and accessibility
 must be proven on the named stations before the corresponding release tier.
 
+## Touchpad recovery after resume
+
+Some Intel/amd64 laptops (the reference station included) wire their
+touchpad as a Synaptics RMI4 device reached over SMBus, with a legacy PS/2
+`psmouse` serio passthrough used only to negotiate the SMBus handover at
+boot. A suspend/resume on that stack can leave the PS/2 side unable to hand
+control back: the kernel logs
+`psmouse serioN: Failed to deactivate mouse on isa0060/serioN: -5` followed
+by `rmi4_smbus`/`rmi4_f01` resume failures, and only a non-gesture
+"PS/2 Generic Mouse" (or no pointer device at all) comes back — everywhere,
+including the GDM greeter, until reboot.
+
+The rmac-session package installs
+`/usr/lib/systemd/system-sleep/rmac-input-resume`
+(`packaging/rmac-session/system-sleep/rmac-input-resume`). systemd-logind
+runs it after every resume; it checks `/proc/bus/input/devices` for a
+working pointer device and, only when the `rmi4_smbus`/`psmouse` stack is
+present *and* no such device is found, unloads and reloads `psmouse` (and
+`rmi_smbus`) once, bounded by a short timeout, logging the outcome under the
+`rmac-input-resume` journal tag. It is a no-op on any machine that does not
+run this exact driver stack, and it never touches suspend/hibernate
+firmware settings. See [Troubleshooting](troubleshooting.md#common-failures).
+
 ## Reporting hardware results
 
 Use synthetic data and report only the public station class, architecture, GPU

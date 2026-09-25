@@ -144,6 +144,10 @@ def package_files() -> dict[str, tuple[bytes, int]]:
             _read_regular(REPO_ROOT / "scripts/linux/rmac-update-check"),
             0o755,
         ),
+        "usr/lib/systemd/system-sleep/rmac-input-resume": (
+            _read_regular(package / "system-sleep" / "rmac-input-resume"),
+            0o755,
+        ),
         "usr/share/rmac/niri/shortcuts-fallback.kdl": (
             _read_regular(package / "shortcuts-fallback.kdl"),
             0o644,

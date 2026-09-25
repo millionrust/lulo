@@ -73,6 +73,34 @@ def rendered_session_wrapper(root: Path) -> Path:
     return wrapper
 
 
+def rendered_input_resume_hook(root: Path) -> Path:
+    """The packaged rmac-input-resume systemd-sleep hook (PWR-05), with its
+    hardcoded system paths redirected into the fixture root the same way
+    rendered_session_wrapper redirects the login wrapper."""
+    source = (
+        stage_package.REPO_ROOT
+        / "packaging/rmac-session/system-sleep/rmac-input-resume"
+    ).read_text(encoding="utf-8")
+    replacements = {
+        "MODPROBE=/usr/sbin/modprobe": f"MODPROBE={root}/usr/sbin/modprobe",
+        "LSMOD=/usr/sbin/lsmod": f"LSMOD={root}/usr/sbin/lsmod",
+        "LOGGER=/usr/bin/logger": f"LOGGER={root}/usr/bin/logger",
+        "TIMEOUT_BIN=/usr/bin/timeout": f"TIMEOUT_BIN={root}/usr/bin/timeout",
+        "AWK=/usr/bin/awk": f"AWK={shutil.which('awk')}",
+        "BASENAME=/usr/bin/basename": f"BASENAME={shutil.which('basename')}",
+        "READLINK=/usr/bin/readlink": f"READLINK={shutil.which('readlink')}",
+        "INPUT_DEVICES=/proc/bus/input/devices": f"INPUT_DEVICES={root}/proc-bus-input-devices",
+        "I2C_BUS_DEVICES=/sys/bus/i2c/devices": f"I2C_BUS_DEVICES={root}/sys-bus-i2c-devices",
+    }
+    for old, new in replacements.items():
+        assert old in source, old
+        source = source.replace(old, new)
+    hook = root / "rmac-input-resume"
+    hook.write_text(source, encoding="utf-8")
+    hook.chmod(0o755)
+    return hook
+
+
 def rendered_start_script(root: Path) -> Path:
     source = (
         stage_package.REPO_ROOT / "scripts/linux/start-rmac-session.sh"
@@ -120,6 +148,75 @@ def add_wrapper_config_fixture(root: Path) -> None:
         target = shutil.which(executable)
         assert target is not None
         write_program(root / "usr/bin" / executable, f'exec "{target}" "$@"\n')
+
+
+# Captured (with identifying details removed) from the reference laptop's
+# /proc/bus/input/devices: a healthy Synaptics RMI4-over-SMBus touchpad, and
+# the "PS/2 Generic Mouse" fallback the psmouse serio deactivate failure
+# (PWR-05) leaves behind after a broken resume.
+HEALTHY_TOUCHPAD_DEVICES = (
+    'I: Bus=0018 Vendor=06cb Product=00ea Version=0100\n'
+    'N: Name="Synaptics TM2768-002"\n'
+    "P: Phys=rmi4-00/input0\n"
+    "S: Sysfs=/devices/pci0000:00/0000:00:1f.3/i2c-4/4-002c/rmi4-00/input/input25\n"
+    "U: Uniq=\n"
+    "H: Handlers=mouse2 event15 \n"
+    "B: PROP=1\n"
+    "B: EV=b\n"
+    "\n"
+)
+BROKEN_RESUME_DEVICES = (
+    "I: Bus=0011 Vendor=0002 Product=0001 Version=0000\n"
+    'N: Name="PS/2 Generic Mouse"\n'
+    "P: Phys=isa0060/serio2/input0\n"
+    "S: Sysfs=/devices/platform/i8042/serio2/input/input31\n"
+    "U: Uniq=\n"
+    "H: Handlers=mouse1 event5 \n"
+    "B: PROP=1\n"
+    "B: EV=7\n"
+    "\n"
+)
+
+
+def write_input_resume_fixture(
+    root: Path,
+    *,
+    stack_present: bool,
+    devices: str | None,
+    modprobe_script: str = 'printf "%s\\n" "$*" >>"$RMAC_TEST_MODPROBE_LOG"\nexit 0\n',
+) -> dict[str, str]:
+    """A fixture root for rendered_input_resume_hook: a fake lsmod, an
+    optional i2c device bound to the rmi4_smbus driver, a fake
+    /proc/bus/input/devices, and capturing fakes for modprobe/logger."""
+    write_program(
+        root / "usr/sbin/lsmod",
+        'printf "psmouse 225280 0\\n"\n' if stack_present else "true\n",
+    )
+    i2c_device = root / "sys-bus-i2c-devices" / "4-002c"
+    i2c_device.mkdir(parents=True)
+    if stack_present:
+        driver = root / "sys-bus-i2c-drivers" / "rmi4_smbus"
+        driver.mkdir(parents=True)
+        (i2c_device / "driver").symlink_to(
+            os.path.relpath(driver, i2c_device), target_is_directory=True
+        )
+    if devices is None:
+        # No file at all: pointer_device_present must fail closed (absent),
+        # not raise.
+        pass
+    else:
+        (root / "proc-bus-input-devices").write_text(devices, encoding="utf-8")
+    write_program(root / "usr/sbin/modprobe", modprobe_script)
+    write_program(
+        root / "usr/bin/logger",
+        'printf "%s\\n" "$*" >>"$RMAC_TEST_LOGGER_LOG"\n',
+    )
+    write_program(root / "usr/bin/timeout", "shift\nexec \"$@\"\n")
+    return {
+        **os.environ,
+        "RMAC_TEST_MODPROBE_LOG": str(root / "modprobe.log"),
+        "RMAC_TEST_LOGGER_LOG": str(root / "logger.log"),
+    }
 
 
 class SessionPackageTests(unittest.TestCase):
@@ -928,6 +1025,164 @@ class SessionPackageTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Log out and back in", result.stderr)
             self.assertNotIn("start rmac-session.target", log.read_text(encoding="utf-8"))
+
+
+class InputResumeHookTests(unittest.TestCase):
+    """PWR-05: the psmouse/rmi4-SMBus touchpad recovery hook packaged as
+    /usr/lib/systemd/system-sleep/rmac-input-resume (docs/troubleshooting.md,
+    docs/hardware-support.md)."""
+
+    def test_hook_is_staged_as_a_root_owned_executable(self):
+        files = stage_package.package_files()
+        destination = "usr/lib/systemd/system-sleep/rmac-input-resume"
+        self.assertIn(destination, files)
+        contents, mode = files[destination]
+        self.assertEqual(mode, 0o755)
+        self.assertIn(Path(destination), verify_package.EXPECTED_PATHS)
+        text = contents.decode("utf-8")
+        self.assertIn("rmi4_smbus", text)
+        self.assertIn("psmouse", text)
+        # No development path can leak into a system-package hook.
+        self.assertNotIn("%h/.local", text)
+
+    def test_hook_is_a_noop_for_the_pre_phase(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = write_input_resume_fixture(
+                root, stack_present=True, devices=BROKEN_RESUME_DEVICES
+            )
+            hook = rendered_input_resume_hook(root)
+            result = subprocess.run(
+                [str(hook), "pre", "suspend"],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((root / "modprobe.log").exists())
+            self.assertFalse((root / "logger.log").exists())
+
+    def test_hook_is_a_noop_without_the_rmi4_psmouse_stack(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = write_input_resume_fixture(
+                root, stack_present=False, devices=BROKEN_RESUME_DEVICES
+            )
+            hook = rendered_input_resume_hook(root)
+            result = subprocess.run(
+                [str(hook), "post", "suspend"],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((root / "modprobe.log").exists())
+            self.assertFalse((root / "logger.log").exists())
+
+    def test_hook_is_a_noop_when_the_touchpad_already_works(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = write_input_resume_fixture(
+                root, stack_present=True, devices=HEALTHY_TOUCHPAD_DEVICES
+            )
+            hook = rendered_input_resume_hook(root)
+            result = subprocess.run(
+                [str(hook), "post", "suspend"],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((root / "modprobe.log").exists())
+            self.assertFalse((root / "logger.log").exists())
+
+    def test_hook_reloads_psmouse_once_when_only_the_generic_mouse_returns(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = write_input_resume_fixture(
+                root, stack_present=True, devices=BROKEN_RESUME_DEVICES
+            )
+            hook = rendered_input_resume_hook(root)
+            result = subprocess.run(
+                [str(hook), "post", "suspend"],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = (root / "modprobe.log").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(
+                calls, ["-r rmi_smbus", "-r psmouse", "psmouse", "rmi_smbus"]
+            )
+            log = (root / "logger.log").read_text(encoding="utf-8")
+            self.assertIn("no working touchpad/pointer device", log)
+            self.assertIn("reloaded psmouse after resume", log)
+
+    def test_hook_treats_a_missing_devices_file_as_no_pointer_device(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = write_input_resume_fixture(
+                root, stack_present=True, devices=None
+            )
+            hook = rendered_input_resume_hook(root)
+            result = subprocess.run(
+                [str(hook), "post", "hibernate"],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(
+                "-r psmouse",
+                (root / "modprobe.log").read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "hibernate", (root / "logger.log").read_text(encoding="utf-8")
+            )
+
+    def test_hook_logs_but_does_not_fail_when_reinserting_psmouse_fails(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            environment = write_input_resume_fixture(
+                root,
+                stack_present=True,
+                devices=BROKEN_RESUME_DEVICES,
+                modprobe_script=(
+                    'printf "%s\\n" "$*" >>"$RMAC_TEST_MODPROBE_LOG"\n'
+                    'case "$*" in\n'
+                    '  psmouse) exit 1 ;;\n'
+                    "  *) exit 0 ;;\n"
+                    "esac\n"
+                ),
+            )
+            hook = rendered_input_resume_hook(root)
+            result = subprocess.run(
+                [str(hook), "post", "suspend"],
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = (root / "modprobe.log").read_text(encoding="utf-8").splitlines()
+            # The reload is attempted and its failure is logged; rmi_smbus is
+            # only reloaded once psmouse itself came back.
+            self.assertEqual(calls, ["-r rmi_smbus", "-r psmouse", "psmouse"])
+            self.assertIn(
+                "reloading psmouse after resume failed",
+                (root / "logger.log").read_text(encoding="utf-8"),
+            )
 
 
 class DevelopmentInstallLockTests(unittest.TestCase):

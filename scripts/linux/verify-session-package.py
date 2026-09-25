@@ -127,6 +127,7 @@ EXPECTED_PATHS = {
     Path("usr/libexec/rmac/rmac-wayland-session"),
     Path("usr/libexec/rmac/rmac-session-start"),
     Path("usr/libexec/rmac/rmac-update-check"),
+    Path("usr/lib/systemd/system-sleep/rmac-input-resume"),
     Path("usr/share/rmac/niri/config.kdl"),
     Path("usr/share/rmac/niri/shell.kdl"),
     Path("usr/share/rmac/niri/shortcuts-fallback.kdl"),

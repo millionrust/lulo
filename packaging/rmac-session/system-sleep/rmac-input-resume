@@ -1,0 +1,115 @@
+#!/bin/sh
+set -eu
+
+# rmac-input-resume: systemd-sleep post-resume hook.
+#
+# Some laptops wire their touchpad as a Synaptics RMI4 device over SMBus
+# (kernel driver rmi4_smbus, i2c client such as 4-002c/rmi4-00), reached
+# through a legacy PS/2 serio passthrough (psmouse) used only to negotiate
+# the SMBus handover at boot. After a suspend/resume, the PS/2 side can fail
+# to hand control back:
+#
+#   psmouse serioN: Failed to deactivate mouse on isa0060/serioN: -5
+#   rmi4_smbus M-00XX: failed to get SMBus version number!
+#   rmi4_f01 rmi4-00.fn01: Failed to restore normal operation: -6.
+#
+# and only a generic "PS/2 Generic Mouse" (no multitouch, no gestures)
+# reappears, or no pointer device at all. See docs/troubleshooting.md and
+# docs/hardware-support.md. Unloading and reloading the psmouse (and
+# rmi_smbus, where present) kernel modules after resume clears it, without
+# a reboot.
+#
+# Installed by the rmac-session package at
+# /usr/lib/systemd/system-sleep/rmac-input-resume. systemd-logind runs every
+# script in that directory as "<script> pre|post suspend|hibernate|hybrid-
+# sleep|suspend-then-hibernate" (systemd-sleep(8)); only the post phase does
+# anything here, once per resume, and it is a no-op on any machine that does
+# not run this exact rmi4-over-SMBus + psmouse passthrough stack.
+
+MODPROBE=/usr/sbin/modprobe
+LSMOD=/usr/sbin/lsmod
+LOGGER=/usr/bin/logger
+TIMEOUT_BIN=/usr/bin/timeout
+AWK=/usr/bin/awk
+BASENAME=/usr/bin/basename
+READLINK=/usr/bin/readlink
+INPUT_DEVICES=/proc/bus/input/devices
+I2C_BUS_DEVICES=/sys/bus/i2c/devices
+RELOAD_TIMEOUT_SECONDS=5
+
+log()
+{
+    "${LOGGER}" -t rmac-input-resume -- "$1" 2>/dev/null || printf 'rmac-input-resume: %s\n' "$1" >&2
+}
+
+# True only when this machine actually has the psmouse-passthrough + rmi4
+# SMBus stack loaded: an i2c device bound to the rmi4_smbus (or older
+# rmi_smbus) driver, with the psmouse module present to own its serio side.
+stack_present()
+{
+    [ -d "${I2C_BUS_DEVICES}" ] || return 1
+    "${LSMOD}" 2>/dev/null | "${AWK}" '$1 == "psmouse" { found = 1 } END { exit found ? 0 : 1 }' || return 1
+    for driver_link in "${I2C_BUS_DEVICES}"/*/driver; do
+        [ -e "${driver_link}" ] || continue
+        driver_name=$("${BASENAME}" "$("${READLINK}" -f "${driver_link}")")
+        case "${driver_name}" in
+            rmi4_smbus | rmi_smbus) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# True when /proc/bus/input/devices already lists a real pointer/touchpad
+# device with a live evdev node: an "event" handler, plus either a "mouse"
+# handler or a name that says touchpad/trackpad, and not just the bare
+# "PS/2 Generic Mouse" fallback the failure above leaves behind.
+pointer_device_present()
+{
+    [ -r "${INPUT_DEVICES}" ] || return 1
+    "${AWK}" '
+        function reset() { name = ""; handlers = "" }
+        function block_is_pointer() {
+            if (handlers !~ /event/) { return 0 }
+            if (name == "PS/2 Generic Mouse") { return 0 }
+            if (handlers ~ /mouse/) { return 1 }
+            if (tolower(name) ~ /touchpad|trackpad/) { return 1 }
+            return 0
+        }
+        BEGIN { reset() }
+        /^N: Name=/ {
+            name = $0
+            sub(/^N: Name="/, "", name)
+            sub(/"$/, "", name)
+        }
+        /^H: Handlers=/ { handlers = $0 }
+        /^$/ { if (block_is_pointer()) { found = 1 }; reset() }
+        END { if (block_is_pointer()) { found = 1 }; exit found ? 0 : 1 }
+    ' "${INPUT_DEVICES}"
+}
+
+reload_stack()
+{
+    log "no working touchpad/pointer device found after resume; reloading psmouse"
+    "${TIMEOUT_BIN}" "${RELOAD_TIMEOUT_SECONDS}" "${MODPROBE}" -r rmi_smbus >/dev/null 2>&1 || true
+    "${TIMEOUT_BIN}" "${RELOAD_TIMEOUT_SECONDS}" "${MODPROBE}" -r psmouse >/dev/null 2>&1 || true
+    if "${TIMEOUT_BIN}" "${RELOAD_TIMEOUT_SECONDS}" "${MODPROBE}" psmouse >/dev/null 2>&1; then
+        "${TIMEOUT_BIN}" "${RELOAD_TIMEOUT_SECONDS}" "${MODPROBE}" rmi_smbus >/dev/null 2>&1 || true
+        log "reloaded psmouse after resume"
+    else
+        log "reloading psmouse after resume failed"
+    fi
+}
+
+phase=${1:-}
+mode=${2:-}
+[ "${phase}" = post ] || exit 0
+
+if ! stack_present; then
+    exit 0
+fi
+if pointer_device_present; then
+    exit 0
+fi
+log "resumed from ${mode:-sleep} with no pointer device; rmi4/psmouse SMBus stack present"
+reload_stack
+exit 0

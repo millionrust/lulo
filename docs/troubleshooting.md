@@ -62,6 +62,17 @@ private content.
   it.
 - **Disconnected mount/device/display:** wait for authoritative recovery or
   move work to a known local location. Do not continue writing to a stale path.
+- **Touchpad dead after resume:** on a Synaptics RMI4 touchpad wired over
+  SMBus with a PS/2 (`psmouse`) serio passthrough, a suspend/resume can leave
+  the kernel logging `psmouse serioN: Failed to deactivate mouse … : -5` and
+  only a non-gesture "PS/2 Generic Mouse" (or no pointer device at all)
+  reappearing — everywhere, including the GDM greeter. The rmac-session
+  package installs `/usr/lib/systemd/system-sleep/rmac-input-resume`, which
+  reloads the `psmouse`/`rmi_smbus` kernel modules once after such a resume
+  and is a no-op elsewhere; see [Hardware support](hardware-support.md#touchpad-recovery-after-resume).
+  If a touchpad is still missing after that, check
+  `journalctl -k -b | grep -i psmouse` and
+  `journalctl -t rmac-input-resume -b` before filing a report.
 - **Update interrupted:** boot the stock recovery session and let APT/dpkg and
   PackageKit report their real state. Never disable signature verification.
 

@@ -333,9 +333,9 @@ Window shape (230×408, sidebar/mode toolbar buttons) matches the Mac.
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| CALC-01 | P1 | S (hide) / M (implement) | Broken | Mac's toolbar sidebar (history) and Mode buttons both work. / Lulo's have no `on_click` at all — they're dead controls. | `crates/calculator/src/view.rs:110-141` |
-| CALC-02 | P1 (Scientific) / P2 (Programmer) | M | Missing | Mac has Scientific ⌘2 (2nd, x², sin/cos/tan, π, memory) and Programmer ⌘3. / Lulo is Basic only; ShowBasic is a no-op. | `crates/calculator/src/engine.rs`, `keypad.rs` |
-| CALC-03 | P2 | S | Missing | Mac has a History ⌃⌘S sidebar of past calculations, clickable to reuse. / Lulo: absent. | — |
+| CALC-01 | P1 | S (hide) / M (implement) | Fixed 5c9f9e31 | Mac's toolbar sidebar (history) and Mode buttons both work. / Lulo's have no `on_click` at all — they're dead controls. | `crates/calculator/src/view.rs:110-141` |
+| CALC-02 | P1 (Scientific) / P2 (Programmer) | M | Fixed e7c6e42d + 5c9f9e31 (Scientific; Programmer/Convert stubbed, dimmed with "Soon", not dead). Known bug: on this niri build, Scientific's post-switch `window.resize()` settles ~24pt short of the requested size in both dimensions (last column/parens render past the card) even after c59c0b4e's retry; initial sizing via `WindowOptions` is exact, so the shortfall is specific to a runtime resize on an already-mapped window — root cause not found, needs a `gpui_linux` Wayland-backend look. | Mac has Scientific ⌘2 (2nd, x², sin/cos/tan, π, memory) and Programmer ⌘3. / Lulo is Basic only; ShowBasic is a no-op. | `crates/calculator/src/scientific.rs`, `scientific_keypad.rs`, `view.rs` |
+| CALC-03 | P2 | S | Fixed 5c9f9e31 (as part of CALC-01's sidebar button) | Mac has a History ⌃⌘S sidebar of past calculations, clickable to reuse. / Lulo: absent. | — |
 | CALC-05 | P2 | S | Missing | Mac's thousands separator follows Region and can be hidden; Decimal Places is adjustable. / Lulo hard-codes "," with no options. | `engine.rs:482-491` |
 | CALC-06 | P2 | M | Missing | Mac has Convert ⌥⌘C (units/currency) and RPN ⌘R. / Lulo: absent (Spotlight already has conversions to reuse). | — |
 | CALC-07 | P2 | S | Missing | Mac's light appearance is measured. / Lulo's light palette is unmeasured/unverified. | `keypad.rs:224` |
@@ -388,9 +388,9 @@ Window shape (960×640, 5-tab toolbar) matches the Mac.
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| MON-01 | P0 | S (filter with `Process::thread_kind()`, or turn off task enumeration) | Broken | Mac's process list shows processes, with Threads as a column. / Lulo lists every Linux **thread** as its own process via sysinfo 0.33 — the summary reads "Threads 667 / Processes 667" on a real run, and energy/disk totals likely double-count. | `crates/activity-monitor/src/process_table.rs:259-304`, `metrics_panes.rs:319-323`, `sampling.rs:76-89` |
-| MON-02 | P1 | M | Missing | Mac gives each tab its own column set (CPU/Memory/Energy/Disk/Network each have different columns, Process Name first). / Lulo shows the same six columns on every tab, PID first, no CPU Time or Threads column. | `crates/activity-monitor/src/columns.rs:28-101`, `view.rs:133-149` |
-| MON-03 | P1 | S–M | Missing | Mac has a View filter (All/My/System/Other Users'/Active/Windowed/Hierarchically), and the window subtitle follows it. / Lulo: absent — subtitle is a fixed "All Processes". | `view/render/chrome.rs:286-293` |
+| MON-01 | P0 | S (filter with `Process::thread_kind()`, or turn off task enumeration) | Fixed 9730b65a | Mac's process list shows processes, with Threads as a column. / Lulo lists every Linux **thread** as its own process via sysinfo 0.33 — the summary reads "Threads 667 / Processes 667" on a real run, and energy/disk totals likely double-count. | `crates/activity-monitor/src/process_table.rs:259-304`, `metrics_panes.rs:319-323`, `sampling.rs:76-89` |
+| MON-02 | P1 | M | Fixed 9730b65a | Mac gives each tab its own column set (CPU/Memory/Energy/Disk/Network each have different columns, Process Name first). / Lulo shows the same six columns on every tab, PID first, no CPU Time or Threads column. | `crates/activity-monitor/src/columns.rs:28-101`, `view.rs:133-149` |
+| MON-03 | P1 | S–M | Fixed 9730b65a (All/My/System/Other Users'/Active, from a new subtitle dropdown since the app-menu crate was off limits; Windowed Processes and Hierarchically still missing — Windowed needs the compositor's own window list, which this crate has no access to) | Mac has a View filter (All/My/System/Other Users'/Active/Windowed/Hierarchically), and the window subtitle follows it. / Lulo: absent — subtitle is a fixed "All Processes". | `crates/activity-monitor/src/view_filter.rs`, `view/render/chrome.rs` |
 | MON-04 | P2 | S | Missing | Mac's Energy column is a real Energy Impact score. / Lulo computes `cpu + disk_MiB × 0.5`, roughly equal to %CPU, and shows a value before %CPU has one on first refresh. | `process_table.rs:295` |
 | MON-07 | P2 | M | Missing | Mac's Inspect Process is a separate window with Memory/Statistics/Open Files/Ports tabs. / Lulo shows a modal card with 10 facts and no tabs (Open Files is easy via `/proc/<pid>/fd`). | `view/render/overlays.rs:59-171` |
 | MON-08 | P2 | S | Missing | Mac's Memory tab shows a Memory Pressure graph (green/yellow/red) plus Wired/Compressed/Cached/Swap breakdown. / Lulo shows a plain "MEMORY USED" percentage (Linux PSI at `/proc/pressure/memory` could supply pressure). | `metrics_panes.rs:343-382` |
@@ -404,7 +404,7 @@ Window shape (1024×768, 4-tab toolbar) matches the Mac.
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| CLOCK-01 | P1 (scroll) / P2 (analogue) | S / M | Broken | Mac's Stopwatch has digital and analogue views with a scrolling lap list. / Lulo is digital only, and the lap list can't scroll (`overflow_hidden`) — laps beyond the visible area are lost from view. | `crates/clock/src/view.rs:1045-1169`, `:1158` |
+| CLOCK-01 | P1 (scroll) / P2 (analogue) | S / M | Fixed dff45888 (scroll only; analogue view still missing) | Mac's Stopwatch has digital and analogue views with a scrolling lap list. / Lulo is digital only, and the lap list can't scroll (`overflow_hidden`) — laps beyond the visible area are lost from view. | `crates/clock/src/view.rs:1045-1169`, `:1158` |
 | CLOCK-02 | P2 | S | Missing | Mac Timers have presets, Recent timers, a label, a sound choice. / Lulo has none (the model has an unused `label` field). | `view.rs:1173-1394`, `countdown.rs:94` |
 | CLOCK-03 | P2 | S | Missing | Mac Alarms have a sound picker. / Lulo always uses the Alert cue. | `ring.rs:189` |
 | CLOCK-04 | P2 | S | Missing | Mac World Clock cities can be reordered and switched to a list. / Lulo only adds/removes. | `view.rs:525-652` |

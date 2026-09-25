@@ -326,6 +326,26 @@ pub fn on_accent() -> u32 {
     hex(current().colors.on_accent)
 }
 
+pub fn menu_badge_fill() -> u32 {
+    hex(current().colors.menu_badge_fill)
+}
+
+pub fn menu_badge_fill_on() -> u32 {
+    hex(current().colors.menu_badge_fill_on)
+}
+
+pub fn menu_badge_text() -> u32 {
+    hex(current().colors.menu_badge_text)
+}
+
+pub fn dialog_icon_badge_fill() -> u32 {
+    hex(current().colors.dialog_icon_badge_fill)
+}
+
+pub fn dialog_icon_badge_text() -> u32 {
+    hex(current().colors.dialog_icon_badge_text)
+}
+
 pub fn selection_text() -> u32 {
     hex(current().colors.selection_text)
 }

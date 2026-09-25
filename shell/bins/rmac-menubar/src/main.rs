@@ -1231,7 +1231,7 @@ mod linux_wayland {
                                 .top(px(menu_model::APP_ROW_HEIGHT / 2.0 - 0.75))
                                 .w(px(menu_model::CHECK_WIDTH))
                                 .h(px(1.5))
-                                .rounded(px(0.75))
+                                .rounded_full()
                                 .bg(rgba(foreground)),
                         )
                     })
@@ -2574,8 +2574,8 @@ mod linux_wayland {
                         div()
                             .w(px(68.0))
                             .h(px(68.0))
-                            .rounded(px(34.0))
-                            .bg(rgba(0xAEAEB2FF))
+                            .rounded_full()
+                            .bg(rgba(tokens::dialog_icon_badge_fill()))
                             .flex()
                             .items_center()
                             .justify_center()
@@ -2584,7 +2584,7 @@ mod linux_wayland {
                                     .w(px(36.0))
                                     .h(px(36.0))
                                     .path(menu_icon_path(confirmation.icon))
-                                    .text_color(rgba(0x3A3A3CFF)),
+                                    .text_color(rgba(tokens::dialog_icon_badge_text())),
                             ),
                     );
                     let mut body = div()
@@ -2629,7 +2629,7 @@ mod linux_wayland {
                                     div()
                                         .w(px(16.0))
                                         .h(px(16.0))
-                                        .rounded(px(8.0))
+                                        .rounded_full()
                                         .border_1()
                                         .border_color(rgba(tokens::separator()))
                                         .when(reopen_checked, |style| {
@@ -2643,7 +2643,7 @@ mod linux_wayland {
                                                 .w(px(10.0))
                                                 .h(px(10.0))
                                                 .path(menu_icon_path("checkmark"))
-                                                .text_color(rgba(0xFFFFFFFF))
+                                                .text_color(rgba(tokens::on_accent()))
                                         })),
                                 )
                                 .child(menu_model::REOPEN_WINDOWS_LABEL),
@@ -3224,13 +3224,17 @@ mod linux_wayland {
             .ml(px(menu_model::BADGE_GAP))
             .h(px(16.0))
             .px(px(8.5))
-            .rounded(px(8.0))
+            .rounded_full()
             .flex()
             .items_center()
-            .bg(rgba(if highlighted { 0xFFFFFF33 } else { 0xFFFFFF1A }))
+            .bg(rgba(if highlighted {
+                tokens::menu_badge_fill_on()
+            } else {
+                tokens::menu_badge_fill()
+            }))
             .text_size(px(11.0))
             .font_weight(gpui::FontWeight::SEMIBOLD)
-            .text_color(rgba(0xFFFFFFDB))
+            .text_color(rgba(tokens::menu_badge_text()))
             .child(text.to_owned())
     }
 

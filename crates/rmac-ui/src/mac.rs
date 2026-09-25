@@ -469,6 +469,11 @@ pub fn scrim() -> Hsla {
     crate::theme::current().colors.scrim.hsla()
 }
 
+/// Software Update's More Info table stripe.
+pub fn info_table_stripe() -> Hsla {
+    crate::theme::current().colors.info_table_stripe.hsla()
+}
+
 // Notes accent family (yellow)
 pub fn notes_accent() -> Hsla {
     crate::theme::current().colors.notes_accent.hsla()

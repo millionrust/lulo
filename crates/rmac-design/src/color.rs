@@ -125,6 +125,16 @@ pub struct Colors {
     pub menubar_text: Rgba,
     pub scrim: Rgba,
 
+    /// The menu bar's count capsule ("1 update") and its label.
+    pub menu_badge_fill: Rgba,
+    pub menu_badge_fill_on: Rgba,
+    pub menu_badge_text: Rgba,
+    /// The confirmation dialog's grey icon disc and the glyph on it.
+    pub dialog_icon_badge_fill: Rgba,
+    pub dialog_icon_badge_text: Rgba,
+    /// Software Update's More Info table stripe.
+    pub info_table_stripe: Rgba,
+
     pub system_blue: Rgba,
     pub system_purple: Rgba,
     pub system_pink: Rgba,
@@ -222,6 +232,15 @@ impl Colors {
                 menubar_text: Rgba::rgb(0x010206),
                 scrim: Rgba::from_rgba(0x00000038),
 
+                // S: the light capsule and dialog disc are not measured; the
+                // capsule mirrors the light badge (black at reduced alpha).
+                menu_badge_fill: Rgba::from_rgba(0x0000000f),
+                menu_badge_fill_on: Rgba::from_rgba(0xffffff33),
+                menu_badge_text: Rgba::from_rgba(0x000000db),
+                dialog_icon_badge_fill: Rgba::rgb(0xaeaeb2),
+                dialog_icon_badge_text: Rgba::rgb(0x3a3a3c),
+                info_table_stripe: Rgba::rgb(0xe9e9ec),
+
                 system_blue: Rgba::rgb(0x1372f9),
                 system_purple: Rgba::rgb(0xaf52de),
                 system_pink: Rgba::rgb(0xff2d55),
@@ -292,6 +311,15 @@ impl Colors {
                 button_destructive: Rgba::rgb(0x812e25),
                 menubar_text: Rgba::rgb(0xffffff),
                 scrim: Rgba::from_rgba(0x00000070),
+
+                // Measured 2026-09-24 (design-lab/menus.html,
+                // design-lab/software-update.html).
+                menu_badge_fill: Rgba::from_rgba(0xffffff1a),
+                menu_badge_fill_on: Rgba::from_rgba(0xffffff33),
+                menu_badge_text: Rgba::from_rgba(0xffffffdb),
+                dialog_icon_badge_fill: Rgba::rgb(0xaeaeb2),
+                dialog_icon_badge_text: Rgba::rgb(0x3a3a3c),
+                info_table_stripe: Rgba::rgb(0x32343d),
 
                 system_blue: Rgba::rgb(0x1372f9),
                 system_purple: Rgba::rgb(0xbf5af2),

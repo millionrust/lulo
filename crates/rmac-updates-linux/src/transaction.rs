@@ -23,6 +23,7 @@ pub(crate) const fn offline_update_flags() -> u64 {
 
 /// A PackageKit `Details` size: the download size when it reports one,
 /// otherwise the package size. Zero means unknown.
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn details_download_size(download: Option<u64>, size: Option<u64>) -> Option<u64> {
     download
         .filter(|value| *value > 0)

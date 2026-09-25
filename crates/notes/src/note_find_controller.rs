@@ -114,9 +114,9 @@ impl NotesView {
             .border_b_1()
             .border_color(row_rule())
             .child(
-                div().w(px(220.0)).child(
-                    rmac_ui::SearchField::new(&self.note_find_input).appearance(true),
-                ),
+                div()
+                    .w(px(220.0))
+                    .child(rmac_ui::SearchField::new(&self.note_find_input).appearance(true)),
             )
             .child(
                 Button::new("note-find-prev", "")
@@ -162,7 +162,10 @@ mod tests {
 
     #[test]
     fn note_find_matches_are_case_insensitive() {
-        assert_eq!(note_find_offsets("Hello hello HELLO", "hello"), vec![0, 6, 12]);
+        assert_eq!(
+            note_find_offsets("Hello hello HELLO", "hello"),
+            vec![0, 6, 12]
+        );
         assert!(note_find_offsets("no query", "").is_empty());
         assert!(note_find_offsets("nothing here", "zzz").is_empty());
     }

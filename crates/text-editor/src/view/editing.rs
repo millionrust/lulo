@@ -42,7 +42,12 @@ fn matches_needle_at(hay: &str, offset: usize, needle: &str) -> bool {
 
 /// `hay` with every `needle_len`-byte span at `offsets` (as `match_offsets`
 /// found them) replaced by `replacement`, left to right.
-fn replace_at_offsets(hay: &str, offsets: &[usize], needle_len: usize, replacement: &str) -> String {
+fn replace_at_offsets(
+    hay: &str,
+    offsets: &[usize],
+    needle_len: usize,
+    replacement: &str,
+) -> String {
     let mut result = String::with_capacity(hay.len());
     let mut cursor = 0;
     for &offset in offsets {
@@ -348,6 +353,9 @@ mod tests {
     fn replace_all_is_case_insensitive_and_keeps_the_replacement_case() {
         let hay = "Cat cat CATS";
         let offsets = match_offsets(hay, "cat");
-        assert_eq!(replace_at_offsets(hay, &offsets, "cat".len(), "dog"), "dog dog dogS");
+        assert_eq!(
+            replace_at_offsets(hay, &offsets, "cat".len(), "dog"),
+            "dog dog dogS"
+        );
     }
 }

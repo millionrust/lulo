@@ -108,9 +108,9 @@ impl NotesView {
             .on_action(
                 cx.listener(|this, _: &FindInNote, window, cx| this.toggle_note_find(window, cx)),
             )
-            .on_action(cx.listener(|this, _: &FindInNoteNext, window, cx| {
-                this.note_find_next(window, cx)
-            }))
+            .on_action(
+                cx.listener(|this, _: &FindInNoteNext, window, cx| this.note_find_next(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &FindInNotePrevious, window, cx| {
                 this.note_find_previous(window, cx)
             }))

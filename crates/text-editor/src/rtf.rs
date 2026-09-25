@@ -443,7 +443,11 @@ pub mod portable {
                     && run.size == self.style.size
             });
             if continues {
-                self.runs.last_mut().expect("checked above").text.push_str(text);
+                self.runs
+                    .last_mut()
+                    .expect("checked above")
+                    .text
+                    .push_str(text);
             } else {
                 self.runs.push(RtfRun {
                     text: text.to_owned(),
@@ -528,7 +532,11 @@ pub mod portable {
             };
             if first.is_ascii_alphabetic() {
                 let word_start = self.pos;
-                while self.bytes.get(self.pos).is_some_and(u8::is_ascii_alphabetic) {
+                while self
+                    .bytes
+                    .get(self.pos)
+                    .is_some_and(u8::is_ascii_alphabetic)
+                {
                     self.pos += 1;
                 }
                 let word = std::str::from_utf8(&self.bytes[word_start..self.pos])
@@ -700,9 +708,7 @@ pub mod portable {
             // next to each other, which a JSON-style tool layer could read
             // as its own `\uXXXX` escape.
             let euro_codepoint = 8364;
-            let rtf = format!(
-                "{{\\rtf1\\ansi \\uc1\\u{euro_codepoint}? caf\\'e9}}"
-            );
+            let rtf = format!("{{\\rtf1\\ansi \\uc1\\u{euro_codepoint}? caf\\'e9}}");
             let runs = parse_rtf(rtf.as_bytes()).expect("valid rtf");
             assert_eq!(joined(&runs), "\u{20AC} caf\u{e9}");
         }

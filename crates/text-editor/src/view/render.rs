@@ -14,9 +14,9 @@ use rmac_ui::{mac, Button, SearchField, TextField};
 
 use crate::{
     document, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, ExportPdf, FindNext,
-    FindPrev, IncreaseFont, NewFile, OpenFile, PrintFile, SaveFile, SaveFileAs,
-    SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom,
-    SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ToggleFind, ToggleMono, ToggleReplace,
+    FindPrev, IncreaseFont, NewFile, OpenFile, PrintFile, SaveFile, SaveFileAs, SetEncodingUtf16Be,
+    SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf,
+    SetLineEndingLf, ToggleFind, ToggleMono, ToggleReplace,
 };
 
 use super::{

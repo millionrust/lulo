@@ -189,10 +189,13 @@ impl NotesView {
         let expected_revision = note.revision;
         self.pending_undo_trash = Some((note_id, expected_revision));
         self.message = Some("Note deleted.".into());
-        self.send_action(LibraryAction::TrashNote {
-            note_id,
-            expected_revision,
-        }, cx);
+        self.send_action(
+            LibraryAction::TrashNote {
+                note_id,
+                expected_revision,
+            },
+            cx,
+        );
         cx.notify();
         // Undo stays offered for a few seconds, like a Mac toast, then the
         // banner clears itself — unless a newer delete already replaced it.

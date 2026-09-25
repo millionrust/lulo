@@ -329,10 +329,12 @@ mod tests {
 
     #[test]
     fn clock_parts_split_the_date_from_the_time() {
-        let mut settings = rmac_shell_settings::ClockSettings::default();
-        settings.show_date = true;
-        settings.show_seconds = false;
-        settings.format = rmac_shell_settings::ClockFormat::TwelveHour;
+        let mut settings = rmac_shell_settings::ClockSettings {
+            show_date: true,
+            show_seconds: false,
+            format: rmac_shell_settings::ClockFormat::TwelveHour,
+            ..Default::default()
+        };
         assert_eq!(
             top_bar_clock_parts(&settings),
             (Some("%a %-d %b"), "%-I:%M %p")
@@ -349,8 +351,10 @@ mod tests {
 
     #[test]
     fn unavailable_sound_is_not_shown_as_a_meaningless_status_item() {
-        let mut snapshot = rmac_shell_status::Snapshot::default();
-        snapshot.sound = Some(rmac_shell_status::SoundIndicator::default());
+        let snapshot = rmac_shell_status::Snapshot {
+            sound: Some(rmac_shell_status::SoundIndicator::default()),
+            ..Default::default()
+        };
 
         let labels = top_bar_indicator_labels(&snapshot);
         assert!(labels.is_empty());
@@ -358,17 +362,19 @@ mod tests {
 
     #[test]
     fn live_indicators_have_human_accessible_state() {
-        let mut snapshot = rmac_shell_status::Snapshot::default();
-        snapshot.network = Some(rmac_shell_status::NetworkIndicator {
-            state: rmac_shell_status::NetworkState::Connected,
-            connection_name: Some("Home".into()),
-            wifi_bars: Some(3),
-        });
-        snapshot.sound = Some(rmac_shell_status::SoundIndicator {
-            available: true,
-            volume: 37,
-            muted: false,
-        });
+        let snapshot = rmac_shell_status::Snapshot {
+            network: Some(rmac_shell_status::NetworkIndicator {
+                state: rmac_shell_status::NetworkState::Connected,
+                connection_name: Some("Home".into()),
+                wifi_bars: Some(3),
+            }),
+            sound: Some(rmac_shell_status::SoundIndicator {
+                available: true,
+                volume: 37,
+                muted: false,
+            }),
+            ..Default::default()
+        };
 
         // Sound lives in Control Center, as on macOS, not in the menu bar.
         let labels = top_bar_indicator_labels(&snapshot);

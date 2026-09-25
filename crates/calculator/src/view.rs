@@ -519,6 +519,13 @@ impl CalculatorView {
                 text.chars().map(|c| c.len_utf8() as u8).collect::<Vec<_>>(),
             );
             builder.push_child(id, node);
+            // A Label's AT-SPI Name is computed from its text-run content
+            // (the number itself), so `aria_label` alone never reaches it;
+            // `run_lulo.py`'s `fact_display` instead looks for "display" in
+            // the node's name *or description* — set the description here
+            // rather than through `with_description` (which uses its own
+            // `a11y_synthetic_children` hook and would replace this one).
+            builder.parent_node().set_description("Display");
         }
     }
 

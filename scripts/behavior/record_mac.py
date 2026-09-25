@@ -321,6 +321,36 @@ function run() {{
             f"click menu item {as_string(items[-1])} of menu 1 of {target}"
         )
 
+    def click_key(self, row: int, col: int) -> None:
+        """Click a Scientific-mode calculator key by its (row, column) in
+        `crates/calculator/src/scientific_keypad.rs::LAYOUT`. Real macOS
+        Calculator does not expose a usable accessible name for these keys
+        (their AXTitle/AXDescription are generic), so `select` (an
+        accessible-name click) cannot find them; this instead reads the
+        focused window's own position live and clicks the key's measured
+        offset from it (`KEYPAD_LEFT`/`KEYPAD_TOP`/`KEY_PITCH_X/Y` in that
+        same file), the same way this scenario was originally recorded by
+        hand with `click at`."""
+
+        if self.process != "Calculator":
+            raise Stop("click_key is only defined for calculator scenarios")
+        self.check_target()
+        origin = osascript(
+            f'tell application "System Events" to tell process {as_string(self.process)} '
+            "to get position of window 1"
+        )
+        window_x, window_y = (float(value.strip().rstrip(",")) for value in origin.split())
+        keypad_left, keypad_top = 10.0, 132.0
+        pitch_x, pitch_y = 66.0, 54.0
+        key_width, key_height = 60.0, 48.0
+        x = window_x + keypad_left + col * pitch_x + key_width / 2
+        y = window_y + keypad_top + row * pitch_y + key_height / 2
+        subprocess.run(
+            [sys.executable, str(HERE / "mac_click.py"), "left", str(x), str(y)],
+            check=True,
+            timeout=10,
+        )
+
     def run_steps(self) -> dict[str, Any]:
         observations: dict[str, Any] = {}
         for step in self.scenario["steps"]:
@@ -337,6 +367,8 @@ function run() {{
                 self.context(step["context"])
             elif "menu" in step:
                 self.menu(step["menu"])
+            elif "click_key" in step:
+                self.click_key(step["row"], step["col"])
             elif "focus_desktop" in step:
                 osascript('tell application "Finder" to activate')
                 self.check_target()

@@ -512,6 +512,7 @@ impl CalculatorView {
     /// use since it names an `InputState` field, not a static result).
     fn accessible_display_text(text: String) -> impl FnOnce(&mut A11ySubtreeBuilder) + 'static {
         move |builder| {
+            let text = flatten_superscript_digits(&text);
             let id = builder.synthetic_node_id(("display-text", 0usize));
             let mut node = accesskit::Node::new(accesskit::Role::TextRun);
             node.set_value(text.clone());
@@ -659,10 +660,8 @@ impl CalculatorView {
         let highlighted = self.scientific.highlighted_operator();
         let selected = match key {
             scientific::Key::Operator(operator) => highlighted == Some(operator),
-            scientific::Key::PowerOrRoot => matches!(
-                highlighted,
-                Some(scientific::BinaryOp::Power | scientific::BinaryOp::Root)
-            ),
+            scientific::Key::Power => highlighted == Some(scientific::BinaryOp::Power),
+            scientific::Key::YRoot => highlighted == Some(scientific::BinaryOp::Root),
             _ => false,
         };
         let (fill, label) = match scientific_keypad::key_style(key) {
@@ -719,7 +718,7 @@ impl CalculatorView {
                 .into_any_element(),
             scientific_keypad::KeyFace::Glyph(path) => svg()
                 .path(path)
-                .size(px(scientific_keypad::GLYPH_SIZE * 0.8))
+                .size(px(scientific_keypad::GLYPH_SIZE))
                 .text_color(rgb(label))
                 .into_any_element(),
         };
@@ -733,8 +732,9 @@ impl CalculatorView {
             .absolute()
             .left(px(x))
             .top(px(y))
-            .size(px(scientific_keypad::KEY_DIAMETER))
-            .rounded_full()
+            .w(px(scientific_keypad::KEY_WIDTH))
+            .h(px(scientific_keypad::KEY_HEIGHT))
+            .rounded(px(scientific_keypad::KEY_HEIGHT / 2.0))
             .bg(rgb(if flashing { pressed_fill } else { fill }))
             .border_1()
             .border_color(rgba(palette.rim))
@@ -745,6 +745,42 @@ impl CalculatorView {
             .child(face)
             .on_click(cx.listener(move |this, _, _, cx| this.press_scientific(key, cx)))
     }
+}
+
+/// Replace Unicode superscript digits with their plain ASCII equivalents,
+/// for the accessible text only (the visible glyph keeps the real
+/// superscript). Measured on the Mac (macOS 26.2, 2026-09-25,
+/// `tests/behavior/calculator/scientific.json`): Scientific's `x²` shows a
+/// raised "2" on screen, but AX reads the display's value as the plain
+/// digits "22", not "2²" — Calculator's exponent is a baseline-offset
+/// attribute on an ordinary digit, not a distinct character, and AX drops
+/// text attributes. Lulo's engine (`scientific.rs`) uses the real Unicode
+/// superscript characters for on-screen formula text (`format!("{d}²")`,
+/// `"sin⁻¹({d})"`, …) since GPUI has no per-character baseline offset; this
+/// flattens the same way only where it was actually measured — plain
+/// exponent digits (`⁰`–`⁹`) — leaving other superscript glyphs (`⁻¹`, `ʸ`,
+/// …) alone, since no capture exists yet to say how those read on the Mac.
+fn flatten_superscript_digits(text: &str) -> String {
+    const SUPERSCRIPTS: [(char, char); 10] = [
+        ('⁰', '0'),
+        ('¹', '1'),
+        ('²', '2'),
+        ('³', '3'),
+        ('⁴', '4'),
+        ('⁵', '5'),
+        ('⁶', '6'),
+        ('⁷', '7'),
+        ('⁸', '8'),
+        ('⁹', '9'),
+    ];
+    text.chars()
+        .map(|c| {
+            SUPERSCRIPTS
+                .iter()
+                .find_map(|(super_digit, plain)| (c == *super_digit).then_some(*plain))
+                .unwrap_or(c)
+        })
+        .collect()
 }
 
 /// Composite a 0xRRGGBBAA overlay onto an opaque 0xRRGGBB colour.
@@ -770,7 +806,7 @@ impl Render for CalculatorView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = palette();
         let mode = self.mode;
-        let mut keys = Vec::with_capacity(45);
+        let mut keys = Vec::with_capacity(50);
         match mode {
             Mode::Basic => {
                 for (row, keys_in_row) in keypad::LAYOUT.iter().enumerate() {
@@ -785,7 +821,6 @@ impl Render for CalculatorView {
             Mode::Scientific => {
                 for (row, keys_in_row) in scientific_keypad::LAYOUT.iter().enumerate() {
                     for (column, key) in keys_in_row.iter().enumerate() {
-                        let Some(key) = key else { continue };
                         keys.push(
                             self.render_scientific_key(*key, row, column, palette, cx)
                                 .into_any_element(),
@@ -794,6 +829,12 @@ impl Render for CalculatorView {
                 }
             }
         }
+        // The Mac shows a small persistent "Rad" label above the keypad
+        // whenever radians is active — separate from the toggle key itself,
+        // which always names the *other* mode (see `scientific_keypad`'s
+        // doc comment).
+        let show_angle_indicator = mode == Mode::Scientific
+            && self.scientific.angle_mode() == scientific::AngleMode::Radians;
         let window_width = self.window_width();
         let window_height = self.window_height();
         div()
@@ -823,6 +864,17 @@ impl Render for CalculatorView {
             .child(self.render_toolbar(palette, window, cx))
             .child(self.render_display(palette))
             .children(keys)
+            .when(show_angle_indicator, |el| {
+                el.child(
+                    div()
+                        .absolute()
+                        .left(px(scientific_keypad::KEYPAD_LEFT))
+                        .top(px(scientific_keypad::ANGLE_INDICATOR_TOP))
+                        .text_size(px(scientific_keypad::ANGLE_INDICATOR_SIZE))
+                        .text_color(rgb(palette.expression))
+                        .child("Rad"),
+                )
+            })
             .when(self.mode_menu_open, |el| {
                 el.child(self.render_mode_menu(palette, cx))
             })
@@ -834,7 +886,7 @@ impl Render for CalculatorView {
 
 #[cfg(test)]
 mod tests {
-    use super::blend;
+    use super::{blend, flatten_superscript_digits};
 
     #[test]
     fn blend_mixes_overlay_by_alpha() {
@@ -842,5 +894,16 @@ mod tests {
         assert_eq!(blend(0x000000, 0xFFFFFFFF), 0xFFFFFF);
         assert_eq!(blend(0x000000, 0xFFFFFF80), 0x808080);
         assert_eq!(blend(0xFF9200, 0x00000000), 0xFF9200);
+    }
+
+    #[test]
+    fn flatten_superscript_digits_matches_the_macs_measured_ax_text() {
+        // Measured: Scientific's "2²" (a raised "2" on screen) reads as the
+        // plain digits "22" to AX, not "2²".
+        assert_eq!(flatten_superscript_digits("2²"), "22");
+        assert_eq!(flatten_superscript_digits("1,024³"), "1,0243");
+        // Left alone: unmeasured superscript glyphs, and plain text.
+        assert_eq!(flatten_superscript_digits("sin⁻¹(1)"), "sin⁻¹(1)");
+        assert_eq!(flatten_superscript_digits("42"), "42");
     }
 }

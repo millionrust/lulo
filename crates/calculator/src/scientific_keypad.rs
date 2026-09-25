@@ -1,45 +1,67 @@
 //! Scientific-mode keypad layout, metrics and keyboard mapping (CALC-02).
 //!
-//! **None of this geometry is measured.** The audit
-//! (`docs/parity-audit-2026-09-24-apps.md`, "5. Calculator") only measured
-//! Basic mode (230×408 on the Mac); it never opened Scientific, so there is
-//! no capture to read pixels from here. Every constant below is an estimate,
-//! marked `// S`, built from Basic's *measured* 48 pt / 54 pt circular-key
-//! grid (`crate::keypad`) plus the standard nine-column, five-row macOS
-//! Scientific key set (2nd, x²/x³/xʸ, eˣ/10ˣ, trig, memory, parentheses — the
-//! same keys `crates/calculator/src/scientific.rs` implements).
+//! Measured live from the owner's Mac (macOS 26.2, 2026-09-25): opened
+//! Calculator, switched to Scientific (View ▸ Scientific), and read the AX
+//! tree with System Events (`position`/`size` of every button) plus a
+//! `screencapture -x` capture read pixel-for-pixel. Both agree to the point:
 //!
-//! The estimate keeps Basic's 5-row rhythm and 6 pt key gap, but a uniform
-//! grid wide enough for nine columns within the requested ~330–350 pt width
-//! cannot also keep Basic's 54 pt row pitch inside ~406–408 pt of height —
-//! nine columns of 54 pt keys would be 524 pt wide. This mock instead shrinks
-//! every key uniformly (30 pt circles on a 36 pt pitch, the same 6 pt gap
-//! ratio as Basic) so the grid stays square and legible; the trade-off is a
-//! shorter window (316 pt) than the "same height" suggestion in the design
-//! brief. `design-lab/calculator.html` shows the reasoning next to the mock.
+//! - Window: **674 × 408** (content size; height matches Basic's own
+//!   406/408 — see `keypad.rs`'s doc comment on that 2 pt discrepancy —
+//!   reused here rather than re-litigated).
+//! - **10 columns × 5 rows**, all 50 cells filled (no unused slots, unlike
+//!   earlier guesses). The rightmost 4 columns are *exactly* Basic's own
+//!   4-column digit/operator grid (`⌫ AC % ÷` / `7 8 9 ×` / `4 5 6 −` /
+//!   `1 2 3 +` / `± 0 . =`), with 6 function columns prepended.
+//! - Keys are **60 × 48 pt stadium-rounded pills** (corner radius = height
+//!   ÷ 2 = 24, i.e. fully rounded top and bottom, straight sides) on a
+//!   **66 × 54 pt pitch** — a 6 pt gap on both axes, matching Basic's own
+//!   gap ratio. Row pitch (54) and origin (10, 132) are exactly Basic's;
+//!   only the column pitch (66, vs Basic's 54) and column count are new.
+//! - Toolbar, traffic lights and display geometry are all unchanged from
+//!   Basic (same 52 pt toolbar, same two-line display); only the two
+//!   toolbar buttons' x position moves with the new width (mode button
+//!   keeps Basic's measured 26 pt margin from the trailing edge; the
+//!   sidebar button keeps Basic's absolute 124 pt from the leading edge).
+//!
+//! Confirmed by clicking real keys (`click at` + reading the AX tree, not
+//! guessed): `2nd` toggles `eˣ`↔`yˣ`, `10ˣ`↔`2ˣ`, `ln`↔`logᵧ`,
+//! `log₁₀`↔`log₂`, and the trig/hyperbolic-trig rows to their inverses —
+//! `x²`, `x³`, `xʸ`, `²√x`, `³√x`, `ʸ√x` and `1/x` do **not** change with
+//! `2nd`, they are permanent keys. Rad/Deg additionally shows a small
+//! persistent label above the keypad naming the *active* mode (separate
+//! from the toggle key, which always names the mode pressing it would
+//! switch *to* — `view.rs` renders it).
 use crate::keypad::{self, KeyStyle, Palette};
-use crate::scientific::{AngleMode, BinaryOp, Key, UnaryFn};
+use crate::scientific::{AngleMode, BinaryOp, Key};
 
-/// Content size of the fixed-size window. Both dimensions are S.
-pub const WINDOW_WIDTH: f32 = 338.0; // S
-pub const WINDOW_HEIGHT: f32 = 316.0; // S
+/// Content size of the fixed-size window. Measured.
+pub const WINDOW_WIDTH: f32 = 674.0;
+/// Reuses Basic's own constant, including its documented 2 pt discrepancy
+/// against the true measured 408 — see `keypad.rs`. Scientific's toolbar,
+/// row count and row pitch are identical to Basic's, so re-deriving a
+/// different number here would be a new mismatch, not a fix.
+pub const WINDOW_HEIGHT: f32 = keypad::WINDOW_HEIGHT;
 
-/// Keys are 30 pt circles on a 36 pt pitch (a 6 pt gap, the same ratio as
-/// Basic's 48 pt / 54 pt grid). S.
-pub const KEY_DIAMETER: f32 = 30.0; // S
-pub const KEY_PITCH: f32 = 36.0; // S
+/// Keys are 60 × 48 pt stadium pills (corner radius `KEY_HEIGHT / 2`) on a
+/// 66 × 54 pt pitch (a 6 pt gap on both axes, matching Basic's ratio).
+pub const KEY_WIDTH: f32 = 60.0;
+pub const KEY_HEIGHT: f32 = 48.0;
+pub const KEY_PITCH_X: f32 = 66.0;
+/// Row pitch, reused unchanged from Basic.
+pub const KEY_PITCH_Y: f32 = keypad::KEY_PITCH;
 /// Left edge of the first key column and top edge of the first key row.
-/// Reuses Basic's measured margins unchanged. S (applied to a new grid).
+/// Reuses Basic's measured margins unchanged.
 pub const KEYPAD_LEFT: f32 = keypad::KEYPAD_LEFT;
 pub const KEYPAD_TOP: f32 = keypad::KEYPAD_TOP;
+pub const COLUMNS: usize = 10;
+pub const ROWS: usize = 5;
 
-/// Toolbar buttons keep Basic's measured 36 pt diameter and the traffic
-/// lights' measured position; only their x position is new (S), keeping
-/// Basic's measured 80 pt gap between the two buttons and its 26 pt margin
-/// from the mode button to the window's trailing edge.
+/// Toolbar buttons keep Basic's measured 36 pt diameter. The sidebar
+/// (history) button keeps Basic's absolute x position; the mode button
+/// keeps Basic's measured 26 pt margin from the window's trailing edge.
 pub const TOOLBAR_BUTTON_DIAMETER: f32 = keypad::TOOLBAR_BUTTON_DIAMETER;
-pub const MODE_BUTTON_CENTER_X: f32 = WINDOW_WIDTH - 26.0; // S
-pub const SIDEBAR_BUTTON_CENTER_X: f32 = MODE_BUTTON_CENTER_X - 80.0; // S
+pub const SIDEBAR_BUTTON_CENTER_X: f32 = keypad::SIDEBAR_BUTTON_CENTER_X;
+pub const MODE_BUTTON_CENTER_X: f32 = WINDOW_WIDTH - 26.0;
 
 /// The display geometry (insets, line positions, font sizes) is shared with
 /// Basic mode: same toolbar height, same two-line layout, just a wider box
@@ -53,79 +75,92 @@ pub const RESULT_LINE: f32 = keypad::RESULT_LINE;
 pub const RESULT_MAX_SIZE: f32 = keypad::RESULT_MAX_SIZE;
 pub const RESULT_MIN_SIZE: f32 = keypad::RESULT_MIN_SIZE;
 
-/// Function-key labels are shorter than Basic's digits, so they run smaller.
-pub const LABEL_SIZE: f32 = 15.0; // S
-/// Digits and the four basic operators keep Basic's label size.
+/// Function-key label size. Not pixel-measured (the Mac auto-shrinks long
+/// labels like `log₁₀`/`sinh⁻¹` per-string rather than using one fixed
+/// size); this is a reasonable fit for the widest labels in a 60 pt pill.
+pub const LABEL_SIZE: f32 = 17.0; // S: reasonable fit, not measured per-glyph.
+/// Digits and the four basic operators keep Basic's measured label size.
 pub const DIGIT_LABEL_SIZE: f32 = keypad::LABEL_SIZE;
 pub const GLYPH_SIZE: f32 = keypad::GLYPH_SIZE;
 
-/// Nine columns (five function columns, then Basic's four digit/operator
-/// columns), five rows. `None` cells are unused — the function set (22 keys)
-/// does not fill all 25 function-column slots. S throughout: this is the
-/// estimated key placement, not a measured grid.
-pub const LAYOUT: [[Option<Key>; 9]; 5] = [
+/// The small "Rad"/nothing indicator above the keypad, shown only while
+/// radians is active (see the module doc comment). Position estimated from
+/// the capture (it sits left-aligned, just above row 1); not pixel-measured
+/// to the point.
+pub const ANGLE_INDICATOR_TOP: f32 = KEYPAD_TOP - 20.0; // S
+pub const ANGLE_INDICATOR_SIZE: f32 = 12.0; // S
+
+/// Rows top to bottom, columns left to right, exactly as read from the Mac.
+/// Every cell is filled — unlike the old (unmeasured) 9-column guess, there
+/// are no unused slots.
+pub const LAYOUT: [[Key; COLUMNS]; ROWS] = [
     [
-        Some(Key::MemoryClear),
-        Some(Key::MemoryAdd),
-        Some(Key::MemorySubtract),
-        Some(Key::MemoryRecall),
-        Some(Key::OpenParen),
-        Some(Key::Backspace),
-        Some(Key::Clear),
-        Some(Key::Percent),
-        Some(Key::Operator(BinaryOp::Divide)),
+        Key::OpenParen,
+        Key::CloseParen,
+        Key::MemoryClear,
+        Key::MemoryAdd,
+        Key::MemorySubtract,
+        Key::MemoryRecall,
+        Key::Backspace,
+        Key::Clear,
+        Key::Percent,
+        Key::Operator(BinaryOp::Divide),
     ],
     [
-        Some(Key::Second),
-        Some(Key::Unary(UnaryFn::SquareOrRoot)),
-        Some(Key::Unary(UnaryFn::CubeOrCbrt)),
-        Some(Key::PowerOrRoot),
-        Some(Key::Unary(UnaryFn::ExpOrLn)),
-        Some(Key::Digit(7)),
-        Some(Key::Digit(8)),
-        Some(Key::Digit(9)),
-        Some(Key::Operator(BinaryOp::Multiply)),
+        Key::Second,
+        Key::Square,
+        Key::Cube,
+        Key::Power,
+        Key::ExpOrYPower,
+        Key::TenPowOrTwoPow,
+        Key::Digit(7),
+        Key::Digit(8),
+        Key::Digit(9),
+        Key::Operator(BinaryOp::Multiply),
     ],
     [
-        Some(Key::Unary(UnaryFn::TenPowOrLog10)),
-        Some(Key::Unary(UnaryFn::Sin)),
-        Some(Key::Unary(UnaryFn::Cos)),
-        Some(Key::Unary(UnaryFn::Tan)),
-        Some(Key::Unary(UnaryFn::Reciprocal)),
-        Some(Key::Digit(4)),
-        Some(Key::Digit(5)),
-        Some(Key::Digit(6)),
-        Some(Key::Operator(BinaryOp::Subtract)),
+        Key::Reciprocal,
+        Key::SquareRoot,
+        Key::CubeRoot,
+        Key::YRoot,
+        Key::LnOrLogY,
+        Key::Log10OrLog2,
+        Key::Digit(4),
+        Key::Digit(5),
+        Key::Digit(6),
+        Key::Operator(BinaryOp::Subtract),
     ],
     [
-        Some(Key::Unary(UnaryFn::Factorial)),
-        Some(Key::Pi),
-        Some(Key::E),
-        Some(Key::Rand),
-        Some(Key::Ee),
-        Some(Key::Digit(1)),
-        Some(Key::Digit(2)),
-        Some(Key::Digit(3)),
-        Some(Key::Operator(BinaryOp::Add)),
+        Key::Factorial,
+        Key::Sin,
+        Key::Cos,
+        Key::Tan,
+        Key::E,
+        Key::Ee,
+        Key::Digit(1),
+        Key::Digit(2),
+        Key::Digit(3),
+        Key::Operator(BinaryOp::Add),
     ],
     [
-        Some(Key::RadDeg),
-        Some(Key::CloseParen),
-        None,
-        None,
-        None,
-        Some(Key::ToggleSign),
-        Some(Key::Digit(0)),
-        Some(Key::Decimal),
-        Some(Key::Equals),
+        Key::Rand,
+        Key::Sinh,
+        Key::Cosh,
+        Key::Tanh,
+        Key::Pi,
+        Key::RadDeg,
+        Key::ToggleSign,
+        Key::Digit(0),
+        Key::Decimal,
+        Key::Equals,
     ],
 ];
 
 /// Top-left corner of the key at `row`, `column`.
 pub fn key_origin(row: usize, column: usize) -> (f32, f32) {
     (
-        KEYPAD_LEFT + column as f32 * KEY_PITCH,
-        KEYPAD_TOP + row as f32 * KEY_PITCH,
+        KEYPAD_LEFT + column as f32 * KEY_PITCH_X,
+        KEYPAD_TOP + row as f32 * KEY_PITCH_Y,
     )
 }
 
@@ -161,26 +196,35 @@ pub fn key_face(key: Key, second: bool, angle: AngleMode) -> KeyFace {
         Key::Operator(BinaryOp::Subtract) => KeyFace::Glyph("icons/calculator/minus.svg"),
         Key::Operator(BinaryOp::Multiply) => KeyFace::Glyph("icons/calculator/multiply.svg"),
         Key::Operator(BinaryOp::Divide) => KeyFace::Glyph("icons/calculator/divide.svg"),
-        // Never placed on the keypad directly (PowerOrRoot is used instead),
-        // kept only so this match stays exhaustive over `BinaryOp`.
-        Key::Operator(BinaryOp::Power | BinaryOp::Root) => KeyFace::Text("xʸ"),
-        Key::PowerOrRoot => KeyFace::Text(if second { "ʸ√x" } else { "xʸ" }),
+        // Never placed on the keypad directly (Power/YRoot keys are used
+        // instead), kept only so this match stays exhaustive over `BinaryOp`.
+        Key::Operator(BinaryOp::Power | BinaryOp::Root | BinaryOp::LogBase) => KeyFace::Text("xʸ"),
         Key::Second => KeyFace::Text("2nd"),
-        Key::Unary(UnaryFn::SquareOrRoot) => KeyFace::Text(if second { "√x" } else { "x²" }),
-        Key::Unary(UnaryFn::CubeOrCbrt) => KeyFace::Text(if second { "∛x" } else { "x³" }),
-        Key::Unary(UnaryFn::ExpOrLn) => KeyFace::Text(if second { "ln" } else { "eˣ" }),
-        Key::Unary(UnaryFn::TenPowOrLog10) => {
-            KeyFace::Text(if second { "log₁₀" } else { "10ˣ" })
-        }
-        Key::Unary(UnaryFn::Sin) => KeyFace::Text(if second { "sin⁻¹" } else { "sin" }),
-        Key::Unary(UnaryFn::Cos) => KeyFace::Text(if second { "cos⁻¹" } else { "cos" }),
-        Key::Unary(UnaryFn::Tan) => KeyFace::Text(if second { "tan⁻¹" } else { "tan" }),
-        Key::Unary(UnaryFn::Reciprocal) => KeyFace::Text("1/x"),
-        Key::Unary(UnaryFn::Factorial) => KeyFace::Text("x!"),
+        Key::Square => KeyFace::Text("x²"),
+        Key::Cube => KeyFace::Text("x³"),
+        Key::Power => KeyFace::Text("xʸ"),
+        Key::SquareRoot => KeyFace::Text("²√x"),
+        Key::CubeRoot => KeyFace::Text("³√x"),
+        Key::YRoot => KeyFace::Text("ʸ√x"),
+        Key::Reciprocal => KeyFace::Text("1/x"),
+        Key::Factorial => KeyFace::Text("x!"),
+        Key::ExpOrYPower => KeyFace::Text(if second { "yˣ" } else { "eˣ" }),
+        Key::TenPowOrTwoPow => KeyFace::Text(if second { "2ˣ" } else { "10ˣ" }),
+        Key::LnOrLogY => KeyFace::Text(if second { "logᵧ" } else { "ln" }),
+        Key::Log10OrLog2 => KeyFace::Text(if second { "log₂" } else { "log₁₀" }),
+        Key::Sin => KeyFace::Text(if second { "sin⁻¹" } else { "sin" }),
+        Key::Cos => KeyFace::Text(if second { "cos⁻¹" } else { "cos" }),
+        Key::Tan => KeyFace::Text(if second { "tan⁻¹" } else { "tan" }),
+        Key::Sinh => KeyFace::Text(if second { "sinh⁻¹" } else { "sinh" }),
+        Key::Cosh => KeyFace::Text(if second { "cosh⁻¹" } else { "cosh" }),
+        Key::Tanh => KeyFace::Text(if second { "tanh⁻¹" } else { "tanh" }),
         Key::Pi => KeyFace::Text("π"),
         Key::E => KeyFace::Text("e"),
         Key::Rand => KeyFace::Text("Rand"),
         Key::Ee => KeyFace::Text("EE"),
+        // The key itself always names the mode pressing it would switch TO
+        // (measured: it read "Rad" while in degrees, "Deg" while already in
+        // radians) — the opposite sense from the persistent indicator label.
         Key::RadDeg => KeyFace::Text(match angle {
             AngleMode::Degrees => "Rad",
             AngleMode::Radians => "Deg",
@@ -195,7 +239,8 @@ pub fn key_face(key: Key, second: bool, angle: AngleMode) -> KeyFace {
 }
 
 /// A stable, toggle-independent identifier for a key: used for element ids
-/// and accessible names, where "x²/√x" needs one name regardless of `2nd`.
+/// and accessible names, where e.g. "sin/sin⁻¹" needs one name regardless
+/// of `2nd`.
 pub fn key_name(key: Key) -> &'static str {
     match key {
         Key::Digit(0) => "zero",
@@ -218,18 +263,26 @@ pub fn key_name(key: Key) -> &'static str {
         Key::Operator(BinaryOp::Subtract) => "subtract",
         Key::Operator(BinaryOp::Multiply) => "multiply",
         Key::Operator(BinaryOp::Divide) => "divide",
-        Key::Operator(BinaryOp::Power | BinaryOp::Root) => "power-or-root",
-        Key::PowerOrRoot => "power-or-root",
+        Key::Operator(BinaryOp::Power | BinaryOp::Root | BinaryOp::LogBase) => "operator",
         Key::Second => "second",
-        Key::Unary(UnaryFn::SquareOrRoot) => "square-or-square-root",
-        Key::Unary(UnaryFn::CubeOrCbrt) => "cube-or-cube-root",
-        Key::Unary(UnaryFn::ExpOrLn) => "exp-or-natural-log",
-        Key::Unary(UnaryFn::TenPowOrLog10) => "ten-power-or-log-ten",
-        Key::Unary(UnaryFn::Sin) => "sine",
-        Key::Unary(UnaryFn::Cos) => "cosine",
-        Key::Unary(UnaryFn::Tan) => "tangent",
-        Key::Unary(UnaryFn::Reciprocal) => "reciprocal",
-        Key::Unary(UnaryFn::Factorial) => "factorial",
+        Key::Square => "square",
+        Key::Cube => "cube",
+        Key::Power => "power",
+        Key::SquareRoot => "square-root",
+        Key::CubeRoot => "cube-root",
+        Key::YRoot => "y-root",
+        Key::Reciprocal => "reciprocal",
+        Key::Factorial => "factorial",
+        Key::ExpOrYPower => "exp-or-y-power",
+        Key::TenPowOrTwoPow => "ten-power-or-two-power",
+        Key::LnOrLogY => "ln-or-log-base-y",
+        Key::Log10OrLog2 => "log-ten-or-log-two",
+        Key::Sin => "sine",
+        Key::Cos => "cosine",
+        Key::Tan => "tangent",
+        Key::Sinh => "hyperbolic-sine",
+        Key::Cosh => "hyperbolic-cosine",
+        Key::Tanh => "hyperbolic-tangent",
         Key::Pi => "pi",
         Key::E => "e",
         Key::Rand => "random",
@@ -291,50 +344,66 @@ mod tests {
     use super::*;
 
     #[test]
-    fn keypad_geometry_matches_the_documented_formula() {
+    fn keypad_geometry_matches_the_measured_grid() {
         let (left, top) = key_origin(0, 0);
         assert_eq!((left, top), (KEYPAD_LEFT, KEYPAD_TOP));
-        let (right_col, bottom_row) = key_origin(4, 8);
+        let (right_col, bottom_row) = key_origin(ROWS - 1, COLUMNS - 1);
         assert_eq!(
             WINDOW_WIDTH,
-            right_col + KEY_DIAMETER + KEYPAD_LEFT,
+            right_col + KEY_WIDTH + KEYPAD_LEFT,
             "width should match key_origin's rightmost column plus a margin \
              equal to the left margin"
         );
-        assert_eq!(
-            WINDOW_HEIGHT,
-            bottom_row + KEY_DIAMETER + 10.0,
-            "height should match key_origin's bottom row plus Basic's 10 pt \
-             margin"
-        );
-        assert_eq!(KEY_PITCH - KEY_DIAMETER, 6.0, "keeps Basic's 6 pt gap");
+        assert_eq!(KEY_PITCH_X - KEY_WIDTH, 6.0, "keeps a 6 pt column gap");
+        assert_eq!(KEY_PITCH_Y - KEY_HEIGHT, 6.0, "keeps Basic's 6 pt row gap");
+        assert_eq!(WINDOW_WIDTH, 674.0, "measured on the Mac");
+        let _ = bottom_row; // exercised via WINDOW_HEIGHT's reuse of Basic's.
     }
 
     #[test]
-    fn layout_has_the_expected_key_set() {
-        let keys: Vec<Key> = LAYOUT.iter().flatten().flatten().copied().collect();
-        assert_eq!(keys.len(), 22 + 20, "22 function keys plus Basic's 20");
+    fn the_rightmost_four_columns_are_exactly_basics_grid() {
+        for row in 0..ROWS {
+            for column in 0..4 {
+                assert_eq!(
+                    LAYOUT[row][6 + column],
+                    basic_key_to_scientific(keypad::LAYOUT[row][column])
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layout_has_all_fifty_measured_keys() {
+        let keys: Vec<Key> = LAYOUT.iter().flatten().copied().collect();
+        assert_eq!(keys.len(), 50);
         let digits = keys
             .iter()
             .filter(|key| matches!(key, Key::Digit(_)))
             .count();
         assert_eq!(digits, 10);
-        assert!(keys.contains(&Key::Second));
-        assert!(keys.contains(&Key::PowerOrRoot));
-        assert!(keys.contains(&Key::OpenParen));
-        assert!(keys.contains(&Key::CloseParen));
-        assert!(keys.contains(&Key::MemoryClear));
-        assert!(keys.contains(&Key::Rand));
-        assert!(keys.contains(&Key::Ee));
-        assert!(keys.contains(&Key::RadDeg));
-        for row in LAYOUT.iter() {
-            assert!(matches!(row[8], Some(Key::Operator(_) | Key::Equals)));
+        for always_present in [
+            Key::Square,
+            Key::Cube,
+            Key::Power,
+            Key::SquareRoot,
+            Key::CubeRoot,
+            Key::YRoot,
+            Key::Reciprocal,
+            Key::Second,
+            Key::OpenParen,
+            Key::CloseParen,
+            Key::MemoryClear,
+            Key::Rand,
+            Key::Ee,
+            Key::RadDeg,
+        ] {
+            assert!(keys.contains(&always_present), "{always_present:?} missing");
         }
     }
 
     #[test]
     fn every_present_key_has_a_face_and_a_stable_name() {
-        for key in LAYOUT.iter().flatten().flatten().copied() {
+        for key in LAYOUT.iter().flatten().copied() {
             assert!(!key_name(key).is_empty());
             for second in [false, true] {
                 for angle in [AngleMode::Degrees, AngleMode::Radians] {
@@ -348,27 +417,43 @@ mod tests {
     }
 
     #[test]
-    fn second_flips_the_paired_function_labels() {
+    fn second_flips_only_the_measured_pairs() {
+        // Always-present, never toggled.
         assert_eq!(
-            key_face(Key::Unary(UnaryFn::SquareOrRoot), false, AngleMode::Degrees),
+            key_face(Key::Square, true, AngleMode::Degrees),
             KeyFace::Text("x²")
         );
         assert_eq!(
-            key_face(Key::Unary(UnaryFn::SquareOrRoot), true, AngleMode::Degrees),
-            KeyFace::Text("√x")
+            key_face(Key::SquareRoot, true, AngleMode::Degrees),
+            KeyFace::Text("²√x")
+        );
+        // The measured 2nd pairs.
+        assert_eq!(
+            key_face(Key::ExpOrYPower, false, AngleMode::Degrees),
+            KeyFace::Text("eˣ")
         );
         assert_eq!(
-            key_face(Key::PowerOrRoot, false, AngleMode::Degrees),
-            KeyFace::Text("xʸ")
+            key_face(Key::ExpOrYPower, true, AngleMode::Degrees),
+            KeyFace::Text("yˣ")
         );
         assert_eq!(
-            key_face(Key::PowerOrRoot, true, AngleMode::Degrees),
-            KeyFace::Text("ʸ√x")
+            key_face(Key::TenPowOrTwoPow, true, AngleMode::Degrees),
+            KeyFace::Text("2ˣ")
+        );
+        assert_eq!(
+            key_face(Key::Sin, true, AngleMode::Degrees),
+            KeyFace::Text("sin⁻¹")
+        );
+        assert_eq!(
+            key_face(Key::Sinh, true, AngleMode::Degrees),
+            KeyFace::Text("sinh⁻¹")
         );
     }
 
     #[test]
-    fn rad_deg_label_reflects_the_current_mode() {
+    fn rad_deg_key_names_the_mode_pressing_it_switches_to() {
+        // Measured: the key reads "Rad" while in degrees (press it to go to
+        // radians) and "Deg" while already in radians.
         assert_eq!(
             key_face(Key::RadDeg, false, AngleMode::Degrees),
             KeyFace::Text("Rad")
@@ -388,6 +473,7 @@ mod tests {
         assert_eq!(key_style(Key::Second), KeyStyle::Function);
         assert_eq!(key_style(Key::OpenParen), KeyStyle::Function);
         assert_eq!(key_style(Key::MemoryClear), KeyStyle::Function);
+        assert_eq!(key_style(Key::Square), KeyStyle::Function);
     }
 
     #[test]
@@ -405,8 +491,9 @@ mod tests {
     }
 
     #[test]
-    fn toolbar_buttons_stay_inside_the_window_with_basic_spacing() {
-        assert_eq!(MODE_BUTTON_CENTER_X - SIDEBAR_BUTTON_CENTER_X, 80.0);
+    fn toolbar_buttons_stay_inside_the_window_with_basics_margins() {
+        assert_eq!(WINDOW_WIDTH - MODE_BUTTON_CENTER_X, 26.0);
+        assert_eq!(SIDEBAR_BUTTON_CENTER_X, keypad::SIDEBAR_BUTTON_CENTER_X);
         const { assert!(MODE_BUTTON_CENTER_X + TOOLBAR_BUTTON_DIAMETER / 2.0 < WINDOW_WIDTH) };
         const { assert!(SIDEBAR_BUTTON_CENTER_X - TOOLBAR_BUTTON_DIAMETER / 2.0 > 0.0) };
     }

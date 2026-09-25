@@ -776,6 +776,12 @@ class LuloRun:
                 self.nested.input.click(OUTPUT_W // 4, OUTPUT_H // 2, OUTPUT_W, OUTPUT_H)
             elif "menu" in step:
                 raise Unsupported("menu-bar steps need the top bar, which the nested runner does not start yet")
+            elif "click_key" in step:
+                # The Mac side clicks by measured grid position (real macOS
+                # Calculator exposes no usable accessible name for these
+                # keys); Lulo's keys do carry a stable aria-label
+                # (`scientific_keypad::key_name`), so click by that instead.
+                self.click_item(step["click_key"], "left")
             elif "observe" in step:
                 facts = {}
                 for fact in step["facts"]:

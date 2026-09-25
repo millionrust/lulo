@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "calculator/scientific",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-25",
+  "observations": {
+    "squared_pending": {
+      "display": {
+        "value": "22"
+      }
+    },
+    "squared_result": {
+      "display": {
+        "value": "4"
+      }
+    }
+  }
+}

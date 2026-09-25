@@ -140,7 +140,8 @@ class Run:
         shell = (REPO / "packaging/rmac-session/shell.kdl").read_text(encoding="utf-8")
         mission_control = str(Path(self.args.bin_dir) / "mission-control")
         config = self.out / "niri.kdl"
-        config.write_text(shell.replace("/usr/libexec/rmac/rmac-mission-control", mission_control))
+        config.write_text(shell.replace("/usr/libexec/rmac/rmac-mission-control", mission_control)
+                          .replace("/usr/libexec/rmac/rmac-dock", str(Path(self.args.bin_dir) / "dock")))
         validate = subprocess.run([self.args.niri, "validate", "-c", str(config)], env=self.env,
                                   capture_output=True, text=True)
         self.check("niri validate accepts shell.kdl", validate.returncode == 0,
@@ -280,17 +281,11 @@ class Run:
             # find the tile left of the Bin in a picture of the Dock and click it.
             point = self.minimized_tile_point("dock-after-set-minimized")
             self.check("the Dock shows a minimised tile left of the Bin", point, str(point))
-            if point:
-                # niri routes a virtual pointer through its own input path
-                # (unlike a virtual keyboard), so the click goes to niri.
-                pointer = wlinput.Wayland({**self.env, "RMAC_BEHAVIOR_NESTED": "1"})
-                pointer.move(point[0], point[1], *self.output_size)
-                time.sleep(0.8)
-                pointer.click(point[0], point[1], *self.output_size)
-                pointer.close()
-                time.sleep(0.5)
-                subprocess.run(["grim", "-c", "-o", str(self.output), str(self.out / "after-tile-click.png")],
-                               env=self.env, capture_output=True, check=False)
+            # Restore it from the keyboard, as a Mac user can: ⌃F3 moves focus
+            # to the Dock, End selects the Bin, ← the tile before it, Return.
+            for key in ("ctrl-f3", "end", "left", "enter"):
+                self.keys.key(key)
+                time.sleep(0.6)
         restored = self.wait_for(lambda: (self.window(wid) or {}).get("workspace_id") == origin, 10)
         self.check("the Dock restores it to its workspace", restored)
         self.check("restoring forgets the record", restored and not self.entry(wid))

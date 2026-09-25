@@ -535,8 +535,7 @@ pub fn selected_text(
     let to_page = to_page.min(pages.len() - 1);
     let mut out = String::new();
     let mut previous: Option<UnitRect> = None;
-    for page_index in from_page..=to_page {
-        let page = &pages[page_index];
+    for (page_index, page) in pages.iter().enumerate().take(to_page + 1).skip(from_page) {
         if page.words.is_empty() {
             continue;
         }

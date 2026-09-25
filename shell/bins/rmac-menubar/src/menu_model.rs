@@ -1528,14 +1528,18 @@ mod tests {
                 ),
             ],
         };
-        let help = help_menu("find n", &[edit.clone()], Vec::new());
+        let help = help_menu("find n", std::slice::from_ref(&edit), Vec::new());
         assert_eq!(help.items[0].action, HELP_SEARCH_ACTION);
         assert_eq!(help.items[0].label, "find n");
         assert_eq!(help.items.len(), 2);
         assert_eq!(help.items[1].label, "Edit ▸ Find ▸ Find Next");
         assert_eq!(help.items[1].action, "test::Find Next");
 
-        let empty = help_menu("", &[edit.clone()], vec![item("Files Help", "", false)]);
+        let empty = help_menu(
+            "",
+            std::slice::from_ref(&edit),
+            vec![item("Files Help", "", false)],
+        );
         assert_eq!(empty.items[0].label, "Search");
         assert_eq!(empty.items[1].label, "Files Help");
         assert!(empty.items[1].separator_before);

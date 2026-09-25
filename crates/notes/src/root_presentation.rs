@@ -88,7 +88,11 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &ComposeNote, _, cx| this.create_note(cx)))
             .on_action(cx.listener(|this, _: &CreateFolder, _, cx| this.create_folder(cx)))
             .on_action(cx.listener(|this, _: &TrashOrRestore, _, cx| this.trash_or_restore(cx)))
+            .on_action(cx.listener(|this, _: &DeleteSelectedNote, _, cx| {
+                this.delete_selected_note_with_undo(cx)
+            }))
             .on_action(cx.listener(|this, _: &TogglePin, _, cx| this.toggle_pin(cx)))
+            .on_action(cx.listener(|this, _: &DuplicateNote, _, cx| this.duplicate_note(cx)))
             .on_action(
                 cx.listener(|this, _: &SortByEdited, _, cx| this.set_sort(SortOrder::Edited, cx)),
             )
@@ -101,6 +105,15 @@ impl NotesView {
             .on_action(
                 cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)),
             )
+            .on_action(
+                cx.listener(|this, _: &FindInNote, window, cx| this.toggle_note_find(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &FindInNoteNext, window, cx| {
+                this.note_find_next(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &FindInNotePrevious, window, cx| {
+                this.note_find_previous(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &ExportNotes, _, cx| this.begin_export(cx)))
             .on_action(cx.listener(|this, _: &PrintNote, window, cx| this.print_note(window, cx)))
             .on_action(
@@ -108,6 +121,31 @@ impl NotesView {
             )
             .on_action(cx.listener(|this, _: &InsertChecklist, window, cx| {
                 this.insert_checklist(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleBold, window, cx| this.toggle_bold(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &ToggleItalic, window, cx| this.toggle_italic(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &SetStyleTitle, window, cx| {
+                this.set_paragraph_style(ParagraphStyle::Title, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SetStyleHeading, window, cx| {
+                this.set_paragraph_style(ParagraphStyle::Heading, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SetStyleSubheading, window, cx| {
+                this.set_paragraph_style(ParagraphStyle::Subheading, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SetStyleBody, window, cx| {
+                this.set_paragraph_style(ParagraphStyle::Body, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &SetStyleMonospaced, window, cx| {
+                this.set_paragraph_style(ParagraphStyle::Monospaced, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &InsertBulletedList, window, cx| {
+                this.insert_list_marker(ListMarker::Bulleted, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &InsertNumberedList, window, cx| {
+                this.insert_list_marker(ListMarker::Numbered, window, cx)
             }))
             .on_action(cx.listener(|this, _: &RenameSelectedFolder, window, cx| {
                 this.begin_folder_rename(window, cx)

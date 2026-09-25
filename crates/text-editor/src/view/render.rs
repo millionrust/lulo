@@ -13,10 +13,10 @@ use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_ui::{mac, Button, SearchField, TextField};
 
 use crate::{
-    document, CloseBar, CloseWindow, DecreaseFont, ExportPdf, FindNext, FindPrev, IncreaseFont,
-    NewFile, OpenFile, PrintFile, SaveFile, SaveFileAs, SetEncodingUtf16Be, SetEncodingUtf16Le,
-    SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf,
-    ToggleFind, ToggleMono, ToggleReplace,
+    document, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, ExportPdf, FindNext,
+    FindPrev, IncreaseFont, NewFile, OpenFile, PrintFile, SaveFile, SaveFileAs,
+    SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom,
+    SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ToggleFind, ToggleMono, ToggleReplace,
 };
 
 use super::{
@@ -100,6 +100,9 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &OpenFile, window, cx| this.open(window, cx)))
             .on_action(cx.listener(|this, _: &SaveFile, window, cx| this.save(window, cx)))
             .on_action(cx.listener(|this, _: &SaveFileAs, window, cx| this.save_as(window, cx)))
+            .on_action(cx.listener(|this, _: &DuplicateDocument, window, cx| {
+                this.duplicate_document(window, cx)
+            }))
             .on_action(
                 cx.listener(|this, _: &ExportPdf, window, cx| this.export_pdf(window, cx)),
             )

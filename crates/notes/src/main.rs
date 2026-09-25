@@ -11,6 +11,8 @@ mod glyphs;
 mod input_support;
 mod library_actions;
 mod markdown_presentation;
+mod note_find_controller;
+mod note_format_controller;
 mod note_navigation;
 mod notes_style;
 mod presentation;
@@ -68,6 +70,7 @@ use input_support::{
     display_title, now_unix_ms, parse_tags, safe_export_stem, take_counter, unique_folder_name,
 };
 use markdown_presentation::render_markdown_document;
+use note_format_controller::{ListMarker, ParagraphStyle};
 use notes_style::*;
 use presentation::{
     attachment_match_row, centered_state, date_label, date_section, folder_row,
@@ -86,15 +89,29 @@ actions!(
         ComposeNote,
         CreateFolder,
         TrashOrRestore,
+        DeleteSelectedNote,
         TogglePin,
+        DuplicateNote,
         SortByEdited,
         SortByCreated,
         SortByTitle,
         FocusSearch,
+        FindInNote,
+        FindInNoteNext,
+        FindInNotePrevious,
         ExportNotes,
         RenameSelectedFolder,
         DeleteSelectedFolder,
         InsertChecklist,
+        ToggleBold,
+        ToggleItalic,
+        SetStyleTitle,
+        SetStyleHeading,
+        SetStyleSubheading,
+        SetStyleBody,
+        SetStyleMonospaced,
+        InsertBulletedList,
+        InsertNumberedList,
         MoveSelectedNote,
         DeleteNotePermanently,
         EmptyRecentlyDeleted,
@@ -165,6 +182,16 @@ struct NotesView {
     /// A press on a toolbar's empty area, turned into a window move by the
     /// next pointer motion (as in Files).
     dragging: bool,
+    /// In-note Find (⌘F), separate from the note list's search (⌥⌘F).
+    note_find_open: bool,
+    note_find_input: Entity<InputState>,
+    /// Byte offsets of every case-insensitive match of the query in the
+    /// selected note's body.
+    note_find_matches: Vec<usize>,
+    note_find_current: usize,
+    /// The note plain ⌫ most recently moved to Trash, so the status
+    /// banner's Undo button can bring back exactly that one.
+    pending_undo_trash: Option<(NoteId, u64)>,
 }
 
 impl NotesView {
@@ -223,6 +250,11 @@ impl NotesView {
             print_busy: false,
             print_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             dragging: false,
+            note_find_open: false,
+            note_find_input: inputs.note_find,
+            note_find_matches: Vec::new(),
+            note_find_current: 0,
+            pending_undo_trash: None,
         };
 
         view.start_workers(window, cx);

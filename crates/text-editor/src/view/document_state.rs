@@ -84,6 +84,36 @@ impl EditorView {
         self.text_revision = self.text_revision.wrapping_add(1);
     }
 
+    /// Install a duplicate window's starting content (see
+    /// [`super::DuplicateContent`]): a duplicate has never been written to
+    /// disk, so it is dirty from its very first frame, exactly like
+    /// TextEdit's File ▸ Duplicate.
+    pub(super) fn seed_duplicate_content(
+        &mut self,
+        content: super::DuplicateContent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.mono = content.mono;
+        self.font_size = content.font_size;
+        self.text_format = content.format;
+        if let Some(runs) = content.rtf_runs {
+            self.long_lines = None;
+            self.input
+                .update(cx, |state, cx| state.set_value(content.text, window, cx));
+            self.text_revision = self.text_revision.wrapping_add(1);
+            self.rtf_runs = Some(runs);
+        } else {
+            self.rtf_runs = None;
+            let longest_line = long_lines::longest_line_bytes(&content.text);
+            self.install_document_text(content.text, longest_line, window, cx);
+        }
+        self.dirty = true;
+        self.report_unsaved(cx);
+        self.schedule_autosave(cx);
+        cx.notify();
+    }
+
     pub(super) fn on_buffer_changed(&mut self, cx: &mut Context<Self>) {
         self.text_revision = self.text_revision.wrapping_add(1);
         self.advance_document_generation();

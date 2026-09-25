@@ -2,6 +2,9 @@ use super::*;
 
 impl NotesView {
     pub(super) fn sync_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // A different note's body makes any in-note Find state stale.
+        self.note_find_open = false;
+        self.note_find_matches.clear();
         let (title, tags, body) = self
             .session
             .selected_note()

@@ -65,6 +65,9 @@ impl EditorView {
             Some(ActiveAlert::ConfirmOverwrite { reviewed_revision }) => {
                 self.overwrite_conflicting_document(reviewed_revision, window, cx);
             }
+            Some(ActiveAlert::ConfirmPlainTextConversion) => {
+                self.perform_edit_as_plain_text(cx);
+            }
             Some(ActiveAlert::Error { .. }) | None => {}
         }
         cx.notify();

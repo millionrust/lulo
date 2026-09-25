@@ -140,6 +140,8 @@ pub const HOVER_GAP: f32 = 1.0;
 pub const TITLE_HEIGHT: f32 = 22.5;
 pub const TITLE_SIZE: f32 = 18.0;
 pub const TITLE_PADDING: f32 = 14.5;
+/// The capsule sits this far below the hovered thumbnail's bottom edge.
+pub const TITLE_GAP: f32 = 7.0;
 /// App Exposé's captions: 13 pt, 9 below the window, in a 32 pt band.
 pub const CAPTION_SIZE: f32 = 13.0;
 pub const CAPTION_LINE: f32 = 16.0;
@@ -358,6 +360,17 @@ pub fn layout(frames: &[Rect], area: Rect, gap_x: f32, gap_y: f32, band: f32) ->
 pub fn space_centres(count: usize, width: f32) -> Vec<f32> {
     let first = width / 2.0 - (count.saturating_sub(1)) as f32 * THUMB_PITCH / 2.0;
     (0..count).map(|i| first + i as f32 * THUMB_PITCH).collect()
+}
+
+/// The hover title capsule's frame: `TITLE_HEIGHT` tall and `width` wide
+/// (its text plus padding), centred horizontally on the `window` thumbnail,
+/// `TITLE_GAP` below its bottom edge, and clamped inside the `screen_width`
+/// wide output so it is never drawn off-screen.
+pub fn title_capsule_frame(window: Rect, width: f32, screen_width: f32) -> Rect {
+    let width = width.min(screen_width);
+    let centre = window.x + window.width / 2.0;
+    let x = (centre - width / 2.0).clamp(0.0, screen_width - width);
+    Rect::new(x, window.bottom() + TITLE_GAP, width, TITLE_HEIGHT)
 }
 
 // ---------------------------------------------------------------------------
@@ -1076,6 +1089,28 @@ mod tests {
         assert!((ease(0.5) - 0.5).abs() < 1e-2);
         assert_eq!(space_centres(1, 1470.0), [735.0]);
         assert_eq!(space_centres(2, 1470.0), [650.0, 820.0]);
+    }
+
+    #[test]
+    fn title_capsule_sits_centred_below_the_thumbnail_and_clamps_to_screen() {
+        let window = Rect::new(400.0, 200.0, 300.0, 180.0);
+        let capsule = title_capsule_frame(window, 120.0, 1470.0);
+        assert_eq!(capsule, Rect::new(490.0, 387.0, 120.0, TITLE_HEIGHT));
+        assert_eq!(
+            capsule.x + capsule.width / 2.0,
+            window.x + window.width / 2.0
+        );
+        // y sits a TITLE_GAP below the thumbnail's bottom edge.
+        assert_eq!(capsule.y, window.bottom() + TITLE_GAP);
+
+        // A title wider than the screen is clamped to it, not clipped.
+        let wide = title_capsule_frame(window, 2000.0, 1470.0);
+        assert_eq!(wide.x, 0.0);
+        assert_eq!(wide.width, 1470.0);
+
+        // A capsule wider than a thumbnail near the left edge stays on-screen.
+        let edge = title_capsule_frame(Rect::new(20.0, 200.0, 200.0, 180.0), 300.0, 1470.0);
+        assert_eq!(edge.x, 0.0);
     }
 
     #[test]

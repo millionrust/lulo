@@ -47,13 +47,10 @@ Ubuntu execution, accessibility evidence, and the H8 hardware matrix.
   for the highlighted title and, once a menu opens, the highlighted row.
   Verified by compiling, `cargo clippy -D warnings`, `niri validate`, and
   new unit tests covering the dispatch socket and the shell.kdl bind;
-  **not yet verified live or nested with Orca/AT-SPI** -- doing that needs
-  either a visible nested-niri window on the reference laptop's real
-  screen (niri has no headless backend to test its own keybindings and
-  layer-shell keyboard-interactivity in isolation) or toggling Full
-  Keyboard Access on the owner's own Mac to record a behaviour-suite
-  scenario, and this pass avoided both rather than disturb the owner's
-  live session or its physical Mac's system settings without asking.
+  A 2026-09-26 nested-niri virtual-keyboard run passed 8/8 menu-bar
+  focus/navigation checks, including AT-SPI focus and visible screenshots.
+  Letter typeahead, Return activation, complete keyboard-only journeys,
+  and the owner-only Orca pass remain unverified.
   Known scope limit: only the bar's own menu titles (the Lulo/system menu,
   the bold app menu, and the app's declared menus) are reachable this way;
   the status items on the right (Wi-Fi, Battery, the clock) are not part

@@ -112,7 +112,9 @@ runner plays the same scenario inside a private nested compositor and diffs the 
   directory. `text-editor/save-untitled` requires the `rmac-file-chooser` executable in one of
   the supplied `--bin-dir` or `--shell-bin-dir` directories; the runner fails before launching
   the app if it is absent. Running only a fresh `rmac-text-editor` binary leaves the private
-  portal without a FileChooser backend and cannot test Save-panel behavior.
+  portal without a FileChooser backend and cannot test Save-panel behavior. On a cold D-Bus
+  activation, the chooser can take several seconds to register its AT-SPI window; that scenario
+  waits before observing or sending Escape so it does not race panel startup.
 - It starts its own headless Sway and holds `wayland-0`/`wayland-1`'s lock files so its socket
   is never named `wayland-1`.
 - It injects input only through `wlinput.py`. That script is a pure-Python virtual keyboard and

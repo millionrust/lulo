@@ -2175,7 +2175,7 @@ fn inset_by_tiling(mut bounds: Bounds<Pixels>, inset: Pixels, tiling: Tiling) ->
     bounds
 }
 
-const CLIENT_RESIZE_BORDER: f32 = 8.0;
+const CLIENT_RESIZE_BORDER: f32 = 16.0;
 
 fn resize_edge_at(position: Point<Pixels>, size: Size<Pixels>) -> Option<ResizeEdge> {
     let x = f32::from(position.x);
@@ -2233,6 +2233,10 @@ mod rmac_frame_loop_tests {
         let bounds = size(px(400.0), px(300.0));
         assert_eq!(
             resize_edge_at(point(px(399.0), px(150.0)), bounds),
+            Some(ResizeEdge::Right)
+        );
+        assert_eq!(
+            resize_edge_at(point(px(388.0), px(150.0)), bounds),
             Some(ResizeEdge::Right)
         );
         assert_eq!(

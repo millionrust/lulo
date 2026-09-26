@@ -40,7 +40,9 @@ def gtk_window() -> int:
 def _show_gtk(app, Gtk) -> None:
     window = Gtk.ApplicationWindow(application=app, title="Window Move Test")
     window.set_default_size(420, 300)
-    window.set_child(Gtk.Label(label="Drag this GTK title bar"))
+    button = Gtk.Button(label="Click to check virtual pointer")
+    button.connect("clicked", lambda *_: window.set_title("Pointer Works"))
+    window.set_child(button)
     window.present()
 
 
@@ -200,6 +202,11 @@ class Run:
             return
         time.sleep(1)
         x, y, width, height = self.geometry(window)
+        if app_id == "org.example.WindowMoveTest":
+            self.pointer.click(*self.parent_point(x + width / 2, y + height / 2),
+                               self.parent_width, self.parent_height)
+            clicked = self.wait_for(lambda: (self.window(app_id) or {}).get("title") == "Pointer Works", 3)
+            self.check("GTK content receives a virtual pointer click", bool(clicked))
         start, end = (x + width * .5, y + 18), (x + width * .5 + 150, y + 100)
         self.drag(start, end)
         moved = self.wait_for(lambda: self.window(app_id), 3)

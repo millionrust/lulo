@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "scenario": "calculator/mode-switch",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-26",
+  "observations": {
+    "basic_initial": {
+      "window_size": {"width": 230, "height": 408},
+      "display": {"value": "0"}
+    },
+    "scientific": {
+      "window_size": {"width": 674, "height": 408},
+      "display": {"value": "0"}
+    },
+    "basic_return": {
+      "window_size": {"width": 230, "height": 408},
+      "display": {"value": "0"}
+    }
+  }
+}

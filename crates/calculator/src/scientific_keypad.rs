@@ -5,9 +5,7 @@
 //! tree with System Events (`position`/`size` of every button) plus a
 //! `screencapture -x` capture read pixel-for-pixel. Both agree to the point:
 //!
-//! - Window: **674 × 408** (content size; height matches Basic's own
-//!   406/408 — see `keypad.rs`'s doc comment on that 2 pt discrepancy —
-//!   reused here rather than re-litigated).
+//! - Window: **674 × 408** (content size; uses Basic's measured height).
 //! - **10 columns × 5 rows**, all 50 cells filled (no unused slots, unlike
 //!   earlier guesses). The rightmost 4 columns are *exactly* Basic's own
 //!   4-column digit/operator grid (`⌫ AC % ÷` / `7 8 9 ×` / `4 5 6 −` /
@@ -36,10 +34,8 @@ use crate::scientific::{AngleMode, BinaryOp, Key};
 
 /// Content size of the fixed-size window. Measured.
 pub const WINDOW_WIDTH: f32 = 674.0;
-/// Reuses Basic's own constant, including its documented 2 pt discrepancy
-/// against the true measured 408 — see `keypad.rs`. Scientific's toolbar,
-/// row count and row pitch are identical to Basic's, so re-deriving a
-/// different number here would be a new mismatch, not a fix.
+/// Reuses Basic's measured height. Scientific's toolbar, row count and row
+/// pitch are identical to Basic's.
 pub const WINDOW_HEIGHT: f32 = keypad::WINDOW_HEIGHT;
 
 /// Keys are 60 × 48 pt stadium pills (corner radius `KEY_HEIGHT / 2`) on a

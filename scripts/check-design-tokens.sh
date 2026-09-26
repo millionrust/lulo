@@ -35,6 +35,7 @@ case "${1:-}" in
 esac
 
 paths=(
+  crates/calculator/src
   crates/finder/src
   crates/system-settings/src
   crates/notes/src

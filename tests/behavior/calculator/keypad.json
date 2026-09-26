@@ -9,6 +9,8 @@
     {"observe": "sum", "facts": ["display"]},
     {"type": "*3="},
     {"observe": "product", "facts": ["display"]},
+    {"type": "="},
+    {"observe": "repeated_equals", "facts": ["display"]},
     {"key": "escape"},
     {"observe": "cleared", "facts": ["display"]}
   ]

@@ -1,0 +1,15 @@
+{
+  "title": "Calculator: Basic to Scientific to Basic keeps the window fitted to the keypad",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {"capture": "basic"},
+    {"observe": "basic_initial", "facts": ["window_size", "display"]},
+    {"key": "cmd-2", "settle": 1.5},
+    {"capture": "scientific"},
+    {"observe": "scientific", "facts": ["window_size", "display"]},
+    {"key": "cmd-1", "settle": 1.5},
+    {"capture": "basic-return"},
+    {"observe": "basic_return", "facts": ["window_size", "display"]}
+  ]
+}

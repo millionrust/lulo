@@ -2096,6 +2096,11 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                         state.button_pressed = Some(button);
 
                         if let Some(window) = state.mouse_focused_window.clone() {
+                            let control = if button == gpui::MouseButton::Left {
+                                window.hit_test_window_control()
+                            } else {
+                                None
+                            };
                             let input = PlatformInput::MouseDown(MouseDownEvent {
                                 button,
                                 position: state.mouse_location.unwrap(),
@@ -2104,6 +2109,9 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                                 first_mouse: state.enter_token.take().is_some(),
                             });
                             drop(state);
+                            if control == Some(gpui::WindowControlArea::Drag) {
+                                window.start_window_move();
+                            }
                             window.handle_input(input);
                         }
                     }

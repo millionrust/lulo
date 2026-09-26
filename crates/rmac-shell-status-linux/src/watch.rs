@@ -230,24 +230,30 @@ fn property_change(message: &zbus::Message) -> crate::model::PropertyChange {
     crate::model::property_change(interface, &changed, &invalidated)
 }
 
+/// Builds the `async_process::Command` that runs `program args...`
+/// (`pw-dump --monitor --no-colors` in production; a test passes a
+/// different program/args so it never depends on PipeWire being
+/// installed), bound to this process (see [`rmac_process::bind_to_parent`])
+/// with its stdio piped/nulled and `kill_on_drop` set.
+///
+/// Same fix as `rmac-audio`'s identical watcher (`rmac-audio/src/linux.rs`'s
+/// `build_monitor_command`, see its doc comment for the full story):
+/// `Command::from(std::process::Command)` resets `async_process`'s own
+/// stdin/stdout/stderr tracking, so a plain `.spawn()` would otherwise
+/// silently replace the piped stdout with `Stdio::inherit()`,
+/// `child.stdout` would always be `None`, and the freshly spawned `pw-dump`
+/// would be SIGKILLed by `kill_on_drop` a moment after every spawn -- a
+/// permanent one-second reconnect loop. Re-asserting the same stdio through
+/// `async_process::Command`'s own builder sets the tracking flags so
+/// `spawn()` leaves them alone -- `tests::command_pipes_stdout_through_async_process`
+/// regression-tests this.
 #[cfg(target_os = "linux")]
-async fn watch_audio_once(
-    sender: &Sender<Event>,
-    previous_error: &mut Option<Error>,
-) -> Result<(), Error> {
+pub(crate) fn build_monitor_command(program: &str, args: &[&str]) -> async_process::Command {
     use std::process::Stdio;
 
-    use futures_lite::io::AsyncReadExt as _;
-
-    // `pw-dump --monitor` is the machine-readable PipeWire graph monitor: it
-    // prints the full graph once, then a fresh JSON array of changed objects
-    // on every subsequent state change. Any array that changes more than
-    // PipeWire's client list is a "something changed, re-read the
-    // authoritative state" trigger, matching `rmac-audio`'s own watcher.
-    let mut monitor = std::process::Command::new("pw-dump");
+    let mut monitor = std::process::Command::new(program);
     monitor
-        .arg("--monitor")
-        .arg("--no-colors")
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -255,7 +261,27 @@ async fn watch_audio_once(
     // that exits without dropping it, so the monitor never outlives it.
     rmac_process::bind_to_parent(&mut monitor);
     let mut command = async_process::Command::from(monitor);
-    command.kill_on_drop(true);
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    command
+}
+
+#[cfg(target_os = "linux")]
+async fn watch_audio_once(
+    sender: &Sender<Event>,
+    previous_error: &mut Option<Error>,
+) -> Result<(), Error> {
+    use futures_lite::io::AsyncReadExt as _;
+
+    // `pw-dump --monitor` is the machine-readable PipeWire graph monitor: it
+    // prints the full graph once, then a fresh JSON array of changed objects
+    // on every subsequent state change. Any array that changes more than
+    // PipeWire's client list is a "something changed, re-read the
+    // authoritative state" trigger, matching `rmac-audio`'s own watcher.
+    let mut command = build_monitor_command("pw-dump", &["--monitor", "--no-colors"]);
     let mut child = command
         .spawn()
         .map_err(|error| Error::new("start the PipeWire monitor", error.to_string()))?;

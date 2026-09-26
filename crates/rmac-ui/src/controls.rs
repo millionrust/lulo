@@ -1937,7 +1937,17 @@ impl ListRow {
         self
     }
 
-    pub(crate) fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+    /// Overrides the row's accessible name. `ListRow` defaults to
+    /// `Role::ListItem` with no name of its own -- there is no automatic
+    /// "content-derived name" despite what callers might assume from the
+    /// row's visible text: a live AT-SPI dump of System Settings found
+    /// every sidebar and content `ListRow` (built through `nav_row`,
+    /// `icon_nav_row`, `large_nav_row`, the sidebar's own category rows,
+    /// ...) reporting an empty name, so a screen reader announced nothing
+    /// at all when moving through them. This is `pub`, not `pub(crate)`,
+    /// specifically so callers outside `rmac-ui` (System Settings and every
+    /// other `ListRow` consumer) can give their own rows a real name.
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
         self.aria_label = Some(label.into());
         self
     }

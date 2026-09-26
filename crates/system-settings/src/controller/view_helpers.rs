@@ -254,7 +254,14 @@ pub(super) fn nav_row(
     target: SubPage,
 ) -> AnyElement {
     let id = ElementId::from(SharedString::from(format!("nav-{title}")));
+    // `ListRow` has no name of its own (see its `aria_label` doc comment);
+    // fold the trailing value (e.g. About's hardware model) into the name.
+    let aria_label = match &value {
+        Some(value) if !value.is_empty() => SharedString::from(format!("{title}, {value}")),
+        _ => title.clone(),
+    };
     nav_list_row(id, nav_content(icon, color, title, value))
+        .aria_label(aria_label)
         .on_activate(move |_, _, cx| {
             let target = target.clone();
             view.update(cx, |s, cx| s.push(target, cx));
@@ -272,6 +279,9 @@ pub(super) fn pane_nav_row(
 ) -> AnyElement {
     let id = ElementId::from(SharedString::from(format!("pane-{title}")));
     nav_list_row(id, nav_content(icon, color, title.into(), None))
+        // `ListRow` has no name of its own (see its `aria_label` doc
+        // comment).
+        .aria_label(title)
         .on_activate(move |_, window, cx| {
             view.update(cx, |s, cx| {
                 s.select_category(title, window, cx);

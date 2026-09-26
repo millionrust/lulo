@@ -335,6 +335,17 @@ impl Settings {
                         .map(SharedString::from)
                         .unwrap_or_else(|| cat.desc.clone())
                 });
+                // The row's own text children carry no accessible name of
+                // their own (`ListRow` defaults to a plain, unnamed list
+                // item -- confirmed live: every sidebar row reported an
+                // empty AT-SPI name), so a screen reader announced nothing
+                // at all when moving through the sidebar. Fold the search
+                // snippet in the same way Files folds a description into a
+                // row's name (docs/journey-suite.md).
+                let aria_label = match &search_context {
+                    Some(context) => SharedString::from(format!("{}, {}", cat.name, context)),
+                    None => cat.name.clone(),
+                };
                 let selected = if searching {
                     search_result_index == active_search_result
                 } else {
@@ -390,6 +401,7 @@ impl Settings {
                                     }),
                             ),
                     )
+                    .aria_label(aria_label)
                     // The row paints its own Tahoe fill: accent only while the
                     // sidebar has focus, grey otherwise, and no hover wash.
                     .selected(true)

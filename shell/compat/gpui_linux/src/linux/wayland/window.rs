@@ -2203,7 +2203,7 @@ fn resize_edge_at(position: Point<Pixels>, size: Size<Pixels>) -> Option<ResizeE
 #[cfg(test)]
 mod rmac_frame_loop_tests {
     use super::{frame_loop_parked, resize_edge_at};
-    use gpui::{point, px, size, ResizeEdge};
+    use gpui::{ResizeEdge, point, px, size};
 
     #[test]
     fn a_drawing_window_is_not_parked() {
@@ -2231,9 +2231,18 @@ mod rmac_frame_loop_tests {
     #[test]
     fn client_resize_edges_and_corners_are_hit_tested() {
         let bounds = size(px(400.0), px(300.0));
-        assert_eq!(resize_edge_at(point(px(399.0), px(150.0)), bounds), Some(ResizeEdge::Right));
-        assert_eq!(resize_edge_at(point(px(2.0), px(2.0)), bounds), Some(ResizeEdge::TopLeft));
-        assert_eq!(resize_edge_at(point(px(399.0), px(299.0)), bounds), Some(ResizeEdge::BottomRight));
+        assert_eq!(
+            resize_edge_at(point(px(399.0), px(150.0)), bounds),
+            Some(ResizeEdge::Right)
+        );
+        assert_eq!(
+            resize_edge_at(point(px(2.0), px(2.0)), bounds),
+            Some(ResizeEdge::TopLeft)
+        );
+        assert_eq!(
+            resize_edge_at(point(px(399.0), px(299.0)), bounds),
+            Some(ResizeEdge::BottomRight)
+        );
         assert_eq!(resize_edge_at(point(px(200.0), px(150.0)), bounds), None);
     }
 }

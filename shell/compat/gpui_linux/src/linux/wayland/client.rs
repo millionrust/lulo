@@ -2102,13 +2102,12 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                             } else {
                                 None
                             };
-                            let control = if button == gpui::MouseButton::Left
-                                && resize_edge.is_none()
-                            {
-                                window.hit_test_window_control()
-                            } else {
-                                None
-                            };
+                            let control =
+                                if button == gpui::MouseButton::Left && resize_edge.is_none() {
+                                    window.hit_test_window_control()
+                                } else {
+                                    None
+                                };
                             let input = PlatformInput::MouseDown(MouseDownEvent {
                                 button,
                                 position,

@@ -244,42 +244,28 @@ class Run:
             self.check("Settings title-bar drag brings it into the output", intersects_output,
                        f"{(x, y, width, height)} -> {placed_geometry}")
             x, y, width, height = placed_geometry
-            # Settings' initial height is slightly larger than this nested
-            # output. Shrink it through niri so the edge probe uses a fully
-            # visible window rather than an offscreen resize edge.
-            requested_height = min(700, self.height - 80)
-            self.niri("action", "set-window-height", "--id", str(window["id"]),
-                      str(requested_height))
-            sized = self.wait_for(
-                lambda: (candidate := self.window("org.rmac.SystemSettings"))
-                if candidate and self.geometry(candidate)[3] < height - 30 else None,
-                3,
+            fits_output = (
+                x >= 0 and y >= 0 and x + width <= self.width and y + height <= self.height
             )
-            sized_geometry = self.geometry(sized) if sized else (x, y, width, height)
-            self.check("Settings fits the nested output before edge resizing",
-                       bool(sized and sized_geometry[0] >= 0 and sized_geometry[1] >= 0
-                            and sized_geometry[0] + sized_geometry[2] <= self.width
-                            and sized_geometry[1] + sized_geometry[3] <= self.height),
-                       f"{(x, y, width, height)} -> {sized_geometry}; output={self.width}x{self.height}")
-            x, y, width, height = sized_geometry
-            # Settings' GPUI surface includes an inset beyond its visible frame.
-            # Grab the left edge and drag inward so the point stays on-screen.
+            self.check("Settings fits the nested output before edge resizing", fits_output,
+                       f"{placed_geometry}; output={self.width}x{self.height}")
+            # Settings starts at its minimum width; expand from the left edge.
             edge_y = min(y + height / 2, self.height - 12)
             resized = None
             resize_offset = None
             for offset in (0, 1, -1, 2, -2, 4, -4, 8, -8):
-                self.drag((x + offset, edge_y), (x + offset + 160, edge_y))
+                self.drag((x + offset, edge_y), (x + offset - 160, edge_y))
                 resized = self.wait_for(
                     lambda: (candidate := self.window("org.rmac.SystemSettings"))
-                    if candidate and self.geometry(candidate)[2] < width - 30 else None,
+                    if candidate and self.geometry(candidate)[2] > width + 30 else None,
                     0.6,
                 )
                 if resized:
                     resize_offset = offset
                     break
             resized_geometry = self.geometry(resized) if resized else (x, y, width, height)
-            shrunk = resized is not None
-            self.check("Settings resizes from its left edge", shrunk,
+            expanded = resized is not None
+            self.check("Settings expands from its left edge", expanded,
                        f"{(width, height)} -> {resized_geometry[2:]}; grab offset={resize_offset}")
             sx, sy, sw, sh = resized_geometry
             self.drag((sx + sw * .5, sy + 18), (sx + sw * .5 + 140, sy + 90))
@@ -287,7 +273,7 @@ class Run:
             mg = self.geometry(moved) if moved else resized_geometry
             changed = abs(mg[0] - sx) > 30 or abs(mg[1] - sy) > 30
             self.check("Settings remains movable after the resize attempt", changed,
-                       f"{(sx, sy)} -> {mg[:2]}; resized={shrunk}")
+                       f"{(sx, sy)} -> {mg[:2]}; expanded={expanded}")
         process.terminate()
         process.wait(10)
 

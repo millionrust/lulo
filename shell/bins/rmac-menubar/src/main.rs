@@ -812,6 +812,11 @@ mod linux_wayland {
         /// "Reopen windows when logging in" checkbox state; unchecked by
         /// default, as on the Mac.
         confirmation_reopen: bool,
+        /// Which control (a button or the checkbox) Tab has moved keyboard
+        /// focus to inside the open confirmation
+        /// (`menu_model::confirmation_controls`'s order); Space activates
+        /// it, Return always runs the default button regardless.
+        confirmation_focus: usize,
         /// The Wi-Fi or Battery menu, open under its status item.
         status_menu: Option<StatusMenuKind>,
         status_selected: Option<usize>,
@@ -893,6 +898,7 @@ mod linux_wayland {
                 confirmation_started_at: None,
                 confirmation_generation: 0,
                 confirmation_reopen: false,
+                confirmation_focus: 0,
                 status_menu: None,
                 status_selected: None,
                 status_option: false,
@@ -971,6 +977,7 @@ mod linux_wayland {
         fn start_confirmation(&mut self, action: String, cx: &mut Context<Self>) {
             self.pending_system_action = Some(action.clone());
             self.confirmation_reopen = false;
+            self.confirmation_focus = menu_model::confirmation_initial_focus(&action);
             self.confirmation_generation = self.confirmation_generation.saturating_add(1);
             let generation = self.confirmation_generation;
             let confirmation = menu_model::system_confirmation(&action);
@@ -2182,10 +2189,45 @@ mod linux_wayland {
                     // `system_confirmation`), so Return does nothing there,
                     // as on the Mac (K) — a stray press of the physical
                     // power key should never shut anything down on its own.
-                    "enter" | "space" => {
+                    // Return always runs the default button regardless of
+                    // where Tab left the focus ring; Space runs whichever
+                    // control is actually focused, matching AppKit.
+                    "enter" => {
                         if let Some(confirmed) = menu_model::confirmation_default_action(&action) {
                             self.close_menu(window, cx);
                             dispatch_system_menu(confirmed.to_owned(), cx);
+                        }
+                    }
+                    "tab" => {
+                        let controls = menu_model::confirmation_controls(&action);
+                        self.confirmation_focus = menu_model::confirmation_next_focus(
+                            controls.len(),
+                            self.confirmation_focus,
+                            !event.keystroke.modifiers.shift,
+                        );
+                        cx.notify();
+                    }
+                    "space" => {
+                        let controls = menu_model::confirmation_controls(&action);
+                        match controls.get(self.confirmation_focus) {
+                            Some(menu_model::ConfirmationControl::ReopenCheckbox) => {
+                                self.confirmation_reopen = !self.confirmation_reopen;
+                                cx.notify();
+                            }
+                            Some(menu_model::ConfirmationControl::Button(index)) => {
+                                let confirmed = menu_model::system_confirmation(&action)
+                                    .buttons
+                                    .get(*index)
+                                    .and_then(|button| button.action);
+                                match confirmed {
+                                    Some(confirmed) => {
+                                        self.close_menu(window, cx);
+                                        dispatch_system_menu(confirmed.to_owned(), cx);
+                                    }
+                                    None => self.cancel_confirmation(window, cx),
+                                }
+                            }
+                            None => {}
                         }
                     }
                     _ => {}
@@ -3013,16 +3055,29 @@ mod linux_wayland {
                         confirmation.detail.to_owned()
                     };
                     let reopen_checked = self.confirmation_reopen;
+                    let focus_controls = menu_model::confirmation_controls(&action);
+                    let focused = focus_controls.get(self.confirmation_focus).copied();
+                    let focus_ring = |el: gpui::Stateful<gpui::Div>| {
+                        el.shadow(vec![gpui::BoxShadow::new(
+                            px(0.0),
+                            px(0.0),
+                            rgba(tokens::focus_ring()).into(),
+                        )
+                        .spread_radius(px(tokens::focus_ring_width()))])
+                    };
                     let buttons = confirmation
                         .buttons
                         .iter()
-                        .map(|button| {
+                        .enumerate()
+                        .map(|(index, button)| {
                             let confirmed = button.action;
                             let (background, hover) = if button.default {
                                 (tokens::accent(), tokens::accent_hover())
                             } else {
                                 (tokens::separator(), tokens::separator())
                             };
+                            let is_focused =
+                                focused == Some(menu_model::ConfirmationControl::Button(index));
                             div()
                                 .id(format!(
                                     "system-confirmation-{display_id}-{action}-{}",
@@ -3037,6 +3092,7 @@ mod linux_wayland {
                                 .rounded(px(tokens::menu_item_radius()))
                                 .bg(rgba(background))
                                 .cursor_pointer()
+                                .when(is_focused, focus_ring)
                                 .hover(move |style| style.bg(rgba(hover)))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
@@ -3094,6 +3150,7 @@ mod linux_wayland {
                     }
                     if confirmation.countdown {
                         let check_id = format!("system-confirmation-{display_id}-{action}-reopen");
+                        let is_focused = focused == Some(menu_model::ConfirmationControl::ReopenCheckbox);
                         body = body.child(
                             div()
                                 .id(check_id)
@@ -3104,6 +3161,7 @@ mod linux_wayland {
                                 .items_center()
                                 .gap_2()
                                 .cursor_pointer()
+                                .when(is_focused, focus_ring)
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     cx.stop_propagation();
                                     this.confirmation_reopen = !this.confirmation_reopen;
@@ -4374,6 +4432,20 @@ mod linux_wayland {
                         eprintln!("could not read windows before {action}: {error:?}");
                         break;
                     }
+                    Err(error) if menu_model::quit_all_gives_up_on_errors(started.elapsed()) => {
+                        // The compositor never came back within the same
+                        // grace period an unresponsive app gets: retrying
+                        // forever would leave Shut Down, Restart and Log Out
+                        // silently stuck with no window list to judge by, so
+                        // this gives up waiting and ends the session, same
+                        // as losing the compositor before any window was
+                        // ever asked to close.
+                        eprintln!(
+                            "giving up re-reading windows during {action} after {:?}: {error:?}",
+                            started.elapsed()
+                        );
+                        break;
+                    }
                     Err(error) => {
                         eprintln!("could not re-read windows during {action}: {error:?}");
                         cx.background_executor().timer(QUIT_ALL_CHECK).await;
@@ -4409,6 +4481,15 @@ mod linux_wayland {
                 }
             }
             cx.update(|cx| match action.as_str() {
+                // Bare names, resolved through this process's own `PATH`:
+                // checked live (`/proc/<top-bar-pid>/environ`) as part of
+                // chasing "can't shut down, restart" — the real session's
+                // `rmac-top-bar.service` PATH already has `/usr/bin`, so
+                // that candidate wasn't the bug. Kept as bare names, not
+                // hardcoded absolute ones, so a fake `systemctl`/`niri`
+                // placed first on PATH (this crate's own regression
+                // scripts) can still intercept them; an absolute path
+                // would bypass that and run the real command instead.
                 "system::restart" => spawn_command("systemctl", &["reboot"], cx),
                 "system::shutdown" => spawn_command("systemctl", &["poweroff"], cx),
                 _ => spawn_command(

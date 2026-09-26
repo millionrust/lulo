@@ -12,6 +12,32 @@ fn defaults_use_unique_standard_and_niri_triggers() {
     }));
 }
 
+/// The power-button fail-safe (`rmac-session`'s `hold-power-key`) and the
+/// lock coordinator both take this as a logind *block* inhibitor so a press
+/// while Lulo OS isn't handling the key falls back to nothing instead of an
+/// instant poweroff. It must name only the power key: logind's `Inhibit`
+/// `what` is a colon-separated list, and a build that ever grew a `shutdown`
+/// entry here would silently block `systemctl poweroff`/`reboot` — the exact
+/// "can't shut down, restart" failure this was written to rule out.
+#[test]
+fn the_power_key_inhibitor_never_names_shutdown_sleep_or_reboot() {
+    // `lock::coordinate` takes the inhibitor through this same constant
+    // (crate::power_key::INHIBIT_WHAT), so one assertion covers both.
+    assert_eq!(power_key::INHIBIT_WHAT, "handle-power-key");
+    for what in power_key::INHIBIT_WHAT.split(':') {
+        assert!(
+            matches!(
+                what,
+                "handle-power-key"
+                    | "handle-suspend-key"
+                    | "handle-hibernate-key"
+                    | "handle-lid-switch"
+            ),
+            "logind Inhibit what={what:?} blocks more than the power key"
+        );
+    }
+}
+
 #[test]
 fn fallback_is_explicit_shell_free_and_uses_one_dispatcher() {
     let output = render_niri_fallback(

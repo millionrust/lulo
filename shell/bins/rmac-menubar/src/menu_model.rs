@@ -1083,6 +1083,16 @@ pub fn quit_all_progress(remaining: &[Option<String>], elapsed: Duration) -> Qui
     QuitAllProgress::Interrupted(names)
 }
 
+/// Whether `quit_all_then` should stop retrying a failing compositor
+/// connection and end the session anyway, instead of polling forever. Once
+/// every window was asked to close, losing the compositor mid-wait must not
+/// hang Shut Down, Restart or Log Out any longer than an unresponsive app
+/// would: the same grace period applies, even though there is no window list
+/// left to judge by.
+pub fn quit_all_gives_up_on_errors(elapsed: Duration) -> bool {
+    elapsed >= QUIT_ALL_GRACE
+}
+
 /// Title and body of the notice shown when an application stops a Log Out,
 /// Restart or Shut Down. Wording is rmac's; the Mac's alert was not captured.
 pub fn quit_all_interrupted_copy(action: &str, apps: &[String]) -> (String, String) {
@@ -1255,6 +1265,56 @@ pub fn confirmation_default_action(action: &str) -> Option<&'static str> {
         .into_iter()
         .find(|button| button.default)
         .and_then(|button| button.action)
+}
+
+/// One control Tab can land keyboard focus on inside a confirmation: one of
+/// its buttons (`system_confirmation`'s left-to-right order), or the
+/// "Reopen windows…" checkbox the three timed confirmations show below
+/// their body text. On the Mac, Tab and Shift-Tab cycle every such control,
+/// Space activates whichever one has focus, and Return always runs the
+/// default button regardless of focus (`confirmation_default_action`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfirmationControl {
+    Button(usize),
+    ReopenCheckbox,
+}
+
+/// `action`'s focusable controls, in tab order.
+pub fn confirmation_controls(action: &str) -> Vec<ConfirmationControl> {
+    let confirmation = system_confirmation(action);
+    let mut controls = (0..confirmation.buttons.len())
+        .map(ConfirmationControl::Button)
+        .collect::<Vec<_>>();
+    if confirmation.countdown {
+        controls.push(ConfirmationControl::ReopenCheckbox);
+    }
+    controls
+}
+
+/// Where keyboard focus starts when `action`'s confirmation opens: its
+/// default button, or the first control when it has none (the power-button
+/// dialog: no button is default there, K, so Tab must still start
+/// somewhere).
+pub fn confirmation_initial_focus(action: &str) -> usize {
+    system_confirmation(action)
+        .buttons
+        .iter()
+        .position(|button| button.default)
+        .unwrap_or(0)
+}
+
+/// Tab (`forward`) or Shift-Tab: the next control to focus, wrapping. `0`
+/// when there is nothing to focus.
+pub fn confirmation_next_focus(control_count: usize, current: usize, forward: bool) -> usize {
+    if control_count == 0 {
+        return 0;
+    }
+    let current = current.min(control_count - 1);
+    if forward {
+        (current + 1) % control_count
+    } else {
+        (current + control_count - 1) % control_count
+    }
 }
 
 /// The live body text of a timed confirmation (Log Out, Restart, Shut
@@ -2184,6 +2244,55 @@ mod tests {
             quit_all_progress(&[], QUIT_ALL_GRACE * 2),
             QuitAllProgress::Proceed
         );
+    }
+
+    #[test]
+    fn quit_all_gives_up_on_a_failing_compositor_after_the_same_grace_period() {
+        // Losing niri mid-wait must not hang the request any longer than an
+        // unresponsive app would (`quit_all_then`'s `Err` branch).
+        assert!(!quit_all_gives_up_on_errors(Duration::ZERO));
+        assert!(!quit_all_gives_up_on_errors(
+            QUIT_ALL_GRACE - QUIT_ALL_CHECK
+        ));
+        assert!(quit_all_gives_up_on_errors(QUIT_ALL_GRACE));
+        assert!(quit_all_gives_up_on_errors(QUIT_ALL_GRACE * 2));
+    }
+
+    #[test]
+    fn a_timed_confirmation_tabs_through_cancel_confirm_then_the_checkbox() {
+        let controls = confirmation_controls("system::shutdown");
+        assert_eq!(
+            controls,
+            vec![
+                ConfirmationControl::Button(0),
+                ConfirmationControl::Button(1),
+                ConfirmationControl::ReopenCheckbox,
+            ]
+        );
+        // Cancel, Confirm: Shut Down is the second (default) button.
+        assert_eq!(confirmation_initial_focus("system::shutdown"), 1);
+        assert_eq!(confirmation_next_focus(controls.len(), 1, true), 2);
+        assert_eq!(confirmation_next_focus(controls.len(), 2, true), 0);
+        assert_eq!(confirmation_next_focus(controls.len(), 0, false), 2);
+    }
+
+    #[test]
+    fn the_power_dialog_has_no_checkbox_and_starts_at_its_first_button() {
+        let controls = confirmation_controls(POWER_DIALOG_ACTION);
+        assert_eq!(
+            controls,
+            (0..4).map(ConfirmationControl::Button).collect::<Vec<_>>()
+        );
+        // No button is default (K), so Tab must still start somewhere.
+        assert_eq!(confirmation_initial_focus(POWER_DIALOG_ACTION), 0);
+        assert_eq!(confirmation_next_focus(controls.len(), 3, true), 0);
+        assert_eq!(confirmation_next_focus(controls.len(), 0, false), 3);
+    }
+
+    #[test]
+    fn tab_focus_never_panics_with_nothing_to_focus() {
+        assert_eq!(confirmation_next_focus(0, 0, true), 0);
+        assert_eq!(confirmation_next_focus(0, 5, false), 0);
     }
 
     #[test]

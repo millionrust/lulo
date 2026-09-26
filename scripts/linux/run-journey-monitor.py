@@ -21,66 +21,70 @@ genuinely wired into `crates/activity-monitor/src/process_table.rs`'s
 `render_tr`: real processes on the reference laptop appeared as "table row"
 nodes named exactly `"{name} (PID {pid}), {cpu}% CPU, {mem}"` with a working
 AT-SPI `click` action, and the "Quit Process"/"Inspect Process" toolbar
-buttons and the top bar's "Process" menu (with "Force Quit Process…") are
-real too. What is *not* fixed, found by the same live dump, is narrower and
-more specific than before:
+buttons and the top bar's Quit Process/Force Quit Process… items (under the
+**View** menu -- Activity Monitor keeps its process commands there, not in a
+menu of their own; see `crates/rmac-app-menu/src/lib.rs`'s `MONITOR_MENUS`)
+are real too.
 
-  * The table's AT-SPI projection is bounded to a small number of rows (19
-    in one dump) that closely tracked the top processes by %CPU on the
-    system at that moment -- an apparent viewport/virtualization limit
-    rather than a full per-process AT-SPI tree. This script's own
-    intentionally idle, near-0%-CPU disposable process fell outside that
-    window and had no AT-SPI node at all, even though other, busier
-    processes were fully exposed with the correct label/action model.
-  * There is no accessible way to bring a specific low-usage row into that
-    window: the column headers (`crates/activity-monitor/src/
-    process_table.rs`'s `render_th`) expose AT-SPI's Accessible and
-    Component interfaces only -- no Action -- so they cannot be clicked to
-    re-sort (e.g. by PID) over AT-SPI even though a mouse click can. The
-    search field (`crates/activity-monitor/src/view.rs:59`) still exposes
-    no Text/EditableText either, so it cannot filter to a specific process
-    by typing.
-  * Quit/Force Quit still act on whatever `selected_pid` a **mouse** click
-    (left or right) on a row (`crates/activity-monitor/src/
-    process_table.rs:343-365`) or **keyboard** table navigation
-    (`crates/activity-monitor/src/view.rs:165-176`) last set -- there is no
-    AT-SPI action that sets it independent of a real row being clickable.
-    Since this laptop's session is shared with other automated agents and
-    possibly a person, this script cannot even safely assume "nothing is
-    selected": another actor could have a row highlighted right now.
-    Blindly invoking Quit/Force Quit could therefore signal a process this
-    script does not own, which the brief for this journey explicitly
-    forbids ("Never touch any other process").
+`rmac_ui::Table`'s virtualized row model used to publish an AccessKit node
+only for the table's painted viewport (a `TableDelegate`'s `render_tr` is
+only ever called for the visible range), so a specific low-usage process
+outside that window -- such as this script's own idle, near-0%-CPU
+disposable process -- had no AT-SPI node at all and could not be selected,
+however correct its row's own label/action model would have been once
+painted. That is fixed: `rmac_ui::Table` now also publishes a synthetic
+`Role::Row` node for every model row outside the painted range, while an AT
+client is listening, with the same `"{name} (PID {pid})"`-prefixed name,
+selected state and row index/count as a painted row, and `Click`/`Focus`
+actions that scroll it into view and select it exactly as a real click
+would. What is *not* fixed:
+
+  * The column headers (`crates/activity-monitor/src/process_table.rs`'s
+    `render_th`) expose AT-SPI's Accessible and Component interfaces only
+    -- no Action -- so they cannot be clicked to re-sort (e.g. by PID) over
+    AT-SPI even though a mouse click can.
+  * The search field (`crates/activity-monitor/src/view.rs:59`) still
+    exposes no Text/EditableText, so it cannot filter to a specific process
+    by typing (the same pinned `accesskit_unix` upstream gap as Spotlight
+    and Text Editor's document buffer).
+  * Quit/Force Quit act on whatever `selected_pid` a **mouse** click (left
+    or right) on a row, **keyboard** table navigation, or now an **AT-SPI**
+    Click/Focus action on a row (real or off-screen) last set. Since this
+    laptop's session is shared with other automated agents and possibly a
+    person, this script cannot safely assume "nothing is selected" before
+    it acts: another actor could have a row highlighted right now. It
+    therefore only ever selects its own row, by that row's own AT-SPI
+    action, immediately before invoking Quit/Force Quit on it, and
+    re-verifies the selected row's PID both before and after selecting --
+    never assuming, always confirming -- so it can never signal a process
+    it does not own, which the brief for this journey explicitly forbids
+    ("Never touch any other process").
 
 Given that, this script:
 
   1. Starts one harmless, disposable process it owns (`sleep 600
      <unique-marker>`), with a marker recorded only in the process's own
      argv, never printed into the report.
-  2. Launches System Monitor and verifies, structurally and non-
-     destructively (reading node names/roles/interfaces only -- no clicks
-     that could act on an unknown selection), whether a row for its own
-     specific disposable process is among the ones currently exposed over
-     AT-SPI, by the exact label `crates/activity-monitor/src/
+  2. Launches System Monitor and looks, structurally and non-destructively
+     at first (reading node names/roles/interfaces only -- no clicks that
+     could act on an unknown selection), for a row -- painted or, since the
+     `rmac_ui::Table` fix above, off-screen -- for its own specific
+     disposable process, by the exact label `crates/activity-monitor/src/
      accessibility.rs` defines (`"{name} (PID {pid})"`, prefix-matched
      since the live label also appends CPU/memory).
   3. If (and only if) a row for its own disposable process can be safely
      identified this way, it proceeds with the full journey: select it via
      its AT-SPI Click action, re-verify both its AT-SPI STATE_SELECTED and
      that its name still carries this run's own PID, invoke Quit through
-     the top bar's Process menu, confirm the dialog appears, Cancel once
+     the top bar's View menu, confirm the dialog appears, Cancel once
      (assert the process survives), re-verify the PID one last time, invoke
-     Quit again, confirm (assert the process exits). Because low-usage
-     processes fall outside the table's visible-row window today, this
-     path is not expected to run on a busy reference laptop, but is exactly
-     what would execute once the table exposes every row (or once this
-     process happens to rank inside the current window).
-  4. Otherwise -- the current reality -- it stops short of touching Quit/
-     Force Quit at all, reports the gaps above precisely, and still
-     verifies what it safely can: the disposable process launches and stays
-     alive, System Monitor launches, and both the "Quit Process" button and
-     the top bar's Process menu items (including "Force Quit Process…")
-     exist (a structural check, not an invocation).
+     Quit again, confirm (assert the process exits).
+  4. Otherwise, it stops short of touching Quit/Force Quit at all, reports
+     the gap precisely, and still verifies what it safely can: the
+     disposable process launches and stays alive, System Monitor launches,
+     and both the "Quit Process" button and the top bar's View menu items
+     (including "Force Quit Process…") exist (a structural check, not an
+     invocation).
 
 Cleanup always terminates the disposable process directly (`os.kill`, never
 through the UI it just finished testing) and closes System Monitor through
@@ -439,7 +443,7 @@ def check_search_field_editable() -> dict[str, Any]:
 def check_quit_controls_exist() -> dict[str, Any]:
     # rmac-top-bar's AT-SPI tree carries one frame per workspace/output, most
     # of them empty placeholders on a laptop this many agents have been
-    # exercising concurrently; a full traversal to find "Process menu" can
+    # exercising concurrently; a full traversal to find "View menu" can
     # take noticeably longer than the in-window lookups below, so it gets a
     # more generous timeout rather than being (mis)reported as absent.
     #
@@ -447,9 +451,12 @@ def check_quit_controls_exist() -> dict[str, Any]:
     # "Quit Process" -- via an outer accessible wrapper
     # (crates/activity-monitor/src/view/render/chrome.rs:44-63
     # accessible_icon_button); there is no equivalent in-window "Force
-    # Quit" icon (Force Quit is reachable only via the top bar's Process
-    # menu, or the confirmation dialog's own escalation button), so this
-    # checks the menu item instead of a nonexistent toolbar button.
+    # Quit" icon. Quit Process and Force Quit Process… both live in the top
+    # bar's **View** menu, not a menu of their own -- Activity Monitor
+    # keeps its process commands there on purpose (see
+    # `crates/rmac-app-menu/src/lib.rs`'s `MONITOR_MENUS`, confirmed live
+    # by dumping the open menu's AT-SPI tree) -- so this checks the menu
+    # item instead of a nonexistent toolbar button or "Process" menu.
     quit_button = find_node(
         SYSTEM_MONITOR["atspi_name"], "Quit Process", role="button", timeout=2.0
     )
@@ -459,7 +466,7 @@ def check_quit_controls_exist() -> dict[str, Any]:
     # its first switch to a just-focused app under heavy CPU load (see
     # run-journey-terminal.py's identical observation for Shell/Edit/View).
     for attempt in range(2):
-        menu_button = find_node("rmac-top-bar", "Process menu", role="button", timeout=8.0)
+        menu_button = find_node("rmac-top-bar", "View menu", role="button", timeout=8.0)
         if menu_button is not None and "click" in action_names(menu_button):
             click(menu_button)
             force_quit_item = find_node(
@@ -476,7 +483,7 @@ def check_quit_controls_exist() -> dict[str, Any]:
         label
         for label, node in (
             ("in-window 'Quit Process' button", quit_button),
-            ("top bar Process menu", menu_button),
+            ("top bar View menu", menu_button),
             ("'Force Quit Process…' menu item", force_quit_item),
         )
         if node is None
@@ -484,7 +491,7 @@ def check_quit_controls_exist() -> dict[str, Any]:
     return make_step(
         "quit_controls_exist",
         found,
-        "the 'Quit Process' button, the top bar's Process menu, and its "
+        "the 'Quit Process' button, the top bar's View menu, and its "
         "'Force Quit Process…' item all exist over AT-SPI"
         if found
         else f"not found over AT-SPI: {', '.join(missing)}",
@@ -538,11 +545,16 @@ def count_process_rows() -> int:
 
 
 def request_process_action(force: bool) -> bool:
-    menu_button = find_node("rmac-top-bar", "Process menu", role="button", timeout=2.0)
+    # Quit Process / Force Quit Process… live in the top bar's View menu
+    # (crates/rmac-app-menu/src/lib.rs's MONITOR_MENUS), not a "Process"
+    # menu of their own.
+    menu_button = find_node("rmac-top-bar", "View menu", role="button", timeout=2.0)
     if menu_button is None or "click" not in action_names(menu_button):
         return False
     click(menu_button)
-    item_name = "Force Quit Process…" if force else "Quit Process…"
+    # MONITOR_MENUS spells the non-destructive item "Quit Process" with no
+    # ellipsis (only the destructive Force Quit gets one).
+    item_name = "Force Quit Process…" if force else "Quit Process"
     item = find_node("rmac-top-bar", item_name, role="menu item", timeout=2.0)
     if item is None or "click" not in action_names(item):
         return False

@@ -15,12 +15,14 @@
 //! focused, named field with its text and caret.
 
 use std::cell::RefCell;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::rc::Rc;
 
 use gpui::{
-    accesskit, A11ySubtreeBuilder, AccessibleAction, App, Div, Entity, Focusable as _, Stateful,
-    StatefulInteractiveElement as _,
+    accesskit, A11ySubtreeBuilder, AccessibleAction, App, Div, Entity, Focusable as _,
+    SharedString, Stateful, StatefulInteractiveElement as _,
 };
 
 use crate::InputState;
@@ -269,6 +271,82 @@ pub fn with_description(
     })
 }
 
+/// Longest `Table` exposed to assistive technology, in rows. Bounds the
+/// per-frame cost of publishing off-screen rows for any `rmac_ui::Table`
+/// user, however many rows its model actually holds — an honest, bounded
+/// degradation (rows past the cap are simply not reachable) rather than an
+/// unbounded per-frame cost.
+pub const MAX_ACCESSIBLE_TABLE_ROWS: usize = 4096;
+
+/// One model row that isn't currently painted, published to assistive
+/// technology because a `Table`'s virtualization skips it. See
+/// [`offscreen_table_row_indices`] and [`push_offscreen_table_rows`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AccessibleTableRow {
+    /// The row's index into the table's full model (0-based).
+    pub index: usize,
+    /// The row's name, read from its first column.
+    pub name: SharedString,
+    /// Whether this row is the table's selected row.
+    pub selected: bool,
+}
+
+/// Row indices that need a synthetic AccessKit node: every model row
+/// index below `row_count` and outside `painted` (which already has a
+/// real, accessible element from the delegate's own row rendering), up to
+/// [`MAX_ACCESSIBLE_TABLE_ROWS`].
+pub fn offscreen_table_row_indices(row_count: usize, painted: Range<usize>) -> Vec<usize> {
+    (0..row_count.min(MAX_ACCESSIBLE_TABLE_ROWS))
+        .filter(|index| !painted.contains(index))
+        .collect()
+}
+
+/// A deterministic AccessKit node id for a synthetic table row, stable
+/// across frames (so a screen reader keeps tracking the same row as it
+/// scrolls into and out of the painted range) and unique per table
+/// instance. `salt` should be the hosting `Entity`'s id
+/// (`Entity::entity_id().as_u64()`), so two `Table`s on screen at once
+/// never collide.
+pub fn table_row_node_id(salt: u64, row_index: usize) -> accesskit::NodeId {
+    let mut hasher = DefaultHasher::new();
+    salt.hash(&mut hasher);
+    "rmac_ui::accessibility::table_row".hash(&mut hasher);
+    row_index.hash(&mut hasher);
+    accesskit::NodeId(hasher.finish())
+}
+
+/// Push one synthetic `Role::Row` node per `row`: its 1-based row index
+/// and the table's row count (so a screen reader can announce "row 145 of
+/// 300"), its name, its selected state, and — since none of these rows
+/// are painted — `bounds`, which callers should fill in with the table's
+/// own bounds (the best available position for an item that isn't on
+/// screen). Each node also advertises the `Click` and `Focus` actions;
+/// [`table_row_node_id`] gives the id to register their handlers under
+/// with `Window::on_a11y_action`, since this builder has no access to
+/// `Window` to register them itself.
+pub fn push_offscreen_table_rows(
+    builder: &mut A11ySubtreeBuilder,
+    salt: u64,
+    rows: &[AccessibleTableRow],
+    row_count: usize,
+    bounds: Option<accesskit::Rect>,
+) {
+    for row in rows {
+        let id = table_row_node_id(salt, row.index);
+        let mut node = accesskit::Node::new(accesskit::Role::Row);
+        node.set_label(row.name.to_string());
+        node.set_selected(row.selected);
+        node.set_row_index(row.index + 1);
+        node.set_row_count(row_count);
+        node.add_action(accesskit::Action::Click);
+        node.add_action(accesskit::Action::Focus);
+        if let Some(bounds) = bounds {
+            node.set_bounds(bounds);
+        }
+        builder.push_child(id, node);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,5 +413,35 @@ mod tests {
         let total: usize = runs.iter().map(|run| run.text.len()).sum();
         assert!(total <= MAX_ACCESSIBLE_TEXT_BYTES);
         assert_eq!(total % 2, 0);
+    }
+
+    #[test]
+    fn offscreen_rows_are_every_index_outside_the_painted_range() {
+        assert_eq!(
+            offscreen_table_row_indices(10, 3..6),
+            vec![0, 1, 2, 6, 7, 8, 9]
+        );
+        // A painted range covering the whole model needs no synthetic rows.
+        assert_eq!(offscreen_table_row_indices(5, 0..5), Vec::<usize>::new());
+        // Nothing painted at all (e.g. before the first layout): every row.
+        assert_eq!(offscreen_table_row_indices(3, 0..0), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn offscreen_rows_are_capped_so_a_huge_model_stays_bounded() {
+        let indices = offscreen_table_row_indices(MAX_ACCESSIBLE_TABLE_ROWS + 500, 0..0);
+        assert_eq!(indices.len(), MAX_ACCESSIBLE_TABLE_ROWS);
+        assert_eq!(indices.last(), Some(&(MAX_ACCESSIBLE_TABLE_ROWS - 1)));
+    }
+
+    #[test]
+    fn row_node_ids_are_stable_and_distinct() {
+        // Stable: the same salt and row index always hash the same way, so a
+        // screen reader keeps tracking a row across frames.
+        assert_eq!(table_row_node_id(1, 5), table_row_node_id(1, 5));
+        // Distinct per row...
+        assert_ne!(table_row_node_id(1, 5), table_row_node_id(1, 6));
+        // ...and distinct per table, so two `Table`s never collide.
+        assert_ne!(table_row_node_id(1, 5), table_row_node_id(2, 5));
     }
 }

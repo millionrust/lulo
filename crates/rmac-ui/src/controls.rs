@@ -2251,7 +2251,7 @@ impl<D: TableDelegate> Table<D> {
 }
 
 impl<D: TableDelegate> RenderOnce for Table<D> {
-    fn render(self, _window: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let mut table = ComponentTable::new(&self.state)
             .stripe(self.striped)
             .bordered(self.bordered)
@@ -2259,7 +2259,76 @@ impl<D: TableDelegate> RenderOnce for Table<D> {
         if let Some(size) = self.size {
             table = table.with_size(size);
         }
-        table
+
+        // ACC (beta blocker, journey 6): gpui-component's virtualized table
+        // only produces AccessKit nodes for the painted row range, even
+        // though the delegate's model holds every row — a row that hasn't
+        // been scrolled into view is unreachable to a screen reader.
+        // Publish the rest as synthetic `Role::Row` nodes, computed only
+        // while an AT client is listening (`is_a11y_active`), the same
+        // gating Terminal's own accessibility projection uses so idle CPU
+        // stays flat (commit ba012c90).
+        let salt = self.state.entity_id().as_u64();
+        let offscreen = window.is_a11y_active().then(|| {
+            let state = self.state.read(cx);
+            let delegate = state.delegate();
+            let row_count = delegate.rows_count(cx);
+            let painted = state.visible_range().rows().clone();
+            let selected_row = state.selected_row();
+            let rows = crate::accessibility::offscreen_table_row_indices(row_count, painted)
+                .into_iter()
+                .map(|index| crate::accessibility::AccessibleTableRow {
+                    index,
+                    name: delegate.cell_text(index, 0, cx).into(),
+                    selected: selected_row == Some(index),
+                })
+                .collect::<Vec<_>>();
+            (row_count, rows)
+        });
+
+        // `DataTable` sizes itself to 100% of its parent; size this new
+        // wrapper the same way so it stays a transparent passthrough for
+        // layout, exactly as when `Table::render` returned `DataTable`
+        // directly.
+        let mut wrapper = div()
+            .id(("rmac-table-rows", salt as usize))
+            .role(Role::RowGroup)
+            .size_full();
+
+        if let Some((row_count, rows)) = offscreen {
+            // A screen reader selects an off-screen row exactly like the
+            // table's own painted rows do — `set_selected_row` both scrolls
+            // it into view and selects it, and emits `TableEvent::SelectRow`
+            // so app-specific selection bookkeeping (e.g. Activity
+            // Monitor's PID-keyed selection) stays in sync the same way it
+            // already does for keyboard navigation.
+            for row in &rows {
+                let node_id = crate::accessibility::table_row_node_id(salt, row.index);
+                let row_index = row.index;
+                let select_state = self.state.clone();
+                window.on_a11y_action(node_id, AccessibleAction::Click, {
+                    let select_state = select_state.clone();
+                    move |_data, _window, cx| {
+                        select_state.update(cx, |state, cx| state.set_selected_row(row_index, cx));
+                    }
+                });
+                window.on_a11y_action(
+                    node_id,
+                    AccessibleAction::Focus,
+                    move |_data, _window, cx| {
+                        select_state.update(cx, |state, cx| state.set_selected_row(row_index, cx));
+                    },
+                );
+            }
+            wrapper = wrapper.a11y_synthetic_children(move |builder| {
+                let bounds = builder.parent_node().bounds();
+                crate::accessibility::push_offscreen_table_rows(
+                    builder, salt, &rows, row_count, bounds,
+                );
+            });
+        }
+
+        wrapper.child(table)
     }
 }
 

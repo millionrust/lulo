@@ -133,12 +133,12 @@ impl Render for MonitorView {
             })
             .when(self.tab.has_process_table(), |monitor| {
                 // Activity Monitor's table: full-width 24 pt rows with every
-                // other row striped, a 5 pt gap under the header. The
-                // underlying virtualized table widget `rmac_ui::Table` wraps
-                // sets no AT-SPI role on its own container or rows — see
-                // docs/accessibility-audit.md — so the table's own role/name
-                // live on this wrapper, and each row/header cell's role
-                // lives in `process_table.rs`.
+                // other row striped, a 5 pt gap under the header. The table's
+                // own role/name live on this wrapper; `rmac_ui::Table` marks
+                // its own row group and publishes every off-screen row to
+                // assistive technology (see docs/accessibility-audit.md),
+                // and each painted row/header cell's role lives in
+                // `process_table.rs`.
                 let row_count = self.table.read(cx).delegate().rows.len();
                 let column_count = self.table.read(cx).delegate().visible.len();
                 let query = self.search.read(cx).value().to_string();

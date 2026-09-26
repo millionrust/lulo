@@ -416,3 +416,65 @@ metric-tab pills (Cpu/Memory/Energy/Disk/Network), plain `div().on_click
 (...)` with no way to reach them from the keyboard, were fixed the same
 pass: each is a real tab stop, with Left/Right/Home/End roving focus and
 selection together across the strip.
+
+### Off-screen rows were unreachable — fixed in `rmac_ui::Table` itself
+
+Every fix above still left one gap this document didn't call out: even a
+`TableDelegate` implementation that does everything right (real
+`Role::Row`/`aria_label`/`aria_selected` on each row, as
+`ProcessTableDelegate` does) only produces an AccessKit node for a row while
+`gpui-component`'s virtualized `TableState`/`DataTable` has it painted.
+`render_tr`/`render_th` are only ever called for the visible range; a row
+that has never scrolled into view has no element at all, so no screen
+reader can select it. Journey 6 of `docs/journey-suite.md` found exactly
+this: with ~227 real processes and ~19 painted at a time, most of System
+Monitor's process list was outside AT-SPI's reach, and select → Quit
+Process → confirm was impossible for a process outside the current
+viewport.
+
+Unlike the per-`TableDelegate` gaps documented above, this one could not be
+fixed by any one delegate — the model rows a delegate never paints never
+reach its own `render_tr` at all. It is fixed instead in the shared layer,
+`rmac_ui::Table<D>::render` (`controls.rs`), so every `Table` user gets it
+for free:
+
+- The table is now wrapped in a `Role::RowGroup` element (previously
+  `Table::render` returned `DataTable` directly with no role of its own).
+- While an AT client is listening (`Window::is_a11y_active`, the same gate
+  Terminal's own accessibility projection uses — commit `ba012c90` — so
+  idle CPU stays flat), that wrapper publishes one synthetic `Role::Row`
+  AccessKit node per model row outside the table's current painted range
+  (`TableState::visible_range().rows()`), up to
+  `rmac_ui::accessibility::MAX_ACCESSIBLE_TABLE_ROWS` (4096) — an honest,
+  bounded cap rather than unbounded per-frame cost for a pathologically
+  large table.
+- Each synthetic row gets its 1-based row index and the table's row count
+  (`node.set_row_index`/`set_row_count`, so a screen reader can announce
+  "row 145 of 300"), its name from `TableDelegate::cell_text(row, 0, cx)`
+  (the first column), its selected state, and — since it isn't painted —
+  the table's own bounds as a stand-in position, via
+  `A11ySubtreeBuilder::parent_node().bounds()`. Painted rows are
+  untouched: they keep using their own real element and real bounds, so no
+  row is ever described twice.
+- Each synthetic row advertises the `Click` and `Focus` actions, registered
+  via `Window::on_a11y_action` with a deterministic, per-table, per-row
+  node id (`rmac_ui::accessibility::table_row_node_id`, salted with the
+  `TableState` entity's id so two tables never collide). Either action
+  calls `TableState::set_selected_row`, which both scrolls the row into
+  view and selects it, and emits `TableEvent::SelectRow` — the same event
+  keyboard navigation already emits — so a consumer's own selection
+  bookkeeping (e.g. `ProcessTableDelegate::selected_pid`, kept in sync via
+  `MonitorView`'s existing `TableEvent::SelectRow` subscription) stays
+  correct regardless of how the row was selected.
+- `ProcessTableDelegate::cell_text` now returns real per-cell text (it
+  previously used the trait's empty-string default), and
+  `ProcessTableDelegate::render_tr` now also sets `aria_row_index`/
+  `aria_row_count` on painted rows, so a screen reader announces "row N of
+  M" the same way whether or not a given row happens to be painted.
+
+The pure row-selection and node-id logic
+(`offscreen_table_row_indices`, `table_row_node_id`) lives in
+`rmac_ui::accessibility` and is unit-tested there. This closes the System
+Monitor accept-flow blocker `docs/beta-checklist.md` row 3/6 described;
+see that file and `docs/journey-suite.md` journey 6 for the live
+confirmation.

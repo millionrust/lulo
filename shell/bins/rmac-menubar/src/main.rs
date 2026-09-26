@@ -3155,7 +3155,8 @@ mod linux_wayland {
                     }
                     if confirmation.countdown {
                         let check_id = format!("system-confirmation-{display_id}-{action}-reopen");
-                        let is_focused = focused == Some(menu_model::ConfirmationControl::ReopenCheckbox);
+                        let is_focused =
+                            focused == Some(menu_model::ConfirmationControl::ReopenCheckbox);
                         body = body.child(
                             div()
                                 .id(check_id)

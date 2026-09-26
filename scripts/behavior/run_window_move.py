@@ -94,9 +94,24 @@ class Run:
     @staticmethod
     def geometry(window: dict) -> tuple[float, float, float, float]:
         layout = window.get("layout") or {}
-        pos = layout.get("pos_in_scrolling_layout") or layout.get("pos_in_workspace_view") or [0, 0]
+        pos = (layout.get("tile_pos_in_workspace_view") or
+               layout.get("pos_in_scrolling_layout") or [0, 0])
         size = layout.get("window_size") or layout.get("tile_size") or [500, 400]
         return float(pos[0]), float(pos[1]), float(size[0]), float(size[1])
+
+    def swaymsg(self, *args: str):
+        result = subprocess.run(["swaymsg", "-s", str(self.sway_socket), "-r", *args],
+                                env=self.env, capture_output=True, text=True, timeout=10)
+        return json.loads(result.stdout) if result.stdout.strip() else None
+
+    def parent_point(self, x: float, y: float) -> tuple[float, float]:
+        # Input is scaled into the nested niri client's actual Sway surface.
+        return (self.niri_rect[0] + x * self.niri_rect[2] / self.width,
+                self.niri_rect[1] + y * self.niri_rect[3] / self.height)
+
+    def drag(self, start: tuple[float, float], end: tuple[float, float]) -> None:
+        self.pointer.drag(self.parent_point(*start), self.parent_point(*end),
+                          self.parent_width, self.parent_height)
 
     def start(self) -> None:
         self.locks = []
@@ -113,6 +128,20 @@ class Run:
             (p.name for p in self.runtime.glob("wayland-*") if not p.name.endswith(".lock")), None))
         if not self.sway_display:
             raise RuntimeError("headless Sway did not start")
+        self.sway_socket = self.wait_for(lambda: next(self.runtime.glob("sway-ipc.*.sock"), None))
+        if not self.sway_socket:
+            raise RuntimeError("headless Sway IPC socket did not appear")
+        outputs = self.swaymsg("-t", "get_outputs") or []
+        output = next((o for o in outputs if o.get("active")), outputs[0] if outputs else {})
+        if output:
+            # Settings is taller than Sway's small default headless mode. Raise
+            # the mode before niri maps so its lower edge remains draggable.
+            self.swaymsg("output", output["name"], "mode", "1600x1200")
+            time.sleep(0.5)
+            outputs = self.swaymsg("-t", "get_outputs") or []
+            output = next((o for o in outputs if o.get("active")), output)
+        rect = output.get("rect") or {"width": 1440, "height": 900}
+        self.parent_width, self.parent_height = rect["width"], rect["height"]
 
         shell = (REPO / "packaging/rmac-session/shell.kdl").read_text(encoding="utf-8")
         # Keep the shipped session rules and replace only the two packaged service paths.
@@ -125,8 +154,9 @@ class Run:
                                   capture_output=True, text=True)
         self.check("shipped shell.kdl validates", validate.returncode == 0, validate.stderr[-300:])
         existing = {p.name for p in self.runtime.glob("wayland-*")}
-        self.spawn([self.args.niri, "-c", str(niri_config)], "niri",
-                   {"WAYLAND_DISPLAY": self.sway_display, "LIBGL_ALWAYS_SOFTWARE": "1"})
+        self.niri_process = self.spawn([self.args.niri, "-c", str(niri_config)], "niri",
+                                       {"WAYLAND_DISPLAY": self.sway_display,
+                                        "LIBGL_ALWAYS_SOFTWARE": "1"})
         self.socket = self.wait_for(lambda: next(iter(self.runtime.glob("niri.*.sock")), None))
         self.display = self.wait_for(lambda: next((p.name for p in self.runtime.glob("wayland-*")
                                                     if not p.name.endswith(".lock") and p.name not in existing), None))
@@ -137,6 +167,22 @@ class Run:
         outputs = self.niri("outputs") or {}
         output = next(iter(outputs.values()), {}).get("logical", {})
         self.width, self.height = output.get("width", 1440), output.get("height", 900)
+        tree = self.swaymsg("-t", "get_tree") or {}
+        stack = [tree]
+        niri_node = None
+        while stack:
+            node = stack.pop()
+            if node.get("pid") == self.niri_process.pid:
+                niri_node = node
+                break
+            stack.extend(node.get("nodes", []))
+            stack.extend(node.get("floating_nodes", []))
+        node_rect = (niri_node or {}).get("rect") or {
+            "x": 0, "y": 0, "width": self.parent_width, "height": self.parent_height,
+        }
+        self.niri_rect = (node_rect["x"], node_rect["y"], node_rect["width"], node_rect["height"])
+        print(f"nested displays: niri={self.width}x{self.height}, Sway={self.parent_width}x{self.parent_height}, "
+              f"niri surface={self.niri_rect}", flush=True)
         # The shipped shell starts these services. Their HOME/XDG state is private to this run.
         self.spawn([str(bins / "dock")], "dock", {"VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
         self.spawn([str(bins / "mission-control"), "--service"], "mission-control",
@@ -155,12 +201,12 @@ class Run:
         time.sleep(1)
         x, y, width, height = self.geometry(window)
         start, end = (x + width * .5, y + 18), (x + width * .5 + 150, y + 100)
-        self.pointer.drag(start, end, self.width, self.height)
+        self.drag(start, end)
         moved = self.wait_for(lambda: self.window(app_id), 3)
         new_geometry = self.geometry(moved) if moved else (x, y, width, height)
         changed = abs(new_geometry[0] - x) > 30 or abs(new_geometry[1] - y) > 30
         self.check(f"{title} title-bar drag changes niri position", changed,
-                   f"{(x, y)} -> {new_geometry[:2]}")
+                   f"{(x, y)} -> {new_geometry[:2]}; layout={window.get('layout')}")
         time.sleep(2)
         settled = self.window(app_id)
         settled_geometry = self.geometry(settled) if settled else (0, 0, 0, 0)
@@ -177,15 +223,15 @@ class Run:
             time.sleep(1)
             x, y, width, height = self.geometry(window)
             # Grab just inside the lower right edge and move inward to shrink.
-            self.pointer.drag((x + width - 3, y + height - 3),
-                              (x + width - 240, y + height - 200), self.width, self.height)
+            self.drag((x + width - 3, y + height - 3),
+                      (x + width - 240, y + height - 200))
             resized = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
             resized_geometry = self.geometry(resized) if resized else (x, y, width, height)
             shrunk = resized_geometry[2] < width - 30 and resized_geometry[3] < height - 30
             self.check("Settings resizes from its lower-right edge", shrunk,
                        f"{(width, height)} -> {resized_geometry[2:]}")
             sx, sy, sw, sh = resized_geometry
-            self.pointer.drag((sx + sw * .5, sy + 18), (sx + sw * .5 + 140, sy + 90), self.width, self.height)
+            self.drag((sx + sw * .5, sy + 18), (sx + sw * .5 + 140, sy + 90))
             moved = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
             mg = self.geometry(moved) if moved else resized_geometry
             changed = abs(mg[0] - sx) > 30 or abs(mg[1] - sy) > 30
@@ -242,7 +288,7 @@ def outer(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--niri", default="/usr/bin/niri")
-    parser.add_argument("--bin-dir", required=True)
+    parser.add_argument("--bin-dir")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--gtk-window", action="store_true", help=argparse.SUPPRESS)
@@ -251,6 +297,8 @@ def main() -> int:
         return gtk_window()
     if args.inner:
         return Run(args, args.inner).run()
+    if not args.bin_dir:
+        parser.error("--bin-dir is required")
     return outer(args)
 
 

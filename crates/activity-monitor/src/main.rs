@@ -35,6 +35,9 @@ fn main() {
         640.0,
         |window, cx| {
             let view = MonitorView::new(window, cx);
+            // Route menu-bar commands to the monitor even while focus is in
+            // the top bar or has just returned from a dismissed confirmation.
+            rmac_ui::register_menu_target(window, &view.focus, cx);
             cx.bind_keys([
                 gpui::KeyBinding::new(
                     rmac_ui::shortcuts::FIND.keystroke,

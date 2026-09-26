@@ -6,7 +6,7 @@ impl MonitorView {
     pub(super) fn render_confirm(&self, cx: &Context<Self>) -> Option<gpui::AnyElement> {
         use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
 
-        let request = self.pending_kill.clone()?;
+        let request = self.pending_kill.current()?.clone();
         if request.kind == process_action::ActionKind::Quit {
             // Activity Monitor's ⊗ asks once and offers both signals:
             // Force Quit · Cancel · Quit.

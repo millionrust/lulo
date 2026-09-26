@@ -35,6 +35,28 @@ pub(crate) struct Request {
     pub(crate) kind: ActionKind,
 }
 
+/// State for the process confirmation shown by the monitor.
+#[derive(Default)]
+pub(crate) struct Confirmation(Option<Request>);
+
+impl Confirmation {
+    pub(crate) fn request(&mut self, request: Request) {
+        self.0 = Some(request);
+    }
+
+    pub(crate) fn take(&mut self) -> Option<Request> {
+        self.0.take()
+    }
+
+    pub(crate) fn current(&self) -> Option<&Request> {
+        self.0.as_ref()
+    }
+
+    pub(crate) fn current_mut(&mut self) -> Option<&mut Request> {
+        self.0.as_mut()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Preflight {
     Current,
@@ -128,6 +150,43 @@ mod tests {
             },
             kind,
         }
+    }
+
+    #[test]
+    fn quit_confirmation_can_be_reopened_after_cancel() {
+        let mut confirmation = Confirmation::default();
+        confirmation.request(request(ActionKind::Quit));
+        assert_eq!(
+            confirmation.current().map(|r| r.kind),
+            Some(ActionKind::Quit)
+        );
+        assert_eq!(confirmation.take().map(|r| r.kind), Some(ActionKind::Quit));
+        assert!(confirmation.current().is_none());
+        confirmation.request(request(ActionKind::Quit));
+        assert_eq!(
+            confirmation.current().map(|r| r.kind),
+            Some(ActionKind::Quit)
+        );
+    }
+
+    #[test]
+    fn force_quit_confirmation_can_be_reopened_after_cancel() {
+        let mut confirmation = Confirmation::default();
+        confirmation.request(request(ActionKind::ForceQuit));
+        assert_eq!(
+            confirmation.current().map(|r| r.kind),
+            Some(ActionKind::ForceQuit)
+        );
+        assert_eq!(
+            confirmation.take().map(|r| r.kind),
+            Some(ActionKind::ForceQuit)
+        );
+        assert!(confirmation.current().is_none());
+        confirmation.request(request(ActionKind::ForceQuit));
+        assert_eq!(
+            confirmation.current().map(|r| r.kind),
+            Some(ActionKind::ForceQuit)
+        );
     }
 
     #[test]

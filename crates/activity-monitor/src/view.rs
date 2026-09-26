@@ -35,7 +35,7 @@ pub(crate) struct MonitorView {
     pub(crate) focus: gpui::FocusHandle,
     tab: Tab,
     sampler: Sampler,
-    pending_kill: Option<process_action::Request>,
+    pending_kill: process_action::Confirmation,
     process_action_feedback: Option<process_action::Feedback>,
     /// Whether the column chooser dropdown is open.
     cols_menu_open: bool,
@@ -95,7 +95,7 @@ impl MonitorView {
             focus: cx.focus_handle(),
             tab: Tab::Cpu,
             sampler: Sampler::new(),
-            pending_kill: None,
+            pending_kill: process_action::Confirmation::default(),
             process_action_feedback: None,
             cols_menu_open: false,
             persistence_error,
@@ -193,7 +193,7 @@ impl MonitorView {
             }
         });
         if let Some(process) = self.selected_proc(cx) {
-            self.pending_kill = Some(process_action::Request {
+            self.pending_kill.request(process_action::Request {
                 process,
                 kind: if force {
                     process_action::ActionKind::ForceQuit
@@ -297,7 +297,7 @@ impl MonitorView {
     /// Force-quit the process a pending Quit confirmation names, from the
     /// alert's Force Quit button.
     fn confirm_force_quit(&mut self, cx: &mut Context<Self>) {
-        if let Some(request) = self.pending_kill.as_mut() {
+        if let Some(request) = self.pending_kill.current_mut() {
             request.kind = process_action::ActionKind::ForceQuit;
         }
         self.confirm_kill(cx);

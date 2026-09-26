@@ -219,8 +219,43 @@ class Run:
         settled_geometry = self.geometry(settled) if settled else (0, 0, 0, 0)
         stays = abs(settled_geometry[0] - new_geometry[0]) < 2 and abs(settled_geometry[1] - new_geometry[1]) < 2
         self.check(f"{title} remains at dragged position", stays, str(settled_geometry[:2]))
+        self.assert_edge_resize(app_id, title)
         process.terminate()
         process.wait(10)
+
+    def assert_edge_resize(self, app_id: str, title: str) -> None:
+        window = self.window(app_id)
+        if not window:
+            return
+        x, y, width, height = self.geometry(window)
+        initial_width = width
+        edge_y = y + height / 2
+        resized = False
+        offset_used = None
+        for offset in (0, 1, -1, 2, -2, 4, -4, 8, -8):
+            current = self.window(app_id)
+            if not current:
+                break
+            x, y, width, height = self.geometry(current)
+            if width > initial_width + 30:
+                resized = True
+                break
+            edge_y = y + height / 2
+            self.drag((x + offset, edge_y), (x + offset - 160, edge_y))
+            candidate = self.wait_for(
+                lambda: (candidate := self.window(app_id))
+                if candidate and self.geometry(candidate)[2] > initial_width + 30 else None,
+                3.0,
+            )
+            if candidate:
+                resized = True
+                offset_used = offset
+                break
+        final = self.window(app_id) or window
+        after = self.geometry(final)
+        expanded = resized or after[2] > initial_width + 30
+        self.check(f"{title} left-edge resize changes niri width", expanded,
+                   f"width {initial_width} -> {after[2]}; edge={(x, edge_y)}; grab offset={offset_used}")
 
     def resize_settings(self) -> None:
         process = self.spawn([str(Path(self.args.bin_dir) / "rmac-system-settings")], "settings")
@@ -250,6 +285,7 @@ class Run:
             mg = self.geometry(moved) if moved else (sx, sy, sw, sh)
             changed = abs(mg[0] - sx) > 30 or abs(mg[1] - sy) > 30
             self.check("Settings title bar remains movable", changed, f"{(sx, sy)} -> {mg[:2]}")
+            self.assert_edge_resize("org.rmac.SystemSettings", "Settings")
         process.terminate()
         process.wait(10)
 

@@ -1158,9 +1158,9 @@ pub const CONFIRMATION_HEIGHT: f32 = 288.0;
 /// (reachable only by holding the physical power key, which this audit
 /// does not press); width kept at its prior estimate.
 pub const POWER_DIALOG_WIDTH: f32 = 360.0;
-/// S: not measured; the dialog has a title, no countdown body, and one
-/// button row, so it should need less height than the timed ones.
-pub const POWER_DIALOG_HEIGHT: f32 = 150.0;
+/// The rendered power dialog is 198 pt high in the nested 1440×900 capture.
+/// Keep two points of input-region clearance around its button row.
+pub const POWER_DIALOG_HEIGHT: f32 = 200.0;
 /// How long a menu-triggered Log Out, Restart or Shut Down waits before it
 /// runs on its own, as on the Mac (measured on macOS 26.2: starts at 60
 /// and counts down one per second).

@@ -2778,7 +2778,10 @@ mod linux_wayland {
                     .map(|menu| menu_panel_width(menu, window))
             };
             let screen_width = f32::from(window.bounds().size.width);
-            let screen_height = f32::from(window.bounds().size.height);
+            let screen_height = window
+                .display(cx)
+                .map(|display| f32::from(display.bounds().size.height))
+                .unwrap_or_else(|| f32::from(window.bounds().size.height));
             // A confirmation is a floating panel centred on screen, not a
             // dropdown anchored under the logo menu, as on the Mac.
             let menu_left = if let Some(confirmation) = &confirmation {
@@ -2798,7 +2801,9 @@ mod linux_wayland {
                     .map(|menu| app_menu_height(&menu.items))
             };
             let panel_top = if let Some(confirmation) = &confirmation {
-                ((screen_height - confirmation.height) / 2.0).max(menu_top)
+                ((screen_height - confirmation.height) / 2.0)
+                    .max(menu_top)
+                    .min(MENU_SURFACE_HEIGHT - confirmation.height - 8.0)
             } else {
                 menu_top
             };

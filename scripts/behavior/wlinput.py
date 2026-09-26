@@ -342,6 +342,24 @@ class Wayland:
         self._send(self.pointer, 4, b"")
         self.roundtrip()
 
+    def button(self, pressed: bool, button: str = "left") -> None:
+        code = {"left": 0x110, "right": 0x111, "middle": 0x112}[button]
+        self._send(self.pointer, 2, struct.pack("<III", self._time(), code, int(pressed)))
+        self._send(self.pointer, 4, b"")
+        self.roundtrip()
+
+    def drag(self, start: tuple[float, float], end: tuple[float, float], width: int, height: int,
+             button: str = "left", steps: int = 8) -> None:
+        self.move(*start, width, height)
+        time.sleep(0.05)
+        self.button(True, button)
+        for step in range(1, steps + 1):
+            fraction = step / steps
+            self.move(start[0] + (end[0] - start[0]) * fraction,
+                      start[1] + (end[1] - start[1]) * fraction, width, height)
+            time.sleep(0.04)
+        self.button(False, button)
+
     def click(self, x: float, y: float, width: int, height: int, button: str = "left", count: int = 1) -> None:
         code = {"left": 0x110, "right": 0x111, "middle": 0x112}[button]
         self.move(x, y, width, height)

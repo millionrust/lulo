@@ -51,6 +51,7 @@ pub(crate) struct Callbacks {
     moved: Option<Box<dyn FnMut()>>,
     should_close: Option<Box<dyn FnMut() -> bool>>,
     close: Option<Box<dyn FnOnce()>>,
+    hit_test_window_control: Option<Box<dyn FnMut() -> Option<WindowControlArea>>>,
     appearance_changed: Option<Box<dyn FnMut()>>,
     button_layout_changed: Option<Box<dyn FnMut()>>,
 }
@@ -795,6 +796,22 @@ impl WaylandWindowStatePtr {
 
     pub fn toplevel(&self) -> Option<xdg_toplevel::XdgToplevel> {
         self.state.borrow().surface_state.toplevel().cloned()
+    }
+
+    pub fn hit_test_window_control(&self) -> Option<WindowControlArea> {
+        self.callbacks
+            .borrow_mut()
+            .hit_test_window_control
+            .as_mut()
+            .and_then(|callback| callback())
+    }
+
+    pub fn start_window_move(&self) {
+        let state = self.state.borrow();
+        let serial = state.client.get_serial(SerialKind::MousePress);
+        if let Some(toplevel) = state.surface_state.toplevel() {
+            toplevel._move(&state.globals.seat, serial);
+        }
     }
 
     /// The `xdg_surface` backing this window, if it has one. Used to anchor child popups.
@@ -1783,6 +1800,7 @@ impl PlatformWindow for WaylandWindow {
     }
 
     fn on_hit_test_window_control(&self, _callback: Box<dyn FnMut() -> Option<WindowControlArea>>) {
+        self.0.callbacks.borrow_mut().hit_test_window_control = Some(_callback);
     }
 
     fn on_appearance_changed(&self, callback: Box<dyn FnMut()>) {
@@ -1857,11 +1875,7 @@ impl PlatformWindow for WaylandWindow {
     }
 
     fn start_window_move(&self) {
-        let state = self.borrow();
-        let serial = state.client.get_serial(SerialKind::MousePress);
-        if let Some(toplevel) = state.surface_state.toplevel() {
-            toplevel._move(&state.globals.seat, serial);
-        }
+        self.0.start_window_move();
     }
 
     fn start_window_resize(&self, edge: gpui::ResizeEdge) {

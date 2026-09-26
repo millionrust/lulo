@@ -556,7 +556,9 @@ class UninstallScriptBehaviorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             bin_dir = Path(temporary)
             _stub_id(bin_dir, "1000")
-            _stub_sudo(bin_dir)
+            _write_stub(bin_dir / "dpkg-query", "exit 1")
+            _write_stub(bin_dir / "systemctl", "exit 1")
+            _write_stub(bin_dir / "sudo", "exit 0")
             result = _run(UNINSTALL, bin_dir)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("rmac has been removed", result.stdout)

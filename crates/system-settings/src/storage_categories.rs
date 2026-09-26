@@ -9,8 +9,9 @@
 use std::path::{Path, PathBuf};
 
 /// Files visited per measurement before the walk stops and reports a lower
-/// bound instead of an exact size.
-pub(crate) const FILE_LIMIT: usize = 400_000;
+/// bound instead of an exact size. Keeping this bounded makes opening Storage
+/// responsive on home folders with large application caches and Flatpak data.
+pub(crate) const FILE_LIMIT: usize = 64_000;
 
 /// One measured category of the home volume.
 #[derive(Clone, Debug, PartialEq, Eq)]

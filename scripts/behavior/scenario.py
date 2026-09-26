@@ -31,9 +31,10 @@ STEP_KINDS = {
     "context",
     "select",
     "click_key",
+    "capture",
     "focus_desktop",
 }
-FACTS = {"focus", "windows", "dialog", "menu", "selection", "files", "tabs", "display"}
+FACTS = {"focus", "windows", "window_size", "dialog", "menu", "selection", "files", "tabs", "display"}
 
 # Mac AX roles and AT-SPI role names, both mapped to one small vocabulary.
 AX_ROLES = {

@@ -621,7 +621,7 @@ class LuloRun:
         focused = [w for w in windows if w.get("focused")] or windows
         if not focused:
             return {"width": None, "height": None}
-        rect = focused[0].get("window_rect") or {}
+        rect = focused[0].get("rect") or {}
         return {"width": rect.get("width"), "height": rect.get("height")}
 
     def dialog_node(self):

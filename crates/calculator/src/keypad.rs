@@ -7,7 +7,7 @@ use crate::engine::{Key, Operator};
 
 /// Content size of the fixed-size window.
 pub const WINDOW_WIDTH: f32 = 230.0;
-pub const WINDOW_HEIGHT: f32 = 406.0;
+pub const WINDOW_HEIGHT: f32 = 408.0;
 
 /// Keys are 48 pt circles on a 54 pt pitch (a 6 pt gap).
 pub const KEY_DIAMETER: f32 = 48.0;
@@ -198,6 +198,11 @@ pub struct Palette {
     pub rim: u32,
     /// Overlay while a key is pressed, as 0xRRGGBBAA.
     pub pressed_overlay: u32,
+    /// Popup surface and interaction fills, as 0xRRGGBBAA.
+    pub popover: u32,
+    pub popover_border: u32,
+    pub menu_selected: u32,
+    pub menu_hover: u32,
 }
 
 /// Measured from the dark-mode capture. The capture is in Display P3, where
@@ -219,6 +224,10 @@ pub const DARK: Palette = Palette {
     toolbar_glyph: 0xE8E8E8,
     rim: 0xFFFFFF1A,
     pressed_overlay: 0xFFFFFF40,
+    popover: 0x2C2C32CC,
+    popover_border: 0xFFFFFF1A,
+    menu_selected: 0xFFFFFF14,
+    menu_hover: 0xFFFFFF0D,
 };
 
 /// Light appearance. Not yet measured from a light-mode capture; these follow
@@ -239,6 +248,10 @@ pub const LIGHT: Palette = Palette {
     toolbar_glyph: 0x3A3A3C,
     rim: 0x0000001A,
     pressed_overlay: 0x00000026,
+    popover: 0xF2F2F4F2,
+    popover_border: 0x0000001A,
+    menu_selected: 0x00000014,
+    menu_hover: 0x0000000D,
 };
 
 #[cfg(test)]
@@ -251,7 +264,7 @@ mod tests {
         let (right, bottom) = key_origin(4, 3);
         assert_eq!((left, top), (10.0, 132.0));
         assert_eq!(WINDOW_WIDTH - (right + KEY_DIAMETER), left);
-        assert_eq!(WINDOW_HEIGHT - (bottom + KEY_DIAMETER), 10.0);
+        assert_eq!(WINDOW_HEIGHT - (bottom + KEY_DIAMETER), 12.0);
         assert_eq!(KEY_PITCH - KEY_DIAMETER, 6.0);
     }
 

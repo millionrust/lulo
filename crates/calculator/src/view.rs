@@ -22,11 +22,6 @@ use crate::{CloseWindow, Copy, Paste, ShowBasic, ShowHistory, ShowScientific};
 /// How long a key stays lit after a hardware key press.
 const KEY_FLASH: Duration = Duration::from_millis(110);
 
-/// A popover background, matching the material `--mat-menu` uses elsewhere
-/// in the design lab (`design-lab/tokens.css`): 0x2C2C32 at 80% opacity.
-const POPOVER_BG: u32 = 0x2C2C32CC;
-const POPOVER_BORDER: u32 = 0xFFFFFF1A;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Default)]
 pub(crate) enum Mode {
     #[default]
@@ -355,14 +350,14 @@ impl CalculatorView {
                 .flex()
                 .items_center()
                 .justify_between()
-                .rounded(px(6.0))
+                .rounded(px(mac::radius_menu_item()))
                 .text_size(px(13.0))
                 .text_color(if active {
                     rgb(palette.result)
                 } else {
                     rgb(palette.expression)
                 })
-                .when(active, |style| style.bg(rgba(0xFFFFFF14)))
+                .when(active, |style| style.bg(rgba(palette.menu_selected)))
         };
         let soon = || {
             div()
@@ -381,10 +376,10 @@ impl CalculatorView {
                 .min(self.window_width() - width - 6.0)))
             .w(px(width))
             .p(px(5.0))
-            .rounded(px(10.0))
-            .bg(rgba(POPOVER_BG))
+            .rounded(px(mac::radius_menu()))
+            .bg(rgba(palette.popover))
             .border_1()
-            .border_color(rgba(POPOVER_BORDER))
+            .border_color(rgba(palette.popover_border))
             .shadow_lg()
             .flex()
             .flex_col()
@@ -454,7 +449,7 @@ impl CalculatorView {
                     .gap(px(2.0))
                     .border_b_1()
                     .border_color(rgba(palette.rim))
-                    .hover(|style| style.bg(rgba(0xFFFFFF0D)))
+                    .hover(|style| style.bg(rgba(palette.menu_hover)))
                     .child(
                         div()
                             .text_size(px(12.0))
@@ -499,9 +494,9 @@ impl CalculatorView {
             .left_0()
             .w(px(width))
             .h(px(height))
-            .bg(rgba(POPOVER_BG))
+            .bg(rgba(palette.popover))
             .border_t_1()
-            .border_color(rgba(POPOVER_BORDER))
+            .border_color(rgba(palette.popover_border))
             .child(body)
     }
 

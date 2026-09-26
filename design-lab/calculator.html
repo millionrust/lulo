@@ -14,8 +14,8 @@
   history, mode). Keys are 48 pt circles on a 54 pt pitch (6 pt gap), keypad
   origin (10, 132). Expression line 22 pt at top 57.5, result up to 31 pt at
   top 88, right inset 11. This mock's numbers are copied into
-  crates/calculator/src/keypad.rs, whose own WINDOW_HEIGHT is 406, not 408 —
-  a pre-existing 2 pt discrepancy from before this task, left alone here.
+  crates/calculator/src/keypad.rs, whose WINDOW_HEIGHT is now 408 to match
+  the measured Mac window.
 
   SCIENTIFIC — CALC-02, now measured live (macOS 26.2, 2026-09-25): opened
   Calculator, View ▸ Scientific, read every button's `position`/`size` from
@@ -24,8 +24,7 @@
   replaced an earlier *estimated* 9-column/30 pt-key guess that turned out
   wrong on every count once measured:
 
-    - Window is 674 × 408 (height reuses Basic's own 406/408 constant —
-      same toolbar, same 5 rows, same row pitch).
+    - Window is 674 × 408 (same toolbar, same 5 rows, same row pitch).
     - The grid is **10 columns × 5 rows**, all 50 cells filled. The
       rightmost 4 columns are *exactly* Basic's own digit/operator grid
       (⌫ AC % ÷ / 7 8 9 × / 4 5 6 − / 1 2 3 + / ± 0 . =), with 6 function

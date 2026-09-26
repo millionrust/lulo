@@ -413,13 +413,15 @@ def extents(node) -> Optional[tuple[int, int, int, int]]:
 
 
 class LuloRun:
-    def __init__(self, nested: Nested, sid: str, scenario: dict[str, Any], bins: list[Path], settle: float) -> None:
+    def __init__(self, nested: Nested, sid: str, scenario: dict[str, Any], bins: list[Path], settle: float,
+                 capture_dir: Optional[Path] = None) -> None:
         self.nested = nested
         self.sid = sid
         self.scenario = scenario
         self.app = scenario["app"]
         self.settle = settle
         self.bins = bins
+        self.capture_dir = capture_dir
         # A fresh home per scenario: apps keep state (Text Editor's unsaved
         # work, Files' window state) that must not leak into the next one.
         home = nested.work / "homes" / sid.replace("/", "-")
@@ -613,6 +615,15 @@ class LuloRun:
             titles.insert(0, front)
         return {"count": len(plain), "front": front, "titles": titles}
 
+    def fact_window_size(self) -> dict[str, Any]:
+        """Visible compositor bounds for runtime-sized calculator windows."""
+        windows = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
+        focused = [w for w in windows if w.get("focused")] or windows
+        if not focused:
+            return {"width": None, "height": None}
+        rect = focused[0].get("window_rect") or {}
+        return {"width": rect.get("width"), "height": rect.get("height")}
+
     def dialog_node(self):
         pyatspi = atspi()
         frame = self.active_frame()
@@ -782,6 +793,12 @@ class LuloRun:
                 # keys); Lulo's keys do carry a stable aria-label
                 # (`scientific_keypad::key_name`), so click by that instead.
                 self.click_item(step["click_key"], "left")
+            elif "capture" in step:
+                if self.capture_dir is not None:
+                    self.capture_dir.mkdir(parents=True, exist_ok=True)
+                    destination = self.capture_dir / f"{self.sid.replace('/', '-')}-{step['capture']}.png"
+                    subprocess.run(["grim", str(destination)], env=self.env, check=True)
+                continue
             elif "observe" in step:
                 facts = {}
                 for fact in step["facts"]:
@@ -835,7 +852,8 @@ def inner(args: argparse.Namespace) -> int:
             expected_path = sc.expectation_path(path)
             if not expected_path.exists() and not args.explore:
                 continue
-            run = LuloRun(nested, sid, scenario, bins, args.settle)
+            run = LuloRun(nested, sid, scenario, bins, args.settle,
+                          Path(args.capture_dir) if args.capture_dir else None)
             actual: dict[str, Any] = {"format": sc.FORMAT, "scenario": sid, "observations": {}}
             try:
                 run.setup()
@@ -881,6 +899,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--bin-dir", action="append", default=[], help="directory with rmac-files etc. (repeatable)")
     parser.add_argument("--shell-bin-dir", action="append", default=[], help="directory with the shell's wallpaper binary")
     parser.add_argument("--output", help="write results JSON here (compare.py reads it)")
+    parser.add_argument("--capture-dir", help="save scenario capture steps with grim into this directory")
     parser.add_argument("--settle", type=float, default=0.8)
     parser.add_argument("--keep", action="store_true", help="keep the temporary directory and logs")
     parser.add_argument("--explore", action="store_true", help="print each scenario app's accessible tree instead")
@@ -899,6 +918,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     args.shell_bin_dir = [str(Path(p).resolve()) for p in args.shell_bin_dir]
     if args.output:
         args.output = str(Path(args.output).resolve())
+    if args.capture_dir:
+        args.capture_dir = str(Path(args.capture_dir).resolve())
     rebuilt = list(args.scenarios)
     for directory in args.bin_dir:
         rebuilt += ["--bin-dir", directory]
@@ -906,6 +927,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         rebuilt += ["--shell-bin-dir", directory]
     if args.output:
         rebuilt += ["--output", args.output]
+    if args.capture_dir:
+        rebuilt += ["--capture-dir", args.capture_dir]
     rebuilt += ["--settle", str(args.settle), "--explore-steps", str(args.explore_steps)]
     if args.explore:
         rebuilt.append("--explore")

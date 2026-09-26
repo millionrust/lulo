@@ -3,6 +3,27 @@
 use super::*;
 use rmac_finder::goto;
 
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum PendingSelectionAction {
+    Select(usize),
+    Wait,
+    Discard,
+}
+
+pub(super) fn pending_selection_action<'a>(
+    target: &Path,
+    entry_paths: impl Iterator<Item = &'a PathBuf>,
+    transfer_active: bool,
+) -> PendingSelectionAction {
+    if let Some(index) = entry_paths.position(|path| path == target) {
+        PendingSelectionAction::Select(index)
+    } else if transfer_active {
+        PendingSelectionAction::Wait
+    } else {
+        PendingSelectionAction::Discard
+    }
+}
+
 /// The Go to Folder sheet: a path field with folder suggestions under it.
 pub(super) struct GoToSheet {
     pub(super) input: gpui::Entity<InputState>,
@@ -140,14 +161,25 @@ impl FinderView {
         }
     }
 
-    /// Selects the item Go to Folder named once its folder has loaded.
+    /// Selects a pending destination once its folder has loaded. A watcher
+    /// reload can run before an active transfer has created its destination,
+    /// so keep that pending selection for the transfer's reload.
     pub(super) fn select_pending(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.pending_select.take() else {
+        let Some(path) = self.pending_select.as_ref() else {
             return;
         };
-        if let Some(index) = self.entries.iter().position(|entry| entry.path == path) {
-            self.select_single(index);
-            cx.notify();
+        match pending_selection_action(
+            path,
+            self.entries.iter().map(|entry| &entry.path),
+            self.transfer.is_some(),
+        ) {
+            PendingSelectionAction::Select(index) => {
+                self.pending_select = None;
+                self.select_single(index);
+                cx.notify();
+            }
+            PendingSelectionAction::Wait => {}
+            PendingSelectionAction::Discard => self.pending_select = None,
         }
     }
 

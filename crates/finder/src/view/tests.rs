@@ -1,5 +1,6 @@
 use super::*;
 use crate::file_ops::copy_item;
+use crate::view::go_to_folder_controller::{pending_selection_action, PendingSelectionAction};
 use crate::view::selection_controller::pathname_clipboard_text;
 use crate::view::sidebar_favourites::{dedupe_absolute_directories, extra_favourite_place};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -55,6 +56,28 @@ fn checked_listing_rejects_a_replacement_at_the_same_path() {
         Err(error) => error,
     };
     assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+}
+
+#[test]
+fn pending_selection_waits_for_a_transfer_result_to_appear() {
+    let copy = PathBuf::from("/tmp/report copy.txt");
+    let original = PathBuf::from("/tmp/report.txt");
+    let entries = [original.clone()];
+
+    assert_eq!(
+        pending_selection_action(&copy, entries.iter(), true),
+        PendingSelectionAction::Wait,
+        "a watcher reload can finish before the duplicate transfer creates its destination"
+    );
+    assert_eq!(
+        pending_selection_action(&copy, entries.iter(), false),
+        PendingSelectionAction::Discard,
+        "a failed transfer must not leave a stale selection request"
+    );
+    assert_eq!(
+        pending_selection_action(&copy, [&original, &copy].into_iter(), true),
+        PendingSelectionAction::Select(1)
+    );
 }
 
 #[test]

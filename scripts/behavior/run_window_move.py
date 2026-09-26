@@ -229,6 +229,22 @@ class Run:
         if window:
             time.sleep(1)
             x, y, width, height = self.geometry(window)
+            # Settings' initial height is slightly larger than this nested
+            # output. Shrink it through niri so the edge probe uses a fully
+            # visible window rather than an offscreen resize edge.
+            requested_height = min(700, self.height - 80)
+            self.niri("action", "set-window-height", "--id", str(window["id"]),
+                      str(requested_height))
+            sized = self.wait_for(
+                lambda: (candidate := self.window("org.rmac.SystemSettings"))
+                if candidate and self.geometry(candidate)[3] < height - 30 else None,
+                3,
+            )
+            sized_geometry = self.geometry(sized) if sized else (x, y, width, height)
+            self.check("Settings fits the nested output before edge resizing",
+                       bool(sized and sized_geometry[1] + sized_geometry[3] <= self.height),
+                       f"{(width, height)} -> {sized_geometry[2:]}; output={self.width}x{self.height}")
+            x, y, width, height = sized_geometry
             # Niri may map Settings partly beyond the nested output because its
             # initial surface is taller than the available area. Move it into
             # the visible output before testing its edge hit zone.

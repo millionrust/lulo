@@ -232,12 +232,22 @@ class Run:
             # Use the right edge, which remains visible when Settings' minimum
             # height is slightly taller than the nested niri output.
             edge_y = min(y + height / 2, self.height - 12)
-            self.drag((x + width + 4, edge_y), (x + width - 240, edge_y))
-            resized = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
+            resized = None
+            resize_offset = None
+            for offset in (0, -1, 1, -2, 2, -3, 3, -4, 4, -6, 6, -8, 8):
+                self.drag((x + width + offset, edge_y), (x + width + offset - 160, edge_y))
+                resized = self.wait_for(
+                    lambda: (candidate := self.window("org.rmac.SystemSettings"))
+                    if candidate and self.geometry(candidate)[2] < width - 30 else None,
+                    0.6,
+                )
+                if resized:
+                    resize_offset = offset
+                    break
             resized_geometry = self.geometry(resized) if resized else (x, y, width, height)
-            shrunk = resized_geometry[2] < width - 30
+            shrunk = resized is not None
             self.check("Settings resizes from its right edge", shrunk,
-                       f"{(width, height)} -> {resized_geometry[2:]}")
+                       f"{(width, height)} -> {resized_geometry[2:]}; grab offset={resize_offset}")
             sx, sy, sw, sh = resized_geometry
             self.drag((sx + sw * .5, sy + 18), (sx + sw * .5 + 140, sy + 90))
             moved = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)

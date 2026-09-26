@@ -68,8 +68,10 @@ private content.
   only a non-gesture "PS/2 Generic Mouse" (or no pointer device at all)
   reappearing — everywhere, including the GDM greeter. The rmac-session
   package installs `/usr/lib/systemd/system-sleep/rmac-input-resume`, which
-  reloads the `psmouse`/`rmi_smbus` kernel modules once after such a resume
-  and is a no-op elsewhere; see [Hardware support](hardware-support.md#touchpad-recovery-after-resume).
+  always reloads the `rmi_smbus`/`psmouse` stack after resume when that driver
+  stack is present. A stale touchpad entry in the kernel's input-device list
+  does not prevent recovery; each module command is timeout-bounded and
+  logged. The hook is a no-op without that stack; see [Hardware support](hardware-support.md#touchpad-recovery-after-resume).
   If a touchpad is still missing after that, check
   `journalctl -k -b | grep -i psmouse` and
   `journalctl -t rmac-input-resume -b` before filing a report.

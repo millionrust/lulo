@@ -51,10 +51,11 @@ including the GDM greeter, until reboot.
 The rmac-session package installs
 `/usr/lib/systemd/system-sleep/rmac-input-resume`
 (`packaging/rmac-session/system-sleep/rmac-input-resume`). systemd-logind
-runs it after every resume; it checks `/proc/bus/input/devices` for a
-working pointer device and, only when the `rmi4_smbus`/`psmouse` stack is
-present *and* no such device is found, unloads and reloads `psmouse` (and
-`rmi_smbus`) once, bounded by a short timeout, logging the outcome under the
+runs it after every resume; when the `rmi4_smbus`/`psmouse` stack is present,
+it always unloads `rmi_smbus` and `psmouse`, reloads `psmouse`, and ensures
+`rmi_smbus` is loaded. The input device list can retain a stale touchpad
+entry after a failed resume, so it is not used to decide whether recovery is
+needed. Each module command has a short timeout and logs its result under the
 `rmac-input-resume` journal tag. It is a no-op on any machine that does not
 run this exact driver stack, and it never touches suspend/hibernate
 firmware settings. See [Troubleshooting](troubleshooting.md#common-failures).

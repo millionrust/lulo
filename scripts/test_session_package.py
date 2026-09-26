@@ -89,7 +89,6 @@ def rendered_input_resume_hook(root: Path) -> Path:
         "AWK=/usr/bin/awk": f"AWK={shutil.which('awk')}",
         "BASENAME=/usr/bin/basename": f"BASENAME={shutil.which('basename')}",
         "READLINK=/usr/bin/readlink": f"READLINK={shutil.which('readlink')}",
-        "INPUT_DEVICES=/proc/bus/input/devices": f"INPUT_DEVICES={root}/proc-bus-input-devices",
         "I2C_BUS_DEVICES=/sys/bus/i2c/devices": f"I2C_BUS_DEVICES={root}/sys-bus-i2c-devices",
     }
     for old, new in replacements.items():
@@ -201,8 +200,7 @@ def write_input_resume_fixture(
             os.path.relpath(driver, i2c_device), target_is_directory=True
         )
     if devices is None:
-        # No file at all: pointer_device_present must fail closed (absent),
-        # not raise.
+        # The old input-device list is intentionally irrelevant to recovery.
         pass
     else:
         (root / "proc-bus-input-devices").write_text(devices, encoding="utf-8")
@@ -1083,7 +1081,7 @@ class InputResumeHookTests(unittest.TestCase):
             self.assertFalse((root / "modprobe.log").exists())
             self.assertFalse((root / "logger.log").exists())
 
-    def test_hook_is_a_noop_when_the_touchpad_already_works(self):
+    def test_hook_reloads_even_when_touchpad_device_looks_present(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             environment = write_input_resume_fixture(
@@ -1099,8 +1097,10 @@ class InputResumeHookTests(unittest.TestCase):
                 timeout=5,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertFalse((root / "modprobe.log").exists())
-            self.assertFalse((root / "logger.log").exists())
+            self.assertEqual(
+                (root / "modprobe.log").read_text(encoding="utf-8").splitlines(),
+                ["-r rmi_smbus", "-r psmouse", "psmouse", "rmi_smbus"],
+            )
 
     def test_hook_reloads_psmouse_once_when_only_the_generic_mouse_returns(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1119,14 +1119,14 @@ class InputResumeHookTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             calls = (root / "modprobe.log").read_text(encoding="utf-8").splitlines()
-            self.assertEqual(
-                calls, ["-r rmi_smbus", "-r psmouse", "psmouse", "rmi_smbus"]
-            )
+            self.assertEqual(calls, ["-r rmi_smbus", "-r psmouse", "psmouse", "rmi_smbus"])
             log = (root / "logger.log").read_text(encoding="utf-8")
-            self.assertIn("no working touchpad/pointer device", log)
-            self.assertIn("reloaded psmouse after resume", log)
+            self.assertIn("unload rmi_smbus", log)
+            self.assertIn("unload psmouse", log)
+            self.assertIn("reload psmouse", log)
+            self.assertIn("ensure rmi_smbus", log)
 
-    def test_hook_treats_a_missing_devices_file_as_no_pointer_device(self):
+    def test_hook_reloads_when_device_list_is_missing(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             environment = write_input_resume_fixture(
@@ -1142,9 +1142,9 @@ class InputResumeHookTests(unittest.TestCase):
                 timeout=5,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn(
-                "-r psmouse",
-                (root / "modprobe.log").read_text(encoding="utf-8"),
+            self.assertEqual(
+                (root / "modprobe.log").read_text(encoding="utf-8").splitlines(),
+                ["-r rmi_smbus", "-r psmouse", "psmouse", "rmi_smbus"],
             )
             self.assertIn(
                 "hibernate", (root / "logger.log").read_text(encoding="utf-8")
@@ -1176,13 +1176,13 @@ class InputResumeHookTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             calls = (root / "modprobe.log").read_text(encoding="utf-8").splitlines()
-            # The reload is attempted and its failure is logged; rmi_smbus is
-            # only reloaded once psmouse itself came back.
-            self.assertEqual(calls, ["-r rmi_smbus", "-r psmouse", "psmouse"])
-            self.assertIn(
-                "reloading psmouse after resume failed",
-                (root / "logger.log").read_text(encoding="utf-8"),
+            # Every step is attempted even after psmouse insertion fails.
+            self.assertEqual(
+                calls, ["-r rmi_smbus", "-r psmouse", "psmouse", "rmi_smbus"]
             )
+            log = (root / "logger.log").read_text(encoding="utf-8")
+            self.assertIn("reload psmouse: failed", log)
+            self.assertIn("ensure rmi_smbus: succeeded", log)
 
 
 class DevelopmentInstallLockTests(unittest.TestCase):

@@ -51,6 +51,24 @@ KEEP_ENV = {"PATH", "LANG", "LC_ALL", "TERM", "USER", "LOGNAME", "SHELL", "CARGO
 TEXT_ROLES = {"text-field", "text-area", "search-field", "combo-box"}
 DIALOG_ROLES = {"dialog", "alert", "file chooser"}
 HELPER_APPS = {"rmac-file-chooser"}
+FILE_CHOOSER_SCENARIO = "text-editor/save-untitled"
+
+
+def find_file_chooser_binary(directories: list[Path]) -> Optional[Path]:
+    """Find the portal backend among the app and helper binary directories."""
+
+    for directory in directories:
+        candidate = directory / "rmac-file-chooser"
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate.resolve()
+    return None
+
+
+def scenarios_need_file_chooser(scenarios: list[str]) -> bool:
+    """The default run includes Save on Untitled, which needs the portal backend."""
+
+    selected = sc.scenario_paths(only=scenarios)
+    return any(sc.scenario_id(path) == FILE_CHOOSER_SCENARIO for path in selected)
 
 
 class Unsupported(RuntimeError):
@@ -151,6 +169,14 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
             raise SystemExit(f"{tool} is required")
     work = Path(tempfile.mkdtemp(prefix="lulo-behavior-"))
     try:
+        binary_directories = [Path(p) for p in args.bin_dir + args.shell_bin_dir]
+        chooser = find_file_chooser_binary(binary_directories)
+        if scenarios_need_file_chooser(args.scenarios) and chooser is None:
+            raise SystemExit(
+                "text-editor/save-untitled requires the rmac-file-chooser binary; "
+                "build -p rmac-file-chooser and include its directory with "
+                "--bin-dir or --shell-bin-dir"
+            )
         env = isolated_environment(work)
         refuse_live_session(env)
         # A session bus that can activate only the AT-SPI bus launcher: the
@@ -164,8 +190,6 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
                 shutil.copy(source, services / name)
         # Save and Open panels: xdg-desktop-portal with only the branch's own
         # rmac-file-chooser behind it (GPUI asks the portal for them).
-        chooser = next((Path(d) / "rmac-file-chooser" for d in args.bin_dir
-                        if (Path(d) / "rmac-file-chooser").is_file()), None)
         if chooser is not None:
             (services / "org.freedesktop.impl.portal.desktop.rmac.filechooser.service").write_text(
                 "[D-BUS Service]\nName=org.freedesktop.impl.portal.desktop.rmac.filechooser\n"

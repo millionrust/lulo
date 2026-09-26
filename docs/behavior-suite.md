@@ -109,7 +109,10 @@ runner plays the same scenario inside a private nested compositor and diffs the 
 - The private bus can start only three services: the AT-SPI bus, `xdg-desktop-portal`, and the
   `rmac-file-chooser` from `--bin-dir`, which is what opens Save panels. The installed rmac
   services never start. At the end the runner stops every process still using its runtime
-  directory.
+  directory. `text-editor/save-untitled` requires the `rmac-file-chooser` executable in one of
+  the supplied `--bin-dir` or `--shell-bin-dir` directories; the runner fails before launching
+  the app if it is absent. Running only a fresh `rmac-text-editor` binary leaves the private
+  portal without a FileChooser backend and cannot test Save-panel behavior.
 - It starts its own headless Sway and holds `wayland-0`/`wayland-1`'s lock files so its socket
   is never named `wayland-1`.
 - It injects input only through `wlinput.py`. That script is a pure-Python virtual keyboard and

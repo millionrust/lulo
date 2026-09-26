@@ -229,6 +229,21 @@ class Run:
         if window:
             time.sleep(1)
             x, y, width, height = self.geometry(window)
+            # Niri may map Settings partly beyond the nested output because its
+            # initial surface is taller than the available area. Move it into
+            # the visible output before testing its edge hit zone.
+            self.drag((x + width * .5, y + 18), (x + width * .5 + 140, y + 90))
+            placed = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
+            placed_geometry = self.geometry(placed) if placed else (x, y, width, height)
+            placed_ok = (
+                placed_geometry[0] < self.width
+                and placed_geometry[1] < self.height
+                and placed_geometry[0] + placed_geometry[2] > 0
+                and placed_geometry[1] + placed_geometry[3] > 0
+            )
+            self.check("Settings title-bar drag brings it into the output", placed_ok,
+                       f"{(x, y, width, height)} -> {placed_geometry}")
+            x, y, width, height = placed_geometry
             # Settings' GPUI surface includes an inset beyond its visible frame.
             # Grab the left edge and drag inward so the point stays on-screen.
             edge_y = min(y + height / 2, self.height - 12)

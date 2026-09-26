@@ -511,8 +511,13 @@ class LuloRun:
             # The Calculator has a fixed, mode-dependent size. Sway's default
             # tiled container fills the whole headless output and obscures
             # its requested size, so keep it floating like the real desktop.
-            self.nested.swaymsg("floating enable")
-            self.nested.swaymsg("resize set width 254 px height 432 px")
+            # Target the launched window explicitly: AT-SPI registration can
+            # move Sway's focus before this command runs on a busy CI runner.
+            target = f'[pid="{self.process.pid}"]'
+            for command in ("floating enable", "resize set width 254 px height 432 px"):
+                result = self.nested.swaymsg(f"{target} {command}")
+                if not result or not all(reply.get("success") for reply in result):
+                    raise StepFailed(f"could not configure Calculator window: {command}: {result}")
             time.sleep(0.2)
         time.sleep(max(self.settle, 1.0))
 

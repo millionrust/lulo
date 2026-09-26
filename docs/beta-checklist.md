@@ -3,12 +3,11 @@
 ## Beta 1 go/no-go (updated 2026-09-26)
 
 **No-go under the current release gates.** The earlier CI failures recorded
-below are resolved: [main CI run 36254342437](https://github.com/millionrust/lulo/actions/runs/36254342437)
-and [quality CI run 36254342440](https://github.com/millionrust/lulo/actions/runs/36254342440)
-both succeeded. The Mac behaviour-parity job is non-blocking and reports
-21/25; its four remaining misses are Calculator's startup size and three
-Files behaviours (Share/label/Quick Actions, Duplicate selection, and Get
-Info window behavior). CI success does not establish release readiness:
+below are resolved: [main CI run 36259639647](https://github.com/millionrust/lulo/actions/runs/36259639647)
+and [quality CI run 36259639596](https://github.com/millionrust/lulo/actions/runs/36259639596)
+both succeeded. The latest non-blocking Mac behaviour-parity job reports
+23/25 on `e4153ca5`; its two remaining misses are the Files context menu
+(Share/tags/Quick Actions) and Get Info window behavior. CI success does not establish release readiness:
 these product, accessibility, security, and packaging gates remain open.
 
 | # | Blocker | Owner/agent | Size |

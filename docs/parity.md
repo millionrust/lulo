@@ -622,7 +622,7 @@ Shell states audit, 2026-09-25. Mac: macOS 26.2 on the owner's Mac, read live th
 
 | Area | State | Mac checked | Lulo checked | Row IDs |
 |---|---|---|---|---|
-| Behaviour suite | 23 keyboard scenarios in `tests/behavior` (Files, Text Editor, Settings, Calculator, desktop); 21 match. The 2 that don't are files/context-menu (FILES-23: Share, tags, Quick Actions) and files/get-info (FILES-15, out of scope here) | recorded 2026-09-25 (`record_mac.py`) | nested Sway, `behavior-fixes` `cea3be33` (`run_lulo.py`) | ACC-09, FILES-43–49, TE-19–20 |
+| Behaviour suite | 25 Mac-recorded keyboard scenarios in `tests/behavior` (Files, Text Editor, Settings, Calculator, desktop); 23 match on `e4153ca5`. The two remaining gaps are files/context-menu (FILES-23: Share, tags, Quick Actions) and files/get-info (FILES-15: a separate Info window). Calculator mode sizing, duplicate selection and the cold-start Save panel pass. | Mac recordings 2026-09-25–26 (`record_mac.py`) | nested Sway, CI run 36259639647 (`run_lulo.py`) | ACC-09, FILES-15/23/43–49, TE-19–20 |
 | Menu bar | Status item order (Battery, Wi-Fi, Spotlight, Control Centre, Clock) | live | live | — |
 | Menu bar | Wi-Fi menu: switch, Weak Security…, Personal Hotspot, Known Networks, Other Networks ▸, Wi-Fi Settings… | live | code | — (Hotspot is Continuity) |
 | Menu bar | Wi-Fi ⌥-click details | ref | code | — |

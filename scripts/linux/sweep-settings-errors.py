@@ -466,6 +466,14 @@ def run_sweep(binary: Path, work: Path) -> list[dict[str, Any]]:
 
             for row_name in STATIC_ROW_SUBPAGES.get(pane_id, []):
                 print(f"sweep-settings-errors:   entering {pane_name} > {row_name}", file=sys.stderr)
+                # Re-fetch rather than reuse the `app` handle from the pane
+                # sweep above: after wait_settle's own repeated tree walks,
+                # the AT-SPI client-side cache on this reference laptop has
+                # already logged its own "Unknown object /org/a11y/atspi/
+                # cache" GetItems errors, and a stale handle here silently
+                # returning no matches (rather than raising) was observed
+                # live for Accessibility's four section rows.
+                app = support.wait_for(find_settings_app, f"{pane_name} (refetched)", APP_FIND_TIMEOUT_S)
                 if not enter_named_row(app, row_name):
                     print(f"sweep-settings-errors:     row not found, skipping", file=sys.stderr)
                     continue

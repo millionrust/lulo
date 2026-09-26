@@ -157,3 +157,37 @@ class SystemMonitorConstantTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PidAliveTests(unittest.TestCase):
+    """A killed child stays in /proc as a zombie until reaped; that is not alive."""
+
+    def _stat(self, text):
+        import tempfile
+        from unittest import mock
+
+        directory = Path(tempfile.mkdtemp())
+        (directory / "stat").write_text(text)
+        real_path = journey.Path
+
+        def fake_path(value):
+            if str(value).startswith("/proc/4242"):
+                return real_path(str(value).replace("/proc/4242", str(directory)))
+            return real_path(value)
+
+        return mock.patch.object(journey, "Path", side_effect=fake_path)
+
+    def test_a_running_process_is_alive(self):
+        with self._stat("4242 (sleep) S 1 4242 4242 0 -1\n"):
+            self.assertTrue(journey.pid_alive(4242))
+
+    def test_a_zombie_is_not_alive(self):
+        with self._stat("4242 (sleep) Z 1 4242 4242 0 -1\n"):
+            self.assertFalse(journey.pid_alive(4242))
+
+    def test_a_command_name_with_parentheses_is_parsed(self):
+        with self._stat("4242 (odd) name) R 1 4242 4242 0 -1\n"):
+            self.assertTrue(journey.pid_alive(4242))
+
+    def test_a_missing_process_is_not_alive(self):
+        self.assertFalse(journey.pid_alive(2**22 + 12345))

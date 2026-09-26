@@ -300,7 +300,20 @@ def wait_for_window_gone(window_id: int, timeout: float = CLOSE_TIMEOUT_S) -> bo
 
 
 def pid_alive(pid: int) -> bool:
-    return Path(f"/proc/{pid}").exists()
+    """True while the process exists and has not exited.
+
+    A process this script spawned stays in /proc as a zombie ("Z") after it
+    is killed, until the script reaps it, so a bare existence check would
+    report a successfully quit process as still running.
+    """
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return False
+    # /proc/<pid>/stat is "pid (comm) state ...": comm may contain spaces or
+    # parentheses, so read the state after the last ')'.
+    fields = stat[stat.rfind(")") + 1 :].split()
+    return bool(fields) and fields[0] not in ("Z", "X")
 
 
 # --------------------------------------------------------------------------

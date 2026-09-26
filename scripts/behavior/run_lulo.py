@@ -507,6 +507,13 @@ class LuloRun:
                 f"the app (pid {self.process.pid}) showed no window with an accessible tree within 30 s; "
                 f"sway windows {windows}, AT-SPI apps {apps}"
             )
+        if self.app == "calculator":
+            # The Calculator has a fixed, mode-dependent size. Sway's default
+            # tiled container fills the whole headless output and obscures
+            # its requested size, so keep it floating like the real desktop.
+            self.nested.swaymsg("floating enable")
+            self.nested.swaymsg("resize set width 230 px height 408 px")
+            time.sleep(0.2)
         time.sleep(max(self.settle, 1.0))
 
     def stop(self) -> None:
@@ -617,11 +624,12 @@ class LuloRun:
 
     def fact_window_size(self) -> dict[str, Any]:
         """Visible compositor bounds for runtime-sized calculator windows."""
-        frame = self.active_frame()
-        box = extents(frame) if frame is not None else None
-        if box is None:
+        windows = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
+        focused = [w for w in windows if w.get("focused")] or windows
+        if not focused:
             return {"width": None, "height": None}
-        return {"width": box[2], "height": box[3]}
+        rect = focused[0].get("window_rect") or focused[0].get("rect") or {}
+        return {"width": rect.get("width"), "height": rect.get("height")}
 
     def dialog_node(self):
         pyatspi = atspi()

@@ -111,6 +111,69 @@ class RaceDetectionTimingTests(unittest.TestCase):
         self.assertLess(sweep.IMMEDIATE_SWEEP_DELAY_S, 1.0)
 
 
+class FakeNode:
+    def __init__(self, role, name, actions=()):
+        self.role = role
+        self.name = name
+        self.actions = actions
+
+
+class FakeSupport:
+    """A minimal stand-in for atspi_assert_support, so
+    clickable_named_row/enter_named_row's own logic (not pyatspi) is
+    testable on any platform."""
+
+    def __init__(self, nodes):
+        self.nodes = nodes
+        self.clicked = []
+
+    def nodes_with(self, _app, role, name):
+        return [node for node in self.nodes if node.role == role and node.name == name]
+
+    def actions(self, node):
+        return node.actions
+
+    def click(self, node):
+        self.clicked.append(node)
+
+    def wait_for(self, predicate, description, timeout):
+        # No live session to poll here: either the predicate is already
+        # true (the common case these tests cover) or it times out at once.
+        value = predicate()
+        if value:
+            return value
+        raise AssertionError(f"timed out waiting for {description}")
+
+
+class EnterNamedRowTests(unittest.TestCase):
+    def setUp(self):
+        self.real_support = sweep.support
+
+    def tearDown(self):
+        sweep.support = self.real_support
+
+    def test_clicks_the_row_with_a_click_action(self):
+        clickable = FakeNode("list item", "Storage", actions=["click"])
+        fake = FakeSupport([clickable])
+        sweep.support = fake
+        self.assertTrue(sweep.enter_named_row(object(), "Storage"))
+        self.assertEqual(fake.clicked, [clickable])
+
+    def test_ignores_a_same_named_row_with_no_click_action(self):
+        # A toggle or disabled row that happens to share a name must never
+        # be treated as a safe navigation target.
+        inert = FakeNode("list item", "Storage", actions=[])
+        fake = FakeSupport([inert])
+        sweep.support = fake
+        self.assertFalse(sweep.enter_named_row(object(), "Storage"))
+        self.assertEqual(fake.clicked, [])
+
+    def test_returns_false_honestly_when_the_row_never_appears(self):
+        fake = FakeSupport([])
+        sweep.support = fake
+        self.assertFalse(sweep.enter_named_row(object(), "Nonexistent Mode"))
+
+
 class NavigationRsSyncTests(unittest.TestCase):
     def test_pane_routes_matches_navigation_rs(self):
         source = NAVIGATION_RS.read_text(encoding="utf-8")

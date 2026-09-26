@@ -184,6 +184,7 @@ ALERT_ROLE_MARKERS = ("alert", "notification", "banner")
 SETTLE_TIMEOUT_S = 8.0
 SETTLE_POLL_S = 0.3
 APP_FIND_TIMEOUT_S = 15.0
+ROW_APPEAR_TIMEOUT_S = 3.0
 RELAUNCH_WAIT_S = 10.0
 CLOSE_TIMEOUT_S = 5.0
 
@@ -497,12 +498,31 @@ def run_sweep(binary: Path, work: Path) -> list[dict[str, Any]]:
     return findings
 
 
-def enter_named_row(app, row_name: str) -> bool:
+def clickable_named_row(app, row_name: str):
     for node in support.nodes_with(app, "list item", row_name):
         if "click" in support.actions(node):
-            support.click(node)
-            return True
-    return False
+            return node
+    return None
+
+
+def enter_named_row(app, row_name: str, timeout: float = ROW_APPEAR_TIMEOUT_S) -> bool:
+    """Clicks the named row, retrying for `timeout`: a `--pane <id>`
+    relaunch hand-off finishes (the process exits) before the window has
+    necessarily finished re-rendering the new pane's own rows, so a single
+    immediate check can miss a row that is genuinely there a moment later
+    (confirmed live: General's Storage and Accessibility's four section
+    rows intermittently reported "not found" this way). Returns False only
+    once the row never appeared within `timeout`, which is the honest
+    "not reachable" case (e.g. no Focus modes configured)."""
+
+    try:
+        node = support.wait_for(
+            lambda: clickable_named_row(app, row_name), f"the {row_name!r} row", timeout
+        )
+    except AssertionError:
+        return False
+    support.click(node)
+    return True
 
 
 def reset_to_pane(binary: Path, env: dict[str, str], pane_id: str, pane_name: str):

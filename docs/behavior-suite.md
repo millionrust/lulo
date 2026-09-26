@@ -143,7 +143,7 @@ python3 scripts/behavior/run_niri_minimize.py --niri ~/rmac-niri-build/target/re
 Title-bar movement and floating-window edge resizing run in nested niri as well, because Sway
 does not exercise GPUI's xdg_toplevel move requests. The runner uses the shipped `shell.kdl`,
 drags Calculator and Settings plus a GTK window with the virtual pointer, checks niri's reported
-positions, and resizes Settings before moving it again:
+positions, tries resizing Settings, then checks its title-bar movement independently:
 
 ```sh
 python3 scripts/behavior/run_window_move.py --niri ~/rmac-niri-build/target/release/niri \

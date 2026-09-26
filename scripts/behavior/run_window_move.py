@@ -248,13 +248,13 @@ class Run:
             shrunk = resized is not None
             self.check("Settings resizes from its left edge", shrunk,
                        f"{(width, height)} -> {resized_geometry[2:]}; grab offset={resize_offset}")
-            if shrunk:
-                sx, sy, sw, sh = resized_geometry
-                self.drag((sx + sw * .5, sy + 18), (sx + sw * .5 + 140, sy + 90))
-                moved = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
-                mg = self.geometry(moved) if moved else resized_geometry
-                changed = abs(mg[0] - sx) > 30 or abs(mg[1] - sy) > 30
-                self.check("shrunk Settings window can still move", changed, f"{(sx, sy)} -> {mg[:2]}")
+            sx, sy, sw, sh = resized_geometry
+            self.drag((sx + sw * .5, sy + 18), (sx + sw * .5 + 140, sy + 90))
+            moved = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
+            mg = self.geometry(moved) if moved else resized_geometry
+            changed = abs(mg[0] - sx) > 30 or abs(mg[1] - sy) > 30
+            self.check("Settings remains movable after the resize attempt", changed,
+                       f"{(sx, sy)} -> {mg[:2]}; resized={shrunk}")
         process.terminate()
         process.wait(10)
 

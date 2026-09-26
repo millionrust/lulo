@@ -617,12 +617,11 @@ class LuloRun:
 
     def fact_window_size(self) -> dict[str, Any]:
         """Visible compositor bounds for runtime-sized calculator windows."""
-        windows = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
-        focused = [w for w in windows if w.get("focused")] or windows
-        if not focused:
+        frame = self.active_frame()
+        box = extents(frame) if frame is not None else None
+        if box is None:
             return {"width": None, "height": None}
-        rect = focused[0].get("rect") or {}
-        return {"width": rect.get("width"), "height": rect.get("height")}
+        return {"width": box[2], "height": box[3]}
 
     def dialog_node(self):
         pyatspi = atspi()

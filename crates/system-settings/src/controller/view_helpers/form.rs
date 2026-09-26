@@ -137,6 +137,15 @@ pub(in crate::controller) fn large_nav_row(
     value: Option<SharedString>,
     on_activate: impl Fn(&mut Window, &mut App) + 'static,
 ) -> AnyElement {
+    let title = title.into();
+    // `ListRow` has no name of its own (see its `aria_label` doc comment);
+    // fold the trailing value into the row's name the way Files/Notes fold
+    // a description in, so e.g. a Focus mode's "On" or a network service's
+    // status is still announced, not just its title.
+    let aria_label = match &value {
+        Some(value) => SharedString::from(format!("{title}, {value}")),
+        None => title.clone(),
+    };
     let content = div()
         .w_full()
         .flex()
@@ -147,6 +156,7 @@ pub(in crate::controller) fn large_nav_row(
         .when_some(value, |row, value| row.child(trailing_value(value)))
         .child(row_chevron());
     ListRow::new(id, content)
+        .aria_label(aria_label)
         .selected(true)
         .bg(gpui::transparent_black())
         .rounded(px(0.0))
@@ -166,16 +176,24 @@ pub(in crate::controller) fn icon_nav_row(
     value: Option<SharedString>,
     on_activate: impl Fn(&mut Window, &mut App) + 'static,
 ) -> AnyElement {
+    let title = title.into();
+    // See `large_nav_row`: `ListRow` has no name of its own, so fold the
+    // trailing value (a count, a status) into the row's accessible name.
+    let aria_label = match &value {
+        Some(value) => SharedString::from(format!("{title}, {value}")),
+        None => title.clone(),
+    };
     let content = div()
         .w_full()
         .flex()
         .items_center()
         .gap(px(style::NAV_ICON_GAP))
         .child(icon)
-        .child(text_block(title.into(), None))
+        .child(text_block(title, None))
         .when_some(value, |row, value| row.child(trailing_value(value)))
         .child(row_chevron());
     nav_list_row(id, content)
+        .aria_label(aria_label)
         .on_activate(move |_, window, cx| on_activate(window, cx))
         .into_any_element()
 }

@@ -24,6 +24,23 @@ fn audio_choice_row(
     // macOS 26 marks the chosen device like a table selection: a grey row,
     // text unchanged, rather than an accent fill.
     let has_detail = detail.is_some();
+    // `ListRow` has no name of its own (see its `aria_label` doc comment),
+    // so without this a screen reader announced only "selected" or nothing
+    // at all when moving through the output/input device and alert-sound
+    // lists, with no way to tell which device or sound a row was.
+    let mut aria_label = title.to_string();
+    if let Some(detail) = &detail {
+        aria_label.push_str(", ");
+        aria_label.push_str(detail);
+    }
+    if let Some(status) = status {
+        aria_label.push_str(", ");
+        aria_label.push_str(status);
+    }
+    // `selected` is already exposed through `ListRow`'s own
+    // `aria_selected(selected)` state, so it is not folded into the name
+    // too (that would double-announce it).
+    let aria_label = SharedString::from(aria_label);
     let foreground = label();
     let secondary_foreground = secondary();
     let mut text = div().v_flex().flex_1().child(
@@ -59,6 +76,7 @@ fn audio_choice_row(
             row.child(glyph("icons/check.svg", 13.0, foreground))
         });
     ListRow::new(ElementId::from(id), content)
+        .aria_label(aria_label)
         .selected(true)
         .bg(if selected {
             gpui::hsla(0.0, 0.0, 1.0, 0.08)

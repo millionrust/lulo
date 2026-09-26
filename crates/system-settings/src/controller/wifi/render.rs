@@ -212,6 +212,16 @@ impl Settings {
                         let can_connect = !self.wifi_busy && network.can_connect();
                         let selected_network = network.clone();
                         let network_view = view.clone();
+                        // `ListRow` has no name of its own (see its
+                        // `aria_label` doc comment), so without this a
+                        // screen reader announced nothing at all for any
+                        // network in this list.
+                        let aria_label = match &status {
+                            Some(status) => {
+                                SharedString::from(format!("{}, {status}", network.ssid))
+                            }
+                            None => network.ssid.clone().into(),
+                        };
                         ListRow::new(
                             SharedString::from(format!("wifi-network-{index}")),
                             div()
@@ -226,6 +236,7 @@ impl Settings {
                                     Some(network.strength),
                                 )),
                         )
+                        .aria_label(aria_label)
                         .selected(true)
                         .bg(gpui::transparent_black())
                         .rounded(px(0.0))

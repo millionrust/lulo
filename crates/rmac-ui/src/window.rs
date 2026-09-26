@@ -184,9 +184,8 @@ fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
             // a *resize* on the working area below the menu bar and beside
             // the Dock (the same area `Action::CenterWindow` and the green
             // button's Centre use), but centres a window's *initial*
-            // placement on the whole output. Shrinking an oversized window
-            // in place can therefore still leave it partly under the Dock
-            // unless it is recentred too.
+            // placement on the whole output. Even a window that fits can
+            // therefore open under the Dock unless it is centred after map.
             let pid = std::process::id() as i32;
             let window_id = snapshot
                 .windows
@@ -216,14 +215,14 @@ fn fit_to_display_after_first_frame(window: &Window, cx: &App) {
                     }
                     oversized
                 });
-                let Ok(true) = oversized else {
-                    break;
-                };
                 if let Some(window_id) = window_id {
                     let _ = rmac_compositor_niri::execute_action(
                         &rmac_compositor::Action::CenterWindow { window: window_id },
                     )
                     .await;
+                }
+                if !matches!(oversized, Ok(true)) {
+                    break;
                 }
             }
         })

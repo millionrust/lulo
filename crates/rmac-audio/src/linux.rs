@@ -28,24 +28,38 @@ pub(super) async fn system_watch(sender: async_channel::Sender<WatchEvent>) -> R
     }
 }
 
+/// Builds the `async_process::Command` that runs `program args...`
+/// (`pw-dump --monitor --no-colors` in production; a test passes a
+/// different program/args so it never depends on PipeWire being
+/// installed), bound to this process (see [`rmac_process::bind_to_parent`])
+/// with its stdio piped/nulled and `kill_on_drop` set.
+///
+/// `async_process::Command::from(std::process::Command)` resets
+/// `async_process`'s own stdin/stdout/stderr tracking to "unset" even when
+/// the wrapped `std::process::Command` already configured them, so a plain
+/// `.spawn()` would otherwise see its internal flags unset and silently
+/// replace the piped stdout with `Stdio::inherit()` -- `child.stdout` would
+/// then always be `None`, downstream code's `ok_or_else` would always fire,
+/// and the freshly spawned monitor would be SIGKILLed by `kill_on_drop` a
+/// moment after every single spawn (confirmed live via strace against a
+/// real `pw-dump --monitor`: `execve` succeeds, then an immediate
+/// `kill(pid, SIGKILL)` from the very thread that spawned it). In
+/// production that produced a permanent one-second reconnect loop and the
+/// "Live audio updates are temporarily unavailable" banner on every System
+/// Settings pane, continuously, not just during a real PipeWire hiccup.
+/// Re-asserting the same stdio through `async_process::Command`'s own
+/// builder (not just the wrapped `std::process::Command`'s) sets those
+/// tracking flags so `spawn()` leaves them alone --
+/// `tests::command_pipes_stdout_through_async_process` below
+/// regression-tests this by actually spawning a real child and reading its
+/// captured stdout back.
 #[cfg(not(target_os = "macos"))]
-pub(super) async fn watch_once(
-    sender: &async_channel::Sender<WatchEvent>,
-    unavailable_reported: &mut bool,
-) -> Result<(), Error> {
+pub(super) fn build_monitor_command(program: &str, args: &[&str]) -> async_process::Command {
     use std::process::Stdio;
 
-    use futures_lite::io::AsyncReadExt as _;
-
-    // `pw-dump --monitor` is the machine-readable PipeWire graph monitor: it
-    // prints the full graph once, then a JSON array of the objects that
-    // changed on every later state change. Only changes to the objects a
-    // snapshot reads trigger a re-read; `pw-dump` clients (every snapshot
-    // is one) coming and going do not, or watchers would feed each other.
-    let mut monitor = std::process::Command::new("pw-dump");
+    let mut monitor = std::process::Command::new(program);
     monitor
-        .arg("--monitor")
-        .arg("--no-colors")
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -53,7 +67,27 @@ pub(super) async fn watch_once(
     // that exits without dropping it, so the monitor never outlives it.
     rmac_process::bind_to_parent(&mut monitor);
     let mut command = async_process::Command::from(monitor);
-    command.kill_on_drop(true);
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
+    command
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(super) async fn watch_once(
+    sender: &async_channel::Sender<WatchEvent>,
+    unavailable_reported: &mut bool,
+) -> Result<(), Error> {
+    use futures_lite::io::AsyncReadExt as _;
+
+    // `pw-dump --monitor` is the machine-readable PipeWire graph monitor: it
+    // prints the full graph once, then a JSON array of the objects that
+    // changed on every later state change. Only changes to the objects a
+    // snapshot reads trigger a re-read; `pw-dump` clients (every snapshot
+    // is one) coming and going do not, or watchers would feed each other.
+    let mut command = build_monitor_command("pw-dump", &["--monitor", "--no-colors"]);
     let mut child = command
         .spawn()
         .map_err(|error| Error::new("start the PipeWire monitor", error.to_string()))?;
@@ -1457,4 +1491,61 @@ pub(super) fn default_device_id(devices: &[Device]) -> Option<&str> {
         .iter()
         .find(|device| device.is_default)
         .map(|device| device.id.as_str())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::build_monitor_command;
+    use futures_lite::io::AsyncReadExt as _;
+
+    /// Regression test for the bug fixed alongside this test: wrapping an
+    /// already-configured `std::process::Command` in
+    /// `async_process::Command::from(...)` used to silently drop the piped
+    /// stdout in favour of `Stdio::inherit()`, so `child.stdout` was always
+    /// `None` and every spawn of the real `pw-dump --monitor` watcher was
+    /// killed a moment later by `kill_on_drop` -- see `build_monitor_command`'s
+    /// doc comment for the full story (confirmed live via strace). This
+    /// spawns a real, trivial child (`sh -c "echo ..."`, not `pw-dump`, so
+    /// it needs nothing PipeWire-specific) through the exact same builder
+    /// and asserts its stdout is actually captured and readable.
+    #[test]
+    fn command_pipes_stdout_through_async_process() {
+        let mut command = build_monitor_command("sh", &["-c", "echo lulo-audio-watch-test"]);
+        let mut child = command.spawn().expect("spawn the test child");
+        let mut stdout = child
+            .stdout
+            .take()
+            .expect("stdout must be piped, not inherited");
+        let mut collected = Vec::new();
+        futures_lite::future::block_on(async {
+            stdout
+                .read_to_end(&mut collected)
+                .await
+                .expect("read the child's stdout");
+        });
+        assert_eq!(
+            String::from_utf8_lossy(&collected).trim(),
+            "lulo-audio-watch-test",
+        );
+    }
+
+    /// The same regression, checked the other direction: before the fix,
+    /// `async_process::Command`'s own `stdin`/`stdout`/`stderr` tracking
+    /// booleans (which `spawn()` consults to decide whether to overwrite
+    /// the wrapped command's stdio with `Stdio::inherit()`) were left
+    /// `false` by `Command::from(std::process::Command)`. `Command`'s
+    /// alternate (`{:#?}`) `Debug` impl prints those exact fields (its
+    /// plain `{:?}` delegates to the wrapped `std::process::Command`
+    /// instead and would not show this).
+    #[test]
+    fn command_reports_stdio_as_explicitly_configured() {
+        let command = build_monitor_command("true", &[]);
+        let debug = format!("{command:#?}");
+        assert!(
+            debug.contains("stdin: true")
+                && debug.contains("stdout: true")
+                && debug.contains("stderr: true"),
+            "async_process::Command did not track its stdio as explicitly set: {debug}",
+        );
+    }
 }

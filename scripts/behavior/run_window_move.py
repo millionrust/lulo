@@ -107,9 +107,9 @@ class Run:
         return json.loads(result.stdout) if result.stdout.strip() else None
 
     def parent_point(self, x: float, y: float) -> tuple[float, float]:
-        # Input is scaled into the nested niri client's actual Sway surface.
-        return (self.niri_rect[0] + x * self.niri_rect[2] / self.width,
-                self.niri_rect[1] + y * self.niri_rect[3] / self.height)
+        # Wayland pointer coordinates are surface-local logical pixels; niri's
+        # output can be smaller than the parent Sway surface in this nested setup.
+        return self.niri_rect[0] + x, self.niri_rect[1] + y
 
     def drag(self, start: tuple[float, float], end: tuple[float, float]) -> None:
         self.pointer.drag(self.parent_point(*start), self.parent_point(*end),
@@ -229,13 +229,14 @@ class Run:
         if window:
             time.sleep(1)
             x, y, width, height = self.geometry(window)
-            # Grab just inside the lower right edge and move inward to shrink.
-            self.drag((x + width - 3, y + height - 3),
-                      (x + width - 240, y + height - 200))
+            # Use the right edge, which remains visible when Settings' minimum
+            # height is slightly taller than the nested niri output.
+            edge_y = min(y + height / 2, self.height - 12)
+            self.drag((x + width - 3, edge_y), (x + width - 240, edge_y))
             resized = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
             resized_geometry = self.geometry(resized) if resized else (x, y, width, height)
-            shrunk = resized_geometry[2] < width - 30 and resized_geometry[3] < height - 30
-            self.check("Settings resizes from its lower-right edge", shrunk,
+            shrunk = resized_geometry[2] < width - 30
+            self.check("Settings resizes from its right edge", shrunk,
                        f"{(width, height)} -> {resized_geometry[2:]}")
             sx, sy, sw, sh = resized_geometry
             self.drag((sx + sw * .5, sy + 18), (sx + sw * .5 + 140, sy + 90))

@@ -54,6 +54,16 @@ HELPER_APPS = {"rmac-file-chooser"}
 FILE_CHOOSER_SCENARIO = "text-editor/save-untitled"
 
 
+def calculator_visible_size(width: Optional[int], height: Optional[int]) -> tuple[Optional[int], Optional[int]]:
+    """Account for Sway versions that report GPUI's 12 px client frame."""
+
+    if width in (254, 698):
+        width -= 24
+    if height in (430, 432):
+        height -= 24
+    return width, height
+
+
 def find_file_chooser_binary(directories: list[Path]) -> Optional[Path]:
     """Find the portal backend among the app and helper binary directories."""
 
@@ -542,7 +552,11 @@ class LuloRun:
             while time.monotonic() < deadline:
                 windows = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
                 rect = (windows[0].get("window_rect") or {}) if windows else {}
-                if 228 <= rect.get("width", 0) <= 232 and 404 <= rect.get("height", 0) <= 410:
+                visible_width, visible_height = calculator_visible_size(
+                    rect.get("width"), rect.get("height")
+                )
+                if (visible_width is not None and visible_height is not None
+                        and 228 <= visible_width <= 232 and 404 <= visible_height <= 410):
                     break
                 time.sleep(0.1)
             else:
@@ -665,6 +679,8 @@ class LuloRun:
         # current window rectangle matches the visible pixels in captures.
         rect = focused[0].get("window_rect") or focused[0].get("rect") or {}
         width, height = rect.get("width"), rect.get("height")
+        if self.app == "calculator":
+            width, height = calculator_visible_size(width, height)
         return {
             "width": width,
             "height": height,

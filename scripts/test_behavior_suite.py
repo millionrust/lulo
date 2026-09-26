@@ -44,6 +44,13 @@ class KeyTests(unittest.TestCase):
 
 
 class GuardTests(unittest.TestCase):
+    def test_calculator_sway_frame_normalization(self):
+        self.assertEqual(run_lulo.calculator_visible_size(254, 432), (230, 408))
+        self.assertEqual(run_lulo.calculator_visible_size(698, 432), (674, 408))
+        self.assertEqual(run_lulo.calculator_visible_size(230, 406), (230, 406))
+        self.assertEqual(run_lulo.calculator_visible_size(674, 406), (674, 406))
+        self.assertEqual(run_lulo.calculator_visible_size(1280, 800), (1280, 800))
+
     def test_injector_refuses_the_live_session(self):
         wlinput.assert_nested(NESTED)
         for override in ({"WAYLAND_DISPLAY": "wayland-1"}, {"XDG_RUNTIME_DIR": "/run/user/1000"},

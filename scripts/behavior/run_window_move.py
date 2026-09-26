@@ -136,9 +136,9 @@ class Run:
         outputs = self.swaymsg("-t", "get_outputs") or []
         output = next((o for o in outputs if o.get("active")), outputs[0] if outputs else {})
         if output:
-            # Settings is taller than Sway's small default headless mode. Raise
-            # the mode before niri maps so its lower edge remains draggable.
-            self.swaymsg("output", output["name"], "mode", "1280x800")
+            # Settings is taller than Sway's small default headless mode. Give
+            # it enough vertical room to expose all four resize edges.
+            self.swaymsg("output", output["name"], "mode", "1280x900")
             time.sleep(0.5)
             outputs = self.swaymsg("-t", "get_outputs") or []
             output = next((o for o in outputs if o.get("active")), output)
@@ -236,12 +236,12 @@ class Run:
             placed = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
             placed_geometry = self.geometry(placed) if placed else (x, y, width, height)
             placed_ok = (
-                placed_geometry[0] < self.width
-                and placed_geometry[1] < self.height
-                and placed_geometry[0] + placed_geometry[2] > 0
-                and placed_geometry[1] + placed_geometry[3] > 0
+                placed_geometry[0] >= 0
+                and placed_geometry[1] >= 0
+                and placed_geometry[0] + placed_geometry[2] <= self.width
+                and placed_geometry[1] + placed_geometry[3] <= self.height
             )
-            self.check("Settings title-bar drag brings it into the output", placed_ok,
+            self.check("Settings title-bar drag brings it fully into the output", placed_ok,
                        f"{(x, y, width, height)} -> {placed_geometry}")
             x, y, width, height = placed_geometry
             # Settings' GPUI surface includes an inset beyond its visible frame.

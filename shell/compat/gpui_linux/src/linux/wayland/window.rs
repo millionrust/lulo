@@ -822,6 +822,7 @@ impl WaylandWindowStatePtr {
     pub fn start_window_resize(&self, edge: ResizeEdge) {
         let state = self.state.borrow();
         let serial = state.client.get_serial(SerialKind::MousePress);
+        eprintln!("gpui_linux: xdg resize requested edge={edge:?} serial={serial}");
         if let Some(toplevel) = state.surface_state.toplevel() {
             toplevel.resize(&state.globals.seat, serial, edge.to_xdg());
         }
@@ -2187,7 +2188,7 @@ fn resize_edge_at(position: Point<Pixels>, size: Size<Pixels>) -> Option<ResizeE
     let top = y < CLIENT_RESIZE_BORDER;
     let bottom = y >= height - CLIENT_RESIZE_BORDER;
 
-    match (left, right, top, bottom) {
+    let edge = match (left, right, top, bottom) {
         (true, _, true, _) => Some(ResizeEdge::TopLeft),
         (_, true, true, _) => Some(ResizeEdge::TopRight),
         (true, _, _, true) => Some(ResizeEdge::BottomLeft),
@@ -2197,7 +2198,13 @@ fn resize_edge_at(position: Point<Pixels>, size: Size<Pixels>) -> Option<ResizeE
         (_, _, true, _) => Some(ResizeEdge::Top),
         (_, _, _, true) => Some(ResizeEdge::Bottom),
         _ => None,
+    };
+    if edge.is_some() {
+        eprintln!(
+            "gpui_linux: resize edge hit position=({x},{y}) size=({width},{height}) edge={edge:?}"
+        );
     }
+    edge
 }
 
 #[cfg(test)]

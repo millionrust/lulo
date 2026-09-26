@@ -155,7 +155,11 @@ impl CalculatorView {
                 scientific_keypad::WINDOW_HEIGHT,
             ),
         };
-        window.resize(size(px(width), px(height)));
+        // GPUI's platform bounds include the 12 pt Linux client frame. The
+        // keypad uses visible content coordinates, so resize the outer
+        // surface to the content size plus that frame (as at window creation).
+        let (outer_width, outer_height) = rmac_ui::outer_window_size(width, height);
+        window.resize(size(px(outer_width), px(outer_height)));
         // niri can reconfigure a floating window after a client-driven
         // resize (the same behaviour `rmac_ui::window`'s own post-map
         // fit-to-display retry works around), so a single `resize` call can
@@ -169,10 +173,10 @@ impl CalculatorView {
                     .await;
                 let settled = this.update_in(cx, |_, window, _| {
                     let current = window.bounds().size;
-                    let matches = (f32::from(current.width) - width).abs() < 0.5
-                        && (f32::from(current.height) - height).abs() < 0.5;
+                    let matches = (f32::from(current.width) - outer_width).abs() < 0.5
+                        && (f32::from(current.height) - outer_height).abs() < 0.5;
                     if !matches {
-                        window.resize(size(px(width), px(height)));
+                        window.resize(size(px(outer_width), px(outer_height)));
                     }
                     matches
                 });

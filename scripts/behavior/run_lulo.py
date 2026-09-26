@@ -512,7 +512,7 @@ class LuloRun:
             # tiled container fills the whole headless output and obscures
             # its requested size, so keep it floating like the real desktop.
             self.nested.swaymsg("floating enable")
-            self.nested.swaymsg("resize set width 230 px height 408 px")
+            self.nested.swaymsg("resize set width 254 px height 432 px")
             time.sleep(0.2)
         time.sleep(max(self.settle, 1.0))
 
@@ -629,7 +629,14 @@ class LuloRun:
         if not focused:
             return {"width": None, "height": None}
         rect = focused[0].get("window_rect") or focused[0].get("rect") or {}
-        return {"width": rect.get("width"), "height": rect.get("height")}
+        # GPUI's visible app area is inset by the 12 pt client frame on each
+        # edge. Compare that content size with the Mac's window dimensions.
+        frame = 12 if self.app == "calculator" else 0
+        width, height = rect.get("width"), rect.get("height")
+        return {
+            "width": width - 2 * frame if width is not None else None,
+            "height": height - 2 * frame if height is not None else None,
+        }
 
     def dialog_node(self):
         pyatspi = atspi()

@@ -3,9 +3,8 @@
   "app": "calculator",
   "launch": {},
   "steps": [
-    {"key": "cmd-1", "settle": 0.3},
     {"capture": "basic"},
-    {"observe": "basic_initial", "facts": ["window_size", "display"]},
+    {"observe": "basic_initial", "facts": ["display"]},
     {"key": "cmd-2", "settle": 1.5},
     {"capture": "scientific"},
     {"observe": "scientific", "facts": ["window_size", "display"]},

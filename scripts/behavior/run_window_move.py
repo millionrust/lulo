@@ -229,13 +229,13 @@ class Run:
         if window:
             time.sleep(1)
             x, y, width, height = self.geometry(window)
-            # Use the right edge, which remains visible when Settings' minimum
-            # height is slightly taller than the nested niri output.
+            # Settings' GPUI surface includes an inset beyond its visible frame.
+            # Grab the left edge and drag inward so the point stays on-screen.
             edge_y = min(y + height / 2, self.height - 12)
             resized = None
             resize_offset = None
-            for offset in (0, -1, 1, -2, 2, -3, 3, -4, 4, -6, 6, -8, 8):
-                self.drag((x + width + offset, edge_y), (x + width + offset - 160, edge_y))
+            for offset in (0, 1, -1, 2, -2, 4, -4, 8, -8):
+                self.drag((x + offset, edge_y), (x + offset + 160, edge_y))
                 resized = self.wait_for(
                     lambda: (candidate := self.window("org.rmac.SystemSettings"))
                     if candidate and self.geometry(candidate)[2] < width - 30 else None,

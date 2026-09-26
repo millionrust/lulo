@@ -5,6 +5,7 @@
   "recorded": "2026-09-26",
   "observations": {
     "basic_initial": {
+      "window_size": {"width": 230, "height": 408},
       "display": {"value": "0"}
     },
     "scientific": {

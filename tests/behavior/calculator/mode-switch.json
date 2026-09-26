@@ -4,7 +4,7 @@
   "launch": {},
   "steps": [
     {"capture": "basic"},
-    {"observe": "basic_initial", "facts": ["display"]},
+    {"observe": "basic_initial", "facts": ["window_size", "display"]},
     {"key": "cmd-2", "settle": 1.5},
     {"capture": "scientific"},
     {"observe": "scientific", "facts": ["window_size", "display"]},

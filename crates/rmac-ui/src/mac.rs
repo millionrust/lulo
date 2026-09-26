@@ -139,6 +139,10 @@ pub fn list() -> Hsla {
 
 // Corner-radius hierarchy shared by every rmac surface. Keeping these here
 // prevents each app from drifting into a different visual language.
+pub fn radius_window() -> f32 {
+    crate::theme::current().radii.window
+}
+
 pub fn radius_control() -> f32 {
     crate::theme::current().radii.control
 }

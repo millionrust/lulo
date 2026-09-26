@@ -847,6 +847,7 @@ impl Render for CalculatorView {
             .relative()
             .w(px(window_width))
             .h(px(window_height))
+            .rounded(px(mac::radius_window()))
             .overflow_hidden()
             .bg(rgb(palette.window))
             .font_features(mac::tabular_font_features())

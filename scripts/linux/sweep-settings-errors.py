@@ -181,7 +181,7 @@ ERROR_PATTERNS = [
 ]
 ALERT_ROLE_MARKERS = ("alert", "notification", "banner")
 
-SETTLE_TIMEOUT_S = 4.0
+SETTLE_TIMEOUT_S = 8.0
 SETTLE_POLL_S = 0.3
 APP_FIND_TIMEOUT_S = 15.0
 RELAUNCH_WAIT_S = 10.0
@@ -316,17 +316,31 @@ def content_fingerprint(app) -> str:
     return "\x1e".join(parts)
 
 
+def has_progress_indicator(app) -> bool:
+    """True while an indeterminate `progress bar` is on screen (e.g.
+    General's system-info fetch, SET-56/DOCK-10's loading banners). An
+    indeterminate spinner usually carries no changing text at all, so
+    `content_fingerprint` can look perfectly stable while the pane is still
+    mid-fetch -- that stability is exactly what caused General's own
+    About/Software Update/Storage rows to go temporarily missing from a
+    live sweep (confirmed: they appeared once the fetch finished a moment
+    later). This check keeps `wait_settle` from declaring victory early."""
+
+    return any(support.role(node) == "progress bar" for node in support.descendants(app))
+
+
 def wait_settle(app, timeout: float = SETTLE_TIMEOUT_S) -> None:
     """Waits for the pane's visible text to stop changing between two
-    polls, or gives up after `timeout` -- a pane still mid-async-fetch at
-    that point is swept as-is (its loading/placeholder text is real
-    output, not a script bug)."""
+    polls, and for any indeterminate progress indicator to clear, or gives
+    up after `timeout` -- a pane still mid-async-fetch at that point is
+    swept as-is (its loading/placeholder text is real output, not a script
+    bug)."""
 
     deadline = time.monotonic() + timeout
     previous = None
     while time.monotonic() < deadline:
         current = content_fingerprint(app)
-        if current == previous:
+        if current == previous and not has_progress_indicator(app):
             return
         previous = current
         time.sleep(SETTLE_POLL_S)

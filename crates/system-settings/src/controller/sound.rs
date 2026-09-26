@@ -29,11 +29,11 @@ fn audio_choice_row(
     // at all when moving through the output/input device and alert-sound
     // lists, with no way to tell which device or sound a row was.
     let mut aria_label = title.to_string();
-    if let Some(detail) = &detail {
+    if let Some(detail) = detail.as_deref().filter(|detail| !detail.is_empty()) {
         aria_label.push_str(", ");
         aria_label.push_str(detail);
     }
-    if let Some(status) = status {
+    if let Some(status) = status.filter(|status| !status.is_empty()) {
         aria_label.push_str(", ");
         aria_label.push_str(status);
     }

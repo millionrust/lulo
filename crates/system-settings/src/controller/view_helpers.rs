@@ -257,8 +257,8 @@ pub(super) fn nav_row(
     // `ListRow` has no name of its own (see its `aria_label` doc comment);
     // fold the trailing value (e.g. About's hardware model) into the name.
     let aria_label = match &value {
-        Some(value) => SharedString::from(format!("{title}, {value}")),
-        None => title.clone(),
+        Some(value) if !value.is_empty() => SharedString::from(format!("{title}, {value}")),
+        _ => title.clone(),
     };
     nav_list_row(id, nav_content(icon, color, title, value))
         .aria_label(aria_label)

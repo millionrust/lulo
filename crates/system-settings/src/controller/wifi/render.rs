@@ -217,10 +217,10 @@ impl Settings {
                         // screen reader announced nothing at all for any
                         // network in this list.
                         let aria_label = match &status {
-                            Some(status) => {
+                            Some(status) if !status.is_empty() => {
                                 SharedString::from(format!("{}, {status}", network.ssid))
                             }
-                            None => network.ssid.clone().into(),
+                            _ => network.ssid.clone().into(),
                         };
                         ListRow::new(
                             SharedString::from(format!("wifi-network-{index}")),

@@ -143,8 +143,8 @@ pub(in crate::controller) fn large_nav_row(
     // a description in, so e.g. a Focus mode's "On" or a network service's
     // status is still announced, not just its title.
     let aria_label = match &value {
-        Some(value) => SharedString::from(format!("{title}, {value}")),
-        None => title.clone(),
+        Some(value) if !value.is_empty() => SharedString::from(format!("{title}, {value}")),
+        _ => title.clone(),
     };
     let content = div()
         .w_full()
@@ -180,8 +180,8 @@ pub(in crate::controller) fn icon_nav_row(
     // See `large_nav_row`: `ListRow` has no name of its own, so fold the
     // trailing value (a count, a status) into the row's accessible name.
     let aria_label = match &value {
-        Some(value) => SharedString::from(format!("{title}, {value}")),
-        None => title.clone(),
+        Some(value) if !value.is_empty() => SharedString::from(format!("{title}, {value}")),
+        _ => title.clone(),
     };
     let content = div()
         .w_full()

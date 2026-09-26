@@ -92,6 +92,28 @@ class ScenarioFileTests(unittest.TestCase):
                 names = {s["observe"] for s in scenario["steps"] if "observe" in s}
                 self.assertEqual(set(data["observations"]), names)
 
+    def test_save_untitled_requires_the_portal_backend(self):
+        self.assertTrue(run_lulo.scenarios_need_file_chooser([]))
+        self.assertTrue(run_lulo.scenarios_need_file_chooser(["text-editor/save-untitled"]))
+        self.assertFalse(run_lulo.scenarios_need_file_chooser(["text-editor/find"]))
+
+    def test_file_chooser_can_live_in_either_binary_directory(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            app_bins = Path(temporary) / "apps"
+            helper_bins = Path(temporary) / "helpers"
+            helper_bins.mkdir()
+            binary = helper_bins / "rmac-file-chooser"
+            binary.write_text("#!/bin/sh\nexit 0\n")
+            binary.chmod(0o755)
+            self.assertEqual(
+                run_lulo.find_file_chooser_binary([app_bins, helper_bins]),
+                binary.resolve(),
+            )
+            binary.chmod(0o644)
+            self.assertIsNone(run_lulo.find_file_chooser_binary([app_bins, helper_bins]))
+
     def test_recordings_hold_no_paths_or_captures(self):
         for path in sc.SCENARIO_ROOT.glob("*/*.mac.json"):
             text = path.read_text()

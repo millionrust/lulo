@@ -98,6 +98,19 @@ class RowSafetyTests(unittest.TestCase):
                 self.assertFalse(sweep.is_safe_subpage_row(role, "Forget This Network…"))
 
 
+class RaceDetectionTimingTests(unittest.TestCase):
+    def test_immediate_sweep_runs_before_the_pane_has_had_time_to_settle(self):
+        # sweep_immediate_and_settled's whole point (catching a
+        # placeholder/error shown before a watcher's first tick lands) only
+        # holds if the "immediate" sweep really does fire well before
+        # wait_settle's own poll would have already stabilized.
+        self.assertGreater(sweep.SETTLE_TIMEOUT_S, sweep.IMMEDIATE_SWEEP_DELAY_S)
+
+    def test_immediate_sweep_delay_is_positive_but_short(self):
+        self.assertGreater(sweep.IMMEDIATE_SWEEP_DELAY_S, 0.0)
+        self.assertLess(sweep.IMMEDIATE_SWEEP_DELAY_S, 1.0)
+
+
 class NavigationRsSyncTests(unittest.TestCase):
     def test_pane_routes_matches_navigation_rs(self):
         source = NAVIGATION_RS.read_text(encoding="utf-8")

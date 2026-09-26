@@ -64,15 +64,22 @@ On each pane/subpage, every visible text this script can reach --
 `ERROR_PATTERNS`, plus every node whose AT-SPI role name contains "alert" or
 "notification"/"banner" (`crates/rmac-ui/src/feedback.rs`'s `Toast` and the
 error variant of `EmptyState` both set `Role::Alert` with the title and
-message folded into one accessible name) is recorded outright. Findings are
-deduplicated by (pane, role, text): the same lingering backend error can
-legitimately show up on every single pane, because
-`Settings::global_settings_error()` is a single window-wide banner checked
-regardless of which pane is open.
+message folded into one accessible name) is recorded outright. Each landing
+is swept twice (`sweep_immediate_and_settled`): once ~0.3s after navigating,
+before most background watchers have had a chance to run, and once after
+`wait_settle` finds the pane's visible text has stopped changing. A finding
+tagged "immediate" with no "settled" counterpart at the same (pane, role,
+text) self-healed before the pane settled -- the race shape the owning task
+calls out ("live updates starting before the watchers") -- while one tagged
+"settled" is a persistent problem. Findings are deduplicated by (pane, role,
+text, when): the same lingering backend error can legitimately show up on
+every single pane, because `Settings::global_settings_error()` is a single
+window-wide banner checked regardless of which pane is open.
 
-Output is a JSON array of `{"pane": ..., "role": ..., "text": ..., "reasons": [...]}`
-objects, plus a short human report on stdout. `scripts/test_sweep_settings_errors.py`
-unit-tests the pure classifier and the row-safety rule with no live session.
+Output is a JSON array of `{"pane": ..., "role": ..., "text": ..., "reasons":
+[...], "when": "immediate"|"settled"}` objects, plus a short human report on
+stdout. `scripts/test_sweep_settings_errors.py` unit-tests the pure
+classifier and the row-safety rule with no live session.
 
 Cleanup always sends SIGTERM (then SIGKILL after a timeout) to the one
 `rmac-system-settings` process this script started, by PID -- never a
@@ -325,6 +332,17 @@ def wait_settle(app, timeout: float = SETTLE_TIMEOUT_S) -> None:
         time.sleep(SETTLE_POLL_S)
 
 
+# How long to wait before the "immediate" sweep below: long enough for the
+# just-navigated view to paint at all, short enough to still catch a
+# placeholder/error shown before a background watcher's first tick lands --
+# exactly the race the owning task calls out ("live updates starting before
+# the watchers"). `wait_settle`'s own poll then runs after it for the
+# second, "settled" sweep, so a message seen only immediately (and gone by
+# the time content stops changing) is reported as a transient/race finding,
+# distinct from one that is still there once the pane has settled.
+IMMEDIATE_SWEEP_DELAY_S = 0.3
+
+
 # --------------------------------------------------------------------------
 # AT-SPI text collection.
 # --------------------------------------------------------------------------
@@ -348,18 +366,45 @@ def node_texts(node) -> list[str]:
     return texts
 
 
-def sweep(app, pane_label: str, findings: list[dict[str, Any]], seen: set[tuple[str, str, str]]) -> None:
+def sweep(
+    app,
+    pane_label: str,
+    findings: list[dict[str, Any]],
+    seen: set[tuple[str, str, str, str]],
+    when: str = "settled",
+) -> None:
     for node in support.descendants(app):
         role = support.role(node)
         for text in node_texts(node):
             reasons = classify(text, role)
             if not reasons:
                 continue
-            key = (pane_label, role, text)
+            key = (pane_label, role, text, when)
             if key in seen:
                 continue
             seen.add(key)
-            findings.append({"pane": pane_label, "role": role, "text": text, "reasons": reasons})
+            findings.append(
+                {"pane": pane_label, "role": role, "text": text, "reasons": reasons, "when": when}
+            )
+
+
+def sweep_immediate_and_settled(
+    app,
+    pane_label: str,
+    findings: list[dict[str, Any]],
+    seen: set[tuple[str, str, str, str]],
+) -> None:
+    """Two passes per landing: a fast one that can still catch a
+    placeholder/error a background watcher hasn't corrected yet, and one
+    after `wait_settle` -- see IMMEDIATE_SWEEP_DELAY_S. A finding tagged
+    "immediate" with no "settled" counterpart at the same (pane, role, text)
+    self-healed before the pane settled, which is itself worth reporting: it
+    is exactly the transient-race shape the owning task asks to hunt for."""
+
+    time.sleep(IMMEDIATE_SWEEP_DELAY_S)
+    sweep(app, pane_label, findings, seen, when="immediate")
+    wait_settle(app)
+    sweep(app, pane_label, findings, seen, when="settled")
 
 
 def safe_subpage_rows(app) -> list[str]:
@@ -389,7 +434,7 @@ def run_sweep(binary: Path, work: Path) -> list[dict[str, Any]]:
     env = build_env(work)
     require_live_session(env)
     findings: list[dict[str, Any]] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str, str]] = set()
 
     first_id, _first_name = PANE_ROUTES[0]
     owner = launch(binary, env, pane=first_id)
@@ -401,23 +446,20 @@ def run_sweep(binary: Path, work: Path) -> list[dict[str, Any]]:
                 relauncher = launch(binary, env, pane=pane_id)
                 relauncher.wait(timeout=RELAUNCH_WAIT_S)
             app = support.wait_for(find_settings_app, f"the {pane_name} pane's window", APP_FIND_TIMEOUT_S)
-            wait_settle(app)
-            sweep(app, pane_name, findings, seen)
+            sweep_immediate_and_settled(app, pane_name, findings, seen)
 
             for row_name in STATIC_ROW_SUBPAGES.get(pane_id, []):
                 if not enter_named_row(app, row_name):
                     continue
                 app = support.wait_for(find_settings_app, f"{pane_name} > {row_name}", APP_FIND_TIMEOUT_S)
-                wait_settle(app)
-                sweep(app, f"{pane_name} > {row_name}", findings, seen)
+                sweep_immediate_and_settled(app, f"{pane_name} > {row_name}", findings, seen)
                 app = reset_to_pane(binary, env, pane_id, pane_name)
 
             for sub_id, sub_label in STATIC_SUBPAGES.get(pane_id, []):
                 relauncher = launch(binary, env, pane=sub_id)
                 relauncher.wait(timeout=RELAUNCH_WAIT_S)
                 app = support.wait_for(find_settings_app, f"{pane_name} > {sub_label}", APP_FIND_TIMEOUT_S)
-                wait_settle(app)
-                sweep(app, f"{pane_name} > {sub_label}", findings, seen)
+                sweep_immediate_and_settled(app, f"{pane_name} > {sub_label}", findings, seen)
 
             if pane_id in GENERIC_ROW_SUBPAGES:
                 app = reset_to_pane(binary, env, pane_id, pane_name)
@@ -427,8 +469,7 @@ def run_sweep(binary: Path, work: Path) -> list[dict[str, Any]]:
                     app = support.wait_for(
                         find_settings_app, f"{pane_name} > {row_name}", APP_FIND_TIMEOUT_S
                     )
-                    wait_settle(app)
-                    sweep(app, f"{pane_name} > {row_name}", findings, seen)
+                    sweep_immediate_and_settled(app, f"{pane_name} > {row_name}", findings, seen)
                     app = reset_to_pane(binary, env, pane_id, pane_name)
     finally:
         close(owner)

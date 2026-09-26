@@ -135,6 +135,12 @@ class ScenarioFileTests(unittest.TestCase):
 class CompareTests(unittest.TestCase):
     scenario = {"title": "New Folder", "app": "files", "steps": [], "tolerance": {"a.windows.titles": "ignore"}}
 
+    def test_window_size_tolerance_allows_only_compositor_rounding(self):
+        self.assertTrue(sc.field_matches("within-2", 408, 406))
+        self.assertTrue(sc.field_matches("within-2", 408, 410))
+        self.assertFalse(sc.field_matches("within-2", 408, 405))
+        self.assertFalse(sc.field_matches("within-2", 408, None))
+
     def test_matching_facts_pass(self):
         mac = {"observations": {"a": {"focus": {"role": "text-field", "value": "untitled folder", "selection": [0, 15]},
                                       "files": {"entries": ["b/", "a.txt"]}}}}

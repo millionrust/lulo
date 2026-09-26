@@ -253,6 +253,7 @@ class Nested:
             "xwayland disable\n"
             "default_border none\n"
             "default_floating_border none\n"
+            'for_window [app_id="org.rmac.Calculator"] floating enable\n'
             f"output HEADLESS-1 mode {OUTPUT_W}x{OUTPUT_H} position 0 0\n"
             "seat seat0 fallback true\n"
             "focus_follows_mouse no\n"
@@ -534,15 +535,18 @@ class LuloRun:
         if self.app == "calculator":
             # The Calculator has a fixed, mode-dependent size. Sway's default
             # tiled container fills the whole headless output and obscures
-            # its requested size, so keep it floating like the real desktop.
-            # Target the launched window explicitly: AT-SPI registration can
-            # move Sway's focus before this command runs on a busy CI runner.
-            target = f'[pid="{self.process.pid}"]'
-            for command in ("floating enable", "resize set width 254 px height 432 px"):
-                result = self.nested.swaymsg(f"{target} {command}")
-                if not result or not all(reply.get("success") for reply in result):
-                    raise StepFailed(f"could not configure Calculator window: {command}: {result}")
-            time.sleep(0.2)
+            # its requested size. The pre-launch rule keeps it floating like
+            # the real desktop; wait for its Basic-sized surface before the
+            # first observation or shortcut.
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                windows = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
+                rect = (windows[0].get("window_rect") or {}) if windows else {}
+                if 228 <= rect.get("width", 0) <= 232 and 404 <= rect.get("height", 0) <= 410:
+                    break
+                time.sleep(0.1)
+            else:
+                raise StepFailed(f"Calculator did not settle to Basic size: {windows}")
         time.sleep(max(self.settle, 1.0))
 
     def stop(self) -> None:
@@ -657,14 +661,13 @@ class LuloRun:
         focused = [w for w in windows if w.get("focused")] or windows
         if not focused:
             return {"width": None, "height": None}
+        # Sway's xdg geometry can lag a client-driven resize. The compositor's
+        # current window rectangle matches the visible pixels in captures.
         rect = focused[0].get("window_rect") or focused[0].get("rect") or {}
-        # GPUI's visible app area is inset by the 12 pt client frame on each
-        # edge. Compare that content size with the Mac's window dimensions.
-        frame = 12 if self.app == "calculator" else 0
         width, height = rect.get("width"), rect.get("height")
         return {
-            "width": width - 2 * frame if width is not None else None,
-            "height": height - 2 * frame if height is not None else None,
+            "width": width,
+            "height": height,
         }
 
     def dialog_node(self):

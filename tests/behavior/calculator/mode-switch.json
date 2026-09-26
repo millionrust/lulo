@@ -1,6 +1,7 @@
 {
   "title": "Calculator: Basic to Scientific to Basic keeps the window fitted to the keypad",
   "app": "calculator",
+  "tolerance": {"*.window_size.height": "within-2"},
   "launch": {},
   "steps": [
     {"capture": "basic"},

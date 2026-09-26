@@ -300,7 +300,7 @@ DEFAULT_RULES = {
     "tabs.titles": "exact",
     "display.value": "text",
 }
-RULES = {"exact", "set", "text", "role-class", "ignore", "subset", "present", "count"}
+RULES = {"exact", "set", "text", "role-class", "ignore", "subset", "present", "count", "within-2"}
 
 
 def _text(value: Any) -> Any:
@@ -331,6 +331,14 @@ def field_matches(rule: str, expected: Any, actual: Any) -> bool:
         return (expected is None) == (actual is None)
     if rule == "count":
         return len(expected or []) == len(actual or [])
+    if rule == "within-2":
+        return (
+            isinstance(expected, (int, float))
+            and not isinstance(expected, bool)
+            and isinstance(actual, (int, float))
+            and not isinstance(actual, bool)
+            and abs(expected - actual) <= 2
+        )
     if rule == "role-class":
         return _same_role(expected, actual)
     if rule == "text":

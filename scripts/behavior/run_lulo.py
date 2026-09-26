@@ -47,7 +47,7 @@ APP_BINARIES = {
     "calculator": ["rmac-calculator"],
     "desktop": ["rmac-wallpaper", "wallpaper"],
 }
-KEEP_ENV = {"PATH", "LANG", "LC_ALL", "TERM", "USER", "LOGNAME", "SHELL", "CARGO_TARGET_DIR", "RUST_BACKTRACE", "RUST_LOG"}
+KEEP_ENV = {"PATH", "LANG", "TERM", "USER", "LOGNAME", "SHELL", "CARGO_TARGET_DIR", "RUST_BACKTRACE", "RUST_LOG"}
 TEXT_ROLES = {"text-field", "text-area", "search-field", "combo-box"}
 DIALOG_ROLES = {"dialog", "alert", "file chooser"}
 HELPER_APPS = {"rmac-file-chooser"}

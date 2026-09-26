@@ -71,12 +71,15 @@ class GuardTests(unittest.TestCase):
 
         saved = dict(os.environ)
         os.environ.update({"WAYLAND_DISPLAY": "wayland-1", "XDG_RUNTIME_DIR": "/run/user/1000",
-                           "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"})
+                           "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+                           "LC_ALL": "C.UTF-8"})
         try:
             with tempfile.TemporaryDirectory() as work:
                 env = run_lulo.isolated_environment(Path(work))
                 self.assertNotIn("WAYLAND_DISPLAY", env)
                 self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", env)
+                self.assertNotIn("LC_ALL", env)
+                self.assertEqual(env["LANG"], "en_GB.UTF-8")
                 self.assertTrue(env["XDG_RUNTIME_DIR"].startswith(work))
                 self.assertTrue(env["HOME"].startswith(work))
                 self.assertEqual(env["GSETTINGS_BACKEND"], "memory")

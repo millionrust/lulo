@@ -1,12 +1,12 @@
 # Beta release checklist — 0.9.0-beta.1
 
-## Beta 1 go/no-go (updated 2026-09-26)
+## Beta 1 go/no-go (updated 2026-09-27)
 
 **No-go under the current release gates.** The earlier CI failures recorded
-below are resolved: [main CI run 36259639647](https://github.com/millionrust/lulo/actions/runs/36259639647)
-and [quality CI run 36259639596](https://github.com/millionrust/lulo/actions/runs/36259639596)
-both succeeded. The latest non-blocking Mac behaviour-parity job reports
-23/25 on `e4153ca5`; its two remaining misses are the Files context menu
+below are resolved: [main CI run 36261319386](https://github.com/millionrust/lulo/actions/runs/36261319386)
+and [quality CI run 36261319364](https://github.com/millionrust/lulo/actions/runs/36261319364)
+both succeeded on source commit `8ae3a9eb`. The non-blocking Mac behaviour-parity job reports
+23/25; its two remaining misses are the Files context menu
 (Share/tags/Quick Actions) and Get Info window behavior. CI success does not establish release readiness:
 these product, accessibility, security, and packaging gates remain open.
 
@@ -14,7 +14,7 @@ these product, accessibility, security, and packaging gates remain open.
 |---|---|---|---|
 | 1 | Journey 5 Save-panel behavior passes in the nested run with `rmac-file-chooser` present. The earlier failure was a cold-start timing issue: the scenario observed after 1.5 s and sent Escape before the D-Bus-activated chooser's AT-SPI window was ready. It now waits 4 s before observing. `run_lulo.py` also fails preflight when the helper is missing. The chooser is still not deployed in the reference live session. | agent | M |
 | 2 | Accessibility remains a release gate: AT-SPI `EditableText` is absent upstream; ACC-08 and role/name/action gaps remain; Control-F2 is nested-confirmed but not Orca-confirmed; and no owner-run Orca/I3 audit exists. See journeys 1–5 and 8–9 below. | agent / owner / upstream | L |
-| 3 | Packaging lifecycle evidence is missing: no clean Ubuntu 26.04 install/upgrade/uninstall run and no GitHub Actions Release workflow run has produced a candidate. Green dev CI does not exercise that release pipeline. | agent / owner VM | L |
+| 3 | A local amd64 package candidate was built from `8ae3a9eb`: the native pair and pinned compositor packages pass `verify-native-packages.py`, and staged artifact checksums pass. Packaging lifecycle evidence is still missing: no clean Ubuntu 26.04 install/upgrade/uninstall run and no GitHub Actions Release workflow run. Green dev CI does not exercise that release pipeline. | agent / owner VM | L |
 | 4 | Security gate remains **Fail**. Three accepted Low findings remain (SR-15, SR-18, SR-29), and 24 of 80 checks need native-station evidence; no Beta station has run. The verifier must continue to fail closed until its evidence requirements are met. | agent / owner stations | L |
 | 5 | Performance evidence is incomplete and the current checklist records a failing budget: Clock idle CPU/wake-ups remain over budget; frame pacing, input response, soak memory, and NVIDIA results are unmeasured. | agent | M |
 | 6 | Release-facing install/readiness language still needs the owner's decision before publication so README and install guidance match the early-access Beta scope. | **owner** | S |

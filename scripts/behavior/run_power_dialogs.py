@@ -335,17 +335,8 @@ class Run:
     def click_power_dialog_button(self, label: str, systemctl_verb: str | None) -> None:
         """Opens a fresh power dialog and activates `label`, checking it
         either ran `systemctl_verb` (Restart/Sleep/Shut Down) or nothing at
-        all and closed the dialog (Cancel).
-
-        This activates the button over AT-SPI (`doAction`), the same proven
-        route `run_shutdown.py` already uses for these exact buttons,
-        rather than a synthetic pointer click: a real click lands reliably
-        on the bar itself (the logo, `open_system_menu`) but not
-        consistently on this dynamically-positioned popup's own buttons in
-        this nested test environment, even retried — a test-harness
-        limitation of driving a layer-shell popup with a synthetic
-        wl_pointer, not a product bug (Tab/Shift-Tab/Space/Escape on this
-        same dialog, below, are still checked with real key strokes)."""
+        all and closed the dialog (Cancel). The click is a real pointer event
+        in the nested compositor, so it covers the popup's input region."""
 
         before = len(self.systemctl_calls())
         self.dispatch("shutdown-dialog")
@@ -353,7 +344,7 @@ class Run:
         self.check(f"Power dialog: {label} is on screen (AT-SPI)", button)
         if button is None:
             return
-        button.queryAction().doAction(0)
+        self.check(f"Power dialog: {label} accepts a pointer click", self.click_button(label))
         if systemctl_verb is None:
             self.check(f"Power dialog: {label} cancels it and never touches systemctl",
                        self.wait_for(lambda: self.find_button(label) is None, 10)

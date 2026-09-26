@@ -232,7 +232,7 @@ class Run:
             # Use the right edge, which remains visible when Settings' minimum
             # height is slightly taller than the nested niri output.
             edge_y = min(y + height / 2, self.height - 12)
-            self.drag((x + width - 3, edge_y), (x + width - 240, edge_y))
+            self.drag((x + width + 4, edge_y), (x + width - 240, edge_y))
             resized = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
             resized_geometry = self.geometry(resized) if resized else (x, y, width, height)
             shrunk = resized_geometry[2] < width - 30

@@ -814,6 +814,19 @@ impl WaylandWindowStatePtr {
         }
     }
 
+    pub fn resize_edge_at(&self, position: Point<Pixels>) -> Option<ResizeEdge> {
+        let state = self.state.borrow();
+        resize_edge_at(position, state.window_bounds.size)
+    }
+
+    pub fn start_window_resize(&self, edge: ResizeEdge) {
+        let state = self.state.borrow();
+        let serial = state.client.get_serial(SerialKind::MousePress);
+        if let Some(toplevel) = state.surface_state.toplevel() {
+            toplevel.resize(&state.globals.seat, serial, edge.to_xdg());
+        }
+    }
+
     /// The `xdg_surface` backing this window, if it has one. Used to anchor child popups.
     pub fn xdg_surface(&self) -> Option<xdg_surface::XdgSurface> {
         self.state.borrow().surface_state.xdg_surface().cloned()
@@ -1879,14 +1892,7 @@ impl PlatformWindow for WaylandWindow {
     }
 
     fn start_window_resize(&self, edge: gpui::ResizeEdge) {
-        let state = self.borrow();
-        if let Some(toplevel) = state.surface_state.toplevel() {
-            toplevel.resize(
-                &state.globals.seat,
-                state.client.get_serial(SerialKind::MousePress),
-                edge.to_xdg(),
-            )
-        }
+        self.0.start_window_resize(edge);
     }
 
     fn set_input_region(&self, region: Option<&[Bounds<Pixels>]>) {
@@ -2169,9 +2175,35 @@ fn inset_by_tiling(mut bounds: Bounds<Pixels>, inset: Pixels, tiling: Tiling) ->
     bounds
 }
 
+const CLIENT_RESIZE_BORDER: f32 = 8.0;
+
+fn resize_edge_at(position: Point<Pixels>, size: Size<Pixels>) -> Option<ResizeEdge> {
+    let x = f32::from(position.x);
+    let y = f32::from(position.y);
+    let width = f32::from(size.width);
+    let height = f32::from(size.height);
+    let left = x < CLIENT_RESIZE_BORDER;
+    let right = x >= width - CLIENT_RESIZE_BORDER;
+    let top = y < CLIENT_RESIZE_BORDER;
+    let bottom = y >= height - CLIENT_RESIZE_BORDER;
+
+    match (left, right, top, bottom) {
+        (true, _, true, _) => Some(ResizeEdge::TopLeft),
+        (_, true, true, _) => Some(ResizeEdge::TopRight),
+        (true, _, _, true) => Some(ResizeEdge::BottomLeft),
+        (_, true, _, true) => Some(ResizeEdge::BottomRight),
+        (true, _, _, _) => Some(ResizeEdge::Left),
+        (_, true, _, _) => Some(ResizeEdge::Right),
+        (_, _, true, _) => Some(ResizeEdge::Top),
+        (_, _, _, true) => Some(ResizeEdge::Bottom),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod rmac_frame_loop_tests {
-    use super::frame_loop_parked;
+    use super::{frame_loop_parked, resize_edge_at};
+    use gpui::{point, px, size, ResizeEdge};
 
     #[test]
     fn a_drawing_window_is_not_parked() {
@@ -2194,5 +2226,14 @@ mod rmac_frame_loop_tests {
     #[test]
     fn a_pending_frame_callback_keeps_the_loop_awake() {
         assert!(!frame_loop_parked(5, true));
+    }
+
+    #[test]
+    fn client_resize_edges_and_corners_are_hit_tested() {
+        let bounds = size(px(400.0), px(300.0));
+        assert_eq!(resize_edge_at(point(px(399.0), px(150.0)), bounds), Some(ResizeEdge::Right));
+        assert_eq!(resize_edge_at(point(px(2.0), px(2.0)), bounds), Some(ResizeEdge::TopLeft));
+        assert_eq!(resize_edge_at(point(px(399.0), px(299.0)), bounds), Some(ResizeEdge::BottomRight));
+        assert_eq!(resize_edge_at(point(px(200.0), px(150.0)), bounds), None);
     }
 }

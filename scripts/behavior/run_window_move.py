@@ -138,7 +138,7 @@ class Run:
         if output:
             # Settings is taller than Sway's small default headless mode. Raise
             # the mode before niri maps so its lower edge remains draggable.
-            self.swaymsg("output", output["name"], "mode", "1600x1200")
+            self.swaymsg("output", output["name"], "mode", "1280x800")
             time.sleep(0.5)
             outputs = self.swaymsg("-t", "get_outputs") or []
             output = next((o for o in outputs if o.get("active")), output)

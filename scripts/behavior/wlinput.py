@@ -338,7 +338,7 @@ class Wayland:
     # -- pointer -----------------------------------------------------------
 
     def move(self, x: float, y: float, width: int, height: int) -> None:
-        self._send(self.pointer, 1, struct.pack("<IIIII", self._time(), _fixed(x), _fixed(y), width, height))
+        self._send(self.pointer, 1, struct.pack("<IIIII", self._time(), int(x), int(y), width, height))
         self._send(self.pointer, 4, b"")
         self.roundtrip()
 

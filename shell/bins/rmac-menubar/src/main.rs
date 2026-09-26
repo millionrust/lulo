@@ -2889,7 +2889,7 @@ mod linux_wayland {
                 {
                     panels.push(MenuBackdropPanel {
                         left,
-                        top: menu_top,
+                        top: panel_top,
                         width,
                         height,
                         radius: menu_model::APP_MENU_RADIUS,
@@ -2952,9 +2952,14 @@ mod linux_wayland {
                 if let (Some(left), Some(width), Some(height)) =
                     (menu_left, menu_width, menu_height)
                 {
+                    let region_top = if confirmation.is_some() {
+                        panel_top
+                    } else {
+                        BAR_HEIGHT
+                    };
                     input_regions.push(Bounds {
-                        origin: point(px(left), px(BAR_HEIGHT)),
-                        size: Size::new(px(width), px(height + menu_top - BAR_HEIGHT)),
+                        origin: point(px(left), px(region_top)),
+                        size: Size::new(px(width), px(height + panel_top - region_top)),
                     });
                     if let Some(top) = recent_submenu_top {
                         input_regions.push(Bounds {

@@ -317,6 +317,20 @@ class Run:
             self.check(f"{label}: Return runs the default button ({systemctl_verb!r})",
                        new_calls and new_calls[-1].strip() == systemctl_verb, f"calls={new_calls}")
 
+    def menu_click_runs_confirmation(self, item_prefix: str, label: str,
+                                     systemctl_verb: str) -> None:
+        before = len(self.systemctl_calls())
+        opened = self.retry_until(lambda: self.open_confirmation_via_menu(item_prefix),
+                                  lambda: self.find_button(label))
+        self.check(f"{label}: pointer test opens its confirmation", opened)
+        if not opened:
+            return
+        self.check(f"{label}: confirmation accepts a pointer click", self.click_button(label))
+        new_calls = self.wait_for(lambda: self.systemctl_calls()[before:] or None, 10)
+        self.check(f"{label}: pointer click runs {systemctl_verb!r}",
+                   new_calls and new_calls[-1].strip() == systemctl_verb,
+                   f"calls={new_calls}")
+
     def retry_until(self, action, condition, attempts: int = 4, step: float = 2.0) -> bool:
         """Runs `action()` (which sends some real input), then waits up to
         `step` seconds for `condition()`, repeating if it hasn't happened.
@@ -335,17 +349,8 @@ class Run:
     def click_power_dialog_button(self, label: str, systemctl_verb: str | None) -> None:
         """Opens a fresh power dialog and activates `label`, checking it
         either ran `systemctl_verb` (Restart/Sleep/Shut Down) or nothing at
-        all and closed the dialog (Cancel).
-
-        This activates the button over AT-SPI (`doAction`), the same proven
-        route `run_shutdown.py` already uses for these exact buttons,
-        rather than a synthetic pointer click: a real click lands reliably
-        on the bar itself (the logo, `open_system_menu`) but not
-        consistently on this dynamically-positioned popup's own buttons in
-        this nested test environment, even retried — a test-harness
-        limitation of driving a layer-shell popup with a synthetic
-        wl_pointer, not a product bug (Tab/Shift-Tab/Space/Escape on this
-        same dialog, below, are still checked with real key strokes)."""
+        all and closed the dialog (Cancel). The click is a real pointer event
+        in the nested compositor, so it covers the popup's input region."""
 
         before = len(self.systemctl_calls())
         self.dispatch("shutdown-dialog")
@@ -353,7 +358,7 @@ class Run:
         self.check(f"Power dialog: {label} is on screen (AT-SPI)", button)
         if button is None:
             return
-        button.queryAction().doAction(0)
+        self.check(f"Power dialog: {label} accepts a pointer click", self.click_button(label))
         if systemctl_verb is None:
             self.check(f"Power dialog: {label} cancels it and never touches systemctl",
                        self.wait_for(lambda: self.find_button(label) is None, 10)
@@ -381,9 +386,7 @@ class Run:
         before = len(self.systemctl_calls())
 
         def tab_x3_and_space() -> None:
-            # A real click on the logo — proven reliable, unlike one on
-            # this popup's own buttons in this environment (see
-            # `click_power_dialog_button`) — grants real keyboard focus
+            # A real click on the logo grants real keyboard focus
             # before `shutdown-dialog` replaces the menu it opened with the
             # power dialog, so no further click is needed before the keys.
             # The Escapes first undo a menu a previous retry may have left
@@ -450,11 +453,18 @@ class Run:
 
     def run(self) -> int:
         self.start()
+        if self.args.pointer_only:
+            for label, verb in (("Cancel", None), ("Sleep", "suspend"),
+                                ("Restart", "reboot"), ("Shut Down", "poweroff")):
+                self.click_power_dialog_button(label, verb)
+            return self.finish()
         self.power_dialog_tab_and_space()
         self.menu_escape_cancels("Shut Down…", "Shut Down")
         self.menu_return_runs_the_default_regardless_of_tab("Shut Down…", "Shut Down", "poweroff")
+        self.menu_click_runs_confirmation("Shut Down…", "Shut Down", "poweroff")
         self.menu_escape_cancels("Restart…", "Restart")
         self.menu_return_runs_the_default_regardless_of_tab("Restart…", "Restart", "reboot")
+        self.menu_click_runs_confirmation("Restart…", "Restart", "reboot")
         # Last: Log Out really ends this test's own nested niri.
         self.menu_return_runs_the_default_regardless_of_tab("Log Out", "Log Out", None)
         return self.finish()
@@ -532,6 +542,7 @@ def main() -> int:
     parser.add_argument("--niri", default="/usr/bin/niri")
     parser.add_argument("--bin-dir", help="directory with this branch's top-bar, dock, rmac-shortcut-dispatch")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--pointer-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bin_dir:

@@ -2778,7 +2778,10 @@ mod linux_wayland {
                     .map(|menu| menu_panel_width(menu, window))
             };
             let screen_width = f32::from(window.bounds().size.width);
-            let screen_height = f32::from(window.bounds().size.height);
+            let screen_height = window
+                .display(cx)
+                .map(|display| f32::from(display.bounds().size.height))
+                .unwrap_or_else(|| f32::from(window.bounds().size.height));
             // A confirmation is a floating panel centred on screen, not a
             // dropdown anchored under the logo menu, as on the Mac.
             let menu_left = if let Some(confirmation) = &confirmation {
@@ -2798,7 +2801,9 @@ mod linux_wayland {
                     .map(|menu| app_menu_height(&menu.items))
             };
             let panel_top = if let Some(confirmation) = &confirmation {
-                ((screen_height - confirmation.height) / 2.0).max(menu_top)
+                ((screen_height - confirmation.height) / 2.0)
+                    .max(menu_top)
+                    .min(MENU_SURFACE_HEIGHT - confirmation.height - 8.0)
             } else {
                 menu_top
             };
@@ -2889,7 +2894,7 @@ mod linux_wayland {
                 {
                     panels.push(MenuBackdropPanel {
                         left,
-                        top: menu_top,
+                        top: panel_top,
                         width,
                         height,
                         radius: menu_model::APP_MENU_RADIUS,
@@ -2952,9 +2957,14 @@ mod linux_wayland {
                 if let (Some(left), Some(width), Some(height)) =
                     (menu_left, menu_width, menu_height)
                 {
+                    let region_top = if confirmation.is_some() {
+                        panel_top
+                    } else {
+                        BAR_HEIGHT
+                    };
                     input_regions.push(Bounds {
-                        origin: point(px(left), px(BAR_HEIGHT)),
-                        size: Size::new(px(width), px(height + menu_top - BAR_HEIGHT)),
+                        origin: point(px(left), px(region_top)),
+                        size: Size::new(px(width), px(height + panel_top - region_top)),
                     });
                     if let Some(top) = recent_submenu_top {
                         input_regions.push(Bounds {
@@ -3150,7 +3160,8 @@ mod linux_wayland {
                     }
                     if confirmation.countdown {
                         let check_id = format!("system-confirmation-{display_id}-{action}-reopen");
-                        let is_focused = focused == Some(menu_model::ConfirmationControl::ReopenCheckbox);
+                        let is_focused =
+                            focused == Some(menu_model::ConfirmationControl::ReopenCheckbox);
                         body = body.child(
                             div()
                                 .id(check_id)

@@ -12,7 +12,7 @@ pub(super) enum PendingSelectionAction {
 
 pub(super) fn pending_selection_action<'a>(
     target: &Path,
-    entry_paths: impl Iterator<Item = &'a PathBuf>,
+    mut entry_paths: impl Iterator<Item = &'a PathBuf>,
     transfer_active: bool,
 ) -> PendingSelectionAction {
     if let Some(index) = entry_paths.position(|path| path == target) {

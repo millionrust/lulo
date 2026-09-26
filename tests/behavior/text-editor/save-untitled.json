@@ -5,6 +5,7 @@
   "steps": [
     {"type": "Hello"},
     {"key": "cmd-s", "settle": 1.5},
+    {"wait": 4},
     {"observe": "panel", "facts": ["focus", "dialog"]},
     {"key": "escape", "settle": 1.0},
     {"observe": "cancelled", "facts": ["dialog", "windows"]}

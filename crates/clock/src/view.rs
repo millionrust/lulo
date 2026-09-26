@@ -33,7 +33,10 @@ use crate::{
 const LAND_SVG: &str = include_str!("../assets/world-land.svg");
 /// Hundredths need a fast refresh while the Stopwatch runs on screen.
 const FAST_TICK: Duration = Duration::from_millis(33);
-const SLOW_TICK: Duration = Duration::from_millis(250);
+/// Clock faces and countdowns display whole seconds; repaint at that cadence.
+const SECOND_TICK: Duration = Duration::from_secs(1);
+/// Static tabs only need an occasional check for changes made by the ring process.
+const IDLE_TICK: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Tab {
@@ -49,6 +52,31 @@ const TABS: [(Tab, &str); 4] = [
     (Tab::Stopwatch, "Stopwatch"),
     (Tab::Timers, "Timers"),
 ];
+
+fn ticker_delay(tab: Tab, stopwatch_running: bool, timers_running: bool) -> Duration {
+    if tab == Tab::Stopwatch && stopwatch_running {
+        FAST_TICK
+    } else if tab == Tab::World || (tab == Tab::Timers && timers_running) {
+        SECOND_TICK
+    } else {
+        IDLE_TICK
+    }
+}
+
+fn ticker_needs_redraw(tab: Tab, stopwatch_running: bool, timers_running: bool) -> bool {
+    tab == Tab::World
+        || (tab == Tab::Stopwatch && stopwatch_running)
+        || (tab == Tab::Timers && timers_running)
+}
+
+fn ticker_should_redraw(
+    tab: Tab,
+    stopwatch_running: bool,
+    timers_running: bool,
+    state_changed: bool,
+) -> bool {
+    state_changed || ticker_needs_redraw(tab, stopwatch_running, timers_running)
+}
 
 /// A rendered map and what it was rendered for.
 struct MapImage {
@@ -133,18 +161,29 @@ impl ClockView {
 
     fn start_ticker(&self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| loop {
-            let fast = this
+            let (tab, stopwatch_running, timers_running) = this
                 .update(cx, |view, _| {
-                    view.tab == Tab::Stopwatch && view.state.stopwatch.phase() == Phase::Running
+                    (
+                        view.tab,
+                        view.state.stopwatch.phase() == Phase::Running,
+                        view.state.timers.iter().any(|timer| timer.is_running()),
+                    )
                 })
-                .unwrap_or(false);
+                .unwrap_or((Tab::Alarms, false, false));
             cx.background_executor()
-                .timer(if fast { FAST_TICK } else { SLOW_TICK })
+                .timer(ticker_delay(tab, stopwatch_running, timers_running))
                 .await;
             if this
                 .update(cx, |view, cx| {
-                    view.reload_if_changed();
-                    cx.notify();
+                    let changed = view.reload_if_changed();
+                    if ticker_should_redraw(
+                        view.tab,
+                        view.state.stopwatch.phase() == Phase::Running,
+                        view.state.timers.iter().any(|timer| timer.is_running()),
+                        changed,
+                    ) {
+                        cx.notify();
+                    }
                 })
                 .is_err()
             {
@@ -156,14 +195,17 @@ impl ClockView {
 
     /// Pick up the ring process's edits (a one-time alarm switching off, a
     /// finished timer going away).
-    fn reload_if_changed(&mut self) {
+    fn reload_if_changed(&mut self) -> bool {
         let mtime = state_mtime();
         if mtime.is_some() && mtime != self.state_mtime {
             self.state_mtime = mtime;
             if let Ok(state) = store::load() {
+                let changed = state != self.state;
                 self.state = state;
+                return changed;
             }
         }
+        false
     }
 
     /// Apply a change now and persist it (and the ring schedule) off the UI
@@ -1751,5 +1793,35 @@ impl Render for ClockView {
             .children(picker)
             .children(error)
             .children(editor)
+    }
+}
+
+#[cfg(test)]
+mod ticker_tests {
+    use super::*;
+
+    #[test]
+    fn idle_tabs_sleep_and_do_not_redraw_until_state_changes() {
+        assert_eq!(ticker_delay(Tab::Alarms, false, false), IDLE_TICK);
+        assert!(!ticker_needs_redraw(Tab::Alarms, false, false));
+        assert_eq!(ticker_delay(Tab::Stopwatch, false, false), IDLE_TICK);
+        assert!(!ticker_needs_redraw(Tab::Stopwatch, false, false));
+        assert!(ticker_should_redraw(Tab::Alarms, false, false, true));
+    }
+
+    #[test]
+    fn visible_clocks_and_running_countdowns_refresh_once_per_second() {
+        assert_eq!(ticker_delay(Tab::World, false, false), SECOND_TICK);
+        assert!(ticker_needs_redraw(Tab::World, false, false));
+        assert_eq!(ticker_delay(Tab::Timers, false, true), SECOND_TICK);
+        assert!(ticker_needs_redraw(Tab::Timers, false, true));
+        assert_eq!(ticker_delay(Tab::Timers, false, false), IDLE_TICK);
+        assert!(!ticker_needs_redraw(Tab::Timers, false, false));
+    }
+
+    #[test]
+    fn running_stopwatch_keeps_hundredth_second_updates() {
+        assert_eq!(ticker_delay(Tab::Stopwatch, true, false), FAST_TICK);
+        assert!(ticker_needs_redraw(Tab::Stopwatch, true, false));
     }
 }

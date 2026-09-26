@@ -1,0 +1,46 @@
+{
+  "apps": {
+    "rmac-clock": {
+      "display_name": "Clock",
+      "frame_timing": "not_measured",
+      "idle": {
+        "idle_cpu_percent": {
+          "budget": 0.3,
+          "value": 0.467,
+          "within_budget": false
+        },
+        "pss_mib": 95.3,
+        "suspected_idle_redraw": true,
+        "wakeups_per_second": 3.2
+      },
+      "warm_launch": {
+        "interactive_marker": "ready_file",
+        "median_ms": 171.1,
+        "p95_ms": {
+          "budget": 500.0,
+          "value": 183.491,
+          "within_budget": true
+        },
+        "samples_ms": [
+          181.8,
+          171.1,
+          183.5,
+          155.4,
+          158.3
+        ]
+      }
+    }
+  },
+  "captured_at": "2026-09-26T15:41:02Z",
+  "rustc_processes": 0,
+  "schema_version": 1,
+  "settings": {
+    "idle_seconds": 30.0,
+    "repetitions": 5,
+    "settle_seconds": 3.0,
+    "startup_timeout": 10.0,
+    "wakeup_threshold_per_second": 0.5,
+    "warmups": 1
+  },
+  "shell_surfaces": {}
+}

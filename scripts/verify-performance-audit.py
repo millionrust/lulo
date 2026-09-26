@@ -19,6 +19,7 @@ JOURNEY_PATH = REPO_ROOT / "scripts/journey-suite.json"
 HARDWARE_PATH = REPO_ROOT / "packaging/hardware-matrix.json"
 MAX_BYTES = 1024 * 1024
 APPLICATIONS = (
+    ("rmac-clock", 500, 0.3, 12),
     ("rmac-activity-monitor", 500, 2.5, 60),
     ("rmac-app-drawer", 500, 0.3, 12),
     ("rmac-finder", 900, 0.3, 12),

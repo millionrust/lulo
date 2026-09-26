@@ -442,6 +442,7 @@ def run_sweep(binary: Path, work: Path) -> list[dict[str, Any]]:
         app = support.wait_for(find_settings_app, "rmac-system-settings on the AT-SPI bus", APP_FIND_TIMEOUT_S)
 
         for pane_id, pane_name in PANE_ROUTES:
+            print(f"sweep-settings-errors: visiting {pane_name} ({pane_id})", file=sys.stderr)
             if pane_id != first_id:
                 relauncher = launch(binary, env, pane=pane_id)
                 relauncher.wait(timeout=RELAUNCH_WAIT_S)
@@ -449,13 +450,16 @@ def run_sweep(binary: Path, work: Path) -> list[dict[str, Any]]:
             sweep_immediate_and_settled(app, pane_name, findings, seen)
 
             for row_name in STATIC_ROW_SUBPAGES.get(pane_id, []):
+                print(f"sweep-settings-errors:   entering {pane_name} > {row_name}", file=sys.stderr)
                 if not enter_named_row(app, row_name):
+                    print(f"sweep-settings-errors:     row not found, skipping", file=sys.stderr)
                     continue
                 app = support.wait_for(find_settings_app, f"{pane_name} > {row_name}", APP_FIND_TIMEOUT_S)
                 sweep_immediate_and_settled(app, f"{pane_name} > {row_name}", findings, seen)
                 app = reset_to_pane(binary, env, pane_id, pane_name)
 
             for sub_id, sub_label in STATIC_SUBPAGES.get(pane_id, []):
+                print(f"sweep-settings-errors:   entering {pane_name} > {sub_label} (--pane {sub_id})", file=sys.stderr)
                 relauncher = launch(binary, env, pane=sub_id)
                 relauncher.wait(timeout=RELAUNCH_WAIT_S)
                 app = support.wait_for(find_settings_app, f"{pane_name} > {sub_label}", APP_FIND_TIMEOUT_S)
@@ -463,7 +467,9 @@ def run_sweep(binary: Path, work: Path) -> list[dict[str, Any]]:
 
             if pane_id in GENERIC_ROW_SUBPAGES:
                 app = reset_to_pane(binary, env, pane_id, pane_name)
-                for row_name in safe_subpage_rows(app):
+                rows = safe_subpage_rows(app)
+                print(f"sweep-settings-errors:   {pane_name} generic rows: {rows}", file=sys.stderr)
+                for row_name in rows:
                     if not enter_named_row(app, row_name):
                         continue
                     app = support.wait_for(

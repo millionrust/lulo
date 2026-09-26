@@ -1,6 +1,12 @@
 {
   "applications": [
     {
+      "id": "rmac-clock",
+      "idle_cpu_percent": 0.3,
+      "idle_wakeups_per_minute": 12,
+      "startup_p95_ms": 500
+    },
+    {
       "id": "rmac-activity-monitor",
       "idle_cpu_percent": 2.5,
       "idle_wakeups_per_minute": 60,

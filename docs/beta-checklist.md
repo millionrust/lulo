@@ -96,23 +96,25 @@ JSON/parsing logic, not a live run.
 
 | Metric | Budget | Status |
 |---|---|---|
-| Warm launch to interactive | p95 ≤ 500 ms (900 ms Files/Terminal) | **Measured under build contention** — Notes, System Monitor, System Settings over; re-run with `rustc` at 0 |
-| Idle CPU | ≤ 0.3%/app, ≤ 1% shell combined | **Re-measured 2026-09-25** (read-only, `top -b -d 10 -n 6`, 60 s, on the live session's real shell processes): top bar averaged 0.27% (samples 0.0–0.6%), Dock 0.0–0.1%, wallpaper 0.0–0.3%, OSD/launcher/Mission Control/screenshot/shortcut-broker/focus-service/clipboard/file-chooser all 0.0% — combined well under the 1% shell budget, a large improvement on 2026-09-24's 2.78%. This held even while another build was saturating the laptop (load average ~4, 98% system CPU) — a harder test than idle. Per-app numbers (System Settings 24.95%, Files 5.32%, System Monitor 3.13%, Clock 1.58% from 2026-09-24) were **not re-measured this pass** — avoided launching extra app instances on a laptop shared with other agents; still needs a clean re-run |
-| Idle wake-ups | none while nothing changes | **Not re-measured this pass** (still the 2026-09-24 number: ~4/s per visible layer window, top bar 24/s, shortcut broker 23/s) — the near-zero CPU result above is consistent with a fix, but a wake-up count needs `strace -c -e sendmsg`, not just `top`, and the laptop was busy with a concurrent build for the whole window this pass had available |
+| Warm launch to interactive | p95 ≤ 500 ms (900 ms Files/Terminal) | **Clock measured 2026-09-26** with no Cargo contention: p95 183.5 ms over five launches (+1 warm-up), using the app's ready marker. Earlier Notes/System Monitor/Settings values remain from a contended run; see [Clock before/after report](perf/reference-laptop-2026-09-26-clock.md) |
+| Idle CPU | ≤ 0.3%/app, ≤ 1% shell combined | Shell values remain the 2026-09-25 read-only run: top bar 0.27%, Dock 0.0–0.1%, wallpaper 0.0–0.3%, other listed surfaces 0.0%, combined under 1%. Clock was measured before/after on 2026-09-26: 3.767% → 0.467%; the 87.6% drop still leaves it 0.167 percentage points over budget. See [Clock report](perf/reference-laptop-2026-09-26-clock.md) |
+| Idle wake-ups | none while nothing changes | Clock fell from 41.933/s to 3.200/s (92.4% reduction), but remains above its 12/min budget. Shell wake-ups have not been re-measured since 2026-09-24. Frame timing is not measured by the current harness; see [Clock report](perf/reference-laptop-2026-09-26-clock.md) |
 | Input to visible response | p95 ≤ 50 ms | **Not yet run** — no frame-timing harness exists yet |
 | 60/120 Hz animation frame budget | ≥ 99% / ≥ 95% within budget | **Not yet run** — `docs/performance-baseline.md` notes no per-frame trace is available yet |
 | Memory (8-hour soak) | per-app budget, no leak | **Not yet run** |
 | Repeat on an NVIDIA system | required before Beta | **Not yet run** — no NVIDIA station in the matrix yet |
 
 Evidence: [docs/perf/reference-laptop-2026-09-24.md](perf/reference-laptop-2026-09-24.md)
-is the first real run (system audit, 2026-09-24); see
+is the first real run (system audit, 2026-09-24); the Clock before/after
+run on 2026-09-26 is documented at
+[docs/perf/reference-laptop-2026-09-26-clock.md](perf/reference-laptop-2026-09-26-clock.md).
+See
 [docs/system-audit-2026-09-24.md](system-audit-2026-09-24.md). This pass adds
-a 2026-09-25 read-only re-measurement of shell idle CPU only (see the Idle
-CPU row above) — command: `top -b -d 10 -n 6 -p <shell PIDs>` against the
-live session's own `rmac-dock`/`rmac-top-bar`/`rmac-wallpaper`/etc. processes,
-no changes made. **Status: Fail** — idle wake-ups and per-app idle CPU are
-unconfirmed this pass and were last measured over budget; shell idle CPU
-itself now measures well under budget.
+a 2026-09-25 read-only re-measurement of shell idle CPU and a 2026-09-26
+focused Clock idle/launch comparison. **Status: Fail** — Clock's large idle
+regression is substantially reduced, but its idle CPU and wake-up budgets
+still fail; frame pacing, input response, soak memory, and NVIDIA results
+remain unmeasured.
 
 ## 3. Accessibility gates (todo.md)
 

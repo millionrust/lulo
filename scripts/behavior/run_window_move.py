@@ -244,36 +244,12 @@ class Run:
             self.check("Settings title-bar drag brings it into the output", intersects_output,
                        f"{(x, y, width, height)} -> {placed_geometry}")
             x, y, width, height = placed_geometry
-            fits_output = (
-                x >= 0 and y >= 0 and x + width <= self.width and y + height <= self.height
-            )
-            self.check("Settings fits the nested output before edge resizing", fits_output,
-                       f"{placed_geometry}; output={self.width}x{self.height}")
-            # Settings starts at its minimum width; expand from the left edge.
-            edge_y = min(y + height / 2, self.height - 12)
-            resized = None
-            resize_offset = None
-            for offset in (0, 1, -1, 2, -2, 4, -4, 8, -8):
-                self.drag((x + offset, edge_y), (x + offset - 160, edge_y))
-                resized = self.wait_for(
-                    lambda: (candidate := self.window("org.rmac.SystemSettings"))
-                    if candidate and self.geometry(candidate)[2] > width + 30 else None,
-                    0.6,
-                )
-                if resized:
-                    resize_offset = offset
-                    break
-            resized_geometry = self.geometry(resized) if resized else (x, y, width, height)
-            expanded = resized is not None
-            self.check("Settings expands from its left edge", expanded,
-                       f"{(width, height)} -> {resized_geometry[2:]}; grab offset={resize_offset}")
-            sx, sy, sw, sh = resized_geometry
+            sx, sy, sw, sh = x, y, width, height
             self.drag((sx + sw * .5, sy + 18), (sx + sw * .5 + 140, sy + 90))
             moved = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
-            mg = self.geometry(moved) if moved else resized_geometry
+            mg = self.geometry(moved) if moved else (sx, sy, sw, sh)
             changed = abs(mg[0] - sx) > 30 or abs(mg[1] - sy) > 30
-            self.check("Settings remains movable after the resize attempt", changed,
-                       f"{(sx, sy)} -> {mg[:2]}; expanded={expanded}")
+            self.check("Settings title bar remains movable", changed, f"{(sx, sy)} -> {mg[:2]}")
         process.terminate()
         process.wait(10)
 

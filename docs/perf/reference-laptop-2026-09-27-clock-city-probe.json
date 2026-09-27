@@ -1,0 +1,80 @@
+{
+  "title": "Clock one-city versus empty-city idle probe",
+  "captured_at": "2026-09-27T08:21:12Z / 2026-09-27T08:22:16Z",
+  "source_binary": {
+    "path": "/home/jacob/rmac-release/inputs-20260926T2339/rmac-clock",
+    "sha256": "2f29b3bb578f5279e1f84184bbdf39389422cced68ce6c9a3f8d54cbddec9c7a",
+    "size_bytes": 27322360,
+    "modified_at": "2026-09-26T23:46:05.438919685+05:30"
+  },
+  "measurement": {
+    "harness": "scripts/linux/measure-budgets.py with a local temporary modification that seeds cities=[] only for the empty-city run",
+    "command": "python3 /tmp/rmac-measure-clock.py --skip-surfaces --app rmac-clock --warmups 0 --repetitions 1 --settle-seconds 3 --idle-seconds 60 --binary-dir /home/jacob/rmac-release/inputs-20260926T2339",
+    "isolation": "Each launch used a private temporary HOME and XDG config/data/state/cache directories; no input was injected. The Clock window started on World view. Runs were sequential under /tmp/lulo-journey.lock.",
+    "cargo_running": false,
+    "rustc_processes": 0
+  },
+  "runs": [
+    {
+      "mode": "one_default_local_city",
+      "state": "missing state file; Clock initialized its normal local-city fallback",
+      "report": {
+        "display_name": "Clock",
+        "frame_timing": "not_measured",
+        "idle": {
+          "idle_cpu_percent": {
+            "budget": 0.3,
+            "value": 0.55,
+            "within_budget": false
+          },
+          "pss_mib": 58.6,
+          "suspected_idle_redraw": true,
+          "wakeups_per_second": 3.117
+        },
+        "warm_launch": {
+          "interactive_marker": "ready_file",
+          "median_ms": 441.2,
+          "p95_ms": {
+            "budget": 500.0,
+            "value": 441.157,
+            "within_budget": true
+          },
+          "samples_ms": [
+            441.2
+          ]
+        }
+      }
+    },
+    {
+      "mode": "zero_cities",
+      "state": "seeded private clock.json with cities=[]; no city faces or moving second hands",
+      "report": {
+        "display_name": "Clock",
+        "frame_timing": "not_measured",
+        "idle": {
+          "idle_cpu_percent": {
+            "budget": 0.3,
+            "value": 0.433,
+            "within_budget": false
+          },
+          "pss_mib": 63.6,
+          "suspected_idle_redraw": true,
+          "wakeups_per_second": 3.117
+        },
+        "warm_launch": {
+          "interactive_marker": "ready_file",
+          "median_ms": 340.5,
+          "p95_ms": {
+            "budget": 500.0,
+            "value": 340.475,
+            "within_budget": true
+          },
+          "samples_ms": [
+            340.5
+          ]
+        }
+      }
+    }
+  ],
+  "interpretation": "Both modes retain the once-per-second World ClockView ticker, and both measured 3.117 wake-ups/s. Removing the single city lowered CPU by about 0.117 percentage points (0.550% to 0.433%), so the city face is a small part of the measured cost. Both still exceed the 0.3% budget. This is a focused probe and does not replace the nine-app candidate release table."
+}

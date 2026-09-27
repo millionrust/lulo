@@ -3,6 +3,7 @@
 //! Mac's Find (docs/parity.md NOTES-09).
 
 use super::*;
+use crate::toolbar::accessible_icon_button;
 
 /// Byte offset of every non-overlapping, case-insensitive match of `needle`
 /// in `hay`. ASCII-lowercasing keeps every offset valid in the original

@@ -1,6 +1,7 @@
 //! Notes folder navigation and searchable note-list projection.
 
 use super::*;
+use crate::toolbar::accessible_icon_button;
 
 impl NotesView {
     pub(super) fn render_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {

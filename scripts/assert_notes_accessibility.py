@@ -8,7 +8,9 @@ then checks:
 
 - the folder sidebar and the note list are `list box`es of named `list
   item`s with exactly one selected, through the Selection interface;
-- the glyph-only New Note toolbar control has a name and Click action;
+- New Note and New Folder expose names and Click actions; Checklist, Add
+  Photo… and Move Note… have names in the newly created note state; the
+  in-note Find controls expose Click actions and can be closed;
 - Search, Title, Body and Tags are named `entry` nodes with a Text interface,
   and no unnamed entry is left over from the field's inner input;
 - grabbing focus on Title focuses it (AccessKit's Focus action) and its
@@ -45,6 +47,37 @@ def list_box(label):
     return boxes[0] if boxes else None
 
 
+def named_clickable_button(label):
+    return support.wait_for(
+        lambda: next(
+            (
+                node
+                for node in support.descendants(app())
+                if support.role(node) in {"push button", "button"}
+                and support.name(node) == label
+                and "click" in support.actions(node)
+            ),
+            None,
+        ),
+        f"the named, actionable {label} button",
+    )
+
+
+def named_button(label):
+    return support.wait_for(
+        lambda: next(
+            (
+                node
+                for node in support.descendants(app())
+                if support.role(node) in {"push button", "button"}
+                and support.name(node) == label
+            ),
+            None,
+        ),
+        f"the named {label} button",
+    )
+
+
 folders = support.wait_for(lambda: list_box("Folders"), "the Folders list box")
 folder_items = [
     node for node in support.descendants(folders) if support.role(node) == "list item"
@@ -56,20 +89,7 @@ assert len(selected_folders) == 1, f"{len(selected_folders)} folders selected"
 assert support.selected_count(folders) == 1, "Folders' Selection interface disagrees"
 assert all("click" in support.actions(node) for node in folder_items), "a folder item has no click"
 
-new_note = support.wait_for(
-    lambda: next(
-        (
-            node
-            for node in support.descendants(app())
-            if support.role(node) in {"push button", "button"}
-            and support.name(node) == "New Note"
-            and "click" in support.actions(node)
-        ),
-        None,
-    ),
-    "the named, actionable New Note toolbar button",
-)
-
+new_note = named_clickable_button("New Note")
 assert support.click(new_note), "New Note accessibility action was not handled"
 
 
@@ -116,8 +136,26 @@ body = fields_now("Body")
 body_text, body_caret, _ = support.text_of(body)
 assert 0 <= body_caret <= len(body_text)
 
+for label in ("Checklist", "Add Photo…", "Move Note…"):
+    named_button(label)
+named_clickable_button("New Folder")
+
+support.activate_menu("org.rmac.Notes.Menu", "notes::FindInNote")
+previous = named_clickable_button("Previous match")
+following = named_clickable_button("Next match")
+done = named_clickable_button("Done")
+assert support.click(previous), "Previous match accessibility action was not handled"
+assert support.click(following), "Next match accessibility action was not handled"
+assert support.click(done), "Done accessibility action was not handled"
+support.wait_for(
+    lambda: not support.nodes_with(app(), "button", "Done"),
+    "the in-note Find bar to close",
+)
+
 print(
     "AT-SPI Notes: "
     f"{len(folder_items)} folder items (1 selected), {len(note_items)} note items (1 selected), "
-    f"named Search/Title/Body/Tags entries with Text, Title focus via grabFocus, caret {caret}"
+    "named toolbar controls, actionable New Note/New Folder/Find, "
+    "Search/Title/Body/Tags entries with Text, "
+    f"Title focus via grabFocus, caret {caret}"
 )

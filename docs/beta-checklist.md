@@ -63,9 +63,11 @@ includes a regression that focuses Notes then Files without a Files menu
 publisher: the installed top bar lacked File/Edit/View/Go, while the candidate
 shows all four.
 
-Visual parity is not established by the behavior or startup passes. The
-current checkout has no completed Mac/Lulo screenshot-pair records under
-`target/evidence/visual-comparisons/`. The
+Visual parity is not established by the behavior or startup passes. One local
+Mac/Lulo screenshot-pair record under `target/evidence/visual-comparisons/`
+documents the installed build's missing Files menus; its originals differ in
+scale, wallpaper and desktop state. It passes the provenance audit but does
+not establish overall desktop parity. The
 [comparison protocol](visual-comparison.md) and
 `scripts/audit-visual-comparisons.py` can validate future pairs and their
 provenance, but a human must still review their visible differences.

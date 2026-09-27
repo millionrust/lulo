@@ -2,14 +2,14 @@
   "title": "Clock one-city versus empty-city idle probe",
   "captured_at": "2026-09-27T08:21:12Z / 2026-09-27T08:22:16Z",
   "source_binary": {
-    "path": "/home/jacob/rmac-release/inputs-20260926T2339/rmac-clock",
+    "path": "~/rmac-release/inputs-20260926T2339/rmac-clock",
     "sha256": "2f29b3bb578f5279e1f84184bbdf39389422cced68ce6c9a3f8d54cbddec9c7a",
     "size_bytes": 27322360,
     "modified_at": "2026-09-26T23:46:05.438919685+05:30"
   },
   "measurement": {
     "harness": "scripts/linux/measure-budgets.py with a local temporary modification that seeds cities=[] only for the empty-city run",
-    "command": "python3 /tmp/rmac-measure-clock.py --skip-surfaces --app rmac-clock --warmups 0 --repetitions 1 --settle-seconds 3 --idle-seconds 60 --binary-dir /home/jacob/rmac-release/inputs-20260926T2339",
+    "command": "python3 /tmp/rmac-measure-clock.py --skip-surfaces --app rmac-clock --warmups 0 --repetitions 1 --settle-seconds 3 --idle-seconds 60 --binary-dir ~/rmac-release/inputs-20260926T2339",
     "isolation": "Each launch used a private temporary HOME and XDG config/data/state/cache directories; no input was injected. The Clock window started on World view. Runs were sequential under /tmp/lulo-journey.lock.",
     "cargo_running": false,
     "rustc_processes": 0

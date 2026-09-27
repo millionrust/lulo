@@ -41,12 +41,11 @@ result remains the valid installed-binary result.
 The staged candidate selected by `./install-lulo.sh` now contains these source
 changes. It has not been installed on the reference PC.
 
-An amd64 candidate with `rmac-apps` and `rmac-session` built from source
-`e8b589ac` and the previously pinned niri/xwayland-satellite packages is now
-staged at `~/rmac-release/packages-install10-e8b589ac` on the reference PC. Its four
-Debian package SHA-256 checks and native package verifier passed, and
-`~/install-lulo.sh` points to that set with the installer checkout pinned to
-the build commit. [Main CI run 36327602027](https://github.com/millionrust/lulo/actions/runs/36327602027)
+The previous amd64 candidate with `rmac-apps` and `rmac-session` built from source
+`e8b589ac` and the pinned niri/xwayland-satellite packages remains staged at
+`~/rmac-release/packages-install10-e8b589ac` on the reference PC. Its four
+Debian package SHA-256 checks and native package verifier passed.
+[Main CI run 36327602027](https://github.com/millionrust/lulo/actions/runs/36327602027)
 and [quality run 36327602104](https://github.com/millionrust/lulo/actions/runs/36327602104)
 passed for the exact source. The candidate is staged but **not installed**;
 the installed-build results above still refer to `0e3fa470`. The exact
@@ -62,6 +61,28 @@ passed
 includes a regression that focuses Notes then Files without a Files menu
 publisher: the installed top bar lacked File/Edit/View/Go, while the candidate
 shows all four.
+
+The current candidate is the 38-binary amd64 set built from exact source
+`8ba31b82`, with the same pinned niri/xwayland-satellite packages, at
+`~/rmac-release/packages-install11-8ba31b82`. Its four SHA-256 checks and
+native package verifier pass; `~/install-lulo.sh` and its installer checkout
+are pinned to this set. It is **not installed**: the active reference session
+still runs `0e3fa470`. [Main CI](https://github.com/millionrust/lulo/actions/runs/36334082582)
+and [quality CI](https://github.com/millionrust/lulo/actions/runs/36334082589)
+passed for `8ba31b82`. The exact binaries pass
+[9/9 startup checks](behavior-results/source-8ba31b82-startup-smoke.json),
+[25/27 Mac behavior scenarios](behavior-results/source-8ba31b82-27.json),
+37/37 private power-dialog checks, and 28/28 private shutdown checks with a
+fake `systemctl`. Focused private Files checks also pass for View and Sort By
+flyouts, checked sorting, all seven visible tag swatches, and applying and
+removing a tag xattr. The two behavior mismatches remain the Files item and
+background menus: Share, Quick Actions, grouping, View Options, and iPhone
+import lack their underlying services or presentation model. Text Editor's
+stale parent redraw observer was removed, but one paired 30-second private
+[probe](perf/reference-laptop-2026-09-27-text-editor-parent-invalidation.md)
+changed idle CPU from 40.5% to 39.1%, an inconclusive difference; the idle
+performance gate is still open. Neither fake power checks nor private UI
+checks prove real host poweroff or full visual parity.
 
 Visual parity is not established by the behavior or startup passes. One local
 Mac/Lulo screenshot-pair record under `target/evidence/visual-comparisons/`

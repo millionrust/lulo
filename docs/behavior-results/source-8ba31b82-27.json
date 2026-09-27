@@ -1,0 +1,941 @@
+{
+  "format": 1,
+  "results": [
+    {
+      "scenario": "calculator/keypad",
+      "title": "Calculator: typed keys update the display; Escape clears",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/keypad",
+        "observations": {
+          "sum": {
+            "display": {
+              "value": "19"
+            }
+          },
+          "product": {
+            "display": {
+              "value": "57"
+            }
+          },
+          "repeated_equals": {
+            "display": {
+              "value": "171"
+            }
+          },
+          "cleared": {
+            "display": {
+              "value": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/mode-switch",
+      "title": "Calculator: Basic to Scientific to Basic keeps the window fitted to the keypad",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/mode-switch",
+        "observations": {
+          "basic_initial": {
+            "window_size": {
+              "width": 230,
+              "height": 408
+            },
+            "display": {
+              "value": "0"
+            }
+          },
+          "scientific": {
+            "window_size": {
+              "width": 674,
+              "height": 408
+            },
+            "display": {
+              "value": "0"
+            }
+          },
+          "basic_return": {
+            "window_size": {
+              "width": 230,
+              "height": 408
+            },
+            "display": {
+              "value": "0"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "calculator/scientific",
+      "title": "Calculator: Scientific mode computes 2 x² = with the real formula-first display",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "calculator/scientific",
+        "observations": {
+          "squared_pending": {
+            "display": {
+              "value": "22"
+            }
+          },
+          "squared_result": {
+            "display": {
+              "value": "4"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "desktop/new-folder",
+      "title": "New Folder (⇧⌘N) on the desktop starts renaming it with the whole name selected",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "desktop/new-folder",
+        "observations": {
+          "created": {
+            "focus": {
+              "role": "text-field",
+              "value": "untitled folder",
+              "selection": [
+                0,
+                15
+              ],
+              "selected_text": "untitled folder",
+              "selected_all": true,
+              "label": "Rename untitled folder"
+            },
+            "files": {
+              "entries": [
+                "untitled folder/"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/context-menu",
+      "title": "Right-clicking a file shows Finder's item menu",
+      "status": "fail",
+      "mismatches": [
+        {
+          "observation": "menu",
+          "fact": "menu",
+          "field": "items",
+          "expected": [
+            "Open",
+            "Open With",
+            "-",
+            "Move to Bin",
+            "-",
+            "Get Info",
+            "Rename",
+            "Compress “report.txt”",
+            "Duplicate",
+            "Make Alias",
+            "Quick Look",
+            "-",
+            "Copy",
+            "Share…",
+            "-",
+            "label",
+            "-",
+            "Quick Actions"
+          ],
+          "actual": [
+            "Open",
+            "Open With",
+            "-",
+            "Move to Bin",
+            "-",
+            "Get Info",
+            "Rename",
+            "Compress “report.txt”",
+            "Duplicate",
+            "Make Alias",
+            "Quick Look",
+            "-",
+            "Copy",
+            "-",
+            "Red",
+            "Orange",
+            "Yellow",
+            "Green",
+            "Blue",
+            "Purple",
+            "Gray"
+          ],
+          "rule": "exact"
+        }
+      ],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/context-menu",
+        "observations": {
+          "menu": {
+            "menu": {
+              "present": true,
+              "items": [
+                "Open",
+                "Open With",
+                "-",
+                "Move to Bin",
+                "-",
+                "Get Info",
+                "Rename",
+                "Compress “report.txt”",
+                "Duplicate",
+                "Make Alias",
+                "Quick Look",
+                "-",
+                "Copy",
+                "-",
+                "Red",
+                "Orange",
+                "Yellow",
+                "Green",
+                "Blue",
+                "Purple",
+                "Gray"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/duplicate",
+      "title": "Duplicate (⌘D) makes “name copy.ext” next to the file and selects it",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/duplicate",
+        "observations": {
+          "duplicated": {
+            "files": {
+              "entries": [
+                "report copy.txt",
+                "report.txt"
+              ]
+            },
+            "selection": {
+              "items": [
+                "report copy.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/get-info-background",
+      "title": "Get Info from empty folder background names the current folder",
+      "status": "fail",
+      "mismatches": [
+        {
+          "observation": "menu",
+          "fact": "menu",
+          "field": "items",
+          "expected": [
+            "New Folder",
+            "-",
+            "Get Info",
+            "-",
+            "View",
+            "Use Groups",
+            "Sort By",
+            "Show View Options",
+            "-",
+            "Import from iPhone"
+          ],
+          "actual": [
+            "New Folder",
+            "-",
+            "Get Info",
+            "-",
+            "View",
+            "Sort By",
+            "-",
+            "Select All"
+          ],
+          "rule": "exact"
+        }
+      ],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/get-info-background",
+        "observations": {
+          "menu": {
+            "menu": {
+              "present": true,
+              "items": [
+                "New Folder",
+                "-",
+                "Get Info",
+                "-",
+                "View",
+                "Sort By",
+                "-",
+                "Select All"
+              ]
+            }
+          },
+          "info": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 2,
+              "front": "sandbox Info",
+              "titles": [
+                "sandbox Info",
+                "sandbox"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/get-info",
+      "title": "Get Info (⌘I) opens an “<name> Info” window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/get-info",
+        "observations": {
+          "info": {
+            "windows": {
+              "count": 2,
+              "front": "report.txt Info",
+              "titles": [
+                "report.txt Info",
+                "sandbox"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/go-to-folder",
+      "title": "Go to Folder (⇧⌘G) opens a path field with its text selected; Escape closes it",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/go-to-folder",
+        "observations": {
+          "open": {
+            "focus": {
+              "role": "text-field",
+              "selected_all": false
+            },
+            "dialog": {
+              "present": true,
+              "title": "Go to Folder",
+              "buttons": [
+                "Close"
+              ]
+            }
+          },
+          "closed": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "sandbox",
+              "titles": [
+                "sandbox"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/list-arrows",
+      "title": "↓ and ↑ move the selection in list view and stop at the ends",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/list-arrows",
+        "observations": {
+          "down": {
+            "selection": {
+              "items": [
+                "b.txt"
+              ]
+            }
+          },
+          "bottom": {
+            "selection": {
+              "items": [
+                "c.txt"
+              ]
+            }
+          },
+          "up": {
+            "selection": {
+              "items": [
+                "b.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/move-to-trash",
+      "title": "Move to Trash (⌘⌫) removes the file without asking, and Undo (⌘Z) puts it back",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/move-to-trash",
+        "observations": {
+          "trashed": {
+            "files": {
+              "entries": [
+                "keep.txt"
+              ]
+            },
+            "dialog": {
+              "present": false
+            }
+          },
+          "restored": {
+            "files": {
+              "entries": [
+                "keep.txt",
+                "report.txt"
+              ]
+            },
+            "selection": {
+              "items": [
+                "report.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/new-folder-name",
+      "title": "Typing a name over New Folder's selection and pressing Return names the folder and keeps it selected",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/new-folder-name",
+        "observations": {
+          "named": {
+            "focus": {
+              "role": "list",
+              "value": null,
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null,
+              "label": null
+            },
+            "files": {
+              "entries": [
+                "Plans/",
+                "report.txt"
+              ]
+            },
+            "selection": {
+              "items": [
+                "Plans"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/new-folder",
+      "title": "New Folder (⇧⌘N) leaves the new folder's whole name selected for editing",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/new-folder",
+        "observations": {
+          "created": {
+            "focus": {
+              "role": "text-field",
+              "value": "untitled folder",
+              "selection": [
+                0,
+                15
+              ],
+              "selected_text": "untitled folder",
+              "selected_all": true,
+              "label": "Name"
+            },
+            "files": {
+              "entries": [
+                "report.txt",
+                "untitled folder/"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/new-tab",
+      "title": "New Tab (⌘T) adds a tab to the same window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/new-tab",
+        "observations": {
+          "tabbed": {
+            "windows": {
+              "count": 1
+            },
+            "tabs": {
+              "count": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/new-window",
+      "title": "New Window (⌘N) opens a second window",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/new-window",
+        "observations": {
+          "opened": {
+            "windows": {
+              "count": 2
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/quick-look",
+      "title": "Space opens Quick Look on the selected file and Space closes it",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/quick-look",
+        "observations": {
+          "previewing": {
+            "windows": {
+              "count": 2,
+              "front": "Quick Look",
+              "titles": [
+                "Quick Look",
+                "sandbox"
+              ]
+            }
+          },
+          "closed": {
+            "windows": {
+              "count": 1,
+              "front": "sandbox",
+              "titles": [
+                "sandbox"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/rename-escape",
+      "title": "Escape during a rename keeps the old name",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/rename-escape",
+        "observations": {
+          "cancelled": {
+            "files": {
+              "entries": [
+                "report.txt"
+              ]
+            },
+            "selection": {
+              "items": [
+                "report.txt"
+              ]
+            },
+            "focus": {
+              "role": "list",
+              "value": null,
+              "selection": null,
+              "selected_text": null,
+              "selected_all": null,
+              "label": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/rename-file",
+      "title": "Return renames a file with only the name before the extension selected",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/rename-file",
+        "observations": {
+          "editing": {
+            "focus": {
+              "role": "text-field",
+              "value": "report.txt",
+              "selection": [
+                0,
+                6
+              ],
+              "selected_text": "report",
+              "selected_all": false,
+              "label": "Name"
+            }
+          },
+          "renamed": {
+            "files": {
+              "entries": [
+                "notes.txt",
+                "other.txt"
+              ]
+            },
+            "selection": {
+              "items": [
+                "notes.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/rename-folder",
+      "title": "Return renames a folder with its whole name selected",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/rename-folder",
+        "observations": {
+          "editing": {
+            "focus": {
+              "role": "text-field",
+              "value": "Projects",
+              "selection": [
+                0,
+                8
+              ],
+              "selected_text": "Projects",
+              "selected_all": true,
+              "label": "Name"
+            }
+          },
+          "renamed": {
+            "files": {
+              "entries": [
+                "Plans/",
+                "report.txt"
+              ]
+            },
+            "selection": {
+              "items": [
+                "Plans"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/select-all",
+      "title": "Select All (⌘A) selects every item in the folder",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/select-all",
+        "observations": {
+          "all": {
+            "selection": {
+              "items": [
+                "a.txt",
+                "b.txt",
+                "Folder"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "files/undo-rename",
+      "title": "Undo (⌘Z) after a rename restores the old name",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "files/undo-rename",
+        "observations": {
+          "undone": {
+            "files": {
+              "entries": [
+                "report.txt"
+              ]
+            },
+            "selection": {
+              "items": [
+                "report.txt"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "preview/find-pdf",
+      "title": "Preview: ⌘F focuses the Find field in an open PDF",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "preview/find-pdf",
+        "observations": {
+          "find": {
+            "focus": {
+              "role": "text-field",
+              "value": "",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Find"
+            },
+            "windows": {
+              "count": 1,
+              "front": "guide.pdf – 1 page",
+              "titles": [
+                "guide.pdf – 1 page"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "settings/search",
+      "title": "Settings search: ⌘F focuses search, typing filters, ↓ then Return opens the first match",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "settings/search",
+        "observations": {
+          "focused": {
+            "focus": {
+              "role": "text-field",
+              "label": "Search"
+            }
+          },
+          "typed": {
+            "focus": {
+              "role": "text-field",
+              "value": "wallpaper",
+              "selection": [
+                9,
+                9
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Search"
+            }
+          },
+          "opened": {
+            "windows": {
+              "count": 1,
+              "front": "Wallpaper",
+              "titles": [
+                "Wallpaper"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/close-unsaved",
+      "title": "Closing (⌘W) an edited Untitled document asks to save; Escape cancels",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/close-unsaved",
+        "observations": {
+          "asked": {
+            "dialog": {
+              "present": true,
+              "title": "Do you want to keep this new document “Untitled”?",
+              "texts": [],
+              "buttons": [
+                "Delete",
+                "Cancel",
+                "Save"
+              ]
+            }
+          },
+          "cancelled": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "Untitled",
+              "titles": [
+                "Untitled"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/find",
+      "title": "Find (⌘F) focuses the find field; typing searches",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/find",
+        "observations": {
+          "find": {
+            "focus": {
+              "role": "text-field",
+              "label": "Find"
+            }
+          },
+          "typed": {
+            "focus": {
+              "role": "text-field",
+              "value": "hello",
+              "selection": [
+                5,
+                5
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Find"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/new-document",
+      "title": "New (⌘N) opens a second Untitled window with the text area focused",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/new-document",
+        "observations": {
+          "new": {
+            "windows": {
+              "count": 2,
+              "front": "Untitled 2",
+              "titles": [
+                "Untitled 2",
+                "Untitled"
+              ]
+            },
+            "focus": {
+              "role": "text-field",
+              "value": "",
+              "selection": [
+                0,
+                0
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Untitled 2"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario": "text-editor/save-untitled",
+      "title": "Save (⌘S) on an Untitled document opens the Save panel with the name selected",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/save-untitled",
+        "observations": {
+          "panel": {
+            "focus": {
+              "role": "text-field",
+              "value": "Untitled",
+              "selection": [
+                0,
+                8
+              ],
+              "selected_text": "Untitled",
+              "selected_all": true,
+              "label": null
+            },
+            "dialog": {
+              "present": true,
+              "title": null,
+              "buttons": [
+                "Cancel",
+                "Save"
+              ]
+            }
+          },
+          "cancelled": {
+            "dialog": {
+              "present": false
+            },
+            "windows": {
+              "count": 1,
+              "front": "Untitled",
+              "titles": [
+                "Untitled"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

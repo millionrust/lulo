@@ -2,10 +2,11 @@
 
 ## Beta 1 go/no-go (updated 2026-09-27)
 
-**No-go under the current release gates.** The latest
-[main CI run 36306250044](https://github.com/millionrust/lulo/actions/runs/36306250044)
-and [quality CI run 36306250015](https://github.com/millionrust/lulo/actions/runs/36306250015)
-both succeeded on source commit `afa8d07d`; the candidate packages still
+**No-go under the current release gates.** The latest completed
+[main CI run 36308017443](https://github.com/millionrust/lulo/actions/runs/36308017443)
+succeeded on `48a2a861`, and
+[quality CI run 36308895817](https://github.com/millionrust/lulo/actions/runs/36308895817)
+succeeded on `7320242c`. The candidate packages still
 contain `8ae3a9eb`. The non-blocking Mac behaviour-parity job reports 23/26;
 its three mismatches are the Files item menu
 (Share/tags/Quick Actions), Get Info window behavior, and the new background
@@ -80,8 +81,8 @@ Beta cohort") if that distinction needs to survive outside this document.
 | 1 | Log in, launch from Dock/Spotlight, switch, close | `scripts/linux/run-journey-launch.py` | Ran live on the reference laptop. Dock tiles and Spotlight rows were fixed to expose a real AT-SPI `click`/`Text` surface (see `docs/journey-suite.md`). Spotlight's search field still can't be **typed into** over AT-SPI: the pinned `accesskit_unix` bridge has no `EditableText` implementation at all (upstream gap, not fixable here). | **Fail** — one real, live, unfixable-in-repo accessibility gap (no-keyboard-injector query typing); everything else in journey 1 passes |
 | 2 | Find, preview, copy, move, rename, trash a file; undo | `scripts/linux/run-journey-files.py`, `scripts/assert_files_accessibility.py`, `scripts/behavior/run_lulo.py files/*` | **Re-run 2026-09-25** against a fresh `dev` build (`3ca78f24` + this pass's fixes, built package-scoped on the laptop). `scripts/linux/run-content-accessibility.sh ~/rmac-wt/target/iterate files` — live session, one instance, temp XDG dirs, no input injection — exits 0: "3 items with kind descriptions and click/selection, 8 sidebar places, click selects, Rename opens a focused Name entry (selection [(0, 5)]), setCaretOffset moves the caret, refocusing the row ends the rename." Separately, the nested-compositor behaviour suite (real typed keystrokes via the isolated Wayland injector, never the live session) ran all 16 Files scenarios against the same build: **14/16 pass**, including `rename-file`, `rename-folder`, `new-folder-name` and `undo-rename` — all previously blocked live by the missing injector. The 2 fails are already-tracked, non-blocking parity gaps: `context-menu` is missing Share…/Quick Actions items (FILES-23/49) and `get-info` opens a modal card instead of a separate window (FILES-15). | **Fail** — ACC-03 (no accessible file list, no working rename path) is fixed and live-reconfirmed; the one remaining gap is the same upstream `accesskit_unix` `EditableText` limitation as journey 1 (real keyboard/pointer use is unaffected); FILES-15/23/49 are tracked, non-blocking |
 | 3 | Terminal: run, scroll, select, copy/paste, tabs | `scripts/linux/run-journey-terminal.py`, `scripts/assert_terminal_accessibility.py` | **Re-run 2026-09-25.** `run-content-accessibility.sh ... terminal` exits 0 live: "62 characters over 24 lines, caret 41 after the prompt, line navigation returns single lines." Separately, a nested-compositor probe launched a fresh `rmac-terminal`, clicked the grid, typed `echo LULO_PROBE_OK` through the isolated virtual keyboard, and read the result back over AT-SPI `Text`: the grid's text included the typed command and its real output. The terminal grid now publishes real text/caret/selection (ACC-01); the tab strip is named per `docs/journey-suite.md`. | **Fail** — ACC-01 (no accessible text-entry surface) is fixed and live-reconfirmed with a real typed round-trip; the one remaining gap is the same upstream `EditableText` limitation as journey 1 (Terminal intentionally doesn't wire `SetValue` either, since a blind whole-buffer replace is the wrong model for a shell) |
-| 4 | Notes: create, search, edit, recover after crash | `scripts/linux/run-journey-notes.py`, `scripts/assert_notes_accessibility.py` | **Re-run 2026-09-27.** `run-content-accessibility.sh ... notes` exits 0 against a disposable Notes library: named New Note Click creates a selected note; New Folder has a named Click action; Checklist, Add Photo… and Move Note… are named but have no Click action in this new-note state; in-note Find's Previous match, Next match and Done actions were activated live. Search/Title/Body/Tags expose named Text entries with Title focus and caret. A title/body typed round-trip and crash recovery have not been independently re-confirmed in this pass; More, View Options and Folder Actions remain unnamed (ACC-08). | **Fail** — the content surface and some toolbar and Find accessibility actions pass, but upstream `EditableText`, remaining ACC-08 controls, and the full recovery journey remain open |
-| 5 | Open/edit/save a text file through the portal | `scripts/linux/run-journey-textfile.py`, `scripts/behavior/run_lulo.py text-editor/*` | The nested `save-untitled` scenario passes with the `rmac-file-chooser` backend. The previous failure came from observing after 1.5 s and pressing Escape before the D-Bus-activated chooser's AT-SPI window was ready; the scenario now waits 4 s and confirms the selected `Untitled` name and Cancel/Save buttons before cancellation. The runner requires the helper for this scenario and searches both binary directories. The live reference session still has no deployed `rmac-file-chooser.service`, so the live portal journey remains unable to exercise Open/Save As and falls back to `fallback_spawn`, per `docs/journey-suite.md`. | **Not yet confirmed live** — nested product behavior passes with its backend; deployment remains an environment gap |
+| 4 | Notes: create, search, edit, recover after crash | `scripts/linux/run-journey-notes.py`, `scripts/assert_notes_accessibility.py` | **Re-run 2026-09-27.** `run-content-accessibility.sh ... notes` exits 0 against a disposable Notes library: named New Note Click creates a selected note; New Folder has a named Click action; Checklist, Add Photo… and Move Note… are named, but their Click actions were absent in one post-create run and present in another, so stable activation is unverified; in-note Find's Previous match, Next match and Done actions were activated live. Search/Title/Body/Tags expose named Text entries with Title focus and caret. A title/body typed round-trip and crash recovery have not been independently re-confirmed in this pass; More, View Options and Folder Actions remain unnamed (ACC-08). | **Fail** — the content surface and some toolbar and Find accessibility actions pass, but upstream `EditableText`, remaining ACC-08 controls, and the full recovery journey remain open |
+| 5 | Open/edit/save a text file through the portal | `scripts/linux/run-journey-textfile.py`, `scripts/behavior/run_lulo.py text-editor/*` | **Re-run 2026-09-27:** the nested `save-untitled` scenario passes 1/1 against existing release binaries with the `rmac-file-chooser` backend. It observes a focused `Untitled` name selected `[0,8]`, Cancel/Save buttons, and Escape dismissal (`/tmp/save-untitled-20260927.json` on Lulo). The previous failure came from observing after 1.5 s and pressing Escape before the D-Bus-activated chooser's AT-SPI window was ready; the scenario now waits 4 s. The chooser appears as a separate, blank-titled window in nested Sway; visual/parent-window parity is not covered by this assertion. The live reference session still has no deployed `rmac-file-chooser.service`, so the live portal journey remains unable to exercise Open/Save As and falls back to `fallback_spawn`, per `docs/journey-suite.md`. | **Not yet confirmed live** — nested product behavior passes with its backend; deployment remains an environment gap |
 | 6 | Inspect resource use, safely stop a process | `scripts/linux/run-journey-monitor.py` | **Re-run 2026-09-26** live against a fresh `rmac-system-monitor` build (`5decc694`, branch `table-a11y`), using its own disposable process. The table fix makes off-screen rows accessible and selectable; menu lookup was corrected from Process to View. A later live rerun also verified select → Quit → confirmation → Cancel → Quit again → confirm ends the process. MON-15 is fixed by registering the menu target (`3e75d3d8`); the behavior suite covers reopening Quit and Force Quit confirmations after Cancel. | **Pass (9/10), 2026-09-26.** The only remaining failure is `search_field_editable`, due to the upstream `accesskit_unix` EditableText gap. |
 | 7 | Wi-Fi, Bluetooth, audio output, battery | none (code trace + read-only live checks) | `docs/journey-7-trace.md`'s source trace stands. This pass added **read-only live queries** on the laptop's real services (no toggling, no connecting): `nmcli device status`/`nmcli radio` show Wi-Fi connected and radios enabled; `bluetoothctl show` shows the controller powered on with real UUIDs; `wpctl status` shows PipeWire's real Analog Stereo sink/source (the laptop has no `pactl`/`pipewire-pulse` compat layer active, so Settings' audio backend must be the native PipeWire path, not a PulseAudio shim — matches `docs/settings-backend-audit.md`); `upower -i` on `battery_BAT0` returns real battery state (95%, fully-charged, real voltage/energy). All four backends are real, live, queryable services, not stubs. | **Not yet run** as a full live Settings-UI acceptance test — the backends themselves are confirmed real and live this pass |
 | 8 | Journeys 1–7, keyboard only | nested Ctrl-F2 probe, within-app keyboard scenarios | **Nested-confirmed 2026-09-26:** with the current niri config and isolated virtual keyboard, Ctrl-F2 focused the menu bar, Right selected Files, Down opened its visible menu, another Down focused Empty Trash… without activating it, and two Escapes closed the menu and exited keyboard mode. AT-SPI focus and screenshots agreed; 8/8 focused checks passed. The Dock is keyboard-reachable via Control-F3, and within-app arrow, Return and ⌘ shortcut scenarios are exercised separately. Letter typeahead, Return activation, complete journeys 1–7 by keyboard, and the owner-only Orca pass remain unverified. | **Partial** — menu-bar entry/navigation works in nested niri; full keyboard-only journeys and Orca remain open |
@@ -263,15 +264,10 @@ versioning changes: `scripts/test_keyring_packages.py`,
 
 ## What actually blocks shipping 0.9.0-beta.1 today
 
-Updated 2026-09-25 (evening pass) with real evidence gathered on the
-reference laptop this session — see the go/no-go table at the top of this
-document for the current, short punch list. In order of severity:
+Updated 2026-09-27. The go/no-go table at the top is the current punch list;
+the items below explain the remaining gates in more detail:
 
-1. **CI is red on `dev`.** Two of the four causes found this pass are fixed
-   in this pass's commits (a stale `rustfmt` diff, a missing Dock icon in
-   the test inventory whitelist); two macOS-only compile errors remain open
-   and need an agent with cargo and a macOS target (§8).
-2. **Accessibility (never waived) — much improved, not clear.** Terminal,
+1. **Accessibility (never waived) — much improved, not clear.** Terminal,
    Notes and Files no longer have the "zero accessible content" bugs that
    made this the top blocker as of 2026-09-24: ACC-01/02/03 are fixed and
    live-reconfirmed on the reference laptop this pass (§1, §3). What remains
@@ -281,16 +277,16 @@ document for the current, short punch list. In order of severity:
    (journey 9, owner-only). Current component-level roles and remaining
    announcement gaps are recorded in `docs/accessibility-audit.md`,
    “Component × criterion” and “What still needs gpui-kit/gpui-component work.”
-3. **No real packaging install/remove/upgrade run** on a clean VM or the
-   reference laptop, and no exercised GitHub Actions release run — not
-   re-verified this pass; the pipeline is well-gated and unit-tested but has
-   never produced a real `.deb` on real CI infrastructure.
-4. **Performance: partially re-measured.** Shell idle CPU is now confirmed
-   well under budget on the live laptop (§2), even under concurrent-build
-   load. Idle wake-ups and per-app idle CPU (System Settings, Files, System
-   Monitor, Clock) were not re-measured this pass and were last recorded
-   over budget.
-5. **Security review: Fail (source review done, gate not met).**
+2. **No clean-VM package lifecycle run or exercised release workflow.**
+   Local amd64 candidate packages pass their artifact and native-pair checks,
+   but the install/upgrade/uninstall path and GitHub Actions Release workflow
+   still need end-to-end evidence.
+3. **Performance: release binaries exceed idle budgets.** Nine apps pass
+   warm-launch budgets, while Files, System Monitor, Text Editor, Clock, and
+   Weather exceed the per-app idle CPU target in the packaged candidate.
+   A later `dev` Files watcher fix passed a focused probe, but is not in that
+   package. Input latency, frame pacing, soak memory and NVIDIA remain open.
+4. **Security review: Fail (source review done, gate not met).**
    [docs/security-review-0.9.0-beta.1.md](security-review-0.9.0-beta.1.md)
    and its canonical summary `docs/security-review-0.9.0-beta.1.json` cover
    all 80 checks of `scripts/security-review.json`. 26 findings are fixed
@@ -304,12 +300,12 @@ document for the current, short punch list. In order of severity:
    SR-29. 56 checks pass on source review; 24 need native station
    evidence. None of the Beta stations has been run, so
    `verify-security-review.py` fails closed, as it should.
-6. **Journey 5 has a real, reconfirmed functional bug** (Save-panel-on-
-   Untitled doesn't present properly); journey 6's headline AT-SPI blackout
-   is fixed but its full accept flow is unexercised; journey 7 has live
-   backend evidence but no Settings-UI run; journeys 8/9 remain Fail/
-   Owner-manual (§1).
-7. **`docs/install.md`/`README.md` still say the product isn't ready to
+5. **Product journeys remain incomplete.** Journey 5's nested Save-panel
+   scenario passes, but the live reference session lacks the deployed
+   chooser service; journey 6's process-stop path is live-confirmed except
+   upstream EditableText, while journey 7 has backend evidence but no full
+   Settings-UI run. Journeys 8/9 remain Partial/Owner-manual (§1).
+6. **`docs/install.md`/`README.md` still say the product isn't ready to
    install** — an owner-level messaging decision, not a mechanical fix.
 
 None of these are release-engineering plumbing problems — the tagging,

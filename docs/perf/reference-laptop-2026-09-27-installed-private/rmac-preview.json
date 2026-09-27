@@ -1,0 +1,14 @@
+{
+  "app": "rmac-preview",
+  "binary_provenance": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-preview",
+    "sha256": "289fc56962317925bef895409c662f4f765347efa00bf43eb7d64452b1ab92b4"
+  },
+  "diagnostic": "No first-frame marker or mapped window appeared before the 20-second startup timeout in the private session.",
+  "exit_code": 1,
+  "result": "failed_before_readiness",
+  "success": false
+}

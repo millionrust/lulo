@@ -1,0 +1,14 @@
+{
+  "app": "rmac-app-drawer",
+  "binary_provenance": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-app-drawer",
+    "sha256": "d927f50412ef89d50fe21978565e933fff5b71e3c0014a25868fb2a2b2e5df94"
+  },
+  "diagnostic": "Process exited with status 1 before readiness (the sampler invokes it without service/show arguments).",
+  "exit_code": 1,
+  "result": "failed_before_readiness",
+  "success": false
+}

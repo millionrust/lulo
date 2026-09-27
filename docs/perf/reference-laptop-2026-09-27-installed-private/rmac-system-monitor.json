@@ -1,0 +1,35 @@
+{
+  "app": "rmac-system-monitor",
+  "binary": "rmac-system-monitor",
+  "binary_provenance": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-system-monitor",
+    "sha256": "8ee3cd57acd1b7cee999eaa905215dfb642b697a94172bd28be366098b22fbbc"
+  },
+  "captured_at": "2026-09-27T13:14:42Z",
+  "display_name": "System Monitor",
+  "idle": {
+    "context_switches_per_second": 3.5,
+    "cpu_percent_one_core": 18.233,
+    "process_count": 1,
+    "pss_mib": 169.1,
+    "seconds": 30.0
+  },
+  "limits": [
+    "No input was injected; function, navigation, and control behavior are untested.",
+    "No screenshot or pixel comparison was performed; visual quality and feel are untested.",
+    "Nested Sway and software rendering differ from the installed Lulo desktop.",
+    "Context switches are a wakeup proxy, not a count of rendered frames.",
+    "One launch and a short idle interval are exploratory samples, not a percentile or release gate."
+  ],
+  "result": "sampled",
+  "schema_version": 1,
+  "scope": "single_installed_app_private_nested_session",
+  "startup": {
+    "elapsed_ms": 405.3,
+    "marker": "first_gpui_frame_marker",
+    "measured_from": "immediately_before_spawn"
+  }
+}

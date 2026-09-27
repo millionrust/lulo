@@ -1,0 +1,72 @@
+{
+  "rmac-app-drawer": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-app-drawer",
+    "sha256": "d927f50412ef89d50fe21978565e933fff5b71e3c0014a25868fb2a2b2e5df94"
+  },
+  "rmac-calculator": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-calculator",
+    "sha256": "0539bde3ed550e559bf97c9978f2d692303b01e427cd35f85a43e1e15f1e0aa2"
+  },
+  "rmac-clock": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-clock",
+    "sha256": "2f29b3bb578f5279e1f84184bbdf39389422cced68ce6c9a3f8d54cbddec9c7a"
+  },
+  "rmac-notes": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-notes",
+    "sha256": "db518113a26206d8940451a852e6ffa485d7950228e3fe6b163b10f38b46ae4e"
+  },
+  "rmac-preview": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-preview",
+    "sha256": "289fc56962317925bef895409c662f4f765347efa00bf43eb7d64452b1ab92b4"
+  },
+  "rmac-system-monitor": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-system-monitor",
+    "sha256": "8ee3cd57acd1b7cee999eaa905215dfb642b697a94172bd28be366098b22fbbc"
+  },
+  "rmac-system-settings": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-system-settings",
+    "sha256": "5efc208bcb547dcfd7d9a988146984c1990edb3186bfe541110492e1b99e894b"
+  },
+  "rmac-terminal": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-terminal",
+    "sha256": "87c6dcfb118adf2248a000e838a83197f185c6e9ece17d927dd232f10338dde9"
+  },
+  "rmac-text-editor": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-text-editor",
+    "sha256": "e9e6c8a46c4128c803b33cf2339069b7341c1a1ab1fd72a65755109c8e7d09b5"
+  },
+  "rmac-weather": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-weather",
+    "sha256": "722ee9a209f1ef7985fcdee28fe77bd246fd01243fee6bbe85faad028dfaa9bb"
+  }
+}

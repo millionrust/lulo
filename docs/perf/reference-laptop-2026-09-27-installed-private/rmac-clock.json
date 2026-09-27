@@ -1,0 +1,35 @@
+{
+  "app": "rmac-clock",
+  "binary": "rmac-clock",
+  "binary_provenance": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-clock",
+    "sha256": "2f29b3bb578f5279e1f84184bbdf39389422cced68ce6c9a3f8d54cbddec9c7a"
+  },
+  "captured_at": "2026-09-27T13:18:17Z",
+  "display_name": "Clock",
+  "idle": {
+    "context_switches_per_second": 6.1,
+    "cpu_percent_one_core": 32.633,
+    "process_count": 1,
+    "pss_mib": 182.2,
+    "seconds": 30.0
+  },
+  "limits": [
+    "No input was injected; function, navigation, and control behavior are untested.",
+    "No screenshot or pixel comparison was performed; visual quality and feel are untested.",
+    "Nested Sway and software rendering differ from the installed Lulo desktop.",
+    "Context switches are a wakeup proxy, not a count of rendered frames.",
+    "One launch and a short idle interval are exploratory samples, not a percentile or release gate."
+  ],
+  "result": "sampled",
+  "schema_version": 1,
+  "scope": "single_installed_app_private_nested_session",
+  "startup": {
+    "elapsed_ms": 319.6,
+    "marker": "first_gpui_frame_marker",
+    "measured_from": "immediately_before_spawn"
+  }
+}

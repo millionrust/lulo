@@ -1,0 +1,35 @@
+{
+  "app": "rmac-system-settings",
+  "binary": "rmac-system-settings",
+  "binary_provenance": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-system-settings",
+    "sha256": "5efc208bcb547dcfd7d9a988146984c1990edb3186bfe541110492e1b99e894b"
+  },
+  "captured_at": "2026-09-27T13:15:56Z",
+  "display_name": "System Settings",
+  "idle": {
+    "context_switches_per_second": 0.033,
+    "cpu_percent_one_core": 0.0,
+    "process_count": 3,
+    "pss_mib": 167.4,
+    "seconds": 30.0
+  },
+  "limits": [
+    "No input was injected; function, navigation, and control behavior are untested.",
+    "No screenshot or pixel comparison was performed; visual quality and feel are untested.",
+    "Nested Sway and software rendering differ from the installed Lulo desktop.",
+    "Context switches are a wakeup proxy, not a count of rendered frames.",
+    "One launch and a short idle interval are exploratory samples, not a percentile or release gate."
+  ],
+  "result": "sampled",
+  "schema_version": 1,
+  "scope": "single_installed_app_private_nested_session",
+  "startup": {
+    "elapsed_ms": 395.7,
+    "marker": "first_gpui_frame_marker",
+    "measured_from": "immediately_before_spawn"
+  }
+}

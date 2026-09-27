@@ -1,0 +1,35 @@
+{
+  "app": "rmac-text-editor",
+  "binary": "rmac-text-editor",
+  "binary_provenance": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-text-editor",
+    "sha256": "e9e6c8a46c4128c803b33cf2339069b7341c1a1ab1fd72a65755109c8e7d09b5"
+  },
+  "captured_at": "2026-09-27T13:17:06Z",
+  "display_name": "Text Editor",
+  "idle": {
+    "context_switches_per_second": 9.467,
+    "cpu_percent_one_core": 38.533,
+    "process_count": 1,
+    "pss_mib": 160.4,
+    "seconds": 30.0
+  },
+  "limits": [
+    "No input was injected; function, navigation, and control behavior are untested.",
+    "No screenshot or pixel comparison was performed; visual quality and feel are untested.",
+    "Nested Sway and software rendering differ from the installed Lulo desktop.",
+    "Context switches are a wakeup proxy, not a count of rendered frames.",
+    "One launch and a short idle interval are exploratory samples, not a percentile or release gate."
+  ],
+  "result": "sampled",
+  "schema_version": 1,
+  "scope": "single_installed_app_private_nested_session",
+  "startup": {
+    "elapsed_ms": 324.4,
+    "marker": "first_gpui_frame_marker",
+    "measured_from": "immediately_before_spawn"
+  }
+}

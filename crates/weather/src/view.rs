@@ -22,7 +22,10 @@ use crate::{CloseWindow, FindCity, Refresh, UseCelsius, UseFahrenheit};
 
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(350);
 const REFRESH_EVERY: Duration = Duration::from_secs(15 * 60);
-const CLOCK_TICK: Duration = Duration::from_secs(30);
+
+fn next_minute_tick_delay(now: i64) -> Duration {
+    Duration::from_secs((60 - now.rem_euclid(60)) as u64)
+}
 
 #[derive(Clone, Debug, PartialEq)]
 enum Status {
@@ -124,7 +127,9 @@ impl WeatherView {
         .detach();
         // Keep the cities' local times current.
         cx.spawn(async move |this, cx| loop {
-            cx.background_executor().timer(CLOCK_TICK).await;
+            cx.background_executor()
+                .timer(next_minute_tick_delay(now_seconds()))
+                .await;
             if this.update(cx, |_, cx| cx.notify()).is_err() {
                 break;
             }
@@ -856,6 +861,20 @@ impl WeatherView {
                 .child(attribution(status_line)),
         )
         .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod idle_tick_tests {
+    use super::next_minute_tick_delay;
+    use std::time::Duration;
+
+    #[test]
+    fn weather_clock_tick_tracks_minute_boundaries() {
+        assert_eq!(next_minute_tick_delay(120), Duration::from_secs(60));
+        assert_eq!(next_minute_tick_delay(121), Duration::from_secs(59));
+        assert_eq!(next_minute_tick_delay(179), Duration::from_secs(1));
+        assert_eq!(next_minute_tick_delay(-1), Duration::from_secs(1));
     }
 }
 

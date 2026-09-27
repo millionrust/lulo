@@ -27,22 +27,20 @@ previously forced this has since been fixed; the other still stands.
    prints (its content -- title/date/preview -- would be real user data),
    consistent with "never read or modify other notes".
 
-2. STILL OPEN: every text-entry surface in Notes (the search field, and the
-   title/tags/body fields) now carries `Role::TextInput` and a live
-   `aria_value` (`crates/notes/src/editor_presentation.rs`, `toolbar.rs`),
-   but still exposes neither AT-SPI Text nor EditableText -- the same pinned
-   upstream `accesskit_unix`/`accesskit_atspi_common` limitation documented
-   for Spotlight and other fields (`docs/known-limitations.md:42-49`), not a
-   Notes-specific regression. `any_entry_is_text_capable` checks this live
-   each run rather than assuming it.
+2. PARTIAL: Notes' search, title, tags and body fields now expose AT-SPI Text,
+   including caret and selection, but upstream `accesskit_unix` still lacks
+   EditableText. An AT-SPI client can inspect text but cannot insert it; a
+   screen-reader user can type with the keyboard. This script deliberately
+   does not read the owner's existing note content into its report.
+   `any_entry_is_text_capable` checks the current surface each run.
 
-Because of (2), a title, tag, search query or body still cannot be read or
-typed via pure AT-SPI -- but (1) being fixed means a *created* note could now
-be found and selected in principle. What still blocks a full create-edit-
-delete cycle is a third, narrower gap: the toolbar's `trash`/
+Because of (2), a title, tag, search query or body still cannot be typed via
+pure AT-SPI -- but (1) being fixed means a *created* note could now be found
+and selected in principle. What still blocks a full create-edit-delete cycle
+on the owner's live library is a third, narrower gap: the toolbar's `trash`/
 `delete-permanently` controls (`crates/notes/src/toolbar.rs`) remain plain,
 unnamed `Button::new(id, "")` nodes among a dozen other unnamed buttons --
-unlike the search field, they were never given an `aria_label` -- and no
+unlike the now-named New Note control -- and no
 other accessible delete path exists (no top-bar "Move to Trash" item, no
 context-menu access without a pointer). A note this script created could
 therefore still not be safely, uniquely removed afterward, so File > New
@@ -65,7 +63,7 @@ rather than assuming success. This is the same honest-limitation approach
 todo.md asks for ("An honest limitation beats simulated system behaviour").
 
 The report is privacy-safe: no screenshots, no home-directory paths, no note
-titles or bodies (impossible to read anyway -- see above), no user names.
+titles or bodies, no user names.
 Every wait is bounded; this script never hangs.
 """
 
@@ -805,11 +803,9 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
                     "trashed, or permanently deleted over AT-SPI on this build",
                 }
             )
-        # Notes' search/title/tags/body fields now carry Role::TextInput and
-        # a live `aria_value` (crates/notes/src/editor_presentation.rs,
-        # toolbar.rs), a real fix over the previous Role-less entries. This
-        # checks live whether that value is actually reachable over AT-SPI's
-        # Text/EditableText interfaces rather than assuming it still isn't.
+        # Notes' search/title/tags/body fields carry Role::TextInput and
+        # a live `aria_value`; current builds also expose AT-SPI Text. Check
+        # the running build rather than assuming that surface is present.
         text_entry_reachable = any_entry_is_text_capable()
         if not text_entry_reachable:
             gaps.append(
@@ -827,9 +823,8 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
             )
 
         # The toolbar's trash/delete-permanently controls remain plain,
-        # unnamed Button::new(id, "") nodes among 12 other unnamed buttons
-        # (crates/notes/src/toolbar.rs) -- unlike the search field, they were
-        # not given an aria_label. Even now that a created note could be
+        # unnamed Button::new(id, "") nodes among other icon controls
+        # (crates/notes/src/toolbar.rs). Even now that a created note could be
         # selected via its new ListItem, this script still could not safely,
         # uniquely delete one it made afterward.
         unnamed_clickable_buttons = sum(
@@ -846,7 +841,8 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
                     "create/search/edit/recover/delete were not attempted: "
                     "the note list is now reachable over AT-SPI "
                     "(note_list_reachable above) and a search/title/tags/body "
-                    "field's value is now readable/writable over AT-SPI, but "
+                    "field's value is readable over AT-SPI Text (but not "
+                    "writable through upstream EditableText), and "
                     "this script still cannot safely clean up a note it "
                     "creates -- the toolbar's trash/delete-permanently "
                     f"controls remain {unnamed_clickable_buttons} unnamed, "
@@ -857,9 +853,9 @@ def run_journey(budget_ms: float, keep_open: bool) -> dict[str, Any]:
                     "reference-laptop Notes library"
                     if can_create_safely
                     else "create/search/edit/recover/delete were not "
-                    "attempted: with no accessible note-list/sidebar surface "
-                    "(note_list_reachable above) and no way to type or read "
-                    "a title, this script cannot create a uniquely "
+                    "attempted: the accessible note-list/sidebar or Text "
+                    "surface is incomplete on this build, and EditableText "
+                    "is unavailable, so this script cannot create a uniquely "
                     "identifiable test note, verify it is the note it later "
                     "acts on, or clean it up afterward -- attempting any of "
                     "File > New Note / trash / permanent delete blind would "

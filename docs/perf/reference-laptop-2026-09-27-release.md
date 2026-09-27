@@ -31,20 +31,16 @@ the result; this report's table remains the release-package baseline.
 
 The previous report measured Files at 7.60% idle CPU and 32.100 wake-ups/s.
 Its marker and XDG directories were inside Files' watched HOME or parent,
-creating filesystem events during measurement. This corrected run measures
-4.57% and 27.333/s; an independent focused run with the same layout measured
+so benchmark writes could trigger Files' watcher. The changed result makes
+that earlier Files measurement unreliable; the exact cause of the difference
+is not fully isolated. This corrected release-package run measures 4.57% and
+27.333/s; an independent focused run with the same layout measured
 4.58% and 27.433/s. A later focused repeat of the original release binary
 measured 4.83% and 26.417/s
 ([data](reference-laptop-2026-09-27-files-repeat.json)). The earlier
-30-second thread sample, which attributed
-6.767% CPU to the main UI thread, used the contaminated layout and cannot
-establish the source of the remaining cost. Files still misses the 0.3% budget;
-a frame/event-loop profile is needed before attributing a code fix. Separate
-15-second diagnostics under the corrected layout counted 150 Files frame
-requests and 225 Wayland surface commits (Notes: zero of each); a traced
-Files process returned 54 successful inotify reads in 15 seconds. Protocol
-logging and tracing perturb timing, so those counts identify active paths,
-not benchmark rates.
+30-second thread sample, which attributed 6.767% CPU to the main UI thread,
+used the contaminated layout and cannot establish the source of the remaining
+cost.
 
 An unmerged Files watcher filter passed all 215 Finder package tests. In a
 controlled 30-second sibling-folder churn comparison, the original and
@@ -52,6 +48,22 @@ filtered release binaries both measured 0.73% CPU (7.467 versus 8.100
 wake-ups/s). That workload did not establish a performance benefit and its
 lower absolute CPU is not comparable to the clean-idle 60-second runs above;
 the filter was left out of `dev` pending stronger evidence.
+
+A paired inotify and Wayland trace of the original release binary under the
+corrected layout then decoded 102 `OPEN` events on Files' current directory in
+15 seconds, alongside 144 frame requests and 216 surface commits. Files was
+forwarding those access events to its reload loop, so reading a folder could
+trigger another read. The `dev` fix ignores access-only watcher events before
+queuing a reload. All 214 Finder package tests passed. A focused 60-second
+release-binary sample of that fix measured **0.03% idle CPU and 0.050
+wake-ups/s**, with 171.9 ms warm-launch p95
+([data](reference-laptop-2026-09-27-files-access-probe.json)). In a separate
+passive check, the fixed Files window made zero frame requests and commits in
+five untouched seconds; creating a file in its private HOME produced five
+frame requests and seven commits, and its named row appeared through AT-SPI.
+Tracing perturbs timing, while the budget sample does not trace the process.
+The table below remains the original release-package baseline; the fixed
+binary is not yet in that package.
 
 Measured against todo.md "Performance budgets": idle CPU <=0.3% per app and <=1% for all shell surfaces combined, no idle redraw, warm launch p95 <=500 ms (<=900 ms for Files/Terminal), memory recorded. No personal data is recorded: no hostnames, home-directory paths, window titles, or user names.
 

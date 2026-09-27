@@ -1,0 +1,46 @@
+{
+  "apps": {
+    "rmac-files": {
+      "display_name": "Files",
+      "frame_timing": "not_measured",
+      "idle": {
+        "idle_cpu_percent": {
+          "budget": 0.3,
+          "value": 0.033,
+          "within_budget": true
+        },
+        "pss_mib": 43.2,
+        "suspected_idle_redraw": false,
+        "wakeups_per_second": 0.05
+      },
+      "warm_launch": {
+        "interactive_marker": "ready_file",
+        "median_ms": 166.4,
+        "p95_ms": {
+          "budget": 900.0,
+          "value": 171.906,
+          "within_budget": true
+        },
+        "samples_ms": [
+          171.9,
+          168.1,
+          165.9,
+          160.9,
+          166.4
+        ]
+      }
+    }
+  },
+  "captured_at": "2026-09-27T07:50:27Z",
+  "rustc_processes": 0,
+  "schema_version": 1,
+  "settings": {
+    "idle_seconds": 60.0,
+    "repetitions": 5,
+    "settle_seconds": 3.0,
+    "startup_timeout": 10.0,
+    "wakeup_threshold_per_second": 0.5,
+    "warmups": 1
+  },
+  "shell_surfaces": {}
+}

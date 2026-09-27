@@ -7,7 +7,8 @@ Usage on the Lulo host:
       --output /tmp/lulo-installed-report
 
 Coverage is 27 recorded Mac behavior scenarios, startup-only readiness for 9
-first-party apps, and nested power-dialog and shutdown flows. Screenshots are
+first-party apps, a private Terminal typed-command roundtrip, and nested
+power-dialog and shutdown flows. Screenshots are
 captured for review, but no automatic pixel score is calculated. The suite
 does not exercise real hardware, live login/logout, or real power state.
 
@@ -78,7 +79,7 @@ def main() -> int:
     parser.add_argument("--bin-dir", action="append", required=True, help="installed app binary directory")
     parser.add_argument("--shell-bin-dir", action="append", required=True, help="installed shell binary directory")
     parser.add_argument("--output", type=Path, required=True, help="report directory (created if needed)")
-    parser.add_argument("--only", choices=("behavior-27", "startup-smoke", "power-dialogs", "shutdown-completion"),
+    parser.add_argument("--only", choices=("behavior-27", "startup-smoke", "terminal-roundtrip", "power-dialogs", "shutdown-completion"),
                         help="run one phase and merge it into an existing report when binary hashes match")
     parser.add_argument("--skip-behavior", action="store_true", help="reuse behavior.json already in --output")
     parser.add_argument("--skip-startup", action="store_true")
@@ -164,6 +165,12 @@ def main() -> int:
                    "--bin-dir", str(app_dirs[0]), "--output", str(out / "startup.json")]
         commands.append(("startup-smoke", startup))
 
+    if args.only is None or args.only == "terminal-roundtrip":
+        terminal = [sys.executable, str(ROOT / "scripts/behavior/run_private_beta_journeys.py"),
+                    "--niri", shutil.which("niri") or "niri", "--bin-dir", str(aliases),
+                    "--app-bin-dir", str(app_dirs[0])]
+        commands.append(("terminal-roundtrip", terminal))
+
     if not args.skip_shell and (args.only is None or args.only in {"power-dialogs", "shutdown-completion"}):
         if args.only is None or args.only == "power-dialogs":
             commands.append(("power-dialogs", [sys.executable, str(ROOT / "scripts/behavior/run_power_dialogs.py"),
@@ -226,6 +233,10 @@ def main() -> int:
                 row.get("name") in {"power-dialogs", "shutdown-completion"}
                 and row.get("exit_code") == 0 for row in results
             ),
+            "private_terminal_typed_roundtrip_completed": sum(
+                row.get("name") == "terminal-roundtrip" and row.get("exit_code") == 0
+                for row in results
+            ),
             "behavior_screenshot_count": sum(1 for path in (out / "captures").rglob("*.png"))
             if (out / "captures").exists() else 0,
             "session_dialog_screenshot_count": sum(1 for path in session_capture_dir.rglob("*.png"))
@@ -237,7 +248,7 @@ def main() -> int:
         "summary": {
             "passed": sum(item["exit_code"] == 0 for item in results),
             "failed": sum(item["exit_code"] != 0 for item in results),
-            "not_run": max(0, (4 if args.only is None or previous_report else len(commands)) - len(results)),
+            "not_run": max(0, (5 if args.only is None or previous_report else len(commands)) - len(results)),
         },
         "limits": [
             "Interaction scenarios compare named behavior and state against recorded Mac expectations; captures are for review, not an automatic pixel score.",

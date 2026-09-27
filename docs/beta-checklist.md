@@ -19,7 +19,9 @@ The reference PC now has the `0e3fa470` `rmac-apps` and `rmac-session`
 binary hashes match their staged package contents. The installed binaries
 passed 28/28 nested shutdown checks and 41/41 power-dialog checks with fake
 `systemctl`; no live power action was taken. The isolated startup smoke passed
-9/9 apps against the installed binaries, proving startup readiness only. The
+9/9 apps against the installed binaries, proving startup readiness only. A
+private Terminal typed-command roundtrip also passed: the marker appeared in
+both the echoed command and its executed output. The
 sequential run and binary hashes are in `/tmp/lulo-installed-report-20260927`
 on the reference PC; `scripts/behavior/run_installed_suite.py` reproduces it.
 

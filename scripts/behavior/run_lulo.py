@@ -1106,6 +1106,14 @@ def check_files_tag_swatches(nested: Nested, bins: list[Path], settle: float) ->
                     return None
                 raise
 
+        def wait_for_tag(expected: Optional[str], timeout: float = 8.0) -> bool:
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if tag_value() == expected:
+                    return True
+                time.sleep(0.2)
+            return tag_value() == expected
+
         def visible_items() -> dict[str, Any]:
             pyatspi = atspi()
             frame = run.active_frame()
@@ -1176,7 +1184,7 @@ def check_files_tag_swatches(nested: Nested, bins: list[Path], settle: float) ->
         print("PASS  seven visible tag dots match their colors and keep Red–Gray accessible names", flush=True)
 
         click_menu_item("Red", rows)
-        if not run.wait_for(lambda: tag_value() == "red", 8, 0.2):
+        if not wait_for_tag("red"):
             raise StepFailed(f"selecting Red did not write user.rmac.tag=red (value={tag_value()!r})")
 
         rows = open_item_menu()
@@ -1185,7 +1193,7 @@ def check_files_tag_swatches(nested: Nested, bins: list[Path], settle: float) ->
             raise StepFailed("Red did not appear checked after applying the tag")
         print("PASS  applying Red checks the row and persists user.rmac.tag=red", flush=True)
         click_menu_item("Red", rows)
-        if not run.wait_for(lambda: tag_value() is None, 8, 0.2):
+        if not wait_for_tag(None):
             raise StepFailed(f"selecting Red again did not remove the tag (value={tag_value()!r})")
         print("PASS  selecting Red again removes the tag xattr", flush=True)
     finally:

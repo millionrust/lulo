@@ -3092,10 +3092,11 @@ mod tests {
                 "Newest body",
             )))
             .unwrap();
-        assert!(matches!(
-            worker.recv_timeout(Duration::from_millis(10)),
-            Err(RecvTimeoutError::Timeout)
-        ));
+        // Do not assert a fixed quiet interval after sending: the worker may
+        // process this command after the debounce deadline if the test thread
+        // is descheduled. The event below still verifies that the edit is
+        // committed, and the quiet period plus wakeup count below verifies
+        // that the worker does not emit idle events or spin between deadlines.
         let accepted = match worker.recv_timeout(Duration::from_secs(2)).unwrap() {
             WorkerEvent::Accepted(event) => event,
             event => panic!("expected accepted edit, got {event:?}"),

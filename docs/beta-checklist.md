@@ -28,6 +28,14 @@ both the echoed command and its executed output. The
 sequential run and binary hashes are in `/tmp/lulo-installed-report-20260927`
 on the reference PC; `scripts/behavior/run_installed_suite.py` reproduces it.
 
+The `dev` source now has separate non-modal Files Get Info windows and a
+persistent seven-colour item-menu tag control. Focused Files tests and a
+private Get Info scenario passed, but these commits are newer than the
+installed package set. The tag control has not been verified in the UI, and
+the installed 24/27 behavior result remains the valid release-binary result.
+Running `./install-lulo.sh` again with the existing packages will not install
+these source changes.
+
 | # | Blocker | Owner/agent | Size |
 |---|---|---|---|
 | 1 | Journey 5 Save-panel behavior passes in the nested run with `rmac-file-chooser` present. The earlier failure was a cold-start timing issue: the scenario observed after 1.5 s and sent Escape before the D-Bus-activated chooser's AT-SPI window was ready. It now waits 4 s before observing. `run_lulo.py` also fails preflight when the helper is missing. The chooser service is now deployed, but the live portal journey has not been retested. | agent | M |

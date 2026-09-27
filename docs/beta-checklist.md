@@ -2,35 +2,35 @@
 
 ## Beta 1 go/no-go (updated 2026-09-27)
 
-**No-go under the current release gates.** The latest completed
-[main CI run 36309228159](https://github.com/millionrust/lulo/actions/runs/36309228159)
-succeeded on `caf1abed`, and
-[quality CI run 36311598240](https://github.com/millionrust/lulo/actions/runs/36311598240)
-succeeded on `fffbde89`; the main CI for the later Preview/test changes is in progress.
-The candidate packages still contain `8ae3a9eb`. The 26-scenario nested
-behavior rerun matched 23 Mac recordings; its three mismatches are the Files item menu
+**No-go under the current release gates.**
+[Main CI run 36312045023](https://github.com/millionrust/lulo/actions/runs/36312045023)
+and [quality CI run 36312045008](https://github.com/millionrust/lulo/actions/runs/36312045008)
+succeeded on source `0e3fa470`. An amd64 package set built from that exact
+commit is staged but **not installed**. The 27-scenario nested behavior rerun
+matched 24 Mac recordings; its three mismatches are the Files item menu
 (Share/tags/Quick Actions), Get Info window behavior, and the new background
-Get Info scenario (remaining menu rows plus that same window behavior). A new
-Preview PDF Find scenario passed separately against its rebuilt dev binary.
+Get Info scenario (remaining menu rows plus that same window behavior). The new
+Preview PDF Find scenario passes in the full release-binary rerun.
 CI success does not establish release readiness:
 these product, accessibility, security, and packaging gates remain open.
 
 The reference PC itself still has `rmac-apps` and `rmac-session`
 `0.9.0~beta.1-38` from the Sep 26 14:01 package set, whose build epoch matches
 source `02dd4ffd`. That predates both shutdown-dialog fixes (`cb2fbe81`,
-`212c68b3`) and every newer dev validation above. A nested dev shutdown run
-passed 28/28 with fake `systemctl`; the installed PC has not been updated or
-asked to power off during this audit. The new isolated startup smoke passed
-9/9 previously uncovered apps on mixed dev binaries, which proves startup
-readiness only; see `scripts/linux/smoke-app-launches.py`.
+`212c68b3`) and every newer dev validation above. The exact packaged release
+binaries passed 28/28 nested shutdown checks with fake `systemctl`; the
+installed PC has not been updated or asked to power off during this audit.
+The new isolated startup smoke passed 9/9 previously uncovered apps against
+those same release binaries, proving startup readiness only; see
+`scripts/linux/smoke-app-launches.py`.
 
 | # | Blocker | Owner/agent | Size |
 |---|---|---|---|
 | 1 | Journey 5 Save-panel behavior passes in the nested run with `rmac-file-chooser` present. The earlier failure was a cold-start timing issue: the scenario observed after 1.5 s and sent Escape before the D-Bus-activated chooser's AT-SPI window was ready. It now waits 4 s before observing. `run_lulo.py` also fails preflight when the helper is missing. The chooser is still not deployed in the reference live session. | agent | M |
 | 2 | Accessibility remains a release gate: AT-SPI `EditableText` is absent upstream; ACC-08 and role/name/action gaps remain; Control-F2 is nested-confirmed but not Orca-confirmed; and no owner-run Orca/I3 audit exists. See journeys 1–5 and 8–9 below. | agent / owner / upstream | L |
-| 3 | A local amd64 package candidate was built from `8ae3a9eb`: the native pair and pinned compositor packages pass `verify-native-packages.py`, and staged artifact checksums pass. Packaging lifecycle evidence is still missing: no clean Ubuntu 26.04 install/upgrade/uninstall run and no GitHub Actions Release workflow run. Green dev CI does not exercise that release pipeline. | agent / owner VM | L |
+| 3 | A local amd64 package set from `0e3fa470` is staged in `~/rmac-release/packages-install8-0e3fa470` on the reference PC. The native pair and pinned compositor packages pass `verify-native-packages.py`, all four SHA-256 checks pass, and the exact release binaries pass 24/27 behavior scenarios plus 9/9 startup checks. It has not been installed; the GNOME-only installer check, clean Ubuntu 26.04 install/upgrade/uninstall run, and GitHub Actions Release workflow remain unexercised. Green dev CI does not exercise that release pipeline. | agent / owner VM | L |
 | 4 | Security gate remains **Fail**. Three accepted Low findings remain (SR-15, SR-18, SR-29), and 24 of 80 checks need native-station evidence; no Beta station has run. The verifier must continue to fail closed until its evidence requirements are met. | agent / owner stations | L |
-| 5 | Release-binary performance evidence now covers nine apps: all nine pass their warm-launch budgets, but Files, System Monitor, Text Editor, Clock, and Weather exceed the 0.3% idle CPU budget in the `8ae3a9eb` packages. A later `dev` Files watcher fix passed a focused 60-second sample at 0.03% CPU; those packages still contain the old binary. Apps and Preview could not be measured by the generic launcher. Frame pacing, input response, soak memory, and NVIDIA results remain unmeasured. See the [2026-09-27 report](perf/reference-laptop-2026-09-27-release.md). | agent | M |
+| 5 | Release-binary performance evidence covers nine apps in the earlier `8ae3a9eb` package set: all nine pass warm-launch budgets, but Files, System Monitor, Text Editor, Clock, and Weather exceed the 0.3% idle CPU budget. The `0e3fa470` set includes a later Files watcher fix that passed a focused 60-second sample at 0.03% CPU, but full performance budgets have not been rerun on this package. Apps and Preview could not be measured by the generic launcher. Frame pacing, input response, soak memory, and NVIDIA results remain unmeasured. See the [2026-09-27 report](perf/reference-laptop-2026-09-27-release.md). | agent | M |
 | 6 | Release-facing install/readiness language still needs the owner's decision before publication so README and install guidance match the early-access Beta scope. | **owner** | S |
 
 **What changed this pass, with real evidence:** journeys 2 (Files), 3

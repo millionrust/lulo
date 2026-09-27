@@ -97,14 +97,16 @@ impl NotesView {
         // accessibility-only name. Keep the glyph-only visual control and
         // publish a named, actionable wrapper so AT clients can reliably
         // identify and activate New Note.
+        let view = cx.entity();
         let compose = div()
             .id("compose-a11y")
             .role(Role::Button)
             .aria_label("New Note")
-            .on_a11y_action(
-                AccessibleAction::Click,
-                cx.listener(|this, _, _, cx| this.create_note(cx)),
-            )
+            .when(ready, |element| {
+                element.on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
+                    view.update(cx, |this, cx| this.create_note(cx));
+                })
+            })
             .child(compose_button);
 
         let format = capsule("format-capsule")

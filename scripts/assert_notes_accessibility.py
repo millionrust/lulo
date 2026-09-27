@@ -3,11 +3,12 @@
 
 Run against one rmac-notes started with temporary XDG_* directories, so its
 library is a fresh, empty one (see scripts/linux/run-content-accessibility.sh).
-The script creates one note through Notes' own File > New Note menu endpoint
-(the D-Bus call the top bar makes), then checks:
+The script creates one note through the accessible New Note toolbar action,
+then checks:
 
 - the folder sidebar and the note list are `list box`es of named `list
   item`s with exactly one selected, through the Selection interface;
+- the glyph-only New Note toolbar control has a name and Click action;
 - Search, Title, Body and Tags are named `entry` nodes with a Text interface,
   and no unnamed entry is left over from the field's inner input;
 - grabbing focus on Title focuses it (AccessKit's Focus action) and its
@@ -55,7 +56,21 @@ assert len(selected_folders) == 1, f"{len(selected_folders)} folders selected"
 assert support.selected_count(folders) == 1, "Folders' Selection interface disagrees"
 assert all("click" in support.actions(node) for node in folder_items), "a folder item has no click"
 
-support.activate_menu("org.rmac.Notes.Menu", "notes::ComposeNote")
+new_note = support.wait_for(
+    lambda: next(
+        (
+            node
+            for node in support.descendants(app())
+            if support.role(node) in {"push button", "button"}
+            and support.name(node) == "New Note"
+            and "click" in support.actions(node)
+        ),
+        None,
+    ),
+    "the named, actionable New Note toolbar button",
+)
+
+assert support.click(new_note), "New Note accessibility action was not handled"
 
 
 def editor_ready():

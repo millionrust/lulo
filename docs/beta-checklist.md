@@ -3,16 +3,26 @@
 ## Beta 1 go/no-go (updated 2026-09-27)
 
 **No-go under the current release gates.** The latest completed
-[main CI run 36308017443](https://github.com/millionrust/lulo/actions/runs/36308017443)
-succeeded on `48a2a861`, and
-[quality CI run 36308895817](https://github.com/millionrust/lulo/actions/runs/36308895817)
-succeeded on `7320242c`. The candidate packages still
-contain `8ae3a9eb`. The non-blocking Mac behaviour-parity job reports 23/26;
-its three mismatches are the Files item menu
+[main CI run 36309228159](https://github.com/millionrust/lulo/actions/runs/36309228159)
+succeeded on `caf1abed`, and
+[quality CI run 36311598240](https://github.com/millionrust/lulo/actions/runs/36311598240)
+succeeded on `fffbde89`; the main CI for the later Preview/test changes is in progress.
+The candidate packages still contain `8ae3a9eb`. The 26-scenario nested
+behavior rerun matched 23 Mac recordings; its three mismatches are the Files item menu
 (Share/tags/Quick Actions), Get Info window behavior, and the new background
-Get Info scenario (remaining menu rows plus that same window behavior). CI
-success does not establish release readiness:
+Get Info scenario (remaining menu rows plus that same window behavior). A new
+Preview PDF Find scenario passed separately against its rebuilt dev binary.
+CI success does not establish release readiness:
 these product, accessibility, security, and packaging gates remain open.
+
+The reference PC itself still has `rmac-apps` and `rmac-session`
+`0.9.0~beta.1-38` from the Sep 26 14:01 package set, whose build epoch matches
+source `02dd4ffd`. That predates both shutdown-dialog fixes (`cb2fbe81`,
+`212c68b3`) and every newer dev validation above. A nested dev shutdown run
+passed 28/28 with fake `systemctl`; the installed PC has not been updated or
+asked to power off during this audit. The new isolated startup smoke passed
+9/9 previously uncovered apps on mixed dev binaries, which proves startup
+readiness only; see `scripts/linux/smoke-app-launches.py`.
 
 | # | Blocker | Owner/agent | Size |
 |---|---|---|---|

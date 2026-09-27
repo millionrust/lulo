@@ -12,6 +12,19 @@ runner plays the same scenario inside a private nested compositor and diffs the 
 | Runner | `scripts/behavior/run_lulo.py` (+ `wlinput.py`) | the laptop, or CI's `behavior-parity` job |
 | Comparator | `scripts/behavior/compare.py`, rules in `scripts/behavior/scenario.py` | anywhere |
 
+For packaged apps without a recorded interaction scenario, run the separate
+startup check on Lulo:
+
+```sh
+python3 scripts/linux/smoke-app-launches.py --bin-dir target/release \
+  --output /tmp/lulo-app-smoke.json
+```
+
+It uses a private D-Bus session, headless Sway and disposable app data, then
+reports whether each app launches and exposes an accessible surface. It does
+not test interaction or visual parity; the JSON records a SHA-256 for each
+tested binary so mixed dev builds are visible.
+
 ## Add a scenario
 
 1. Write `tests/behavior/<area>/<name>.json`. `area` is `files`, `text-editor`, `settings`,

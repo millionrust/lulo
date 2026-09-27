@@ -77,8 +77,19 @@ passive check, the fixed Files window made zero frame requests and commits in
 five untouched seconds; creating a file in its private HOME produced five
 frame requests and seven commits, and its named row appeared through AT-SPI.
 Tracing perturbs timing, while the budget sample does not trace the process.
-The table below remains the original release-package baseline; the fixed
-binary is not yet in that package.
+The table below remains the original `8ae3a9eb` release-package baseline; the
+fixed binary was packaged later in the `0e3fa470` set.
+
+After installing the later `0e3fa470` package set, a single exploratory
+private-Sway sample of `/usr/bin/rmac-files` (SHA-256
+`72370ea1034a95ae9b0b288f91ef75ea1287ca9a0e94dec3b756aa7b678613c5`,
+`rmac-apps` `0.9.0~beta.1-38`) reached its first-frame marker in 350.4 ms.
+Over 30.0 idle seconds it used 0.767% of one CPU core, 0.2 context
+switches/s and 160.6 MiB PSS. This exceeds the 0.3% idle target in that
+sample, but it is not directly comparable with the live-niri, 60-second,
+five-launch results above. It did not inject input or inspect pixels. Run
+`scripts/linux/sample-installed-performance.py --app rmac-files` to repeat
+the private sample; a full installed-package budget run remains outstanding.
 
 Measured against todo.md "Performance budgets": idle CPU <=0.3% per app and <=1% for all shell surfaces combined, no idle redraw, warm launch p95 <=500 ms (<=900 ms for Files/Terminal), memory recorded. No personal data is recorded: no hostnames, home-directory paths, window titles, or user names.
 

@@ -217,7 +217,7 @@ fn read_file_tag(path: &Path) -> Result<Vec<u8>, rustix::io::Errno> {
 
 #[cfg(test)]
 mod tag_tests {
-    use super::{clear_file_tag, read_file_tag, write_file_tag, FILE_TAG_XATTR};
+    use super::{clear_file_tag, read_file_tag, write_file_tag};
     use std::fs;
 
     #[test]

@@ -1,0 +1,88 @@
+{
+  "binary_dir": "inputs-e8b589ac",
+  "binary_revision": "unknown",
+  "results": [
+    {
+      "app": "archive-utility",
+      "binary": "rmac-archive-utility",
+      "binary_sha256": "d6a0a06c091532f70203e6f818e6ad20d2c520aebd306eb50d1ef61c16b7c50b",
+      "elapsed_ms": 153,
+      "outcome": "passed",
+      "readiness": "fixture_extracted"
+    },
+    {
+      "app": "app-drawer",
+      "binary": "rmac-app-drawer",
+      "binary_sha256": "d927f50412ef89d50fe21978565e933fff5b71e3c0014a25868fb2a2b2e5df94",
+      "elapsed_ms": 1090,
+      "outcome": "passed",
+      "readiness": "accessible_layer_surface"
+    },
+    {
+      "app": "clock",
+      "binary": "rmac-clock",
+      "binary_sha256": "2f29b3bb578f5279e1f84184bbdf39389422cced68ce6c9a3f8d54cbddec9c7a",
+      "elapsed_ms": 1794,
+      "outcome": "passed",
+      "readiness": "mapped_and_accessible"
+    },
+    {
+      "app": "notes",
+      "binary": "rmac-notes",
+      "binary_sha256": "db518113a26206d8940451a852e6ffa485d7950228e3fe6b163b10f38b46ae4e",
+      "elapsed_ms": 1596,
+      "outcome": "passed",
+      "readiness": "mapped_and_accessible"
+    },
+    {
+      "app": "player",
+      "binary": "rmac-player",
+      "binary_sha256": "918e2ebf17b92e69ec4d6858d3063763738677548beab57c99f9041d3f9908b2",
+      "elapsed_ms": 1712,
+      "outcome": "passed",
+      "readiness": "mapped_and_accessible"
+    },
+    {
+      "app": "preview",
+      "binary": "rmac-preview",
+      "binary_sha256": "289fc56962317925bef895409c662f4f765347efa00bf43eb7d64452b1ab92b4",
+      "elapsed_ms": 1560,
+      "outcome": "passed",
+      "readiness": "mapped_and_accessible"
+    },
+    {
+      "app": "system-monitor",
+      "binary": "rmac-system-monitor",
+      "binary_sha256": "8ee3cd57acd1b7cee999eaa905215dfb642b697a94172bd28be366098b22fbbc",
+      "elapsed_ms": 1705,
+      "outcome": "passed",
+      "readiness": "mapped_and_accessible"
+    },
+    {
+      "app": "terminal",
+      "binary": "rmac-terminal",
+      "binary_sha256": "87c6dcfb118adf2248a000e838a83197f185c6e9ece17d927dd232f10338dde9",
+      "elapsed_ms": 1502,
+      "outcome": "passed",
+      "readiness": "mapped_and_accessible"
+    },
+    {
+      "app": "weather",
+      "binary": "rmac-weather",
+      "binary_sha256": "722ee9a209f1ef7985fcdee28fe77bd246fd01243fee6bbe85faad028dfaa9bb",
+      "elapsed_ms": 1878,
+      "outcome": "passed",
+      "readiness": "mapped_and_accessible"
+    }
+  ],
+  "schema_version": 1,
+  "scope": "startup_readiness_only",
+  "source_dirty": false,
+  "source_revision": "e8b589ac",
+  "summary": {
+    "failed": 0,
+    "passed": 9,
+    "skipped": 0,
+    "total": 9
+  }
+}

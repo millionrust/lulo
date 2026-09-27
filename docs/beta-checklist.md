@@ -54,8 +54,10 @@ the installed-build results above still refer to `0e3fa470`. The exact
 [27-scenario rerun](behavior-results/source-e8b589ac-27.json) at 25/27:
 Get Info now matches its Mac behavior; the item and background context menus
 remain mismatches. No scenario that passed on the installed 24/27 run
-regressed. The candidate also passed 9/9 private startup checks, including
-App Drawer and Preview through their proper launch paths. Its top bar passed
+regressed. The candidate also passed
+[9/9 private startup checks](behavior-results/source-e8b589ac-startup-smoke.json),
+including App Drawer and Preview through their proper launch paths. Its top bar
+passed
 45/45 scoped unit tests and 37/37 private menu/power-dialog checks. The latter
 includes a regression that focuses Notes then Files without a Files menu
 publisher: the installed top bar lacked File/Edit/View/Go, while the candidate

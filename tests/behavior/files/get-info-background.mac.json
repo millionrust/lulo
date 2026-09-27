@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "files/get-info-background",
+  "platform": "macOS expected behavior",
+  "recorded": "2026-09-27",
+  "observations": {
+    "info": {
+      "windows": {
+        "count": 2,
+        "front": "sandbox Info",
+        "titles": [
+          "sandbox Info",
+          "sandbox"
+        ]
+      }
+    }
+  }
+}

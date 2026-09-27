@@ -38,7 +38,7 @@ runner plays the same scenario inside a private nested compositor and diffs the 
        ⌃ is Control.
      - `type`: ASCII text.
      - `wait`: seconds.
-     - `select` or `context`: click or right-click the item with that name.
+     - `select` or `context`: click or right-click the item with that name. For Files, `context: "background"` right-clicks an empty point in the list viewport.
      - `focus_desktop`.
      - `observe`: records facts.
      - Any step can take `settle` (seconds to wait after it; the default is 0.8).

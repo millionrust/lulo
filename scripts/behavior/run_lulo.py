@@ -74,6 +74,14 @@ def find_file_chooser_binary(directories: list[Path]) -> Optional[Path]:
     return None
 
 
+def empty_viewport_point(box: tuple[int, int, int, int], origin: tuple[int, int]) -> tuple[int, int]:
+    """Choose an inset point at the bottom-right of an accessible viewport."""
+    x, y, width, height = box
+    if width <= 48 or height <= 48:
+        raise StepFailed("Files list viewport is too small to context-click safely")
+    return origin[0] + x + width - 24, origin[1] + y + height - 24
+
+
 def scenarios_need_file_chooser(scenarios: list[str]) -> bool:
     """The default run includes Save on Untitled, which needs the portal backend."""
 
@@ -814,7 +822,7 @@ class LuloRun:
         frame = self.active_frame()
         target = None
         for node in descendants(frame, limit=4000) if frame is not None else []:
-            if name(node) == label and role(node) in {"list item", "table row", "tree item", "table cell", "label", "static", "push button", "button"}:
+            if name(node) == label and role(node) in {"list item", "table row", "tree item", "table cell", "label", "static", "push button", "button", "menu item"}:
                 target = node
                 break
         if target is None:
@@ -825,6 +833,23 @@ class LuloRun:
         ox, oy = self.window_origin()
         x, y = ox + box[0] + min(40, box[2] // 2), oy + box[1] + box[3] // 2
         self.nested.input.click(x, y, OUTPUT_W, OUTPUT_H, button=button)
+
+    def context_background(self) -> None:
+        """Right-click an empty point in the Files list viewport."""
+        frame = self.active_frame()
+        candidates = []
+        for node in descendants(frame, limit=4000) if frame is not None else []:
+            if role(node) in {"list", "table", "tree", "tree table", "list box"}:
+                box = extents(node)
+                if box and box[2] > 80 and box[3] > 80:
+                    candidates.append((box[2] * box[3], box))
+        if not candidates:
+            raise StepFailed("no on-screen Files list viewport to context-click")
+        _, box = max(candidates)
+        # The lower-right corner of the viewport is below the listed rows in
+        # the fixture and avoids activating a file or folder.
+        x, y = empty_viewport_point(box, self.window_origin())
+        self.nested.input.click(x, y, OUTPUT_W, OUTPUT_H, button="right")
 
     def run_steps(self, limit: Optional[int] = None) -> dict[str, Any]:
         observations: dict[str, Any] = {}
@@ -842,9 +867,12 @@ class LuloRun:
             elif "select" in step:
                 self.click_item(step["select"], "left")
             elif "context" in step:
-                self.click_item(step["context"], "left")
-                time.sleep(0.3)
-                self.click_item(step["context"], "right")
+                if step["context"] == "background":
+                    self.context_background()
+                else:
+                    self.click_item(step["context"], "left")
+                    time.sleep(0.3)
+                    self.click_item(step["context"], "right")
             elif "focus_desktop" in step:
                 self.nested.input.click(OUTPUT_W // 4, OUTPUT_H // 2, OUTPUT_W, OUTPUT_H)
             elif "menu" in step:

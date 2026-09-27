@@ -44,6 +44,11 @@ class KeyTests(unittest.TestCase):
 
 
 class GuardTests(unittest.TestCase):
+    def test_background_context_point_stays_inside_viewport(self):
+        self.assertEqual(run_lulo.empty_viewport_point((100, 80, 600, 400), (20, 30)), (696, 486))
+        with self.assertRaises(run_lulo.StepFailed):
+            run_lulo.empty_viewport_point((0, 0, 48, 100), (0, 0))
+
     def test_calculator_sway_frame_normalization(self):
         self.assertEqual(run_lulo.calculator_visible_size(254, 432), (230, 408))
         self.assertEqual(run_lulo.calculator_visible_size(698, 432), (674, 408))
@@ -89,6 +94,18 @@ class GuardTests(unittest.TestCase):
 
 
 class ScenarioFileTests(unittest.TestCase):
+    def test_get_info_background_targets_empty_content_and_current_folder(self):
+        path = sc.SCENARIO_ROOT / "files" / "get-info-background.json"
+        scenario = sc.load(path)
+        self.assertEqual(scenario["launch"], {"folder": "."})
+        self.assertEqual(
+            [(step.get("context"), step.get("select")) for step in scenario["steps"] if "context" in step or "select" in step],
+            [("background", None), (None, "Get Info")],
+        )
+        self.assertEqual(scenario["steps"][-1], {"observe": "info", "facts": ["windows"]})
+        expected = json.loads(sc.expectation_path(path).read_text())
+        self.assertEqual(expected["observations"]["info"]["windows"]["front"], "sandbox Info")
+
     def test_every_scenario_is_valid_and_recorded(self):
         paths = sc.scenario_paths()
         self.assertGreaterEqual(len(paths), 20)

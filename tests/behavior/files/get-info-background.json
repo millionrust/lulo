@@ -1,0 +1,11 @@
+{
+  "title": "Get Info from empty folder background names the current folder",
+  "app": "files",
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "cmd-2"},
+    {"context": "background", "settle": 0.5},
+    {"select": "Get Info", "settle": 1.2},
+    {"observe": "info", "facts": ["windows"]}
+  ]
+}

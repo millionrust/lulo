@@ -468,7 +468,7 @@ class Run:
     # -- the run ---------------------------------------------------------------
 
     def desktop_files_menu_titles(self) -> None:
-        """Files titles survive focus before Files publishes its menu endpoint."""
+        """Files titles survive an app switch before Files publishes menus."""
 
         titles = ("File", "Edit", "View", "Go")
         foot = shutil.which("foot", path=self.env.get("PATH"))
@@ -480,28 +480,42 @@ class Run:
             )
             return
 
-        dummy = self.spawn(
-            [
-                foot,
-                "--app-id=org.rmac.Files",
-                "--title=Files menu fallback probe",
-                "sleep",
-                "60",
-            ],
-            "dummy-files-window",
-        )
-        focused = self.wait_for(
-            lambda: next(
-                (
-                    window
-                    for window in self.niri("windows") or []
-                    if window.get("app_id") == "org.rmac.Files" and window.get("focused")
+        def focus_dummy(app_id: str, log_name: str):
+            process = self.spawn(
+                [foot, f"--app-id={app_id}", "--title=Menu fallback probe", "sleep", "60"],
+                log_name,
+            )
+            window = self.wait_for(
+                lambda: next(
+                    (
+                        item
+                        for item in self.niri("windows") or []
+                        if item.get("app_id") == app_id and item.get("is_focused")
+                    ),
+                    None,
                 ),
-                None,
-            ),
-            10,
-            0.2,
-        )
+                10,
+                0.2,
+            )
+            return process, window
+
+        notes, notes_focused = focus_dummy("org.rmac.Notes", "dummy-notes-window")
+        notes_alive = notes.poll() is None
+        notes.terminate()
+        try:
+            notes.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            notes.kill()
+            notes.wait(timeout=3)
+        if notes_focused is None:
+            self.check(
+                "Desktop: Files menu fallback with a focused unpublished Files app id",
+                False,
+                f"could not focus the initial Notes app-id window (alive={notes_alive})",
+            )
+            return
+
+        dummy, focused = focus_dummy("org.rmac.Files", "dummy-files-window")
         publisher = subprocess.run(
             ["busctl", "--user", "--no-pager", "list"],
             env=self.env,
@@ -529,13 +543,24 @@ class Run:
             dummy.wait(timeout=3)
         self.check(
             "Desktop: Files menu fallback with a focused unpublished Files app id",
-            focused is not None and alive and publisher.returncode == 0 and not menu_owner and not missing,
-            f"focused_files_id={focused is not None}, dummy_alive={alive}, "
+            notes_focused is not None
+            and notes_alive
+            and focused is not None
+            and alive
+            and publisher.returncode == 0
+            and not menu_owner
+            and not missing,
+            f"initial_notes_focus={notes_focused is not None}, notes_alive={notes_alive}, "
+            f"focused_files_id={focused is not None}, "
+            f"dummy_alive={alive}, "
             f"files_menu_published={menu_owner}, missing={missing}",
         )
 
     def run(self) -> int:
         self.start()
+        if self.args.menu_fallback_only:
+            self.desktop_files_menu_titles()
+            return self.finish()
         self.desktop_files_menu_titles()
         if self.args.pointer_only:
             for label, verb in (("Cancel", None), ("Sleep", "suspend"),
@@ -627,6 +652,7 @@ def main() -> int:
     parser.add_argument("--bin-dir", help="directory with this branch's top-bar, dock, rmac-shortcut-dispatch")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--pointer-only", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--menu-fallback-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--capture-dir", help="save private-compositor dialog screenshots here")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()

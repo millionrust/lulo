@@ -96,9 +96,9 @@ JSON/parsing logic, not a live run.
 
 | Metric | Budget | Status |
 |---|---|---|
-| Warm launch to interactive | p95 ≤ 500 ms (900 ms Files/Terminal) | **Pass for nine measured apps** on the 2026-09-27 release build: all used the ready-file marker, with p95 from 144.2 ms (Calculator) to 250.6 ms (Notes). Apps and Preview require different launch inputs and remain unmeasured. See [release-binary report](perf/reference-laptop-2026-09-27-release.md). |
-| Idle CPU | ≤ 0.3%/app, ≤ 1% shell combined | **Fail:** Files 7.60%, System Monitor 3.70%, Clock 1.78%, Text Editor 0.63%, Weather 0.60% in the isolated 60-second release-binary run; the other four measured apps pass. Shell values remain from the 2026-09-25 read-only run (combined under 1%) and were excluded from this run. |
-| Idle wake-ups | none while nothing changes | **Fail or needs attribution:** Files 32.100/s, Clock 12.283/s, Text Editor 6.267/s, Weather 6.233/s, and System Monitor 3.150/s. Clock's visible second hand and System Monitor's live metrics account for some expected activity, but the CPU budget still fails. See [release-binary report](perf/reference-laptop-2026-09-27-release.md). |
+| Warm launch to interactive | p95 ≤ 500 ms (900 ms Files/Terminal) | **Pass for nine measured apps** on the 2026-09-27 release build: all used the ready-file marker, with p95 from 150.1 ms (Text Editor) to 290.7 ms (Notes). Apps and Preview require different launch inputs and remain unmeasured. See [release-binary report](perf/reference-laptop-2026-09-27-release.md). |
+| Idle CPU | ≤ 0.3%/app, ≤ 1% shell combined | **Fail:** Files 4.57%, System Monitor 4.45%, Clock 1.87%, Text Editor 0.70%, Weather 0.70% in the corrected isolated 60-second release-binary run; the other four measured apps pass. Shell values remain from the 2026-09-25 read-only run (combined under 1%) and were excluded from this run. |
+| Idle wake-ups | none while nothing changes | **Fail or needs attribution:** Files 27.333/s, Clock 12.417/s, Text Editor 6.133/s, Weather 6.483/s, and System Monitor 3.233/s. Clock's visible second hand and System Monitor's live metrics account for some expected activity, but the CPU budget still fails. See [release-binary report](perf/reference-laptop-2026-09-27-release.md). |
 | Input to visible response | p95 ≤ 50 ms | **Not yet run** — no frame-timing harness exists yet |
 | 60/120 Hz animation frame budget | ≥ 99% / ≥ 95% within budget | **Not yet run** — `docs/performance-baseline.md` notes no per-frame trace is available yet |
 | Memory (8-hour soak) | per-app budget, no leak | **Not yet run** |
@@ -109,7 +109,8 @@ Earlier evidence: [system audit](perf/reference-laptop-2026-09-24.md),
 [system-audit notes](system-audit-2026-09-24.md). The current
 [release-binary run](perf/reference-laptop-2026-09-27-release.md) used a
 temporary HOME and XDG directories per app, no Cargo contention, and one app
-at a time. **Status: Fail** — five apps exceed idle CPU budget; frame pacing,
+at a time. Its marker and XDG writes are outside Files' watched HOME and parent;
+the earlier layout inflated Files' result. **Status: Fail** — five apps exceed idle CPU budget; frame pacing,
 input response, soak memory, and NVIDIA results remain unmeasured.
 
 ## 3. Accessibility gates (todo.md)
@@ -135,9 +136,10 @@ on all three) and a nested-compositor run with real typed keystrokes (Files:
 14/16 behaviour scenarios, including working rename). What remains
 release-blocking in this category: the upstream `accesskit_unix`
 `EditableText` gap (not fixable in this repo, affects Spotlight, Terminal,
-Notes and Files' search/rename fields identically), Control-F2, the formal
-Orca/I3 audit, and the `Role::Button`-wrapped controls still Blocked on an
-upstream/rewrite decision.
+Notes and Files' search/rename fields identically), mouse-only Popover
+triggers, the plain `PopUpButton` role gap, Notes' unnamed toolbar buttons,
+the unfinished keyboard-only checks in journey 8, and the formal Orca/I3
+audit.
 
 ## 4. Code rules (todo.md)
 

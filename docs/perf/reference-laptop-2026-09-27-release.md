@@ -1,8 +1,9 @@
-# Reference laptop performance budgets -- 2026-09-27T05:37:32Z
+# Reference laptop performance budgets -- 2026-09-27T06:38:56Z
 
 This run used release binaries built from `8ae3a9eb`, one app at a time on
 the reference laptop's live niri session, with a separate temporary HOME,
-config, data, state, and cache directory for each app. No input was injected
+config, data, state, and cache directory for each app. Benchmark marker and
+XDG writes sit outside Files' watched HOME and its parent. No input was injected
 and no Cargo process ran. Only the nine applications listed below were
 selected. Apps needs its service launch path and Preview needs a document,
 so the generic launch method did not measure them; shell surfaces were also
@@ -11,20 +12,28 @@ Weather starts with search focused in the empty profile. The
 [machine-readable report](reference-laptop-2026-09-27-release.json) records
 each sample and its limits.
 
-A later, unmerged System Monitor experiment cached stable per-process search
+A prior, unmerged System Monitor experiment cached stable per-process search
 and user strings by PID and start time. Its focused package tests (39/39) and
-Clippy passed, but a matching isolated 60-second release-binary sample measured
-4.25% idle CPU and 3.483 wake-ups/s, versus this baseline's 3.70% and
-3.150/s. The experiment was discarded. Its one launch sample is not comparable
-to this report's five-sample p95. The [probe data](reference-laptop-2026-09-27-system-monitor-probe.json)
-is retained so the same cache is not repeated without new profiling evidence.
+Clippy passed, but a 60-second sample under the previous benchmark layout
+measured 4.25% idle CPU versus that layout's 3.70% baseline. The experiment
+was discarded. These measurements are not directly comparable with this
+report's corrected HOME layout or five-sample p95. The
+[probe data](reference-laptop-2026-09-27-system-monitor-probe.json) is retained
+so the same cache is not repeated without new profiling evidence.
 
-A separate 30-second Files thread sample under the same temporary HOME/XDG
-conditions attributed 6.767% CPU to the main UI thread, 0.167% to its timer
-thread, and 0.132% to four worker threads combined. The source audit found
-event-driven directory watching and a five-second Linux mount poll; neither
-explains the main-thread cost. A frame/event-loop profile is needed before a
-Files code change can be credited with fixing idle CPU.
+The previous report measured Files at 7.60% idle CPU and 32.100 wake-ups/s.
+Its marker and XDG directories were inside Files' watched HOME or parent,
+creating filesystem events during measurement. This corrected run measures
+4.57% and 27.333/s; an independent focused run with the same layout measured
+4.58% and 27.433/s. The earlier 30-second thread sample, which attributed
+6.767% CPU to the main UI thread, used the contaminated layout and cannot
+establish the source of the remaining cost. Files still misses the 0.3% budget;
+a frame/event-loop profile is needed before attributing a code fix. Separate
+15-second diagnostics under the corrected layout counted 150 Files frame
+requests and 225 Wayland surface commits (Notes: zero of each); a traced
+Files process returned 54 successful inotify reads in 15 seconds. Protocol
+logging and tracing perturb timing, so those counts identify active paths,
+not benchmark rates.
 
 Measured against todo.md "Performance budgets": idle CPU <=0.3% per app and <=1% for all shell surfaces combined, no idle redraw, warm launch p95 <=500 ms (<=900 ms for Files/Terminal), memory recorded. No personal data is recorded: no hostnames, home-directory paths, window titles, or user names.
 
@@ -39,15 +48,17 @@ Idle window: 60.0 s; warm-launch repetitions: 5 (+1 warm-up); idle-redraw thresh
 
 | App | Warm p95 | Budget | Interactive marker | Idle CPU % | Budget | Wake-ups/s | PSS | Frame timing |
 |---|---:|---|---|---:|---|---:|---:|---|
-| Calculator | 144.2 ms | <=500 ms ✓ | ready_file | 0.00% | <=0.3% ✓ | 0.000 | 45.5 MiB | not_measured |
-| Clock | 166.7 ms | <=500 ms ✓ | ready_file | 1.78% | <=0.3% ✗ | 12.283 | 55.7 MiB | not_measured |
-| Files | 167.5 ms | <=900 ms ✓ | ready_file | 7.60% | <=0.3% ✗ | 32.100 | 54.2 MiB | not_measured |
-| Notes | 250.6 ms | <=500 ms ✓ | ready_file | 0.00% | <=0.3% ✓ | 0.000 | 51.5 MiB | not_measured |
-| System Monitor | 230.2 ms | <=500 ms ✓ | ready_file | 3.70% | <=0.3% ✗ | 3.150 | 56.9 MiB | not_measured |
-| System Settings | 235.5 ms | <=500 ms ✓ | ready_file | 0.05% | <=0.3% ✓ | 2.383 | 61.8 MiB | not_measured |
-| Terminal | 151.5 ms | <=900 ms ✓ | ready_file | 0.00% | <=0.3% ✓ | 0.000 | 52.4 MiB | not_measured |
-| Text Editor | 150.8 ms | <=500 ms ✓ | ready_file | 0.63% | <=0.3% ✗ | 6.267 | 55.5 MiB | not_measured |
-| Weather | 156.3 ms | <=500 ms ✓ | ready_file | 0.60% | <=0.3% ✗ | 6.233 | 47.4 MiB | not_measured |
+| Apps | n/a | n/a | not_measured | n/a | n/a | n/a | n/a | not_measured |
+| Calculator | 150.3 ms | <=500 ms ✓ | ready_file | 0.00% | <=0.3% ✓ | 0.000 | 41.8 MiB | not_measured |
+| Clock | 167.0 ms | <=500 ms ✓ | ready_file | 1.87% | <=0.3% ✗ | 12.417 | 53.5 MiB | not_measured |
+| Files | 196.2 ms | <=900 ms ✓ | ready_file | 4.57% | <=0.3% ✗ | 27.333 | 48.9 MiB | not_measured |
+| Notes | 290.7 ms | <=500 ms ✓ | ready_file | 0.00% | <=0.3% ✓ | 0.000 | 48.4 MiB | not_measured |
+| Preview | n/a | n/a | not_measured | n/a | n/a | n/a | n/a | not_measured |
+| System Monitor | 228.0 ms | <=500 ms ✓ | ready_file | 4.45% | <=0.3% ✗ | 3.233 | 54.0 MiB | not_measured |
+| System Settings | 231.3 ms | <=500 ms ✓ | ready_file | 0.05% | <=0.3% ✓ | 3.383 | 59.1 MiB | not_measured |
+| Terminal | 160.3 ms | <=900 ms ✓ | ready_file | 0.00% | <=0.3% ✓ | 0.000 | 49.2 MiB | not_measured |
+| Text Editor | 150.1 ms | <=500 ms ✓ | ready_file | 0.70% | <=0.3% ✗ | 6.133 | 48.4 MiB | not_measured |
+| Weather | 156.1 ms | <=500 ms ✓ | ready_file | 0.70% | <=0.3% ✗ | 6.483 | 44.3 MiB | not_measured |
 
 ## Over budget
 

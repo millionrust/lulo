@@ -1,5 +1,12 @@
 {
   "apps": {
+    "rmac-app-drawer": {
+      "display_name": "Apps",
+      "frame_timing": "not_measured",
+      "idle": null,
+      "note": "process exited before becoming ready: status 0",
+      "warm_launch": null
+    },
     "rmac-calculator": {
       "display_name": "Calculator",
       "frame_timing": "not_measured",
@@ -9,24 +16,24 @@
           "value": 0.0,
           "within_budget": true
         },
-        "pss_mib": 45.5,
+        "pss_mib": 41.8,
         "suspected_idle_redraw": false,
         "wakeups_per_second": 0.0
       },
       "warm_launch": {
         "interactive_marker": "ready_file",
-        "median_ms": 139.4,
+        "median_ms": 134.4,
         "p95_ms": {
           "budget": 500.0,
-          "value": 144.203,
+          "value": 150.314,
           "within_budget": true
         },
         "samples_ms": [
-          139.6,
-          144.2,
+          150.3,
+          134.1,
+          134.4,
           134.0,
-          139.4,
-          138.8
+          139.4
         ]
       }
     },
@@ -36,27 +43,27 @@
       "idle": {
         "idle_cpu_percent": {
           "budget": 0.3,
-          "value": 1.783,
+          "value": 1.867,
           "within_budget": false
         },
-        "pss_mib": 55.7,
+        "pss_mib": 53.5,
         "suspected_idle_redraw": true,
-        "wakeups_per_second": 12.283
+        "wakeups_per_second": 12.417
       },
       "warm_launch": {
         "interactive_marker": "ready_file",
-        "median_ms": 157.3,
+        "median_ms": 161.1,
         "p95_ms": {
           "budget": 500.0,
-          "value": 166.674,
+          "value": 167.008,
           "within_budget": true
         },
         "samples_ms": [
-          152.0,
-          155.5,
-          157.3,
-          161.3,
-          166.7
+          161.1,
+          152.9,
+          155.2,
+          167.0,
+          161.2
         ]
       }
     },
@@ -66,27 +73,27 @@
       "idle": {
         "idle_cpu_percent": {
           "budget": 0.3,
-          "value": 7.6,
+          "value": 4.567,
           "within_budget": false
         },
-        "pss_mib": 54.2,
+        "pss_mib": 48.9,
         "suspected_idle_redraw": true,
-        "wakeups_per_second": 32.1
+        "wakeups_per_second": 27.333
       },
       "warm_launch": {
         "interactive_marker": "ready_file",
-        "median_ms": 166.3,
+        "median_ms": 171.8,
         "p95_ms": {
           "budget": 900.0,
-          "value": 167.498,
+          "value": 196.247,
           "within_budget": true
         },
         "samples_ms": [
-          167.5,
-          166.3,
-          161.8,
-          160.8,
-          167.0
+          196.2,
+          166.4,
+          177.7,
+          171.8,
+          161.2
         ]
       }
     },
@@ -99,26 +106,33 @@
           "value": 0.0,
           "within_budget": true
         },
-        "pss_mib": 51.5,
+        "pss_mib": 48.4,
         "suspected_idle_redraw": false,
         "wakeups_per_second": 0.0
       },
       "warm_launch": {
         "interactive_marker": "ready_file",
-        "median_ms": 246.5,
+        "median_ms": 249.7,
         "p95_ms": {
           "budget": 500.0,
-          "value": 250.609,
+          "value": 290.739,
           "within_budget": true
         },
         "samples_ms": [
-          246.5,
-          244.4,
-          246.9,
-          241.4,
-          250.6
+          249.7,
+          257.3,
+          243.8,
+          245.3,
+          290.7
         ]
       }
+    },
+    "rmac-preview": {
+      "display_name": "Preview",
+      "frame_timing": "not_measured",
+      "idle": null,
+      "note": "neither RMAC_BENCHMARK_READY_FILE nor a mapped window appeared within 20.0 seconds",
+      "warm_launch": null
     },
     "rmac-system-monitor": {
       "display_name": "System Monitor",
@@ -126,27 +140,27 @@
       "idle": {
         "idle_cpu_percent": {
           "budget": 0.3,
-          "value": 3.7,
+          "value": 4.45,
           "within_budget": false
         },
-        "pss_mib": 56.9,
+        "pss_mib": 54.0,
         "suspected_idle_redraw": true,
-        "wakeups_per_second": 3.15
+        "wakeups_per_second": 3.233
       },
       "warm_launch": {
         "interactive_marker": "ready_file",
-        "median_ms": 213.8,
+        "median_ms": 223.9,
         "p95_ms": {
           "budget": 500.0,
-          "value": 230.232,
+          "value": 227.991,
           "within_budget": true
         },
         "samples_ms": [
-          230.2,
-          217.9,
-          213.8,
-          213.0,
-          210.8
+          228.0,
+          222.8,
+          217.7,
+          223.9,
+          225.0
         ]
       }
     },
@@ -159,24 +173,24 @@
           "value": 0.05,
           "within_budget": true
         },
-        "pss_mib": 61.8,
+        "pss_mib": 59.1,
         "suspected_idle_redraw": true,
-        "wakeups_per_second": 2.383
+        "wakeups_per_second": 3.383
       },
       "warm_launch": {
         "interactive_marker": "ready_file",
-        "median_ms": 219.4,
+        "median_ms": 221.4,
         "p95_ms": {
           "budget": 500.0,
-          "value": 235.509,
+          "value": 231.321,
           "within_budget": true
         },
         "samples_ms": [
-          217.6,
-          233.2,
-          209.3,
-          219.4,
-          235.5
+          221.4,
+          223.4,
+          216.4,
+          231.3,
+          221.2
         ]
       }
     },
@@ -189,24 +203,24 @@
           "value": 0.0,
           "within_budget": true
         },
-        "pss_mib": 52.4,
+        "pss_mib": 49.2,
         "suspected_idle_redraw": false,
         "wakeups_per_second": 0.0
       },
       "warm_launch": {
         "interactive_marker": "ready_file",
-        "median_ms": 150.7,
+        "median_ms": 152.2,
         "p95_ms": {
           "budget": 900.0,
-          "value": 151.521,
+          "value": 160.305,
           "within_budget": true
         },
         "samples_ms": [
-          151.5,
-          150.1,
-          150.7,
-          144.4,
-          150.7
+          157.0,
+          152.2,
+          147.3,
+          160.3,
+          145.2
         ]
       }
     },
@@ -216,27 +230,27 @@
       "idle": {
         "idle_cpu_percent": {
           "budget": 0.3,
-          "value": 0.633,
+          "value": 0.7,
           "within_budget": false
         },
-        "pss_mib": 55.5,
+        "pss_mib": 48.4,
         "suspected_idle_redraw": true,
-        "wakeups_per_second": 6.267
+        "wakeups_per_second": 6.133
       },
       "warm_launch": {
         "interactive_marker": "ready_file",
-        "median_ms": 145.1,
+        "median_ms": 145.7,
         "p95_ms": {
           "budget": 500.0,
-          "value": 150.839,
+          "value": 150.137,
           "within_budget": true
         },
         "samples_ms": [
-          150.8,
           150.1,
-          140.1,
-          145.1,
-          140.4
+          145.7,
+          140.6,
+          146.6,
+          141.2
         ]
       }
     },
@@ -246,32 +260,32 @@
       "idle": {
         "idle_cpu_percent": {
           "budget": 0.3,
-          "value": 0.6,
+          "value": 0.7,
           "within_budget": false
         },
-        "pss_mib": 47.4,
+        "pss_mib": 44.3,
         "suspected_idle_redraw": true,
-        "wakeups_per_second": 6.233
+        "wakeups_per_second": 6.483
       },
       "warm_launch": {
         "interactive_marker": "ready_file",
-        "median_ms": 151.4,
+        "median_ms": 150.2,
         "p95_ms": {
           "budget": 500.0,
-          "value": 156.278,
+          "value": 156.084,
           "within_budget": true
         },
         "samples_ms": [
-          148.4,
-          139.2,
-          156.3,
-          156.0,
-          151.4
+          150.2,
+          150.6,
+          156.1,
+          147.2,
+          139.7
         ]
       }
     }
   },
-  "captured_at": "2026-09-27T05:37:32Z",
+  "captured_at": "2026-09-27T06:38:56Z",
   "rustc_processes": 0,
   "schema_version": 1,
   "settings": {

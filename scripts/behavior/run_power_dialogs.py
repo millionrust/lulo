@@ -95,7 +95,10 @@ class Run:
 
     def check(self, name: str, ok, detail: str = "") -> None:
         self.results.append((name, bool(ok), detail))
-        print(f"{'PASS' if ok else 'FAIL'} {name} {detail}".rstrip(), flush=True)
+        print(
+            f"{'PASS' if ok else 'FAIL'} {name} {detail if not ok else ''}".rstrip(),
+            flush=True,
+        )
 
     def spawn(self, argv: list[str], name: str, extra: dict[str, str] | None = None) -> subprocess.Popen:
         env = {**self.env, **(extra or {})}
@@ -178,9 +181,16 @@ class Run:
                                 capture_output=True, text=True, timeout=10)
         return json.loads(result.stdout) if result.stdout.strip() else None
 
-    def dispatch(self, shortcut: str) -> None:
-        subprocess.run([self.dispatch_bin, shortcut], env=self.env, capture_output=True,
-                       timeout=10, check=False)
+    def dispatch(self, shortcut: str):
+        return subprocess.run([self.dispatch_bin, shortcut], env=self.env, capture_output=True,
+                              text=True, timeout=10, check=False)
+
+    def wait_for_power_dialog(self) -> list[str]:
+        labels = ("Restart", "Sleep", "Cancel", "Shut Down")
+        self.wait_for(
+            lambda: all(self.find_visible_button(label) for label in labels), 10, 0.3
+        )
+        return [label for label in labels if self.find_visible_button(label) is None]
 
     # -- AT-SPI ------------------------------------------------------------
 
@@ -203,6 +213,69 @@ class Run:
 
     def find_button(self, label: str):
         return self.find_node(("push button", "button"), lambda name: name == label)
+
+    def find_visible_button(self, label: str):
+        import pyatspi
+
+        desktop = pyatspi.Registry.getDesktop(0)
+        stack = [desktop.getChildAtIndex(i) for i in range(desktop.childCount)]
+        while stack:
+            node = stack.pop()
+            try:
+                if node is None:
+                    continue
+                if (
+                    node.getRoleName() in {"push button", "button"}
+                    and (node.name or "") == label
+                    and node.getState().contains(pyatspi.STATE_SHOWING)
+                ):
+                    return node
+                stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
+            except Exception:  # noqa: BLE001
+                continue
+        return None
+
+    def click_visible_button(self, label: str) -> bool:
+        """Re-find an exposed button immediately before using its extents."""
+
+        button = self.find_visible_button(label)
+        return button is not None and self.click_node(button)
+
+    def button_diagnostics(self, label: str) -> list[str]:
+        import pyatspi
+
+        states = (
+            ("showing", pyatspi.STATE_SHOWING),
+            ("visible", pyatspi.STATE_VISIBLE),
+            ("focused", pyatspi.STATE_FOCUSED),
+            ("active", pyatspi.STATE_ACTIVE),
+        )
+        desktop = pyatspi.Registry.getDesktop(0)
+        stack = [desktop.getChildAtIndex(i) for i in range(desktop.childCount)]
+        details = []
+        while stack:
+            node = stack.pop()
+            try:
+                if node is None:
+                    continue
+                if node.getRoleName() in {"push button", "button"} and (node.name or "") == label:
+                    state = node.getState()
+                    flags = [name for name, flag in states if state.contains(flag)]
+                    parents = []
+                    parent = node.parent
+                    for _ in range(5):
+                        if parent is None:
+                            break
+                        parents.append(f"{parent.getRoleName()}:{parent.name or ''}")
+                        parent = parent.parent
+                    details.append(
+                        f"states={flags}, extents={self.extents(node)}, "
+                        f"ancestors={parents}"
+                    )
+                stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
+            except Exception:  # noqa: BLE001
+                continue
+        return details
 
     def capture_surface(self, name: str) -> None:
         """Save a reviewable screenshot from this private compositor only."""
@@ -240,7 +313,15 @@ class Run:
         if not box:
             return False
         x, y, w, h = box
-        self.keys.click(x + w / 2, y + h / 2, OUTPUT_W, OUTPUT_H)
+        self.keys.move(x + w / 2, y + h / 2, OUTPUT_W, OUTPUT_H)
+        # A 50ms move-to-click was too short for the first pointer event on
+        # an on-demand layer-shell surface after an app-focus transition.
+        # Private-compositor probes found 200ms reliable; leave some margin.
+        time.sleep(0.3)
+        self.keys.button(True)
+        time.sleep(0.03)
+        self.keys.button(False)
+        time.sleep(0.06)
         return True
 
     def click_button(self, label: str) -> bool:
@@ -369,22 +450,70 @@ class Run:
 
         before = len(self.systemctl_calls())
         self.dispatch("shutdown-dialog")
-        button = self.wait_for(lambda: self.find_button(label), 10, 0.3)
+        find = self.find_visible_button if systemctl_verb is None else self.find_button
+        button = self.wait_for(lambda: find(label), 10, 0.3)
         self.check(f"Power dialog: {label} is on screen (AT-SPI)", button)
         if button is None:
             return
+        cancel_before = self.button_diagnostics(label) if systemctl_verb is None else []
+        cancel_focus_before = self.niri("focused-window") if systemctl_verb is None else None
         self.capture_surface(f"power-dialog-{label.lower().replace(' ', '-')}")
-        self.check(f"Power dialog: {label} accepts a pointer click", self.click_button(label))
+        clicked = (
+            self.click_visible_button(label)
+            if systemctl_verb is None
+            else self.click_button(label)
+        )
+        self.check(f"Power dialog: {label} accepts a pointer click", clicked)
         if systemctl_verb is None:
-            self.check(f"Power dialog: {label} cancels it and never touches systemctl",
-                       self.wait_for(lambda: self.find_button(label) is None, 10)
-                       and len(self.systemctl_calls()) == before)
+            dialog_buttons = ("Restart", "Sleep", "Cancel", "Shut Down")
+            dialog_closed = lambda: all(
+                self.find_visible_button(name) is None for name in dialog_buttons
+            )
+            first_closed = bool(self.wait_for(dialog_closed, 2.0, 0.1))
+            focus_after_first = self.niri("focused-window")
+            after_first = {
+                name: self.button_diagnostics(name) for name in dialog_buttons
+            }
+            second_clicked = False
+            second_closed = None
+            focus_after_second = None
+            if not first_closed:
+                second_clicked = self.click_visible_button(label)
+                second_closed = bool(self.wait_for(dialog_closed, 5.0, 0.1))
+                focus_after_second = self.niri("focused-window")
+            calls = self.systemctl_calls()[before:]
+            if not clicked or not first_closed or calls:
+                details = (
+                    f"first_click={clicked}, first_closed={first_closed}, "
+                    f"second_click={second_clicked}, second_closed={second_closed}, "
+                    f"focus_before={cancel_focus_before}, "
+                    f"focus_after_first={focus_after_first}, "
+                    f"focus_after_second={focus_after_second}, systemctl_delta={calls}, "
+                    f"Cancel_before={cancel_before}, "
+                    f"dialog_buttons_after_first={after_first}, "
+                    f"dialog_buttons_after="
+                    f"{{{', '.join(name + ': ' + str(self.button_diagnostics(name)) for name in dialog_buttons)}}}"
+                )
+            else:
+                details = ""
+            self.check(
+                f"Power dialog: {label} closes on first Cancel click",
+                first_closed,
+                details,
+            )
+            if second_clicked:
+                self.check(
+                    "Power dialog: second Cancel click closes after first click",
+                    bool(second_closed),
+                    f"focus_after_first={focus_after_first}, focus_after_second={focus_after_second}",
+                )
+            self.check(f"Power dialog: Cancel never touches systemctl", not calls, f"delta={calls}")
             return
         new_calls = self.wait_for(lambda: self.systemctl_calls()[before:] or None, 10)
         self.check(f"Power dialog: {label} runs systemctl {systemctl_verb!r}",
                    new_calls and new_calls[-1].strip() == systemctl_verb, f"calls={new_calls}")
 
-    def power_dialog_tab_and_space(self) -> None:
+    def power_dialog_tab_and_space(self, *, pointer_checks: bool = True) -> None:
         """The power-button double-press dialog: Restart, Sleep, Cancel,
         Shut Down, no default button (`system_confirmation`'s
         `POWER_DIALOG_ACTION` branch). Reached through the same
@@ -392,14 +521,17 @@ class Run:
         (crates/rmac-shortcuts/src/power_key.rs), never the real power key
         or its system-bus inhibitor."""
 
-        # Every button, clicked for real, one dialog open at a time.
-        self.click_power_dialog_button("Cancel", None)
-        self.click_power_dialog_button("Sleep", "suspend")
-        self.click_power_dialog_button("Restart", "reboot")
-        self.click_power_dialog_button("Shut Down", "poweroff")
+        if pointer_checks:
+            # Every button, clicked for real, one dialog open at a time.
+            self.click_power_dialog_button("Cancel", None)
+            self.click_power_dialog_button("Sleep", "suspend")
+            self.click_power_dialog_button("Restart", "reboot")
+            self.click_power_dialog_button("Shut Down", "poweroff")
 
         # Tab forward from Restart (index 0): Sleep, Cancel, Shut Down.
         before = len(self.systemctl_calls())
+        keyboard_focus = []
+        open_diagnostics = []
 
         def tab_x3_and_space() -> None:
             # A real click on the logo grants real keyboard focus
@@ -410,31 +542,57 @@ class Run:
             self.keys.key("escape")
             self.keys.key("escape")
             time.sleep(0.2)
-            self.click_button("menu")
-            self.dispatch("shutdown-dialog")
-            self.wait_for(lambda: self.find_button("Restart"), 10, 0.3)
+            menu_clicked = self.click_button("menu")
+            dispatch_result = self.dispatch("shutdown-dialog")
+            missing = self.wait_for_power_dialog()
+            if not menu_clicked or missing:
+                open_diagnostics.append(
+                    f"menu_clicked={menu_clicked}, missing={missing}, "
+                    f"dispatch_rc={dispatch_result.returncode}, "
+                    f"stderr={dispatch_result.stderr[-200:]}"
+                )
+                self.capture_surface("power-tab-open-failed")
+                return
             time.sleep(0.3)
+            self.capture_surface("power-tab-before")
+            keyboard_focus.append(
+                f"before={{{', '.join(name + ': ' + str(self.button_diagnostics(name)) for name in ('Restart', 'Sleep', 'Cancel', 'Shut Down'))}}}"
+            )
             for _ in range(3):
                 self.keys.key("tab")
                 time.sleep(0.1)
+            self.capture_surface("power-tab-selected")
+            keyboard_focus.append(
+                f"after_tab={{{', '.join(name + ': ' + str(self.button_diagnostics(name)) for name in ('Restart', 'Sleep', 'Cancel', 'Shut Down'))}}}"
+            )
             self.keys.key("space")
 
         self.check(
             "Power dialog: Tab x3 from Restart reaches Shut Down, Space runs it",
             self.retry_until(tab_x3_and_space, lambda: self.systemctl_calls()[before:]),
-            f"calls={self.systemctl_calls()[before:]}",
+            f"calls={self.systemctl_calls()[before:]}, focus={keyboard_focus}, "
+            f"open={open_diagnostics}",
         )
 
         # Shift-Tab from Restart (index 0) wraps straight to Shut Down (3).
         before = len(self.systemctl_calls())
+        shift_open_diagnostics = []
 
         def shift_tab_and_space() -> None:
             self.keys.key("escape")
             self.keys.key("escape")
             time.sleep(0.2)
-            self.click_button("menu")
-            self.dispatch("shutdown-dialog")
-            self.wait_for(lambda: self.find_button("Restart"), 10, 0.3)
+            menu_clicked = self.click_button("menu")
+            dispatch_result = self.dispatch("shutdown-dialog")
+            missing = self.wait_for_power_dialog()
+            if not menu_clicked or missing:
+                shift_open_diagnostics.append(
+                    f"menu_clicked={menu_clicked}, missing={missing}, "
+                    f"dispatch_rc={dispatch_result.returncode}, "
+                    f"stderr={dispatch_result.stderr[-200:]}"
+                )
+                self.capture_surface("power-shift-tab-open-failed")
+                return
             time.sleep(0.3)
             self.keys.key("shift-tab")
             time.sleep(0.1)
@@ -443,25 +601,40 @@ class Run:
         self.check(
             "Power dialog: Shift-Tab wraps from Restart to Shut Down, Space runs it",
             self.retry_until(shift_tab_and_space, lambda: self.systemctl_calls()[before:]),
-            f"calls={self.systemctl_calls()[before:]}",
+            f"calls={self.systemctl_calls()[before:]}, open={shift_open_diagnostics}",
         )
 
         # Escape cancels it outright, from any focus.
         before = len(self.systemctl_calls())
+        escape_open_diagnostics = []
+        escape_opened = []
 
         def tab_and_escape() -> None:
             self.keys.key("escape")
             self.keys.key("escape")
             time.sleep(0.2)
-            self.click_button("menu")
-            self.dispatch("shutdown-dialog")
-            self.wait_for(lambda: self.find_button("Restart"), 10, 0.3)
+            menu_clicked = self.click_button("menu")
+            dispatch_result = self.dispatch("shutdown-dialog")
+            missing = self.wait_for_power_dialog()
+            escape_opened.append(not missing)
+            if not menu_clicked or missing:
+                escape_open_diagnostics.append(
+                    f"menu_clicked={menu_clicked}, missing={missing}, "
+                    f"dispatch_rc={dispatch_result.returncode}, "
+                    f"stderr={dispatch_result.stderr[-200:]}"
+                )
+                self.capture_surface("power-escape-open-failed")
+                return
             time.sleep(0.3)
             self.keys.key("tab")
             self.keys.key("escape")
 
+        escape_cancelled = self.retry_until(
+            tab_and_escape, lambda: self.find_visible_button("Restart") is None
+        )
         self.check("Power dialog: Escape cancels it",
-                   self.retry_until(tab_and_escape, lambda: self.find_button("Restart") is None))
+                   any(escape_opened) and escape_cancelled,
+                   f"opened={escape_opened}, open_failures={escape_open_diagnostics}")
         self.check("Power dialog: Escape never touches systemctl",
                    len(self.systemctl_calls()) == before)
 
@@ -561,6 +734,14 @@ class Run:
         if self.args.menu_fallback_only:
             self.desktop_files_menu_titles()
             return self.finish()
+        if self.args.desktop_power_sleep_only:
+            self.desktop_files_menu_titles()
+            self.click_power_dialog_button("Sleep", "suspend")
+            return self.finish()
+        if self.args.desktop_power_keyboard_only:
+            self.desktop_files_menu_titles()
+            self.power_dialog_tab_and_space(pointer_checks=False)
+            return self.finish()
         self.desktop_files_menu_titles()
         if self.args.pointer_only:
             for label, verb in (("Cancel", None), ("Sleep", "suspend"),
@@ -653,6 +834,12 @@ def main() -> int:
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--pointer-only", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--menu-fallback-only", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--desktop-power-sleep-only", action="store_true", help=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--desktop-power-keyboard-only", action="store_true", help=argparse.SUPPRESS
+    )
     parser.add_argument("--capture-dir", help="save private-compositor dialog screenshots here")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()

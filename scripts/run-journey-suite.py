@@ -81,7 +81,8 @@ def load_manifest(path: Path = MANIFEST_PATH) -> dict[str, object]:
         raise JourneyError("journey inventory is invalid")
     available = workspace_packages()
     expected_ids = list(range(1, 11))
-    for expected_id, journey in zip(expected_ids, journeys, strict=True):
+    # The length was checked above; plain zip also supports the Mac's Python 3.9.
+    for expected_id, journey in zip(expected_ids, journeys):
         if not isinstance(journey, dict) or set(journey) != {
             "coverage",
             "id",

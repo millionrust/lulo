@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPT = Path(__file__).parent / "run-journey-suite.py"
@@ -43,6 +46,83 @@ class JourneySuiteTests(unittest.TestCase):
                 suite.load_manifest()
         finally:
             suite.workspace_packages = original
+
+
+class PreviousResultTests(unittest.TestCase):
+    revision = "a" * 40
+
+    def write_result(self, path: Path, *, revision: str | None = None, results=None):
+        path.write_text(
+            json.dumps(
+                {
+                    "format": 1,
+                    "revision": revision or self.revision,
+                    "results": results if results is not None else [
+                        {"duration_ms": 23, "id": 1, "name": "desktop-session", "status": "pass"},
+                        {"duration_ms": 0, "id": 2, "name": "text-document", "status": "fail"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_resume_reuses_only_passed_records(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "journeys.json"
+            self.write_result(path)
+
+            passes = suite._previous_passes(path, self.revision)
+
+        self.assertEqual(set(passes), {1})
+        self.assertEqual(passes[1]["name"], "desktop-session")
+
+    def test_resume_rejects_results_from_a_different_revision(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "journeys.json"
+            self.write_result(path, revision="b" * 40)
+
+            with self.assertRaisesRegex(suite.JourneyError, "does not match this revision"):
+                suite._previous_passes(path, self.revision)
+
+    def test_resume_rejects_malformed_result_records(self):
+        invalid_records = [
+            {"duration_ms": -1, "id": 1, "name": "desktop-session", "status": "pass"},
+            {"duration_ms": 1, "id": True, "name": "desktop-session", "status": "pass"},
+            {"duration_ms": 1, "id": 1, "name": "desktop-session", "status": "unknown"},
+        ]
+        for record in invalid_records:
+            with self.subTest(record=record), tempfile.TemporaryDirectory() as raw:
+                path = Path(raw) / "journeys.json"
+                self.write_result(path, results=[record])
+
+                with self.assertRaises(suite.JourneyError):
+                    suite._previous_passes(path, self.revision)
+
+
+class ResultPublicationTests(unittest.TestCase):
+    document = {"format": 1, "revision": "c" * 40, "results": []}
+
+    def test_publication_replaces_the_destination_with_complete_json(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "journeys.json"
+            path.write_text("old result", encoding="utf-8")
+
+            suite._publish(path, self.document)
+
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), self.document)
+            self.assertEqual(list(Path(raw).iterdir()), [path])
+
+    def test_replace_failure_preserves_previous_result_and_cleans_temporary_file(self):
+        with tempfile.TemporaryDirectory() as raw:
+            path = Path(raw) / "journeys.json"
+            path.write_text("previous result", encoding="utf-8")
+
+            with mock.patch.object(suite.os, "replace", side_effect=OSError("disk error")):
+                with self.assertRaisesRegex(suite.JourneyError, "cannot be published"):
+                    suite._publish(path, self.document)
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "previous result")
+            self.assertEqual(list(Path(raw).iterdir()), [path])
 
 
 if __name__ == "__main__":

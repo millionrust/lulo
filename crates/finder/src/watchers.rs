@@ -158,12 +158,17 @@ mod tests {
 
     #[test]
     fn filesystem_watcher_forwards_mutations_and_errors_but_not_accesses() {
-        use notify::event::{AccessKind, CreateKind, ModifyKind, RemoveKind, RenameMode};
+        use notify::event::{
+            AccessKind, AccessMode, CreateKind, ModifyKind, RemoveKind, RenameMode,
+        };
 
         let event = |kind| -> notify::Result<notify::Event> { Ok(notify::Event::new(kind)) };
 
         assert!(!should_forward_filesystem_event(&event(
             notify::EventKind::Access(AccessKind::Read)
+        )));
+        assert!(!should_forward_filesystem_event(&event(
+            notify::EventKind::Access(AccessKind::Open(AccessMode::Any))
         )));
         assert!(should_forward_filesystem_event(&event(
             notify::EventKind::Create(CreateKind::File)

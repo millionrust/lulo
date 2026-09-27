@@ -1,0 +1,42 @@
+{
+  "apps": {
+    "rmac-system-monitor": {
+      "display_name": "System Monitor",
+      "frame_timing": "not_measured",
+      "idle": {
+        "idle_cpu_percent": {
+          "budget": 0.3,
+          "value": 4.25,
+          "within_budget": false
+        },
+        "pss_mib": 55.1,
+        "suspected_idle_redraw": true,
+        "wakeups_per_second": 3.483
+      },
+      "warm_launch": {
+        "interactive_marker": "ready_file",
+        "median_ms": 495.0,
+        "p95_ms": {
+          "budget": 500.0,
+          "value": 495.034,
+          "within_budget": true
+        },
+        "samples_ms": [
+          495.0
+        ]
+      }
+    }
+  },
+  "captured_at": "2026-09-27T06:05:20Z",
+  "rustc_processes": 0,
+  "schema_version": 1,
+  "settings": {
+    "idle_seconds": 60.0,
+    "repetitions": 1,
+    "settle_seconds": 3.0,
+    "startup_timeout": 10.0,
+    "wakeup_threshold_per_second": 0.5,
+    "warmups": 0
+  },
+  "shell_surfaces": {}
+}

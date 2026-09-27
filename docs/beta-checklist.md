@@ -194,8 +194,9 @@ also still named and accurate.
 
 ## 8. CI (historical 2026-09-24 failure snapshot)
 
-Current `dev` CI is green at `a1150511` ([CI](https://github.com/millionrust/lulo/actions/runs/36263486076),
-[quality gates](https://github.com/millionrust/lulo/actions/runs/36263485988)).
+The preceding `dev` commit `a1150511` passed
+[CI](https://github.com/millionrust/lulo/actions/runs/36263486076) and
+[quality gates](https://github.com/millionrust/lulo/actions/runs/36263485988).
 The old result was checked via `ssh jacob@192.168.18.52 'gh run list -R
 millionrust/lulo --branch dev --limit 3'` (the laptop has `gh` auth). The
 `dev` HEAD at the start of this pass (`3ca78f24`, run

@@ -11,6 +11,21 @@ Weather starts with search focused in the empty profile. The
 [machine-readable report](reference-laptop-2026-09-27-release.json) records
 each sample and its limits.
 
+A later, unmerged System Monitor experiment cached stable per-process search
+and user strings by PID and start time. Its focused package tests (39/39) and
+Clippy passed, but a matching isolated 60-second release-binary sample measured
+4.25% idle CPU and 3.483 wake-ups/s, versus this baseline's 3.70% and
+3.150/s. The experiment was discarded. Its one launch sample is not comparable
+to this report's five-sample p95. The [probe data](reference-laptop-2026-09-27-system-monitor-probe.json)
+is retained so the same cache is not repeated without new profiling evidence.
+
+A separate 30-second Files thread sample under the same temporary HOME/XDG
+conditions attributed 6.767% CPU to the main UI thread, 0.167% to its timer
+thread, and 0.132% to four worker threads combined. The source audit found
+event-driven directory watching and a five-second Linux mount poll; neither
+explains the main-thread cost. A frame/event-loop profile is needed before a
+Files code change can be credited with fixing idle CPU.
+
 Measured against todo.md "Performance budgets": idle CPU <=0.3% per app and <=1% for all shell surfaces combined, no idle redraw, warm launch p95 <=500 ms (<=900 ms for Files/Terminal), memory recorded. No personal data is recorded: no hostnames, home-directory paths, window titles, or user names.
 
 Idle window: 60.0 s; warm-launch repetitions: 5 (+1 warm-up); idle-redraw threshold: 0.5 wakeups/s.

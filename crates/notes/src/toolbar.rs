@@ -153,7 +153,7 @@ impl NotesView {
             .child(accessible_icon_button(
                 "add-image",
                 "Add Photo…",
-                ready && !deleted && has_note && !note_save_pending,
+                ready && !deleted && has_note && !note_save_pending && !attachment_busy,
                 glyph_button(
                     "add-image",
                     glyphs::ATTACH,

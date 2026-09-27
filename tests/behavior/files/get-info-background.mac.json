@@ -1,10 +1,30 @@
 {
   "format": 1,
   "scenario": "files/get-info-background",
-  "platform": "macOS expected behavior",
+  "platform": "macOS 26.2",
   "recorded": "2026-09-27",
   "observations": {
+    "menu": {
+      "menu": {
+        "present": true,
+        "items": [
+          "New Folder",
+          "-",
+          "Get Info",
+          "-",
+          "View",
+          "Use Groups",
+          "Sort By",
+          "Show View Options",
+          "-",
+          "Import from iPhone"
+        ]
+      }
+    },
     "info": {
+      "dialog": {
+        "present": false
+      },
       "windows": {
         "count": 2,
         "front": "sandbox Info",

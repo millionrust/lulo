@@ -5,7 +5,8 @@
   "steps": [
     {"key": "cmd-2"},
     {"context": "background", "settle": 0.5},
+    {"observe": "menu", "facts": ["menu"]},
     {"select": "Get Info", "settle": 1.2},
-    {"observe": "info", "facts": ["windows"]}
+    {"observe": "info", "facts": ["dialog", "windows"]}
   ]
 }

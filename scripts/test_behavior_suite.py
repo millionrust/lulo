@@ -14,6 +14,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "behavior"))
 
 import compare  # noqa: E402
+import record_mac  # noqa: E402
 import run_lulo  # noqa: E402
 import scenario as sc  # noqa: E402
 import wlinput  # noqa: E402
@@ -44,6 +45,12 @@ class KeyTests(unittest.TestCase):
 
 
 class GuardTests(unittest.TestCase):
+    def test_mac_background_context_point_requires_viewport_inside_our_window(self):
+        self.assertEqual(record_mac.background_context_point((20, 30, 800, 600), (40, 100, 740, 500)), (756, 576))
+        self.assertEqual(record_mac.background_context_point((20, 30, 800, 600), (40, 100, 800, 500)), (796, 576))
+        with self.assertRaises(record_mac.Stop):
+            record_mac.background_context_point((20, 30, 800, 600), (900, 100, 800, 500))
+
     def test_background_context_point_stays_inside_viewport(self):
         self.assertEqual(run_lulo.empty_viewport_point((100, 80, 600, 400), (20, 30)), (696, 486))
         with self.assertRaises(run_lulo.StepFailed):
@@ -102,8 +109,12 @@ class ScenarioFileTests(unittest.TestCase):
             [(step.get("context"), step.get("select")) for step in scenario["steps"] if "context" in step or "select" in step],
             [("background", None), (None, "Get Info")],
         )
-        self.assertEqual(scenario["steps"][-1], {"observe": "info", "facts": ["windows"]})
+        self.assertEqual(scenario["steps"][-3], {"observe": "menu", "facts": ["menu"]})
+        self.assertEqual(scenario["steps"][-1], {"observe": "info", "facts": ["dialog", "windows"]})
         expected = json.loads(sc.expectation_path(path).read_text())
+        self.assertTrue(expected["observations"]["menu"]["menu"]["present"])
+        self.assertIn("Get Info", expected["observations"]["menu"]["menu"]["items"])
+        self.assertFalse(expected["observations"]["info"]["dialog"]["present"])
         self.assertEqual(expected["observations"]["info"]["windows"]["front"], "sandbox Info")
 
     def test_every_scenario_is_valid_and_recorded(self):

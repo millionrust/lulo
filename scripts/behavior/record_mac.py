@@ -63,6 +63,17 @@ class Stop(RuntimeError):
     """A safety check failed; the scenario stops and cleans up."""
 
 
+def background_context_point(window: tuple[int, int, int, int], viewport: tuple[int, int, int, int]) -> tuple[int, int]:
+    """Return a safe empty point from the viewport's intersection with our window."""
+    wx, wy, ww, wh = window
+    vx, vy, vw, vh = viewport
+    left, top = max(wx, vx), max(wy, vy)
+    right, bottom = min(wx + ww, vx + vw), min(wy + wh, vy + vh)
+    if right - left <= 48 or bottom - top <= 48:
+        raise Stop(f"Finder viewport {viewport} is not a usable region inside scenario window {window}")
+    return right - 24, bottom - 24
+
+
 def osascript(*lines: str, js: bool = False, args: tuple[str, ...] = ()) -> str:
     command = ["osascript"]
     if js:
@@ -274,11 +285,92 @@ class MacRun:
     def select(self, name: str) -> None:
         if self.process != "Finder":
             raise Stop("select is only defined for Finder scenarios")
+        if self.menu_open:
+            self.check_target()
+            script = f"""
+function run() {{
+  var se = Application("System Events");
+  var p = se.processes.byName({json.dumps(self.process)});
+  var hit = null;
+  function A(el, n) {{ try {{ return el.attributes.byName(n).value(); }} catch (e) {{ return undefined; }} }}
+  function walk(el, d) {{
+    if (hit || d < 0) return;
+    if (A(el, "AXRole") === "AXMenuItem" && A(el, "AXTitle") === {json.dumps(name)}) {{ hit = el; return; }}
+    var k = A(el, "AXChildren") || [];
+    for (var i = 0; i < k.length; i++) walk(k[i], d - 1);
+  }}
+  walk(p, 12);
+  if (!hit) return "none";
+  var pos = A(hit, "AXPosition"), size = A(hit, "AXSize");
+  if (!pos || !size || size[0] <= 0 || size[1] <= 0) return "none";
+  return [pos[0], pos[1], size[0], size[1]].join(" ");
+}}"""
+            where = osascript(script, js=True)
+            if where == "none":
+                raise Stop(f"no open context-menu item named {name!r}")
+            try:
+                x, y, width, height = (float(value) for value in where.split())
+            except (TypeError, ValueError) as error:
+                raise Stop(f"Finder returned invalid bounds for context-menu item {name!r}") from error
+            self.check_target()
+            subprocess.run([sys.executable, str(HERE / "mac_click.py"), "left", str(x + width / 2), str(y + height / 2)], check=True, timeout=10)
+            self.menu_open = False
+            return
         self.check_target()
         target = self.files_root / name
         osascript(f'tell application "Finder" to select (POSIX file {as_string(str(target))} as alias)')
 
     def context(self, name: str) -> None:
+        if name == "background":
+            self.check_target()
+            script = f"""
+function run() {{
+  var se = Application("System Events");
+  var p = se.processes.byName({json.dumps(self.process)});
+  var w = p.attributes.byName("AXFocusedWindow").value();
+  function A(el, n) {{ try {{ return el.attributes.byName(n).value(); }} catch (e) {{ return undefined; }} }}
+  var hits = [];
+  function walk(el, d) {{
+    if (d < 0) return;
+    var role = A(el, "AXRole");
+    if (role === "AXOutline" || role === "AXTable" || role === "AXList") {{
+      var vp = A(el, "AXPosition"), vs = A(el, "AXSize");
+      if (vp && vs) hits.push([vp[0], vp[1], vs[0], vs[1]]);
+    }}
+    var k = A(el, "AXChildren") || [];
+    for (var i = 0; i < k.length; i++) walk(k[i], d - 1);
+  }}
+  walk(w, 12);
+  var wp = A(w, "AXPosition"), ws = A(w, "AXSize");
+  if (!wp || !ws) return "none";
+  return JSON.stringify([[wp[0], wp[1], ws[0], ws[1]], hits]);
+}}"""
+            where = osascript(script, js=True)
+            if where == "none":
+                raise Stop("Finder did not expose an AX list viewport for background context-click")
+            try:
+                window_values, viewport_values = json.loads(where)
+                window = tuple(float(value) for value in window_values)
+                viewports = [tuple(float(value) for value in values) for values in viewport_values]
+            except (TypeError, ValueError, json.JSONDecodeError) as error:
+                raise Stop("Finder returned invalid AX bounds for background context-click")
+            usable = []
+            for box in viewports:
+                try:
+                    background_context_point(window, box)
+                    left, top = max(window[0], box[0]), max(window[1], box[1])
+                    right, bottom = min(window[0] + window[2], box[0] + box[2]), min(window[1] + window[3], box[1] + box[3])
+                    usable.append(((right - left) * (bottom - top), box))
+                except Stop:
+                    continue
+            if not usable:
+                raise Stop(f"Finder list viewports {viewports} are not inside scenario window {window}")
+            _, viewport = max(usable)
+            x, y = background_context_point(window, viewport)
+            self.check_target()
+            subprocess.run([sys.executable, str(HERE / "mac_click.py"), "right", str(x), str(y)], check=True, timeout=10)
+            self.menu_open = True
+            return
         self.select(name)
         time.sleep(0.4)
         self.check_target()

@@ -15,7 +15,7 @@ runner plays the same scenario inside a private nested compositor and diffs the 
 ## Add a scenario
 
 1. Write `tests/behavior/<area>/<name>.json`. `area` is `files`, `text-editor`, `settings`,
-   `calculator` or `desktop`.
+   `calculator`, `preview` or `desktop`.
 
    ```json
    {
@@ -31,8 +31,10 @@ runner plays the same scenario inside a private nested compositor and diffs the 
    }
    ```
 
-   - **launch**: `{"folder": "."}` or `{"reveal": "report.txt"}` for Files. The other apps start
-     with no arguments. Text Editor starts with one Untitled document.
+   - **launch**: `{"folder": "."}` or `{"reveal": "report.txt"}` for Files;
+     `{"file": "guide.pdf"}` for Preview, with that file created in the
+     scenario's sandbox. The other apps start with no arguments. Text Editor
+     starts with one Untitled document.
    - **Steps**:
      - `key`: a chord like `cmd-shift-n` or `⇧⌘N`. ⌘ is Super on Lulo (ADR 0017), ⌥ is Alt,
        ⌃ is Control.
@@ -70,7 +72,8 @@ runner plays the same scenario inside a private nested compositor and diffs the 
 3. Run it on Lulo. Do this on the laptop, under the screen lock, with binaries built from the
    branch under test. Build them with
    `cargo build --profile iterate --bins -p rmac-finder -p rmac-text-editor
-   -p rmac-system-settings -p rmac-calculator -p rmac-file-chooser`, plus the shell's
+   -p rmac-system-settings -p rmac-calculator -p rmac-preview
+   -p rmac-file-chooser`, plus the shell's
    `wallpaper` binary. Don't use `--bin`: it restricts every `-p` to that one binary, which leaves
    the others stale.
 

@@ -1,0 +1,28 @@
+{
+  "format": 1,
+  "scenario": "preview/find-pdf",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-27",
+  "observations": {
+    "find": {
+      "focus": {
+        "role": "search-field",
+        "value": "",
+        "selection": [
+          0,
+          0
+        ],
+        "selected_text": "",
+        "selected_all": false,
+        "label": null
+      },
+      "windows": {
+        "count": 1,
+        "front": "guide.pdf – 1 page",
+        "titles": [
+          "guide.pdf – 1 page"
+        ]
+      }
+    }
+  }
+}

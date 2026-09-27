@@ -39,7 +39,7 @@ use gpui::{
     div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AnyElement, AppContext as _,
     ClickEvent, ClipboardItem, Context, Entity, FocusHandle, Focusable as _, FontWeight, Image,
     ImageFormat, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, ParentElement as _, Render, RenderImage, ScrollHandle,
+    MouseMoveEvent, MouseUpEvent, ParentElement as _, Render, RenderImage, Role, ScrollHandle,
     ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
     WindowControlArea,
 };
@@ -48,7 +48,7 @@ use rmac_preview::layout::{self, Rect, Rotation, ThumbItem};
 use rmac_preview::metrics::{self, dark, light};
 use rmac_preview::poppler::{self, Match, TextPage};
 use rmac_preview::zoom::{self, ContentKind, Zoom};
-use rmac_ui::{mac, InputEvent, InputState};
+use rmac_ui::{mac, AccessibleTextInput as _, InputEvent, InputState};
 
 use crate::{
     ActualSize, CloseWindow, Copy, ExportAsPdf, Find, FindNext, FindPrevious, GoToPage,
@@ -66,6 +66,17 @@ const MAX_THUMBNAILS: usize = 80;
 const LINE_SCROLL: f32 = 40.0;
 
 static NEXT_WINDOW_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// macOS includes this subtitle in the accessibility/window title for a
+/// single-page PDF. Keep other subtitles in the toolbar only until their
+/// native title behaviour has been recorded.
+fn document_window_title(title: &str, subtitle: Option<&str>) -> String {
+    if subtitle == Some("1 page") {
+        format!("{title} – 1 page")
+    } else {
+        title.to_owned()
+    }
+}
 
 #[derive(Clone, Copy)]
 struct Palette {
@@ -1691,9 +1702,16 @@ impl PreviewView {
                         .items_center()
                         .text_size(px(13.0))
                         .child(
-                            rmac_ui::SearchField::new(&self.search_input)
-                                .appearance(false)
-                                .small(),
+                            div()
+                                .id("preview-find-field")
+                                .role(Role::SearchInput)
+                                .aria_label("Find")
+                                .accessible_text_input(&self.search_input, cx)
+                                .child(
+                                    rmac_ui::SearchField::new(&self.search_input)
+                                        .appearance(false)
+                                        .small(),
+                                ),
                         ),
                 )
                 .when_some(count, |field, count| {
@@ -2366,7 +2384,8 @@ impl Render for PreviewView {
         );
         self.schedule(window, cx);
 
-        let (title, _) = self.title_and_subtitle();
+        let (title, subtitle) = self.title_and_subtitle();
+        let title = document_window_title(&title, subtitle.as_deref());
         let native = rmac_ui::native_window_title(&title, "Preview");
         if native != self.title {
             window.set_window_title(&native);
@@ -2448,5 +2467,23 @@ impl Render for PreviewView {
             .when(self.go_to_page_open, |root| {
                 root.child(self.render_go_to_page(palette, width, height))
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::document_window_title;
+
+    #[test]
+    fn only_the_recorded_single_page_pdf_subtitle_joins_the_window_title() {
+        assert_eq!(
+            document_window_title("guide.pdf", Some("1 page")),
+            "guide.pdf – 1 page"
+        );
+        assert_eq!(document_window_title("photo.png", None), "photo.png");
+        assert_eq!(
+            document_window_title("guide.pdf", Some("Page 1 of 3")),
+            "guide.pdf"
+        );
     }
 }

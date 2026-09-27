@@ -46,6 +46,7 @@ APP_BINARIES = {
     "settings": ["rmac-system-settings"],
     "calculator": ["rmac-calculator"],
     "desktop": ["rmac-wallpaper", "wallpaper"],
+    "preview": ["rmac-preview"],
 }
 KEEP_ENV = {"PATH", "LANG", "TERM", "USER", "LOGNAME", "SHELL", "CARGO_TARGET_DIR", "RUST_BACKTRACE", "RUST_LOG"}
 TEXT_ROLES = {"text-field", "text-area", "search-field", "combo-box"}
@@ -528,6 +529,8 @@ class LuloRun:
                 command += ["--reveal", str(self.sandbox / launch["reveal"])]
             else:
                 command += ["--path", str(self.sandbox / launch.get("folder", "."))]
+        elif self.app == "preview":
+            command += [str(self.sandbox / launch["file"])]
         self.log = open(self.nested.logs / f"{self.sid.replace('/', '-')}.log", "w")
         self.process = subprocess.Popen(
             command, env=self.env, stdout=self.log, stderr=subprocess.STDOUT, close_fds=True,

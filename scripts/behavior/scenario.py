@@ -21,7 +21,7 @@ FORMAT = 1
 REPO = Path(__file__).resolve().parents[2]
 SCENARIO_ROOT = REPO / "tests" / "behavior"
 
-APPS = {"files", "text-editor", "settings", "calculator", "desktop"}
+APPS = {"files", "text-editor", "settings", "calculator", "desktop", "preview"}
 STEP_KINDS = {
     "key",
     "type",
@@ -137,7 +137,7 @@ def normalize_atspi_role(role: Optional[str]) -> Optional[str]:
 
 
 LULO_TITLE_SUFFIXES = re.compile(
-    r"( — (Files|Text Editor|System Settings|Settings|Calculator))?( — Edited)?( — (Files|Text Editor|System Settings|Settings|Calculator))?$"
+    r"( — (Files|Text Editor|System Settings|Settings|Calculator|Preview))?( — Edited)?( — (Files|Text Editor|System Settings|Settings|Calculator|Preview))?$"
 )
 
 

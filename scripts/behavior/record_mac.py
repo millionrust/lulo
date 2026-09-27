@@ -55,6 +55,7 @@ APPS = {
     "text-editor": {"process": "TextEdit", "bundle": "com.apple.TextEdit"},
     "settings": {"process": "System Settings", "bundle": "com.apple.systempreferences"},
     "calculator": {"process": "Calculator", "bundle": "com.apple.calculator"},
+    "preview": {"process": "Preview", "bundle": "com.apple.Preview"},
 }
 BIDI_MARKS = dict.fromkeys(map(ord, "‎‏‪‫‬‭‮⁦⁧⁨⁩"))
 
@@ -238,6 +239,10 @@ class MacRun:
             osascript('tell application "Finder" to activate')
         elif self.app == "text-editor":
             osascript('tell application "TextEdit" to make new document', 'tell application "TextEdit" to activate')
+        elif self.app == "preview":
+            document = self.sandbox / launch["file"]
+            subprocess.run(["open", "-b", APPS[self.app]["bundle"], str(document)], check=True)
+            osascript(f'tell application id {as_string(APPS[self.app]["bundle"])} to activate')
         else:
             subprocess.run(["open", "-b", APPS[self.app]["bundle"]], check=True)
             osascript(f'tell application id {as_string(APPS[self.app]["bundle"])} to activate')
@@ -551,6 +556,17 @@ function run() {{
                     time.sleep(1.0)
                 for path in created:
                     notes.extend(self.discard_autosaved(path))
+            elif self.app == "preview":
+                # Preview may already be open on the owner's documents. Close
+                # only this run's focused window, proven by the AX baseline.
+                raw = observe_raw(self.process, [], self.baseline)
+                guard = raw.get("guard") or {}
+                if raw.get("frontmost") == self.process and guard.get("focused_window_is_ours"):
+                    osascript('tell application "System Events" to key code 13 using {command down}')
+                    time.sleep(0.5)
+                if not self.was_running:
+                    osascript(f'tell application id {as_string(APPS[self.app]["bundle"])} to quit')
+                    time.sleep(0.5)
             elif not self.was_running:
                 osascript(f'tell application id {as_string(APPS[self.app]["bundle"])} to quit')
         except Stop as error:

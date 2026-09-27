@@ -532,7 +532,7 @@ impl InfoWindow {
     }
 }
 
-impl Focusable for InfoWindow {
+impl gpui::Focusable for InfoWindow {
     fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
         self.focus.clone()
     }

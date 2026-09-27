@@ -81,7 +81,13 @@ import lack their underlying services or presentation model. Text Editor's
 stale parent redraw observer was removed, but one paired 30-second private
 [probe](perf/reference-laptop-2026-09-27-text-editor-parent-invalidation.md)
 changed idle CPU from 40.5% to 39.1%, an inconclusive difference; the idle
-performance gate is still open. Neither fake power checks nor private UI
+performance gate is still open. A sequential
+[eleven-app candidate sample](perf/reference-laptop-2026-09-28-candidate-8ba31b82.json)
+against the staged binaries finds five apps above the 0.3% idle CPU target in
+private software-rendered Sway: Text Editor 40.53%, Weather 39.93%, Clock
+32.43%, System Monitor 19.63%, and Files 0.80%. Each is one 30-second idle
+window, not an installed-desktop percentile; the result confirms the gate
+needs further work and an installed rerun. Neither fake power checks nor private UI
 checks prove real host poweroff or full visual parity.
 
 Visual parity is not established by the behavior or startup passes. One local

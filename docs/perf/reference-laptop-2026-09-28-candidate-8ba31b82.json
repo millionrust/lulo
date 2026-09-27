@@ -1,0 +1,111 @@
+{
+  "format": 1,
+  "source_revision": "8ba31b82",
+  "binary_set": "inputs-8ba31b82",
+  "scope": "one launch and one 30-second idle sample per app in a private nested Sway software-rendered session; no input",
+  "limits": [
+    "These are single exploratory samples, not warm-launch percentiles or an installed-desktop measurement.",
+    "Context switches are a wake-up proxy, not rendered-frame counts."
+  ],
+  "results": [
+    {
+      "app": "rmac-app-drawer",
+      "binary_sha256": "d58bb4bad3c37cbd8a1734be8157fd960938848a1132e56faf5be40fbb1e31da",
+      "startup_ms": 319.3,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 0.0,
+      "idle_context_switches_per_second": 1.0,
+      "idle_pss_mib": 184.5
+    },
+    {
+      "app": "rmac-calculator",
+      "binary_sha256": "cc3524e116497ac2f44a16cd6250023030c84058fcb922685368c2fa0724ed4b",
+      "startup_ms": 315.9,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 0.0,
+      "idle_context_switches_per_second": 0.0,
+      "idle_pss_mib": 179.5
+    },
+    {
+      "app": "rmac-clock",
+      "binary_sha256": "6c61aca163634a82770fdf7aba01e9f6fb9d6ba7e730595bf01a7d2620582b3f",
+      "startup_ms": 331.8,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 32.433,
+      "idle_context_switches_per_second": 6.067,
+      "idle_pss_mib": 223.8
+    },
+    {
+      "app": "rmac-files",
+      "binary_sha256": "f7ee1d6cc34d58eb715ee72e9a425820fc740c189a4c4874c02477eddb4c7b45",
+      "startup_ms": 345.7,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 0.8,
+      "idle_context_switches_per_second": 0.233,
+      "idle_pss_mib": 200.3
+    },
+    {
+      "app": "rmac-notes",
+      "binary_sha256": "4b387b25cd47ab30c756f3e6f4a4cf2d9bef1f267ee5de9747b2df2b11bf984a",
+      "startup_ms": 1545.2,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 0.0,
+      "idle_context_switches_per_second": 0.0,
+      "idle_pss_mib": 187.8
+    },
+    {
+      "app": "rmac-preview",
+      "binary_sha256": "98475969b21bd2c7292baa50d2358abc41f53161479237c25bd131b4aac4eb8e",
+      "startup_ms": 321.8,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 0.0,
+      "idle_context_switches_per_second": 0.0,
+      "idle_pss_mib": 224.2
+    },
+    {
+      "app": "rmac-system-monitor",
+      "binary_sha256": "16a00990bcad03be3f15736c3a9787c5c6ae4da512985018b23a2f6dd7a803b8",
+      "startup_ms": 417.2,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 19.633,
+      "idle_context_switches_per_second": 3.5,
+      "idle_pss_mib": 208.2
+    },
+    {
+      "app": "rmac-system-settings",
+      "binary_sha256": "2ff1d8d157fbb55bf322900106fb026a7bbd834d9ef9e04e981a25b0114c56d1",
+      "startup_ms": 408.7,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 0.0,
+      "idle_context_switches_per_second": 0.033,
+      "idle_pss_mib": 208.5
+    },
+    {
+      "app": "rmac-terminal",
+      "binary_sha256": "da6860b4040cf26f525f600166769c016ad07ee5813f0033cf6d14e16060d1df",
+      "startup_ms": 358.8,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 0.0,
+      "idle_context_switches_per_second": 0.0,
+      "idle_pss_mib": 192.4
+    },
+    {
+      "app": "rmac-text-editor",
+      "binary_sha256": "c89a2ed964baa21afb2052eada0ab8c3cfc39858769bda137caa4b04482606df",
+      "startup_ms": 324.0,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 40.533,
+      "idle_context_switches_per_second": 9.3,
+      "idle_pss_mib": 202.5
+    },
+    {
+      "app": "rmac-weather",
+      "binary_sha256": "36f993392adab80bf6093aeac927f8bc4f6fa9955f1246731b1f517fe9eec9fc",
+      "startup_ms": 318.4,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 39.933,
+      "idle_context_switches_per_second": 9.9,
+      "idle_pss_mib": 195.4
+    }
+  ]
+}

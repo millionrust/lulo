@@ -33,7 +33,10 @@ The previous report measured Files at 7.60% idle CPU and 32.100 wake-ups/s.
 Its marker and XDG directories were inside Files' watched HOME or parent,
 creating filesystem events during measurement. This corrected run measures
 4.57% and 27.333/s; an independent focused run with the same layout measured
-4.58% and 27.433/s. The earlier 30-second thread sample, which attributed
+4.58% and 27.433/s. A later focused repeat of the original release binary
+measured 4.83% and 26.417/s
+([data](reference-laptop-2026-09-27-files-repeat.json)). The earlier
+30-second thread sample, which attributed
 6.767% CPU to the main UI thread, used the contaminated layout and cannot
 establish the source of the remaining cost. Files still misses the 0.3% budget;
 a frame/event-loop profile is needed before attributing a code fix. Separate
@@ -42,6 +45,13 @@ requests and 225 Wayland surface commits (Notes: zero of each); a traced
 Files process returned 54 successful inotify reads in 15 seconds. Protocol
 logging and tracing perturb timing, so those counts identify active paths,
 not benchmark rates.
+
+An unmerged Files watcher filter passed all 215 Finder package tests. In a
+controlled 30-second sibling-folder churn comparison, the original and
+filtered release binaries both measured 0.73% CPU (7.467 versus 8.100
+wake-ups/s). That workload did not establish a performance benefit and its
+lower absolute CPU is not comparable to the clean-idle 60-second runs above;
+the filter was left out of `dev` pending stronger evidence.
 
 Measured against todo.md "Performance budgets": idle CPU <=0.3% per app and <=1% for all shell surfaces combined, no idle redraw, warm launch p95 <=500 ms (<=900 ms for Files/Terminal), memory recorded. No personal data is recorded: no hostnames, home-directory paths, window titles, or user names.
 

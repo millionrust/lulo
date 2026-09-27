@@ -60,7 +60,7 @@ use gpui::{
     MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render, Result, Role,
     SharedString, Stateful, StatefulInteractiveElement as _, Styled, Svg, Toggled, Window,
 };
-use gpui_component::{Icon, IconName, StyledExt as _};
+use gpui_component::{Icon, IconName, Root, StyledExt as _};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use rmac_ui::{
     AccessibleTextInput as _, Button, InputEvent, InputState, SearchField, Slider, SliderEvent,
@@ -302,7 +302,7 @@ struct FinderView {
     /// list `sidebar_favourites` persists and every window shares.
     favourite_extras: Vec<PathBuf>,
     /// Separate Get Info windows opened from this Finder window.
-    info_windows: Vec<gpui::WindowHandle<gpui_component::Root>>,
+    info_windows: Vec<gpui::WindowHandle<Root>>,
     /// Go ▸ Go to Folder…, while its sheet is open.
     go_to: Option<go_to_folder_controller::GoToSheet>,
     /// An item Go to Folder named, selected once its folder loads.

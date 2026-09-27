@@ -40,11 +40,6 @@ impl EditorView {
                 this.on_buffer_changed(cx);
             }
         });
-        // Re-render the parent whenever the buffer notifies — InputEvent has no
-        // cursor-move variant, but `observe` fires on every `notify()` the input
-        // makes (including caret movement), keeping the line:col status live.
-        cx.observe(&input, |_, _, cx| cx.notify()).detach();
-
         // Live match recompute as the query is edited.
         let sub_find = cx.subscribe(&find_input, |this, _input, ev: &InputEvent, cx| {
             if matches!(ev, InputEvent::Change) {

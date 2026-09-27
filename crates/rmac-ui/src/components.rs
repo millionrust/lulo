@@ -473,6 +473,7 @@ pub struct ContextMenuState {
     return_focus: FocusHandle,
     active_submenu: Rc<Cell<Option<usize>>>,
     owner: gpui::EntityId,
+    submenu_opens_left: bool,
 }
 
 impl ContextMenuState {
@@ -492,6 +493,9 @@ impl ContextMenuState {
             return_focus: return_focus.clone(),
             active_submenu: Rc::new(Cell::new(None)),
             owner: cx.entity_id(),
+            // The parent menu has a 190 px minimum width; reserve the same
+            // space for its flyout and keep an 8 px window margin.
+            submenu_opens_left: position.x + px(380.0) > window.bounds().size.width - px(8.0),
         }
     }
 
@@ -699,6 +703,7 @@ impl ContextMenu {
         let return_focus = state.return_focus.clone();
         let active_submenu = state.active_submenu.clone();
         let owner = state.owner;
+        let submenu_opens_left = state.submenu_opens_left;
         let has_swatch_column = self.items.iter().any(|entry| {
             matches!(
                 entry,
@@ -779,10 +784,33 @@ impl ContextMenu {
                     });
                     let move_active = active_submenu.clone();
                     let move_owner = owner;
+                    let click_active = active_submenu.clone();
+                    let click_owner = owner;
+                    let flyout = div()
+                        .id(("rmac-menu-submenu-panel", i))
+                        .role(Role::Menu)
+                        .absolute()
+                        .top_0()
+                        .min_w(px(190.0))
+                        .py(px(5.0))
+                        .tab_group()
+                        .rounded(px(mac::radius_card()))
+                        .bg(mac::material())
+                        .border_1()
+                        .border_color(mac::separator())
+                        .shadow_lg()
+                        .occlude()
+                        .children(submenu_children);
+                    let flyout = if submenu_opens_left {
+                        flyout.right(px(190.0))
+                    } else {
+                        flyout.left_full()
+                    };
                     panel = panel.child(
                         div()
                             .id(("rmac-menu-submenu-row", i))
                             .relative()
+                            .w_full()
                             .on_mouse_move(move |_, _, cx| {
                                 if move_active.get() != Some(i) {
                                     move_active.set(Some(i));
@@ -790,30 +818,11 @@ impl ContextMenu {
                                 }
                             })
                             .on_mouse_down(MouseButton::Left, move |_, _, cx| {
-                                active_submenu.set(Some(i));
-                                cx.notify(owner);
+                                click_active.set(Some(i));
+                                cx.notify(click_owner);
                             })
                             .child(row)
-                            .when(active, |el| {
-                                el.child(
-                                    div()
-                                        .id(("rmac-menu-submenu-panel", i))
-                                        .role(Role::Menu)
-                                        .absolute()
-                                        .left_full()
-                                        .top_0()
-                                        .min_w(px(190.0))
-                                        .py(px(5.0))
-                                        .tab_group()
-                                        .rounded(px(mac::radius_card()))
-                                        .bg(mac::material())
-                                        .border_1()
-                                        .border_color(mac::separator())
-                                        .shadow_lg()
-                                        .occlude()
-                                        .children(submenu_children),
-                                )
-                            }),
+                            .when(active, |el| el.child(flyout)),
                     );
                 }
                 MenuEntry::Item {
@@ -941,6 +950,12 @@ impl ContextMenu {
             .track_focus(&menu_focus)
             .key_context(MENU_CONTEXT)
             .capture_key_down(move |event: &KeyDownEvent, window, cx| {
+                if event.keystroke.key.as_str() == "escape" && active_submenu.get().is_some() {
+                    cx.stop_propagation();
+                    active_submenu.set(None);
+                    cx.notify(owner);
+                    return;
+                }
                 let forward = match event.keystroke.key.as_str() {
                     "down" => Some(true),
                     "up" => Some(false),

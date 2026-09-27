@@ -56,6 +56,15 @@ class GuardTests(unittest.TestCase):
         with self.assertRaises(run_lulo.StepFailed):
             run_lulo.empty_viewport_point((0, 0, 48, 100), (0, 0))
 
+    def test_background_context_targets_inner_folder_list(self):
+        sidebar = (9, 53, 146, 738)
+        outer_with_status_bar = (156, 52, 1124, 748)
+        inner_folder_list = (156, 80, 1124, 692)
+        self.assertEqual(
+            run_lulo.content_viewport([sidebar, outer_with_status_bar, inner_folder_list]),
+            inner_folder_list,
+        )
+
     def test_calculator_sway_frame_normalization(self):
         self.assertEqual(run_lulo.calculator_visible_size(254, 432), (230, 408))
         self.assertEqual(run_lulo.calculator_visible_size(698, 432), (674, 408))

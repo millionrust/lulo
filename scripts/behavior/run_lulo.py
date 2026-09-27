@@ -82,6 +82,14 @@ def empty_viewport_point(box: tuple[int, int, int, int], origin: tuple[int, int]
     return origin[0] + x + width - 24, origin[1] + y + height - 24
 
 
+def content_viewport(candidates: list[tuple[int, int, int, int]]) -> tuple[int, int, int, int]:
+    """Choose the inner folder list, excluding the sidebar and status bar."""
+    wide = [box for box in candidates if box[2] >= OUTPUT_W // 2]
+    if not wide:
+        raise StepFailed("no on-screen Files content viewport to context-click")
+    return min(wide, key=lambda box: box[2] * box[3])
+
+
 def scenarios_need_file_chooser(scenarios: list[str]) -> bool:
     """The default run includes Save on Untitled, which needs the portal backend."""
 
@@ -842,10 +850,10 @@ class LuloRun:
             if role(node) in {"list", "table", "tree", "tree table", "list box"}:
                 box = extents(node)
                 if box and box[2] > 80 and box[3] > 80:
-                    candidates.append((box[2] * box[3], box))
+                    candidates.append(box)
         if not candidates:
             raise StepFailed("no on-screen Files list viewport to context-click")
-        _, box = max(candidates)
+        box = content_viewport(candidates)
         # The lower-right corner of the viewport is below the listed rows in
         # the fixture and avoids activating a file or folder.
         x, y = empty_viewport_point(box, self.window_origin())

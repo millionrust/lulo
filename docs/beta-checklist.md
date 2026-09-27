@@ -116,10 +116,10 @@ input response, soak memory, and NVIDIA results remain unmeasured.
 
 | Gate | Status | Evidence |
 |---|---|---|
-| Stable identity/role/name/state/actions on every `rmac-ui` control | **Fail** (partial) | `docs/accessibility-audit.md`: Toggle/Checkbox/Radio/dialogs/menus/toasts/traffic lights fixed this pass; `PopUpButton`, `ContextMenu` items, `ListRow`/`TreeRow` still wrap `gpui_component::Button` and are stuck at `Role::Button` until either an upstream `gpui-component`/`gpui-kit` change or a rewrite off `Button` (Blocked, not Gap, per that doc) |
+| Stable identity/role/name/state/actions on every `rmac-ui` control | **Fail** (partial) | `docs/accessibility-audit.md`, “Component × criterion” and “What still needs gpui-kit/gpui-component work”: context-menu items and list/tree rows now expose roles and names; the unused plain `PopUpButton` variant remains a code-level role gap. The audit marks this as a Gap, not an upstream Blocked issue; runtime assistive-technology review remains open. |
 | Correct tab order, visible focus ring | **Fail** (partial) | Same doc: a shared 3pt focus ring now exists and is used on the rewritten controls; everything still wrapping `Button` keeps a hardcoded 1.5px ring it cannot override (Blocked) |
-| Full keyboard operation, no pointer-only controls | **Fail** (much improved) | Terminal, Notes and Files' content surfaces were the sharpest evidence of this gate's worst failures — as of 2026-09-25 those are fixed and live-reconfirmed (ACC-01/02/03; journeys 2–4 above). The gate still fails: Control-F2 (menu-bar keyboard focus, journey 8), `accesskit_unix`'s missing `EditableText` (journeys 1–4), Notes' unnamed toolbar buttons (ACC-08), and `PopUpButton`/`ContextMenu`/`ListRow`/`TreeRow` stuck at `Role::Button` (Blocked, row above) |
-| Announcements for async status/errors | **Fail** (partial) | Toast fixed this pass; `EmptyState`'s error variant and list Loading/Empty/Error messages still have no role (Gap) |
+| Full keyboard operation, no pointer-only controls | **Fail** (much improved) | Terminal, Notes and Files' content surfaces are fixed and live-reconfirmed (ACC-01/02/03; journeys 2–4 above). Remaining gaps include `accesskit_unix`'s missing `EditableText`, the Popover trigger's mouse-only activation, Notes' unnamed toolbar buttons (ACC-08), and journey 8 keyboard checks that remain incomplete (letter typeahead, Return activation, and full keyboard-only journeys). See `docs/accessibility-audit.md`, “PopUpButton” and “What still needs gpui-kit/gpui-component work”; these are code-level findings, not Orca verification. |
+| Announcements for async status/errors | **Fail** (partial) | `docs/accessibility-audit.md`, “Component × criterion”: Toast, EmptyState errors, and List/Tree state messages have code-level announcement roles. `TextField` inline validation errors still lack a live announcement; runtime screen-reader review remains open. |
 | No clipping at 200% | **Not yet run** (S) | `docs/accessibility-audit.md`: static read-through only, no rendered check at 200%. This pass separately confirmed (nested compositor only) that a compositor output scale of 2 doesn't collapse the AT-SPI tree — a Files window still exposed all 27 nodes with named items — but that isn't a visual-clipping check |
 | Usable high-contrast colours | **Pass** (token level) | Theme contrast-ratio tests pass; no shared component hardcodes a raw color |
 | Reduced motion from the Settings portal | **Pass** (plumbing) / **Not yet run** (exercised) | Portal → theme wiring is tested end to end, but no shared component currently animates anything, so the gate has nothing live to violate yet |
@@ -270,9 +270,12 @@ document for the current, short punch list. In order of severity:
    Notes and Files no longer have the "zero accessible content" bugs that
    made this the top blocker as of 2026-09-24: ACC-01/02/03 are fixed and
    live-reconfirmed on the reference laptop this pass (§1, §3). What remains
-   release-blocking: the upstream `accesskit_unix` `EditableText` gap (not
-   fixable here), Control-F2 (journey 8), the formal Orca/I3 audit (journey
-   9, owner-only), and Notes' unnamed toolbar buttons (ACC-08).
+   release-blocking: the upstream `accesskit_unix` `EditableText` gap,
+   pointer-only Popover triggers, incomplete journey 8 keyboard coverage (letter typeahead, Return activation, and full keyboard-only journeys),
+   Notes' unnamed toolbar buttons (ACC-08), and the formal Orca/I3 audit
+   (journey 9, owner-only). Current component-level roles and remaining
+   announcement gaps are recorded in `docs/accessibility-audit.md`,
+   “Component × criterion” and “What still needs gpui-kit/gpui-component work.”
 3. **No real packaging install/remove/upgrade run** on a clean VM or the
    reference laptop, and no exercised GitHub Actions release run — not
    re-verified this pass; the pipeline is well-gated and unit-tested but has

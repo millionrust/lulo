@@ -864,20 +864,6 @@ impl WeatherView {
     }
 }
 
-#[cfg(test)]
-mod idle_tick_tests {
-    use super::next_minute_tick_delay;
-    use std::time::Duration;
-
-    #[test]
-    fn weather_clock_tick_tracks_minute_boundaries() {
-        assert_eq!(next_minute_tick_delay(120), Duration::from_secs(60));
-        assert_eq!(next_minute_tick_delay(121), Duration::from_secs(59));
-        assert_eq!(next_minute_tick_delay(179), Duration::from_secs(1));
-        assert_eq!(next_minute_tick_delay(-1), Duration::from_secs(1));
-    }
-}
-
 fn panel() -> gpui::Div {
     div()
         .flex_none()
@@ -1154,5 +1140,19 @@ impl Render for WeatherView {
                     .text_color(mac::danger())
                     .child(message)
             }))
+    }
+}
+
+#[cfg(test)]
+mod idle_tick_tests {
+    use super::next_minute_tick_delay;
+    use std::time::Duration;
+
+    #[test]
+    fn weather_clock_tick_tracks_minute_boundaries() {
+        assert_eq!(next_minute_tick_delay(120), Duration::from_secs(60));
+        assert_eq!(next_minute_tick_delay(121), Duration::from_secs(59));
+        assert_eq!(next_minute_tick_delay(179), Duration::from_secs(1));
+        assert_eq!(next_minute_tick_delay(-1), Duration::from_secs(1));
     }
 }

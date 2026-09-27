@@ -54,7 +54,12 @@ pub(super) fn unique_path(path: PathBuf) -> PathBuf {
 }
 
 pub(super) fn entry_for(path: &Path) -> Option<Entry> {
-    let name = path.file_name()?.to_string_lossy().into_owned();
+    // The filesystem root has no `file_name`, but it can still be the
+    // current folder whose information Finder shows from the background menu.
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string());
     let md = std::fs::symlink_metadata(path).ok();
     let is_dir = md.as_ref().map(|m| m.is_dir()).unwrap_or(false);
     let size_bytes = if is_dir {

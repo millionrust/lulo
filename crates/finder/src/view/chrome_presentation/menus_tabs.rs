@@ -133,6 +133,8 @@ impl FinderView {
             }
             m = m
                 .separator()
+                .command_item("Get Info", rmac_ui::shortcuts::INFO, Box::new(GetInfo))
+                .separator()
                 .item("View as Icons", Box::new(ViewAsIcons))
                 .item("View as List", Box::new(ViewAsList))
                 .item("View as Columns", Box::new(ViewAsColumns))

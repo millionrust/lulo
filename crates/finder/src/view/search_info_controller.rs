@@ -1,5 +1,11 @@
 use super::*;
 
+fn get_info_entry(selected_entry: Option<&Entry>, current_directory: &Path) -> Option<Entry> {
+    selected_entry
+        .cloned()
+        .or_else(|| entry_for(current_directory))
+}
+
 impl FinderView {
     pub(super) fn get_info(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.trash_view {
@@ -8,7 +14,11 @@ impl FinderView {
             cx.notify();
             return;
         }
-        self.info = self.selected_entry().cloned();
+        self.info = if self.applications_view {
+            self.selected_entry().cloned()
+        } else {
+            get_info_entry(self.selected_entry(), &self.cwd)
+        };
         self.info_details = self.info.as_ref().map(file_info).unwrap_or_default();
         self.info_name = None;
         if let Some(entry) = self.info.clone() {
@@ -408,5 +418,42 @@ impl FinderView {
             .justify_center()
             .bg(rmac_ui::mac::scrim())
             .child(card)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_info_without_a_selection_uses_the_current_directory() {
+        let current_directory = std::env::current_dir().unwrap();
+
+        let entry = get_info_entry(None, &current_directory).unwrap();
+
+        assert_eq!(entry.path, current_directory);
+        assert!(entry.is_dir);
+    }
+
+    #[test]
+    fn get_info_keeps_the_selected_entry_when_one_exists() {
+        let selected_path = std::env::current_exe().unwrap();
+        let selected = entry_for(&selected_path).unwrap();
+        let current_directory = std::env::current_dir().unwrap();
+
+        let entry = get_info_entry(Some(&selected), &current_directory).unwrap();
+
+        assert_eq!(entry.path, selected_path);
+    }
+
+    #[test]
+    fn get_info_can_describe_the_filesystem_root() {
+        let root = Path::new(std::path::MAIN_SEPARATOR_STR);
+
+        let entry = get_info_entry(None, root).unwrap();
+
+        assert_eq!(entry.path.as_path(), root);
+        assert_eq!(entry.name.as_ref(), root.display().to_string());
+        assert!(entry.is_dir);
     }
 }

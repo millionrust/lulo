@@ -479,7 +479,7 @@ pub struct ContextMenuState {
 impl ContextMenuState {
     /// Open a menu at `position`, transfer keyboard focus to it, and remember
     /// the invoking control so focus can be restored when it closes.
-    pub fn open<V>(
+    pub fn open<V: 'static>(
         position: Point<Pixels>,
         return_focus: &FocusHandle,
         window: &mut Window,
@@ -918,12 +918,6 @@ impl ContextMenu {
                     }
                     let hover_submenu = active_submenu.clone();
                     let hover_owner = owner;
-                    row = row.on_mouse_move(move |_, _, cx| {
-                        if hover_submenu.get().is_some() {
-                            hover_submenu.set(None);
-                            cx.notify(hover_owner);
-                        }
-                    });
                     if enabled {
                         row = row.on_activate({
                             let return_focus = return_focus.clone();
@@ -937,7 +931,16 @@ impl ContextMenu {
                             }
                         });
                     }
-                    panel = panel.child(row);
+                    panel = panel.child(
+                        div()
+                            .on_mouse_move(move |_, _, cx| {
+                                if hover_submenu.get().is_some() {
+                                    hover_submenu.set(None);
+                                    cx.notify(hover_owner);
+                                }
+                            })
+                            .child(row),
+                    );
                 }
             }
         }
@@ -1006,11 +1009,11 @@ fn render_submenu_entries(
         .into_iter()
         .enumerate()
         .filter_map(|(index, entry)| {
-            let id = (parent, index);
+            let id = format!("{parent}-{index}");
             match entry {
                 MenuEntry::Separator => Some(
                     div()
-                        .id(("rmac-submenu-separator", id))
+                        .id(format!("rmac-submenu-separator-{id}"))
                         .role(Role::Splitter)
                         .my(px(4.0))
                         .mx(px(8.0))
@@ -1076,7 +1079,7 @@ fn render_submenu_entries(
                                     .when_some(swatch, |el, color| {
                                         el.child(
                                             div()
-                                                .id(("rmac-submenu-swatch", id))
+                                                .id(format!("rmac-submenu-swatch-{id}"))
                                                 .role(Role::Image)
                                                 .aria_label(swatch_accessible_label)
                                                 .w(px(9.0))
@@ -1106,7 +1109,7 @@ fn render_submenu_entries(
                     } else {
                         Role::MenuItem
                     };
-                    let mut row = ListRow::new(("rmac-submenu-item", id), content)
+                    let mut row = ListRow::new(format!("rmac-submenu-item-{id}"), content)
                         .mx(px(5.0))
                         .px(px(8.0))
                         .disabled(!enabled)

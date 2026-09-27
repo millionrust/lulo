@@ -10,15 +10,15 @@
 //! app's root element or opaque siblings paint over it.
 
 use gpui::{
-    Action, AnyElement, App, Context, ElementId, FocusHandle, Hsla, InteractiveElement as _,
-    IntoElement, KeyBinding, KeyDownEvent, MouseButton, ParentElement as _, Pixels, Point,
-    RenderOnce, Role, SharedString, StatefulInteractiveElement as _, Styled as _, Toggled, Window,
-    anchored, deferred, div, prelude::FluentBuilder as _, px,
+    anchored, deferred, div, prelude::FluentBuilder as _, px, Action, AnyElement, App, Context,
+    ElementId, FocusHandle, Hsla, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent,
+    MouseButton, ParentElement as _, Pixels, Point, RenderOnce, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Toggled, Window,
 };
 use gpui_component::StyledExt as _;
 use std::{cell::Cell, rc::Rc};
 
-use crate::{Button, ButtonRole, ListRow, mac, shortcuts::Shortcut};
+use crate::{mac, shortcuts::Shortcut, Button, ButtonRole, ListRow};
 
 gpui::actions!(
     rmac_ui,
@@ -1185,14 +1185,12 @@ mod tests {
             color,
             Box::new(DismissMenu),
         );
-        let [
-            MenuEntry::Item {
-                label,
-                checked,
-                swatch,
-                ..
-            },
-        ] = menu.items.as_slice()
+        let [MenuEntry::Item {
+            label,
+            checked,
+            swatch,
+            ..
+        }] = menu.items.as_slice()
         else {
             panic!("swatch should stay attached to one checked menu item");
         };

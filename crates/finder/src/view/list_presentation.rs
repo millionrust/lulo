@@ -881,7 +881,6 @@ impl FinderView {
                         "down" => this.column_move_vertical(1, cx),
                         "right" => this.column_move_right(cx),
                         "left" => this.column_move_left(cx),
-                        "escape" if this.info.take().is_some() => cx.notify(),
                         _ => {}
                     }
                     return;
@@ -916,22 +915,13 @@ impl FinderView {
                     "end" => Some(last),
                     _ => None,
                 };
-                match ev.keystroke.key.as_str() {
-                    "escape" => {
-                        if this.info.take().is_some() {
-                            cx.notify();
-                        }
+                if let Some(position) = select_position {
+                    if !navigation_indices.is_empty() {
+                        this.select_single(navigation_indices[position]);
+                        cx.notify();
                     }
-                    _ => {
-                        if let Some(position) = select_position {
-                            if !navigation_indices.is_empty() {
-                                this.select_single(navigation_indices[position]);
-                                cx.notify();
-                            }
-                        } else if let Some(text) = type_select_text(ev) {
-                            this.type_select(&text, &navigation_indices, cx);
-                        }
-                    }
+                } else if let Some(text) = type_select_text(ev) {
+                    this.type_select(&text, &navigation_indices, cx);
                 }
             }))
             .when(!self.applications_view && !self.trash_view, |element| {

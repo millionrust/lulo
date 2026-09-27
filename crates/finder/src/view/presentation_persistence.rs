@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use gpui::{Context, Window};
+use gpui::{AppContext as _, Context, Window};
 use rmac_storage::{Backend as _, FileSystem};
 use serde::{Deserialize, Serialize};
 

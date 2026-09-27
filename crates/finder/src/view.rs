@@ -294,16 +294,12 @@ struct FinderView {
     /// User-added Favourites, over and above the built-in ones — the same
     /// list `sidebar_favourites` persists and every window shares.
     favourite_extras: Vec<PathBuf>,
-    info: Option<Entry>,
+    /// Separate Get Info windows opened from this Finder window.
+    info_windows: Vec<gpui::WindowHandle<gpui_component::Root>>,
     /// Go ▸ Go to Folder…, while its sheet is open.
     go_to: Option<go_to_folder_controller::GoToSheet>,
     /// An item Go to Folder named, selected once its folder loads.
     pending_select: Option<PathBuf>,
-    /// Get Info's rows, read from the file system once when it opens (and
-    /// after a rename from it), never while rendering.
-    info_details: Vec<(&'static str, String)>,
-    /// Get Info's editable Name & Extension field and the path it renames.
-    info_name: Option<(PathBuf, gpui::Entity<InputState>)>,
     open_with: Option<OpenWithPicker>,
     open_generation: u64,
     quick_look: Option<QuickLookPanel>,

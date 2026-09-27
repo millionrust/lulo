@@ -14,7 +14,6 @@ impl Render for FinderView {
         );
         let window_active = window.is_window_active();
         let window_height = f32::from(window.bounds().size.height);
-        let info = self.info.clone();
         let multi = self.tabs.len() > 1;
         let menu_at = self.menu_at.clone();
         let menu_purpose = self.menu_purpose;
@@ -115,16 +114,6 @@ impl Render for FinderView {
                         }
                         _ => {}
                     }
-                    return;
-                }
-                if this.info.is_some()
-                    && this.info_name.is_none()
-                    && event.keystroke.key.as_str() == "escape"
-                {
-                    cx.stop_propagation();
-                    this.info = None;
-                    this.info_details.clear();
-                    cx.notify();
                     return;
                 }
                 if this.help_open {
@@ -424,7 +413,6 @@ impl Render for FinderView {
                     .when(self.trash_view, |el| el.child(self.render_trash_bar(cx)))
                     .child(self.render_list(window_active, window_height, cx)),
             )
-            .when_some(info, |el, entry| el.child(self.render_info(&entry, cx)))
             .when_some(go_to_sheet, |el, sheet| el.child(sheet))
             .when_some(menu_at, |el, state| {
                 let menu = match menu_purpose {

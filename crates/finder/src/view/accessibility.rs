@@ -159,9 +159,6 @@ impl FinderView {
 
     fn accessible_dialogs(&self) -> Vec<AccessibleDialog> {
         let mut dialogs = Vec::new();
-        if let Some(entry) = &self.info {
-            dialogs.push(self.accessible_info_dialog(entry));
-        }
         if let Some(dialog) = self.accessible_conflict_dialog() {
             dialogs.push(dialog);
         }
@@ -180,30 +177,6 @@ impl FinderView {
             dialogs.push(dialog);
         }
         dialogs
-    }
-
-    fn accessible_info_dialog(&self, entry: &Entry) -> AccessibleDialog {
-        let name = sanitize_dialog_name(entry.name.as_ref());
-        let description = self
-            .info_details
-            .iter()
-            .map(|(key, value)| format!("{key}: {value}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        AccessibleDialog {
-            kind: DialogKind::GetInfo,
-            title: format!("{name} Info"),
-            description,
-            actions: vec![dialog_action(
-                "info-close",
-                "Close",
-                DialogActionKind::Normal,
-            )],
-            options: Vec::new(),
-            initial_focus: DialogFocus::Action(0),
-            document_text: None,
-            status: None,
-        }
     }
 
     fn accessible_conflict_dialog(&self) -> Option<AccessibleDialog> {

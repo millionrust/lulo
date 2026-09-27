@@ -27,7 +27,6 @@ impl FinderView {
             return;
         }
         self.menu_at = None;
-        self.info = None;
         self.open_with = None;
         let options = rmac_quick_look::Options { uncompress: true };
         let Some((handle, panel)) = rmac_quick_look::open(paths.clone(), 0, options, cx) else {

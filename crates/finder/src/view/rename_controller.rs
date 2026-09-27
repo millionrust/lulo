@@ -97,7 +97,7 @@ impl FinderView {
     /// destination share a parent), so Command-Z can undo it exactly as it
     /// undoes any other move — a plain `file_ops::rename` records nothing
     /// an Undo could act on.
-    fn rename_path_to(
+    pub(super) fn rename_path_to(
         &mut self,
         path: &Path,
         new_name: &str,
@@ -163,42 +163,6 @@ impl FinderView {
             }
         }
         Some(destination)
-    }
-
-    /// Get Info's editable Name & Extension field, as in Finder's Info
-    /// window: Return renames the item and the panel follows it.
-    pub(super) fn info_name_field(
-        &mut self,
-        entry: &Entry,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let input = cx.new(|cx| InputState::new(window, cx).default_value(entry.name.to_string()));
-        cx.subscribe(&input, |this, _input, event: &InputEvent, cx| {
-            if let InputEvent::PressEnter { .. } = event {
-                this.info_rename_commit(cx);
-            }
-        })
-        .detach();
-        self.info_name = Some((entry.path.clone(), input));
-    }
-
-    fn info_rename_commit(&mut self, cx: &mut Context<Self>) {
-        let Some((path, input)) = self.info_name.clone() else {
-            return;
-        };
-        if self.info.as_ref().map(|entry| &entry.path) != Some(&path) {
-            return;
-        }
-        let new_name = input.read(cx).value().to_string();
-        if let Some(destination) = self.rename_path_to(&path, &new_name, cx) {
-            if let Some(entry) = entry_for(&destination) {
-                self.info_details = file_info(&entry);
-                self.info = Some(entry);
-            }
-            self.info_name = Some((destination, input));
-        }
-        self.reload(cx);
     }
 }
 

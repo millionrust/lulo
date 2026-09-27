@@ -102,7 +102,6 @@ impl FinderView {
             self.selected.clear();
             self.anchor = None;
             self.renaming = None;
-            self.info = None;
             self.menu_at = None;
             if let Some(tab) = self.tabs.get_mut(self.active) {
                 tab.cwd = self.cwd.clone();

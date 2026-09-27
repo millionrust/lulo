@@ -278,8 +278,11 @@ impl FinderView {
     /// window itself closes. A window never gets a second chance to save
     /// after this runs, so the save happens before `remove_window`, not
     /// after.
-    pub(super) fn close_finder_window(&mut self, window: &mut Window, _cx: &mut Context<Self>) {
+    pub(super) fn close_finder_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.finder_persistence.close(self.finder_state());
+        for info_window in self.info_windows.drain(..) {
+            let _ = cx.update_window(info_window, |_, window, _| window.remove_window());
+        }
         window.remove_window();
     }
 }

@@ -141,6 +141,14 @@ def launch_command(binary: Path, spec: Any, fixture_dir: Path) -> list[str]:
     return [str(resolved), *smoke.fixture_arguments(spec, fixture_dir)]
 
 
+def launch_spec(app_id: str, package: str) -> Any:
+    """Return a smoke launch definition or the app's ordinary window mode."""
+    return next(
+        (spec for spec in smoke.APP_SPECS if spec.binary == package),
+        smoke.AppSpec(app_id, package),
+    )
+
+
 def run_inner(args: argparse.Namespace, work: Path) -> dict[str, Any]:
     env = smoke.isolated_environment(work)
     for name in ("DBUS_SESSION_BUS_ADDRESS", "DBUS_SESSION_BUS_PID"):
@@ -157,9 +165,9 @@ def run_inner(args: argparse.Namespace, work: Path) -> dict[str, Any]:
         binary = binary.resolve(strict=True)
         provenance = binary_provenance(binary)
 
-        spec = next((spec for spec in smoke.APP_SPECS if spec.binary == package), None)
-        if spec is None:
-            raise RuntimeError(f"no private smoke launch definition for {package}")
+        # Some installed apps are not in the nine-app startup smoke inventory.
+        # They still use their ordinary no-argument window launch path.
+        spec = launch_spec(_app_id, package)
         fixture_dir = work / "fixtures"
         smoke.create_fixtures(fixture_dir)
 

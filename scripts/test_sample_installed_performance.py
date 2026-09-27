@@ -47,6 +47,19 @@ class InstalledLaunchPreparationTests(unittest.TestCase):
             self.assertEqual(command[1:], [str(fixtures / "smoke-document.pdf")])
             self.assertTrue((fixtures / "smoke-document.pdf").read_bytes().startswith(b"%PDF-1.4"))
 
+    def test_budget_app_outside_startup_smoke_uses_plain_window_launch(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            binary = root / "rmac-text-editor"
+            binary.write_text("placeholder")
+            binary.chmod(0o755)
+
+            spec = sampler.launch_spec("org.rmac.TextEditor", binary.name)
+            command = sampler.launch_command(binary, spec, root / "fixtures")
+
+            self.assertEqual(spec.mode, "window")
+            self.assertEqual(command, [str(binary.resolve())])
+
 
 if __name__ == "__main__":
     unittest.main()

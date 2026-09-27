@@ -51,6 +51,7 @@ import argparse
 import fcntl
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -466,8 +467,76 @@ class Run:
 
     # -- the run ---------------------------------------------------------------
 
+    def desktop_files_menu_titles(self) -> None:
+        """Files titles survive focus before Files publishes its menu endpoint."""
+
+        titles = ("File", "Edit", "View", "Go")
+        foot = shutil.which("foot", path=self.env.get("PATH"))
+        if foot is None:
+            self.check(
+                "Desktop: Files menu fallback with a focused unpublished Files app id",
+                False,
+                "foot is required to create the private dummy Wayland window",
+            )
+            return
+
+        dummy = self.spawn(
+            [
+                foot,
+                "--app-id=org.rmac.Files",
+                "--title=Files menu fallback probe",
+                "sleep",
+                "60",
+            ],
+            "dummy-files-window",
+        )
+        focused = self.wait_for(
+            lambda: next(
+                (
+                    window
+                    for window in self.niri("windows") or []
+                    if window.get("app_id") == "org.rmac.Files" and window.get("focused")
+                ),
+                None,
+            ),
+            10,
+            0.2,
+        )
+        publisher = subprocess.run(
+            ["busctl", "--user", "--no-pager", "list"],
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        menu_owner = any(
+            line.split() and line.split()[0] == "org.rmac.Files.Menu"
+            for line in publisher.stdout.splitlines()
+        )
+        self.wait_for(
+            lambda: all(self.find_button(f"{title} menu") is not None for title in titles),
+            8,
+            0.2,
+        )
+        missing = [title for title in titles if self.find_button(f"{title} menu") is None]
+        alive = dummy.poll() is None
+        dummy.terminate()
+        try:
+            dummy.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            dummy.kill()
+            dummy.wait(timeout=3)
+        self.check(
+            "Desktop: Files menu fallback with a focused unpublished Files app id",
+            focused is not None and alive and publisher.returncode == 0 and not menu_owner and not missing,
+            f"focused_files_id={focused is not None}, dummy_alive={alive}, "
+            f"files_menu_published={menu_owner}, missing={missing}",
+        )
+
     def run(self) -> int:
         self.start()
+        self.desktop_files_menu_titles()
         if self.args.pointer_only:
             for label, verb in (("Cancel", None), ("Sleep", "suspend"),
                                 ("Restart", "reboot"), ("Shut Down", "poweroff")):

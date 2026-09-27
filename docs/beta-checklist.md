@@ -36,6 +36,13 @@ the installed 24/27 behavior result remains the valid release-binary result.
 Running `./install-lulo.sh` again with the existing packages will not install
 these source changes.
 
+Visual parity is not established by the behavior or startup passes. The
+current checkout has no completed Mac/Lulo screenshot-pair records under
+`target/evidence/visual-comparisons/`. The
+[comparison protocol](visual-comparison.md) and
+`scripts/audit-visual-comparisons.py` can validate future pairs and their
+provenance, but a human must still review their visible differences.
+
 | # | Blocker | Owner/agent | Size |
 |---|---|---|---|
 | 1 | Journey 5 Save-panel behavior passes in the nested run with `rmac-file-chooser` present. The earlier failure was a cold-start timing issue: the scenario observed after 1.5 s and sent Escape before the D-Bus-activated chooser's AT-SPI window was ready. It now waits 4 s before observing. `run_lulo.py` also fails preflight when the helper is missing. The chooser service is now deployed, but the live portal journey has not been retested. | agent | M |

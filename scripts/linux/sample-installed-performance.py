@@ -133,6 +133,14 @@ def binary_provenance(binary: Path) -> dict[str, Any]:
     return result
 
 
+def launch_command(binary: Path, spec: Any, fixture_dir: Path) -> list[str]:
+    """Build the smoke runner's installed-app launch command."""
+    resolved = binary.resolve(strict=True)
+    if not resolved.is_file() or not os.access(resolved, os.X_OK):
+        raise RuntimeError(f"installed executable unavailable: {binary.name}")
+    return [str(resolved), *smoke.fixture_arguments(spec, fixture_dir)]
+
+
 def run_inner(args: argparse.Namespace, work: Path) -> dict[str, Any]:
     env = smoke.isolated_environment(work)
     for name in ("DBUS_SESSION_BUS_ADDRESS", "DBUS_SESSION_BUS_PID"):
@@ -146,7 +154,14 @@ def run_inner(args: argparse.Namespace, work: Path) -> dict[str, Any]:
         binary = args.binary_dir / package
         if not binary.is_file() or not os.access(binary, os.X_OK):
             raise RuntimeError(f"installed executable unavailable: {package}")
+        binary = binary.resolve(strict=True)
         provenance = binary_provenance(binary)
+
+        spec = next((spec for spec in smoke.APP_SPECS if spec.binary == package), None)
+        if spec is None:
+            raise RuntimeError(f"no private smoke launch definition for {package}")
+        fixture_dir = work / "fixtures"
+        smoke.create_fixtures(fixture_dir)
 
         app_root = work / "app"
         ready = app_root / "ready"
@@ -154,7 +169,7 @@ def run_inner(args: argparse.Namespace, work: Path) -> dict[str, Any]:
         app_env = app_environment(env, app_root, ready)
         startup_started = time.monotonic()
         process = subprocess.Popen(
-            [str(binary)], cwd=app_env["HOME"], env=app_env,
+            launch_command(binary, spec, fixture_dir), cwd=app_env["HOME"], env=app_env,
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True,
         )

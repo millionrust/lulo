@@ -94,26 +94,31 @@ the private sample; a full installed-package budget run remains outstanding.
 The same private sampler then ran the other ten installed apps sequentially,
 with 30-second idle windows and cleanup checked after each run. The
 [per-app JSON and binary hashes](reference-laptop-2026-09-27-installed-private/)
-are retained. The first-frame marker was reached for eight of ten apps:
+are retained. The first-frame marker was reached for eight of ten apps in that
+initial batch and for the other two in the corrected follow-up run:
 
 | Installed app | Startup | Idle CPU | Context switches/s | PSS |
 |---|---:|---:|---:|---:|
+| App Drawer¹ | 282.4 ms | 0.033% | 1.000 | 183.9 MiB |
 | Calculator | 290.7 ms | 0.000% | 0.000 | 140.6 MiB |
 | Clock | 319.6 ms | 32.633% | 6.100 | 182.2 MiB |
 | Notes | 1573.3 ms | 0.000% | 0.000 | 146.3 MiB |
+| Preview¹ | 328.7 ms | 0.000% | 0.000 | 220.9 MiB |
 | System Monitor | 405.3 ms | 18.233% | 3.500 | 169.1 MiB |
 | System Settings | 395.7 ms | 0.000% | 0.033 | 167.4 MiB |
 | Terminal | 395.3 ms | 0.000% | 0.000 | 144.5 MiB |
 | Text Editor | 324.4 ms | 38.533% | 9.467 | 160.4 MiB |
 | Weather | 318.3 ms | 42.466% | 10.200 | 156.2 MiB |
 
-App Drawer exited before readiness because this generic path omits its
-service/show arguments. Preview did not map a window or write the marker within
-20 seconds. These failures are limitations of this launcher, not proof that
-either installed app is broken; both passed the separate startup smoke. The
-large CPU figures and the Notes startup delay require live-session or repeated
-checks before they can be treated as release regressions. Private Sway uses
-software rendering and the sampler performs no interaction or pixel checks.
+¹ App Drawer and Preview were measured in a later sequential private run after
+the sampler adopted the startup smoke's supervised `--service --show` arguments
+and generated PDF fixture. Their earlier `rmac-app-drawer.json` and
+`rmac-preview.json` records document launcher failures, superseded by
+`app-drawer.json` and `preview.json`. All eleven apps now have one exploratory
+private sample. The large CPU figures and Notes startup delay require
+live-session or repeated checks before they can be treated as release
+regressions. Private Sway uses software rendering and the sampler performs no
+interaction or pixel checks.
 
 Measured against todo.md "Performance budgets": idle CPU <=0.3% per app and <=1% for all shell surfaces combined, no idle redraw, warm launch p95 <=500 ms (<=900 ms for Files/Terminal), memory recorded. No personal data is recorded: no hostnames, home-directory paths, window titles, or user names.
 

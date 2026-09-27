@@ -1,0 +1,34 @@
+{
+  "app": "rmac-preview",
+  "binary": "rmac-preview",
+  "binary_provenance": {
+    "dpkg_owner_verified": true,
+    "dpkg_package": "rmac-apps",
+    "dpkg_version": "0.9.0~beta.1-38",
+    "resolved_path": "/usr/bin/rmac-preview",
+    "sha256": "289fc56962317925bef895409c662f4f765347efa00bf43eb7d64452b1ab92b4"
+  },
+  "captured_at": "2026-09-27T14:04:56Z",
+  "display_name": "Preview",
+  "idle": {
+    "context_switches_per_second": 0.0,
+    "cpu_percent_one_core": 0.0,
+    "process_count": 1,
+    "pss_mib": 220.9,
+    "seconds": 30.0
+  },
+  "limits": [
+    "No input was injected; function, navigation, and control behavior are untested.",
+    "No screenshot or pixel comparison was performed; visual quality and feel are untested.",
+    "Nested Sway and software rendering differ from the installed Lulo desktop.",
+    "Context switches are a wakeup proxy, not a count of rendered frames.",
+    "One launch and a short idle interval are exploratory samples, not a percentile or release gate."
+  ],
+  "schema_version": 1,
+  "scope": "single_installed_app_private_nested_session",
+  "startup": {
+    "elapsed_ms": 328.7,
+    "marker": "first_gpui_frame_marker",
+    "measured_from": "immediately_before_spawn"
+  }
+}

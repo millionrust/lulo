@@ -203,6 +203,18 @@ class Run:
     def find_button(self, label: str):
         return self.find_node(("push button", "button"), lambda name: name == label)
 
+    def capture_surface(self, name: str) -> None:
+        """Save a reviewable screenshot from this private compositor only."""
+        if not self.args.capture_dir:
+            return
+        directory = Path(self.args.capture_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+        destination = directory / f"{name}.png"
+        result = subprocess.run(["grim", str(destination)], env=self.env,
+                                capture_output=True, text=True, timeout=10, check=False)
+        self.check(f"Visual capture: {name}", result.returncode == 0,
+                   "" if result.returncode == 0 else result.stderr[-300:])
+
     def find_menu_item(self, prefix: str):
         return self.find_node(("menu item",), lambda name: name.startswith(prefix))
 
@@ -282,6 +294,8 @@ class Run:
         self.check(f"{label}: the menu's Down presses reach its confirmation",
                    self.retry_until(lambda: self.open_confirmation_via_menu(item_prefix),
                                     lambda: self.find_button(label)))
+        if self.find_button(label) is not None:
+            self.capture_surface(f"session-{item_prefix.lower().replace('…', '').replace(' ', '-')}")
         self.keys.key("escape")
         closed = self.wait_for(lambda: self.find_button(label) is None, 10)
         self.check(f"{label}: Escape cancels the confirmation", closed)
@@ -358,6 +372,7 @@ class Run:
         self.check(f"Power dialog: {label} is on screen (AT-SPI)", button)
         if button is None:
             return
+        self.capture_surface(f"power-dialog-{label.lower().replace(' ', '-')}")
         self.check(f"Power dialog: {label} accepts a pointer click", self.click_button(label))
         if systemctl_verb is None:
             self.check(f"Power dialog: {label} cancels it and never touches systemctl",
@@ -543,6 +558,7 @@ def main() -> int:
     parser.add_argument("--bin-dir", help="directory with this branch's top-bar, dock, rmac-shortcut-dispatch")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--pointer-only", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--capture-dir", help="save private-compositor dialog screenshots here")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not args.bin_dir:

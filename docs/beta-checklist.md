@@ -18,7 +18,10 @@ The reference PC now has the `0e3fa470` `rmac-apps` and `rmac-session`
 `0.9.0~beta.1-38` package set. The installed Files, Preview, and top-bar
 binary hashes match their staged package contents. The installed binaries
 passed 28/28 nested shutdown checks and 41/41 power-dialog checks with fake
-`systemctl`; no live power action was taken. The isolated startup smoke passed
+`systemctl`. On the live installed session, AT-SPI opened the Lulo menu,
+activated Shut Down…, found its confirmation, and clicked Cancel; the dialog
+closed without a power request. Actual pointer activation and poweroff remain
+unverified. The isolated startup smoke passed
 9/9 apps against the installed binaries, proving startup readiness only. A
 private Terminal typed-command roundtrip also passed: the marker appeared in
 both the echoed command and its executed output. The

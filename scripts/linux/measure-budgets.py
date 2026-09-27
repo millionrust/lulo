@@ -625,10 +625,31 @@ def discover_binary(executable: str, extra_dirs: list[Path]) -> Optional[Path]:
     return None
 
 
-def start_app(binary: Path, ready_file: Path) -> subprocess.Popen[bytes]:
-    ready_file.unlink(missing_ok=True)
-    environment = os.environ.copy()
+def app_environment(environ: dict[str, str], app_temp: Path, ready_file: Path) -> dict[str, str]:
+    """Keep each measured app's files out of the owner's home directory.
+
+    The live Wayland and D-Bus sockets must remain reachable for this
+    reference-session measurement, so XDG_RUNTIME_DIR is deliberately kept.
+    """
+
+    environment = environ.copy()
+    environment["HOME"] = str(app_temp)
+    for key, name in (
+        ("XDG_CONFIG_HOME", "config"),
+        ("XDG_DATA_HOME", "data"),
+        ("XDG_STATE_HOME", "state"),
+        ("XDG_CACHE_HOME", "cache"),
+    ):
+        directory = app_temp / name
+        directory.mkdir(exist_ok=True)
+        environment[key] = str(directory)
     environment[READY_FILE_ENV] = str(ready_file)
+    return environment
+
+
+def start_app(binary: Path, ready_file: Path, app_temp: Path) -> subprocess.Popen[bytes]:
+    ready_file.unlink(missing_ok=True)
+    environment = app_environment(dict(os.environ), app_temp, ready_file)
     return subprocess.Popen(
         [str(binary)],
         env=environment,
@@ -761,7 +782,7 @@ def measure_app(
     markers: list[str] = []
     for index in range(warmups):
         ready_file = temp_dir / f"warmup-{index}.ready"
-        process = start_app(binary, ready_file)
+        process = start_app(binary, ready_file, temp_dir)
         try:
             wait_for_interactive(process, ready_file, app_id, startup_timeout)
         finally:
@@ -770,7 +791,7 @@ def measure_app(
     samples_ms: list[float] = []
     for index in range(repetitions):
         ready_file = temp_dir / f"startup-{index}.ready"
-        process = start_app(binary, ready_file)
+        process = start_app(binary, ready_file, temp_dir)
         try:
             elapsed_seconds, marker = wait_for_interactive(
                 process, ready_file, app_id, startup_timeout
@@ -793,7 +814,7 @@ def measure_app(
     }
 
     ready_file = temp_dir / "idle.ready"
-    process = start_app(binary, ready_file)
+    process = start_app(binary, ready_file, temp_dir)
     idle_result: Optional[dict[str, Any]] = None
     try:
         wait_for_interactive(process, ready_file, app_id, startup_timeout)

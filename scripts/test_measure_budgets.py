@@ -14,6 +14,7 @@ import importlib.util
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 SCRIPT = Path(__file__).parent / "linux" / "measure-budgets.py"
@@ -22,6 +23,35 @@ assert SPEC is not None and SPEC.loader is not None
 measure_budgets = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = measure_budgets
 SPEC.loader.exec_module(measure_budgets)
+
+
+class AppEnvironmentTests(unittest.TestCase):
+    def test_measured_app_uses_private_home_and_xdg_files_but_live_session_sockets(self):
+        with TemporaryDirectory() as directory:
+            app_temp = Path(directory)
+            original = {
+                "HOME": "/home/owner",
+                "XDG_CONFIG_HOME": "/home/owner/.config",
+                "XDG_RUNTIME_DIR": "/run/user/1000",
+                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+                "WAYLAND_DISPLAY": "wayland-1",
+            }
+            ready = app_temp / "startup.ready"
+            result = measure_budgets.app_environment(original, app_temp, ready)
+            self.assertEqual(original["HOME"], "/home/owner")
+            self.assertEqual(result["HOME"], directory)
+            for key, name in (
+                ("XDG_CONFIG_HOME", "config"),
+                ("XDG_DATA_HOME", "data"),
+                ("XDG_STATE_HOME", "state"),
+                ("XDG_CACHE_HOME", "cache"),
+            ):
+                self.assertEqual(result[key], str(app_temp / name))
+                self.assertTrue((app_temp / name).is_dir())
+            self.assertEqual(result["XDG_RUNTIME_DIR"], original["XDG_RUNTIME_DIR"])
+            self.assertEqual(result["DBUS_SESSION_BUS_ADDRESS"], original["DBUS_SESSION_BUS_ADDRESS"])
+            self.assertEqual(result["WAYLAND_DISPLAY"], original["WAYLAND_DISPLAY"])
+            self.assertEqual(result[measure_budgets.READY_FILE_ENV], str(ready))
 
 
 class ParseProcStatTests(unittest.TestCase):

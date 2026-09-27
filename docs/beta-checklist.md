@@ -16,7 +16,7 @@ these product, accessibility, security, and packaging gates remain open.
 | 2 | Accessibility remains a release gate: AT-SPI `EditableText` is absent upstream; ACC-08 and role/name/action gaps remain; Control-F2 is nested-confirmed but not Orca-confirmed; and no owner-run Orca/I3 audit exists. See journeys 1–5 and 8–9 below. | agent / owner / upstream | L |
 | 3 | A local amd64 package candidate was built from `8ae3a9eb`: the native pair and pinned compositor packages pass `verify-native-packages.py`, and staged artifact checksums pass. Packaging lifecycle evidence is still missing: no clean Ubuntu 26.04 install/upgrade/uninstall run and no GitHub Actions Release workflow run. Green dev CI does not exercise that release pipeline. | agent / owner VM | L |
 | 4 | Security gate remains **Fail**. Three accepted Low findings remain (SR-15, SR-18, SR-29), and 24 of 80 checks need native-station evidence; no Beta station has run. The verifier must continue to fail closed until its evidence requirements are met. | agent / owner stations | L |
-| 5 | Performance evidence is incomplete and the current checklist records a failing budget: Clock idle CPU/wake-ups remain over budget; frame pacing, input response, soak memory, and NVIDIA results are unmeasured. | agent | M |
+| 5 | Release-binary performance evidence now covers nine apps: all nine pass their warm-launch budgets, but Files, System Monitor, Text Editor, Clock, and Weather exceed the 0.3% idle CPU budget. Apps and Preview could not be measured by the generic launcher. Frame pacing, input response, soak memory, and NVIDIA results remain unmeasured. See the [2026-09-27 report](perf/reference-laptop-2026-09-27-release.md). | agent | M |
 | 6 | Release-facing install/readiness language still needs the owner's decision before publication so README and install guidance match the early-access Beta scope. | **owner** | S |
 
 **What changed this pass, with real evidence:** journeys 2 (Files), 3
@@ -96,25 +96,21 @@ JSON/parsing logic, not a live run.
 
 | Metric | Budget | Status |
 |---|---|---|
-| Warm launch to interactive | p95 ≤ 500 ms (900 ms Files/Terminal) | **Clock measured 2026-09-26** with no Cargo contention: p95 183.5 ms over five launches (+1 warm-up), using the app's ready marker. Earlier Notes/System Monitor/Settings values remain from a contended run; see [Clock before/after report](perf/reference-laptop-2026-09-26-clock.md) |
-| Idle CPU | ≤ 0.3%/app, ≤ 1% shell combined | Shell values remain the 2026-09-25 read-only run: top bar 0.27%, Dock 0.0–0.1%, wallpaper 0.0–0.3%, other listed surfaces 0.0%, combined under 1%. Clock was measured before/after on 2026-09-26: 3.767% → 0.467%; the 87.6% drop still leaves it 0.167 percentage points over budget. See [Clock report](perf/reference-laptop-2026-09-26-clock.md) |
-| Idle wake-ups | none while nothing changes | Clock fell from 41.933/s to 3.200/s (92.4% reduction), but remains above its 12/min budget. Shell wake-ups have not been re-measured since 2026-09-24. Frame timing is not measured by the current harness; see [Clock report](perf/reference-laptop-2026-09-26-clock.md) |
+| Warm launch to interactive | p95 ≤ 500 ms (900 ms Files/Terminal) | **Pass for nine measured apps** on the 2026-09-27 release build: all used the ready-file marker, with p95 from 144.2 ms (Calculator) to 250.6 ms (Notes). Apps and Preview require different launch inputs and remain unmeasured. See [release-binary report](perf/reference-laptop-2026-09-27-release.md). |
+| Idle CPU | ≤ 0.3%/app, ≤ 1% shell combined | **Fail:** Files 7.60%, System Monitor 3.70%, Clock 1.78%, Text Editor 0.63%, Weather 0.60% in the isolated 60-second release-binary run; the other four measured apps pass. Shell values remain from the 2026-09-25 read-only run (combined under 1%) and were excluded from this run. |
+| Idle wake-ups | none while nothing changes | **Fail or needs attribution:** Files 32.100/s, Clock 12.283/s, Text Editor 6.267/s, Weather 6.233/s, and System Monitor 3.150/s. Clock's visible second hand and System Monitor's live metrics account for some expected activity, but the CPU budget still fails. See [release-binary report](perf/reference-laptop-2026-09-27-release.md). |
 | Input to visible response | p95 ≤ 50 ms | **Not yet run** — no frame-timing harness exists yet |
 | 60/120 Hz animation frame budget | ≥ 99% / ≥ 95% within budget | **Not yet run** — `docs/performance-baseline.md` notes no per-frame trace is available yet |
 | Memory (8-hour soak) | per-app budget, no leak | **Not yet run** |
 | Repeat on an NVIDIA system | required before Beta | **Not yet run** — no NVIDIA station in the matrix yet |
 
-Evidence: [docs/perf/reference-laptop-2026-09-24.md](perf/reference-laptop-2026-09-24.md)
-is the first real run (system audit, 2026-09-24); the Clock before/after
-run on 2026-09-26 is documented at
-[docs/perf/reference-laptop-2026-09-26-clock.md](perf/reference-laptop-2026-09-26-clock.md).
-See
-[docs/system-audit-2026-09-24.md](system-audit-2026-09-24.md). This pass adds
-a 2026-09-25 read-only re-measurement of shell idle CPU and a 2026-09-26
-focused Clock idle/launch comparison. **Status: Fail** — Clock's large idle
-regression is substantially reduced, but its idle CPU and wake-up budgets
-still fail; frame pacing, input response, soak memory, and NVIDIA results
-remain unmeasured.
+Earlier evidence: [system audit](perf/reference-laptop-2026-09-24.md),
+[Clock before/after](perf/reference-laptop-2026-09-26-clock.md), and
+[system-audit notes](system-audit-2026-09-24.md). The current
+[release-binary run](perf/reference-laptop-2026-09-27-release.md) used a
+temporary HOME and XDG directories per app, no Cargo contention, and one app
+at a time. **Status: Fail** — five apps exceed idle CPU budget; frame pacing,
+input response, soak memory, and NVIDIA results remain unmeasured.
 
 ## 3. Accessibility gates (todo.md)
 
@@ -196,13 +192,15 @@ those sections describe, not an understatement of a bigger problem. The
 placeholder top-bar mark and the absence of a signed APT repository are
 also still named and accurate.
 
-## 8. CI
+## 8. CI (historical 2026-09-24 failure snapshot)
 
-**Checked directly this pass** via `ssh jacob@192.168.18.52 'gh run list -R
+Current `dev` CI is green at `a1150511` ([CI](https://github.com/millionrust/lulo/actions/runs/36263486076),
+[quality gates](https://github.com/millionrust/lulo/actions/runs/36263485988)).
+The old result was checked via `ssh jacob@192.168.18.52 'gh run list -R
 millionrust/lulo --branch dev --limit 3'` (the laptop has `gh` auth). The
 `dev` HEAD at the start of this pass (`3ca78f24`, run
 [36151133746](https://github.com/millionrust/lulo/actions/runs/36151133746))
-is **red**:
+was **red**:
 
 | Job | Result | Cause | Fixed this pass? |
 |---|---|---|---|
@@ -219,8 +217,8 @@ validated locally (`rustfmt --edition 2021 --check
 crates/text-editor/src/view/startup.rs`; `python3 -m pytest
 scripts/test_application_icons.py`, 4 passed) — per `AGENTS.md`, no cargo was
 run on the Mac; both fixes were cross-checked against the laptop's own
-`rustfmt`/`pytest` too. The two macOS compile errors are real, current, and
-**not fixed** — they need an agent with cargo and a macOS build target.
+`rustfmt`/`pytest` too. The two macOS compile errors described here were
+fixed in later commits and the current macOS job passes.
 `linux-2604` (the Ubuntu 26.04 hosted-runner trial) is still explicitly
 non-blocking per `todo.md`.
 

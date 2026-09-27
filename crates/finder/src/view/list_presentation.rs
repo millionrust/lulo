@@ -802,6 +802,19 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &PasteItems, _, cx| this.paste(cx)))
             .on_action(cx.listener(|this, _: &UndoOperation, _, cx| this.start_undo(cx)))
             .on_action(cx.listener(|this, _: &MakeAlias, _, cx| this.make_alias(cx)))
+            .on_action(cx.listener(|this, _: &TagRed, _, cx| this.set_selected_tag("red", cx)))
+            .on_action(
+                cx.listener(|this, _: &TagOrange, _, cx| this.set_selected_tag("orange", cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &TagYellow, _, cx| this.set_selected_tag("yellow", cx)),
+            )
+            .on_action(cx.listener(|this, _: &TagGreen, _, cx| this.set_selected_tag("green", cx)))
+            .on_action(cx.listener(|this, _: &TagBlue, _, cx| this.set_selected_tag("blue", cx)))
+            .on_action(
+                cx.listener(|this, _: &TagPurple, _, cx| this.set_selected_tag("purple", cx)),
+            )
+            .on_action(cx.listener(|this, _: &TagGray, _, cx| this.set_selected_tag("gray", cx)))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
             .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
             .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))

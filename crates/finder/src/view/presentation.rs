@@ -424,6 +424,7 @@ impl Render for FinderView {
                         self.trash_view,
                         self.applications_view,
                         undo_label,
+                        self.selected_tag_checks(),
                         self.file_words,
                     ),
                     MenuPurpose::Sort => Self::build_sort_menu(state.position(), sort_key),

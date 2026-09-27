@@ -31,6 +31,7 @@ impl FinderView {
         trash_view: bool,
         applications_view: bool,
         undo_label: Option<String>,
+        tag_checks: [rmac_ui::MenuCheck; 7],
         file_words: rmac_locale::FileVocabulary,
     ) -> rmac_ui::ContextMenu {
         let has_selection = compress_label.is_some();
@@ -117,7 +118,16 @@ impl FinderView {
                 .item("Make Alias", Box::new(MakeAlias))
                 .command_item("Quick Look", rmac_ui::shortcuts::SPACE, Box::new(QuickLook))
                 .separator()
-                .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(CopyItems));
+                .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(CopyItems))
+                .separator()
+                .header("Tags")
+                .checked_item("Red", tag_checks[0], Box::new(TagRed))
+                .checked_item("Orange", tag_checks[1], Box::new(TagOrange))
+                .checked_item("Yellow", tag_checks[2], Box::new(TagYellow))
+                .checked_item("Green", tag_checks[3], Box::new(TagGreen))
+                .checked_item("Blue", tag_checks[4], Box::new(TagBlue))
+                .checked_item("Purple", tag_checks[5], Box::new(TagPurple))
+                .checked_item("Gray", tag_checks[6], Box::new(TagGray));
         } else {
             m = m.command_item(
                 "New Folder",

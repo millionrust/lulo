@@ -1,6 +1,79 @@
 use super::*;
+use std::path::Path;
+
+#[cfg(target_os = "macos")]
+const FILE_TAG_XATTR: &str = "com.rmac.tag";
+#[cfg(not(target_os = "macos"))]
+const FILE_TAG_XATTR: &str = "user.rmac.tag";
+
+const FILE_TAGS: [&str; 7] = ["red", "orange", "yellow", "green", "blue", "purple", "gray"];
 
 impl FinderView {
+    /// Finder-style color tags persisted in an app-owned extended attribute.
+    /// This avoids touching file contents or ownership.
+    pub(super) fn set_selected_tag(&mut self, tag: &'static str, cx: &mut Context<Self>) {
+        let paths = self.selected_paths();
+        if paths.is_empty() {
+            return;
+        }
+        let remove_tag = FILE_TAGS
+            .iter()
+            .position(|candidate| *candidate == tag)
+            .is_some_and(|index| self.selected_tag_checks()[index] == rmac_ui::MenuCheck::On);
+        let mut failures = Vec::new();
+        let mut updated = 0usize;
+        for path in paths {
+            let result = if remove_tag {
+                clear_file_tag(&path)
+            } else {
+                write_file_tag(&path, tag)
+            };
+            if let Err(error) = result {
+                failures.push(format!("{}: {error}", path.display()));
+            } else {
+                updated += 1;
+            }
+        }
+        if failures.is_empty() {
+            self.operation_error = None;
+            self.operation_notice = Some(
+                format!(
+                    "{} the {tag} tag {} {updated} item{}",
+                    if remove_tag { "Removed" } else { "Applied" },
+                    if remove_tag { "from" } else { "to" },
+                    if updated == 1 { "" } else { "s" }
+                )
+                .into(),
+            );
+        } else {
+            self.operation_notice = None;
+            self.operation_error =
+                Some(format!("Could not tag selected item(s): {}", failures.join("; ")).into());
+        }
+        cx.notify();
+    }
+
+    pub(super) fn selected_tag_checks(&self) -> [rmac_ui::MenuCheck; 7] {
+        let paths = self.selected_paths();
+        let values = paths
+            .iter()
+            .map(|path| read_file_tag(path).ok())
+            .collect::<Vec<_>>();
+        std::array::from_fn(|index| {
+            let matches = values
+                .iter()
+                .filter(|value| value.as_deref() == Some(FILE_TAGS[index].as_bytes()))
+                .count();
+            if matches == 0 {
+                rmac_ui::MenuCheck::None
+            } else if matches == paths.len() {
+                rmac_ui::MenuCheck::On
+            } else {
+                rmac_ui::MenuCheck::Mixed
+            }
+        })
+    }
+
     // ---- operations ----
     pub(super) fn new_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.block_mutation_during_transfer(cx) {
@@ -120,5 +193,55 @@ impl FinderView {
         self.operation_error =
             Some("Delete Immediately needs a confirmation step that isn't available yet".into());
         cx.notify();
+    }
+}
+
+fn write_file_tag(path: &Path, tag: &str) -> Result<(), rustix::io::Errno> {
+    rustix::fs::setxattr(
+        path,
+        FILE_TAG_XATTR,
+        tag.as_bytes(),
+        rustix::fs::XattrFlags::empty(),
+    )
+}
+
+fn clear_file_tag(path: &Path) -> Result<(), rustix::io::Errno> {
+    rustix::fs::removexattr(path, FILE_TAG_XATTR)
+}
+
+fn read_file_tag(path: &Path) -> Result<Vec<u8>, rustix::io::Errno> {
+    let mut buffer = [0u8; 32];
+    let length = rustix::fs::getxattr(path, FILE_TAG_XATTR, &mut buffer)?;
+    Ok(buffer[..length].to_vec())
+}
+
+#[cfg(test)]
+mod tag_tests {
+    use super::{clear_file_tag, read_file_tag, write_file_tag, FILE_TAG_XATTR};
+    use std::fs;
+
+    #[test]
+    fn selected_tag_is_persisted_as_file_metadata() {
+        let path = std::env::temp_dir().join(format!("rmac-tag-test-{}.txt", uuid::Uuid::new_v4()));
+        fs::write(&path, "file contents remain unchanged").unwrap();
+
+        if let Err(error) = write_file_tag(&path, "blue") {
+            let _ = fs::remove_file(path);
+            assert!(
+                error == rustix::io::Errno::NOTSUP
+                    || error == rustix::io::Errno::OPNOTSUPP
+                    || error == rustix::io::Errno::PERM
+                    || error == rustix::io::Errno::ACCESS,
+                "unexpected extended attribute error: {error}"
+            );
+            return;
+        }
+        let stored = read_file_tag(&path).unwrap();
+
+        assert_eq!(stored.as_slice(), b"blue");
+        assert_eq!(fs::read(&path).unwrap(), b"file contents remain unchanged");
+        clear_file_tag(&path).unwrap();
+        assert!(read_file_tag(&path).is_err());
+        let _ = fs::remove_file(path);
     }
 }

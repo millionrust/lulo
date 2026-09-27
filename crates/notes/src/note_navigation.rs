@@ -22,6 +22,7 @@ impl NotesView {
         });
         let current = self.session.folder_selection();
         let has_selected_folder = matches!(current, FolderSelection::Folder(_));
+        let view = cx.entity();
         let mut rows = div()
             .id("notes-folders")
             .role(Role::ListBox)
@@ -67,7 +68,10 @@ impl NotesView {
                                             .menu("Delete Folder…", Box::new(DeleteSelectedFolder))
                                     }),
                             )
-                            .child(
+                            .child(accessible_icon_button(
+                                "new-folder",
+                                "New Folder",
+                                self.is_interactive_ready(),
                                 Button::new("new-folder", "")
                                     .icon(IconName::Plus)
                                     .ghost()
@@ -76,7 +80,9 @@ impl NotesView {
                                     .disabled(!self.is_interactive_ready())
                                     .tooltip("New Folder")
                                     .on_click(cx.listener(|this, _, _, cx| this.create_folder(cx))),
-                            ),
+                                view,
+                                |this, _, cx| this.create_folder(cx),
+                            )),
                     ),
             )
             .child(folder_row(

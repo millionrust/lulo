@@ -39,6 +39,33 @@ pub(super) fn glyph_button(
         .text_color(toolbar_glyph())
 }
 
+/// Give an icon-only component button an accessibility name and a Click
+/// action. The inner button keeps its current mouse behavior; disabled
+/// controls do not publish a Click action.
+pub(super) fn accessible_icon_button(
+    id: &'static str,
+    name: &'static str,
+    enabled: bool,
+    button: impl IntoElement,
+    view: Entity<NotesView>,
+    activate: impl Fn(&mut NotesView, &mut Window, &mut Context<NotesView>) + 'static,
+) -> impl IntoElement {
+    div()
+        .id(SharedString::from(format!("{id}-a11y")))
+        .role(Role::Button)
+        .aria_label(name)
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .when(enabled, move |element| {
+            element.on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
+                view.update(cx, |this, cx| activate(this, window, cx));
+            })
+        })
+        .child(button)
+}
+
 impl NotesView {
     /// Pointer handlers that turn a press-and-drag on a toolbar's empty area
     /// into a window move.
@@ -98,19 +125,20 @@ impl NotesView {
         // publish a named, actionable wrapper so AT clients can reliably
         // identify and activate New Note.
         let view = cx.entity();
-        let compose = div()
-            .id("compose-a11y")
-            .role(Role::Button)
-            .aria_label("New Note")
-            .when(ready, |element| {
-                element.on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
-                    view.update(cx, |this, cx| this.create_note(cx));
-                })
-            })
-            .child(compose_button);
+        let compose = accessible_icon_button(
+            "compose",
+            "New Note",
+            ready,
+            compose_button,
+            view.clone(),
+            |this, _, cx| this.create_note(cx),
+        );
 
         let format = capsule("format-capsule")
-            .child(
+            .child(accessible_icon_button(
+                "checklist",
+                "Checklist",
+                ready && !deleted && has_note && !preview_visible,
                 glyph_button(
                     "checklist",
                     glyphs::CHECKLIST,
@@ -119,8 +147,13 @@ impl NotesView {
                 )
                 .disabled(!ready || deleted || !has_note || preview_visible)
                 .on_click(cx.listener(|this, _, window, cx| this.insert_checklist(window, cx))),
-            )
-            .child(
+                view.clone(),
+                |this, window, cx| this.insert_checklist(window, cx),
+            ))
+            .child(accessible_icon_button(
+                "add-image",
+                "Add Photo…",
+                ready && !deleted && has_note && !note_save_pending,
                 glyph_button(
                     "add-image",
                     glyphs::ATTACH,
@@ -130,10 +163,15 @@ impl NotesView {
                 .busy(attachment_busy)
                 .disabled(!ready || deleted || !has_note || note_save_pending)
                 .on_click(cx.listener(|this, _, _, cx| this.choose_image_attachment(cx))),
-            );
+                view.clone(),
+                |this, _, cx| this.choose_image_attachment(cx),
+            ));
 
         let more = capsule("note-capsule")
-            .child(
+            .child(accessible_icon_button(
+                "move-note",
+                "Move Note…",
+                ready && !deleted && has_note,
                 glyph_button(
                     "move-note",
                     glyphs::FOLDER,
@@ -142,7 +180,9 @@ impl NotesView {
                 )
                 .disabled(!ready || deleted || !has_note)
                 .on_click(cx.listener(|this, _, _, cx| this.begin_move_note(cx))),
-            )
+                view.clone(),
+                |this, _, cx| this.begin_move_note(cx),
+            ))
             .child(
                 glyph_button("note-more", glyphs::MORE, CAPSULE_BUTTON_WIDTH, "More")
                     .disabled(!ready || !has_note)

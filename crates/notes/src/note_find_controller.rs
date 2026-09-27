@@ -91,6 +91,7 @@ impl NotesView {
     }
 
     pub(super) fn render_note_find_bar(&self, cx: &mut Context<Self>) -> AnyElement {
+        let view = cx.entity();
         let query_empty = self.note_find_input.read(cx).value().is_empty();
         let status: SharedString = if query_empty {
             "".into()
@@ -118,7 +119,10 @@ impl NotesView {
                     .w(px(220.0))
                     .child(rmac_ui::SearchField::new(&self.note_find_input).appearance(true)),
             )
-            .child(
+            .child(accessible_icon_button(
+                "note-find-prev",
+                "Previous match",
+                true,
                 Button::new("note-find-prev", "")
                     .icon(IconName::ChevronUp)
                     .ghost()
@@ -127,15 +131,22 @@ impl NotesView {
                     .on_click(
                         cx.listener(|this, _, window, cx| this.note_find_previous(window, cx)),
                     ),
-            )
-            .child(
+                view.clone(),
+                |this, window, cx| this.note_find_previous(window, cx),
+            ))
+            .child(accessible_icon_button(
+                "note-find-next",
+                "Next match",
+                true,
                 Button::new("note-find-next", "")
                     .icon(IconName::ChevronDown)
                     .ghost()
                     .with_size(Size::XSmall)
                     .tooltip("Next match")
                     .on_click(cx.listener(|this, _, window, cx| this.note_find_next(window, cx))),
-            )
+                view.clone(),
+                |this, window, cx| this.note_find_next(window, cx),
+            ))
             .child(
                 div()
                     .min_w(px(56.0))
@@ -144,14 +155,19 @@ impl NotesView {
                     .child(status),
             )
             .child(div().flex_1())
-            .child(
+            .child(accessible_icon_button(
+                "note-find-close",
+                "Done",
+                true,
                 Button::new("note-find-close", "")
                     .icon(IconName::Close)
                     .ghost()
                     .with_size(Size::XSmall)
                     .tooltip("Done")
                     .on_click(cx.listener(|this, _, window, cx| this.close_note_find(window, cx))),
-            )
+                view,
+                |this, window, cx| this.close_note_find(window, cx),
+            ))
             .into_any_element()
     }
 }

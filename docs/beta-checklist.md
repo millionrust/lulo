@@ -21,7 +21,10 @@ passed 28/28 nested shutdown checks and 41/41 power-dialog checks with fake
 `systemctl`. On the live installed session, AT-SPI opened the Lulo menu,
 activated Shut Down…, found its confirmation, and clicked Cancel; the dialog
 closed without a power request. Actual pointer activation and poweroff remain
-unverified. The isolated startup smoke passed
+unverified. The repeatable
+[`probe_live_shutdown_cancel.py`](../scripts/linux/probe_live_shutdown_cancel.py)
+also passed on the active session: it opened the same dialog, activated only
+Cancel, verified closure, and closed the menu. The isolated startup smoke passed
 9/9 apps against the installed binaries, proving startup readiness only. A
 private Terminal typed-command roundtrip also passed: the marker appeared in
 both the echoed command and its executed output. The

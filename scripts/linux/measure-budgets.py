@@ -633,7 +633,12 @@ def app_environment(environ: dict[str, str], app_temp: Path, ready_file: Path) -
     """
 
     environment = environ.copy()
-    environment["HOME"] = str(app_temp)
+    # Files opens HOME and watches it for directory changes. Keep benchmark
+    # markers and XDG writes outside both HOME and its parent (which Files
+    # also watches), so the measurement cannot manufacture its own events.
+    home = app_temp / "home-root" / "user"
+    home.mkdir(parents=True, exist_ok=True)
+    environment["HOME"] = str(home)
     for key, name in (
         ("XDG_CONFIG_HOME", "config"),
         ("XDG_DATA_HOME", "data"),

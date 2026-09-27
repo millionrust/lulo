@@ -39,7 +39,8 @@ class AppEnvironmentTests(unittest.TestCase):
             ready = app_temp / "startup.ready"
             result = measure_budgets.app_environment(original, app_temp, ready)
             self.assertEqual(original["HOME"], "/home/owner")
-            self.assertEqual(result["HOME"], directory)
+            self.assertEqual(result["HOME"], str(app_temp / "home-root" / "user"))
+            self.assertTrue((app_temp / "home-root" / "user").is_dir())
             for key, name in (
                 ("XDG_CONFIG_HOME", "config"),
                 ("XDG_DATA_HOME", "data"),
@@ -48,6 +49,10 @@ class AppEnvironmentTests(unittest.TestCase):
             ):
                 self.assertEqual(result[key], str(app_temp / name))
                 self.assertTrue((app_temp / name).is_dir())
+                self.assertFalse(Path(result[key]).is_relative_to(Path(result["HOME"])))
+                self.assertFalse(Path(result[key]).is_relative_to(Path(result["HOME"]).parent))
+            self.assertFalse(ready.is_relative_to(Path(result["HOME"])))
+            self.assertFalse(ready.is_relative_to(Path(result["HOME"]).parent))
             self.assertEqual(result["XDG_RUNTIME_DIR"], original["XDG_RUNTIME_DIR"])
             self.assertEqual(result["DBUS_SESSION_BUS_ADDRESS"], original["DBUS_SESSION_BUS_ADDRESS"])
             self.assertEqual(result["WAYLAND_DISPLAY"], original["WAYLAND_DISPLAY"])

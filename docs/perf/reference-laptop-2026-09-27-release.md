@@ -29,6 +29,13 @@ a material CPU reduction and the 0.3% budget still fails. The
 [probe data](reference-laptop-2026-09-27-weather-minute-probe.json) records
 the result; this report's table remains the release-package baseline.
 
+A paired run of the original Weather candidate binary measured 0.70% CPU in
+the empty first-run state, where search takes focus, and 0.033% with one saved
+city and a fresh forecast cache. The large difference points to the focused
+search caret rather than the minute tick; each state has one 60-second sample,
+so this is directional evidence. First-run autofocus remains intact
+([data](weather-idle-2026-09-27.json)).
+
 A later paired Clock probe used the same candidate binary in two private
 profiles: its default one-city World view measured 0.550% idle CPU, and an
 empty-city World view measured 0.433%; both had 3.117 wake-ups/s. The

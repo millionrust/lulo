@@ -1,0 +1,46 @@
+{
+  "apps": {
+    "rmac-weather": {
+      "display_name": "Weather",
+      "frame_timing": "not_measured",
+      "idle": {
+        "idle_cpu_percent": {
+          "budget": 0.3,
+          "value": 0.633,
+          "within_budget": false
+        },
+        "pss_mib": 39.4,
+        "suspected_idle_redraw": true,
+        "wakeups_per_second": 6.55
+      },
+      "warm_launch": {
+        "interactive_marker": "ready_file",
+        "median_ms": 150.4,
+        "p95_ms": {
+          "budget": 500.0,
+          "value": 151.8,
+          "within_budget": true
+        },
+        "samples_ms": [
+          150.3,
+          151.8,
+          150.4,
+          151.3,
+          145.5
+        ]
+      }
+    }
+  },
+  "captured_at": "2026-09-27T07:06:35Z",
+  "rustc_processes": 0,
+  "schema_version": 1,
+  "settings": {
+    "idle_seconds": 60.0,
+    "repetitions": 5,
+    "settle_seconds": 3.0,
+    "startup_timeout": 10.0,
+    "wakeup_threshold_per_second": 0.5,
+    "warmups": 1
+  },
+  "shell_surfaces": {}
+}

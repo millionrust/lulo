@@ -21,6 +21,14 @@ report's corrected HOME layout or five-sample p95. The
 [probe data](reference-laptop-2026-09-27-system-monitor-probe.json) is retained
 so the same cache is not repeated without new profiling evidence.
 
+A later Weather change aligns its clock refresh with minute boundaries, since
+the displayed time has no seconds. Its focused 60-second sample measured 0.63%
+idle CPU and 6.550 wake-ups/s versus this release binary's 0.70% and 6.483/s.
+The change passed its focused release-mode test, but the sample does not prove
+a material CPU reduction and the 0.3% budget still fails. The
+[probe data](reference-laptop-2026-09-27-weather-minute-probe.json) records
+the result; this report's table remains the release-package baseline.
+
 The previous report measured Files at 7.60% idle CPU and 32.100 wake-ups/s.
 Its marker and XDG directories were inside Files' watched HOME or parent,
 creating filesystem events during measurement. This corrected run measures

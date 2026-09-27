@@ -38,24 +38,28 @@ release binary also selected Blue, observed the `user.rmac.tag=blue` attribute
 and checked menu row, then cleared it by clicking the row again. These commits
 are newer than the installed package set, and the installed 24/27 behavior
 result remains the valid installed-binary result.
-Running `./install-lulo.sh` again with the existing packages will not install
-these source changes.
+The staged candidate selected by `./install-lulo.sh` now contains these source
+changes. It has not been installed on the reference PC.
 
 An amd64 candidate with `rmac-apps` and `rmac-session` built from source
-`8e31d9dc` and the previously pinned niri/xwayland-satellite packages is now
-staged at `~/rmac-release/packages-install9-8e31d9dc` on the reference PC. Its four
+`e8b589ac` and the previously pinned niri/xwayland-satellite packages is now
+staged at `~/rmac-release/packages-install10-e8b589ac` on the reference PC. Its four
 Debian package SHA-256 checks and native package verifier passed, and
 `~/install-lulo.sh` points to that set with the installer checkout pinned to
-the build commit. [Main CI run 36321612140](https://github.com/millionrust/lulo/actions/runs/36321612140)
-and [quality run 36321612175](https://github.com/millionrust/lulo/actions/runs/36321612175)
+the build commit. [Main CI run 36327602027](https://github.com/millionrust/lulo/actions/runs/36327602027)
+and [quality run 36327602104](https://github.com/millionrust/lulo/actions/runs/36327602104)
 passed for the exact source. The candidate is staged but **not installed**;
-the installed-build results above still refer to `0e3fa470`. A private
-[27-scenario source-binary rerun](behavior-results/source-8e31d9dc-27.json)
-passed 25/27: Get Info now matches its Mac behavior; the item and background
-context menus remain mismatches. No scenario that passed on the installed
-24/27 run regressed in this rerun. The same release-binary set also passed
-[9/9 private startup checks](behavior-results/source-8e31d9dc-startup-smoke.json),
-including App Drawer and Preview through their proper launch paths.
+the installed-build results above still refer to `0e3fa470`. The exact
+`e8b589ac` release binaries passed a private
+[27-scenario rerun](behavior-results/source-e8b589ac-27.json) at 25/27:
+Get Info now matches its Mac behavior; the item and background context menus
+remain mismatches. No scenario that passed on the installed 24/27 run
+regressed. The candidate also passed 9/9 private startup checks, including
+App Drawer and Preview through their proper launch paths. Its top bar passed
+45/45 scoped unit tests and 37/37 private menu/power-dialog checks. The latter
+includes a regression that focuses Notes then Files without a Files menu
+publisher: the installed top bar lacked File/Edit/View/Go, while the candidate
+shows all four.
 
 Visual parity is not established by the behavior or startup passes. The
 current checkout has no completed Mac/Lulo screenshot-pair records under

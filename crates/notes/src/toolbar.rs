@@ -86,13 +86,26 @@ impl NotesView {
             - 1.0;
         let search_width = (editor_width - 280.0).clamp(SEARCH_MIN_WIDTH, SEARCH_MAX_WIDTH);
 
-        let compose = glyph_button("compose", glyphs::COMPOSE, CAPSULE_HEIGHT, "New Note")
+        let compose_button = glyph_button("compose", glyphs::COMPOSE, CAPSULE_HEIGHT, "New Note")
             .disabled(!ready)
             .bg(capsule_fill())
             .border_1()
             .border_color(capsule_edge())
             .h(px(CAPSULE_HEIGHT))
             .on_click(cx.listener(|this, _, _, cx| this.create_note(cx)));
+        // `rmac_ui::Button` currently exposes its tooltip but not an
+        // accessibility-only name. Keep the glyph-only visual control and
+        // publish a named, actionable wrapper so AT clients can reliably
+        // identify and activate New Note.
+        let compose = div()
+            .id("compose-a11y")
+            .role(Role::Button)
+            .aria_label("New Note")
+            .on_a11y_action(
+                AccessibleAction::Click,
+                cx.listener(|this, _, _, cx| this.create_note(cx)),
+            )
+            .child(compose_button);
 
         let format = capsule("format-capsule")
             .child(

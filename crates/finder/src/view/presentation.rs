@@ -418,6 +418,7 @@ impl Render for FinderView {
                 let menu = match menu_purpose {
                     MenuPurpose::Context => Self::build_context_menu(
                         state.position(),
+                        sort_key,
                         compress_label,
                         can_open_with,
                         can_paste,

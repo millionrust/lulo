@@ -941,12 +941,84 @@ def explore(run: LuloRun) -> None:
                   f"{' ' + ','.join(states) if states else ''}{extra}")
 
 
+def check_files_context_submenus(nested: Nested, bins: list[Path], settle: float) -> None:
+    """Private nested UI check for real View/Sort By flyout interaction."""
+    scenario = {"app": "files", "launch": {"folder": "."}, "steps": []}
+    run = LuloRun(nested, "private/context-submenus", scenario, bins, settle, None)
+    try:
+        run.setup()
+        run.launch()
+
+        def visible_menu_items() -> dict[str, Any]:
+            pyatspi = atspi()
+            frame = run.active_frame()
+            return {
+                name(node): node
+                for node in (descendants(frame, limit=4000) if frame is not None else [])
+                if role(node) in {"menu item", "check menu item"}
+                and has_state(node, pyatspi.STATE_SHOWING)
+            }
+
+        def click_menu_item(label: str) -> None:
+            items = visible_menu_items()
+            target = items.get(label)
+            if target is None:
+                raise StepFailed(f"no visible menu item named {label!r}")
+            box = extents(target)
+            if not box:
+                raise StepFailed(f"menu item {label!r} has no on-screen extents")
+            ox, oy = run.window_origin()
+            x, y = ox + box[0] + min(40, box[2] // 2), oy + box[1] + box[3] // 2
+            nested.input.click(x, y, OUTPUT_W, OUTPUT_H)
+
+        def open_menu(label: str) -> dict[str, Any]:
+            run.context_background()
+            time.sleep(settle)
+            items = visible_menu_items()
+            if label not in items:
+                raise StepFailed(f"background menu is missing {label!r}; found {sorted(items)}")
+            click_menu_item(label)
+            time.sleep(settle)
+            return visible_menu_items()
+
+        view_items = open_menu("View")
+        for label in ("Icons", "List", "Columns", "Gallery"):
+            if label not in view_items:
+                raise StepFailed(f"View submenu is missing {label!r}; found {sorted(view_items)}")
+        print("PASS  View submenu opened with Icons, List, Columns, Gallery", flush=True)
+        click_menu_item("Columns")
+        time.sleep(settle)
+
+        sort_items = open_menu("Sort By")
+        for label in ("Name", "Date Modified", "Size", "Kind"):
+            if label not in sort_items:
+                raise StepFailed(f"Sort By submenu is missing {label!r}; found {sorted(sort_items)}")
+        pyatspi = atspi()
+        if not has_state(sort_items["Name"], pyatspi.STATE_CHECKED):
+            raise StepFailed("Sort By submenu did not mark the initial Name sort as checked")
+        print("PASS  Sort By submenu opened with Name checked", flush=True)
+        click_menu_item("Size")
+        time.sleep(settle)
+
+        sort_items = open_menu("Sort By")
+        if not has_state(sort_items.get("Size"), pyatspi.STATE_CHECKED):
+            raise StepFailed("choosing Size did not update the checked sort state")
+        if has_state(sort_items.get("Name"), pyatspi.STATE_CHECKED):
+            raise StepFailed("Name remained checked after choosing Size")
+        print("PASS  choosing Size updates the checked sort state", flush=True)
+    finally:
+        run.stop()
+
+
 def inner(args: argparse.Namespace) -> int:
     work = Path(args.inner)
     nested = Nested(work)
     bins = [Path(p) for p in args.bin_dir] + [Path(p) for p in args.shell_bin_dir]
     results = []
     try:
+        if args.check_context_submenus:
+            check_files_context_submenus(nested, bins, args.settle)
+            return 0
         for path in sc.scenario_paths(only=args.scenarios):
             sid = sc.scenario_id(path)
             scenario = sc.load(path)
@@ -1005,6 +1077,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--keep", action="store_true", help="keep the temporary directory and logs")
     parser.add_argument("--explore", action="store_true", help="print each scenario app's accessible tree instead")
     parser.add_argument("--explore-steps", type=int, default=0, help="with --explore: play this many steps first")
+    parser.add_argument("--check-context-submenus", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--inner", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if not sys.platform.startswith("linux"):
@@ -1033,6 +1106,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     rebuilt += ["--settle", str(args.settle), "--explore-steps", str(args.explore_steps)]
     if args.explore:
         rebuilt.append("--explore")
+    if args.check_context_submenus:
+        rebuilt.append("--check-context-submenus")
     return outer(args, rebuilt)
 
 

@@ -25,6 +25,7 @@ impl FinderView {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::view) fn build_context_menu(
         pos: Point<Pixels>,
+        sort_key: SortKey,
         compress_label: Option<String>,
         can_open_with: bool,
         can_paste: bool,
@@ -67,15 +68,8 @@ impl FinderView {
                 return m;
             }
             return m
-                .item("View as Icons", Box::new(ViewAsIcons))
-                .item("View as List", Box::new(ViewAsList))
-                .item("View as Columns", Box::new(ViewAsColumns))
-                .item("View as Gallery", Box::new(ViewAsGallery))
-                .separator()
-                .item("Sort by Name", Box::new(SortByName))
-                .item("Sort by Date Modified", Box::new(SortByDate))
-                .item("Sort by Size", Box::new(SortBySize))
-                .item("Sort by Kind", Box::new(SortByKind))
+                .submenu("View", Self::build_view_submenu(pos))
+                .submenu("Sort By", Self::build_sort_submenu(pos, sort_key))
                 .separator()
                 .command_item(
                     "Select All",
@@ -145,15 +139,8 @@ impl FinderView {
                 .separator()
                 .command_item("Get Info", rmac_ui::shortcuts::INFO, Box::new(GetInfo))
                 .separator()
-                .item("View as Icons", Box::new(ViewAsIcons))
-                .item("View as List", Box::new(ViewAsList))
-                .item("View as Columns", Box::new(ViewAsColumns))
-                .item("View as Gallery", Box::new(ViewAsGallery))
-                .separator()
-                .item("Sort by Name", Box::new(SortByName))
-                .item("Sort by Date Modified", Box::new(SortByDate))
-                .item("Sort by Size", Box::new(SortBySize))
-                .item("Sort by Kind", Box::new(SortByKind))
+                .submenu("View", Self::build_view_submenu(pos))
+                .submenu("Sort By", Self::build_sort_submenu(pos, sort_key))
                 .separator()
                 .command_item(
                     "Select All",
@@ -162,6 +149,29 @@ impl FinderView {
                 );
         }
         m
+    }
+
+    fn build_view_submenu(pos: Point<Pixels>) -> rmac_ui::ContextMenu {
+        rmac_ui::ContextMenu::new(pos)
+            .item("Icons", Box::new(ViewAsIcons))
+            .item("List", Box::new(ViewAsList))
+            .item("Columns", Box::new(ViewAsColumns))
+            .item("Gallery", Box::new(ViewAsGallery))
+    }
+
+    fn build_sort_submenu(pos: Point<Pixels>, key: SortKey) -> rmac_ui::ContextMenu {
+        let check = |candidate| {
+            if key == candidate {
+                rmac_ui::MenuCheck::On
+            } else {
+                rmac_ui::MenuCheck::None
+            }
+        };
+        rmac_ui::ContextMenu::new(pos)
+            .checked_item("Name", check(SortKey::Name), Box::new(SortByName))
+            .checked_item("Date Modified", check(SortKey::Date), Box::new(SortByDate))
+            .checked_item("Size", check(SortKey::Size), Box::new(SortBySize))
+            .checked_item("Kind", check(SortKey::Kind), Box::new(SortByKind))
     }
 
     // ---- list ----

@@ -16,6 +16,7 @@ use gpui::{
     StatefulInteractiveElement as _, Styled as _, Toggled, Window,
 };
 use gpui_component::StyledExt as _;
+use std::{cell::Cell, rc::Rc};
 
 use crate::{mac, shortcuts::Shortcut, Button, ButtonRole, ListRow};
 
@@ -445,6 +446,10 @@ enum MenuEntry {
     },
     Separator,
     Header(SharedString),
+    Submenu {
+        label: SharedString,
+        items: Vec<MenuEntry>,
+    },
 }
 
 /// First enabled item whose label starts with `query` (case-insensitive).
@@ -465,6 +470,8 @@ pub struct ContextMenuState {
     position: Point<Pixels>,
     menu_focus: FocusHandle,
     return_focus: FocusHandle,
+    active_submenu: Rc<Cell<Option<usize>>>,
+    owner: gpui::EntityId,
 }
 
 impl ContextMenuState {
@@ -482,6 +489,8 @@ impl ContextMenuState {
             position,
             menu_focus,
             return_focus: return_focus.clone(),
+            active_submenu: Rc::new(Cell::new(None)),
+            owner: cx.entity_id(),
         }
     }
 
@@ -643,12 +652,24 @@ impl ContextMenu {
         self
     }
 
+    /// Append a flyout menu. Choosing its row opens the flyout without
+    /// dismissing the parent menu; child actions dismiss the whole menu.
+    pub fn submenu(mut self, label: impl Into<SharedString>, submenu: ContextMenu) -> Self {
+        self.items.push(MenuEntry::Submenu {
+            label: label.into(),
+            items: submenu.items,
+        });
+        self
+    }
+
     /// Build the overlay element. Render this as the LAST child of the app root.
     pub fn render(self, state: &ContextMenuState) -> impl IntoElement {
         let pos = self.pos;
         let menu_focus = state.menu_focus.clone();
         let navigation_focus = menu_focus.clone();
         let return_focus = state.return_focus.clone();
+        let active_submenu = state.active_submenu.clone();
+        let owner = state.owner;
         let mut panel = div()
             .id("rmac-context-menu")
             .role(Role::Menu)
@@ -685,6 +706,75 @@ impl ContextMenu {
                             .font_weight(mac::SEMIBOLD)
                             .text_color(mac::text_secondary())
                             .child(label),
+                    );
+                }
+                MenuEntry::Submenu { label, items } => {
+                    let active = active_submenu.get() == Some(i);
+                    let accessible_label = label.clone();
+                    let child_focus = menu_focus.clone();
+                    let child_return_focus = return_focus.clone();
+                    let submenu_children =
+                        render_submenu_entries(items, i, child_focus, child_return_focus);
+                    let mut row = ListRow::new(
+                        ("rmac-menu-submenu", i),
+                        div()
+                            .w_full()
+                            .h_flex()
+                            .items_center()
+                            .gap_2()
+                            .child(div().w(px(14.0)))
+                            .child(div().flex_1().child(label))
+                            .child(div().text_color(mac::text_tertiary()).child("›")),
+                    )
+                    .mx(px(5.0))
+                    .px(px(8.0))
+                    .role(Role::MenuItem)
+                    .aria_label(accessible_label)
+                    .aria_expanded(active);
+                    row = row.on_activate({
+                        let active_submenu = active_submenu.clone();
+                        move |_, _, cx| {
+                            active_submenu.set(Some(i));
+                            cx.notify(owner);
+                        }
+                    });
+                    let move_active = active_submenu.clone();
+                    let move_owner = owner;
+                    panel = panel.child(
+                        div()
+                            .id(("rmac-menu-submenu-row", i))
+                            .relative()
+                            .on_mouse_move(move |_, _, cx| {
+                                if move_active.get() != Some(i) {
+                                    move_active.set(Some(i));
+                                    cx.notify(move_owner);
+                                }
+                            })
+                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                active_submenu.set(Some(i));
+                                cx.notify(owner);
+                            })
+                            .child(row)
+                            .when(active, |el| {
+                                el.child(
+                                    div()
+                                        .id(("rmac-menu-submenu-panel", i))
+                                        .role(Role::Menu)
+                                        .absolute()
+                                        .left_full()
+                                        .top_0()
+                                        .min_w(px(190.0))
+                                        .py(px(5.0))
+                                        .tab_group()
+                                        .rounded(px(mac::radius_card()))
+                                        .bg(mac::material())
+                                        .border_1()
+                                        .border_color(mac::separator())
+                                        .shadow_lg()
+                                        .occlude()
+                                        .children(submenu_children),
+                                )
+                            }),
                     );
                 }
                 MenuEntry::Item {
@@ -755,6 +845,14 @@ impl ContextMenu {
                     if let Some(toggled) = toggled {
                         row = row.aria_toggled(toggled);
                     }
+                    let hover_submenu = active_submenu.clone();
+                    let hover_owner = owner;
+                    row = row.on_mouse_move(move |_, _, cx| {
+                        if hover_submenu.get().is_some() {
+                            hover_submenu.set(None);
+                            cx.notify(hover_owner);
+                        }
+                    });
                     if enabled {
                         row = row.on_activate({
                             let return_focus = return_focus.clone();
@@ -812,6 +910,120 @@ impl ContextMenu {
     }
 }
 
+fn render_submenu_entries(
+    entries: Vec<MenuEntry>,
+    parent: usize,
+    _menu_focus: FocusHandle,
+    return_focus: FocusHandle,
+) -> Vec<AnyElement> {
+    entries
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, entry)| {
+            let id = (parent, index);
+            match entry {
+                MenuEntry::Separator => Some(
+                    div()
+                        .id(("rmac-submenu-separator", id))
+                        .role(Role::Splitter)
+                        .my(px(4.0))
+                        .mx(px(8.0))
+                        .h(px(1.0))
+                        .bg(mac::separator())
+                        .into_any_element(),
+                ),
+                MenuEntry::Header(label) => Some(
+                    div()
+                        .mx(px(5.0))
+                        .px(px(8.0))
+                        .py(px(3.0))
+                        .text_size(crate::text_px(11.0))
+                        .font_weight(mac::SEMIBOLD)
+                        .text_color(mac::text_secondary())
+                        .child(label)
+                        .into_any_element(),
+                ),
+                MenuEntry::Item {
+                    label,
+                    shortcut,
+                    action,
+                    danger,
+                    enabled,
+                    checked,
+                } => {
+                    let base = if !enabled {
+                        mac::text_tertiary()
+                    } else if danger {
+                        mac::danger()
+                    } else {
+                        mac::text()
+                    };
+                    let mark = match checked {
+                        MenuCheck::On => "✓",
+                        MenuCheck::Mixed => "–",
+                        MenuCheck::None => "",
+                    };
+                    let accessible_label = label.clone();
+                    let content = div()
+                        .w_full()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .text_color(base)
+                        .child(
+                            div()
+                                .w(px(14.0))
+                                .flex()
+                                .justify_center()
+                                .text_size(crate::text_px(12.0))
+                                .child(mark),
+                        )
+                        .child(div().flex_1().child(label))
+                        .when_some(shortcut, |el, sc| {
+                            el.child(
+                                div()
+                                    .text_size(crate::text_px(12.0))
+                                    .text_color(mac::text_tertiary())
+                                    .child(sc),
+                            )
+                        });
+                    let toggled = match checked {
+                        MenuCheck::On => Some(Toggled::True),
+                        MenuCheck::Mixed => Some(Toggled::Mixed),
+                        MenuCheck::None => None,
+                    };
+                    let role = if toggled.is_some() {
+                        Role::MenuItemCheckBox
+                    } else {
+                        Role::MenuItem
+                    };
+                    let mut row = ListRow::new(("rmac-submenu-item", id), content)
+                        .mx(px(5.0))
+                        .px(px(8.0))
+                        .disabled(!enabled)
+                        .role(role)
+                        .aria_label(accessible_label);
+                    if let Some(toggled) = toggled {
+                        row = row.aria_toggled(toggled);
+                    }
+                    if enabled {
+                        row = row.on_activate({
+                            let return_focus = return_focus.clone();
+                            move |_, window, cx| {
+                                window.focus(&return_focus, cx);
+                                window.dispatch_action(Box::new(DismissMenu), cx);
+                                window.dispatch_action(action.boxed_clone(), cx);
+                            }
+                        });
+                    }
+                    Some(row.into_any_element())
+                }
+                MenuEntry::Submenu { .. } => None,
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -836,5 +1048,21 @@ mod tests {
     #[test]
     fn menu_check_defaults_to_none() {
         assert_eq!(MenuCheck::default(), MenuCheck::None);
+    }
+
+    #[test]
+    fn submenu_retains_its_checked_child_entry() {
+        let pos = Point::new(px(0.0), px(0.0));
+        let menu = ContextMenu::new(pos).submenu(
+            "Sort By",
+            ContextMenu::new(pos).checked_item("Name", MenuCheck::On, Box::new(DismissMenu)),
+        );
+        let [MenuEntry::Submenu { label, items }] = menu.items.as_slice() else {
+            panic!("submenu should remain a nested menu entry");
+        };
+        assert_eq!(label.as_ref(), "Sort By");
+        assert!(
+            matches!(items.as_slice(), [MenuEntry::Item { label, checked: MenuCheck::On, .. }] if label.as_ref() == "Name")
+        );
     }
 }

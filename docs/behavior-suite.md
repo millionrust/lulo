@@ -101,6 +101,15 @@ tested binary so mixed dev builds are visible.
    a fact reads `nothing` on Lulo. `--emit-parity-rows` proposes `docs/parity.md` rows, which cite
    `behavior:<area>/<name>`. Copy the real ones into parity.md; the tool never edits it.
 
+   For the Files context-menu flyouts, run the private interaction check against freshly built
+   binaries. It opens View and Sort By, selects Columns and Size, then verifies that Size becomes
+   the checked sort option:
+
+   ```sh
+   python3 scripts/behavior/run_lulo.py --bin-dir $CARGO_TARGET_DIR/iterate \
+     --check-context-submenus 9>&-
+   ```
+
 ## Safety
 
 **Mac**

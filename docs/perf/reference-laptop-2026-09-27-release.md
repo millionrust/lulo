@@ -29,6 +29,14 @@ a material CPU reduction and the 0.3% budget still fails. The
 [probe data](reference-laptop-2026-09-27-weather-minute-probe.json) records
 the result; this report's table remains the release-package baseline.
 
+A later paired Clock probe used the same candidate binary in two private
+profiles: its default one-city World view measured 0.550% idle CPU, and an
+empty-city World view measured 0.433%; both had 3.117 wake-ups/s. The
+candidate table's 1.87% Clock sample was not reproduced, but both focused
+runs still exceeded the 0.3% budget. Removing one city left the one-second
+World ticker active, so this probe does not identify the remaining CPU cost
+([data](reference-laptop-2026-09-27-clock-city-probe.json)).
+
 The previous report measured Files at 7.60% idle CPU and 32.100 wake-ups/s.
 Its marker and XDG directories were inside Files' watched HOME or parent,
 so benchmark writes could trigger Files' watcher. The changed result makes

@@ -1,8 +1,8 @@
 # Mac parity gaps
 
-Purpose: the single tracker for where Lulo OS still differs from the Mac, so agents read less. Reference: **macOS 26.2, Dark** (en-GB locale unless noted). Severity: **P0** broken/missing core · **P1** obvious to a Mac user · **P2** polish. Size: **S** ≤1 day · **M** a few days · **L** more. Status: **Missing** · **Partial** · **Broken** · **Fixed `<short sha>`**.
+Purpose: the single tracker for where Lulo OS still differs from the Mac, so agents read less. Reference: **macOS 26.2, Dark** (en-GB locale unless noted). Severity: **P0** broken/missing core · **P1** obvious to a Mac user · **P2** polish. Size: **S** ≤1 day · **M** a few days · **L** more. Status: **Missing** · **Partial** · **Broken** · **Fixed `<short sha>`** · **Measurement corrected (`<date>`)**.
 
-Rules for agents: read only your surface's `##` section; when you fix a gap, set its Status to `Fixed <short sha>` in the same commit; add new gaps as rows here, never as new documents; Mac captures are never committed — rows describe the Mac only in words. Geometry that's reference data, not a gap, belongs in FEEL_SPEC.md / docs/macos-parity-spec.md — link to those instead of repeating their numbers.
+Rules for agents: read only your surface's `##` section; when you fix a gap, set its Status to `Fixed <short sha>` in the same commit; when evidence corrects a reported gap, use `Measurement corrected (<date>)`; add new gaps as rows here, never as new documents; Mac captures are never committed — rows describe the Mac only in words. Geometry that's reference data, not a gap, belongs in FEEL_SPEC.md / docs/macos-parity-spec.md — link to those instead of repeating their numbers.
 
 ---
 
@@ -40,14 +40,15 @@ Sizes/positions/colours: see FEEL_SPEC.md §4.7 and docs/macos-parity-spec.md
 
 ### Menu bar
 
-Bar height (29 px), spacing and transparency: see FEEL_SPEC.md §4.2/§4.7 and
+Bar height (29 pt/logical units; physical pixels depend on display scale),
+spacing and transparency: see FEEL_SPEC.md §4.2/§4.7 and
 docs/macos-parity-spec.md §4.3. The rows below are the shared menu **content**
 contract every app menu is built from (`crates/rmac-app-menu`,
 `shell/bins/rmac-menubar`), plus the bar's own chrome.
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| MENUBAR-01 | P2 | S | Missing | Mac: menu bar renders 29 px tall (FEEL_SPEC.md). / Lulo: rendered 36 px (≈7 px too tall) as of the 2026-09-19 capture; not re-confirmed since. | `shell/bins/rmac-menubar` |
+| MENUBAR-01 | P2 | S | Measurement corrected (2026-09-27) | Mac: menu bar is 29 pt/logical units tall. / Lulo: source uses the same 29 logical units for its bar and exclusive zone (`BAR_HEIGHT` in `shell/bins/rmac-menubar/src/main.rs`). The live 2026-09-27 output is 1920×1080 physical at scale 1.25 (1536×864 logical), so 29 logical units rasterize to 36.25 physical pixels. The old ≈36 px observation compared physical Lulo pixels with Mac logical units; it does not indicate a 7 px geometry gap. | `shell/bins/rmac-menubar/src/main.rs` (`BAR_HEIGHT`, bar `.h`, `exclusive_zone`); read-only `niri msg -j outputs` on the live session, 2026-09-27 |
 | BAR-01 | P1 | S | Partial (focused Files fallback fixed in source; validation pending) | Mac: on the desktop the bar shows Finder with File/Edit/View/Go/Window/Help, because Finder always runs. / Lulo: the no-focus path already seeded static Files menus, but when the compositor reported Files as focused, the shell cleared them and requested live menus; `NotPublished` returned without restoring the fallback. That left only Files/Window/Help in the live bar. The focused Files path now seeds the same static menus while waiting, and replaces them when Files publishes its live layout. | `shell/bins/rmac-menubar/src/main.rs` (`static_fallback_menus`, focus update, `request_app_menus`) |
 | BAR-02 | P1 | M | Fixed 44f223ee | Mac: every app has a system Window menu (Minimise ⌘M, Zoom, Fill 🌐⌃F, Centre 🌐⌃C, Move & Resize ▸, the window list) and a Help menu with a search field. / Lulo: the shell adds neither — Settings shows only "Settings View", Calculator only "Calculator Edit View" (see MENU-01/MENU-06 for the general contract). | `crates/rmac-app-menu/src/lib.rs:263`, `shell/bins/rmac-menubar/src/main.rs:2583` |
 | BAR-03 | P1 | M | Partial | Mac: Bluetooth, Sound, Focus and VPN menu-bar items each open their own dropdown (switch, device/output list, "… Settings…"). / Lulo: only Wi-Fi and Battery have menus; the rest just open Control Centre. | `shell/bins/rmac-menubar/src/main.rs:2152` |

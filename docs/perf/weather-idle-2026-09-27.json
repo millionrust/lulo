@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "captured_at_utc": [
+    "2026-09-27T08:26:46Z",
+    "2026-09-27T08:29:31Z"
+  ],
+  "binary": {
+    "name": "rmac-weather",
+    "sha256": "8c7332622f3a06cf424bd9bd1a10bb5be0fb6cc86cba2ecf880f802417b22ea6"
+  },
+  "method": {
+    "idle_seconds": 60,
+    "settle_seconds": 10,
+    "warmups": 0,
+    "repetitions": 1,
+    "idle_cpu_budget_percent": 0.3,
+    "wakeups_per_second_threshold": 0.5,
+    "private_home_and_xdg": true,
+    "live_input_injected": false,
+    "rustc_processes": 0
+  },
+  "probes": [
+    {
+      "state": "empty_first_run",
+      "setup": "Benchmark private HOME and XDG directories with no saved cities; Weather takes its empty-settings path and requests focus for the city search field.",
+      "idle_cpu_percent": 0.7,
+      "wakeups_per_second": 6.417,
+      "pss_mib": 50.4,
+      "suspected_idle_redraw": true,
+      "warm_launch_ms": 430.9
+    },
+    {
+      "state": "one_saved_city_with_fresh_cache",
+      "setup": "Benchmark private HOME and XDG directories seeded with one saved city and one valid forecast cache whose fetched_at timestamp was current at launch; no network fetch was needed for the idle sample.",
+      "idle_cpu_percent": 0.033,
+      "wakeups_per_second": 0.333,
+      "pss_mib": 51.9,
+      "suspected_idle_redraw": false,
+      "warm_launch_ms": 369.5
+    }
+  ],
+  "interpretation": "The large difference tracks the empty first-run/search-focus state. The source schedules focused InputState caret blinking every 500 ms; the saved-city state does not focus search and is below the 0.3% app idle budget despite the minute-aligned local-time notification. One sample per state is directional evidence, not a stable estimate of a population mean. No UI change was made because first-run autofocus is an intentional keyboard-first behavior."
+}

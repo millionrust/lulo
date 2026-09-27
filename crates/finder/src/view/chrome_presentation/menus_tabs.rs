@@ -95,9 +95,9 @@ impl FinderView {
                 rmac_ui::shortcuts::OPEN_SELECTION,
                 Box::new(OpenItems),
             );
-            // "Open With" is a submenu on the Mac (its handlers, per file
-            // type, live under it); rmac_ui::ContextMenu has no submenu
-            // primitive yet, so this stays one item, named to match.
+            // The picker loads type handlers asynchronously and owns the
+            // default-app controls, so this row opens it instead of building
+            // a submenu from data that is not available to this menu builder.
             if can_open_with {
                 m = m.item("Open With", Box::new(OpenWith));
             }

@@ -30,11 +30,29 @@ on the reference PC; `scripts/behavior/run_installed_suite.py` reproduces it.
 
 The `dev` source now has separate non-modal Files Get Info windows and a
 persistent seven-colour item-menu tag control. Focused Files tests and a
-private Get Info scenario passed, but these commits are newer than the
-installed package set. The tag control has not been verified in the UI, and
-the installed 24/27 behavior result remains the valid release-binary result.
+private Get Info scenario passed. A private UI run against the `8e31d9dc`
+release binary also selected Blue, observed the `user.rmac.tag=blue` attribute
+and checked menu row, then cleared it by clicking the row again. These commits
+are newer than the installed package set, and the installed 24/27 behavior
+result remains the valid installed-binary result.
 Running `./install-lulo.sh` again with the existing packages will not install
 these source changes.
+
+An amd64 candidate with `rmac-apps` and `rmac-session` built from source
+`8e31d9dc` and the previously pinned niri/xwayland-satellite packages is now
+staged at `~/rmac-release/packages-install9-8e31d9dc` on the reference PC. Its four
+Debian package SHA-256 checks and native package verifier passed, and
+`~/install-lulo.sh` points to that set with the installer checkout pinned to
+the build commit. [Main CI run 36321612140](https://github.com/millionrust/lulo/actions/runs/36321612140)
+and [quality run 36321612175](https://github.com/millionrust/lulo/actions/runs/36321612175)
+passed for the exact source. The candidate is staged but **not installed**;
+the installed-build results above still refer to `0e3fa470`. A private
+[27-scenario source-binary rerun](behavior-results/source-8e31d9dc-27.json)
+passed 25/27: Get Info now matches its Mac behavior; the item and background
+context menus remain mismatches. No scenario that passed on the installed
+24/27 run regressed in this rerun. The same release-binary set also passed
+[9/9 private startup checks](behavior-results/source-8e31d9dc-startup-smoke.json),
+including App Drawer and Preview through their proper launch paths.
 
 Visual parity is not established by the behavior or startup passes. The
 current checkout has no completed Mac/Lulo screenshot-pair records under

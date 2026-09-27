@@ -281,7 +281,7 @@ impl FinderView {
     pub(super) fn close_finder_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.finder_persistence.close(self.finder_state());
         for info_window in self.info_windows.drain(..) {
-            let _ = cx.update_window(info_window, |_, window, _| window.remove_window());
+            let _ = cx.update_window(*info_window, |_, window, _| window.remove_window());
         }
         window.remove_window();
     }

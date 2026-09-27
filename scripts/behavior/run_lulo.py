@@ -22,14 +22,17 @@ Isolation (docs/behavior-suite.md):
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import tempfile
 import time
+import zlib
 from pathlib import Path
 from typing import Any, Optional
 
@@ -462,6 +465,75 @@ def extents(node) -> Optional[tuple[int, int, int, int]]:
         return box.x, box.y, box.width, box.height
     except Exception:
         return None
+
+
+def png_pixel_rgb(path: Path, x: int, y: int) -> tuple[int, int, int]:
+    """Read one 8-bit RGB/RGBA PNG pixel without a third-party image package."""
+    data = path.read_bytes()
+    if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise StepFailed(f"{path} is not a PNG screenshot")
+    pos = 8
+    compressed = bytearray()
+    width = height = bit_depth = color_type = interlace = None
+    while pos + 12 <= len(data):
+        length = struct.unpack_from(">I", data, pos)[0]
+        kind = data[pos + 4 : pos + 8]
+        chunk = data[pos + 8 : pos + 8 + length]
+        pos += 12 + length
+        if kind == b"IHDR":
+            width, height, bit_depth, color_type, _compression, _filter, interlace = struct.unpack(
+                ">IIBBBBB", chunk
+            )
+        elif kind == b"IDAT":
+            compressed.extend(chunk)
+        elif kind == b"IEND":
+            break
+    if bit_depth != 8 or color_type not in {2, 6} or interlace != 0:
+        raise StepFailed(
+            f"unsupported PNG format: depth={bit_depth}, type={color_type}, interlace={interlace}"
+        )
+    if width is None or height is None or not (0 <= x < width and 0 <= y < height):
+        raise StepFailed(f"screenshot pixel ({x}, {y}) is outside {width}x{height}")
+    channels = 4 if color_type == 6 else 3
+    row_bytes = width * channels
+    raw = zlib.decompress(compressed)
+    previous = bytearray(row_bytes)
+    offset = 0
+    for row_index in range(height):
+        filter_type = raw[offset]
+        offset += 1
+        row = bytearray(raw[offset : offset + row_bytes])
+        offset += row_bytes
+        for index in range(row_bytes):
+            left = row[index - channels] if index >= channels else 0
+            above = previous[index]
+            upper_left = previous[index - channels] if index >= channels else 0
+            if filter_type == 1:
+                row[index] = (row[index] + left) & 0xFF
+            elif filter_type == 2:
+                row[index] = (row[index] + above) & 0xFF
+            elif filter_type == 3:
+                row[index] = (row[index] + ((left + above) // 2)) & 0xFF
+            elif filter_type == 4:
+                estimate = left + above - upper_left
+                distances = (
+                    abs(estimate - left),
+                    abs(estimate - above),
+                    abs(estimate - upper_left),
+                )
+                predictor = (
+                    left if distances[0] <= distances[1] and distances[0] <= distances[2]
+                    else above if distances[1] <= distances[2]
+                    else upper_left
+                )
+                row[index] = (row[index] + predictor) & 0xFF
+            elif filter_type != 0:
+                raise StepFailed(f"unsupported PNG row filter: {filter_type}")
+        if row_index == y:
+            start = x * channels
+            return tuple(row[start : start + 3])
+        previous = row
+    raise StepFailed(f"screenshot row {y} is missing")
 
 
 class LuloRun:
@@ -1010,6 +1082,116 @@ def check_files_context_submenus(nested: Nested, bins: list[Path], settle: float
         run.stop()
 
 
+def check_files_tag_swatches(nested: Nested, bins: list[Path], settle: float) -> None:
+    """Verify the tag dots, stable accessible names, and real tag toggling."""
+    filename = "tag-swatch.txt"
+    scenario = {
+        "app": "files",
+        "setup": {"files": {filename: "Private tag swatch fixture.\n"}},
+        "launch": {"reveal": filename},
+        "steps": [],
+    }
+    run = LuloRun(nested, "private/file-tag-swatches", scenario, bins, settle, None)
+    colors = ("Red", "Orange", "Yellow", "Green", "Blue", "Purple", "Gray")
+    try:
+        run.setup()
+        run.launch()
+        path = run.sandbox / filename
+
+        def tag_value() -> Optional[str]:
+            try:
+                return os.getxattr(path, "user.rmac.tag").decode("utf-8")
+            except OSError as error:
+                if error.errno in {errno.ENODATA, getattr(errno, "ENOATTR", errno.ENODATA)}:
+                    return None
+                raise
+
+        def visible_items() -> dict[str, Any]:
+            pyatspi = atspi()
+            frame = run.active_frame()
+            return {
+                name(node): node
+                for node in (descendants(frame, limit=5000) if frame is not None else [])
+                if role(node) in {"menu item", "check menu item"}
+                and has_state(node, pyatspi.STATE_SHOWING)
+            }
+
+        def open_item_menu() -> dict[str, Any]:
+            run.click_item(filename, "right")
+            time.sleep(settle)
+            return visible_items()
+
+        def click_menu_item(label: str, items: dict[str, Any]) -> None:
+            target = items.get(label)
+            if target is None:
+                raise StepFailed(f"no visible item-menu row named {label!r}")
+            box = extents(target)
+            if not box:
+                raise StepFailed(f"tag row {label!r} has no visible bounds")
+            ox, oy = run.window_origin()
+            x, y = ox + box[0] + min(40, box[2] // 2), oy + box[1] + box[3] // 2
+            nested.input.click(x, y, OUTPUT_W, OUTPUT_H)
+
+        rows = open_item_menu()
+        missing = [color for color in colors if color not in rows]
+        if missing:
+            raise StepFailed(f"item menu is missing tag colors {missing}; found {sorted(rows)}")
+        expected_rgb = {
+            "Red": ((0xFF, 0x3B, 0x30), (0xFF, 0x45, 0x3A)),
+            "Orange": ((0xFF, 0x95, 0x00), (0xFF, 0x9F, 0x0A)),
+            "Yellow": ((0xFF, 0xCC, 0x00), (0xFF, 0xD6, 0x0A)),
+            "Green": ((0x34, 0xC7, 0x59), (0x30, 0xD1, 0x58)),
+            "Blue": ((0x13, 0x72, 0xF9), (0x13, 0x72, 0xF9)),
+            "Purple": ((0xAF, 0x52, 0xDE), (0xBF, 0x5A, 0xF2)),
+            "Gray": ((0x8E, 0x8E, 0x93), (0x8E, 0x8E, 0x93)),
+        }
+        screenshot = nested.work / "file-tag-swatches.png"
+        if shutil.which("grim", path=run.env.get("PATH")) is None:
+            raise StepFailed("grim is required to verify the private tag swatch colors")
+        subprocess.run(["grim", str(screenshot)], env=run.env, check=True)
+        ox, oy = run.window_origin()
+        for color in colors:
+            swatch_name = f"{color} tag color"
+            swatches = [
+                child
+                for child in descendants(rows[color], limit=40)
+                if role(child) == "image" and name(child) == swatch_name
+            ]
+            if not swatches:
+                raise StepFailed(f"{color} row has no accessible color swatch named {swatch_name!r}")
+            box = extents(swatches[0])
+            if not box or box[2] < 3 or box[3] < 3:
+                raise StepFailed(f"{color} swatch has no measurable visible bounds: {box}")
+            actual = png_pixel_rgb(
+                screenshot, ox + box[0] + box[2] // 2, oy + box[1] + box[3] // 2
+            )
+            expected = expected_rgb[color]
+            if not any(
+                all(abs(actual[channel] - palette[channel]) <= 16 for channel in range(3))
+                for palette in expected
+            ):
+                raise StepFailed(
+                    f"{color} swatch center pixel is {actual!r}, expected one of {expected!r}"
+                )
+        print("PASS  seven visible tag dots match their colors and keep Red–Gray accessible names", flush=True)
+
+        click_menu_item("Red", rows)
+        if not run.wait_for(lambda: tag_value() == "red", 8, 0.2):
+            raise StepFailed(f"selecting Red did not write user.rmac.tag=red (value={tag_value()!r})")
+
+        rows = open_item_menu()
+        pyatspi = atspi()
+        if not has_state(rows.get("Red"), pyatspi.STATE_CHECKED):
+            raise StepFailed("Red did not appear checked after applying the tag")
+        print("PASS  applying Red checks the row and persists user.rmac.tag=red", flush=True)
+        click_menu_item("Red", rows)
+        if not run.wait_for(lambda: tag_value() is None, 8, 0.2):
+            raise StepFailed(f"selecting Red again did not remove the tag (value={tag_value()!r})")
+        print("PASS  selecting Red again removes the tag xattr", flush=True)
+    finally:
+        run.stop()
+
+
 def inner(args: argparse.Namespace) -> int:
     work = Path(args.inner)
     nested = Nested(work)
@@ -1018,6 +1200,9 @@ def inner(args: argparse.Namespace) -> int:
     try:
         if args.check_context_submenus:
             check_files_context_submenus(nested, bins, args.settle)
+            return 0
+        if args.check_file_tag_swatches:
+            check_files_tag_swatches(nested, bins, args.settle)
             return 0
         for path in sc.scenario_paths(only=args.scenarios):
             sid = sc.scenario_id(path)
@@ -1078,6 +1263,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--explore", action="store_true", help="print each scenario app's accessible tree instead")
     parser.add_argument("--explore-steps", type=int, default=0, help="with --explore: play this many steps first")
     parser.add_argument("--check-context-submenus", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--check-file-tag-swatches", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--inner", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if not sys.platform.startswith("linux"):
@@ -1108,6 +1294,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         rebuilt.append("--explore")
     if args.check_context_submenus:
         rebuilt.append("--check-context-submenus")
+    if args.check_file_tag_swatches:
+        rebuilt.append("--check-file-tag-swatches")
     return outer(args, rebuilt)
 
 

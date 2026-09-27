@@ -36,6 +36,17 @@ impl FinderView {
         file_words: rmac_locale::FileVocabulary,
     ) -> rmac_ui::ContextMenu {
         let has_selection = compress_label.is_some();
+        let colors = rmac_ui::theme::current().colors;
+        let swatches = [
+            colors.system_red.hsla(),
+            colors.system_orange.hsla(),
+            colors.system_yellow.hsla(),
+            colors.system_green.hsla(),
+            colors.system_blue.hsla(),
+            colors.system_purple.hsla(),
+            colors.system_gray.hsla(),
+        ];
+        let swatch = |index: usize| swatches[index];
         let mut m = rmac_ui::ContextMenu::new(pos);
         if let Some(label) = undo_label {
             m = m
@@ -115,13 +126,13 @@ impl FinderView {
                 .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(CopyItems))
                 .separator()
                 .header("Tags")
-                .checked_item("Red", tag_checks[0], Box::new(TagRed))
-                .checked_item("Orange", tag_checks[1], Box::new(TagOrange))
-                .checked_item("Yellow", tag_checks[2], Box::new(TagYellow))
-                .checked_item("Green", tag_checks[3], Box::new(TagGreen))
-                .checked_item("Blue", tag_checks[4], Box::new(TagBlue))
-                .checked_item("Purple", tag_checks[5], Box::new(TagPurple))
-                .checked_item("Gray", tag_checks[6], Box::new(TagGray));
+                .checked_item_with_swatch("Red", tag_checks[0], swatch(0), Box::new(TagRed))
+                .checked_item_with_swatch("Orange", tag_checks[1], swatch(1), Box::new(TagOrange))
+                .checked_item_with_swatch("Yellow", tag_checks[2], swatch(2), Box::new(TagYellow))
+                .checked_item_with_swatch("Green", tag_checks[3], swatch(3), Box::new(TagGreen))
+                .checked_item_with_swatch("Blue", tag_checks[4], swatch(4), Box::new(TagBlue))
+                .checked_item_with_swatch("Purple", tag_checks[5], swatch(5), Box::new(TagPurple))
+                .checked_item_with_swatch("Gray", tag_checks[6], swatch(6), Box::new(TagGray));
         } else {
             m = m.command_item(
                 "New Folder",

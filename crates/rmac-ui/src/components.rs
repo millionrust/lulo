@@ -10,15 +10,15 @@
 //! app's root element or opaque siblings paint over it.
 
 use gpui::{
-    anchored, deferred, div, prelude::FluentBuilder as _, px, Action, AnyElement, App, Context,
-    ElementId, FocusHandle, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent,
-    MouseButton, ParentElement as _, Pixels, Point, RenderOnce, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Toggled, Window,
+    Action, AnyElement, App, Context, ElementId, FocusHandle, Hsla, InteractiveElement as _,
+    IntoElement, KeyBinding, KeyDownEvent, MouseButton, ParentElement as _, Pixels, Point,
+    RenderOnce, Role, SharedString, StatefulInteractiveElement as _, Styled as _, Toggled, Window,
+    anchored, deferred, div, prelude::FluentBuilder as _, px,
 };
 use gpui_component::StyledExt as _;
 use std::{cell::Cell, rc::Rc};
 
-use crate::{mac, shortcuts::Shortcut, Button, ButtonRole, ListRow};
+use crate::{Button, ButtonRole, ListRow, mac, shortcuts::Shortcut};
 
 gpui::actions!(
     rmac_ui,
@@ -443,6 +443,7 @@ enum MenuEntry {
         danger: bool,
         enabled: bool,
         checked: MenuCheck,
+        swatch: Option<Hsla>,
     },
     Separator,
     Header(SharedString),
@@ -541,6 +542,7 @@ impl ContextMenu {
             danger: false,
             enabled: true,
             checked: MenuCheck::None,
+            swatch: None,
         });
         self
     }
@@ -559,6 +561,7 @@ impl ContextMenu {
             danger: false,
             enabled: true,
             checked: MenuCheck::None,
+            swatch: None,
         });
         self
     }
@@ -582,6 +585,7 @@ impl ContextMenu {
             danger: true,
             enabled: true,
             checked: MenuCheck::None,
+            swatch: None,
         });
         self
     }
@@ -600,6 +604,7 @@ impl ContextMenu {
             danger: true,
             enabled: true,
             checked: MenuCheck::None,
+            swatch: None,
         });
         self
     }
@@ -629,6 +634,7 @@ impl ContextMenu {
             danger: false,
             enabled: false,
             checked: MenuCheck::None,
+            swatch: None,
         });
         self
     }
@@ -648,6 +654,29 @@ impl ContextMenu {
             danger: false,
             enabled: true,
             checked,
+            swatch: None,
+        });
+        self
+    }
+
+    /// Append a checked item with a color swatch separate from its check mark.
+    /// The item's accessible name remains `label`; the swatch is named as a
+    /// child image so assistive technology can distinguish its color purpose.
+    pub fn checked_item_with_swatch(
+        mut self,
+        label: impl Into<SharedString>,
+        checked: MenuCheck,
+        swatch: Hsla,
+        action: Box<dyn Action>,
+    ) -> Self {
+        self.items.push(MenuEntry::Item {
+            label: label.into(),
+            shortcut: None,
+            action,
+            danger: false,
+            enabled: true,
+            checked,
+            swatch: Some(swatch),
         });
         self
     }
@@ -670,6 +699,15 @@ impl ContextMenu {
         let return_focus = state.return_focus.clone();
         let active_submenu = state.active_submenu.clone();
         let owner = state.owner;
+        let has_swatch_column = self.items.iter().any(|entry| {
+            matches!(
+                entry,
+                MenuEntry::Item {
+                    swatch: Some(_),
+                    ..
+                }
+            )
+        });
         let mut panel = div()
             .id("rmac-context-menu")
             .role(Role::Menu)
@@ -700,7 +738,7 @@ impl ContextMenu {
                     panel = panel.child(
                         div()
                             .mx(px(5.0))
-                            .px(px(8.0))
+                            .px(px(if has_swatch_column { 20.0 } else { 8.0 }))
                             .py(px(3.0))
                             .text_size(crate::text_px(11.0))
                             .font_weight(mac::SEMIBOLD)
@@ -723,6 +761,7 @@ impl ContextMenu {
                             .items_center()
                             .gap_2()
                             .child(div().w(px(14.0)))
+                            .when(has_swatch_column, |el| el.child(div().w(px(12.0))))
                             .child(div().flex_1().child(label))
                             .child(div().text_color(mac::text_tertiary()).child("›")),
                     )
@@ -784,6 +823,7 @@ impl ContextMenu {
                     danger,
                     enabled,
                     checked,
+                    swatch,
                 } => {
                     let base = if !enabled {
                         mac::text_tertiary()
@@ -803,6 +843,7 @@ impl ContextMenu {
                     // Files ⌘⇧."). Every item gets an explicit name of just
                     // its label instead.
                     let accessible_label = label.clone();
+                    let swatch_accessible_label = format!("{label} tag color");
                     let content = div()
                         .w_full()
                         .h_flex()
@@ -817,6 +858,27 @@ impl ContextMenu {
                                 .text_size(crate::text_px(12.0))
                                 .child(mark),
                         )
+                        .when(has_swatch_column, |el| {
+                            el.child(
+                                div()
+                                    .w(px(12.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .when_some(swatch, |el, color| {
+                                        el.child(
+                                            div()
+                                                .id(("rmac-context-menu-swatch", i))
+                                                .role(Role::Image)
+                                                .aria_label(swatch_accessible_label)
+                                                .w(px(9.0))
+                                                .h(px(9.0))
+                                                .rounded_full()
+                                                .bg(color),
+                                        )
+                                    }),
+                            )
+                        })
                         .child(div().flex_1().child(label))
                         .when_some(shortcut, |el, sc| {
                             el.child(
@@ -916,6 +978,15 @@ fn render_submenu_entries(
     _menu_focus: FocusHandle,
     return_focus: FocusHandle,
 ) -> Vec<AnyElement> {
+    let has_swatch_column = entries.iter().any(|entry| {
+        matches!(
+            entry,
+            MenuEntry::Item {
+                swatch: Some(_),
+                ..
+            }
+        )
+    });
     entries
         .into_iter()
         .enumerate()
@@ -935,7 +1006,7 @@ fn render_submenu_entries(
                 MenuEntry::Header(label) => Some(
                     div()
                         .mx(px(5.0))
-                        .px(px(8.0))
+                        .px(px(if has_swatch_column { 20.0 } else { 8.0 }))
                         .py(px(3.0))
                         .text_size(crate::text_px(11.0))
                         .font_weight(mac::SEMIBOLD)
@@ -950,6 +1021,7 @@ fn render_submenu_entries(
                     danger,
                     enabled,
                     checked,
+                    swatch,
                 } => {
                     let base = if !enabled {
                         mac::text_tertiary()
@@ -964,6 +1036,7 @@ fn render_submenu_entries(
                         MenuCheck::None => "",
                     };
                     let accessible_label = label.clone();
+                    let swatch_accessible_label = format!("{label} tag color");
                     let content = div()
                         .w_full()
                         .h_flex()
@@ -978,6 +1051,27 @@ fn render_submenu_entries(
                                 .text_size(crate::text_px(12.0))
                                 .child(mark),
                         )
+                        .when(has_swatch_column, |el| {
+                            el.child(
+                                div()
+                                    .w(px(12.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .when_some(swatch, |el, color| {
+                                        el.child(
+                                            div()
+                                                .id(("rmac-submenu-swatch", id))
+                                                .role(Role::Image)
+                                                .aria_label(swatch_accessible_label)
+                                                .w(px(9.0))
+                                                .h(px(9.0))
+                                                .rounded_full()
+                                                .bg(color),
+                                        )
+                                    }),
+                            )
+                        })
                         .child(div().flex_1().child(label))
                         .when_some(shortcut, |el, sc| {
                             el.child(
@@ -1064,5 +1158,31 @@ mod tests {
         assert!(
             matches!(items.as_slice(), [MenuEntry::Item { label, checked: MenuCheck::On, .. }] if label.as_ref() == "Name")
         );
+    }
+
+    #[test]
+    fn checked_swatch_item_keeps_its_label_and_check_state() {
+        let pos = Point::new(px(0.0), px(0.0));
+        let color: Hsla = gpui::rgb(0xff3b30).into();
+        let menu = ContextMenu::new(pos).checked_item_with_swatch(
+            "Red",
+            MenuCheck::Mixed,
+            color,
+            Box::new(DismissMenu),
+        );
+        let [
+            MenuEntry::Item {
+                label,
+                checked,
+                swatch,
+                ..
+            },
+        ] = menu.items.as_slice()
+        else {
+            panic!("swatch should stay attached to one checked menu item");
+        };
+        assert_eq!(label.as_ref(), "Red");
+        assert_eq!(*checked, MenuCheck::Mixed);
+        assert_eq!(*swatch, Some(color));
     }
 }

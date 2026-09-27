@@ -5,9 +5,11 @@
 **No-go under the current release gates.** The earlier CI failures recorded
 below are resolved: [main CI run 36261319386](https://github.com/millionrust/lulo/actions/runs/36261319386)
 and [quality CI run 36261319364](https://github.com/millionrust/lulo/actions/runs/36261319364)
-both succeeded on source commit `8ae3a9eb`. The non-blocking Mac behaviour-parity job reports
-23/25; its two remaining misses are the Files context menu
-(Share/tags/Quick Actions) and Get Info window behavior. CI success does not establish release readiness:
+both succeeded on source commit `8ae3a9eb`. The non-blocking Mac behaviour-parity job on
+`afa8d07d` reports 23/26; its three mismatches are the Files item menu
+(Share/tags/Quick Actions), Get Info window behavior, and the new background
+Get Info scenario (remaining menu rows plus that same window behavior). CI
+success does not establish release readiness:
 these product, accessibility, security, and packaging gates remain open.
 
 | # | Blocker | Owner/agent | Size |

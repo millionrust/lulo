@@ -225,6 +225,49 @@ mod linux_wayland {
         low_battery: LowBatteryWatch,
     }
 
+    /// Files owns the menu bar on the desktop, including the interval before
+    /// its D-Bus menu endpoint is ready. Other focused apps have no static
+    /// fallback here because their menus are app-specific.
+    fn static_fallback_menus(app_id: &str) -> Vec<rmac_app_menu::Menu> {
+        if app_id == rmac_apps::identity::FILES {
+            rmac_app_menu::static_definition(app_id).unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    }
+
+    #[cfg(test)]
+    mod static_fallback_tests {
+        use super::static_fallback_menus;
+
+        #[test]
+        fn focused_files_gets_desktop_menus_before_live_publication() {
+            let menus = static_fallback_menus(rmac_apps::identity::FILES);
+            let labels = menus
+                .iter()
+                .map(|menu| menu.label.as_str())
+                .collect::<Vec<_>>();
+
+            assert_eq!(
+                labels,
+                [
+                    "Application",
+                    "File",
+                    "Edit",
+                    "View",
+                    "Go",
+                    "Window",
+                    "Help"
+                ]
+            );
+        }
+
+        #[test]
+        fn other_apps_do_not_receive_the_files_fallback() {
+            assert!(static_fallback_menus(rmac_apps::identity::NOTES).is_empty());
+        }
+    }
+
     impl ShellStatus {
         fn new(
             receiver: async_channel::Receiver<rmac_shell_runtime::Update>,
@@ -265,7 +308,7 @@ mod linux_wayland {
                                 .filter(|app_id| !rmac_apps::identity::is_transient_panel(app_id))
                             {
                                 this.menu_app_id = Some(app_id.clone());
-                                this.menus.clear();
+                                this.menus = static_fallback_menus(&app_id);
                                 this.menus_live = false;
                                 this.menu_generation = this.menu_generation.saturating_add(1);
                                 if rmac_app_menu::bus_name(&app_id).is_some() {
@@ -323,7 +366,7 @@ mod linux_wayland {
         fn show_desktop_menus(&mut self, cx: &mut Context<Self>) {
             let files = rmac_apps::identity::FILES;
             self.menu_app_id = Some(files.to_owned());
-            self.menus = rmac_app_menu::static_definition(files).unwrap_or_default();
+            self.menus = static_fallback_menus(files);
             self.menus_live = false;
             self.menu_generation = self.menu_generation.saturating_add(1);
             request_app_menus(files.to_owned(), self.menu_generation, cx);
@@ -431,7 +474,7 @@ mod linux_wayland {
                         this.menu_app_id = None;
                         this.show_desktop_menus(cx);
                     } else if app_id == rmac_apps::identity::FILES {
-                        this.menus = rmac_app_menu::static_definition(app_id).unwrap_or_default();
+                        this.menus = static_fallback_menus(app_id);
                     }
                     cx.notify();
                 });

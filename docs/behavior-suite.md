@@ -110,6 +110,15 @@ tested binary so mixed dev builds are visible.
      --check-context-submenus 9>&-
    ```
 
+   The tag-swatch check needs `grim`. It verifies all seven visible colors and
+   accessible names, then applies and removes a Red tag through the menu and
+   checks the file's `user.rmac.tag` attribute:
+
+   ```sh
+   python3 scripts/behavior/run_lulo.py --bin-dir $CARGO_TARGET_DIR/iterate \
+     --check-file-tag-swatches 9>&-
+   ```
+
 ## Safety
 
 **Mac**

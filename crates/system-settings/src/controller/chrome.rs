@@ -91,12 +91,14 @@ impl Settings {
                     .bg(style::capsule_divider()),
             )
             .child(
-                segment("nav-forward", "icons/chevron-right.svg", can_forward)
-                    .when(can_forward, |forward| {
+                segment("nav-forward", "icons/chevron-right.svg", can_forward).when(
+                    can_forward,
+                    |forward| {
                         forward.on_click(
                             cx.listener(|this, _, window, cx| this.go_forward(window, cx)),
                         )
-                    }),
+                    },
+                ),
             );
         let title = self.toolbar_title();
         let subtitle = self.toolbar_subtitle();

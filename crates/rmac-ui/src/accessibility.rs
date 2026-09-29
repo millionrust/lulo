@@ -202,7 +202,10 @@ fn char_offset(text: &str, byte: usize) -> usize {
     while !text.is_char_boundary(byte) {
         byte -= 1;
     }
-    text[..byte].chars().filter(|&character| character != '\n').count()
+    text[..byte]
+        .chars()
+        .filter(|&character| character != '\n')
+        .count()
 }
 
 /// The inverse of [`char_offset`]: the byte offset in `text` after keeping

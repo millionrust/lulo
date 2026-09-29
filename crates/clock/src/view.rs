@@ -611,6 +611,7 @@ impl ClockView {
             )
             .child(
                 div()
+                    .id("clock-tabs")
                     .absolute()
                     .left(px(tabs_left))
                     .top(px(m::TABS_TOP))

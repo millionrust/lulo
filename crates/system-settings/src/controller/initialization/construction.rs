@@ -8,9 +8,18 @@ impl Settings {
             InputState::new(window, cx)
                 .placeholder(rmac_system_settings::accessibility::SEARCH_NAME)
         });
-        cx.observe(&search, |this: &mut Settings, _, cx| {
-            this.search_selection = 0;
-            cx.notify();
+        // `cx.subscribe`, not a generic `cx.observe`: `InputState` forwards
+        // its own cursor-blink timer's notify (`blink_cursor.rs`) as a
+        // notification on itself, so a plain `cx.observe` here reset the
+        // highlighted search result back to the first one roughly twice a
+        // second — silently undoing Down/Up well before a later Return was
+        // pressed. Only the query text itself should reset it.
+        cx.subscribe(&search, |this: &mut Settings, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.search_selection = 0;
+                this.search_result_focused = false;
+                cx.notify();
+            }
         })
         .detach();
 
@@ -174,9 +183,12 @@ impl Settings {
             navigation_persistence,
             nav,
             forward: Vec::new(),
+            pane_history: Vec::new(),
+            pane_forward: Vec::new(),
             sidebar_focused: false,
             search,
             search_selection: 0,
+            search_result_focused: false,
             compact_sidebar_open: false,
             trackpad_tab: 0,
             storage_categories: None,
@@ -185,6 +197,7 @@ impl Settings {
             keyboard_shortcuts_category: 0,
             focus: cx.focus_handle(),
             content_focus: cx.focus_handle(),
+            results_focus: cx.focus_handle(),
             native_window_title: "Settings".into(),
             focused_once: false,
             wifi_error: None,

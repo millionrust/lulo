@@ -32,6 +32,46 @@ pub fn category_matches(
     })
 }
 
+/// How well `category` ranks for `query`, for ordering search results the
+/// way the Mac does: a hit on the pane's own name (e.g. "Wallpaper" for
+/// "wallpaper") outranks one that only hit its description, which in turn
+/// outranks one that only hit its hidden search vocabulary (a pane like
+/// "Desktop & Dock" whose search terms happen to mention "wallpaper" in
+/// passing). Lower is better; `None` when `category` doesn't match `query`
+/// at all (see [`category_matches`]).
+pub fn category_match_rank(
+    query: &str,
+    category_name: &str,
+    category_description: &str,
+    search_terms: &[&str],
+) -> Option<u8> {
+    if !category_matches(query, category_name, category_description, search_terms) {
+        return None;
+    }
+    let query_terms = query
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>();
+    if query_terms.is_empty() {
+        return Some(0);
+    }
+    let name = category_name.to_lowercase();
+    if query_terms
+        .iter()
+        .all(|term| text_has_word_prefix(&name, term))
+    {
+        return Some(0);
+    }
+    let description = category_description.to_lowercase();
+    if query_terms
+        .iter()
+        .all(|term| text_has_word_prefix(&description, term))
+    {
+        return Some(1);
+    }
+    Some(2)
+}
+
 pub fn category_match_hint<'a>(query: &str, search_terms: &'a [&'a str]) -> Option<&'a str> {
     if query.len() > MAX_QUERY_BYTES {
         return None;

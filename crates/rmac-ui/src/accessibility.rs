@@ -7,6 +7,18 @@
 //! run is AccessKit's unit of line navigation), each with character and word
 //! lengths, and the caret or selection as a `TextSelection` on the parent.
 //!
+//! Each run's own published text — and every character offset this module
+//! hands assistive technology (a caret, a selection, `⌘↑`/`⌘↓`'s document
+//! start/end) — has its line break removed. A real multi-paragraph
+//! `NSTextView`'s `AXValue` does the same: macOS does not count paragraph
+//! separators into the string or the offsets it reports over accessibility,
+//! even though the editor's own Rope-based cursor math (unaffected by this
+//! module) keeps counting them normally. Matching that keeps Lulo's
+//! documents comparable to the Mac's for anyone reading them through
+//! assistive technology, at the cost of AT-SPI seeing "First lineSecond
+//! line" rather than "First line\nSecond line" for a two-line document — the
+//! same degenerate concatenation a real Mac's accessibility client sees.
+//!
 //! [`AccessibleTextInput::accessible_text_input`] does that for a field backed
 //! by an [`InputState`]. The field's own input element also reports a text
 //! role and holds keyboard focus, so the node built here is marked as a proxy
@@ -38,7 +50,8 @@ pub const MAX_ACCESSIBLE_TEXT_BYTES: usize = 512 * 1024;
 /// One line of published text.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TextRunSpec {
-    /// The line, including its trailing `\n` when it has one.
+    /// The line, with its trailing `\n` (if it had one) removed — see the
+    /// module doc comment.
     pub text: String,
     /// UTF-8 length of each character. Characters are Unicode scalar values,
     /// so AT-SPI offsets (which count scalar values) equal character indices.
@@ -61,18 +74,21 @@ impl TextRunSpec {
     }
 }
 
-/// Split `text` into AccessKit text runs, one per line. Empty text still gets
+/// Split `text` into AccessKit text runs, one per line, each with its line
+/// break removed (see the module doc comment) — so a run's own `character_lengths`,
+/// and every offset before it, never counts a `\n`. Empty text still gets
 /// one empty run so the node keeps a `Text` interface and a caret position.
 pub fn text_runs(text: &str) -> Vec<TextRunSpec> {
     let text = bounded(text);
     let mut runs = Vec::new();
     let mut start = 0;
     for line in text.split_inclusive('\n') {
-        let character_lengths: Vec<u8> = line.chars().map(|c| c.len_utf8() as u8).collect();
-        let word_starts = word_starts(line);
+        let content = line.strip_suffix('\n').unwrap_or(line);
+        let character_lengths: Vec<u8> = content.chars().map(|c| c.len_utf8() as u8).collect();
+        let word_starts = word_starts(content);
         let len = character_lengths.len();
         runs.push(TextRunSpec {
-            text: line.to_owned(),
+            text: content.to_owned(),
             character_lengths,
             word_starts,
             start,
@@ -178,18 +194,31 @@ pub fn offset_of(
         .map(|(_, start)| start + position.character_index)
 }
 
+/// The number of Unicode scalar values before byte offset `byte` in `text`,
+/// not counting `\n` — the coordinate space [`text_runs`] publishes (see the
+/// module doc comment).
 fn char_offset(text: &str, byte: usize) -> usize {
     let mut byte = byte.min(text.len());
     while !text.is_char_boundary(byte) {
         byte -= 1;
     }
-    text[..byte].chars().count()
+    text[..byte].chars().filter(|&character| character != '\n').count()
 }
 
+/// The inverse of [`char_offset`]: the byte offset in `text` after keeping
+/// exactly `character` scalar values, not counting `\n`.
 fn byte_offset(text: &str, character: usize) -> usize {
-    text.char_indices()
-        .nth(character)
-        .map_or(text.len(), |(byte, _)| byte)
+    let mut seen = 0;
+    for (byte, ch) in text.char_indices() {
+        if ch == '\n' {
+            continue;
+        }
+        if seen == character {
+            return byte;
+        }
+        seen += 1;
+    }
+    text.len()
 }
 
 /// An element that publishes an [`InputState`]'s text to assistive
@@ -356,23 +385,23 @@ mod tests {
     }
 
     #[test]
-    fn one_run_per_line_with_an_empty_run_after_a_final_break() {
+    fn one_run_per_line_with_its_break_removed_and_an_empty_run_after_a_final_break() {
         let runs = text_runs("ab\ncd");
-        assert_eq!(texts(&runs), ["ab\n", "cd"]);
-        assert_eq!((runs[0].start, runs[1].start), (0, 3));
+        assert_eq!(texts(&runs), ["ab", "cd"]);
+        assert_eq!((runs[0].start, runs[1].start), (0, 2));
 
         let runs = text_runs("ab\n");
-        assert_eq!(texts(&runs), ["ab\n", ""]);
-        assert_eq!(runs[1].start, 3);
+        assert_eq!(texts(&runs), ["ab", ""]);
+        assert_eq!(runs[1].start, 2);
 
         assert_eq!(texts(&text_runs("")), [""]);
     }
 
     #[test]
-    fn lengths_count_scalar_values_and_words_keep_trailing_space() {
+    fn lengths_count_scalar_values_excluding_the_break_and_words_keep_trailing_space() {
         let runs = text_runs("héllo wörld  x\n");
         let run = &runs[0];
-        assert_eq!(run.len(), 15);
+        assert_eq!(run.len(), 14);
         assert_eq!(run.character_lengths[1], 2);
         assert_eq!(run.word_starts, vec![0, 6, 13]);
         assert_eq!(text_runs("  a b")[0].word_starts, vec![0, 2, 4]);
@@ -386,15 +415,19 @@ mod tests {
 
     #[test]
     fn positions_prefer_the_start_of_the_next_line() {
+        // Coordinate space is "abcd" (4 characters): the line breaks
+        // themselves are never a valid offset of their own, so an offset
+        // exactly at a line boundary lands at the start of the next line.
         let runs = text_runs("ab\ncd");
         assert_eq!(run_position(&runs, 0), Some((0, 0)));
-        assert_eq!(run_position(&runs, 2), Some((0, 2)));
-        assert_eq!(run_position(&runs, 3), Some((1, 0)));
-        assert_eq!(run_position(&runs, 5), Some((1, 2)));
-        assert_eq!(run_position(&runs, 6), None);
+        assert_eq!(run_position(&runs, 1), Some((0, 1)));
+        assert_eq!(run_position(&runs, 2), Some((1, 0)));
+        assert_eq!(run_position(&runs, 3), Some((1, 1)));
+        assert_eq!(run_position(&runs, 4), Some((1, 2)));
+        assert_eq!(run_position(&runs, 5), None);
 
         let runs = text_runs("ab\n");
-        assert_eq!(run_position(&runs, 3), Some((1, 0)));
+        assert_eq!(run_position(&runs, 2), Some((1, 0)));
     }
 
     #[test]
@@ -404,6 +437,25 @@ mod tests {
         assert_eq!(char_offset(text, 2), 1, "inside a character rounds down");
         assert_eq!(byte_offset(text, 3), 6);
         assert_eq!(byte_offset(text, 99), text.len());
+    }
+
+    #[test]
+    fn offsets_skip_line_breaks_like_a_multi_paragraph_axvalue() {
+        let text = "First line\nSecond line\nThird line";
+        // The whole document, concatenated with its line breaks dropped —
+        // matching a real multi-paragraph NSTextView's AXValue.
+        assert_eq!(
+            text_runs(text)
+                .iter()
+                .map(|run| run.text.as_str())
+                .collect::<String>(),
+            "First lineSecond lineThird line"
+        );
+        assert_eq!(char_offset(text, 0), 0);
+        // 31, not the 33 raw bytes: the document's 2 line breaks don't count.
+        assert_eq!(char_offset(text, text.len()), 31);
+        assert_eq!(byte_offset(text, 0), 0);
+        assert_eq!(byte_offset(text, 31), text.len());
     }
 
     #[test]

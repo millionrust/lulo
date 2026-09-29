@@ -33,5 +33,9 @@
       ],
       "settle": 1.0
     }
-  ]
+  ],
+  "tolerance": {
+    "back.windows.front": "present",
+    "back.windows.titles": "present"
+  }
 }

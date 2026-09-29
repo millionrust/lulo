@@ -5,7 +5,7 @@ mod matching;
 mod model;
 mod projection;
 
-pub use matching::{category_match_hint, category_matches};
+pub use matching::{category_match_hint, category_match_rank, category_matches};
 pub use model::*;
 pub use projection::project_settings_navigation;
 

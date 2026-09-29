@@ -281,12 +281,13 @@ fn main() {
                 },
                 cx,
             );
-            cx.on_window_closed(|cx, _| {
-                if cx.windows().is_empty() {
-                    cx.quit();
-                }
-            })
-            .detach();
+            // Preview stays running with no windows open, like Finder
+            // (behavior:preview/close-window, behavior:files/close-window-cmd-w):
+            // ⌘W on the last document window used to quit the whole
+            // process instead of just closing it, and quitting would also
+            // undercut the hand-off above, which needs the process alive
+            // to open a later document in a new window rather than
+            // relaunching.
             if paths.is_empty() {
                 choose_and_open(true, cx);
             } else {

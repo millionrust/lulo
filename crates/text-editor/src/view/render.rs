@@ -127,8 +127,8 @@ impl Render for EditorView {
             .on_action(
                 cx.listener(|this, _: &ToggleReplace, window, cx| this.toggle_replace(window, cx)),
             )
-            .on_action(cx.listener(|this, _: &FindNext, window, cx| this.find_next(window, cx)))
-            .on_action(cx.listener(|this, _: &FindPrev, window, cx| this.find_prev(window, cx)))
+            .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_next(cx)))
+            .on_action(cx.listener(|this, _: &FindPrev, _, cx| this.find_prev(cx)))
             .on_action(cx.listener(|this, _: &CloseBar, _, cx| this.close_bar(cx)))
             .on_action(cx.listener(|this, _: &ToggleMono, _, cx| this.toggle_mono(cx)))
             .on_action(cx.listener(|this, _: &SetEncodingUtf8, _, cx| {

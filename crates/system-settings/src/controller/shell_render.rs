@@ -5,7 +5,10 @@ impl Render for Settings {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if !self.focused_once {
             self.focused_once = true;
-            window.focus(&self.focus, cx);
+            // The Mac's own System Settings opens with keyboard focus
+            // already on the search field, not the window as a whole.
+            let search_focus = self.search.read(cx).focus_handle(cx);
+            window.focus(&search_focus, cx);
         }
         let title_subject = self
             .nav
@@ -117,7 +120,19 @@ impl Render for Settings {
                     this.cancel_network_edit(cx);
                 } else if !this.search.read(cx).value().trim().is_empty() {
                     let handled = match event.keystroke.key.as_str() {
-                        "down" => this.move_search_selection(1, cx),
+                        "down" => {
+                            let moved = this.move_search_selection(1, cx);
+                            if moved {
+                                // Matches the Mac: Down hands keyboard focus
+                                // to the results list itself (a `Role::List`
+                                // an assistive-technology client reports),
+                                // not just an internal highlight index while
+                                // the search field keeps focus.
+                                let results_focus = this.results_focus.clone();
+                                window.focus(&results_focus, cx);
+                            }
+                            moved
+                        }
                         "up" => this.move_search_selection(-1, cx),
                         "enter" => this.activate_search_selection(window, cx),
                         "escape" => {
@@ -133,7 +148,7 @@ impl Render for Settings {
                 }
             }))
             .on_action(cx.listener(|t, _: &GoBack, window, cx| t.go_back(window, cx)))
-            .on_action(cx.listener(|t, _: &GoForward, _, cx| t.go_forward(cx)))
+            .on_action(cx.listener(|t, _: &GoForward, window, cx| t.go_forward(window, cx)))
             .on_action(cx.listener(|t, action: &NavigateToPane, window, cx| {
                 t.navigate_to_pane(&action.pane, window, cx)
             }))

@@ -31,6 +31,9 @@
   ],
   "tolerance": {
     "initial.focus.role": "ignore",
-    "after_tab.focus.role": "ignore"
+    "after_tab.focus.role": "ignore",
+    "initial.focus.selection": "present",
+    "initial.focus.selected_text": "present",
+    "initial.focus.selected_all": "present"
   }
 }

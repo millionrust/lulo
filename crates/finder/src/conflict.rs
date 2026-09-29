@@ -77,10 +77,12 @@ pub(crate) fn prepare_conflict_batch(
         // Finder treats pasting a copied item into its own folder as
         // Duplicate. Resolve the name during the background preflight, so
         // no conflict sheet can offer to replace the source with itself.
-        if matches!(task.kind, file_ops::TransferKind::Copy)
-            && task.source == task.destination
-        {
-            task.destination = unique_copy_path_avoiding(&task.source, &reserved_destinations);
+        if matches!(task.kind, file_ops::TransferKind::Copy) {
+            if task.source == task.destination {
+                task.destination = unique_copy_path_avoiding(&task.source, &reserved_destinations);
+            } else if label == "Duplicating" {
+                task.destination = unique_path_avoiding(task.destination, &reserved_destinations);
+            }
         }
         let requested_destination = task.destination.clone();
         let kind = match &task.kind {
@@ -134,7 +136,9 @@ fn unique_copy_path_avoiding(source: &Path, reserved: &BTreeSet<PathBuf>) -> Pat
         .file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let extension = source.extension().map(|ext| ext.to_string_lossy().into_owned());
+    let extension = source
+        .extension()
+        .map(|ext| ext.to_string_lossy().into_owned());
     for number in 1..10_000 {
         let suffix = if number == 1 {
             " copy".to_owned()
@@ -296,6 +300,27 @@ mod tests {
             "rmac-reserved-destination-{} 2",
             std::process::id()
         )));
+    }
+
+    #[test]
+    fn same_folder_copy_uses_finder_numbering_without_a_conflict() {
+        let root = TestDirectory::new("same-folder-copy");
+        let source = root.0.join("report.txt");
+        std::fs::write(&source, b"original").unwrap();
+        let task = || file_ops::TransferTask {
+            kind: file_ops::TransferKind::Copy,
+            source: source.clone(),
+            destination: source.clone(),
+        };
+        let batch = prepare_conflict_batch("Copying", vec![task()], false, false).unwrap();
+        assert!(batch.conflicts.is_empty());
+        assert_eq!(batch.ready[0].destination, root.0.join("report copy.txt"));
+
+        std::fs::write(root.0.join("report copy.txt"), b"first copy").unwrap();
+        let batch = prepare_conflict_batch("Copying", vec![task()], false, false).unwrap();
+        assert!(batch.conflicts.is_empty());
+        assert_eq!(batch.ready[0].destination, root.0.join("report copy 2.txt"));
+        assert_eq!(std::fs::read(source).unwrap(), b"original");
     }
 
     #[test]

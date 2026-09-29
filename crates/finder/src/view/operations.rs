@@ -31,23 +31,6 @@ impl FinderView {
         true
     }
 
-    pub(super) fn start_transfer(
-        &mut self,
-        label: &'static str,
-        tasks: Vec<file_ops::TransferTask>,
-        keep_unfinished_in_clipboard: bool,
-        cx: &mut Context<Self>,
-    ) {
-        self.start_transfer_with_retained(
-            label,
-            tasks,
-            keep_unfinished_in_clipboard,
-            Vec::new(),
-            false,
-            cx,
-        );
-    }
-
     pub(super) fn start_transfer_with_retained(
         &mut self,
         label: &'static str,

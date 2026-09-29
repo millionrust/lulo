@@ -9,6 +9,11 @@ const FILE_TAG_XATTR: &str = "user.rmac.tag";
 const FILE_TAGS: [&str; 7] = ["red", "orange", "yellow", "green", "blue", "purple", "gray"];
 
 impl FinderView {
+    pub(super) fn menu_unavailable(&mut self, message: &'static str, cx: &mut Context<Self>) {
+        self.menu_at = None;
+        self.operation_notice = Some(message.into());
+        cx.notify();
+    }
     /// Finder-style color tags persisted in an app-owned extended attribute.
     /// This avoids touching file contents or ownership.
     pub(super) fn set_selected_tag(&mut self, tag: &'static str, cx: &mut Context<Self>) {
@@ -87,7 +92,10 @@ impl FinderView {
         }
         if let Some(journal) = self.operation_journal.as_ref() {
             if let Err(error) = journal.undo_store().archive_created_folder(&path) {
-                self.operation_error = Some(format!("New folder was created, but Undo could not be recorded: {error}").into());
+                self.operation_error = Some(
+                    format!("New folder was created, but Undo could not be recorded: {error}")
+                        .into(),
+                );
             } else {
                 self.undo_available = journal.undo_store().latest().ok().flatten();
             }
@@ -115,8 +123,6 @@ impl FinderView {
 
     pub(super) fn duplicate(&mut self, cx: &mut Context<Self>) {
         let mut tasks = Vec::new();
-        let mut destinations = BTreeSet::new();
-        let mut new_selection = Vec::new();
         for src in self.selected_paths() {
             let stem = src
                 .file_stem()
@@ -128,9 +134,7 @@ impl FinderView {
                 None => format!("{stem} copy"),
             };
             let destination_dir = src.parent().unwrap_or(self.cwd.as_path());
-            let dst = unique_path_avoiding(destination_dir.join(copy_name), &destinations);
-            destinations.insert(dst.clone());
-            new_selection.push(dst.clone());
+            let dst = destination_dir.join(copy_name);
             tasks.push(file_ops::TransferTask {
                 kind: file_ops::TransferKind::Copy,
                 source: src,
@@ -138,9 +142,7 @@ impl FinderView {
             });
         }
         // Select the new copy once it lands, as Finder does.
-        self.pending_select = None;
-        self.pending_select_many = new_selection;
-        self.start_transfer("Duplicating", tasks, false, cx);
+        self.start_transfer_with_conflicts("Duplicating", tasks, false, false, cx);
     }
 
     /// File ▸ Make Alias: a symbolic link next to each selected item, named

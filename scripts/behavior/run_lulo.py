@@ -901,7 +901,7 @@ class LuloRun:
         frame = self.active_frame()
         target = None
         for node in descendants(frame, limit=4000) if frame is not None else []:
-            if name(node) == label and role(node) in {"list item", "table row", "tree item", "table cell", "label", "static", "push button", "button", "menu item"}:
+            if name(node) == label and role(node) in {"list item", "table row", "tree item", "table cell", "label", "static", "push button", "button", "combo box", "menu item"}:
                 target = node
                 break
         if target is None:

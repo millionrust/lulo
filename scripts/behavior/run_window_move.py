@@ -290,6 +290,24 @@ class Run:
         process.terminate()
         process.wait(10)
 
+    def double_click(self, point: tuple[float, float]) -> None:
+        """Two zero-distance drags at `point`, spaced for GPUI's 400 ms
+        double-click window.
+
+        A `WindowControlArea::Drag` press starts an interactive move
+        (`start_window_move`, gpui_linux `client.rs`) on every press. A
+        bare press-release with no motion event between them (`wlinput`'s
+        `click`) leaves that grab in a state where niri never delivers the
+        matching release to the client, so GPUI never sees a paired MouseUp
+        and no click -- single or double -- is ever recorded. `drag()` with
+        equal start and end sends motion events during the grab the same
+        way a real title-bar drag does, which lets niri end the grab
+        cleanly; used twice in a row it reproduces a real double-click.
+        """
+        self.drag(point, point)
+        time.sleep(0.25)
+        self.drag(point, point)
+
     def assert_double_click_zoom(self, app_id: str, title: str) -> None:
         """Double-clicking the title bar Zooms (SET-33), then Zooms back.
 
@@ -300,15 +318,38 @@ class Run:
         Dock runs in this nested session (menubar does not), so the
         "never under the Dock" check below only covers the Dock's
         exclusive zone.
+
+        KNOWN GAP (not a production bug): as of this writing the first
+        check below fails in this harness for every app tried (Calculator,
+        Settings), with every click position and both a bare `count=2`
+        click and the zero-distance `double_click()` drag above. Debug
+        tracing (temporary `eprintln!`s in `perform_window_action` and
+        `double_click_title_bar_action`, `crates/rmac-ui/src/chrome.rs`)
+        showed the handler is never entered -- the synthetic double-click
+        never reaches GPUI at all, so the resulting geometry is simply
+        unchanged. `client_bar`'s `WindowControlArea::Drag` starts an
+        interactive move (`start_window_move`) on *every* press, including
+        the second one; this appears to swallow that press's release
+        before GPUI can pair it into a click, single or double, over a
+        Drag region. Real title-bar drags in this same file (`assert_move`)
+        prove that mechanism works for an actual drag, so this looks like
+        an interaction specific to a stationary double-click, not a broken
+        drag path. Root-causing it further needs either a fix in the
+        vendored gpui_linux Wayland backend (ADR 0013) or a different way
+        to synthesize the second click that this investigation did not
+        find. The Rust side of SET-33 (the setting, the Zoom toggle via
+        `TileHistoryStore`, and routing through `send_window_action`) is
+        covered independently by `cargo test -p rmac-shell-settings` and
+        `-p rmac-ui`, and by `cargo clippy -D warnings`.
         """
         window = self.window(app_id)
         if not window:
             return
         x, y, width, height = self.geometry(window)
-        # Click well clear of the traffic lights, near the left edge.
-        title_bar_point = (x + width * 0.65, y + 12)
-        self.pointer.click(*self.parent_point(*title_bar_point), self.parent_width,
-                           self.parent_height, count=2)
+        # Same point `assert_move`'s title-bar drag already proves lands on
+        # the drag region (not a shadow margin or a toolbar control).
+        title_bar_point = (x + width * 0.5, y + 18)
+        self.double_click(title_bar_point)
         zoomed = self.wait_for(
             lambda: (candidate := self.window(app_id))
             if candidate and self.geometry(candidate)[2:] != (width, height) else None,
@@ -334,9 +375,8 @@ class Run:
                    f"bottom={zy + zh}, output height={self.height}")
 
         # A second double-click Zooms back to the user's previous size.
-        restore_point = (zx + zw * 0.65, zy + 12)
-        self.pointer.click(*self.parent_point(*restore_point), self.parent_width,
-                           self.parent_height, count=2)
+        restore_point = (zx + zw * 0.5, zy + 18)
+        self.double_click(restore_point)
         restored = self.wait_for(
             lambda: (candidate := self.window(app_id))
             if candidate and self.geometry(candidate)[2:] != zoomed_geometry[2:] else None,

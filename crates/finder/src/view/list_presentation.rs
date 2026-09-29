@@ -448,6 +448,7 @@ impl FinderView {
                     .min_h(px(0.0))
                     .pt(px(LIST_ROWS_TOP))
                     .overflow_hidden()
+                    .child(filler)
                     .child({
                         let indices = visible_list_indices.clone();
                         uniform_list(
@@ -468,10 +469,11 @@ impl FinderView {
                                     .collect::<Vec<_>>()
                             }),
                         )
+                        .with_sizing_behavior(gpui::ListSizingBehavior::Auto)
+                        .w_full()
                         .flex_1()
                         .min_h(px(0.0))
                     })
-                    .child(filler)
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, window, cx| {

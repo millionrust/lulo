@@ -407,7 +407,7 @@ pub(crate) mod linux_wayland {
             };
             let windows = rmac_compositor::windows_of_application(&snapshot, &app.app_id);
             self.pending_quit = true;
-            cx.spawn(async move |cx: &mut AsyncApp| {
+            cx.spawn(async move |_, cx: &mut AsyncApp| {
                 for window in windows.iter().copied() {
                     let action = Action::CloseWindow { window };
                     if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
@@ -439,7 +439,7 @@ pub(crate) mod linux_wayland {
                     cx.background_executor().timer(QUIT_READBACK_INTERVAL).await;
                 }
                 let Some(snapshot) = latest_snapshot else {
-                    let _ = handle.update_in(cx, |view, _, cx| {
+                    let _ = handle.update(cx, |view, _, cx| {
                         view.pending_quit = false;
                         cx.notify();
                     });
@@ -461,7 +461,7 @@ pub(crate) mod linux_wayland {
                 }
 
                 let readback = snapshot.clone();
-                let Ok((apps, items)) = service.update(cx, |service, _| {
+                let (apps, items) = service.update(cx, |service, _| {
                     if remaining.is_empty() {
                         service.recency.forget(&app.app_id);
                     }
@@ -471,14 +471,8 @@ pub(crate) mod linux_wayland {
                         .map(|app| (app.app_id.clone(), service.item(app)))
                         .collect();
                     (apps, items)
-                }) else {
-                    let _ = handle.update_in(cx, |view, _, cx| {
-                        view.pending_quit = false;
-                        cx.notify();
-                    });
-                    return;
-                };
-                let _ = handle.update_in(cx, |view, window, cx| {
+                });
+                let _ = handle.update(cx, |view, window, cx| {
                     view.pending_quit = false;
                     if !view.session.replace_apps(apps) {
                         view.close(window, cx);

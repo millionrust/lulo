@@ -656,11 +656,14 @@ mod tests {
         };
         assert_eq!(
             labels(vec![PathBuf::from("/d/a.txt")]),
-            ["Open", "Move to Trash", "Get Info", "Rename", "Duplicate"]
+            [
+                "Open", "Open With", "Move to Trash", "Get Info", "Rename",
+                "Compress", "Duplicate", "Make Alias", "Quick Look", "Copy"
+            ]
         );
         assert_eq!(
             labels(vec![PathBuf::from("/d/a.txt"), PathBuf::from("/d/b.txt")]),
-            ["Open", "Move to Trash", "Get Info", "Duplicate"]
+            ["Open", "Move to Trash", "Get Info", "Compress", "Duplicate", "Quick Look", "Copy"]
         );
     }
 }

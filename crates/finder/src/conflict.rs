@@ -77,7 +77,7 @@ pub(crate) fn prepare_conflict_batch(
         // Finder treats pasting a copied item into its own folder as
         // Duplicate. Resolve the name during the background preflight, so
         // no conflict sheet can offer to replace the source with itself.
-        if matches!(task.kind, file_ops::TransferKind::Copy) {
+        if matches!(&task.kind, file_ops::TransferKind::Copy) {
             if task.source == task.destination {
                 task.destination = unique_copy_path_avoiding(&task.source, &reserved_destinations);
             } else if label == "Duplicating" {
@@ -330,6 +330,18 @@ mod tests {
         assert!(batch.conflicts.is_empty());
         assert_eq!(batch.ready[0].destination, root.0.join("report copy 2.txt"));
         assert_eq!(std::fs::read(source).unwrap(), b"original");
+    }
+
+    #[test]
+    fn a_broken_symlink_still_reserves_its_file_name() {
+        let root = TestDirectory::new("broken-link-name");
+        let link = root.0.join("report copy.txt");
+        std::os::unix::fs::symlink(root.0.join("missing"), &link).unwrap();
+        assert_eq!(
+            unique_copy_path_avoiding(&root.0.join("report.txt"), &BTreeSet::new()),
+            root.0.join("report copy 2.txt")
+        );
+        assert!(std::fs::symlink_metadata(link).is_ok());
     }
 
     #[test]

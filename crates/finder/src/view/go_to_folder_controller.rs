@@ -174,7 +174,9 @@ impl FinderView {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, entry)| {
-                    self.pending_select_many.contains(&entry.path).then_some(index)
+                    self.pending_select_many
+                        .contains(&entry.path)
+                        .then_some(index)
                 })
                 .collect();
             self.anchor = self.selected.iter().next().copied();

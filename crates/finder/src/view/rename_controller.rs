@@ -133,7 +133,10 @@ impl FinderView {
             .unwrap_or(self.cwd.as_path())
             .join(new_name);
         if destination.exists() {
-            let stem = destination.file_stem().unwrap_or_default().to_string_lossy();
+            let stem = destination
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy();
             let extension = destination
                 .extension()
                 .map(|ext| format!(".{}", ext.to_string_lossy()))

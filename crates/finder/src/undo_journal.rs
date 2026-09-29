@@ -500,9 +500,8 @@ pub(crate) struct UndoAvailability {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UndoOutcome {
     pub(crate) label: String,
-    /// Where undoing a Move to Trash put the file back, so Files can select
-    /// it there, as Finder does. `None` for every other kind of undo.
-    pub(crate) restored_to: Option<PathBuf>,
+    /// Every item restored by a Move or Move to Trash Undo.
+    pub(crate) restored_to: Vec<PathBuf>,
 }
 
 impl UndoStore {
@@ -568,11 +567,13 @@ impl UndoStore {
     /// cleanup used by Copy Undo. If its contents change, Undo refuses to
     /// remove it rather than deleting anything the user added.
     pub(crate) fn archive_created_folder(&self, path: &Path) -> io::Result<()> {
+        require_empty_directory(path)?;
         let parent = path
             .parent()
             .ok_or_else(|| invalid_data("new folder has no parent"))?;
         let id = Uuid::new_v4().to_string();
         let snapshot = TreeSnapshot::capture(path)?;
+        require_empty_directory(path)?;
         self.archive(UndoSeed {
             id: id.clone(),
             kind: UndoKind::NewFolder,
@@ -691,7 +692,7 @@ impl UndoStore {
                 record.id.clone(),
             )
         });
-        let mut restored_to = None;
+        let mut restored_to = Vec::new();
         for mut record in records.into_iter().rev() {
             self.resume_inferred(&mut record)?;
             if !self.record_path(&record.id).exists() {
@@ -718,7 +719,7 @@ impl UndoStore {
             // something, and Replace/MoveReplace restore a destination the
             // caller already has selected.
             if matches!(record.kind, UndoKind::Trash | UndoKind::Move) {
-                restored_to = Some(record.source());
+                restored_to.push(record.source());
             }
         }
         Ok(Some(UndoOutcome { label, restored_to }))
@@ -869,7 +870,7 @@ impl UndoStore {
         if record.stage == UndoStage::CleanupStaged {
             let cleanup = record.cleanup();
             if entry_exists(&cleanup)? {
-                remove_bound_tree(&cleanup, &record.destination_snapshot)?;
+                remove_undo_cleanup(record, &cleanup)?;
             }
             if !entry_exists(&cleanup)? {
                 self.finish(record)?;
@@ -1135,6 +1136,9 @@ impl UndoStore {
             && !record.source_snapshot.still_matches(&record.source())?
         {
             return Err(changed());
+        }
+        if record.kind == UndoKind::NewFolder {
+            require_empty_directory(&record.destination())?;
         }
         if cancel.load(Ordering::Acquire) {
             return Err(interrupted());
@@ -1474,7 +1478,7 @@ impl UndoStore {
     fn finish_cleanup(&self, record: &UndoRecord) -> io::Result<()> {
         let cleanup = record.cleanup();
         if entry_exists(&cleanup)? {
-            remove_bound_tree(&cleanup, &record.destination_snapshot)?;
+            remove_undo_cleanup(record, &cleanup)?;
         }
         if entry_exists(&cleanup)? {
             return Err(changed());
@@ -1803,17 +1807,48 @@ fn bounded_display_name(name: &str) -> String {
     output
 }
 
+fn require_empty_directory(path: &Path) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(changed());
+    }
+    if let Some(entry) = fs::read_dir(path)?.next() {
+        entry?;
+        return Err(io::Error::new(
+            io::ErrorKind::DirectoryNotEmpty,
+            "the new folder contains items and cannot be undone safely",
+        ));
+    }
+    Ok(())
+}
+
+fn remove_undo_cleanup(record: &UndoRecord, path: &Path) -> io::Result<()> {
+    if record.kind != UndoKind::NewFolder {
+        return remove_bound_tree(path, &record.destination_snapshot);
+    }
+    if !record.destination_snapshot.same_root_object(path)? {
+        return Err(changed());
+    }
+    // remove_dir is atomic with the empty-directory condition. In particular,
+    // it cannot delete a file added while the Undo receipt was being staged.
+    fs::remove_dir(path)?;
+    sync_directory(
+        path.parent()
+            .ok_or_else(|| invalid_data("Undo cleanup has no parent"))?,
+    )
+}
+
 fn remove_bound_tree(path: &Path, expected: &TreeSnapshot) -> io::Result<()> {
     if !expected.same_root_object(path)? {
+        return Err(changed());
+    }
+    if !expected.still_matches_after_rename(path)? {
         return Err(changed());
     }
     let metadata = fs::symlink_metadata(path)?;
     if metadata.is_dir() && !metadata.file_type().is_symlink() {
         fs::remove_dir_all(path)?;
     } else {
-        if !expected.still_matches_after_rename(path)? {
-            return Err(changed());
-        }
         fs::remove_file(path)?;
     }
     sync_directory(

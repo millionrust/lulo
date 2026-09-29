@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "scenario": "files/double-click-opens-folder",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "opened": {
+      "windows": {
+        "count": 1
+      },
+      "selection": {
+        "items": []
+      }
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "title": "Shift-clicking back inside an already-extended range shrinks the selection to it",
+  "app": "files",
+  "setup": {
+    "files": {
+      "a.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "b.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "c.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "d.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "select": "a.txt"
+    },
+    {
+      "select": "d.txt",
+      "modifiers": [
+        "shift"
+      ],
+      "settle": 0.6
+    },
+    {
+      "observe": "full_range",
+      "facts": [
+        "selection"
+      ]
+    },
+    {
+      "select": "b.txt",
+      "modifiers": [
+        "shift"
+      ],
+      "settle": 0.6
+    },
+    {
+      "observe": "shrunk_range",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "scenario": "files/tab-cycles-focus-elements",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "list_focused": {
+      "focus": {
+        "role": "list",
+        "selection": null,
+        "selected_text": null,
+        "selected_all": null
+      }
+    },
+    "next_focus": {
+      "focus": {
+        "role": "list",
+        "selection": null,
+        "selected_text": null,
+        "selected_all": null
+      }
+    }
+  }
+}

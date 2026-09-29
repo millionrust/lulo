@@ -874,7 +874,7 @@ impl FinderView {
                 .into_any_element(),
         };
 
-        let row = accessible_item(
+        accessible_item(
             div().id(SharedString::from(format!("row-{}", e.path.display()))),
             Role::ListBoxOption,
             e,
@@ -1057,7 +1057,6 @@ impl FinderView {
                     }))
             },
         )
-        .into_any_element();
-        row
+        .into_any_element()
     }
 }

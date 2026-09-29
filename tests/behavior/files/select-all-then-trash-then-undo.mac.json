@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "scenario": "files/select-all-then-trash-then-undo",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "trashed": {
+      "files": {
+        "entries": []
+      }
+    },
+    "restored": {
+      "files": {
+        "entries": [
+          "a.txt",
+          "b.txt",
+          "c.txt"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "format": 1,
+  "scenario": "files/column-view-arrows",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "drilled": {
+      "selection": {
+        "items": [
+          "notes.txt"
+        ]
+      }
+    },
+    "back": {
+      "selection": {
+        "items": [
+          "Projects"
+        ]
+      }
+    }
+  },
+  "cleanup": [
+    "the AX observer timed out"
+  ]
+}

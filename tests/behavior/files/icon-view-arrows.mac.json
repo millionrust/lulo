@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "scenario": "files/icon-view-arrows",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "down": {
+      "selection": {
+        "items": [
+          "a.txt"
+        ]
+      }
+    },
+    "up": {
+      "selection": {
+        "items": [
+          "a.txt"
+        ]
+      }
+    }
+  }
+}

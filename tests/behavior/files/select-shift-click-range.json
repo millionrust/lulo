@@ -1,0 +1,36 @@
+{
+  "title": "Shift-click extends the selection from the last-clicked item to the one you shift-click",
+  "app": "files",
+  "setup": {
+    "files": {
+      "a.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "b.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "c.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "d.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "select": "a.txt"
+    },
+    {
+      "select": "c.txt",
+      "modifiers": [
+        "shift"
+      ],
+      "settle": 1.0
+    },
+    {
+      "observe": "range_selected",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

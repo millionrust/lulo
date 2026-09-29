@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "scenario": "files/select-all-empty-folder",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "none_selected": {
+      "selection": {
+        "items": []
+      }
+    }
+  }
+}

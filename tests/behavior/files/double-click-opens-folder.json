@@ -1,0 +1,34 @@
+{
+  "title": "Double-clicking a folder opens it",
+  "app": "files",
+  "setup": {
+    "files": {
+      "Projects/": null,
+      "Projects/notes.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "select": "Projects",
+      "double": true,
+      "settle": 1.5
+    },
+    {
+      "observe": "opened",
+      "facts": [
+        "windows",
+        "selection"
+      ]
+    }
+  ],
+  "omit": [
+    "opened.windows.front",
+    "opened.windows.titles"
+  ]
+}

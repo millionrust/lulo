@@ -1,0 +1,48 @@
+{
+  "title": "Space opens Quick Look on several selected files",
+  "app": "files",
+  "setup": {
+    "files": {
+      "a.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "b.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "select": "a.txt"
+    },
+    {
+      "select": "b.txt",
+      "modifiers": [
+        "shift"
+      ],
+      "settle": 0.6
+    },
+    {
+      "key": "space",
+      "settle": 1.5
+    },
+    {
+      "observe": "previewing",
+      "facts": [
+        "windows"
+      ]
+    },
+    {
+      "key": "space",
+      "settle": 1.0
+    },
+    {
+      "observe": "closed",
+      "facts": [
+        "windows"
+      ]
+    }
+  ]
+}

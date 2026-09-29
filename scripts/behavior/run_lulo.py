@@ -55,7 +55,6 @@ KEEP_ENV = {"PATH", "LANG", "TERM", "USER", "LOGNAME", "SHELL", "CARGO_TARGET_DI
 TEXT_ROLES = {"text-field", "text-area", "search-field", "combo-box"}
 DIALOG_ROLES = {"dialog", "alert", "file chooser"}
 HELPER_APPS = {"rmac-file-chooser"}
-FILE_CHOOSER_SCENARIO = "text-editor/save-untitled"
 
 
 def calculator_visible_size(width: Optional[int], height: Optional[int]) -> tuple[Optional[int], Optional[int]]:
@@ -92,13 +91,6 @@ def content_viewport(candidates: list[tuple[int, int, int, int]]) -> tuple[int, 
     if not wide:
         raise StepFailed("no on-screen Files content viewport to context-click")
     return min(wide, key=lambda box: box[2] * box[3])
-
-
-def scenarios_need_file_chooser(scenarios: list[str]) -> bool:
-    """The default run includes Save on Untitled, which needs the portal backend."""
-
-    selected = sc.scenario_paths(only=scenarios)
-    return any(sc.scenario_id(path) == FILE_CHOOSER_SCENARIO for path in selected)
 
 
 class Unsupported(RuntimeError):
@@ -201,12 +193,6 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
     try:
         binary_directories = [Path(p) for p in args.bin_dir + args.shell_bin_dir]
         chooser = find_file_chooser_binary(binary_directories)
-        if scenarios_need_file_chooser(args.scenarios) and chooser is None:
-            raise SystemExit(
-                "text-editor/save-untitled requires the rmac-file-chooser binary; "
-                "build -p rmac-file-chooser and include its directory with "
-                "--bin-dir or --shell-bin-dir"
-            )
         env = isolated_environment(work)
         refuse_live_session(env)
         # A session bus that can activate only the AT-SPI bus launcher: the
@@ -886,6 +872,16 @@ class LuloRun:
             entries.append(rel.as_posix() + ("/" if path.is_dir() else ""))
         return {"entries": entries}
 
+    def fact_saved_documents(self) -> dict[str, Any]:
+        """Read the isolated Documents folder after a Text Editor Save sheet."""
+        directory = Path(self.env["HOME"]) / "Documents"
+        names = sorted(path.name for path in directory.iterdir() if path.is_file())
+        contents = {
+            name: (directory / name).read_bytes()[:4096].decode("utf-8", "replace")
+            for name in names
+        }
+        return {"entries": names, "contents": contents}
+
     # -- steps -------------------------------------------------------------
 
     def ensure_alive(self) -> None:
@@ -901,11 +897,11 @@ class LuloRun:
         inner = focused[0].get("window_rect") or {"x": 0, "y": 0}
         return rect["x"] + inner.get("x", 0), rect["y"] + inner.get("y", 0)
 
-    def click_item(self, label: str, button: str) -> None:
+    def click_item(self, label: str, button: str, count: int = 1, modifiers: Optional[list[str]] = None) -> None:
         frame = self.active_frame()
         target = None
         for node in descendants(frame, limit=4000) if frame is not None else []:
-            if name(node) == label and role(node) in {"list item", "table row", "tree item", "table cell", "label", "static", "push button", "button", "menu item"}:
+            if name(node) == label and role(node) in {"list item", "table row", "tree item", "table cell", "label", "static", "push button", "button", "combo box", "menu item"}:
                 target = node
                 break
         if target is None:
@@ -915,7 +911,7 @@ class LuloRun:
             raise StepFailed(f"{label!r} has no on-screen extents")
         ox, oy = self.window_origin()
         x, y = ox + box[0] + min(40, box[2] // 2), oy + box[1] + box[3] // 2
-        self.nested.input.click(x, y, OUTPUT_W, OUTPUT_H, button=button)
+        self.nested.input.click(x, y, OUTPUT_W, OUTPUT_H, button=button, count=count, modifiers=modifiers)
 
     def context_background(self) -> None:
         """Right-click an empty point in the Files list viewport."""
@@ -948,7 +944,15 @@ class LuloRun:
                 time.sleep(float(step["wait"]))
                 continue
             elif "select" in step:
-                self.click_item(step["select"], "left")
+                # A plain select (no modifiers/double) sends exactly the
+                # same single unmodified left click as before. modifiers
+                # (shift/cmd) and double are a real shift-click,
+                # command-click or double-click, matching mac_click.py.
+                self.click_item(
+                    step["select"], "left",
+                    count=2 if step.get("double") else 1,
+                    modifiers=step.get("modifiers"),
+                )
             elif "context" in step:
                 if step["context"] == "background":
                     self.context_background()

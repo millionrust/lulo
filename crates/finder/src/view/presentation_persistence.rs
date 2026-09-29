@@ -214,10 +214,16 @@ impl FinderView {
             cx.notify();
             return;
         }
-        self.view = mode;
-        if mode != ViewMode::Column {
+        if mode == ViewMode::Column && self.view != ViewMode::Column {
+            self.col_stack = vec![self.cwd.clone()];
+            self.column_selection = self.selected_entry().cloned();
+            if let Some(entry) = self.column_selection.as_ref().filter(|entry| entry.is_dir) {
+                self.col_stack.push(entry.path.clone());
+            }
+        } else if mode != ViewMode::Column {
             self.column_selection = None;
         }
+        self.view = mode;
         self.select_first_for_gallery(cx);
         self.operation_error = None;
         self.persist_finder_state();

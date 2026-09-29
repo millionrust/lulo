@@ -1,0 +1,26 @@
+{
+  "format": 1,
+  "scenario": "files/search-cmd-f",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "opened": {
+      "focus": {
+        "role": "search-field"
+      }
+    },
+    "typed": {
+      "focus": {
+        "role": "search-field",
+        "value": "banana",
+        "selection": [
+          6,
+          6
+        ],
+        "selected_text": "",
+        "selected_all": false,
+        "label": null
+      }
+    }
+  }
+}

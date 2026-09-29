@@ -1,0 +1,27 @@
+{
+  "format": 1,
+  "scenario": "files/new-folder-name-conflict",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "created": {
+      "focus": {
+        "role": "text-field",
+        "value": "untitled folder 2",
+        "selection": [
+          0,
+          17
+        ],
+        "selected_text": "untitled folder 2",
+        "selected_all": true,
+        "label": null
+      },
+      "files": {
+        "entries": [
+          "untitled folder/",
+          "untitled folder 2/"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "title": "Typing a name jumps the selection to the first matching item",
+  "app": "files",
+  "setup": {
+    "files": {
+      "apple.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "banana.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "cherry.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "type": "cherry"
+    },
+    {
+      "observe": "jumped",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

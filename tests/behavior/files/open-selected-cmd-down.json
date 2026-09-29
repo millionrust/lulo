@@ -1,0 +1,33 @@
+{
+  "title": "Open (⌘↓) opens the selected folder",
+  "app": "files",
+  "setup": {
+    "files": {
+      "Projects/": null,
+      "Projects/notes.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "reveal": "Projects"
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "cmd-down",
+      "settle": 1.2
+    },
+    {
+      "observe": "opened",
+      "facts": [
+        "selection",
+        "windows"
+      ]
+    }
+  ],
+  "omit": [
+    "opened.windows.front",
+    "opened.windows.titles"
+  ]
+}

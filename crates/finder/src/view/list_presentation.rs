@@ -898,13 +898,18 @@ impl FinderView {
                     }
                     return;
                 }
-                let current = this.anchor.and_then(|anchor| {
-                    navigation_indices.iter().position(|index| *index == anchor)
+                let current_index = this.selection_lead();
+                let current = current_index.and_then(|index| {
+                    navigation_indices
+                        .iter()
+                        .position(|visible| *visible == index)
                 });
                 let last = navigation_indices.len().saturating_sub(1);
                 // Icon view moves by whole rows vertically, as in Finder.
                 let vertical_step = icon_columns.max(1);
                 let select_position = match ev.keystroke.key.as_str() {
+                    "down" if this.view == ViewMode::Gallery => None,
+                    "up" if this.view == ViewMode::Gallery => None,
                     "down" => Some(
                         current
                             .map(|position| position + vertical_step)
@@ -930,7 +935,12 @@ impl FinderView {
                 };
                 if let Some(position) = select_position {
                     if !navigation_indices.is_empty() {
-                        this.select_single(navigation_indices[position]);
+                        let index = navigation_indices[position];
+                        if ev.keystroke.modifiers.shift {
+                            this.handle_click(index, false, true);
+                        } else {
+                            this.select_single(index);
+                        }
                         cx.notify();
                     }
                 } else if let Some(text) = type_select_text(ev) {

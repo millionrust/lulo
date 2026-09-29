@@ -1,0 +1,35 @@
+{
+  "title": "Gallery view (⌘4): arrow keys move the selection and it survives the view switch",
+  "app": "files",
+  "setup": {
+    "files": {
+      "a.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "b.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "c.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "reveal": "a.txt"
+  },
+  "steps": [
+    {
+      "key": "cmd-4",
+      "settle": 1.2
+    },
+    {
+      "observe": "switched",
+      "facts": [
+        "selection"
+      ]
+    },
+    {
+      "key": "down"
+    },
+    {
+      "observe": "moved",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

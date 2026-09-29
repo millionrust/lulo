@@ -1,0 +1,26 @@
+{
+  "format": 1,
+  "scenario": "files/shift-click-shrinks-range",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "full_range": {
+      "selection": {
+        "items": [
+          "a.txt",
+          "b.txt",
+          "c.txt",
+          "d.txt"
+        ]
+      }
+    },
+    "shrunk_range": {
+      "selection": {
+        "items": [
+          "a.txt",
+          "b.txt"
+        ]
+      }
+    }
+  }
+}

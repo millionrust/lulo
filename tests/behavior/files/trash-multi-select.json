@@ -1,0 +1,39 @@
+{
+  "title": "Move to Trash (⌘⌫) on several selected files removes all of them at once",
+  "app": "files",
+  "setup": {
+    "files": {
+      "a.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "b.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "keep.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "select": "a.txt"
+    },
+    {
+      "select": "b.txt",
+      "modifiers": [
+        "shift"
+      ],
+      "settle": 0.6
+    },
+    {
+      "key": "cmd-backspace",
+      "settle": 1.2
+    },
+    {
+      "observe": "trashed",
+      "facts": [
+        "files"
+      ]
+    }
+  ]
+}

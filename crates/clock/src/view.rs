@@ -8,8 +8,8 @@ use std::time::{Duration, SystemTime};
 use gpui::{
     canvas, div, img, point, prelude::FluentBuilder as _, px, rgb, rgba, svg, AppContext as _,
     Bounds, ClickEvent, Context, Entity, FocusHandle, FontWeight, Hsla, InteractiveElement as _,
-    IntoElement, KeyDownEvent, ParentElement as _, PathBuilder, Pixels, Render, RenderImage,
-    ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
+    IntoElement, KeyDownEvent, ParentElement as _, PathBuilder, Pixels, Render, RenderImage, Role,
+    ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Toggled, Window,
     WindowControlArea,
 };
 use notify::Watcher as _;
@@ -54,6 +54,18 @@ const TABS: [(Tab, &str); 4] = [
     (Tab::Alarms, "Alarms"),
     (Tab::Stopwatch, "Stopwatch"),
     (Tab::Timers, "Timers"),
+];
+
+// Match the Mac alarm editor while keeping Days' persisted Monday=0 bits.
+const ALARM_EDITOR_DAY_ORDER: [u32; 7] = [6, 0, 1, 2, 3, 4, 5];
+const ALARM_EDITOR_DAY_NAMES: [&str; 7] = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
 ];
 
 fn ticker_delay(
@@ -521,6 +533,9 @@ impl ClockView {
             let selected = self.tab == tab;
             div()
                 .id(SharedString::from(format!("clock-tab-{index}")))
+                .role(Role::Tab)
+                .aria_label(*label)
+                .aria_selected(selected)
                 .absolute()
                 .left(px(m::TAB_LEFTS[index]))
                 .top(px(1.0))
@@ -537,8 +552,16 @@ impl ClockView {
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.set_tab(tab, cx)))
         });
         let add = (self.tab != Tab::Stopwatch).then(|| {
+            let label = match self.tab {
+                Tab::World => "Add a city",
+                Tab::Alarms => "Add an alarm",
+                Tab::Timers => "Add a timer",
+                Tab::Stopwatch => unreachable!(),
+            };
             div()
                 .id("clock-add")
+                .role(Role::Button)
+                .aria_label(label)
                 .absolute()
                 .right(px(m::ADD_RIGHT))
                 .top(px(m::TABS_TOP))
@@ -596,6 +619,8 @@ impl ClockView {
                     .bg(rgb(m::CAPSULE_FILL))
                     .border_1()
                     .border_color(rgb(m::CAPSULE_RIM))
+                    .role(Role::TabList)
+                    .aria_label("Clock tabs")
                     .children(segments),
             )
             .children(add)
@@ -972,10 +997,13 @@ impl ClockView {
                     }
                 }))
         };
-        let days = (0..7u32).map(|day| {
+        let days = ALARM_EDITOR_DAY_ORDER.into_iter().map(|day| {
             let on = alarm.repeat.contains(day);
             div()
                 .id(SharedString::from(format!("clock-editor-day-{day}")))
+                .role(Role::CheckBox)
+                .aria_label(ALARM_EDITOR_DAY_NAMES[day as usize])
+                .aria_toggled(if on { Toggled::True } else { Toggled::False })
                 .size(px(30.0))
                 .rounded_full()
                 .flex()

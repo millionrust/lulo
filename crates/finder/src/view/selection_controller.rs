@@ -368,6 +368,9 @@ impl FinderView {
             self.rebuild_list_entries();
         } else {
             sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
+            if !self.trash_view && !self.applications_view && self.search_summary.is_none() {
+                sort_entries(&mut self.root_entries, self.sort_key, self.sort_asc);
+            }
         }
         self.search_relevance_order = false;
         self.selected.clear();

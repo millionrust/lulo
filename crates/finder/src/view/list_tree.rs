@@ -1,6 +1,10 @@
 use super::*;
 
 impl FinderView {
+    pub(super) fn list_row_index(&self, path: &Path) -> Option<usize> {
+        self.entries.iter().position(|entry| entry.path == path)
+    }
+
     /// Rebuild visible list rows from full paths. Indices are only a view of
     /// this tree; preserve selection by path whenever rows are inserted.
     pub(super) fn rebuild_list_entries(&mut self) {
@@ -38,11 +42,21 @@ impl FinderView {
     pub(super) fn toggle_list_folder(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         if !self.expanded.insert(path.clone()) {
             self.expanded.remove(&path);
+            if self.watched_children.remove(&path) {
+                if let Some(watcher) = self.watcher.as_mut() {
+                    let _ = watcher.unwatch(&path);
+                }
+            }
             self.rebuild_list_entries();
             cx.notify();
             return;
         }
         self.rebuild_list_entries();
+        if let Some(watcher) = self.watcher.as_mut() {
+            if watcher.watch(&path, RecursiveMode::NonRecursive).is_ok() {
+                self.watched_children.insert(path.clone());
+            }
+        }
         cx.notify();
         if self.child_entries.contains_key(&path) {
             return;
@@ -73,6 +87,11 @@ impl FinderView {
                     }
                     Err(error) => {
                         this.expanded.remove(&path);
+                        if this.watched_children.remove(&path) {
+                            if let Some(watcher) = this.watcher.as_mut() {
+                                let _ = watcher.unwatch(&path);
+                            }
+                        }
                         this.operation_error =
                             Some(format!("Could not open folder: {error}").into());
                     }

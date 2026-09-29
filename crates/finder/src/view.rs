@@ -272,6 +272,7 @@ struct FinderView {
     expanded: BTreeSet<PathBuf>,
     child_entries: HashMap<PathBuf, Vec<Entry>>,
     list_depths: Vec<usize>,
+    watched_children: BTreeSet<PathBuf>,
     selected: BTreeSet<usize>,
     anchor: Option<usize>,
     clipboard: Vec<PathBuf>,

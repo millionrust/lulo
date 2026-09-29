@@ -190,6 +190,20 @@ impl FinderView {
         } else {
             LIST_ROW_HEIGHT
         };
+        let filler = div()
+            .absolute()
+            .top(px(LIST_ROWS_TOP + stripe_index as f32 * row_height))
+            .left(px(0.0))
+            .right(px(0.0))
+            .v_flex()
+            .children((stripe_index..stripe_index + FILLER_STRIPES).map(|index| {
+                div()
+                    .h(px(LIST_ROW_HEIGHT))
+                    .flex_none()
+                    .mx(px(LIST_ROW_INSET))
+                    .rounded(px(ROW_RADIUS))
+                    .when(index % 2 == 1, |row| row.bg(stripe()))
+            }));
         let show_list = self.view == ViewMode::List;
         let show_icons = self.view == ViewMode::Icon;
         let visible_indices = self
@@ -428,13 +442,17 @@ impl FinderView {
                     .id("file-list")
                     .role(Role::ListBox)
                     .aria_label(listing_name.clone())
+                    .relative()
                     .flex_1()
                     .min_h(px(0.0))
+                    .pt(px(LIST_ROWS_TOP))
+                    .overflow_hidden()
                     .child({
-                        let row_entity = entity.clone();
                         let indices = visible_list_indices.clone();
-                        uniform_list("file-list-rows", indices.len(), move |range, _, cx| {
-                            row_entity.update(cx, |this, cx| {
+                        uniform_list(
+                            "file-list-rows",
+                            indices.len(),
+                            cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
                                 range
                                     .map(|position| {
                                         this.render_list_row(
@@ -447,11 +465,12 @@ impl FinderView {
                                         )
                                     })
                                     .collect::<Vec<_>>()
-                            })
-                        })
+                            }),
+                        )
                         .flex_1()
                         .min_h(px(0.0))
                     })
+                    .child(filler)
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, window, cx| {
@@ -744,6 +763,11 @@ impl FinderView {
         let entity = cx.entity();
         let depth = self.list_depths.get(ix).copied().unwrap_or(0);
         let striped = position % 2 == 1;
+        let row_path = e.path.clone();
+        let accessible_row_path = row_path.clone();
+        let left_row_path = row_path.clone();
+        let right_row_path = row_path.clone();
+        let open_row_path = row_path.clone();
         let selected = self.selected.contains(&ix);
         let primary = if selected {
             selected_text(window_active)
@@ -809,7 +833,10 @@ impl FinderView {
                 .child(TextField::new(input).appearance(true))
                 .into_any_element(),
             _ => div()
-                .id(("list-name", ix))
+                .id(SharedString::from(format!(
+                    "list-name-{}",
+                    e.path.display()
+                )))
                 .pl(px(LIST_ICON_TO_NAME))
                 .flex_1()
                 .min_w(px(0.0))
@@ -848,14 +875,18 @@ impl FinderView {
         };
 
         let row = accessible_item(
-            div().id(("row", ix)),
+            div().id(SharedString::from(format!("row-{}", e.path.display()))),
             Role::ListBoxOption,
             e,
             selected,
             position,
             visible_count,
             &entity,
-            move |this, window, cx| this.accessible_select(ix, window, cx),
+            move |this, window, cx| {
+                if let Some(index) = this.list_row_index(&accessible_row_path) {
+                    this.accessible_select(index, window, cx);
+                }
+            },
         )
         .flex_none()
         .flex()
@@ -884,9 +915,14 @@ impl FinderView {
                         .justify_end()
                         .when(e.is_dir, |el: Div| {
                             let path = e.path.clone();
+                            let accessible_path = path.clone();
+                            let accessible_entity = entity.clone();
                             el.child(
                                 div()
-                                    .id(("disclosure", ix))
+                                    .id(SharedString::from(format!(
+                                        "disclosure-{}",
+                                        e.path.display()
+                                    )))
                                     .role(Role::Button)
                                     .aria_label(format!(
                                         "{} {}",
@@ -923,7 +959,12 @@ impl FinderView {
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         cx.stop_propagation();
                                         this.toggle_list_folder(path.clone(), cx);
-                                    })),
+                                    }))
+                                    .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
+                                        accessible_entity.update(cx, |this, cx| {
+                                            this.toggle_list_folder(accessible_path.clone(), cx)
+                                        });
+                                    }),
                             )
                         }),
                 )
@@ -963,10 +1004,14 @@ impl FinderView {
             cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
                 cx.stop_propagation();
                 if ev.modifiers.control {
-                    this.open_context_menu(Some(ix), ev.position, window, cx);
+                    if let Some(index) = this.list_row_index(&left_row_path) {
+                        this.open_context_menu(Some(index), ev.position, window, cx);
+                    }
                     return;
                 }
-                this.handle_click(ix, ev.modifiers.platform, ev.modifiers.shift);
+                if let Some(index) = this.list_row_index(&left_row_path) {
+                    this.handle_click(index, ev.modifiers.platform, ev.modifiers.shift);
+                }
                 window.focus(&this.focus, cx);
                 cx.notify();
             }),
@@ -975,12 +1020,16 @@ impl FinderView {
             MouseButton::Right,
             cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
                 cx.stop_propagation();
-                this.open_context_menu(Some(ix), ev.position, window, cx);
+                if let Some(index) = this.list_row_index(&right_row_path) {
+                    this.open_context_menu(Some(index), ev.position, window, cx);
+                }
             }),
         )
         .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
             if ev.click_count() >= 2 {
-                this.open_index(ix, cx);
+                if let Some(index) = this.list_row_index(&open_row_path) {
+                    this.open_index(index, cx);
+                }
             }
             window.focus(&this.focus, cx);
         }))

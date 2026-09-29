@@ -233,6 +233,7 @@ impl FinderView {
             expanded: BTreeSet::new(),
             child_entries: HashMap::new(),
             list_depths: Vec::new(),
+            watched_children: BTreeSet::new(),
             selected: BTreeSet::new(),
             menu_at: None,
             menu_purpose: MenuPurpose::Context,

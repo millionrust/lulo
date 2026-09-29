@@ -36,6 +36,7 @@ impl FinderView {
                 }
             }
             self.watcher = None;
+            self.watched_children.clear();
             if self.operation_error.is_none() {
                 self.operation_error = Some(FILESYSTEM_WATCH_INTERRUPTED_MESSAGE.into());
             }
@@ -116,6 +117,7 @@ impl FinderView {
         let mut watch_failed = false;
         let rebuilding_watcher = self.watcher.is_none();
         if rebuilding_watcher {
+            self.watched_children.clear();
             self.watcher = filesystem_watcher(
                 self.filesystem_events.clone(),
                 self.filesystem_hints.clone(),
@@ -151,6 +153,32 @@ impl FinderView {
                     }
                 }
             }
+        }
+        // Expanded folders have their own non-recursive watches. Keep them
+        // across root refreshes, but remove watches from previous locations.
+        let wanted_children = self
+            .expanded
+            .iter()
+            .filter(|folder| folder.starts_with(&self.cwd) && folder != &&self.cwd)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if let Some(watcher) = self.watcher.as_mut() {
+            for folder in self.watched_children.difference(&wanted_children) {
+                let _ = watcher.unwatch(folder);
+            }
+            let mut watching = self
+                .watched_children
+                .intersection(&wanted_children)
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            for folder in wanted_children.difference(&self.watched_children) {
+                if watcher.watch(folder, RecursiveMode::NonRecursive).is_ok() {
+                    watching.insert(folder.clone());
+                }
+            }
+            self.watched_children = watching;
+        } else {
+            self.watched_children.clear();
         }
         if watch_failed
             && self.operation_error.as_ref().is_none_or(|message| {

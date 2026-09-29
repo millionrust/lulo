@@ -84,11 +84,10 @@ fn painted(
         .foreground(text)
         .hover(hover.unwrap_or(fill))
         .active(fill);
-    let button = button
+    button
         .custom(variant)
         .bg(if disabled { fill.opacity(0.5) } else { fill })
-        .text_color(if disabled { mac::text_tertiary() } else { text });
-    button
+        .text_color(if disabled { mac::text_tertiary() } else { text })
 }
 
 /// Keyboard-focusable rmac button with semantic roles and live theme tokens.

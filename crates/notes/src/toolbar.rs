@@ -184,7 +184,12 @@ impl NotesView {
                 |this, _, cx| this.begin_move_note(cx),
             ))
             .child(
-                glyph_button("note-more", glyphs::MORE, CAPSULE_BUTTON_WIDTH, "More")
+                PopUpButton::new("note-more", "More")
+                    .menu_button(glyphs::MORE, TOOLBAR_GLYPH)
+                    .w(px(CAPSULE_BUTTON_WIDTH))
+                    .h(px(CAPSULE_HEIGHT - 2.0))
+                    .rounded(px(CAPSULE_HEIGHT / 2.0))
+                    .text_color(toolbar_glyph())
                     .disabled(!ready || !has_note)
                     .dropdown_menu(move |menu, _, _| {
                         let menu = if deleted {
@@ -327,8 +332,12 @@ impl NotesView {
                     .right(px(LIST_MORE_RIGHT))
                     .top(px(CAPSULE_TOP))
                     .child(
-                        glyph_button("view-options", glyphs::MORE, CAPSULE_HEIGHT, "View Options")
+                        PopUpButton::new("view-options", "View Options")
+                            .menu_button(glyphs::MORE, TOOLBAR_GLYPH)
+                            .w(px(CAPSULE_HEIGHT))
                             .h(px(CAPSULE_HEIGHT))
+                            .rounded(px(CAPSULE_HEIGHT / 2.0))
+                            .text_color(toolbar_glyph())
                             .bg(capsule_fill())
                             .border_1()
                             .border_color(capsule_edge())

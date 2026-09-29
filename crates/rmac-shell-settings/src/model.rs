@@ -414,6 +414,31 @@ pub struct ShellSettings {
     pub hot_corners: HotCornerSettings,
     /// Read live by `rmac-mission-control`, which moves the windows.
     pub click_wallpaper_to_reveal: ClickWallpaperToReveal,
+    /// Desktop & Dock's action for a double-click on a window title bar.
+    pub title_bar_double_click: TitleBarDoubleClickAction,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TitleBarDoubleClickAction {
+    #[default]
+    Zoom,
+    Minimize,
+    Fill,
+    DoNothing,
+}
+
+impl TitleBarDoubleClickAction {
+    pub const ALL: [Self; 4] = [Self::Zoom, Self::Minimize, Self::Fill, Self::DoNothing];
+
+    pub const fn title(self) -> &'static str {
+        match self {
+            Self::Zoom => "Zoom",
+            Self::Minimize => "Minimise",
+            Self::Fill => "Fill",
+            Self::DoNothing => "Do Nothing",
+        }
+    }
 }
 
 impl Default for ShellSettings {
@@ -443,6 +468,7 @@ impl Default for ShellSettings {
             spotlight: SpotlightSettings::default(),
             hot_corners: HotCornerSettings::default(),
             click_wallpaper_to_reveal: ClickWallpaperToReveal::Always,
+            title_bar_double_click: TitleBarDoubleClickAction::Zoom,
         }
     }
 }

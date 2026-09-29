@@ -286,4 +286,35 @@ impl Settings {
         })
         .detach();
     }
+
+    pub(super) fn apply_title_bar_double_click(
+        &mut self,
+        value: rmac_shell_settings::TitleBarDoubleClickAction,
+        cx: &mut Context<Self>,
+    ) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            return;
+        };
+        if snapshot.settings.title_bar_double_click == value {
+            return;
+        }
+
+        self.shell_settings_busy = true;
+        self.shell_settings_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                persist_shell_settings_mutation(ShellSettingsMutation::TitleBarDoubleClick(value))
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_shell_settings_mutation(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
 }

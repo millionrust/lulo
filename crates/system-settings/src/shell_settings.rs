@@ -290,6 +290,7 @@ pub(super) enum ShellSettingsMutation {
     /// Desktop & Dock › Click wallpaper to reveal desktop.
     /// `rmac-mission-control` reads it on every wallpaper click.
     ClickWallpaperToReveal(rmac_shell_settings::ClickWallpaperToReveal),
+    TitleBarDoubleClick(rmac_shell_settings::TitleBarDoubleClickAction),
 }
 
 impl ShellSettingsMutation {
@@ -304,6 +305,7 @@ impl ShellSettingsMutation {
             Self::MenuBar(change) => change.apply(settings),
             Self::HotCorner(change) => change.apply(settings),
             Self::ClickWallpaperToReveal(value) => settings.click_wallpaper_to_reveal = value,
+            Self::TitleBarDoubleClick(value) => settings.title_bar_double_click = value,
         }
     }
 }

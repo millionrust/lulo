@@ -8,6 +8,7 @@ use gpui::{
 };
 use gpui_component::{ActiveTheme as _, InteractiveElementExt as _, StyledExt as _};
 use rmac_compositor::TileRegion;
+use rmac_shell_settings::{ShellSettingsStore, TitleBarDoubleClickAction};
 
 use crate::{components, mac, text_px};
 
@@ -16,6 +17,7 @@ use crate::{components, mac, text_px};
 #[derive(Clone, Copy)]
 enum WindowAction {
     ToggleFullscreen,
+    Zoom,
     Fill,
     Tile(TileRegion),
     Minimize,
@@ -28,6 +30,23 @@ enum WindowAction {
 /// came from so the app menu's Show All can restore it (§2.2).
 fn send_window_action(action: WindowAction, cx: &mut App) {
     cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
+        let preference = if matches!(action, WindowAction::Zoom) {
+            blocking::unblock(|| {
+                ShellSettingsStore::from_environment()
+                    .and_then(|store| store.load())
+                    .map(|snapshot| snapshot.settings.title_bar_double_click)
+                    .unwrap_or_default()
+            })
+            .await
+        } else {
+            TitleBarDoubleClickAction::Zoom
+        };
+        let action = match (action, preference) {
+            (WindowAction::Zoom, TitleBarDoubleClickAction::Minimize) => WindowAction::Minimize,
+            (WindowAction::Zoom, TitleBarDoubleClickAction::Fill) => WindowAction::Fill,
+            (WindowAction::Zoom, TitleBarDoubleClickAction::DoNothing) => return,
+            (action, _) => action,
+        };
         let pid = std::process::id() as i32;
         let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
             return;
@@ -39,7 +58,13 @@ fn send_window_action(action: WindowAction, cx: &mut App) {
             .min_by_key(|window| i32::from(!window.focused))
             .map(|window| window.id);
         let Some(window) = window else { return };
+        if matches!(action, WindowAction::Zoom) {
+            let zoom = blocking::unblock(move || zoom_window_action(&snapshot, window)).await;
+            let _ = rmac_compositor_niri::execute_action(&zoom).await;
+            return;
+        }
         let action = match action {
+            WindowAction::Zoom => unreachable!(),
             WindowAction::ToggleFullscreen => {
                 rmac_compositor::Action::FullscreenWindow { window, on: true }
             }
@@ -60,12 +85,75 @@ fn send_window_action(action: WindowAction, cx: &mut App) {
     .detach();
 }
 
+/// The first Zoom saves the floating frame, then fills the working area.
+/// The next one restores that frame. This is the same shared history used by
+/// Window > Return to Previous Size.
+fn zoom_window_action(
+    snapshot: &rmac_compositor::Snapshot,
+    window: rmac_compositor::WindowId,
+) -> rmac_compositor::Action {
+    use rmac_compositor::{frame_to_percent, Action, Distance, TileHistoryStore};
+
+    let mut history = TileHistoryStore::load_default();
+    if let Some(frame) = history.take(window) {
+        if let Err(error) = history.save_default() {
+            eprintln!("could not save Zoom history: {error}");
+        }
+        return Action::SetWindowFrame {
+            window,
+            x: Distance(frame.x),
+            y: Distance(frame.y),
+            width: Distance(frame.width),
+            height: Distance(frame.height),
+        };
+    }
+
+    let frame = snapshot
+        .windows
+        .iter()
+        .find(|candidate| candidate.id == window && candidate.floating)
+        .and_then(|candidate| {
+            let workspace = snapshot
+                .workspaces
+                .iter()
+                .find(|workspace| Some(workspace.id) == candidate.workspace)?;
+            let output = snapshot
+                .outputs
+                .iter()
+                .find(|output| Some(&output.id) == workspace.output.as_ref())?;
+            let size = &output.logical.as_ref()?.size;
+            let position = candidate.layout.tile_position_in_view?;
+            let tile = candidate.layout.tile_size;
+            frame_to_percent(
+                size.width,
+                size.height,
+                29.0,
+                89.0,
+                position.x,
+                position.y,
+                tile.width,
+                tile.height,
+            )
+        });
+    if let Some(frame) = frame {
+        history.record(window, frame);
+        if let Err(error) = history.save_default() {
+            eprintln!("could not save Zoom history: {error}");
+        }
+    }
+    Action::FillWindow { window }
+}
+
 /// Minimize this process's focused window, the same way the yellow traffic
 /// light does. Exposed so an app can bind ⌘M to it (`todo.md` journey 8):
 /// `WindowAction` and `send_window_action` are private to this module, so a
 /// caller in another crate has no other way to reach this path.
 pub fn minimize_focused_window(cx: &mut App) {
     send_window_action(WindowAction::Minimize, cx);
+}
+
+pub fn double_click_title_bar_action(cx: &mut App) {
+    send_window_action(WindowAction::Zoom, cx);
 }
 
 /// ⌘H: hide this application, parking every visible window it owns the
@@ -669,7 +757,7 @@ fn client_bar(height: f32, base: Hsla, children: impl IntoElement) -> impl IntoE
         .border_b_1()
         .border_color(base)
         .window_control_area(WindowControlArea::Drag)
-        .on_double_click(|_, window, _| window.zoom_window())
+        .on_double_click(|_, _, cx| double_click_title_bar_action(cx))
         .child(div().h_full().flex_1().child(children))
 }
 

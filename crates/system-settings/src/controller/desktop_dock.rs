@@ -241,6 +241,27 @@ impl Settings {
             enabled,
         )]));
 
+        let double_click = snapshot.settings.title_bar_double_click;
+        let double_click_choices = rmac_shell_settings::TitleBarDoubleClickAction::ALL
+            .into_iter()
+            .map(|value| {
+                let preference_view = view.clone();
+                choice(value.title(), value == double_click, move |_, cx| {
+                    preference_view.update(cx, |settings, cx| {
+                        settings.apply_title_bar_double_click(value, cx)
+                    });
+                })
+            })
+            .collect::<Vec<_>>();
+        cards.push(card(vec![popup_row(
+            "title-bar-double-click",
+            "Double-click a window's title bar to",
+            None,
+            popup_value(&double_click_choices, double_click.title()),
+            double_click_choices,
+            enabled,
+        )]));
+
         // macOS keeps these behind a "Hot Corners…" sheet; rmac lists the
         // four pop-ups in the pane. Only actions rmac can perform are
         // offered (rmac_shell_settings::HotCornerAction).

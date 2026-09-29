@@ -107,6 +107,7 @@ fn settings() -> ShellSettings {
             ..HotCornerSettings::default()
         },
         click_wallpaper_to_reveal: ClickWallpaperToReveal::Never,
+        title_bar_double_click: TitleBarDoubleClickAction::Minimize,
         ..ShellSettings::default()
     }
 }
@@ -578,4 +579,20 @@ fn click_wallpaper_to_reveal_defaults_to_always_like_macos() {
         ClickWallpaperToReveal::ALL.map(ClickWallpaperToReveal::title),
         ["Always", "Never"]
     );
+}
+
+#[test]
+fn title_bar_double_click_defaults_to_zoom_for_existing_settings() {
+    let (root, store) = test_store("title-bar-default");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        store.path(),
+        format!(r#"{{"version":{CURRENT_VERSION},"settings":{{"pinned_apps":[]}}}}"#),
+    )
+    .unwrap();
+    assert_eq!(
+        store.load().unwrap().settings.title_bar_double_click,
+        TitleBarDoubleClickAction::Zoom
+    );
+    std::fs::remove_dir_all(root).unwrap();
 }

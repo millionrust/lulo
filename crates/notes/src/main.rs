@@ -181,7 +181,7 @@ struct NotesView {
     print_generation: Arc<std::sync::atomic::AtomicU64>,
     /// A press on a toolbar's empty area, turned into a window move by the
     /// next pointer motion (as in Files).
-    dragging: bool,
+    dragging: Option<gpui::Point<gpui::Pixels>>,
     /// In-note Find (⌘F), separate from the note list's search (⌥⌘F).
     note_find_open: bool,
     note_find_input: Entity<InputState>,
@@ -249,7 +249,7 @@ impl NotesView {
             closing: false,
             print_busy: false,
             print_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
-            dragging: false,
+            dragging: None,
             note_find_open: false,
             note_find_input: inputs.note_find,
             note_find_matches: Vec::new(),

@@ -1114,10 +1114,10 @@ impl Render for WeatherView {
                     .w_full()
                     .h(px(m::TOOLBAR_HEIGHT - 8.0))
                     .window_control_area(WindowControlArea::Drag)
-                    .on_click(|event, window, _| {
+                    .on_click(|event, _, cx| {
                         // Double-clicking the title area zooms, as on macOS.
-                        if event.click_count() >= 2 {
-                            window.zoom_window();
+                        if event.click_count() == 2 {
+                            rmac_ui::double_click_title_bar_action(cx);
                         }
                     }),
             )

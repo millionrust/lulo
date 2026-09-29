@@ -11,7 +11,7 @@ fn drag_region(id: &'static str) -> Stateful<Div> {
     div()
         .id(id)
         .window_control_area(WindowControlArea::Drag)
-        .on_double_click(|_, window, _| window.zoom_window())
+        .on_double_click(|_, _, cx| rmac_ui::double_click_title_bar_action(cx))
 }
 
 impl Settings {

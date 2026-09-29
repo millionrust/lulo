@@ -257,6 +257,32 @@ class Run:
         self.check(f"{title} left-edge resize changes niri width", expanded,
                    f"width {initial_width} -> {after[2]}; edge={(x, edge_y)}; grab offset={offset_used}")
 
+    def assert_double_click_zoom(self, app_id: str, title: str) -> None:
+        window = self.window(app_id)
+        if not window:
+            return
+        before = self.geometry(window)
+        x, y, width, _ = before
+        self.pointer.click(*self.parent_point(x + width * .55, y + 18),
+                           self.parent_width, self.parent_height, count=2)
+        zoomed = self.wait_for(
+            lambda: (candidate := self.window(app_id))
+            if candidate and self.geometry(candidate)[2] > before[2] + 20 else None, 5)
+        zoomed_geometry = self.geometry(zoomed) if zoomed else before
+        self.check(f"{title} title-bar double-click Zoom fills the output", bool(zoomed),
+                   f"{before} -> {zoomed_geometry}")
+        if not zoomed:
+            return
+        zx, zy, zw, _ = zoomed_geometry
+        time.sleep(0.45)  # Start a new GPUI double-click sequence.
+        self.pointer.click(*self.parent_point(zx + zw * .55, zy + 18),
+                           self.parent_width, self.parent_height, count=2)
+        restored = self.wait_for(
+            lambda: (candidate := self.window(app_id))
+            if candidate and abs(self.geometry(candidate)[2] - before[2]) < 20 else None, 5)
+        self.check(f"{title} second title-bar double-click restores the size", bool(restored),
+                   f"{zoomed_geometry} -> {self.geometry(restored) if restored else None}")
+
     def resize_settings(self) -> None:
         process = self.spawn([str(Path(self.args.bin_dir) / "rmac-system-settings")], "settings")
         window = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 40)
@@ -286,6 +312,7 @@ class Run:
             changed = abs(mg[0] - sx) > 30 or abs(mg[1] - sy) > 30
             self.check("Settings title bar remains movable", changed, f"{(sx, sy)} -> {mg[:2]}")
             self.assert_edge_resize("org.rmac.SystemSettings", "Settings")
+            self.assert_double_click_zoom("org.rmac.SystemSettings", "Settings")
         process.terminate()
         process.wait(10)
 

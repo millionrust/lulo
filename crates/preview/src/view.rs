@@ -2301,12 +2301,14 @@ fn load_recent_documents() -> Vec<PathBuf> {
 }
 
 /// Records an opened document in the shared Recents store, off the render
-/// thread (it touches disk).
+/// thread (it touches disk). Tagged as Preview's own, so it also shows in
+/// this app's File ▸ Open Recent ▸ (PREV-08/PREV-15), not just the merged
+/// view every app's `Store::load` sees.
 fn record_recent_document(path: PathBuf, cx: &mut Context<PreviewView>) {
     cx.background_executor()
         .spawn(async move {
             if let Ok(store) = rmac_recent_documents::Store::from_environment() {
-                let _ = store.record(&path);
+                let _ = store.record_for_app(&path, rmac_ui::app_id::PREVIEW);
             }
         })
         .detach();

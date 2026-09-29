@@ -13,10 +13,12 @@ use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_ui::{mac, AccessibleTextInput as _, Button, SearchField, TextField};
 
 use crate::{
-    document, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, ExportPdf, FindNext,
-    FindPrev, IncreaseFont, NewFile, OpenFile, PrintFile, SaveFile, SaveFileAs, SetEncodingUtf16Be,
-    SetEncodingUtf16Le, SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf,
-    SetLineEndingLf, ToggleFind, ToggleMono, ToggleReplace,
+    document, ClearRecentMenu, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, ExportPdf,
+    FindNext, FindPrev, IncreaseFont, NewFile, OpenFile, OpenRecent0, OpenRecent1, OpenRecent2,
+    OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7, OpenRecent8, OpenRecent9,
+    PrintFile, SaveFile, SaveFileAs, SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8,
+    SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ToggleFind,
+    ToggleMono, ToggleReplace,
 };
 
 use super::{
@@ -98,6 +100,17 @@ impl Render for EditorView {
             .key_context(CTX)
             .on_action(cx.listener(|this, _: &NewFile, window, cx| this.new_file(window, cx)))
             .on_action(cx.listener(|this, _: &OpenFile, window, cx| this.open(window, cx)))
+            .on_action(cx.listener(|this, _: &OpenRecent0, window, cx| this.open_recent(0, window, cx)))
+            .on_action(cx.listener(|this, _: &OpenRecent1, window, cx| this.open_recent(1, window, cx)))
+            .on_action(cx.listener(|this, _: &OpenRecent2, window, cx| this.open_recent(2, window, cx)))
+            .on_action(cx.listener(|this, _: &OpenRecent3, window, cx| this.open_recent(3, window, cx)))
+            .on_action(cx.listener(|this, _: &OpenRecent4, window, cx| this.open_recent(4, window, cx)))
+            .on_action(cx.listener(|this, _: &OpenRecent5, window, cx| this.open_recent(5, window, cx)))
+            .on_action(cx.listener(|this, _: &OpenRecent6, window, cx| this.open_recent(6, window, cx)))
+            .on_action(cx.listener(|this, _: &OpenRecent7, window, cx| this.open_recent(7, window, cx)))
+            .on_action(cx.listener(|this, _: &OpenRecent8, window, cx| this.open_recent(8, window, cx)))
+            .on_action(cx.listener(|this, _: &OpenRecent9, window, cx| this.open_recent(9, window, cx)))
+            .on_action(cx.listener(|this, _: &ClearRecentMenu, _, cx| this.clear_recent_documents(cx)))
             .on_action(cx.listener(|this, _: &SaveFile, window, cx| this.save(window, cx)))
             .on_action(cx.listener(|this, _: &SaveFileAs, window, cx| this.save_as(window, cx)))
             .on_action(cx.listener(|this, _: &DuplicateDocument, window, cx| {

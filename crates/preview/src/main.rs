@@ -38,6 +38,19 @@ gpui::actions!(
         GoToPage,
         PrintDocument,
         ExportAsPdf,
+        // File ▸ Open Recent ▸ (PREV-08/PREV-15): one action per shown row,
+        // up to `rmac_app_menu::recent::MAX_ENTRIES`, plus "Clear Menu".
+        OpenRecent0,
+        OpenRecent1,
+        OpenRecent2,
+        OpenRecent3,
+        OpenRecent4,
+        OpenRecent5,
+        OpenRecent6,
+        OpenRecent7,
+        OpenRecent8,
+        OpenRecent9,
+        ClearRecentMenu,
     ]
 );
 
@@ -137,6 +150,43 @@ pub(crate) fn open_window(paths: Vec<PathBuf>, cx: &mut App) {
     cx.activate(true);
 }
 
+/// File ▸ Open Recent ▸ (PREV-08/PREV-15): opens the document at `index` in
+/// the store's own File-Open-Recent list, re-read now (off the render
+/// thread) rather than cached from when the menu opened, in a new window —
+/// exactly what File ▸ Open… does with a chosen path. A document the store
+/// no longer lists (moved, deleted, or the list simply changed since the
+/// menu opened) is silently skipped.
+fn open_recent_menu_entry(index: usize, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let path = cx
+            .background_executor()
+            .spawn(async move {
+                let store = rmac_recent_documents::Store::from_environment().ok()?;
+                let mut paths = store.load_for_app(PREVIEW).ok()?;
+                (index < paths.len()).then(|| paths.swap_remove(index))
+            })
+            .await;
+        if let Some(path) = path {
+            let _ = cx.update(|cx| open_window(vec![path], cx));
+        }
+    })
+    .detach();
+}
+
+/// File ▸ Open Recent ▸ Clear Menu (PREV-08/PREV-15): removes only what
+/// Preview itself recorded, off the render thread. The menu bar sees the
+/// change next time it opens the menu, since it is built fresh from the
+/// store then; nothing needs to be published.
+fn clear_recent_documents(cx: &mut App) {
+    cx.background_executor()
+        .spawn(async move {
+            if let Ok(store) = rmac_recent_documents::Store::from_environment() {
+                let _ = store.clear_for_app(PREVIEW);
+            }
+        })
+        .detach();
+}
+
 /// File ▸ Open…: the portal's open panel, then one window for the choice.
 pub(crate) fn choose_and_open(quit_if_cancelled: bool, cx: &mut App) {
     cx.spawn(async move |cx| {
@@ -204,6 +254,17 @@ fn main() {
             rmac_ui::init_application(cx);
             bind_keys(cx);
             cx.on_action(|_: &OpenFile, cx| choose_and_open(false, cx));
+            cx.on_action(|_: &OpenRecent0, cx| open_recent_menu_entry(0, cx));
+            cx.on_action(|_: &OpenRecent1, cx| open_recent_menu_entry(1, cx));
+            cx.on_action(|_: &OpenRecent2, cx| open_recent_menu_entry(2, cx));
+            cx.on_action(|_: &OpenRecent3, cx| open_recent_menu_entry(3, cx));
+            cx.on_action(|_: &OpenRecent4, cx| open_recent_menu_entry(4, cx));
+            cx.on_action(|_: &OpenRecent5, cx| open_recent_menu_entry(5, cx));
+            cx.on_action(|_: &OpenRecent6, cx| open_recent_menu_entry(6, cx));
+            cx.on_action(|_: &OpenRecent7, cx| open_recent_menu_entry(7, cx));
+            cx.on_action(|_: &OpenRecent8, cx| open_recent_menu_entry(8, cx));
+            cx.on_action(|_: &OpenRecent9, cx| open_recent_menu_entry(9, cx));
+            cx.on_action(|_: &ClearRecentMenu, cx| clear_recent_documents(cx));
             rmac_ui::install_app_instance(
                 PREVIEW,
                 |arguments, cx| {

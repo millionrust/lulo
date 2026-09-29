@@ -16,6 +16,7 @@ rmac-appearance.workspace = true
 rmac-appearance-portal.workspace = true
 rmac-app-menu.workspace = true
 rmac-apps.workspace = true
+rmac-recent-documents.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
 rmac-design.workspace = true

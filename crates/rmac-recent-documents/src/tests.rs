@@ -142,6 +142,66 @@ fn clear_removes_records_and_advances_the_desktop_boundary() {
 }
 
 #[test]
+fn app_scoped_recording_filters_the_merged_view() {
+    let root = root("app-scoped");
+    std::fs::create_dir_all(&root).unwrap();
+    let store = store(&root);
+    let editor_doc = root.join("notes.txt");
+    let preview_doc = root.join("scan.png");
+    let untagged_doc = root.join("shared.txt");
+    std::fs::write(&editor_doc, b"one").unwrap();
+    std::fs::write(&preview_doc, b"two").unwrap();
+    std::fs::write(&untagged_doc, b"three").unwrap();
+
+    assert_eq!(
+        store.record_for_app(&editor_doc, "text_editor").unwrap(),
+        RecordOutcome::Added
+    );
+    assert_eq!(
+        store.record_for_app(&preview_doc, "preview").unwrap(),
+        RecordOutcome::Added
+    );
+    assert_eq!(store.record(&untagged_doc).unwrap(), RecordOutcome::Added);
+
+    assert_eq!(
+        store.load_for_app("text_editor").unwrap(),
+        [editor_doc.canonicalize().unwrap()]
+    );
+    assert_eq!(
+        store.load_for_app("preview").unwrap(),
+        [preview_doc.canonicalize().unwrap()]
+    );
+    assert!(store.load_for_app("nobody").unwrap().is_empty());
+    // The merged view every other consumer reads still sees all three.
+    assert_eq!(store.load().unwrap().paths.len(), 3);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn clear_for_app_only_removes_its_own_entries() {
+    let root = root("app-clear");
+    std::fs::create_dir_all(&root).unwrap();
+    let store = store(&root);
+    let editor_doc = root.join("notes.txt");
+    let preview_doc = root.join("scan.png");
+    std::fs::write(&editor_doc, b"one").unwrap();
+    std::fs::write(&preview_doc, b"two").unwrap();
+    store.record_for_app(&editor_doc, "text_editor").unwrap();
+    store.record_for_app(&preview_doc, "preview").unwrap();
+
+    assert_eq!(store.clear_for_app("text_editor").unwrap(), 1);
+    assert!(store.load_for_app("text_editor").unwrap().is_empty());
+    assert_eq!(
+        store.load_for_app("preview").unwrap(),
+        [preview_doc.canonicalize().unwrap()]
+    );
+    // Clearing again removes nothing more, and does not disturb Preview's.
+    assert_eq!(store.clear_for_app("text_editor").unwrap(), 0);
+    assert_eq!(store.load().unwrap().paths.len(), 1);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn concurrent_writers_preserve_every_document() {
     use std::sync::{Arc, Barrier};
 

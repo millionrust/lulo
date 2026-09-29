@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::{Error, ErrorKind, Operation, MAX_ENTRIES, MAX_URI_BYTES, VERSION};
+use super::{Error, ErrorKind, Operation, MAX_APP_BYTES, MAX_ENTRIES, MAX_URI_BYTES, VERSION};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct StoredFile {
@@ -46,6 +46,10 @@ impl StoredFile {
             if entry.uri.len() > MAX_URI_BYTES
                 || !seen.insert(entry.uri.as_str())
                 || uri_path(&entry.uri).is_none()
+                || entry
+                    .app
+                    .as_deref()
+                    .is_some_and(|app| app.is_empty() || app.len() > MAX_APP_BYTES)
             {
                 return Err(Error::new(Operation::Validate, ErrorKind::Invalid));
             }
@@ -63,12 +67,25 @@ impl StoredFile {
             .take(MAX_ENTRIES)
             .collect()
     }
+
+    /// [`Self::live_paths`] filtered to the documents `app_id` itself
+    /// recorded (see [`super::Store::record_for_app`]).
+    pub(super) fn live_paths_for_app(mut self, app_id: &str) -> Vec<PathBuf> {
+        self.entries
+            .retain(|entry| entry.app.as_deref() == Some(app_id));
+        self.live_paths()
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct StoredEntry {
     pub(super) uri: String,
     pub(super) used_at_unix_ms: u64,
+    /// The app that opened this document through its own UI
+    /// ([`super::Store::record_for_app`]), if any — `None` for a document
+    /// recorded generically (e.g. the launcher's Open With).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) app: Option<String>,
 }
 
 fn uri_path(uri: &str) -> Option<PathBuf> {

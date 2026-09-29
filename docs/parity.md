@@ -27,7 +27,7 @@ Sizes/positions/colours: see FEEL_SPEC.md §4.7 and docs/macos-parity-spec.md
 | DOCK-10 | P2 | S | Broken | Mac: a Settings pane shows its rows at once. / Lulo: Desktop & Dock opens with a "Loading system information…" progress bar above the Dock section. | `crates/system-settings/src/controller/detail.rs:74` |
 | DOCK-11 | P2 | M | Missing | Mac: minimising uses Genie or Scale (DOCK-09's setting). / Lulo: a plain 350 ms fade to parking; neither effect exists. | `rmac-design/src/motion.rs:117` |
 | DOCK-12 | P2 | S | Missing | Mac: recently-quit apps (up to 3) sit in the Dock without a running dot. / Lulo: no recent-but-closed tiles. | `crates/rmac-dock` |
-| DOCK-13 | P2 | S | Missing | Mac: shelf ≈72 px tall, ≈18 px above the screen bottom (FEEL_SPEC.md). / Lulo: shelf rendered 92 px (≈20 px too tall), bottom inset 22 px (≈4 px too high) as of the 2026-09-19 capture — not re-measured since. | `shell/bins/rmac-dock` |
+| DOCK-13 | P2 | S | Partial (re-measured 2026-09-29) | Mac (AX frame of the Dock's icon list, this laptop-reference machine, today): row 1098×84 pt at (186, 862) on a 956 pt-tall screen → bottom inset 10 pt (AX reports the icon hit-area, not necessarily the glass shelf's own edge, so treat 10 as approximate). / Lulo (`dev`, nested-niri capture, `shelf_bottom_margin = icon_size * 0.078125`): shelf 83 px tall, bottom inset 6 px. Both numbers moved a lot since the stale 2026-09-19 capture (92/22) — height is now very close (83 vs ~84), only the bottom inset looks off (6 vs ~10, ≈4 px too low). Not changed this pass: `shelf_bottom_margin`'s ratio was deliberately derived from a specific tile size and Mac capture; before scaling it up, re-measure the Mac's actual glass-shelf bottom edge with a screenshot (not AX) at the tile size Lulo currently ships. | `shell/bins/rmac-dock/src/main.rs` (`shelf_bottom_margin`) |
 | DOCK-14 | P2 | S | Missing | Mac: an item's right-click menu is ≈165 px wide, 24 px item pitch, with a triangular pointer to the tile. / Lulo: menu 309 px wide (≈144 px too wide), ≈45 px item pitch, no pointer. | `crates/rmac-dock/src/menu.rs` |
 | DOCK-15 | P2 | S | Missing | Mac: a running or kept app's tile menu lists that app's recent documents under its open windows (TextEdit: test.rtf, Untitled; Zed: rmac). / Lulo: windows and desktop-file actions only; no recent-documents section, though `rmac-recent-documents` exists. | `crates/rmac-dock/src/menu.rs:259` |
 | DOCK-16 | P2 | S | Missing | Mac: every app tile's Options ▸ is Keep in Dock (or Remove from Dock), Open at Login, Show in Finder. / Lulo: Keep in Dock/Remove from Dock and Show in Files only; no Open at Login, although `rmac-login-items` exists. | `crates/rmac-dock/src/menu.rs:318` |
@@ -53,6 +53,8 @@ contract every app menu is built from (`crates/rmac-app-menu`,
 | BAR-01 | P1 | S | Partial (focused Files fallback fixed in source; validation pending) | Mac: on the desktop the bar shows Finder with File/Edit/View/Go/Window/Help, because Finder always runs. / Lulo: the no-focus path already seeded static Files menus, but when the compositor reported Files as focused, the shell cleared them and requested live menus; `NotPublished` returned without restoring the fallback. That left only Files/Window/Help in the live bar. The focused Files path now seeds the same static menus while waiting, and replaces them when Files publishes its live layout. | `shell/bins/rmac-menubar/src/main.rs` (`static_fallback_menus`, focus update, `request_app_menus`) |
 | BAR-02 | P1 | M | Fixed 44f223ee | Mac: every app has a system Window menu (Minimise ⌘M, Zoom, Fill 🌐⌃F, Centre 🌐⌃C, Move & Resize ▸, the window list) and a Help menu with a search field. / Lulo: the shell adds neither — Settings shows only "Settings View", Calculator only "Calculator Edit View" (see MENU-01/MENU-06 for the general contract). | `crates/rmac-app-menu/src/lib.rs:263`, `shell/bins/rmac-menubar/src/main.rs:2583` |
 | BAR-03 | P1 | M | Partial | Mac: Bluetooth, Sound, Focus and VPN menu-bar items each open their own dropdown (switch, device/output list, "… Settings…"). / Lulo: only Wi-Fi and Battery have menus; the rest just open Control Centre. | `shell/bins/rmac-menubar/src/main.rs:2152` |
+| WIFI-01 | P2 | S | Fixed (this pass) | Mac (2026-09-29 live capture, en-GB): the Wi-Fi menu's saved-network header agrees in number with the list below it — "Known Network" singular with exactly one reachable saved network (this machine's live state today), "Known Networks" with more than one. / Lulo hard-coded the plural in every case. | `shell/bins/rmac-menubar/src/menu_model.rs` (`wifi_menu_rows`) |
+| WIFI-02 | P2 | S | Missing (not fixed this pass) | Mac (2026-09-29 live capture): with no unknown network in range, the row below Known Networks is a plain "Other…" action (no disclosure arrow), presumably opening a manual join sheet — not observed this pass since no such sheet exists to open. / Lulo always shows "Other Networks" as an inline expand/collapse disclosure (`StatusRow::Disclosure`) with no manual-join sheet at all; not changed because the real Mac behaviour when unknown networks *are* in range (submenu vs. inline list vs. an always-present separate "Other…" row) was not captured live this pass — needs a capture with at least one unknown SSID in range before the disclosure is replaced. | `shell/bins/rmac-menubar/src/menu_model.rs` (`wifi_menu_rows`, the `Other Networks` `StatusRow::Disclosure`) |
 | BAR-04 | P2 | S | Partial | Mac: holding ⌥ in the Apple menu turns Force Quit… into Force Quit "App" and drops the "…"/confirmation from Restart/Shut Down/Log Out; System Information follows About This Mac. / Lulo: no Option alternates, no System Information. | `shell/bins/rmac-menubar/src/main.rs:2494` |
 | BAR-05 | P2 | S | Missing | Mac: the Battery menu has a "Using Significant Energy" section above Battery Settings…. / Lulo: Battery, Power Source, Energy Mode, Battery Settings… only. | `shell/bins/rmac-menubar/src/menu_model.rs:609` |
 | BAR-06 | P2 | S | Partial (System Settings… count, `b144988c`) | Mac: the App Store… row shows the pending count ("App Store…, 6 updates"), and System Settings… shows its own ("System Settings…, 1 update") as a grey capsule. / Lulo: "Software Center" with no count and no "…". Now: System Settings… shows Software Update's count capsule (read from its status file when the menu opens). Still: Software Center has no count and no "…". | `shell/bins/rmac-menubar/src/main.rs` (`menu_badge`, `system_menu`) |
@@ -84,15 +86,16 @@ contract every app menu is built from (`crates/rmac-app-menu`,
 
 ### Control Center
 
-Panel position/width (287 px): see FEEL_SPEC.md §4.9 and
-docs/macos-parity-spec.md §4.9.
+Panel position/width: see `design-lab/control-center.html` and
+`crates/rmac-quick-settings/src/layout.rs` (4-column grid, 64 pt cells,
+12 pt gap, 12 pt surface padding → 316 pt wide, cross-checked below).
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
 | CC-01 | P1 | S | Fixed 918aaa38 (niri blur; verify live) | Mac: modules are frosted glass, so nothing behind them can be read. / Lulo: modules are translucent without blur — the desktop folder icon and its "untitled folder" label show sharply through the Bluetooth module. | `crates/quick-settings-app/src/main.rs:108` (Blurred background), `render/cards.rs` |
 | CC-02 | P2 | S | Partial | Mac: Now Playing is always shown as a 2×2 tile, reading "Not Playing" with dimmed transport controls. / Lulo: the tile is hidden when no MPRIS player exists, so the grid is shorter (4 rows vs the Mac's 5). | `crates/quick-settings-app/src/view.rs:33`, `render.rs:179` |
 | CC-03 | P2 | M | Missing | Mac: an "Edit Controls" pill under the modules adds, removes and rearranges controls. / Lulo: the set is fixed. | `crates/quick-settings-app/src/render.rs` |
-| CC-04 | P2 | S | Missing | Mac: panel 287 px wide (spec). / Lulo: panel rendered 380 px wide (≈93 px too wide), top ≈43 px too low, as of the 2026-09-19 capture — not re-measured since. | `crates/quick-settings-app` |
+| CC-04 | P2 | S | Measurement corrected (2026-09-29) | The 380 px/287 px pair here was the 2026-09-19 capture on a build that predates the 2026-09-23 remeasure baked into `design-lab/control-center.html` and `layout.rs` (64 pt cells × 4, 12 pt gaps, 12 pt padding = 316 pt, `SURFACE_WIDTH` test-asserted). A fresh live Mac capture today (2026-09-29, same laptop-reference screen, 1470×956 logical) puts the Wi-Fi/Bluetooth pills and the Display/Sound slider's right edge within a few px of what a 316-wide, 2 pt-from-edge surface predicts — nowhere near a 93 px error. No further action; re-open only if a live Lulo capture (still not taken this pass — no nested-session harness reaches Control Centre without wiring `rmac-shortcut-broker`) shows a real mismatch. | `crates/rmac-quick-settings/src/layout.rs`, `design-lab/control-center.html` |
 | CC-05 | P1 | M | Missing | Mac: date/time click and a keyboard path both open Control Centre / Notification Centre. / Lulo: only the click path works; no key opens either. | `shell/bins/rmac-menubar`, `crates/rmac-quick-settings` |
 | CC-06 | P2 | L | Missing | Mac: Control Centre has Screen Mirroring. / Lulo: absent — niri has no mirroring protocol yet. | `crates/quick-settings-app` |
 | CC-07 | P2 | M | Missing | Mac: the default modules include AirDrop (expands to Off/Contacts Only/Everyone for 10 Minutes), Stage Manager, and an appearance (Dark Mode) toggle. / Lulo: none of the three. Instead it shows a Low Power circle, which the Mac only offers through Edit Controls. | `crates/quick-settings-app/src/view.rs:254` |
@@ -103,8 +106,10 @@ docs/macos-parity-spec.md §4.9.
 
 ### Notification Center
 
-Panel position/width (346 px): see FEEL_SPEC.md §4.10 and
-docs/macos-parity-spec.md §4.10.
+Card width and column position: see `design-lab/notifications.html` (344 pt
+card, centred 180 pt from the right screen edge; there is no Mac panel to
+measure — "346 px" here previously did not match that or any other capture
+and has been corrected).
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
@@ -633,7 +638,7 @@ Shell states audit, 2026-09-25. Mac: macOS 26.2 on the owner's Mac, read live th
 | Menu bar | Bluetooth / Sound / Focus items | live (not in the owner's bar) | code (not in bar) | BAR-03 |
 | Menu bar | Clock opens Notification Centre; second click closes; Esc closes | live | code + live (dispatch) | — |
 | Menu bar | Privacy indicator dot/pill | live | code | BAR-09 |
-| Control Centre | Default grid (Wi-Fi, Bluetooth, AirDrop, Now Playing, Stage Manager, Screen Mirroring, appearance, Screenshot, Focus, Display, Sound, Edit Controls) | live | live | CC-02, CC-03, CC-06, CC-07 |
+| Control Centre | Default grid (Wi-Fi, Bluetooth, AirDrop, Now Playing, Stage Manager, Screen Mirroring, appearance, Screenshot, Focus, Display, Sound, Edit Controls) | live | live (re-confirmed 2026-09-29: `rmac-quick-settings` in a nested sway+niri, opened over its real `$XDG_RUNTIME_DIR/rmac/shortcut-quick-settings.sock` via `rmac-shortcut-dispatch quick-settings` — the same socket a real shortcut uses, no broker/portal needed, no click or key injected. Grid, icon styles and the Wi-Fi/Bluetooth/Low Power/Screenshot/Focus/Display/Sound rows all matched the Mac's shapes and icon glyphs closely; Now Playing/AirDrop/Stage Manager/mirroring/appearance/Edit Controls absent as CC-02/03/06/07 already say. Blur (CC-01) still not verified this way — the headless test output has no textured background to blur against.) | CC-02, CC-03, CC-06, CC-07 |
 | Control Centre | Wi-Fi expanded | live (menu) | code | — |
 | Control Centre | Bluetooth expanded | ref | code | — |
 | Control Centre | AirDrop expanded | ref | code | CC-07 |
@@ -646,6 +651,7 @@ Shell states audit, 2026-09-25. Mac: macOS 26.2 on the owner's Mac, read live th
 | Control Centre | Expand/collapse animation, Esc, second click | ref | code + live | CC-10 |
 | Control Centre | Glass over the desktop | live | live | CC-11 |
 | Notification Centre | List, heading, clear button, Edit Widgets pill, ✕ Clear All menu | live | live + code | NC-09, NC-04 |
+| Notification Centre | 2026-09-29: tried the same nested sway+niri + real dispatch-socket method that worked for Control Centre (`rmac-shortcut-dispatch notification-center` against `rmac-notification-center`'s own socket). `rmac-notification-center` needs a D-Bus session bus at all (added a private `dbus-daemon --session` — without one it prints "notification service failed (Bus)"); with one, it runs with no error but never creates its dispatch socket within several seconds, so the dispatch call fails with ENOENT. Its systemd unit claims `org.freedesktop.impl.portal.desktop.rmac` as a portal backend (`Type=dbus`), so it may be waiting on `xdg-desktop-portal` itself, which this pass did not stand up. Not fixed this pass — needs a nested session with a real `xdg-desktop-portal` (or a documented way to skip that wait for evidence capture, mirroring `RMAC_CAPTURE_MENU`). | — |
 | Notification Centre | Card right-click menu (Mute 1 h/Today, Turn Off, Settings…) | live | code | NC-08 |
 | Notification Centre | Widget gallery (search, category sidebar, sizes) | live | code | DESK-05 |
 | Notification Centre | Group stack, Show Less, hover ✕ | ref | code + live (installed build still lists every card singly) | NC-03 |

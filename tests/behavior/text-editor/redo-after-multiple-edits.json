@@ -1,0 +1,44 @@
+{
+  "title": "Two undos followed by two redos exactly reverse two separate edits",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "Hello "
+    },
+    {
+      "type": "world"
+    },
+    {
+      "key": "cmd-z",
+      "settle": 0.6
+    },
+    {
+      "key": "cmd-z",
+      "settle": 0.6
+    },
+    {
+      "observe": "both_undone",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "cmd-shift-z",
+      "settle": 0.6
+    },
+    {
+      "key": "cmd-shift-z",
+      "settle": 0.6
+    },
+    {
+      "observe": "both_redone",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

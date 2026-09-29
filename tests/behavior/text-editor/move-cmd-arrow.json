@@ -1,0 +1,31 @@
+{
+  "title": "⌘←/→ move the caret to the start or end of the line without selecting",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "Hello world"
+    },
+    {
+      "key": "cmd-left"
+    },
+    {
+      "observe": "at_start",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "cmd-right"
+    },
+    {
+      "observe": "at_end",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

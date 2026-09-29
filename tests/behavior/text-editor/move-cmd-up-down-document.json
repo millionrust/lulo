@@ -1,0 +1,31 @@
+{
+  "title": "⌘↑/↓ move the caret to the very start or end of the document",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "First line\nSecond line\nThird line"
+    },
+    {
+      "key": "cmd-up"
+    },
+    {
+      "observe": "doc_start",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "cmd-down"
+    },
+    {
+      "observe": "doc_end",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

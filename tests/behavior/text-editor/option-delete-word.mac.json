@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "scenario": "text-editor/option-delete-word",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "word_deleted": {
+      "focus": {
+        "role": "text-area",
+        "value": "Hello ",
+        "selection": [
+          6,
+          6
+        ],
+        "selected_text": "",
+        "selected_all": false,
+        "label": null
+      }
+    }
+  }
+}

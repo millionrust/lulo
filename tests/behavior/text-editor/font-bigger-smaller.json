@@ -1,0 +1,41 @@
+{
+  "title": "⌘+ and ⌘- (Format ▸ Font ▸ Bigger/Smaller) resize the font without changing the text",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "Hello world"
+    },
+    {
+      "key": "cmd-+",
+      "settle": 0.8
+    },
+    {
+      "key": "cmd-+",
+      "settle": 0.8
+    },
+    {
+      "observe": "bigger",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "cmd--",
+      "settle": 0.8
+    },
+    {
+      "key": "cmd--",
+      "settle": 0.8
+    },
+    {
+      "observe": "smaller",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

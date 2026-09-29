@@ -1,0 +1,34 @@
+{
+  "title": "Shift+←/→ extends the text selection one character at a time",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "Hello"
+    },
+    {
+      "key": "shift-left"
+    },
+    {
+      "key": "shift-left"
+    },
+    {
+      "observe": "extended",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "shift-right"
+    },
+    {
+      "observe": "shrunk",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

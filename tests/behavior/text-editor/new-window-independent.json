@@ -1,0 +1,33 @@
+{
+  "title": "⌘N opens a second Untitled window whose text is independent of the first",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "First window"
+    },
+    {
+      "key": "cmd-n",
+      "settle": 1.2
+    },
+    {
+      "observe": "second_window",
+      "facts": [
+        "windows",
+        "focus"
+      ]
+    },
+    {
+      "type": "Second window"
+    },
+    {
+      "observe": "typed_in_second",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

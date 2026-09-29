@@ -1,0 +1,31 @@
+{
+  "title": "⌘⇧←/→ selects to the start or end of the line",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "Hello world"
+    },
+    {
+      "key": "cmd-shift-left"
+    },
+    {
+      "observe": "to_start",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "cmd-shift-right"
+    },
+    {
+      "observe": "to_end",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "title": "⌘C then ⌘V copies the selected text and inserts it again at the caret",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "Hello "
+    },
+    {
+      "key": "cmd-shift-left"
+    },
+    {
+      "key": "cmd-c"
+    },
+    {
+      "key": "cmd-right"
+    },
+    {
+      "key": "cmd-v",
+      "settle": 0.8
+    },
+    {
+      "observe": "pasted",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "title": "⌥⇧←/→ extends the selection a whole word at a time",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "Hello world today"
+    },
+    {
+      "key": "alt-shift-left"
+    },
+    {
+      "observe": "one_word",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "alt-shift-left"
+    },
+    {
+      "observe": "two_words",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

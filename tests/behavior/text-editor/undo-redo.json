@@ -1,0 +1,33 @@
+{
+  "title": "Undo (⌘Z) removes typed text; Redo (⌘⇧Z) brings it back",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "Hello"
+    },
+    {
+      "key": "cmd-z",
+      "settle": 1.0
+    },
+    {
+      "observe": "undone",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "cmd-shift-z",
+      "settle": 1.0
+    },
+    {
+      "observe": "redone",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

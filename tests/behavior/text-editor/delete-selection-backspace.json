@@ -1,0 +1,26 @@
+{
+  "title": "Backspace with a word selected deletes the whole selection",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "Hello world"
+    },
+    {
+      "key": "alt-shift-left"
+    },
+    {
+      "key": "backspace",
+      "settle": 0.6
+    },
+    {
+      "observe": "deleted",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+{
+  "format": 1,
+  "scenario": "text-editor/find-next-prev",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "first_match": {
+      "focus": {
+        "role": "search-field",
+        "value": "hello",
+        "selection": [
+          0,
+          5
+        ],
+        "selected_text": "hello",
+        "selected_all": true,
+        "label": "Find"
+      }
+    },
+    "next_match": {
+      "focus": {
+        "role": "search-field",
+        "value": "hello",
+        "selection": [
+          0,
+          5
+        ],
+        "selected_text": "hello",
+        "selected_all": true,
+        "label": "Find"
+      }
+    },
+    "prev_match": {
+      "focus": {
+        "role": "search-field",
+        "value": "hello",
+        "selection": [
+          0,
+          5
+        ],
+        "selected_text": "hello",
+        "selected_all": true,
+        "label": "Find"
+      }
+    }
+  }
+}

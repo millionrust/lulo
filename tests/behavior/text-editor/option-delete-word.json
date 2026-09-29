@@ -1,0 +1,23 @@
+{
+  "title": "⌥⌫ deletes the word before the caret",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "Hello world"
+    },
+    {
+      "key": "alt-backspace",
+      "settle": 0.6
+    },
+    {
+      "observe": "word_deleted",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "scenario": "text-editor/copy-paste-within-document",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "pasted": {
+      "focus": {
+        "role": "text-area",
+        "value": "Hello Hello ",
+        "selection": [
+          12,
+          12
+        ],
+        "selected_text": "",
+        "selected_all": false,
+        "label": null
+      }
+    }
+  }
+}

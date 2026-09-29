@@ -1,0 +1,22 @@
+{
+  "title": "⌘A selects the entire document",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "Hello world"
+    },
+    {
+      "key": "cmd-a"
+    },
+    {
+      "observe": "all_selected",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

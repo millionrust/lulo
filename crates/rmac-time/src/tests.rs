@@ -1,4 +1,5 @@
 use super::*;
+use crate::model::format_mac_date_time;
 
 #[derive(Clone)]
 struct FakeService {
@@ -147,6 +148,39 @@ fn clock_readback_accounts_for_transaction_elapsed_time() {
         target + 30_000_000,
         std::time::Duration::from_secs(1)
     ));
+}
+
+#[test]
+fn mac_style_date_time_matches_the_24_hour_switch() {
+    use chrono::{FixedOffset, TimeZone as _};
+
+    let noon = FixedOffset::east_opt(0)
+        .unwrap()
+        .with_ymd_and_hms(2026, 9, 25, 12, 0, 26)
+        .single()
+        .unwrap();
+    assert_eq!(
+        format_mac_date_time(noon, false),
+        "25 Sep 2026 at 12:00:26 PM"
+    );
+    assert_eq!(format_mac_date_time(noon, true), "25 Sep 2026 at 12:00:26");
+
+    // A single-digit hour isn't zero-padded in the 12-hour style, the same
+    // way the Mac shows "5:04:23 PM", but is zero-padded in the 24-hour
+    // style ("05:04:23").
+    let morning = FixedOffset::east_opt(0)
+        .unwrap()
+        .with_ymd_and_hms(2026, 9, 25, 5, 4, 23)
+        .single()
+        .unwrap();
+    assert_eq!(
+        format_mac_date_time(morning, false),
+        "25 Sep 2026 at 5:04:23 AM"
+    );
+    assert_eq!(
+        format_mac_date_time(morning, true),
+        "25 Sep 2026 at 05:04:23"
+    );
 }
 
 #[test]

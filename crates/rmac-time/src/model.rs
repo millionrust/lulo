@@ -19,11 +19,15 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    pub fn formatted_local_time(&self) -> String {
-        self.formatted_local_time_at(self.time_usec)
+    /// Mac style ("25 Sep 2026 at 12:00:26 PM", or "…at 12:00:26" with
+    /// `twenty_four_hour`), not the locale-formatted long date the OS locale
+    /// would otherwise pick (SET-78): the Mac's Date & Time pane always
+    /// shows day, abbreviated month, year and seconds, regardless of locale.
+    pub fn formatted_local_time(&self, twenty_four_hour: bool) -> String {
+        self.formatted_local_time_at(self.time_usec, twenty_four_hour)
     }
 
-    pub fn formatted_local_time_at(&self, time_usec: u64) -> String {
+    pub fn formatted_local_time_at(&self, time_usec: u64, twenty_four_hour: bool) -> String {
         use chrono::{Local, TimeZone as _};
 
         let seconds = (time_usec / 1_000_000).min(i64::MAX as u64) as i64;
@@ -31,7 +35,7 @@ impl Snapshot {
         Local
             .timestamp_opt(seconds, nanoseconds)
             .single()
-            .map(|time| time.format("%A, %B %-d, %Y at %-I:%M %p").to_string())
+            .map(|time| format_mac_date_time(time, twenty_four_hour))
             .unwrap_or_else(|| "Unavailable".into())
     }
 
@@ -68,4 +72,24 @@ pub trait Service {
     fn set_ntp(&self, enabled: bool) -> Result<Snapshot, Error>;
     fn set_timezone(&self, timezone: &str) -> Result<Snapshot, Error>;
     fn set_time(&self, target: &ClockTarget) -> Result<Snapshot, Error>;
+}
+
+/// The Mac's Date & Time date/time string, independent of the ambient
+/// `Local` timezone so it stays testable: day, abbreviated month, year, and
+/// seconds, with the hour in either the 24-hour or the AM/PM style
+/// (SET-78).
+pub(crate) fn format_mac_date_time<Tz: chrono::TimeZone>(
+    time: chrono::DateTime<Tz>,
+    twenty_four_hour: bool,
+) -> String
+where
+    Tz::Offset: std::fmt::Display,
+{
+    let time_format = if twenty_four_hour {
+        "%H:%M:%S"
+    } else {
+        "%-I:%M:%S %p"
+    };
+    let format = format!("%-d %b %Y at {time_format}");
+    time.format(&format).to_string()
 }

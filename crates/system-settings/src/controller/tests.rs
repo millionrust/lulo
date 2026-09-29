@@ -11,8 +11,9 @@ use super::{
     storage_stream_snapshot_is_current, system_info_stream_snapshot_is_current,
     theme_stream_snapshot_is_current, time_stream_snapshot_is_current,
     update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
-    wifi_stream_snapshot_is_current, DockChange, ShellSettingsMutation, SpotlightAuthority,
-    SpotlightChange, WallpaperChange, WallpaperTarget,
+    wifi_pane_is_visible, wifi_pane_scan_should_start_on_navigation,
+    wifi_stream_snapshot_is_current, DockChange, MenuBarChange, ShellSettingsMutation,
+    SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget,
 };
 
 #[test]
@@ -109,6 +110,26 @@ fn privacy_stream_snapshots_cannot_cross_reset_generations() {
     assert!(!privacy_stream_snapshot_is_current(3, 4, false, false));
     assert!(!privacy_stream_snapshot_is_current(4, 4, true, false));
     assert!(!privacy_stream_snapshot_is_current(4, 4, false, true));
+}
+
+#[test]
+fn wifi_pane_is_visible_only_with_no_subpage_on_the_wifi_category() {
+    assert!(wifi_pane_is_visible(true, "Wi-Fi"));
+    assert!(!wifi_pane_is_visible(false, "Wi-Fi"));
+    assert!(!wifi_pane_is_visible(true, "Bluetooth"));
+    assert!(!wifi_pane_is_visible(false, "Bluetooth"));
+}
+
+#[test]
+fn wifi_pane_scan_starts_only_on_the_transition_into_view() {
+    // Arriving at the Wi-Fi pane from elsewhere starts a scan (SET-14:
+    // "call RequestScan when the pane opens")...
+    assert!(wifi_pane_scan_should_start_on_navigation(true, false));
+    // ...but staying on it, or navigating among other panes, does not (the
+    // periodic timer covers "stays open", not every render).
+    assert!(!wifi_pane_scan_should_start_on_navigation(true, true));
+    assert!(!wifi_pane_scan_should_start_on_navigation(false, false));
+    assert!(!wifi_pane_scan_should_start_on_navigation(false, true));
 }
 
 #[test]
@@ -259,6 +280,29 @@ fn dock_changes_touch_only_the_selected_policy() {
             repeated_click: rmac_shell_settings::RepeatedClickBehavior::DoNothing,
             ..original
         }
+    );
+}
+
+#[test]
+fn twenty_four_hour_change_picks_an_explicit_format_not_locale() {
+    let mut settings = rmac_shell_settings::ShellSettings::default();
+    assert_eq!(
+        settings.clock.format,
+        rmac_shell_settings::ClockFormat::Locale
+    );
+
+    MenuBarChange::TwentyFourHour(true).apply(&mut settings);
+    assert_eq!(
+        settings.clock.format,
+        rmac_shell_settings::ClockFormat::TwentyFourHour
+    );
+
+    // Turning it back off chooses `TwelveHour` explicitly, the same as the
+    // Mac's own switch, rather than reverting to `Locale`.
+    MenuBarChange::TwentyFourHour(false).apply(&mut settings);
+    assert_eq!(
+        settings.clock.format,
+        rmac_shell_settings::ClockFormat::TwelveHour
     );
 }
 

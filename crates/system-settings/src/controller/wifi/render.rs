@@ -165,7 +165,22 @@ impl Settings {
         }
 
         if self.wifi_on {
-            cards.push(section_header("Other Networks"));
+            let scanning = self.wifi_scanning;
+            cards.push(
+                section_header("Other Networks")
+                    .flex()
+                    .items_center()
+                    .gap(px(8.0))
+                    .when(scanning, |header| {
+                        header.child(
+                            div()
+                                .id("wifi-scanning-indicator")
+                                .role(Role::ProgressIndicator)
+                                .aria_label("Scanning for Wi-Fi networks")
+                                .child(Spinner::small()),
+                        )
+                    }),
+            );
             let others: Vec<(usize, &rmac_network::WifiNetwork)> = self
                 .wifi_networks
                 .iter()
@@ -179,7 +194,7 @@ impl Settings {
                         div()
                             .text_size(rmac_ui::text_px(13.0))
                             .text_color(secondary())
-                            .child(if self.wifi_busy {
+                            .child(if self.wifi_busy || self.wifi_scanning {
                                 "Searching…"
                             } else {
                                 "No other networks found"
@@ -253,14 +268,6 @@ impl Settings {
                     .collect()
             };
             cards.push(card(rows));
-            let refresh_view = view.clone();
-            cards.push(footer_buttons(vec![push_button("wifi-refresh", "Refresh")
-                .busy(self.wifi_busy)
-                .disabled(self.wifi_busy)
-                .on_click(move |_, _, cx| {
-                    refresh_view.update(cx, |settings, cx| settings.refresh_wifi(cx));
-                })
-                .into_any_element()]));
             cards.push(footnote(
                 "New WPA Personal and SAE networks ask for their password. Enterprise setup supports certificate-verified PEAP with MSCHAPv2; other EAP methods and legacy security are not supported.",
             ));

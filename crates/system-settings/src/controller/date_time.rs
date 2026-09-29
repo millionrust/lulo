@@ -5,6 +5,22 @@ use super::*;
 mod render;
 
 impl Settings {
+    /// Whether the Date & Time pane's own date/time display, and the
+    /// clock, should read in 24-hour time (SET-78): the same
+    /// `rmac_shell_settings::ClockFormat` the menu bar clock reads, read
+    /// through this pane's own shell-settings snapshot. Falls back to
+    /// 12-hour before that snapshot has loaded, matching `ClockFormat`'s
+    /// own `Locale` default today (`top_bar_clock_pattern` treats `Locale`
+    /// the same as `TwelveHour`).
+    pub(in crate::controller) fn clock_uses_24_hour(&self) -> bool {
+        self.shell_settings
+            .as_ref()
+            .map(|snapshot| {
+                snapshot.settings.clock.format == rmac_shell_settings::ClockFormat::TwentyFourHour
+            })
+            .unwrap_or(false)
+    }
+
     pub(super) fn finish_time_update(
         &mut self,
         result: std::result::Result<rmac_time::Snapshot, rmac_time::Error>,

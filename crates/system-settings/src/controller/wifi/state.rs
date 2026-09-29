@@ -174,27 +174,4 @@ impl Settings {
         })
         .detach();
     }
-
-    pub(in crate::controller) fn refresh_wifi(&mut self, cx: &mut Context<Self>) {
-        if self.wifi_busy || !self.wifi_available || !self.wifi_on {
-            return;
-        }
-        self.begin_wifi_mutation();
-        cx.notify();
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async {
-                    rmac_network::request_scan()?;
-                    std::thread::sleep(Duration::from_millis(750));
-                    rmac_network::snapshot()
-                })
-                .await;
-            let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.finish_wifi_update(result);
-                cx.notify();
-            });
-        })
-        .detach();
-    }
 }

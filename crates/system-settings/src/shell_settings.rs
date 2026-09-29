@@ -131,6 +131,13 @@ pub(super) enum MenuBarChange {
     Notifications(bool),
     Focus(bool),
     ShowSeconds(bool),
+    /// Date & Time's "24-Hour Time" switch (SET-78): the same
+    /// `rmac_shell_settings::ClockFormat` the menu bar clock reads
+    /// (`top_bar_clock_pattern`), so it takes effect there immediately.
+    /// `false` chooses `TwelveHour` explicitly rather than leaving
+    /// `Locale`, matching the Mac's own switch (it always shows one state
+    /// or the other, never "follow the region format").
+    TwentyFourHour(bool),
 }
 
 impl MenuBarChange {
@@ -146,6 +153,13 @@ impl MenuBarChange {
             Self::Notifications(value) => indicators.notifications = value,
             Self::Focus(value) => indicators.focus = value,
             Self::ShowSeconds(value) => settings.clock.show_seconds = value,
+            Self::TwentyFourHour(value) => {
+                settings.clock.format = if value {
+                    rmac_shell_settings::ClockFormat::TwentyFourHour
+                } else {
+                    rmac_shell_settings::ClockFormat::TwelveHour
+                };
+            }
         }
     }
 }

@@ -269,6 +269,16 @@ pub(super) struct Settings {
     pub(super) wifi_interface: Option<String>,
     pub(super) wifi_networks: Vec<rmac_network::WifiNetwork>,
     pub(super) wifi_saved_networks: Vec<rmac_network::WifiSavedNetwork>,
+    /// True while a `RequestScan` triggered by the Wi-Fi pane being open is
+    /// in flight, so "Other Networks" can show a small spinner and never
+    /// claim "No other networks found" before that scan actually ran
+    /// (SET-14). Distinct from `wifi_busy`: a background scan doesn't
+    /// disable the rest of the pane the way a real mutation does.
+    pub(super) wifi_scanning: bool,
+    /// Whether the Wi-Fi pane was the visible pane as of the last
+    /// navigation change, so opening it (arriving from elsewhere, not just
+    /// the periodic timer) can be told apart from staying on it.
+    pub(super) wifi_pane_was_visible: bool,
 
     // Bluetooth
     pub(super) bluetooth_available: bool,

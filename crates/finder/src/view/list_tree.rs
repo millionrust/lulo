@@ -100,7 +100,12 @@ impl FinderView {
     }
 
     pub(super) fn list_folder_key(&mut self, expand: bool, cx: &mut Context<Self>) {
-        if self.view != ViewMode::List || self.selected.len() != 1 {
+        if self.view != ViewMode::List
+            || self.trash_view
+            || self.applications_view
+            || self.search_summary.is_some()
+            || self.selected.len() != 1
+        {
             return;
         }
         let Some(entry) = self.selected_entry() else {

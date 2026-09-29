@@ -762,7 +762,11 @@ impl FinderView {
     ) -> gpui::AnyElement {
         let e = &self.entries[ix];
         let entity = cx.entity();
-        let depth = self.list_depths.get(ix).copied().unwrap_or(0);
+        let depth = if self.trash_view || self.applications_view || self.search_summary.is_some() {
+            0
+        } else {
+            self.list_depths.get(ix).copied().unwrap_or(0)
+        };
         let striped = position % 2 == 1;
         let row_path = e.path.clone();
         let accessible_row_path = row_path.clone();
@@ -914,60 +918,72 @@ impl FinderView {
                         .flex_none()
                         .flex()
                         .justify_end()
-                        .when(e.is_dir, |el: Div| {
-                            let path = e.path.clone();
-                            let accessible_path = path.clone();
-                            let accessible_entity = entity.clone();
-                            el.child(
-                                div()
-                                    .id(SharedString::from(format!(
-                                        "disclosure-{}",
-                                        e.path.display()
-                                    )))
-                                    .role(Role::Button)
-                                    .aria_label(format!(
-                                        "{} {}",
-                                        if self.expanded.contains(&e.path) {
-                                            "Collapse"
-                                        } else {
-                                            "Expand"
-                                        },
-                                        e.name
-                                    ))
-                                    .aria_expanded(self.expanded.contains(&e.path))
-                                    .w(px(LIST_DISCLOSURE_WIDTH))
-                                    .h(px(row_height))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .cursor_pointer()
-                                    .child(icon(
-                                        if self.expanded.contains(&e.path) {
-                                            "icons/chevron-down.svg"
-                                        } else {
-                                            "icons/chevron-right.svg"
-                                        },
-                                        12.0,
-                                        if selected {
-                                            selected_text(window_active)
-                                        } else {
-                                            chrome_text()
-                                        },
-                                    ))
-                                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                                        cx.stop_propagation()
-                                    })
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        cx.stop_propagation();
-                                        this.toggle_list_folder(path.clone(), cx);
-                                    }))
-                                    .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
-                                        accessible_entity.update(cx, |this, cx| {
-                                            this.toggle_list_folder(accessible_path.clone(), cx)
-                                        });
-                                    }),
-                            )
-                        }),
+                        .when(
+                            e.is_dir
+                                && !self.trash_view
+                                && !self.applications_view
+                                && self.search_summary.is_none(),
+                            |el: Div| {
+                                let path = e.path.clone();
+                                let accessible_path = path.clone();
+                                let accessible_entity = entity.clone();
+                                el.child(
+                                    div()
+                                        .id(SharedString::from(format!(
+                                            "disclosure-{}",
+                                            e.path.display()
+                                        )))
+                                        .role(Role::Button)
+                                        .aria_label(format!(
+                                            "{} {}",
+                                            if self.expanded.contains(&e.path) {
+                                                "Collapse"
+                                            } else {
+                                                "Expand"
+                                            },
+                                            e.name
+                                        ))
+                                        .aria_expanded(self.expanded.contains(&e.path))
+                                        .w(px(LIST_DISCLOSURE_WIDTH))
+                                        .h(px(row_height))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .cursor_pointer()
+                                        .child(icon(
+                                            if self.expanded.contains(&e.path) {
+                                                "icons/chevron-down.svg"
+                                            } else {
+                                                "icons/chevron-right.svg"
+                                            },
+                                            12.0,
+                                            if selected {
+                                                selected_text(window_active)
+                                            } else {
+                                                chrome_text()
+                                            },
+                                        ))
+                                        .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                            cx.stop_propagation()
+                                        })
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            cx.stop_propagation();
+                                            this.toggle_list_folder(path.clone(), cx);
+                                        }))
+                                        .on_a11y_action(
+                                            AccessibleAction::Click,
+                                            move |_, _, cx| {
+                                                accessible_entity.update(cx, |this, cx| {
+                                                    this.toggle_list_folder(
+                                                        accessible_path.clone(),
+                                                        cx,
+                                                    )
+                                                });
+                                            },
+                                        ),
+                                )
+                            },
+                        ),
                 )
                 .child(row_icon)
                 .child(name_cell),

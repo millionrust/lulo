@@ -82,20 +82,35 @@ impl FinderView {
     /// Tab accepts the edit and starts the item that followed it before the
     /// list is sorted again under the new name.
     pub(super) fn rename_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let next_path = self.renaming.as_ref().and_then(|(path, _)| {
-            let index = self.entries.iter().position(|entry| &entry.path == path)?;
+        let Some((path, input)) = self.renaming.take() else {
+            return;
+        };
+        let next_path = (|| {
+            let index = self.entries.iter().position(|entry| entry.path == path)?;
             self.entries
                 .get((index + 1) % self.entries.len())
                 .map(|entry| entry.path.clone())
-        });
-        self.rename_commit(window, cx);
+        })();
+        let name = input.read(cx).value().to_string();
+        let destination = self.rename_path_to(&path, &name, cx);
+        window.focus(&self.focus, cx);
+        if self.rename_conflict.is_some() {
+            self.pending_select = Some(path);
+            self.reload(cx);
+            return;
+        }
         if let Some(index) =
             next_path.and_then(|path| self.entries.iter().position(|entry| entry.path == path))
         {
             self.pending_select = None;
             self.select_single(index);
             self.rename_start(window, cx);
+        } else {
+            self.pending_select = destination.or(Some(path));
         }
+        // Capture the next inline editor in reload's state snapshot. Starting
+        // the reload before it exists would discard it on completion.
+        self.reload(cx);
     }
 
     /// Escape while renaming: cancel, discard the typed text and return

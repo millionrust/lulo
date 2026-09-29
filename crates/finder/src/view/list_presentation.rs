@@ -786,6 +786,12 @@ impl FinderView {
             .role(Role::ListBox)
             .track_focus(&self.focus)
             .key_context("Finder")
+            .capture_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                if this.renaming.is_some() && ev.keystroke.key.as_str() == "tab" {
+                    cx.stop_propagation();
+                    this.rename_next(window, cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &NewFolder, window, cx| this.new_folder(window, cx)))
             .on_action(
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_selected(window, cx)),
@@ -897,9 +903,6 @@ impl FinderView {
                 if this.renaming.is_some() {
                     if ev.keystroke.key.as_str() == "escape" {
                         this.rename_cancel(window, cx);
-                    } else if ev.keystroke.key.as_str() == "tab" {
-                        cx.stop_propagation();
-                        this.rename_next(window, cx);
                     }
                     return;
                 }

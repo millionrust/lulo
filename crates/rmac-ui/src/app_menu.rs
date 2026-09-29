@@ -16,6 +16,11 @@
 //! - When the menu bar opens a menu it asks for `Layout`, and the endpoint
 //!   asks this module to validate again first, so focus changes since the
 //!   last publish are reflected without the app announcing them.
+//! - That same moment rebuilds File ▸ Open Recent ▸ for an app whose menu
+//!   table has one (see `rmac_app_menu::recent`), from whichever documents
+//!   `rmac-recent-documents` says it opened. Reading the store then is the
+//!   whole invalidation story: nothing is polled, and an app that clears its
+//!   Recents needs to publish nothing either.
 
 // The menu bar, and so this module's endpoint, exists only on Linux.
 #![cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -30,6 +35,7 @@ use rmac_app_menu::{CheckState, ItemState, Menu};
 gpui::actions!(rmac, [ShowAboutPanel]);
 
 struct MenuModel {
+    app_id: &'static str,
     definition: Vec<Menu>,
     overrides: BTreeMap<String, ItemState>,
     publisher: Option<rmac_app_menu::Publisher>,
@@ -112,6 +118,7 @@ fn current_menus(cx: &mut App) -> Vec<Menu> {
     let Some(model) = cx.try_global::<MenuModel>() else {
         return Vec::new();
     };
+    let app_id = model.app_id;
     let definition = model.definition.clone();
     let overrides = model.overrides.clone();
     let text_actions = definition
@@ -121,7 +128,7 @@ fn current_menus(cx: &mut App) -> Vec<Menu> {
         .filter(|action| action.starts_with(rmac_app_menu::TEXT_FIELD_ACTION_PREFIX))
         .collect::<Vec<_>>();
     let available = available_in_key_window(&text_actions, cx);
-    rmac_app_menu::apply_state(&definition, |item| {
+    let mut menus = rmac_app_menu::apply_state(&definition, |item| {
         let mut state = overrides.get(&item.action).cloned().unwrap_or_default();
         if item
             .action
@@ -131,7 +138,20 @@ fn current_menus(cx: &mut App) -> Vec<Menu> {
             state.enabled = Some(false);
         }
         Some(state)
-    })
+    });
+    // File ▸ Open Recent ▸ (TE-02, PREV-08/PREV-15): built fresh every time
+    // a menu is about to open, from whichever documents `app_id` itself
+    // recorded — nothing to poll, and nothing to announce when the store
+    // changes. A no-op, and no store read at all, for an app whose menu
+    // table has no such submenu.
+    if let Some(prefix) = rmac_app_menu::recent_documents_prefix(app_id) {
+        rmac_app_menu::recent::refresh(&mut menus, prefix, || {
+            rmac_recent_documents::Store::from_environment()
+                .and_then(|store| store.load_for_app(prefix))
+                .unwrap_or_default()
+        });
+    }
+    menus
 }
 
 /// Which of `actions` a handler in the key window's focused element (or
@@ -179,6 +199,7 @@ pub(crate) fn install(app_id: &'static str, open_window: Option<OpenWindowReques
         };
         cx.on_action(move |_: &ShowAboutPanel, cx| crate::about::show(app_id, cx));
         cx.set_global(MenuModel {
+            app_id,
             definition: menus.clone(),
             overrides: BTreeMap::new(),
             publisher: None,

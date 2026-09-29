@@ -15,6 +15,9 @@ const VERSION: u32 = 1;
 const MAX_ENTRIES: usize = 256;
 const MAX_FILE_BYTES: usize = 256 * 1024;
 const MAX_URI_BYTES: usize = 16 * 1024;
+/// The longest app tag [`Store::record_for_app`] accepts — generous for an
+/// identity like `"org.rmac.TextEditor"`.
+const MAX_APP_BYTES: usize = 128;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Operation {
@@ -140,11 +143,27 @@ impl Store {
     }
 
     pub fn record(&self, path: &Path) -> Result<RecordOutcome, Error> {
+        self.record_impl(path, None)
+    }
+
+    /// [`Store::record`], tagged with the app that opened `path` so
+    /// [`Store::load_for_app`] and [`Store::clear_for_app`] can find it
+    /// later. This backs one app's own File ▸ Open Recent submenu without
+    /// disturbing the merged view every app's [`Store::load`] sees — an
+    /// entry recorded this way still appears there too.
+    pub fn record_for_app(&self, path: &Path, app_id: &str) -> Result<RecordOutcome, Error> {
+        self.record_impl(path, Some(app_id))
+    }
+
+    fn record_impl(&self, path: &Path, app_id: Option<&str>) -> Result<RecordOutcome, Error> {
         let path = safe_document_path(path)?;
         let uri = url::Url::from_file_path(&path)
             .map_err(|()| Error::new(Operation::InspectDocument, ErrorKind::UnsafeDocument))?
             .to_string();
         if uri.len() > MAX_URI_BYTES {
+            return Err(Error::new(Operation::Validate, ErrorKind::Limit));
+        }
+        if app_id.is_some_and(|app_id| app_id.is_empty() || app_id.len() > MAX_APP_BYTES) {
             return Err(Error::new(Operation::Validate, ErrorKind::Limit));
         }
 
@@ -176,6 +195,7 @@ impl Store {
                 used_at_unix_ms: now
                     .max(newest.saturating_add(1))
                     .max(stored.cleared_before_unix_ms.unwrap_or(0).saturating_add(1)),
+                app: app_id.map(str::to_owned),
             },
         );
         stored.entries.truncate(MAX_ENTRIES);
@@ -202,6 +222,39 @@ impl Store {
             &StoredFile::cleared(cleared_before_unix_ms),
             Operation::Clear,
         )?;
+        Ok(removed)
+    }
+
+    /// The documents this app itself recorded with [`Store::record_for_app`],
+    /// newest first — what its own File ▸ Open Recent submenu shows. Entries
+    /// other apps recorded, and ones recorded untagged with [`Store::record`],
+    /// are left out; use [`Store::load`] for the merged view.
+    pub fn load_for_app(&self, app_id: &str) -> Result<Vec<PathBuf>, Error> {
+        let (stored, _) = self.load_stored()?;
+        Ok(stored.live_paths_for_app(app_id))
+    }
+
+    /// Removes only the documents this app recorded with
+    /// [`Store::record_for_app`] — File ▸ Open Recent's "Clear Menu" —
+    /// leaving every other app's entries and the desktop-history boundary
+    /// untouched. Returns how many were removed.
+    pub fn clear_for_app(&self, app_id: &str) -> Result<usize, Error> {
+        let parent = self
+            .path
+            .parent()
+            .ok_or_else(|| Error::new(Operation::Resolve, ErrorKind::Invalid))?;
+        rmac_storage::create_dir_all_private(parent)
+            .map_err(|error| Error::io(Operation::CreateDirectory, error))?;
+        let _lock = FileLock::acquire(&parent.join("recent-documents.lock"))?;
+        let (mut stored, _) = self.load_stored()?;
+        let before = stored.entries.len();
+        stored
+            .entries
+            .retain(|entry| entry.app.as_deref() != Some(app_id));
+        let removed = before - stored.entries.len();
+        if removed > 0 {
+            self.save(&stored, Operation::Save)?;
+        }
         Ok(removed)
     }
 

@@ -24,6 +24,58 @@ impl EditorView {
         self.do_open(window, cx);
     }
 
+    /// File ▸ Open Recent ▸ (TE-02): opens the document at `index` in the
+    /// store's own File-Open-Recent list, re-read now (off the render
+    /// thread) rather than cached from when the menu opened. Reuses this
+    /// window when it is a clean empty untitled one, exactly as Open… does;
+    /// a document the store no longer lists (moved, deleted, or the list
+    /// simply changed since the menu opened) is silently skipped.
+    pub(super) fn open_recent(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.file_busy || self.file_action_blocked() {
+            return;
+        }
+        self.file_busy = true;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let path = cx
+                .background_executor()
+                .spawn(async move {
+                    let store = rmac_recent_documents::Store::from_environment().ok()?;
+                    let mut paths = store.load_for_app(rmac_ui::app_id::TEXT_EDITOR).ok()?;
+                    (index < paths.len()).then(|| paths.swap_remove(index))
+                })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.file_busy = false;
+                if let Some(path) = path {
+                    let reuse_current = should_reuse_untitled_window(
+                        this.dirty,
+                        this.path.is_some(),
+                        this.rtf_runs.is_some(),
+                        this.input.read(cx).text().len() == 0 && this.long_lines.is_none(),
+                    );
+                    if reuse_current {
+                        this.load_document_path(path, "The file could not be opened.", window, cx);
+                    } else if open_editor_window(cx, Some(path)).is_err() {
+                        this.alert = Some(ActiveAlert::Error {
+                            title: "Could not open a new document window.",
+                            message: "Text Editor could not create another window. This document \
+                                      remains open."
+                                .into(),
+                        });
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// TextEdit's File ▸ Duplicate: a new window with this document's exact
     /// content, unsaved. Unlike Save As, the window this was invoked from
     /// keeps its own path and dirty state untouched.

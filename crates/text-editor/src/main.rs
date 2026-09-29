@@ -35,6 +35,19 @@ gpui::actions!(
         IncreaseFont,
         DecreaseFont,
         CloseWindow,
+        // File ▸ Open Recent ▸ (TE-02): one action per shown row, up to
+        // `rmac_app_menu::recent::MAX_ENTRIES`, plus "Clear Menu".
+        OpenRecent0,
+        OpenRecent1,
+        OpenRecent2,
+        OpenRecent3,
+        OpenRecent4,
+        OpenRecent5,
+        OpenRecent6,
+        OpenRecent7,
+        OpenRecent8,
+        OpenRecent9,
+        ClearRecentMenu,
     ]
 );
 

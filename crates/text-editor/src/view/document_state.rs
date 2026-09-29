@@ -357,8 +357,9 @@ impl EditorView {
                 .spawn({
                     let path = path.clone();
                     async move {
-                        rmac_recent_documents::Store::from_environment()
-                            .and_then(|store| store.record(&path))
+                        rmac_recent_documents::Store::from_environment().and_then(|store| {
+                            store.record_for_app(&path, rmac_ui::app_id::TEXT_EDITOR)
+                        })
                     }
                 })
                 .await;
@@ -373,5 +374,19 @@ impl EditorView {
             }
         })
         .detach();
+    }
+
+    /// File ▸ Open Recent ▸ Clear Menu (TE-02): removes only what Text
+    /// Editor itself recorded, off the render thread — it touches disk.
+    /// The menu bar sees the change next time it opens the menu, since it is
+    /// built fresh from the store then; nothing needs to be published.
+    pub(super) fn clear_recent_documents(&self, cx: &mut Context<Self>) {
+        cx.background_executor()
+            .spawn(async move {
+                if let Ok(store) = rmac_recent_documents::Store::from_environment() {
+                    let _ = store.clear_for_app(rmac_ui::app_id::TEXT_EDITOR);
+                }
+            })
+            .detach();
     }
 }

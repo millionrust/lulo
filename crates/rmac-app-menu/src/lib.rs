@@ -24,6 +24,7 @@ use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
 use zbus::{interface, Connection};
 
+pub mod recent;
 pub mod unsaved;
 mod wire;
 
@@ -312,6 +313,14 @@ const TEXT_EDITOR_MENUS: &[MenuSpec] = &[
         items: &[
             item!("New", "text_editor::NewFile", "⌘N"),
             item!("Open…", "text_editor::OpenFile", "⌘O"),
+            // TE-02: the static child is only a placeholder that keeps this
+            // submenu registered; `recent::refresh` replaces it with the
+            // real, up-to-ten-document list every time the menu opens.
+            submenu!(
+                "Open Recent",
+                "text_editor::OpenRecentMenu",
+                [item!("Clear Menu", "text_editor::ClearRecentMenu", "")]
+            ),
             item!("Close", "text_editor::CloseWindow", "⌘W", separator),
             item!("Save", "text_editor::SaveFile", "⌘S", separator),
             item!("Duplicate", "text_editor::DuplicateDocument", "⇧⌘S"),
@@ -683,13 +692,21 @@ const PREVIEW_MENUS: &[MenuSpec] = &[
         label: "File",
         items: &[
             item!("Open…", "preview::OpenFile", "⌘O"),
+            // PREV-08/PREV-15: the static child only keeps this submenu
+            // registered; `recent::refresh` replaces it with the real,
+            // up-to-ten-document list every time the menu opens.
+            submenu!(
+                "Open Recent",
+                "preview::OpenRecentMenu",
+                [item!("Clear Menu", "preview::ClearRecentMenu", "")]
+            ),
             item!("Close Window", "preview::CloseWindow", "⌘W", separator),
             // PREV-15: the Mac's File menu also has New from Clipboard,
-            // Open Recent ▸, Close All, Save, Save As…, Duplicate, Rename…,
-            // Move To…, Revert To ▸, Enter Password…, Edit Permissions…,
-            // Import from Camera/Scanner, Take Screenshot ▸, Export…,
-            // Share ▸ — none of those has a working implementation to wire
-            // up yet, so none is listed rather than adding a dead item.
+            // Close All, Save, Save As…, Duplicate, Rename…, Move To…,
+            // Revert To ▸, Enter Password…, Edit Permissions…, Import from
+            // Camera/Scanner, Take Screenshot ▸, Export…, Share ▸ — none of
+            // those has a working implementation to wire up yet, so none is
+            // listed rather than adding a dead item.
             item!("Export as PDF…", "preview::ExportAsPdf", "", separator),
             item!("Print…", "preview::PrintDocument", "⌘P", separator),
         ],
@@ -841,6 +858,17 @@ fn specs(app_id: &str) -> Option<&'static [MenuSpec]> {
         rmac_apps::identity::CLOCK => Some(CLOCK_MENUS),
         rmac_apps::identity::WEATHER => Some(WEATHER_MENUS),
         rmac_apps::identity::PLAYER => Some(PLAYER_MENUS),
+        _ => None,
+    }
+}
+
+/// The action-namespace prefix `app_id`'s menu table uses (`"text_editor"`,
+/// `"preview"`, …), for [`recent::refresh`] — `None` for an app with no
+/// Open Recent submenu.
+pub fn recent_documents_prefix(app_id: &str) -> Option<&'static str> {
+    match app_id {
+        rmac_apps::identity::TEXT_EDITOR => Some("text_editor"),
+        rmac_apps::identity::PREVIEW => Some("preview"),
         _ => None,
     }
 }

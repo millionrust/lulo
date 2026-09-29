@@ -21,7 +21,7 @@ use rmac_weather::summary::{self, Column, Unit};
 use crate::{CloseWindow, FindCity, Refresh, UseCelsius, UseFahrenheit};
 
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(350);
-const REFRESH_EVERY: Duration = Duration::from_secs(15 * 60);
+const REFRESH_EVERY: Duration = Duration::from_secs(60 * 60);
 
 fn next_minute_tick_delay(now: i64) -> Duration {
     Duration::from_secs((60 - now.rem_euclid(60)) as u64)
@@ -51,6 +51,8 @@ pub(crate) struct WeatherView {
     search_generation: u64,
     search_failed: bool,
     settings_error: Option<SharedString>,
+    timer_generation: u64,
+    timers_running: bool,
 }
 
 fn now_seconds() -> i64 {
@@ -102,25 +104,36 @@ impl WeatherView {
             search_generation: 0,
             search_failed: false,
             settings_error,
+            timer_generation: 0,
+            timers_running: false,
         };
         for place in view.settings.places.clone() {
             view.load_cache(&place);
-        }
-        if view.settings.places.is_empty() {
-            view.search.update(cx, |state, cx| state.focus(window, cx));
         }
         view.refresh_all(false, cx);
         view.start_timers(cx);
         view
     }
 
-    fn start_timers(&self, cx: &mut Context<Self>) {
+    fn start_timers(&mut self, cx: &mut Context<Self>) {
+        if self.timers_running || self.settings.places.is_empty() {
+            return;
+        }
+        self.timers_running = true;
+        self.timer_generation += 1;
+        let generation = self.timer_generation;
         cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(REFRESH_EVERY).await;
-            if this
-                .update(cx, |view, cx| view.refresh_all(false, cx))
-                .is_err()
-            {
+            let Ok(current) = this.update(cx, |view, cx| {
+                let current = view.timer_generation == generation;
+                if current {
+                    view.refresh_all(false, cx);
+                }
+                current
+            }) else {
+                break;
+            };
+            if !current {
                 break;
             }
         })
@@ -130,7 +143,16 @@ impl WeatherView {
             cx.background_executor()
                 .timer(next_minute_tick_delay(now_seconds()))
                 .await;
-            if this.update(cx, |_, cx| cx.notify()).is_err() {
+            let Ok(current) = this.update(cx, |view, cx| {
+                let current = view.timer_generation == generation;
+                if current {
+                    cx.notify();
+                }
+                current
+            }) else {
+                break;
+            };
+            if !current {
                 break;
             }
         })
@@ -250,6 +272,7 @@ impl WeatherView {
 
     fn add_place(&mut self, place: Place, cx: &mut Context<Self>) {
         self.settings.add(place.clone());
+        self.start_timers(cx);
         self.results.clear();
         self.search_generation += 1;
         self.load_cache(&place);
@@ -270,6 +293,10 @@ impl WeatherView {
 
     fn remove(&mut self, index: usize, cx: &mut Context<Self>) {
         self.settings.remove(index);
+        if self.settings.places.is_empty() {
+            self.timers_running = false;
+            self.timer_generation += 1;
+        }
         self.save(cx);
         cx.notify();
     }

@@ -68,13 +68,6 @@ impl Settings {
                     .mx_auto()
                     .px(px(style::DETAIL_INSET))
                     .pb(px(style::DETAIL_INSET))
-                    .when(self.system_data_loading, |el| {
-                        el.child(
-                            Progress::indeterminate()
-                                .label("Loading system information…")
-                                .mb_3(),
-                        )
-                    })
                     .child(content),
             )
             .into_any_element()

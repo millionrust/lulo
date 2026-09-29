@@ -1,7 +1,9 @@
 //! Expanding an archive next to itself.
 
+use std::ffi::CString;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufReader, Read};
+use std::io::{self, BufReader, Read, Write};
+use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::fs::{symlink, OpenOptionsExt as _};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,6 +13,8 @@ use crate::staging::{Counted, Meter, Scratch};
 use crate::{Error, Progress};
 
 const MAX_LINK_BYTES: u64 = 4096;
+const DISK_RESERVE_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_EXPANDED_BYTES: u64 = 16 * 1024 * 1024 * 1024;
 
 /// Expand `archive` beside itself and return what appeared: the single
 /// top-level item, or a folder named after the archive holding several.
@@ -34,22 +38,24 @@ pub fn expand(
         Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
         _ => PathBuf::from("."),
     };
+    let output_limit = expansion_budget(&parent, format)?;
     let staging = Scratch::directory(&parent, archive, "expanding")?;
     let length = metadata.len();
     let result = match format {
         Format::Zip => {
             let file = Counted::new(File::open(archive)?, Meter::new(cancel, progress, length));
-            expand_zip(file, &staging.path)
+            expand_zip(file, &staging.path, output_limit)
         }
         Format::Tar => {
             let file = Counted::new(File::open(archive)?, Meter::new(cancel, progress, length));
-            expand_tar(BufReader::new(file), &staging.path)
+            expand_tar(BufReader::new(file), &staging.path, output_limit)
         }
         Format::TarGz => {
             let file = Counted::new(File::open(archive)?, Meter::new(cancel, progress, length));
             expand_tar(
                 flate2::read::MultiGzDecoder::new(BufReader::new(file)),
                 &staging.path,
+                output_limit,
             )
         }
         Format::TarBz2 => {
@@ -57,12 +63,26 @@ pub fn expand(
             expand_tar(
                 bzip2::read::MultiBzDecoder::new(BufReader::new(file)),
                 &staging.path,
+                output_limit,
             )
         }
-        Format::TarXz => expand_tar_xz(archive, &parent, &staging.path, length, cancel, progress),
+        Format::TarXz => expand_tar_xz(
+            archive,
+            &parent,
+            &staging.path,
+            length,
+            output_limit,
+            cancel,
+            progress,
+        ),
         Format::Gz | Format::Bz2 | Format::Xz => {
             let file = Counted::new(File::open(archive)?, Meter::new(cancel, progress, length));
-            decompress_single(file, format, &staging.path.join(archive_stem(archive)))
+            decompress_single(
+                file,
+                format,
+                &staging.path.join(archive_stem(archive)),
+                output_limit,
+            )
         }
     };
     match result {
@@ -73,9 +93,10 @@ pub fn expand(
     }
 }
 
-fn expand_zip(file: Counted<'_, File>, staging: &Path) -> Result<(), Error> {
+fn expand_zip(file: Counted<'_, File>, staging: &Path, limit: u64) -> Result<(), Error> {
     let mut archive = zip::ZipArchive::new(file).map_err(|error| zip_error(error, true))?;
     let mut links = Vec::new();
+    let mut expanded = 0;
     for index in 0..archive.len() {
         let mut entry = archive
             .by_index(index)
@@ -86,6 +107,8 @@ fn expand_zip(file: Counted<'_, File>, staging: &Path) -> Result<(), Error> {
         if skipped(&relative) {
             continue;
         }
+        let entry_size = entry.size();
+        charge(&mut expanded, entry_size, limit)?;
         let target = staging.join(&relative);
         let mode = entry.unix_mode();
         if entry.is_dir() {
@@ -104,13 +127,13 @@ fn expand_zip(file: Counted<'_, File>, staging: &Path) -> Result<(), Error> {
         if let Some(parent) = target.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut output = OpenOptions::new()
+        let output = OpenOptions::new()
             .write(true)
             .create_new(true)
             .mode(mode.map_or(0o644, |mode| mode & 0o777))
             .custom_flags(libc::O_NOFOLLOW)
             .open(&target)?;
-        io::copy(&mut entry, &mut output).map_err(data_error)?;
+        io::copy(&mut entry, &mut LimitedWriter::new(output, entry_size)).map_err(data_error)?;
     }
     // Links last, so no file entry can be written through one. A link can
     // still sit under an earlier link (`x -> ../../.config/autostart`, then
@@ -147,12 +170,13 @@ fn real_parent_folders(staging: &Path, target: &Path) -> Result<(), Error> {
     Ok(())
 }
 
-fn expand_tar<R: Read>(reader: R, staging: &Path) -> Result<(), Error> {
+fn expand_tar<R: Read>(reader: R, staging: &Path, limit: u64) -> Result<(), Error> {
     let mut archive = tar::Archive::new(reader);
     archive.set_preserve_permissions(true);
     archive.set_preserve_mtime(true);
     archive.set_unpack_xattrs(false);
     let mut first = true;
+    let mut expanded = 0;
     let entries = archive.entries().map_err(|error| tar_error(error, true))?;
     for entry in entries {
         let mut entry = entry.map_err(|error| tar_error(error, first))?;
@@ -175,6 +199,11 @@ fn expand_tar<R: Read>(reader: R, staging: &Path) -> Result<(), Error> {
         if skipped(&path) {
             continue;
         }
+        let size = entry
+            .header()
+            .size()
+            .map_err(|error| tar_error(error, false))?;
+        charge(&mut expanded, size, limit)?;
         // `unpack_in` refuses absolute paths, `..` and writes through links
         // that leave the staging folder.
         entry
@@ -189,6 +218,7 @@ fn expand_tar_xz(
     parent: &Path,
     staging: &Path,
     length: u64,
+    limit: u64,
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(Progress),
 ) -> Result<(), Error> {
@@ -205,7 +235,8 @@ fn expand_tar_xz(
             .create_new(true)
             .mode(0o600)
             .open(&payload.path)?;
-        lzma_rs::xz_decompress(&mut input, &mut output).map_err(xz_error)?;
+        lzma_rs::xz_decompress(&mut input, &mut LimitedWriter::new(&mut output, limit))
+            .map_err(xz_error)?;
     }
     let payload_length = fs::metadata(&payload.path)?.len().max(1);
     let mut meter = Meter::new(cancel, progress, length.saturating_mul(2));
@@ -215,17 +246,24 @@ fn expand_tar_xz(
     expand_tar(
         BufReader::new(Counted::new(File::open(&payload.path)?, meter)),
         staging,
+        limit,
     )
 }
 
-fn decompress_single(file: Counted<'_, File>, format: Format, target: &Path) -> Result<(), Error> {
-    let mut output = OpenOptions::new()
+fn decompress_single(
+    file: Counted<'_, File>,
+    format: Format,
+    target: &Path,
+    limit: u64,
+) -> Result<(), Error> {
+    let output = OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o644)
         .custom_flags(libc::O_NOFOLLOW)
         .open(target)?;
     let mut input = BufReader::new(file);
+    let mut output = LimitedWriter::new(output, limit);
     match format {
         Format::Gz => {
             io::copy(&mut flate2::read::MultiGzDecoder::new(input), &mut output)
@@ -238,6 +276,69 @@ fn decompress_single(file: Counted<'_, File>, format: Format, target: &Path) -> 
         _ => lzma_rs::xz_decompress(&mut input, &mut output).map_err(xz_error)?,
     }
     Ok(())
+}
+
+/// Keep one GiB available on the filesystem and cap any one expansion at
+/// 16 GiB. tar.xz also needs a decoded tar scratch file while extracting, so
+/// each of those two files gets half the available budget.
+fn expansion_budget(parent: &Path, format: Format) -> Result<u64, Error> {
+    let path = CString::new(parent.as_os_str().as_bytes())
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    // SAFETY: `path` is NUL-terminated and `space` is valid writable storage.
+    let mut space: libc::statvfs = unsafe { std::mem::zeroed() };
+    // SAFETY: both pointers remain valid for the duration of the call.
+    if unsafe { libc::statvfs(path.as_ptr(), &mut space) } != 0 {
+        return Err(io::Error::last_os_error().into());
+    }
+    let available = (space.f_bavail as u64).saturating_mul(space.f_frsize as u64);
+    let after_reserve = available.saturating_sub(DISK_RESERVE_BYTES);
+    let budget = if format == Format::TarXz {
+        (after_reserve / 2).min(MAX_EXPANDED_BYTES / 2)
+    } else {
+        after_reserve.min(MAX_EXPANDED_BYTES)
+    };
+    if budget == 0 {
+        Err(io::Error::other(crate::EXPANSION_LIMIT).into())
+    } else {
+        Ok(budget)
+    }
+}
+
+fn charge(expanded: &mut u64, bytes: u64, limit: u64) -> Result<(), Error> {
+    if bytes > limit.saturating_sub(*expanded) {
+        return Err(io::Error::other(crate::EXPANSION_LIMIT).into());
+    }
+    *expanded += bytes;
+    Ok(())
+}
+
+struct LimitedWriter<W> {
+    inner: W,
+    remaining: u64,
+}
+
+impl<W> LimitedWriter<W> {
+    fn new(inner: W, limit: u64) -> Self {
+        Self {
+            inner,
+            remaining: limit,
+        }
+    }
+}
+
+impl<W: Write> Write for LimitedWriter<W> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.len() as u64 > self.remaining {
+            return Err(io::Error::other(crate::EXPANSION_LIMIT));
+        }
+        let written = self.inner.write(bytes)?;
+        self.remaining -= written as u64;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 /// Leftovers the Mac writes into zips for its own resource forks.
@@ -341,7 +442,109 @@ fn data_error(error: io::Error) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write as _;
+
+    #[test]
+    fn expansion_budget_charge_refuses_overflow() {
+        let mut expanded = 0;
+        charge(&mut expanded, 7, 10).unwrap();
+        charge(&mut expanded, 3, 10).unwrap();
+        assert!(matches!(
+            charge(&mut expanded, 1, 10),
+            Err(Error::ExpansionLimit)
+        ));
+    }
+
+    #[test]
+    fn limited_writer_never_writes_past_its_budget() {
+        let mut bytes = Vec::new();
+        let mut writer = LimitedWriter::new(&mut bytes, 3);
+        writer.write_all(b"abc").unwrap();
+        assert_eq!(
+            writer.write_all(b"d").unwrap_err().to_string(),
+            crate::EXPANSION_LIMIT
+        );
+        assert_eq!(bytes, b"abc");
+    }
+
+    #[test]
+    fn zip_expansion_refuses_an_oversized_entry_and_leaves_no_output() {
+        let root = scratch("zip-limit");
+        let archive = root.join("Bundle.zip");
+        let staging = root.join("staging");
+        fs::create_dir(&staging).unwrap();
+        zip_with(&archive, &[("large.txt", "four")]);
+        let cancel = AtomicBool::new(false);
+        let mut progress = |_| {};
+        let file = Counted::new(
+            File::open(&archive).unwrap(),
+            Meter::new(
+                &cancel,
+                &mut progress,
+                fs::metadata(&archive).unwrap().len(),
+            ),
+        );
+        assert!(matches!(
+            expand_zip(file, &staging, 3),
+            Err(Error::ExpansionLimit)
+        ));
+        assert_eq!(fs::read_dir(&staging).unwrap().count(), 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn tar_expansion_refuses_an_oversized_entry() {
+        let root = scratch("tar-limit");
+        let archive = root.join("Bundle.tar");
+        let staging = root.join("staging");
+        fs::create_dir(&staging).unwrap();
+        {
+            let mut builder = tar::Builder::new(File::create(&archive).unwrap());
+            let mut header = tar::Header::new_gnu();
+            header.set_size(4);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, "large.txt", &b"four"[..])
+                .unwrap();
+            builder.finish().unwrap();
+        }
+        assert!(matches!(
+            expand_tar(File::open(&archive).unwrap(), &staging, 3),
+            Err(Error::ExpansionLimit)
+        ));
+        assert_eq!(fs::read_dir(&staging).unwrap().count(), 0);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn single_gzip_expansion_refuses_an_oversized_output() {
+        let root = scratch("gzip-limit");
+        let archive = root.join("large.txt.gz");
+        let target = root.join("large.txt");
+        {
+            let mut encoder = flate2::write::GzEncoder::new(
+                File::create(&archive).unwrap(),
+                flate2::Compression::default(),
+            );
+            encoder.write_all(b"four").unwrap();
+            encoder.finish().unwrap();
+        }
+        let cancel = AtomicBool::new(false);
+        let mut progress = |_| {};
+        let file = Counted::new(
+            File::open(&archive).unwrap(),
+            Meter::new(
+                &cancel,
+                &mut progress,
+                fs::metadata(&archive).unwrap().len(),
+            ),
+        );
+        assert!(matches!(
+            decompress_single(file, Format::Gz, &target, 3),
+            Err(Error::ExpansionLimit)
+        ));
+        fs::remove_dir_all(root).unwrap();
+    }
 
     fn scratch(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(

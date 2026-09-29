@@ -49,12 +49,12 @@ use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::term::Term;
 use alacritty_terminal::term::TermMode;
 use gpui::{
-    canvas, div, prelude::FluentBuilder as _, px, A11ySubtreeBuilder, AppContext as _,
-    ClipboardItem, Context, Div, ElementInputHandler, Entity, ExternalPaths, FocusHandle,
-    Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement, KeyBinding,
-    KeyDownEvent, KeyUpEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    NavigationDirection, ParentElement, Pixels, Point, Render, Role, ScrollDelta, ScrollWheelEvent,
-    SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window,
+    canvas, div, prelude::FluentBuilder as _, px, A11ySubtreeBuilder, AccessibleAction,
+    AppContext as _, ClipboardItem, Context, Div, ElementInputHandler, Entity, ExternalPaths,
+    FocusHandle, Focusable as _, FontWeight, Hsla, InteractiveElement as _, IntoElement,
+    KeyBinding, KeyDownEvent, KeyUpEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, NavigationDirection, ParentElement, Pixels, Point, Render, Role, ScrollDelta,
+    ScrollWheelEvent, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Window,
 };
 use gpui_component::StyledExt as _;
 use rmac_terminal::accessibility::TerminalAccessibilitySnapshot;

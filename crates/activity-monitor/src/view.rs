@@ -13,7 +13,7 @@ use crate::columns::{
     default_visible as default_visible_cols, load as load_visible_cols, save as save_visible_cols,
     ColKey,
 };
-use crate::metrics::Tab;
+use crate::metrics::{Tab, REFRESH_SECS};
 use crate::process_table::{resync_selection, ProcessTableDelegate};
 use crate::sampling::Sampler;
 use crate::view_filter::ViewFilter;
@@ -70,7 +70,7 @@ impl MonitorView {
         // Keyboard navigation moves the highlighted row via `set_selected_row`,
         // which emits `SelectRow` but never touches `selected_pid`. Mirror the
         // click-selection path here so keyboard selection is the source of truth
-        // for the target PID — otherwise a 2s background refresh could re-point
+        // for the target PID — otherwise a background refresh could re-point
         // the highlighted row at a different process before a kill is requested.
         cx.subscribe(&table, |this, table, event: &TableEvent, cx| match event {
             TableEvent::SelectRow(row_ix) => {
@@ -105,14 +105,30 @@ impl MonitorView {
         };
         view.refresh(cx);
 
-        // Auto-refresh loop — every 2s, off the render path.
-        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
-            cx.background_executor().timer(Duration::from_secs(2)).await;
-            let Some(this) = this.upgrade() else { break };
-            cx.update_entity(&this, |view: &mut MonitorView, cx| {
+        // Refresh only while the monitor is the active window. A background
+        // or occluded monitor has no visible graph to update.
+        cx.observe_window_activation(window, |view, window, cx| {
+            if window.is_window_active() {
                 view.refresh(cx);
                 cx.notify();
-            });
+            }
+        })
+        .detach();
+        cx.spawn_in(window, async move |this, cx| loop {
+            cx.background_executor()
+                .timer(Duration::from_secs(REFRESH_SECS as u64))
+                .await;
+            if this
+                .update_in(cx, |view, window, cx| {
+                    if window.is_window_active() {
+                        view.refresh(cx);
+                        cx.notify();
+                    }
+                })
+                .is_err()
+            {
+                break;
+            }
         })
         .detach();
 

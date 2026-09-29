@@ -54,7 +54,7 @@ impl ViewFilter {
             }
             // Not idle, stopped, zombied, or dead — a broader bucket than
             // literally "Run" right now, matching how few rows sample as
-            // "Runnable" at any single 2s tick.
+            // "Runnable" at any single sample.
             Self::ActiveProcesses => {
                 !matches!(status, "Idle" | "Stopped" | "Zombie" | "Dead" | "Tracing")
             }

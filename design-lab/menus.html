@@ -56,6 +56,48 @@
     disclosure    "Other Networks": 24, section-head style, chevron ends 15
   Not captured: Option-click (Wi-Fi and Battery) and a highlighted row; those
   mocks use the measured styles and macOS 26 row names but are unverified.
+
+  Sound / Bluetooth / Focus menus — added on macOS 26.2, 2026-09-29. The
+  standalone menu-bar extras were NOT captured: enabling "Always Show in
+  Menu Bar" for Sound/Bluetooth/Focus (System Settings › Menu Bar) or
+  toggling Bluetooth's own row there is a persistent settings change, which
+  the session's auto-mode classifier blocked outright ("Unauthorized
+  Persistence") even meaning to revert it — flagging that here for the
+  owner rather than working around it. What WAS captured, live, without
+  changing any setting: Control Centre's own Sound module, reached by
+  clicking Control Centre then the "Sound" row's label (a plain expand
+  button, not the volume slider/toggle) — its panel matched the existing
+  measured chrome exactly (308 wide, 5 pt row inset, 14.5 pt text inset, 26
+  pt badge circle), which is strong evidence the same tokens apply to the
+  standalone extras too:
+    slider row    31 (same as title) — Control Centre, 2026-09-29: the gap
+                  from the title's bottom to the "Output" header is 40 pt =
+                  this row + one 9 pt separator
+    track/knob    track 4 tall (already the guessed SWITCH_HEIGHT / 6); an
+                  18 × 14 pill knob centred on it; a mute/max glyph each
+                  side, 8 pt from the track (icons and their exact inset are
+                  rmac's own choice — Control Centre uses different icon
+                  sizes that don't map cleanly onto a 16 pt glyph grid)
+    output/device
+    rows          Sound's Output list and Bluetooth's Devices list are
+                  BADGE rows exactly like Wi-Fi's networks (26 pt icon
+                  circle, 32 pt height, accent when the device is the
+                  current/connected one) — NOT a plain item with a trailing
+                  checkmark as first guessed; Control Centre showed a white
+                  vs grey circle for the two states, no checkmark glyph
+                  anywhere in the row
+    Bluetooth     the Devices list's row style is inferred from Sound's
+                  (same badge-row pattern Apple already uses for Wi-Fi), not
+                  captured directly — Control Centre's own Bluetooth tile
+                  only exposed a single on/off toggle via the Accessibility
+                  tree, no separate expand control reachable without either
+                  a live-mouse hover (not available in this session) or
+                  changing Bluetooth's own state, which the task forbids
+    Focus         unchanged from the prior guess (Title, a "Do Not Disturb"
+                  Check row, Focus Settings…): Control Centre's Focus tile
+                  is a single on/off toggle in macOS 26, with no expand
+                  panel to measure, and toggling it would change live DND
+                  state, which the task forbids
 -->
 <style>
   :root {
@@ -65,7 +107,7 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: #0e1014; }
-  body { width: 1300px; height: 1560px; font: 400 13px/1 var(--font);
+  body { width: 1300px; height: 2020px; font: 400 13px/1 var(--font);
          -webkit-font-smoothing: antialiased; letter-spacing: -0.08px; }
   .stage { position: absolute; overflow: hidden;
            background: repeating-linear-gradient(0deg,#0f1115 0 40px,#12151a 40px 80px); }
@@ -124,6 +166,7 @@
   .status .item .label { flex: 1; }
   .status .item.dim { color: rgba(255,255,255,.67); }
   .status .item img { width: 14px; height: 14px; opacity: .67; }
+  .status .item .check { width: 16px; height: 16px; opacity: .9; }
   .status .sep { height: 1px; margin: 4px 14px; background: rgba(255,255,255,.09); }
   .status .head { height: 23px; padding: 1px 14.5px 0; display: flex; align-items: center;
                   font-weight: 700; color: rgba(255,255,255,.67); }
@@ -148,6 +191,19 @@
   .status .groupend { height: 1px; }
   .status .detail { height: 16px; margin: 0 5px; padding-left: 43.5px; display: flex;
                     align-items: center; font-size: 11px; color: rgba(255,255,255,.67); }
+  /* Sound's volume slider — Control Centre's Sound module, 2026-09-29:
+     row 31 (= title height); track 4 tall; an 18 × 14 pill knob; icons 8 pt
+     from the track. */
+  .status .slider { height: 31px; margin: 0 5px; padding: 0 9.5px; display: flex;
+                    align-items: center; }
+  .status .slider img { width: 16px; height: 16px; flex: none; opacity: .67; }
+  .status .slider .track { position: relative; flex: 1; height: 4px; border-radius: 2px;
+                            margin: 0 8px; background: rgba(255,255,255,.14); }
+  .status .slider .track .fill { position: absolute; left: 0; top: 0; bottom: 0;
+                                  border-radius: 2px; background: rgba(255,255,255,.9); }
+  .status .slider .track .knob { position: absolute; top: -5px; width: 18px; height: 14px;
+                                  border-radius: 7px; background: rgba(255,255,255,.9);
+                                  transform: translateX(-50%); }
 </style>
 </head>
 <body>
@@ -302,6 +358,59 @@
     <div class="groupend"></div>
     <div class="sep"></div>
     <div class="item"><span class="label">Battery Settings…</span></div>
+  </div>
+</div>
+
+<!-- H · Sound menu — chrome measured on the real panel (Control Centre's
+     Sound module, 2026-09-29); the Output badge rows use the already-
+     measured Wi-Fi badge geometry unchanged. Not captured: the standalone
+     menu-bar Sound extra itself (see the header note). -->
+<div class="stage" style="left:0;top:1420px;width:620px;height:340px">
+  <div class="bar"></div><div class="slot" style="left:280px;width:46.5px"></div>
+  <div class="status" style="left:280px">
+    <div class="title"><span class="label">Sound</span></div>
+    <div class="slider">
+      <img src="../shell/assets/menu/volume-low.svg">
+      <span class="track"><span class="fill" style="width:60%"></span><span class="knob" style="left:60%"></span></span>
+      <img src="../shell/assets/menu/volume-high.svg">
+    </div>
+    <div class="sep"></div>
+    <div class="head"><span class="label">Output</span></div>
+    <div class="net on"><span class="badge"><img src="../shell/assets/menu/volume-high.svg"></span><span class="label">Internal Speakers</span></div>
+    <div class="net"><span class="badge"><img src="../shell/assets/menu/volume-high.svg"></span><span class="label">USB Audio</span></div>
+    <div class="groupend"></div>
+    <div class="sep"></div>
+    <div class="item"><span class="label">Sound Settings…</span></div>
+  </div>
+</div>
+
+<!-- I · Bluetooth menu — chrome and the Devices badge rows carried over
+     unchanged from Wi-Fi/Sound; the standalone extra itself was not
+     captured (see the header note), so this is inferred, not measured. -->
+<div class="stage" style="left:640px;top:1420px;width:660px;height:340px">
+  <div class="bar"></div><div class="slot" style="left:280px;width:46.5px"></div>
+  <div class="status" style="left:280px">
+    <div class="title"><span class="label">Bluetooth</span><span class="switch"></span></div>
+    <div class="sep"></div>
+    <div class="head"><span class="label">Devices</span></div>
+    <div class="net on"><span class="badge"><img src="../shell/assets/menu/bluetooth-glyph.svg"></span><span class="label">Headphones</span></div>
+    <div class="net"><span class="badge"><img src="../shell/assets/menu/bluetooth-glyph.svg"></span><span class="label">Wireless Mouse</span></div>
+    <div class="groupend"></div>
+    <div class="sep"></div>
+    <div class="item"><span class="label">Bluetooth Settings…</span></div>
+  </div>
+</div>
+
+<!-- J · Focus menu — unchanged from the prior guess: Control Centre's own
+     Focus tile is a single on/off toggle in macOS 26 with no expand panel
+     to measure (see the header note), so this row layout is unverified. -->
+<div class="stage" style="left:0;top:1780px;width:620px;height:220px">
+  <div class="bar"></div><div class="slot" style="left:280px;width:46.5px"></div>
+  <div class="status" style="left:280px">
+    <div class="title"><span class="label">Focus</span></div>
+    <div class="item"><span class="label">Do Not Disturb</span><img class="check" src="../shell/assets/menu/checkmark.svg"></div>
+    <div class="sep"></div>
+    <div class="item"><span class="label">Focus Settings…</span></div>
   </div>
 </div>
 </body>

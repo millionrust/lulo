@@ -120,6 +120,7 @@ mod linux_wayland {
 
     menu_icons!(
         "battery-low",
+        "bluetooth-glyph",
         "checkmark",
         "chevron-down",
         "chevron-right",
@@ -165,6 +166,8 @@ mod linux_wayland {
         "store",
         "trash",
         "undo",
+        "volume-high",
+        "volume-low",
         "warning",
         "wifi-1",
         "wifi-2",
@@ -2626,12 +2629,21 @@ mod linux_wayland {
                             }),
                         )
                         .child(
+                            svg()
+                                .flex_none()
+                                .w(px(menu_model::MENU_ICON_BOX))
+                                .h(px(menu_model::MENU_ICON_BOX))
+                                .mr(px(menu_model::SLIDER_ICON_GAP))
+                                .path(menu_icon_path("volume-low"))
+                                .text_color(rgba(palette.secondary)),
+                        )
+                        .child(
                             div()
                                 .id(format!("volume-track-{}", self.display_id))
                                 .relative()
                                 .flex_1()
-                                .h(px(menu_model::SWITCH_HEIGHT / 6.0))
-                                .rounded(px(menu_model::SWITCH_HEIGHT / 12.0))
+                                .h(px(menu_model::SLIDER_TRACK_HEIGHT))
+                                .rounded(px(menu_model::SLIDER_TRACK_HEIGHT / 2.0))
                                 .bg(rgba(palette.switch_off))
                                 .child(
                                     canvas(
@@ -2653,9 +2665,32 @@ mod linux_wayland {
                                         .top_0()
                                         .bottom_0()
                                         .w(px(fill_width))
-                                        .rounded(px(menu_model::SWITCH_HEIGHT / 12.0))
+                                        .rounded(px(menu_model::SLIDER_TRACK_HEIGHT / 2.0))
+                                        .bg(rgba(palette.status_text)),
+                                )
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .top(px(-(menu_model::SLIDER_KNOB_HEIGHT
+                                            - menu_model::SLIDER_TRACK_HEIGHT)
+                                            / 2.0))
+                                        .left(px((fill_width
+                                            - menu_model::SLIDER_KNOB_WIDTH / 2.0)
+                                            .max(0.0)))
+                                        .w(px(menu_model::SLIDER_KNOB_WIDTH))
+                                        .h(px(menu_model::SLIDER_KNOB_HEIGHT))
+                                        .rounded(px(menu_model::SLIDER_KNOB_HEIGHT / 2.0))
                                         .bg(rgba(palette.status_text)),
                                 ),
+                        )
+                        .child(
+                            svg()
+                                .flex_none()
+                                .w(px(menu_model::MENU_ICON_BOX))
+                                .h(px(menu_model::MENU_ICON_BOX))
+                                .ml(px(menu_model::SLIDER_ICON_GAP))
+                                .path(menu_icon_path("volume-high"))
+                                .text_color(rgba(palette.secondary)),
                         )
                         .into_any_element()
                 }

@@ -95,7 +95,7 @@ fn generated_niri_mode_never_combines_portal_and_fallback_bindings() {
     .unwrap();
     let fallback = std::fs::read_to_string(&path).unwrap();
     assert!(fallback.contains("Mod+Space"));
-    assert_eq!(fallback.matches("{ spawn ").count(), 2);
+    assert_eq!(fallback.matches("{ spawn ").count(), 3);
 
     write_niri_binding_mode(
         &path,

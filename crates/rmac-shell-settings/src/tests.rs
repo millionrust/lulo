@@ -107,6 +107,7 @@ fn settings() -> ShellSettings {
             ..HotCornerSettings::default()
         },
         click_wallpaper_to_reveal: ClickWallpaperToReveal::Never,
+        double_click_title_bar: DoubleClickTitleBarAction::Fill,
         ..ShellSettings::default()
     }
 }
@@ -577,5 +578,36 @@ fn click_wallpaper_to_reveal_defaults_to_always_like_macos() {
     assert_eq!(
         ClickWallpaperToReveal::ALL.map(ClickWallpaperToReveal::title),
         ["Always", "Never"]
+    );
+}
+
+#[test]
+fn double_click_title_bar_defaults_to_zoom_like_macos() {
+    assert_eq!(
+        ShellSettings::default().double_click_title_bar,
+        DoubleClickTitleBarAction::Zoom
+    );
+    // A file saved before the setting existed reads as the default.
+    let (root, store) = test_store("double-click-title-bar-default");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        store.path(),
+        format!(r#"{{"version":{CURRENT_VERSION},"settings":{{"pinned_apps":[]}}}}"#),
+    )
+    .unwrap();
+    assert_eq!(
+        store.load().unwrap().settings.double_click_title_bar,
+        DoubleClickTitleBarAction::Zoom
+    );
+    std::fs::remove_dir_all(root).unwrap();
+
+    assert_eq!(
+        serde_json::to_value(DoubleClickTitleBarAction::DoNothing).unwrap(),
+        "do-nothing"
+    );
+    assert!(serde_json::from_str::<DoubleClickTitleBarAction>(r#""maximize""#).is_err());
+    assert_eq!(
+        DoubleClickTitleBarAction::ALL.map(DoubleClickTitleBarAction::title),
+        ["Zoom", "Minimize", "Fill", "Do Nothing"]
     );
 }

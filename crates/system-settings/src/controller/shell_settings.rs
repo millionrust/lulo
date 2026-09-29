@@ -286,4 +286,38 @@ impl Settings {
         })
         .detach();
     }
+
+    /// Save "Double-click a window's title bar to" through the shell-settings
+    /// store every app's title bar (`crates/rmac-ui/src/chrome.rs`
+    /// `client_bar`) reads fresh on each double-click (SET-33).
+    pub(super) fn apply_double_click_title_bar(
+        &mut self,
+        value: rmac_shell_settings::DoubleClickTitleBarAction,
+        cx: &mut Context<Self>,
+    ) {
+        if self.shell_settings_loading || self.shell_settings_busy {
+            return;
+        }
+        let Some(snapshot) = self.shell_settings.as_ref() else {
+            return;
+        };
+        if snapshot.settings.double_click_title_bar == value {
+            return;
+        }
+
+        self.shell_settings_busy = true;
+        self.shell_settings_error = None;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                persist_shell_settings_mutation(ShellSettingsMutation::DoubleClickTitleBar(value))
+            })
+            .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_shell_settings_mutation(result);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
 }

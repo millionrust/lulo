@@ -241,6 +241,32 @@ impl Settings {
             enabled,
         )]));
 
+        // macOS keeps this in a "Windows" group along with several rmac does
+        // not yet implement (prefer tabs, ask to keep changes, tiling drags
+        // -- SET-89). SET-33: only the double-click action is wired so far.
+        cards.push(section_header("Windows"));
+        let double_click = snapshot.settings.double_click_title_bar;
+        let double_click_choices = rmac_shell_settings::DoubleClickTitleBarAction::ALL
+            .into_iter()
+            .map(|value| {
+                let double_click_view = view.clone();
+                choice(value.title(), value == double_click, move |_, cx| {
+                    double_click_view.update(cx, |settings, cx| {
+                        settings.apply_double_click_title_bar(value, cx)
+                    });
+                })
+            })
+            .collect::<Vec<_>>();
+        let double_click_value = popup_value(&double_click_choices, double_click.title());
+        cards.push(card(vec![popup_row(
+            "double-click-title-bar",
+            "Double-click a window's title bar to",
+            None,
+            double_click_value,
+            double_click_choices,
+            enabled,
+        )]));
+
         // macOS keeps these behind a "Hot Corners…" sheet; rmac lists the
         // four pop-ups in the pane. Only actions rmac can perform are
         // offered (rmac_shell_settings::HotCornerAction).

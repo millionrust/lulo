@@ -69,6 +69,8 @@ impl FinderView {
                                 .iter()
                                 .filter(|task| {
                                     task.destination.parent() == Some(this.cwd.as_path())
+                                        && (batch.label == "Duplicating"
+                                            || task.source.parent() == task.destination.parent())
                                 })
                                 .map(|task| task.destination.clone())
                                 .collect();
@@ -184,7 +186,11 @@ impl FinderView {
                             this.pending_select_many = batch
                                 .ready
                                 .iter()
-                                .filter(|task| task.destination.parent() == Some(this.cwd.as_path()))
+                                .filter(|task| {
+                                    task.destination.parent() == Some(this.cwd.as_path())
+                                        && (batch.label == "Duplicating"
+                                            || task.source.parent() == task.destination.parent())
+                                })
                                 .map(|task| task.destination.clone())
                                 .collect();
                         }

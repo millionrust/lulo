@@ -905,7 +905,15 @@ pub fn wifi_menu_rows(input: WifiMenuInput<'_>) -> Vec<StatusRow> {
         let known = unique_networks(wifi.networks.iter().filter(|network| network.known));
         if !known.is_empty() {
             rows.push(StatusRow::Separator);
-            rows.push(StatusRow::Header("Known Networks".into()));
+            // Mac (2026-09-29 live capture): the header agrees in number
+            // with the list below it — "Known Network" singular with one
+            // reachable saved network, "Known Networks" with more than one.
+            let header = if known.len() == 1 {
+                "Known Network"
+            } else {
+                "Known Networks"
+            };
+            rows.push(StatusRow::Header(header.into()));
             for network in known.iter().copied() {
                 let joining = input.joining == Some(&network.id);
                 rows.push(network_row(network, joining));
@@ -1831,6 +1839,36 @@ mod tests {
     }
 
     #[test]
+    fn known_networks_header_agrees_in_number_with_one_saved_network() {
+        // Mac (2026-09-29 live capture, this laptop's reference screen): with
+        // exactly one reachable saved network the header reads "Known
+        // Network" singular, not "Known Networks".
+        let wifi = snapshot(vec![network("Samas Wifi", 90, true, true, psk())]);
+        let rows = wifi_menu_rows(WifiMenuInput {
+            wifi: Some(&wifi),
+            device: None,
+            option: false,
+            others_expanded: false,
+            joining: None,
+            error: None,
+        });
+        assert_eq!(
+            labels(&rows),
+            [
+                "title:Wi-Fi",
+                "---",
+                "head:Known Network",
+                "badge:Samas Wifi",
+                "end",
+                "---",
+                "more:Other Networks",
+                "---",
+                "item:Wi-Fi Settings…",
+            ]
+        );
+    }
+
+    #[test]
     fn other_networks_expand_and_new_protected_ones_open_settings() {
         let wifi = snapshot(vec![
             network("Neighbour", 70, false, false, psk()),
@@ -1903,7 +1941,7 @@ mod tests {
                 "info:Interface Name: wlan0",
                 "info:Address: 00:11:22:33:44:55",
                 "---",
-                "head:Known Networks",
+                "head:Known Network",
                 "badge:Home Wi-Fi",
                 "detail:IP Address: 192.168.1.20",
                 "detail:Router: 192.168.1.1",

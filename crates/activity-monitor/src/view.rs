@@ -105,9 +105,10 @@ impl MonitorView {
         };
         view.refresh(cx);
 
-        // Refresh only while the monitor is the active window. A background
-        // or occluded monitor has no visible graph to update.
-        cx.observe_window_activation(window, |view, window, cx| {
+        // An inactive window has no graph to update and no timer to run.
+        let (wake, events) = async_channel::bounded(1);
+        cx.observe_window_activation(window, move |view, window, cx| {
+            let _ = wake.try_send(());
             if window.is_window_active() {
                 view.refresh(cx);
                 cx.notify();
@@ -115,12 +116,29 @@ impl MonitorView {
         })
         .detach();
         cx.spawn_in(window, async move |this, cx| loop {
-            cx.background_executor()
-                .timer(Duration::from_secs(REFRESH_SECS as u64))
-                .await;
+            let active = this
+                .update_in(cx, |_, window, _| window.is_window_active())
+                .unwrap_or(false);
+            let timer_expired = futures_lite::future::race(
+                async {
+                    if active {
+                        cx.background_executor()
+                            .timer(Duration::from_secs(REFRESH_SECS as u64))
+                            .await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                    true
+                },
+                async {
+                    let _ = events.recv().await;
+                    false
+                },
+            )
+            .await;
             if this
                 .update_in(cx, |view, window, cx| {
-                    if window.is_window_active() {
+                    if timer_expired && window.is_window_active() {
                         view.refresh(cx);
                         cx.notify();
                     }

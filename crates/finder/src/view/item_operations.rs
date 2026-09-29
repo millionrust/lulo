@@ -90,8 +90,16 @@ impl FinderView {
             self.reload(cx);
             return;
         };
-        self.entries.push(entry.clone());
-        sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
+        if self.view == ViewMode::List {
+            self.root_entries.push(entry.clone());
+            sort_entries(&mut self.root_entries, self.sort_key, self.sort_asc);
+            self.rebuild_list_entries();
+        } else {
+            self.entries.push(entry.clone());
+            sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
+            self.root_entries.push(entry.clone());
+            sort_entries(&mut self.root_entries, self.sort_key, self.sort_asc);
+        }
         let Some(index) = self.entries.iter().position(|entry| entry.path == path) else {
             self.reload(cx);
             return;

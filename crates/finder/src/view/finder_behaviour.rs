@@ -191,6 +191,12 @@ impl FinderView {
         });
         if let Some(index) = type_select_match(&prefix, names) {
             self.select_single(index);
+            if let Some(position) = visible
+                .iter()
+                .position(|visible_index| *visible_index == index)
+            {
+                self.scroll_list_row_into_view(position);
+            }
             cx.notify();
         }
     }

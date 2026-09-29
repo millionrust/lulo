@@ -36,6 +36,7 @@ impl FinderView {
                 }
             }
             self.watcher = None;
+            self.watched_children.clear();
             if self.operation_error.is_none() {
                 self.operation_error = Some(FILESYSTEM_WATCH_INTERRUPTED_MESSAGE.into());
             }
@@ -116,6 +117,7 @@ impl FinderView {
         let mut watch_failed = false;
         let rebuilding_watcher = self.watcher.is_none();
         if rebuilding_watcher {
+            self.watched_children.clear();
             self.watcher = filesystem_watcher(
                 self.filesystem_events.clone(),
                 self.filesystem_hints.clone(),
@@ -128,6 +130,9 @@ impl FinderView {
             .parent()
             .filter(|parent| *parent != self.cwd)
             .map(Path::to_path_buf);
+        if self.watched.as_ref() != Some(&self.cwd) {
+            self.list_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
+        }
         if self.watched.as_ref() != Some(&self.cwd)
             || self.watched_parent.as_ref() != expected_parent.as_ref()
         {
@@ -151,6 +156,32 @@ impl FinderView {
                     }
                 }
             }
+        }
+        // Expanded folders have their own non-recursive watches. Keep them
+        // across root refreshes, but remove watches from previous locations.
+        let wanted_children = self
+            .expanded
+            .iter()
+            .filter(|folder| folder.starts_with(&self.cwd) && folder != &&self.cwd)
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        if let Some(watcher) = self.watcher.as_mut() {
+            for folder in self.watched_children.difference(&wanted_children) {
+                let _ = watcher.unwatch(folder);
+            }
+            let mut watching = self
+                .watched_children
+                .intersection(&wanted_children)
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            for folder in wanted_children.difference(&self.watched_children) {
+                if watcher.watch(folder, RecursiveMode::NonRecursive).is_ok() {
+                    watching.insert(folder.clone());
+                }
+            }
+            self.watched_children = watching;
+        } else {
+            self.watched_children.clear();
         }
         if watch_failed
             && self.operation_error.as_ref().is_none_or(|message| {
@@ -202,6 +233,12 @@ impl FinderView {
         let show_hidden = self.show_hidden;
         let key = self.sort_key;
         let asc = self.sort_asc;
+        let expanded = self
+            .expanded
+            .iter()
+            .filter(|folder| folder.starts_with(&path))
+            .cloned()
+            .collect::<Vec<_>>();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
@@ -210,7 +247,13 @@ impl FinderView {
                         Ok((identity, mut entries)) => {
                             sort_entries(&mut entries, key, asc);
                             let free = refresh_free_space.then(|| free_space(&path));
-                            Ok((identity, entries, free))
+                            let children = expanded.into_iter().filter_map(|folder| {
+                                read_entries_checked(&folder, show_hidden, None).ok().map(|(_, mut rows)| {
+                                    sort_entries(&mut rows, key, asc);
+                                    (folder, rows)
+                                })
+                            }).collect::<HashMap<_, _>>();
+                            Ok((identity, entries, children, free))
                         }
                         Err(error) => Err((
                             error.kind(),
@@ -225,7 +268,7 @@ impl FinderView {
                     return;
                 }
                 match result {
-                    Ok((identity, entries, free)) => {
+                    Ok((identity, entries, children, free)) => {
                         if this
                             .operation_error
                             .as_ref()
@@ -237,7 +280,9 @@ impl FinderView {
                         if let Some(tab) = this.tabs.get_mut(this.active) {
                             tab.identity = Some(identity);
                         }
-                        this.entries = entries;
+                        this.root_entries = entries;
+                        this.child_entries = children;
+                        this.rebuild_list_entries();
                         let entry_paths = this
                             .entries
                             .iter()

@@ -19,6 +19,7 @@ mod go_to_folder_controller;
 mod item_operations;
 mod lifecycle_controller;
 mod list_presentation;
+mod list_tree;
 mod mount_controller;
 mod navigation;
 mod open_with_controller;
@@ -46,7 +47,7 @@ mod undo_controller;
 mod updates;
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -266,6 +267,13 @@ struct FinderView {
     directory_generation: u64,
     thumbs: std::collections::HashMap<PathBuf, PathBuf>,
     entries: Vec<Entry>,
+    /// Direct children of cwd; entries includes descendants only in list view.
+    root_entries: Vec<Entry>,
+    expanded: BTreeSet<PathBuf>,
+    child_entries: HashMap<PathBuf, Vec<Entry>>,
+    list_depths: Vec<usize>,
+    list_scroll: gpui::ScrollHandle,
+    watched_children: BTreeSet<PathBuf>,
     selected: BTreeSet<usize>,
     anchor: Option<usize>,
     clipboard: Vec<PathBuf>,

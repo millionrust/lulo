@@ -172,266 +172,63 @@ impl FinderView {
             )
             .child(div().h(px(0.5)).flex_none().bg(hairline()));
 
-        let mut rows: Vec<gpui::AnyElement> = Vec::new();
-        let mut stripe_index = 0usize;
-        for (ix, e) in self.entries.iter().enumerate() {
-            if !q.is_empty() && !e.name.to_lowercase().contains(&q) {
-                continue;
-            }
-            let striped = stripe_index % 2 == 1;
-            let position = stripe_index;
-            stripe_index += 1;
-            let selected = self.selected.contains(&ix);
-            let primary = if selected {
-                selected_text(window_active)
-            } else {
-                primary_text()
-            };
-            let sub = if selected {
-                selected_text(window_active)
-            } else {
-                secondary_text()
-            };
-            // Finder's list rows show the file's own thumbnail when it has
-            // one, else the full-colour folder or page artwork.
-            let row_icon: gpui::AnyElement = e
-                .application
-                .as_ref()
-                .and_then(|application| application.icon.clone())
-                .map_or_else(
-                    || match self.thumbs.get(&e.path) {
-                        Some(thumbnail) => div()
-                            .size(px(LIST_ICON))
-                            .flex_none()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(
-                                img(thumbnail.clone())
-                                    .max_w(px(LIST_ICON))
-                                    .max_h(px(LIST_ICON - 4.0))
-                                    .rounded(px(2.0)),
-                            )
-                            .into_any_element(),
-                        None => item_artwork(e.is_dir, &e.name, LIST_ICON),
-                    },
-                    |path| {
-                        img(path)
-                            .w(px(LIST_ICON))
-                            .h(px(LIST_ICON))
-                            .rounded(px(rmac_ui::mac::radius_menu_item()))
-                            .into_any_element()
-                    },
-                );
-
-            let drag_paths: Vec<PathBuf> = if selected {
-                self.selected_paths()
-            } else {
-                vec![e.path.clone()]
-            };
-            let drag_count = drag_paths.len();
-            let drop_dir = e.path.clone();
-            let spring_dir = e.path.clone();
-            let row_is_dir = e.is_dir;
-            let search_detail = e.search_detail.clone();
-            let has_search_detail = search_detail.is_some();
-
-            let name_cell: gpui::AnyElement = match &self.renaming {
-                Some((rename_path, input)) if rename_path == &e.path => div()
-                    .id("rename-field")
-                    .role(Role::TextInput)
-                    .aria_label("Name")
-                    .accessible_text_input(input, cx)
-                    .pl(px(LIST_ICON_TO_NAME))
-                    .flex_1()
-                    .child(TextField::new(input).appearance(true))
-                    .into_any_element(),
-                _ => div()
-                    .id(("list-name", ix))
-                    .pl(px(LIST_ICON_TO_NAME))
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .v_flex()
-                    .justify_center()
-                    .child(div().truncate().text_color(primary).child(e.name.clone()))
-                    .when_some(search_detail, |el, detail| {
-                        el.child(
-                            div()
-                                .truncate()
-                                .text_size(rmac_ui::text_px(11.0))
-                                .text_color(sub)
-                                .child(detail),
-                        )
-                    })
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
-                            if selected
-                                && !this.trash_view
-                                && !this.applications_view
-                                && !ev.modifiers.platform
-                                && !ev.modifiers.shift
-                            {
-                                cx.stop_propagation();
-                                this.rename_start(window, cx);
-                            }
-                        }),
+        let visible_list_indices = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter_map(|(index, entry)| {
+                (q.is_empty() || entry.name.to_lowercase().contains(&q)).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        let stripe_index = visible_list_indices.len();
+        let row_height = if self
+            .entries
+            .iter()
+            .any(|entry| entry.search_detail.is_some())
+        {
+            38.0
+        } else {
+            LIST_ROW_HEIGHT
+        };
+        let measured_height = f32::from(self.list_scroll.bounds().size.height);
+        let viewport_height = if measured_height > 1.0 {
+            measured_height
+        } else {
+            window_height
+        };
+        let max_scroll = (LIST_ROWS_TOP + visible_list_indices.len() as f32 * row_height
+            - viewport_height)
+            .max(0.0);
+        let scroll_top = (-f32::from(self.list_scroll.offset().y))
+            .max(0.0)
+            .min(max_scroll);
+        let first_row = ((scroll_top / row_height).floor() as usize)
+            .saturating_sub(8)
+            .min(visible_list_indices.len());
+        let row_limit = (window_height / row_height).ceil() as usize + 16;
+        let last_row = (first_row + row_limit).min(visible_list_indices.len());
+        let list_rows = if self.view == ViewMode::List {
+            (first_row..last_row)
+                .map(|position| {
+                    self.render_list_row(
+                        visible_list_indices[position],
+                        position,
+                        visible_list_indices.len(),
+                        row_height,
+                        window_active,
+                        cx,
                     )
-                    .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
-                        if selected {
-                            cx.stop_propagation();
-                        }
-                    }))
-                    .into_any_element(),
-            };
-
-            rows.push(
-                accessible_item(
-                    div().id(("row", ix)),
-                    Role::ListBoxOption,
-                    e,
-                    selected,
-                    position,
-                    visible_count,
-                    &entity,
-                    move |this, window, cx| this.accessible_select(ix, window, cx),
-                )
-                .flex_none()
-                .flex()
-                .items_center()
-                .h(px(if has_search_detail {
-                    38.0
-                } else {
-                    LIST_ROW_HEIGHT
-                }))
-                .mx(px(LIST_ROW_INSET))
-                .rounded(px(ROW_RADIUS))
-                .text_size(rmac_ui::text_px(13.0))
-                .when(selected, |el: Stateful<Div>| {
-                    el.bg(selection(window_active))
                 })
-                .when(!selected && striped, |el: Stateful<Div>| el.bg(stripe()))
-                .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .items_center()
-                        .min_w(px(0.0))
-                        .child(
-                            div()
-                                .w(px(LIST_DISCLOSURE_X + LIST_DISCLOSURE_WIDTH))
-                                .flex_none()
-                                .flex()
-                                .justify_center()
-                                .pl(px(LIST_DISCLOSURE_X))
-                                .when(e.is_dir, |el: Div| {
-                                    el.child(icon(
-                                        "icons/chevron-right.svg",
-                                        12.0,
-                                        if selected {
-                                            selected_text(window_active)
-                                        } else {
-                                            chrome_text()
-                                        },
-                                    ))
-                                }),
-                        )
-                        .child(row_icon)
-                        .child(name_cell),
-                )
-                .child(
-                    div()
-                        .w(px(DATE_W))
-                        .flex_none()
-                        .pl(px(LIST_CELL_TEXT_X))
-                        .truncate()
-                        .text_color(sub)
-                        .child(e.modified.clone()),
-                )
-                .child(
-                    div()
-                        .w(px(SIZE_W))
-                        .flex_none()
-                        .flex()
-                        .justify_end()
-                        .pr(px(LIST_SIZE_TRAILING))
-                        .text_color(sub)
-                        .child(e.size.clone()),
-                )
-                .child(
-                    div()
-                        .w(px(KIND_W))
-                        .flex_none()
-                        .pl(px(LIST_CELL_TEXT_X))
-                        .text_color(sub)
-                        .truncate()
-                        .child(e.kind.clone()),
-                )
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
-                        cx.stop_propagation();
-                        if ev.modifiers.control {
-                            this.open_context_menu(Some(ix), ev.position, window, cx);
-                            return;
-                        }
-                        this.handle_click(ix, ev.modifiers.platform, ev.modifiers.shift);
-                        window.focus(&this.focus, cx);
-                        cx.notify();
-                    }),
-                )
-                .on_mouse_down(
-                    MouseButton::Right,
-                    cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
-                        cx.stop_propagation();
-                        this.open_context_menu(Some(ix), ev.position, window, cx);
-                    }),
-                )
-                .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                    if ev.click_count() >= 2 {
-                        this.open_index(ix, cx);
-                    }
-                    window.focus(&this.focus, cx);
-                }))
-                .when(
-                    !self.trash_view && !self.applications_view,
-                    |el: Stateful<Div>| {
-                        el.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
-                            cx.new(|_| DragPreview { count: drag_count })
-                        })
-                    },
-                )
-                .when(
-                    row_is_dir && !self.trash_view && !self.applications_view,
-                    |el: Stateful<Div>| {
-                        let dd = drop_dir.clone();
-                        el.drag_over::<DraggedPaths>(|s, _, _, _| {
-                            s.bg(rmac_ui::mac::accent_subtle())
-                        })
-                        .on_drag_move(cx.listener(
-                            move |this, event: &gpui::DragMoveEvent<DraggedPaths>, _, cx| {
-                                let inside = event.bounds.contains(&event.event.position);
-                                this.spring_hover(spring_dir.clone(), inside, cx);
-                            },
-                        ))
-                        .on_drop(cx.listener(
-                            move |this, p: &DraggedPaths, _, cx| {
-                                this.drop_into(dd.clone(), &p.0, cx)
-                            },
-                        ))
-                    },
-                )
-                .into_any_element(),
-            );
-        }
-        // Finder keeps striping the empty area below the last row.
-        let filler_start = stripe_index;
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         let filler = div()
             .flex_1()
             .min_h(px(0.0))
             .overflow_hidden()
             .v_flex()
-            .children((filler_start..filler_start + FILLER_STRIPES).map(|index| {
+            .children((stripe_index..stripe_index + FILLER_STRIPES).map(|index| {
                 div()
                     .h(px(LIST_ROW_HEIGHT))
                     .flex_none()
@@ -439,7 +236,6 @@ impl FinderView {
                     .rounded(px(ROW_RADIUS))
                     .when(index % 2 == 1, |row| row.bg(stripe()))
             }));
-
         let show_list = self.view == ViewMode::List;
         let show_icons = self.view == ViewMode::Icon;
         let visible_indices = self
@@ -681,12 +477,22 @@ impl FinderView {
                     .flex_1()
                     .min_h(px(0.0))
                     .overflow_y_scroll()
+                    .track_scroll(&self.list_scroll)
+                    .on_scroll_wheel(
+                        cx.listener(|_, _: &gpui::ScrollWheelEvent, _, cx| cx.notify()),
+                    )
                     .child(
                         div()
                             .min_h(gpui::relative(1.0))
                             .v_flex()
                             .pt(px(LIST_ROWS_TOP))
-                            .children(rows)
+                            .child(div().h(px(first_row as f32 * row_height)).flex_none())
+                            .children(list_rows)
+                            .child(
+                                div()
+                                    .h(px((stripe_index - last_row) as f32 * row_height))
+                                    .flex_none(),
+                            )
                             .child(filler),
                     )
                     .on_mouse_down(
@@ -898,6 +704,19 @@ impl FinderView {
                     }
                     return;
                 }
+                if this.view == ViewMode::List {
+                    match ev.keystroke.key.as_str() {
+                        "right" => {
+                            this.list_folder_key(true, cx);
+                            return;
+                        }
+                        "left" => {
+                            this.list_folder_key(false, cx);
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
                 let current = this.anchor.and_then(|anchor| {
                     navigation_indices.iter().position(|index| *index == anchor)
                 });
@@ -931,6 +750,7 @@ impl FinderView {
                 if let Some(position) = select_position {
                     if !navigation_indices.is_empty() {
                         this.select_single(navigation_indices[position]);
+                        this.scroll_list_row_into_view(position);
                         cx.notify();
                     }
                 } else if let Some(text) = type_select_text(ev) {
@@ -954,5 +774,329 @@ impl FinderView {
                 el.child(self.render_path_bar(cx))
             })
             .child(self.render_status_bar())
+    }
+    fn render_list_row(
+        &self,
+        ix: usize,
+        position: usize,
+        visible_count: usize,
+        row_height: f32,
+        window_active: bool,
+        cx: &mut Context<Self>,
+    ) -> Stateful<Div> {
+        let e = &self.entries[ix];
+        let entity = cx.entity();
+        let depth = if self.trash_view || self.applications_view || self.search_summary.is_some() {
+            0
+        } else {
+            self.list_depths.get(ix).copied().unwrap_or(0)
+        };
+        let striped = position % 2 == 1;
+        let row_path = e.path.clone();
+        let accessible_row_path = row_path.clone();
+        let left_row_path = row_path.clone();
+        let right_row_path = row_path.clone();
+        let open_row_path = row_path.clone();
+        let selected = self.selected.contains(&ix);
+        let primary = if selected {
+            selected_text(window_active)
+        } else {
+            primary_text()
+        };
+        let sub = if selected {
+            selected_text(window_active)
+        } else {
+            secondary_text()
+        };
+        // Finder's list rows show the file's own thumbnail when it has
+        // one, else the full-colour folder or page artwork.
+        let row_icon: gpui::AnyElement = e
+            .application
+            .as_ref()
+            .and_then(|application| application.icon.clone())
+            .map_or_else(
+                || match self.thumbs.get(&e.path) {
+                    Some(thumbnail) => div()
+                        .size(px(LIST_ICON))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            img(thumbnail.clone())
+                                .max_w(px(LIST_ICON))
+                                .max_h(px(LIST_ICON - 4.0))
+                                .rounded(px(2.0)),
+                        )
+                        .into_any_element(),
+                    None => item_artwork(e.is_dir, &e.name, LIST_ICON),
+                },
+                |path| {
+                    img(path)
+                        .w(px(LIST_ICON))
+                        .h(px(LIST_ICON))
+                        .rounded(px(rmac_ui::mac::radius_menu_item()))
+                        .into_any_element()
+                },
+            );
+
+        let drag_paths: Vec<PathBuf> = if selected {
+            self.selected_paths()
+        } else {
+            vec![e.path.clone()]
+        };
+        let drag_count = drag_paths.len();
+        let drop_dir = e.path.clone();
+        let spring_dir = e.path.clone();
+        let row_is_dir = e.is_dir;
+        let search_detail = e.search_detail.clone();
+
+        let name_cell: gpui::AnyElement = match &self.renaming {
+            Some((rename_path, input)) if rename_path == &e.path => div()
+                .id("rename-field")
+                .role(Role::TextInput)
+                .aria_label("Name")
+                .accessible_text_input(input, cx)
+                .pl(px(LIST_ICON_TO_NAME))
+                .flex_1()
+                .child(TextField::new(input).appearance(true))
+                .into_any_element(),
+            _ => div()
+                .id(SharedString::from(format!(
+                    "list-name-{}",
+                    e.path.display()
+                )))
+                .pl(px(LIST_ICON_TO_NAME))
+                .flex_1()
+                .min_w(px(0.0))
+                .v_flex()
+                .justify_center()
+                .child(div().truncate().text_color(primary).child(e.name.clone()))
+                .when_some(search_detail, |el, detail| {
+                    el.child(
+                        div()
+                            .truncate()
+                            .text_size(rmac_ui::text_px(11.0))
+                            .text_color(sub)
+                            .child(detail),
+                    )
+                })
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                        if selected
+                            && !this.trash_view
+                            && !this.applications_view
+                            && !ev.modifiers.platform
+                            && !ev.modifiers.shift
+                        {
+                            cx.stop_propagation();
+                            this.rename_start(window, cx);
+                        }
+                    }),
+                )
+                .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                    if selected {
+                        cx.stop_propagation();
+                    }
+                }))
+                .into_any_element(),
+        };
+
+        accessible_item(
+            div().id(SharedString::from(format!("row-{}", e.path.display()))),
+            Role::ListBoxOption,
+            e,
+            selected,
+            position,
+            visible_count,
+            &entity,
+            move |this, window, cx| {
+                if let Some(index) = this.list_row_index(&accessible_row_path) {
+                    this.accessible_select(index, window, cx);
+                }
+            },
+        )
+        .flex_none()
+        .flex()
+        .items_center()
+        .h(px(row_height))
+        .mx(px(LIST_ROW_INSET))
+        .rounded(px(ROW_RADIUS))
+        .text_size(rmac_ui::text_px(13.0))
+        .when(selected, |el: Stateful<Div>| {
+            el.bg(selection(window_active))
+        })
+        .when(!selected && striped, |el: Stateful<Div>| el.bg(stripe()))
+        .child(
+            div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .min_w(px(0.0))
+                .child(
+                    div()
+                        .w(px(LIST_DISCLOSURE_X
+                            + LIST_DISCLOSURE_WIDTH
+                            + depth as f32 * 16.0))
+                        .flex_none()
+                        .flex()
+                        .justify_end()
+                        .when(
+                            e.is_dir
+                                && !self.trash_view
+                                && !self.applications_view
+                                && self.search_summary.is_none(),
+                            |el: Div| {
+                                let path = e.path.clone();
+                                let accessible_path = path.clone();
+                                let accessible_entity = entity.clone();
+                                el.child(
+                                    div()
+                                        .id(SharedString::from(format!(
+                                            "disclosure-{}",
+                                            e.path.display()
+                                        )))
+                                        .role(Role::Button)
+                                        .aria_label(format!(
+                                            "{} {}",
+                                            if self.expanded.contains(&e.path) {
+                                                "Collapse"
+                                            } else {
+                                                "Expand"
+                                            },
+                                            e.name
+                                        ))
+                                        .aria_expanded(self.expanded.contains(&e.path))
+                                        .w(px(LIST_DISCLOSURE_WIDTH))
+                                        .h(px(row_height))
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .cursor_pointer()
+                                        .child(icon(
+                                            if self.expanded.contains(&e.path) {
+                                                "icons/chevron-down.svg"
+                                            } else {
+                                                "icons/chevron-right.svg"
+                                            },
+                                            12.0,
+                                            if selected {
+                                                selected_text(window_active)
+                                            } else {
+                                                chrome_text()
+                                            },
+                                        ))
+                                        .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                            cx.stop_propagation()
+                                        })
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            cx.stop_propagation();
+                                            this.toggle_list_folder(path.clone(), cx);
+                                        }))
+                                        .on_a11y_action(
+                                            AccessibleAction::Click,
+                                            move |_, _, cx| {
+                                                accessible_entity.update(cx, |this, cx| {
+                                                    this.toggle_list_folder(
+                                                        accessible_path.clone(),
+                                                        cx,
+                                                    )
+                                                });
+                                            },
+                                        ),
+                                )
+                            },
+                        ),
+                )
+                .child(row_icon)
+                .child(name_cell),
+        )
+        .child(
+            div()
+                .w(px(DATE_W))
+                .flex_none()
+                .pl(px(LIST_CELL_TEXT_X))
+                .truncate()
+                .text_color(sub)
+                .child(e.modified.clone()),
+        )
+        .child(
+            div()
+                .w(px(SIZE_W))
+                .flex_none()
+                .flex()
+                .justify_end()
+                .pr(px(LIST_SIZE_TRAILING))
+                .text_color(sub)
+                .child(e.size.clone()),
+        )
+        .child(
+            div()
+                .w(px(KIND_W))
+                .flex_none()
+                .pl(px(LIST_CELL_TEXT_X))
+                .text_color(sub)
+                .truncate()
+                .child(e.kind.clone()),
+        )
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                cx.stop_propagation();
+                if ev.modifiers.control {
+                    if let Some(index) = this.list_row_index(&left_row_path) {
+                        this.open_context_menu(Some(index), ev.position, window, cx);
+                    }
+                    return;
+                }
+                if let Some(index) = this.list_row_index(&left_row_path) {
+                    this.handle_click(index, ev.modifiers.platform, ev.modifiers.shift);
+                }
+                window.focus(&this.focus, cx);
+                cx.notify();
+            }),
+        )
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                cx.stop_propagation();
+                if let Some(index) = this.list_row_index(&right_row_path) {
+                    this.open_context_menu(Some(index), ev.position, window, cx);
+                }
+            }),
+        )
+        .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
+            if ev.click_count() >= 2 {
+                if let Some(index) = this.list_row_index(&open_row_path) {
+                    this.open_index(index, cx);
+                }
+            }
+            window.focus(&this.focus, cx);
+        }))
+        .when(
+            !self.trash_view && !self.applications_view,
+            |el: Stateful<Div>| {
+                el.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
+                    cx.new(|_| DragPreview { count: drag_count })
+                })
+            },
+        )
+        .when(
+            row_is_dir && !self.trash_view && !self.applications_view,
+            |el: Stateful<Div>| {
+                let dd = drop_dir.clone();
+                el.drag_over::<DraggedPaths>(|s, _, _, _| s.bg(rmac_ui::mac::accent_subtle()))
+                    .on_drag_move(cx.listener(
+                        move |this, event: &gpui::DragMoveEvent<DraggedPaths>, _, cx| {
+                            let inside = event.bounds.contains(&event.event.position);
+                            this.spring_hover(spring_dir.clone(), inside, cx);
+                        },
+                    ))
+                    .on_drop(cx.listener(move |this, p: &DraggedPaths, _, cx| {
+                        this.drop_into(dd.clone(), &p.0, cx)
+                    }))
+            },
+        )
     }
 }

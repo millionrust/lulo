@@ -1,0 +1,32 @@
+{
+  "format": 1,
+  "scenario": "files/list-disclosure",
+  "platform": "macOS 26.2",
+  "basis": "FILES-08 behavior specification; Mac recording pending",
+  "observations": {
+    "child": {
+      "selection": {
+        "items": [
+          "plan.txt"
+        ]
+      }
+    },
+    "collapsed": {
+      "selection": {
+        "items": [
+          "report.txt"
+        ]
+      }
+    },
+    "duplicated_child": {
+      "files": {
+        "entries": [
+          "Projects/",
+          "Projects/plan copy.txt",
+          "Projects/plan.txt",
+          "report.txt"
+        ]
+      }
+    }
+  }
+}

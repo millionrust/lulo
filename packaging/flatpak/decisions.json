@@ -75,6 +75,60 @@
       "sandbox_eligible": false,
       "authority": "System Settings intentionally coordinates system D-Bus, polkit, hardware, session configuration, package, privacy, and service authorities.",
       "permissions": []
+    },
+    {
+      "id": "org.rmac.Calculator",
+      "binary": "rmac-calculator",
+      "distribution": "native-pending-flatpak",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "Calculator needs only local input, but no sandbox manifest or native-to-Flatpak behavior review has been completed for this packaged application.",
+      "permissions": []
+    },
+    {
+      "id": "org.rmac.Clock",
+      "binary": "rmac-clock",
+      "distribution": "native-pending-flatpak",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "Clock reads local time and timezone state; its sandboxed time, notification, and persistence behavior has not been reviewed or packaged.",
+      "permissions": []
+    },
+    {
+      "id": "org.rmac.Weather",
+      "binary": "rmac-weather",
+      "distribution": "native",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "Weather requires forecast network access; the allowed endpoints, privacy behavior, and sandbox network policy have not been reviewed for a Flatpak build.",
+      "permissions": []
+    },
+    {
+      "id": "org.rmac.Preview",
+      "binary": "rmac-preview",
+      "distribution": "native-pending-flatpak",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "Preview opens user documents and must preserve portal-selected file access; a sandbox manifest and document-open acceptance run are pending.",
+      "permissions": []
+    },
+    {
+      "id": "org.rmac.Player",
+      "binary": "rmac-player",
+      "distribution": "native",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "Player combines local media access, audio and video playback, and MPRIS session integration; no constrained sandbox permission set has been reviewed.",
+      "permissions": []
+    },
+    {
+      "id": "org.rmac.ArchiveUtility",
+      "binary": "rmac-archive-utility",
+      "distribution": "native",
+      "manifest": null,
+      "sandbox_eligible": false,
+      "authority": "Archive Utility reads arbitrary selected archives and writes extraction destinations; its filesystem and portal boundaries require a dedicated sandbox review.",
+      "permissions": []
     }
   ]
 }

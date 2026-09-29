@@ -1,0 +1,32 @@
+{
+  "apps": {},
+  "captured_at": "2026-09-28T15:50:57Z",
+  "rustc_processes": 0,
+  "schema_version": 1,
+  "settings": {
+    "idle_seconds": 30.0,
+    "repetitions": 5,
+    "settle_seconds": 3.0,
+    "startup_timeout": 10.0,
+    "wakeup_threshold_per_second": 0.5,
+    "warmups": 1
+  },
+  "shell_combined": {
+    "budget": 1.0,
+    "value": 0.133,
+    "within_budget": true
+  },
+  "shell_surfaces": {
+    "rmac-top-bar": {
+      "idle_cpu_percent": {
+        "budget": 0.3,
+        "value": 0.133,
+        "within_budget": true
+      },
+      "pss_mib": 58.3,
+      "running": true,
+      "suspected_idle_redraw": false,
+      "wakeups_per_second": 0.033
+    }
+  }
+}

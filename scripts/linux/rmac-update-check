@@ -25,9 +25,18 @@ default, like the Mac's three switches).
    `install-lulo-os` is on, plus the security updates when
    `install-security` is on.
 3. With `download-updates` off nothing is downloaded or scheduled. With it
-   on, the updates outside the automatic set are downloaded first (a
-   trusted-only, download-only UpdatePackages, so System Settings can
-   install them quickly later), then the automatic set is prepared as a
+   on, the automatic set gets an ONLY_TRUSTED | SIMULATE pass before any
+   download. A destructive or incomplete plan stays available for review in
+   System Settings; a failed simulation prevents downloads and scheduling.
+   A previously scheduled automatic set is simulated again; if its plan is
+   destructive or unverifiable, the checker cancels the still-matching
+   offline trigger without interactive authorization and reports a failure.
+   Stale prepared package IDs are likewise cancelled instead of replaced.
+   If cancellation fails, the notification warns against restarting until
+   Software Update is reviewed.
+   If the plan is safe, updates outside the automatic set are downloaded
+   first (a trusted-only, download-only UpdatePackages, so System Settings
+   can install them quickly later), then the automatic set is prepared as a
    PackageKit offline update: a download-only UpdatePackages for exactly
    those package IDs -- last, because PackageKit records the latest
    download-only transaction as the prepared update -- and an offline-update
@@ -106,6 +115,11 @@ CLIENT_ERROR_NAMES = (
     "DECLINED_INTERACTION",
 )
 OFFLINE_ERROR_NAMES = ("FAILED", "INVALID_VALUE", "NO_DATA")
+# Mirrors ChangeKind::from_packagekit in rmac-updates/src/plan.rs. The later
+# action codes distinguish updates that install a target package while
+# removing/obsoleting/downgrading the installed package.
+SAFE_PLAN_ACTIONS = frozenset((11, 12, 19, 27))
+DESTRUCTIVE_PLAN_ACTIONS = frozenset((13, 15, 20, 28, 29, 30))
 
 _SAFE_TOKEN = re.compile(r"[^a-z0-9._:-]+")
 MAX_ERROR_LINE = 200
@@ -199,37 +213,41 @@ def bitfield(*values):
     return field
 
 
-def prepared_ids(Pk, GLib):
-    """IDs PackageKit already downloaded for an offline update, or empty."""
+def prepared_ids(Pk, GLib, action_scheduled=False):
+    """Read prepared IDs; only treat NO_DATA as empty when none is scheduled."""
     try:
         return frozenset(Pk.offline_get_prepared_ids() or ())
-    except GLib.Error:
-        # NO_DATA ("No offline updates have been prepared") or an unreadable
-        # prepared-update file: prepare again from scratch.
-        return frozenset()
+    except GLib.Error as error:
+        code = int(getattr(error, "code", 0) or 0)
+        no_data = code == int(Pk.OfflineError.NO_DATA)
+        if no_data and not action_scheduled:
+            return frozenset()
+        error_class, authorization = classify_error(Pk, error)
+        raise StageError("offline-state", error_class, authorization) from None
 
 
-def prepare_offline_update(Pk, GLib, client, package_ids):
+def prepare_offline_update(Pk, GLib, client, package_ids, action_scheduled=False):
     """Download exactly `package_ids` and schedule them for the next restart.
 
     Returns True when this run downloaded or triggered something, False when
     PackageKit already had the same update prepared and scheduled.
     """
     wanted = frozenset(package_ids)
-    reboot = int(Pk.OfflineAction.REBOOT)
-    if prepared_ids(Pk, GLib) == wanted:
-        try:
-            action = int(Pk.offline_get_action())
-        except GLib.Error:
-            action = None
-        if action == reboot:
-            return False
-    else:
+    current_action = offline_reboot_pending(Pk, GLib)
+    if current_action != action_scheduled:
+        raise StageError("offline-state", "changed-action")
+    prepared = prepared_ids(Pk, GLib, current_action)
+    if prepared == wanted and current_action:
+        return False
+    if prepared != wanted:
         flags = bitfield(
             Pk.TransactionFlagEnum.ONLY_TRUSTED,
             Pk.TransactionFlagEnum.ONLY_DOWNLOAD,
         )
         _call(Pk, GLib, "download", client.update_packages, flags, sorted(wanted))
+
+    if offline_reboot_pending(Pk, GLib) != current_action:
+        raise StageError("offline-state", "changed-action")
 
     try:
         triggered = Pk.offline_trigger(Pk.OfflineAction.REBOOT, None)
@@ -239,6 +257,59 @@ def prepare_offline_update(Pk, GLib, client, package_ids):
     if not triggered:
         raise StageError("trigger", "refused")
     return True
+
+
+def cancel_unsafe_scheduled_update(Pk, GLib, expected_ids):
+    """Cancel a still-matching offline plan that cannot pass current simulation."""
+    if not offline_reboot_pending(Pk, GLib):
+        raise StageError("offline-state", "changed-action")
+    if prepared_ids(Pk, GLib, action_scheduled=True) != frozenset(expected_ids):
+        raise StageError("offline-state", "changed-prepared")
+    try:
+        cancelled = Pk.offline_cancel_with_flags(Pk.OfflineFlags.NONE, None)
+    except GLib.Error as error:
+        error_class, authorization = classify_error(Pk, error)
+        raise StageError("offline-state", f"cancel-{error_class}", authorization) from None
+    if not cancelled or offline_reboot_pending(Pk, GLib):
+        raise StageError("offline-state", "cancel-refused")
+
+
+def simulate_automatic_updates(Pk, GLib, client, package_ids):
+    """Return whether the trusted automatic plan removes or downgrades anything.
+
+    A missing/empty result is not enough evidence to schedule an unattended
+    update, so simulation errors and incomplete plans fail closed.
+    """
+    flags = bitfield(
+        Pk.TransactionFlagEnum.ONLY_TRUSTED,
+        Pk.TransactionFlagEnum.SIMULATE,
+    )
+    results = _call(
+        Pk, GLib, "simulate", client.update_packages, flags, sorted(package_ids)
+    )
+    try:
+        changes = results.get_package_array() or ()
+    except Exception:
+        raise StageError("simulate", "incomplete-plan") from None
+    if not changes:
+        raise StageError("simulate", "empty-plan")
+    try:
+        planned_ids = {package.get_id() for package in changes}
+        actions = [int(package.get_info()) for package in changes]
+    except Exception:
+        raise StageError("simulate", "incomplete-plan") from None
+    # PackageKit can return a successful simulation containing only a safe
+    # dependency/action subset. That does not prove every requested update is
+    # represented in the plan; fail closed if one is missing. Extra IDs are
+    # allowed because dependency installs are part of the resolved plan.
+    if not set(package_ids) <= planned_ids:
+        raise StageError("simulate", "incomplete-plan")
+    if any(
+        action not in SAFE_PLAN_ACTIONS | DESTRUCTIVE_PLAN_ACTIONS
+        for action in actions
+    ):
+        raise StageError("simulate", "incomplete-plan")
+    return any(action in DESTRUCTIVE_PLAN_ACTIONS for action in actions)
 
 
 def _plural(count, singular, plural):
@@ -381,9 +452,18 @@ def write_status(update_items, restart_required):
 def offline_reboot_pending(Pk, GLib):
     """True when an offline update is already scheduled for the next restart."""
     try:
-        return int(Pk.offline_get_action()) == int(Pk.OfflineAction.REBOOT)
-    except GLib.Error:
+        action = int(Pk.offline_get_action())
+    except GLib.Error as error:
+        error_class, authorization = classify_error(Pk, error)
+        raise StageError("offline-state", error_class, authorization) from None
+    if action == int(Pk.OfflineAction.REBOOT):
+        return True
+    if action == int(Pk.OfflineAction.UNSET):
         return False
+    # POWER_OFF is also a scheduled update action. UNKNOWN (or a future action)
+    # cannot safely be treated as unset because downloads replace the prepared
+    # transaction and the automatic path only knows how to trigger a reboot.
+    raise StageError("offline-state", "unexpected-action")
 
 
 def notify(Gio, GLib, summary, body):
@@ -484,19 +564,93 @@ def run(Pk, Gio, GLib):
     status = EXIT_OK
     ready = False
     reboot_pending = False
+    unsafe_scheduled = False
+    unknown_restart_state = False
     if settings["download-updates"] and installable:
-        reboot_pending = offline_reboot_pending(Pk, GLib)
+        state_known = True
+        try:
+            reboot_pending = offline_reboot_pending(Pk, GLib)
+        except StageError as error:
+            # Without knowing whether PackageKit already has an offline
+            # transaction, another download could replace its prepared set.
+            report(error.stage, error.error_class)
+            _authorization_hint(error)
+            status = EXIT_FAILED
+            reboot_pending = True  # preserve the conservative restart state
+            state_known = False
+            unknown_restart_state = True
         # An update System Settings scheduled (Update Now) stays scheduled:
         # its still-offered packages join the automatic set, because a new
         # download-only transaction replaces PackageKit's prepared list.
-        scheduled = prepared_ids(Pk, GLib) if reboot_pending else frozenset()
+        scheduled = frozenset()
+        if state_known and reboot_pending:
+            try:
+                scheduled = prepared_ids(Pk, GLib, action_scheduled=True)
+            except StageError as error:
+                report(error.stage, error.error_class)
+                _authorization_hint(error)
+                status = EXIT_FAILED
+                state_known = False
+                reboot_pending = True
+                unknown_restart_state = True
+        if state_known and reboot_pending and auto_set and scheduled - installable:
+            # A prior checker may have prepared package IDs that no longer
+            # appear in the refreshed update list. Do not inherit or replace
+            # an unreviewable restart plan during an automatic timer run.
+            report("offline-state", "stale-prepared-plan")
+            status = EXIT_FAILED
+            auto_set.clear()
+            try:
+                cancel_unsafe_scheduled_update(Pk, GLib, scheduled)
+                reboot_pending = False
+                scheduled = frozenset()
+            except StageError as error:
+                report(error.stage, error.error_class)
+                _authorization_hint(error)
+                unsafe_scheduled = True
+            state_known = False
         keep = scheduled & installable
         already = bool(auto_set) and reboot_pending and auto_set <= scheduled
+        simulation_ok = state_known
+        cancel_required = False
+        if state_known and auto_set:
+            try:
+                if simulate_automatic_updates(Pk, GLib, client, auto_set | keep):
+                    # The plan is valid, but it needs a person's review
+                    # before any restart can apply its removals/replacements.
+                    auto_set.clear()
+                    simulation_ok = False
+                    cancel_required = reboot_pending
+                    if cancel_required:
+                        report("simulate", "destructive-scheduled-plan")
+                        status = EXIT_FAILED
+            except StageError as error:
+                report(error.stage, error.error_class)
+                _authorization_hint(error)
+                status = EXIT_FAILED
+                simulation_ok = False
+                cancel_required = reboot_pending
+        if cancel_required:
+            try:
+                cancel_unsafe_scheduled_update(Pk, GLib, scheduled)
+                reboot_pending = False
+                scheduled = frozenset()
+            except StageError as error:
+                report(error.stage, error.error_class)
+                _authorization_hint(error)
+                status = EXIT_FAILED
+                unsafe_scheduled = True
         cache_ids = installable - auto_set
         # PackageKit records the latest download-only transaction as the
         # prepared update, so a caching download must come first and may
         # never replace an update that is already scheduled.
-        if cache_ids and not already and (auto_set or not reboot_pending):
+        if (
+            state_known
+            and simulation_ok
+            and cache_ids
+            and not already
+            and (auto_set or not reboot_pending)
+        ):
             try:
                 _call(
                     Pk,
@@ -513,10 +667,12 @@ def run(Pk, Gio, GLib):
                 report(error.stage, error.error_class)
                 _authorization_hint(error)
                 status = EXIT_FAILED
-        if auto_set:
+        if state_known and auto_set and simulation_ok:
             try:
                 if not already:
-                    prepare_offline_update(Pk, GLib, client, auto_set | keep)
+                    prepare_offline_update(
+                        Pk, GLib, client, auto_set | keep, reboot_pending
+                    )
                 ready = True
                 reboot_pending = True
             except StageError as error:
@@ -525,6 +681,27 @@ def run(Pk, Gio, GLib):
                 # The automatic path did not happen: offer these updates for
                 # review in System Settings instead, and still fail the unit.
                 status = EXIT_FAILED
+    else:
+        # A prepared offline update can remain scheduled after the update
+        # query becomes empty, or after automatic downloads are switched off.
+        # The menu bar's restart state must reflect PackageKit, not just the
+        # list of newly offered packages.
+        try:
+            reboot_pending = offline_reboot_pending(Pk, GLib)
+            if reboot_pending and not installable:
+                # The refreshed repository provides no plan to simulate for
+                # this already scheduled transaction. Keep the trigger and
+                # its restart indicator intact, but tell the user to review
+                # it instead of silently treating an empty list as safe.
+                report("offline-state", "unlisted-scheduled-plan")
+                status = EXIT_FAILED
+                unknown_restart_state = True
+        except StageError as error:
+            report(error.stage, error.error_class)
+            _authorization_hint(error)
+            status = EXIT_FAILED
+            reboot_pending = True
+            unknown_restart_state = True
 
     lulo_ready = ready and bool(lulo_ids & auto_set)
     security_ready = ready and bool(security_ids & auto_set)
@@ -535,6 +712,16 @@ def run(Pk, Gio, GLib):
     text = notification_text(
         lulo_ready, review_count, review_is_other=ready, security_ready=security_ready
     )
+    if unsafe_scheduled:
+        text = (
+            "Update needs review",
+            "A scheduled restart update could not be cancelled. Open Software Update before restarting.",
+        )
+    elif unknown_restart_state:
+        text = (
+            "Update status needs review",
+            "A scheduled update could not be verified. Open Software Update before restarting.",
+        )
     if text is not None:
         notify(Gio, GLib, *text)
     return status

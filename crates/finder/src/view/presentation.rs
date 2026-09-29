@@ -2,6 +2,11 @@ use super::*;
 
 impl Render for FinderView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // The application menu is shared by every Files window, so only the
+        // active window may publish its window-specific validation state.
+        if window.is_window_active() {
+            self.publish_app_menu_state(cx);
+        }
         let native_window_title = rmac_ui::native_window_title(self.title().as_ref(), "Files");
         if self.native_window_title != native_window_title {
             window.set_window_title(&native_window_title);
@@ -60,6 +65,23 @@ impl Render for FinderView {
         let go_to_sheet = self.render_go_to_folder(cx);
         let archive_sheet = self.render_archive_job(cx);
         let archive_alert = self.render_archive_alert(cx);
+        let rename_alert = self.rename_conflict.clone().map(|title| {
+            rmac_ui::alert(
+                title,
+                "",
+                vec![rmac_ui::dialog_button(
+                    "rename-conflict-ok",
+                    "OK",
+                    rmac_ui::DialogButtonKind::Primary,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.rename_conflict = None;
+                    cx.notify();
+                }))
+                .into_any_element()],
+            )
+            .into_any_element()
+        });
         let help_dialog = self.help_open.then(|| {
             rmac_ui::alert(
                 "Files Help",
@@ -96,7 +118,14 @@ impl Render for FinderView {
             .rounded(px(rmac_ui::mac::radius_large_surface()))
             .overflow_hidden()
             .text_color(label())
+            .on_action(cx.listener(|this, _: &ShowViewOptions, _, cx| this.toggle_view_options(cx)))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.view_options_open && event.keystroke.key.as_str() == "escape" {
+                    this.view_options_open = false;
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                }
                 if this.go_to.is_some() {
                     // Typing goes to the path field; these keys drive the sheet.
                     match event.keystroke.key.as_str() {
@@ -170,6 +199,7 @@ impl Render for FinderView {
                         }
                         _ => {}
                     }
+                    return;
                 } else if this.recovery_open {
                     cx.stop_propagation();
                     match recovery_key_intent(event.keystroke.key.as_str(), this.recovery_busy) {
@@ -177,6 +207,7 @@ impl Render for FinderView {
                         Some(RecoveryKeyIntent::Resolve) => this.resolve_current_recovery(cx),
                         None => {}
                     }
+                    return;
                 } else {
                     #[cfg(any(target_os = "linux", test))]
                     if this.trash_recovery_open {
@@ -191,6 +222,27 @@ impl Render for FinderView {
                             }
                             None => {}
                         }
+                        return;
+                    }
+                }
+                if event.keystroke.key.as_str() == "escape"
+                    && (this.search_open
+                        || !this.query.read(cx).value().is_empty()
+                        || this.showing_recursive_search())
+                {
+                    cx.stop_propagation();
+                    let recursive_search_active = this.showing_recursive_search();
+                    this.search_open = false;
+                    if recursive_search_active {
+                        // Clear the result mode before changing the input so
+                        // the Change subscription does not reload twice.
+                        this.reload(cx);
+                    }
+                    if !this.query.read(cx).value().is_empty() {
+                        this.query
+                            .update(cx, |state, cx| state.set_value("", window, cx));
+                    } else if !recursive_search_active {
+                        cx.notify();
                     }
                 }
             }))
@@ -411,8 +463,21 @@ impl Render for FinderView {
                     })
                     .when(multi, |el| el.child(self.render_tabs(cx)))
                     .when(self.trash_view, |el| el.child(self.render_trash_bar(cx)))
-                    .child(self.render_list(window_active, window_height, cx)),
+                    .child(self.render_list(
+                        window_active,
+                        window_height,
+                        f32::from(window.bounds().size.width)
+                            - if layout.sidebar_visible {
+                                self.sidebar_width
+                            } else {
+                                0.0
+                            },
+                        cx,
+                    )),
             )
+            .when(self.view_options_open, |el| {
+                el.child(self.render_view_options(cx))
+            })
             .when_some(go_to_sheet, |el, sheet| el.child(sheet))
             .when_some(menu_at, |el, state| {
                 let menu = match menu_purpose {
@@ -439,6 +504,197 @@ impl Render for FinderView {
             .when_some(open_with_dialog, |el, dialog| el.child(dialog))
             .when_some(archive_sheet, |el, sheet| el.child(sheet))
             .when_some(archive_alert, |el, dialog| el.child(dialog))
+            .when_some(rename_alert, |el, dialog| el.child(dialog))
             .when_some(help_dialog, |el, dialog| el.child(dialog))
+    }
+}
+
+impl FinderView {
+    pub(super) fn publish_app_menu_state(&self, cx: &mut Context<Self>) {
+        // These labels belong to the one shared application menu, so derive
+        // them from the active window's current selection alongside the
+        // other window-specific menu state.
+        let selection = if self.trash_view || self.applications_view {
+            Vec::new()
+        } else {
+            self.selected_paths()
+        };
+        let labels = SelectionMenuLabels::from_paths(&selection);
+        let compress_label = archive_controller::compress_menu_label(&selection);
+        rmac_ui::set_menu_label("finder::CopyItems", &labels.copy, cx);
+        rmac_ui::set_menu_label("finder::CopyAsPathname", &labels.copy_as_pathname, cx);
+        rmac_ui::set_menu_label(
+            "finder::Compress",
+            compress_label.as_deref().unwrap_or("Compress"),
+            cx,
+        );
+
+        let state = FinderMenuState::new(
+            self.tabs.len(),
+            self.sidebar_visible,
+            self.show_path_bar,
+            self.sort_key,
+            self.search_relevance_order,
+        );
+        rmac_ui::set_menu_label("finder::CloseTab", state.close_label, cx);
+        rmac_ui::set_menu_label("finder::ToggleSidebar", state.sidebar_label, cx);
+        rmac_ui::set_menu_label("finder::TogglePathBar", state.path_bar_label, cx);
+        for (action, checked) in [
+            ("finder::SortByName", state.sort_name),
+            ("finder::SortByDate", state.sort_date),
+            ("finder::SortBySize", state.sort_size),
+            ("finder::SortByKind", state.sort_kind),
+        ] {
+            rmac_ui::set_menu_checked(action, checked, cx);
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SelectionMenuLabels {
+    copy: String,
+    copy_as_pathname: String,
+}
+
+impl SelectionMenuLabels {
+    fn from_paths(paths: &[std::path::PathBuf]) -> Self {
+        match paths {
+            [] => Self {
+                copy: "Copy".into(),
+                copy_as_pathname: "Copy as Pathname".into(),
+            },
+            [path] => {
+                let name = path
+                    .file_name()
+                    .unwrap_or(path.as_os_str())
+                    .to_string_lossy();
+                let quoted = format!("“{}”", sanitize_dialog_name(&name));
+                Self {
+                    copy: format!("Copy {quoted}"),
+                    copy_as_pathname: format!("Copy {quoted} as Pathname"),
+                }
+            }
+            _ => Self {
+                copy: format!("Copy {} Items", paths.len()),
+                copy_as_pathname: format!("Copy {} Items as Pathname", paths.len()),
+            },
+        }
+    }
+}
+
+struct FinderMenuState {
+    close_label: &'static str,
+    sidebar_label: &'static str,
+    path_bar_label: &'static str,
+    sort_name: bool,
+    sort_date: bool,
+    sort_size: bool,
+    sort_kind: bool,
+}
+
+impl FinderMenuState {
+    fn new(
+        tab_count: usize,
+        sidebar_visible: bool,
+        show_path_bar: bool,
+        sort_key: SortKey,
+        relevance_order: bool,
+    ) -> Self {
+        Self {
+            close_label: if tab_count > 1 {
+                "Close Tab"
+            } else {
+                "Close Window"
+            },
+            sidebar_label: if sidebar_visible {
+                "Hide Sidebar"
+            } else {
+                "Show Sidebar"
+            },
+            path_bar_label: if show_path_bar {
+                "Hide Path Bar"
+            } else {
+                "Show Path Bar"
+            },
+            sort_name: !relevance_order && sort_key == SortKey::Name,
+            sort_date: !relevance_order && sort_key == SortKey::Date,
+            sort_size: !relevance_order && sort_key == SortKey::Size,
+            sort_kind: !relevance_order && sort_key == SortKey::Kind,
+        }
+    }
+}
+
+#[cfg(test)]
+mod app_menu_tests {
+    use super::*;
+
+    #[test]
+    fn live_menu_state_tracks_tabs_toggles_and_effective_sort() {
+        let state = FinderMenuState::new(1, true, false, SortKey::Name, false);
+        assert_eq!(state.close_label, "Close Window");
+        assert_eq!(state.sidebar_label, "Hide Sidebar");
+        assert_eq!(state.path_bar_label, "Show Path Bar");
+        assert_eq!(
+            (
+                state.sort_name,
+                state.sort_date,
+                state.sort_size,
+                state.sort_kind
+            ),
+            (true, false, false, false)
+        );
+
+        let state = FinderMenuState::new(2, false, true, SortKey::Date, false);
+        assert_eq!(state.close_label, "Close Tab");
+        assert_eq!(state.sidebar_label, "Show Sidebar");
+        assert_eq!(state.path_bar_label, "Hide Path Bar");
+        assert_eq!(
+            (
+                state.sort_name,
+                state.sort_date,
+                state.sort_size,
+                state.sort_kind
+            ),
+            (false, true, false, false)
+        );
+
+        let state = FinderMenuState::new(2, false, true, SortKey::Date, true);
+        assert_eq!(
+            (
+                state.sort_name,
+                state.sort_date,
+                state.sort_size,
+                state.sort_kind
+            ),
+            (false, false, false, false)
+        );
+    }
+
+    #[test]
+    fn selection_menu_labels_follow_finder_selection() {
+        assert_eq!(
+            SelectionMenuLabels::from_paths(&[]),
+            SelectionMenuLabels {
+                copy: "Copy".into(),
+                copy_as_pathname: "Copy as Pathname".into(),
+            }
+        );
+        assert_eq!(
+            SelectionMenuLabels::from_paths(&["/Users/me/test.txt".into()]),
+            SelectionMenuLabels {
+                copy: "Copy “test.txt”".into(),
+                copy_as_pathname: "Copy “test.txt” as Pathname".into(),
+            }
+        );
+        assert_eq!(
+            SelectionMenuLabels::from_paths(&[
+                "/Users/me/one.txt".into(),
+                "/Users/me/two.txt".into(),
+            ]),
+            SelectionMenuLabels {
+                copy: "Copy 2 Items".into(),
+                copy_as_pathname: "Copy 2 Items as Pathname".into(),
+            }
+        );
     }
 }

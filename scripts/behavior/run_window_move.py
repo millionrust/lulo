@@ -291,22 +291,14 @@ class Run:
         process.wait(10)
 
     def double_click(self, point: tuple[float, float]) -> None:
-        """Two zero-distance drags at `point`, spaced for GPUI's 400 ms
-        double-click window.
+        """Send two stationary presses within GPUI's double-click interval.
 
-        A `WindowControlArea::Drag` press starts an interactive move
-        (`start_window_move`, gpui_linux `client.rs`) on every press. A
-        bare press-release with no motion event between them (`wlinput`'s
-        `click`) leaves that grab in a state where niri never delivers the
-        matching release to the client, so GPUI never sees a paired MouseUp
-        and no click -- single or double -- is ever recorded. `drag()` with
-        equal start and end sends motion events during the grab the same
-        way a real title-bar drag does, which lets niri end the grab
-        cleanly; used twice in a row it reproduces a real double-click.
+        The Wayland backend now waits for pointer motion beyond its title-bar
+        drag threshold before requesting a compositor move, so the matching
+        releases must reach GPUI without synthetic drag motion.
         """
-        self.drag(point, point)
-        time.sleep(0.25)
-        self.drag(point, point)
+        self.pointer.click(*self.parent_point(*point),
+                           self.parent_width, self.parent_height, count=2)
 
     def assert_double_click_zoom(self, app_id: str, title: str) -> None:
         """Double-clicking the title bar Zooms (SET-33), then Zooms back.
@@ -319,28 +311,12 @@ class Run:
         "never under the Dock" check below only covers the Dock's
         exclusive zone.
 
-        KNOWN GAP (not a production bug): as of this writing the first
-        check below fails in this harness for every app tried (Calculator,
-        Settings), with every click position and both a bare `count=2`
-        click and the zero-distance `double_click()` drag above. Debug
-        tracing (temporary `eprintln!`s in `perform_window_action` and
-        `double_click_title_bar_action`, `crates/rmac-ui/src/chrome.rs`)
-        showed the handler is never entered -- the synthetic double-click
-        never reaches GPUI at all, so the resulting geometry is simply
-        unchanged. `client_bar`'s `WindowControlArea::Drag` starts an
-        interactive move (`start_window_move`) on *every* press, including
-        the second one; this appears to swallow that press's release
-        before GPUI can pair it into a click, single or double, over a
-        Drag region. Real title-bar drags in this same file (`assert_move`)
-        prove that mechanism works for an actual drag, so this looks like
-        an interaction specific to a stationary double-click, not a broken
-        drag path. Root-causing it further needs either a fix in the
-        vendored gpui_linux Wayland backend (ADR 0013) or a different way
-        to synthesize the second click that this investigation did not
-        find. The Rust side of SET-33 (the setting, the Zoom toggle via
-        `TileHistoryStore`, and routing through `send_window_action`) is
-        covered independently by `cargo test -p rmac-shell-settings` and
-        `-p rmac-ui`, and by `cargo clippy -D warnings`.
+        SET-33 remains partial: the stationary clicks reach Settings' GPUI
+        handler with counts 1 and 2, and its niri resize requests return
+        Handled, but the frame stays unchanged in this nested run. The same
+        resize commands sent later by the runner do change the frame. This
+        check retains the observable failure while the event/action timing
+        remains unresolved.
         """
         window = self.window(app_id)
         if not window:

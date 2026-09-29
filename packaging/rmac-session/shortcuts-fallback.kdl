@@ -2,5 +2,6 @@
 
 binds {
     Mod+Space repeat=false hotkey-overlay-title="Open Spotlight" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "launcher"; }
+    Mod+Ctrl+N repeat=false hotkey-overlay-title="Open Notification Center" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "notification-center"; }
     Mod+Ctrl+Q repeat=false allow-when-locked=true hotkey-overlay-title="Lock the Lulo OS session" { spawn "/usr/libexec/rmac/rmac-shortcut-dispatch" "lock"; }
 }

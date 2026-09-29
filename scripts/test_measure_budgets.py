@@ -13,8 +13,10 @@ from __future__ import annotations
 import importlib.util
 import sys
 import unittest
+import wave
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import call, patch
 
 
 SCRIPT = Path(__file__).parent / "linux" / "measure-budgets.py"
@@ -23,6 +25,112 @@ assert SPEC is not None and SPEC.loader is not None
 measure_budgets = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = measure_budgets
 SPEC.loader.exec_module(measure_budgets)
+
+
+class ShellWindowTests(unittest.TestCase):
+    @staticmethod
+    def snapshot(ticks: int, switches: int) -> dict[str, int]:
+        return {
+            "cpu_ticks": ticks,
+            "voluntary_ctxt_switches": switches,
+            "nonvoluntary_ctxt_switches": 0,
+            "pss_kib": 1024,
+            "process_count": 1,
+        }
+
+    def test_shell_surfaces_share_one_idle_window(self):
+        samples = {
+            101: [self.snapshot(100, 10), self.snapshot(106, 16)],
+            102: [self.snapshot(50, 5), self.snapshot(53, 8)],
+        }
+        pids = {
+            "rmac-top-bar.service": 101,
+            "rmac-dock.service": 102,
+            "rmac-launcher.service": None,
+        }
+
+        def sample(pid, _hertz):
+            return samples[pid].pop(0)
+
+        with (
+            patch.object(measure_budgets, "get_unit_main_pid", side_effect=pids.get),
+            patch.object(measure_budgets, "sample_process_tree", side_effect=sample) as sampled,
+            patch.object(
+                measure_budgets, "sample_process_forest",
+                side_effect=[self.snapshot(150, 15), self.snapshot(159, 24)],
+            ) as forest,
+            patch.object(measure_budgets.time, "sleep") as sleep,
+            patch.object(measure_budgets.time, "monotonic", side_effect=[100.0, 100.0, 160.0, 160.0]),
+        ):
+            surfaces, combined = measure_budgets.measure_shell_surfaces(
+                ["rmac-top-bar", "rmac-dock", "rmac-launcher"], 3, 60, 100, 0.5
+            )
+
+        sleep.assert_has_calls([call(3), call(60)])
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(sampled.call_count, 4)
+        self.assertEqual(forest.call_count, 2)
+        self.assertEqual(surfaces["rmac-top-bar"]["idle_cpu_percent"]["value"], 0.1)
+        self.assertEqual(surfaces["rmac-dock"]["idle_cpu_percent"]["value"], 0.05)
+        self.assertFalse(surfaces["rmac-launcher"]["running"])
+        self.assertEqual(combined, measure_budgets.evaluate_budget(0.15, 0.5))
+
+    def test_restarted_unit_is_not_credited_to_the_combined_sample(self):
+        pids = [101, 202]
+        samples = [self.snapshot(100, 10), self.snapshot(106, 16)]
+        with (
+            patch.object(measure_budgets, "get_unit_main_pid", side_effect=pids),
+            patch.object(measure_budgets, "sample_process_tree", side_effect=samples),
+            patch.object(
+                measure_budgets, "sample_process_forest",
+                side_effect=[self.snapshot(100, 10), self.snapshot(106, 16)],
+            ),
+            patch.object(measure_budgets.time, "sleep"),
+            patch.object(measure_budgets.time, "monotonic", side_effect=[100.0, 100.0, 160.0, 160.0]),
+        ):
+            surfaces, combined = measure_budgets.measure_shell_surfaces(
+                ["rmac-top-bar"], 3, 60, 100, 0.5
+            )
+        self.assertFalse(surfaces["rmac-top-bar"]["running"])
+        self.assertIn("restarted", surfaces["rmac-top-bar"]["note"])
+        self.assertIsNone(combined)
+
+    def test_newly_started_popover_invalidates_combined_idle_sample(self):
+        with (
+            patch.object(
+                measure_budgets, "get_unit_main_pid",
+                side_effect=[101, None, 101, 202],
+            ),
+            patch.object(
+                measure_budgets, "sample_process_tree",
+                side_effect=[self.snapshot(100, 10), self.snapshot(106, 16)],
+            ),
+            patch.object(
+                measure_budgets, "sample_process_forest",
+                side_effect=[self.snapshot(100, 10), self.snapshot(106, 16)],
+            ),
+            patch.object(measure_budgets.time, "sleep"),
+            patch.object(
+                measure_budgets.time,
+                "monotonic",
+                side_effect=[100.0, 100.0, 160.0, 160.0],
+            ),
+        ):
+            surfaces, combined = measure_budgets.measure_shell_surfaces(
+                ["rmac-top-bar", "rmac-launcher"], 3, 60, 100, 0.5
+            )
+        self.assertIn("started during measurement", surfaces["rmac-launcher"]["note"])
+        self.assertIsNone(combined)
+
+    def test_combined_shell_sample_counts_a_shared_child_once(self):
+        children = {101: {101, 201}, 102: {102, 201}}
+        with (
+            patch.object(measure_budgets, "build_descendant_set", side_effect=children.get),
+            patch.object(measure_budgets, "sample_process_set", return_value=self.snapshot(30, 3)) as sampled,
+        ):
+            result = measure_budgets.sample_process_forest({101, 102}, 100)
+        self.assertEqual(result["cpu_ticks"], 30)
+        sampled.assert_called_once_with({101, 102, 201}, 100)
 
 
 class AppEnvironmentTests(unittest.TestCase):
@@ -57,6 +165,26 @@ class AppEnvironmentTests(unittest.TestCase):
             self.assertEqual(result["DBUS_SESSION_BUS_ADDRESS"], original["DBUS_SESSION_BUS_ADDRESS"])
             self.assertEqual(result["WAYLAND_DISPLAY"], original["WAYLAND_DISPLAY"])
             self.assertEqual(result[measure_budgets.READY_FILE_ENV], str(ready))
+
+    def test_player_launch_uses_short_silent_media_fixture(self):
+        with TemporaryDirectory() as directory:
+            app_temp = Path(directory)
+            command = measure_budgets.launch_command(Path("/usr/bin/rmac-player"), app_temp)
+            self.assertEqual(command[0], "/usr/bin/rmac-player")
+            self.assertEqual(command[1], str(app_temp / "silent-player-fixture.wav"))
+            with wave.open(command[1], "rb") as fixture:
+                self.assertEqual(fixture.getnchannels(), 1)
+                self.assertEqual(fixture.getsampwidth(), 2)
+                self.assertEqual(fixture.getframerate(), 44100)
+                self.assertEqual(fixture.getnframes(), 4410)
+                self.assertEqual(fixture.readframes(4410), b"\0\0" * 4410)
+
+    def test_other_app_launches_without_fixture(self):
+        with TemporaryDirectory() as directory:
+            self.assertEqual(
+                measure_budgets.launch_command(Path("/usr/bin/rmac-weather"), Path(directory)),
+                ["/usr/bin/rmac-weather"],
+            )
 
 
 class ParseProcStatTests(unittest.TestCase):
@@ -273,7 +401,7 @@ class MarkdownRenderingTests(unittest.TestCase):
                 },
                 "rmac-launcher": {"running": False},
             },
-            "shell_combined": measure_budgets.evaluate_budget(0.1, 1.0),
+            "shell_combined": measure_budgets.evaluate_budget(0.1, 0.5),
             "apps": {
                 "rmac-notes": {
                     "display_name": "Notes",
@@ -313,6 +441,17 @@ class MarkdownRenderingTests(unittest.TestCase):
         text = measure_budgets.render_markdown_report(report)
         self.assertIn("rmac-dock: idle CPU over budget", text)
         self.assertNotIn("- none", text)
+
+    def test_flags_app_idle_redraw(self):
+        report = self._fixture_report()
+        report["apps"]["rmac-notes"]["idle"]["suspected_idle_redraw"] = True
+        text = measure_budgets.render_markdown_report(report)
+        self.assertIn("| Wake-ups/s | Idle redraw? | PSS |", text)
+        self.assertIn(
+            "| Notes | 120.0 ms | <=500 ms ✓ | ready_file | 0.10% | <=0.3% ✓ | 0.020 | yes | 70.0 MiB |",
+            text,
+        )
+        self.assertIn("Notes: suspected idle redraw", text)
 
     def test_not_running_surface_has_no_numbers(self):
         text = measure_budgets.render_markdown_report(self._fixture_report())

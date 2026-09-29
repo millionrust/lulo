@@ -1,0 +1,134 @@
+{
+  "schema": "lulo-read-only-shell-cpu/v1",
+  "observed_utc": "2026-09-28T16:27:16Z",
+  "host": "reference Lulo laptop",
+  "installed_packages": [
+    "rmac-apps 0.9.0~beta.1-38",
+    "rmac-session 0.9.0~beta.1-38"
+  ],
+  "method": "Two read-only /proc/<pid>/stat snapshots over one shared interval; CPU ticks summed over the 16 shell service roots and their two observed descendants.",
+  "elapsed_seconds": 75.62000000000262,
+  "clock_ticks_per_second": 100,
+  "shell_cpu_budget_percent_one_core": 0.5,
+  "shell_cpu_percent_one_core": 0.18513620735254582,
+  "total_cpu_ticks": 14,
+  "processes": [
+    {
+      "pid": 7434,
+      "name": "rmac-session-supervisor",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7715,
+      "name": "rmac-session-supervisor",
+      "cpu_ticks": 1,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7720,
+      "name": "rmac-app-switcher",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7722,
+      "name": "rmac-clipboard-service",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7724,
+      "name": "rmac-dock",
+      "cpu_ticks": 1,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7727,
+      "name": "rmac-focus-service",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7728,
+      "name": "rmac-launcher",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7731,
+      "name": "rmac-mission-control",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7732,
+      "name": "rmac-notification-center",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7733,
+      "name": "rmac-osd",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7734,
+      "name": "rmac-screenshot",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7739,
+      "name": "rmac-top-bar",
+      "cpu_ticks": 8,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7744,
+      "name": "rmac-wallpaper",
+      "cpu_ticks": 4,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7767,
+      "name": "wl-paste (clipboard child)",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7778,
+      "name": "rmac-quick-settings",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 7909,
+      "name": "pw-dump (top bar child)",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 8023,
+      "name": "rmac-notification-center-panel",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    },
+    {
+      "pid": 8199,
+      "name": "rmac-shortcut-broker",
+      "cpu_ticks": 0,
+      "start_time_stable": true
+    }
+  ],
+  "validity": {
+    "all_18_process_start_times_stable": true,
+    "service_forest_same_on_followup_scan": true
+  },
+  "limitations": [
+    "Supplementary read-only measurement; the full measure-budgets.py sampler could not run through SSH.",
+    "A transient child that appeared and exited between snapshots could be missed.",
+    "PSS, per-app CPU, launch latency, frame pacing, input latency, and soak are not covered."
+  ]
+}

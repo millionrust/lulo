@@ -83,6 +83,43 @@ pub(super) fn entry_for(path: &Path) -> Option<Entry> {
         is_dir,
         size: size.into(),
         modified: date_label(mtime).into(),
+        modified_absolute: date_label_absolute(mtime).into(),
+        created: md
+            .as_ref()
+            .and_then(|m| m.created().ok())
+            .map(date_label)
+            .unwrap_or_else(|| "--".into())
+            .into(),
+        created_absolute: md
+            .as_ref()
+            .and_then(|m| m.created().ok())
+            .map(date_label_absolute)
+            .unwrap_or_else(|| "--".into())
+            .into(),
+        last_opened: md
+            .as_ref()
+            .and_then(|m| m.accessed().ok())
+            .map(date_label)
+            .unwrap_or_else(|| "--".into())
+            .into(),
+        last_opened_absolute: md
+            .as_ref()
+            .and_then(|m| m.accessed().ok())
+            .map(date_label_absolute)
+            .unwrap_or_else(|| "--".into())
+            .into(),
+        added: md
+            .as_ref()
+            .and_then(|m| m.created().ok())
+            .map(date_label)
+            .unwrap_or_else(|| "--".into())
+            .into(),
+        added_absolute: md
+            .as_ref()
+            .and_then(|m| m.created().ok())
+            .map(date_label_absolute)
+            .unwrap_or_else(|| "--".into())
+            .into(),
         kind: kind.into(),
         size_bytes,
         mtime,
@@ -103,6 +140,13 @@ pub(super) fn entry_for_application(application: rmac_apps::Application) -> Entr
         is_dir: false,
         size: "--".into(),
         modified: date_label(mtime).into(),
+        modified_absolute: date_label_absolute(mtime).into(),
+        created: "--".into(),
+        created_absolute: "--".into(),
+        last_opened: "--".into(),
+        last_opened_absolute: "--".into(),
+        added: "--".into(),
+        added_absolute: "--".into(),
         kind: "Application".into(),
         size_bytes: metadata.map_or(0, |metadata| metadata.len()),
         mtime,
@@ -368,4 +412,9 @@ fn kind_of(path: &Path, is_dir: bool) -> String {
 
 fn date_label(t: SystemTime) -> String {
     rmac_finder::listing::date_label(t)
+}
+
+fn date_label_absolute(t: SystemTime) -> String {
+    let date: chrono::DateTime<chrono::Local> = t.into();
+    date.format("%-d %b %Y at %-I:%M %p").to_string()
 }

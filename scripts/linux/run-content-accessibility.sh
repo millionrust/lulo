@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Launch Terminal, Notes and Files once each, one at a time, with temporary
-# XDG_* directories, and run scripts/assert_{terminal,notes,files}_accessibility.py
-# against each (ACC-01/02/03). Needs a live niri session with the AT-SPI bus
+# Launch Terminal, Notes, Files and Clock once each, one at a time, with temporary
+# XDG_* directories, and run their assert_*_accessibility.py checks.
+# Needs a live niri session with the AT-SPI bus
 # enabled (org.a11y.Status.IsEnabled). It never turns on the screen reader,
 # never injects input, and never touches the user's own app data.
 #
-# usage: run-content-accessibility.sh BIN_DIR [terminal|notes|files]...
-#   BIN_DIR holds rmac-terminal, rmac-notes and rmac-files.
+# usage: run-content-accessibility.sh BIN_DIR [terminal|notes|files|clock]...
+#   BIN_DIR holds the corresponding rmac-* binaries.
 set -euo pipefail
 
-bin_dir=${1:?usage: run-content-accessibility.sh BIN_DIR [terminal|notes|files]...}
+bin_dir=${1:?usage: run-content-accessibility.sh BIN_DIR [terminal|notes|files|clock]...}
 shift
 apps=("$@")
-[[ ${#apps[@]} -gt 0 ]] || apps=(terminal notes files)
+[[ ${#apps[@]} -gt 0 ]] || apps=(terminal notes files clock)
 scripts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
@@ -41,6 +41,7 @@ run_app() {
     terminal) binary=rmac-terminal; assert=assert_terminal_accessibility.py ;;
     notes) binary=rmac-notes; assert=assert_notes_accessibility.py ;;
     files) binary=rmac-files; assert=assert_files_accessibility.py ;;
+    clock) binary=rmac-clock; assert=assert_clock_accessibility.py ;;
     *) echo "unknown app $app" >&2; return 2 ;;
   esac
   comm=${binary:0:15}
@@ -68,6 +69,7 @@ EOF
       ;;
     files)
       mkdir -p "$root/folder/content-a11y/beta folder"
+      printf 'hello\n' >"$root/folder/content-a11y/beta folder/nested.txt"
       printf 'alpha\n' >"$root/folder/content-a11y/alpha.txt"
       printf '%%PDF-1.4\n' >"$root/folder/content-a11y/gamma.pdf"
       arguments=(--path "$root/folder/content-a11y")

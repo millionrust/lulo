@@ -962,6 +962,7 @@ fn move_replace_cancellable(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) fn rename(
     fs: &impl FileSystem,
     source: &Path,

@@ -40,6 +40,15 @@ CHECKSUM_NAME = "SHA256SUMS"
 MAX_MANIFEST_BYTES = 256 * 1024
 MAX_CONTROL_BYTES = 128 * 1024
 MAX_TOOL_OUTPUT_BYTES = 1024 * 1024
+MAX_BINARY_SCAN_BYTES = 1024 * 1024 * 1024
+MAX_PACKAGE_SET_SCAN_BYTES = 4 * 1024 * 1024 * 1024
+PATH_SCAN_CHUNK_BYTES = 64 * 1024
+# Require a username and at least one following path component. This avoids
+# rejecting ordinary references such as the generic string "/home/" while
+# catching compiler/panic locations from a developer checkout.
+BUILD_HOST_HOME_PATH = re.compile(
+    rb"(?<![A-Za-z0-9_.-])/(?:home|Users)/[A-Za-z0-9_.-]+/[A-Za-z0-9_./+@ -]*"
+)
 
 
 class VerificationError(RuntimeError):
@@ -86,6 +95,37 @@ def _sha256(path: Path) -> tuple[str, int]:
     except OSError as error:
         raise VerificationError("native package archive cannot be read") from error
     return digest.hexdigest(), size
+
+
+def _scan_binary_for_build_host_home(path: Path, remaining_budget: int) -> int:
+    """Reject a bounded binary containing an absolute build-host home path."""
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise VerificationError("packaged binary cannot be inspected") from error
+    if path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
+        raise VerificationError("packaged binary is not a regular file")
+    if metadata.st_size > MAX_BINARY_SCAN_BYTES or metadata.st_size > remaining_budget:
+        raise VerificationError("native package binary scan exceeds its size limit")
+    overlap = 4096
+    tail = b""
+    scanned = 0
+    try:
+        with path.open("rb") as source:
+            while chunk := source.read(PATH_SCAN_CHUNK_BYTES):
+                scanned += len(chunk)
+                if scanned > metadata.st_size or scanned > remaining_budget:
+                    raise VerificationError("native package binary changed while scanning")
+                if BUILD_HOST_HOME_PATH.search(tail + chunk):
+                    raise VerificationError(
+                        "native package binary contains a build-host home path"
+                    )
+                tail = (tail + chunk)[-overlap:]
+    except OSError as error:
+        raise VerificationError("packaged binary cannot be inspected") from error
+    if scanned != metadata.st_size:
+        raise VerificationError("native package binary changed while scanning")
+    return scanned
 
 
 def _regular_mode(path: Path) -> tuple[int, int]:
@@ -211,10 +251,12 @@ def _verify_binary_records(
     specification,
     records: object,
     architecture: str,
-) -> set[Path]:
+    remaining_scan_budget: int = MAX_PACKAGE_SET_SCAN_BYTES,
+) -> tuple[set[Path], int]:
     if not isinstance(records, list) or len(records) != len(specification.binaries):
         raise VerificationError("native package binary inventory is invalid")
     expected_paths: set[Path] = set()
+    scanned_bytes = 0
     for expected_name, record in zip(specification.binaries, records, strict=True):
         if not isinstance(record, dict) or set(record) != {
             "name",
@@ -249,8 +291,11 @@ def _verify_binary_records(
             raise VerificationError(str(error)) from error
         if inspected.sha256 != digest or inspected.size != size:
             raise VerificationError(f"packaged binary fingerprint differs: {expected_name}")
+        scanned_bytes += _scan_binary_for_build_host_home(
+            path, remaining_scan_budget - scanned_bytes
+        )
         expected_paths.add(relative)
-    return expected_paths
+    return expected_paths, scanned_bytes
 
 
 def _dpkg_deb_field(dpkg_deb: str, archive: Path, field: str) -> str:
@@ -321,6 +366,22 @@ def _verify_third_party_archives(
             raise VerificationError(f"third-party package architecture differs: {filename}")
         lines.append(f"{digest}  {filename}\n")
     return lines
+
+
+def _verify_checksum_manifest(checksums_raw: bytes, expected_lines: list[str]) -> None:
+    """Require one checksum entry per archive, with no duplicate records."""
+    try:
+        checksum_text = checksums_raw.decode("ascii")
+    except UnicodeDecodeError as error:
+        raise VerificationError("native package checksum manifest is not ASCII") from error
+    actual_lines = checksum_text.splitlines(keepends=True)
+    # Comparing sets alone would accept repeated copies of a valid checksum
+    # line, so also require the manifest to contain no duplicate records.
+    if (
+        len(actual_lines) != len(set(actual_lines))
+        or set(actual_lines) != set(expected_lines)
+    ):
+        raise VerificationError("native package checksum manifest differs")
 
 
 def verify_directory(
@@ -395,6 +456,7 @@ def verify_directory(
 
     with tempfile.TemporaryDirectory(prefix="rmac-native-verify-") as temporary:
         temporary_root = Path(temporary)
+        scanned_package_bytes = 0
         for specification, record in zip(PACKAGE_SPECS, packages, strict=True):
             if not isinstance(record, dict) or set(record) != {
                 "binaries",
@@ -501,12 +563,16 @@ def verify_directory(
                 raise VerificationError(
                     f"{specification.name} immutable payload verification failed"
                 ) from error
-            binary_paths = _verify_binary_records(
+            binary_paths, scanned_bytes = _verify_binary_records(
                 extracted,
                 specification=specification,
                 records=record.get("binaries"),
                 architecture=architecture,
+                remaining_scan_budget=(
+                    MAX_PACKAGE_SET_SCAN_BYTES - scanned_package_bytes
+                ),
             )
+            scanned_package_bytes += scanned_bytes
             base_files = set(payload_verifiers[specification.name].EXPECTED_PATHS)
             base_files.add(payload_verifiers[specification.name].MANIFEST)
             expected_payload = _with_parent_directories(base_files | binary_paths)
@@ -523,18 +589,13 @@ def verify_directory(
             dpkg_deb=dpkg_deb,
         )
 
-    try:
-        checksum_text = checksums_raw.decode("ascii")
-    except UnicodeDecodeError as error:
-        raise VerificationError("native package checksum manifest is not ASCII") from error
     # Compared as a set of lines, not the exact concatenated text: a
     # directory assembled by hand (docs/release-process.md "combine them
     # with a native rmac package set") regenerates SHA256SUMS with a plain
     # `sha256sum -- *.deb`, whose glob order need not match the fixed order
     # checksum_lines was built in. Every expected line must still be present
     # with the right digest, and no unexpected line is tolerated.
-    if set(checksum_text.splitlines(keepends=True)) != set(checksum_lines):
-        raise VerificationError("native package checksum manifest differs")
+    _verify_checksum_manifest(checksums_raw, checksum_lines)
 
 
 def _require_dpkg_deb() -> str:

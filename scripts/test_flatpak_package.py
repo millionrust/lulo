@@ -8,8 +8,10 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest import mock
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).parent / "linux/verify-flatpak-package.py"
@@ -57,6 +59,41 @@ class FlatpakPackageTests(unittest.TestCase):
         notes["manifest"] = "org.rmac.Notes.json"
         with self.assertRaisesRegex(verify.VerificationError, "only the reviewed"):
             verify.verify_decisions(decisions)
+
+    def test_every_packaged_app_requires_a_sandbox_decision(self):
+        decisions = copy.deepcopy(self.decisions)
+        decisions["applications"] = [
+            entry for entry in decisions["applications"]
+            if entry["id"] != "org.rmac.Player"
+        ]
+        with self.assertRaisesRegex(verify.VerificationError, "cover each exact application"):
+            verify.verify_decisions(decisions)
+
+    def test_decision_binary_must_match_packaged_command(self):
+        decisions = copy.deepcopy(self.decisions)
+        player = next(entry for entry in decisions["applications"] if entry["id"] == "org.rmac.Player")
+        player["binary"] = "rmac-preview"
+        with self.assertRaisesRegex(verify.VerificationError, "binary differs"):
+            verify.verify_decisions(decisions)
+
+    def test_packaged_desktop_inventory_cannot_gain_an_unreviewed_app(self):
+        with patch.object(verify, "APP_IDS", verify.APP_IDS - {"org.rmac.Player"}):
+            with self.assertRaisesRegex(verify.VerificationError, "inventory"):
+                verify.verify_packaged_inventory(ROOT)
+
+    def test_packaged_desktop_command_must_match_reviewed_binary(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "packaging/rmac-apps/applications"
+            directory.mkdir(parents=True)
+            (directory / "org.rmac.Player.desktop").write_text(
+                "[Desktop Entry]\nType=Application\nExec=/usr/bin/rmac-preview %F\n",
+                encoding="utf-8",
+            )
+            with patch.object(verify, "APP_IDS", {"org.rmac.Player"}), patch.object(
+                verify, "APP_BINARIES", {"org.rmac.Player": "rmac-player"}
+            ):
+                with self.assertRaisesRegex(verify.VerificationError, "command differs"):
+                    verify.verify_packaged_inventory(Path(temporary))
 
     def test_dependency_checksum_drift_is_rejected(self):
         sources = copy.deepcopy(self.sources)

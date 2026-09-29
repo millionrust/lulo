@@ -1,4 +1,4 @@
-"""Mock tests for the live shutdown confirmation probe; no AT-SPI required."""
+"""Mock tests for the live shutdown menu-row probe; no AT-SPI required."""
 from __future__ import annotations
 
 import importlib.util
@@ -57,15 +57,15 @@ class FakeBackend:
         return False
 
 
-def test_probe_activates_only_menu_rows_and_cancel():
+def test_probe_finds_menu_row_without_opening_confirmation():
     backend = FakeBackend()
     states: list[str] = []
 
     probe.run_probe(backend, states.append)
 
-    assert backend.actions == ["menu", "shutdown-row", "Cancel", "menu"]
+    assert backend.actions == ["menu", "menu"]
     assert backend.state == "closed"
-    assert "state: confirmation visible; Confirm was not activated" in states
+    assert "state: system menu open; Shut Down… row found; confirmation not opened" in states
 
 
 def test_probe_leaves_an_existing_system_menu_untouched():
@@ -81,18 +81,19 @@ def test_probe_leaves_an_existing_system_menu_untouched():
     assert backend.state == "menu"
 
 
-def test_failure_after_opening_dialog_still_cancels():
-    backend = FakeBackend(fail_at="shutdown-row")
+def test_existing_confirmation_is_left_untouched():
+    backend = FakeBackend()
+    backend.state = "dialog"
 
     try:
         probe.run_probe(backend, lambda _message: None)
     except probe.ProbeError:
         pass
     else:
-        raise AssertionError("expected mock failure")
+        raise AssertionError("existing confirmation must be refused")
 
-    assert backend.actions == ["menu", "shutdown-row", "Cancel", "menu"]
-    assert backend.state == "closed"
+    assert backend.actions == []
+    assert backend.state == "dialog"
 
 
 def test_session_guard_requires_expected_wayland_display():
@@ -109,20 +110,23 @@ def test_session_guard_requires_expected_wayland_display():
         probe.platform.system = original
 
 
-def test_confirm_button_is_rejected_by_allowlist():
+def test_shutdown_row_and_confirm_button_are_rejected_by_allowlist():
     class Node:
-        name = "Shut Down"
+        def __init__(self, name: str, role_name: str):
+            self.name = name
+            self.role_name = role_name
 
         def getRoleName(self):
-            return "push button"
+            return self.role_name
 
     backend = object.__new__(probe.AtspiBackend)
-    try:
-        backend.activate_click(Node())
-    except probe.ProbeError as error:
-        assert "outside the safe allowlist" in str(error)
-    else:
-        raise AssertionError("Confirm must be rejected before querying its action")
+    for node in (Node("Shut Down…", "menu item"), Node("Shut Down", "push button")):
+        try:
+            backend.activate_click(node)
+        except probe.ProbeError as error:
+            assert "outside the safe allowlist" in str(error)
+        else:
+            raise AssertionError("Shut Down activation must be rejected")
 
 
 def test_failure_after_menu_open_toggles_menu_closed_and_reports_it():

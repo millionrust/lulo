@@ -76,6 +76,16 @@ mapfile -t binary_names <<<"$inventory"
 # Reuse the repository's one normal target graph even if the caller exports a
 # different Cargo target directory.
 export CARGO_TARGET_DIR="$target_dir"
+# Keep compiler diagnostics and panic locations independent of the builder's
+# checkout and Cargo cache paths. Cargo's encoded form takes precedence over
+# RUSTFLAGS, so extend whichever form the caller already supplied.
+cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+if [[ ${CARGO_ENCODED_RUSTFLAGS+x} ]]; then
+  unit_separator=$'\x1f'
+  export CARGO_ENCODED_RUSTFLAGS="${CARGO_ENCODED_RUSTFLAGS:+${CARGO_ENCODED_RUSTFLAGS}${unit_separator}}--remap-path-prefix=$repo_root=/rmac${unit_separator}--remap-path-prefix=$cargo_home=/cargo"
+else
+  export RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }--remap-path-prefix=$repo_root=/rmac --remap-path-prefix=$cargo_home=/cargo"
+fi
 (
   cd "$repo_root"
   cargo build --locked --release --jobs "$cargo_jobs" \

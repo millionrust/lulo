@@ -33,6 +33,7 @@ INFO_SECURITY = 8
 INFO_BLOCKED = 9
 INFO_CRITICAL = 26
 OFFLINE_REBOOT = 1
+OFFLINE_POWER_OFF = 2
 OFFLINE_UNSET = 3
 CLIENT_DOMAIN = "pk-client-error-quark"
 OFFLINE_DOMAIN = "pk-offline-error-quark"
@@ -113,9 +114,13 @@ FAKE_REPOSITORY = textwrap.dedent(
         ALLOW_REINSTALL=4, JUST_REINSTALL=5, ALLOW_DOWNGRADE=6,
     )
     Pk.FilterEnum = _Enum(UNKNOWN=0, NONE=1, INSTALLED=2)
-    Pk.InfoEnum = _Enum(NORMAL=5, SECURITY=8, BLOCKED=9, CRITICAL=26)
+    Pk.InfoEnum = _Enum(
+        NORMAL=5, SECURITY=8, BLOCKED=9, CRITICAL=26, UPDATING=11,
+        REMOVING=13, OBSOLETING=15, DOWNGRADING=20,
+    )
     Pk.ExitEnum = _Enum(UNKNOWN=0, SUCCESS=1, FAILED=2, CANCELLED=3)
     Pk.OfflineAction = _Enum(UNKNOWN=0, REBOOT=1, POWER_OFF=2, UNSET=3)
+    Pk.OfflineFlags = _Enum(NONE=0)
     Pk.ErrorEnum = _Enum(NO_NETWORK=2, GPG_FAILURE=5, NOT_AUTHORIZED=48)
     Pk.ClientError = _Enum(
         FAILED=0, FAILED_AUTH=1, NO_TID=2, ALREADY_TID=3, ROLE_UNKNOWN=4,
@@ -201,24 +206,49 @@ FAKE_REPOSITORY = textwrap.dedent(
             self, flags, package_ids, cancellable, progress_callback, user_data
         ):
             _check_callback(cancellable, progress_callback, user_data)
-            _log("update_packages", flags=flags, package_ids=list(package_ids))
-            _maybe_raise("update_error")
-            return _Results(SCENARIO.get("update_exit", 1))
+            simulate = bool(flags & (1 << Pk.TransactionFlagEnum.SIMULATE))
+            call = "simulate_packages" if simulate else "update_packages"
+            _log(call, flags=flags, package_ids=list(package_ids))
+            _maybe_raise("simulation_error" if simulate else "update_error")
+            packages = SCENARIO.get("simulation_packages")
+            if simulate and packages is None:
+                packages = [
+                    {"id": package_id, "info": Pk.InfoEnum.UPDATING}
+                    for package_id in package_ids
+                ]
+            exit_key = "simulation_exit" if simulate else "update_exit"
+            return _Results(SCENARIO.get(exit_key, 1), packages or ())
 
 
     Pk.Client = _Client
 
 
+    _prepared_calls = 0
+
     def offline_get_prepared_ids():
+        global _prepared_calls
+        _prepared_calls += 1
         _log("offline_get_prepared_ids")
-        prepared = SCENARIO.get("prepared_ids")
+        _maybe_raise("prepared_ids_error")
+        sequence = SCENARIO.get("prepared_ids_sequence")
+        prepared = sequence[min(_prepared_calls - 1, len(sequence) - 1)] if sequence else SCENARIO.get("prepared_ids")
         if prepared is None:
             raise _Error("pk-offline-error-quark", 2, "No offline updates")
         return list(prepared)
 
 
+    _action_calls = 0
+
     def offline_get_action():
+        global _action_calls
+        _action_calls += 1
         _log("offline_get_action")
+        if _action_calls == SCENARIO.get("offline_action_error_on_call"):
+            raise _Error("pk-offline-error-quark", 0)
+        _maybe_raise("offline_action_error")
+        actions = SCENARIO.get("offline_actions")
+        if actions:
+            return actions[min(_action_calls - 1, len(actions) - 1)]
         return SCENARIO.get("offline_action", 3)
 
 
@@ -228,9 +258,20 @@ FAKE_REPOSITORY = textwrap.dedent(
         return SCENARIO.get("trigger_result", True)
 
 
+    def offline_cancel_with_flags(flags, cancellable):
+        _log("offline_cancel_with_flags", flags=flags)
+        assert cancellable is None
+        _maybe_raise("cancel_error")
+        result = SCENARIO.get("cancel_result", True)
+        if result:
+            SCENARIO["offline_action"] = Pk.OfflineAction.UNSET
+        return result
+
+
     Pk.offline_get_prepared_ids = offline_get_prepared_ids
     Pk.offline_get_action = offline_get_action
     Pk.offline_trigger = offline_trigger
+    Pk.offline_cancel_with_flags = offline_cancel_with_flags
 
 
     Gio = types.ModuleType("Gio")
@@ -586,8 +627,96 @@ class UpdateCheckTests(unittest.TestCase):
         )
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assert_no_offline_work(run)
+        self.assertEqual(len(run.named("simulate_packages")), 1)
+        self.assertEqual(run.named("offline_cancel_with_flags"), [])
         [notification] = run.notifications()
         self.assertEqual(notification["parameters"][3], "Lulo OS update ready")
+
+    def test_legacy_scheduled_destructive_plan_is_cancelled_before_restart(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS[:1]),
+                "prepared_ids": LULO_IDS[:1],
+                "offline_action": OFFLINE_REBOOT,
+                "simulation_packages": [
+                    {"id": pk_id("libc6", "2.42-1"), "info": 13},
+                    {"id": LULO_IDS[0], "info": 11},
+                ],
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(len(run.named("simulate_packages")), 1)
+        self.assertEqual(run.named("offline_cancel_with_flags"), [
+            {"call": "offline_cancel_with_flags", "flags": 0}
+        ])
+        self.assert_no_offline_work(run)
+        self.assertEqual(run.status, "version=1\nupdates=1\nrestart-required=0\n")
+        self.assertIn("destructive-scheduled-plan", run.stderr)
+
+    def test_unverifiable_scheduled_plan_is_cancelled_without_interaction(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS[:1]),
+                "prepared_ids": LULO_IDS[:1],
+                "offline_action": OFFLINE_REBOOT,
+                "simulation_error": {
+                    "domain": CLIENT_DOMAIN,
+                    "code": TRANSACTION_ERROR_BASE + ERROR_NO_NETWORK,
+                },
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(len(run.named("offline_cancel_with_flags")), 1)
+        self.assert_no_offline_work(run)
+        self.assertEqual(run.status, "version=1\nupdates=1\nrestart-required=0\n")
+
+    def test_failed_cancel_warns_before_restart_and_keeps_pending_status(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS[:1]),
+                "prepared_ids": LULO_IDS[:1],
+                "offline_action": OFFLINE_REBOOT,
+                "simulation_packages": [
+                    {"id": LULO_IDS[0], "info": 13},
+                ],
+                "cancel_result": False,
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(len(run.named("offline_cancel_with_flags")), 1)
+        self.assert_no_offline_work(run)
+        self.assertEqual(run.status, "version=1\nupdates=1\nrestart-required=1\n")
+        [notification] = run.notifications()
+        self.assertIn("could not be cancelled", notification["parameters"][4])
+
+    def test_changed_prepared_set_is_not_cancelled(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS[:1]),
+                "prepared_ids_sequence": [LULO_IDS[:1], OTHER_IDS[:1]],
+                "offline_action": OFFLINE_REBOOT,
+                "simulation_packages": [{"id": LULO_IDS[0], "info": 13}],
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(run.named("offline_cancel_with_flags"), [])
+        self.assertEqual(run.status, "version=1\nupdates=1\nrestart-required=1\n")
+        self.assertIn("changed-prepared", run.stderr)
+
+    def test_stale_prepared_package_is_cancelled_before_any_new_download(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS[:1]),
+                "prepared_ids": LULO_IDS[:1] + OTHER_IDS[:1],
+                "offline_action": OFFLINE_REBOOT,
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(run.named("simulate_packages"), [])
+        self.assertEqual(len(run.named("offline_cancel_with_flags")), 1)
+        self.assert_no_offline_work(run)
+        self.assertEqual(run.status, "version=1\nupdates=1\nrestart-required=0\n")
+        self.assertIn("stale-prepared-plan", run.stderr)
 
     def test_prepared_but_untriggered_update_is_triggered_without_download(self):
         run = run_program(
@@ -601,7 +730,53 @@ class UpdateCheckTests(unittest.TestCase):
         self.assertEqual(run.named("update_packages"), [])
         self.assertEqual(len(run.named("offline_trigger")), 1)
 
-    def test_a_different_prepared_set_is_downloaded_again(self):
+    def test_offline_action_read_failure_before_trigger_fails_closed(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS),
+                "prepared_ids": LULO_IDS,
+                "offline_action": OFFLINE_UNSET,
+                "offline_action_error_on_call": 2,
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertEqual(
+            run.stderr, "rmac-update-check: offline-state failed: offline-failed\n"
+        )
+
+    def test_action_changed_before_download_does_not_replace_prepared_update(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS),
+                "offline_actions": [OFFLINE_UNSET, OFFLINE_POWER_OFF],
+                "prepared_ids": [],
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertEqual(
+            run.stderr, "rmac-update-check: offline-state failed: unexpected-action\n"
+        )
+
+    def test_action_changed_after_download_does_not_trigger(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS),
+                "offline_actions": [OFFLINE_UNSET, OFFLINE_UNSET, OFFLINE_POWER_OFF],
+                "prepared_ids": [],
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(len(run.named("update_packages")), 1)
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertEqual(
+            run.stderr, "rmac-update-check: offline-state failed: unexpected-action\n"
+        )
+
+    def test_a_stale_prepared_set_is_cancelled_before_replacement(self):
         stale = [pk_id("rmac-apps", "1.1.0-1")]
         run = run_program(
             {
@@ -610,11 +785,11 @@ class UpdateCheckTests(unittest.TestCase):
                 "offline_action": OFFLINE_REBOOT,
             }
         )
-        self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertEqual(
-            run.named("update_packages")[0]["package_ids"], LULO_IDS
-        )
-        self.assertEqual(len(run.named("offline_trigger")), 1)
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertEqual(len(run.named("offline_cancel_with_flags")), 1)
+        self.assertEqual(run.status, "version=1\nupdates=1\nrestart-required=0\n")
 
     def test_refresh_failure_fails_without_touching_updates(self):
         run = run_program(
@@ -792,8 +967,144 @@ class AutomaticUpdatesTests(unittest.TestCase):
             {"updates": updates(LULO_IDS) + updates(SECURITY_IDS, INFO_SECURITY)}
         )
         self.assertEqual(run.returncode, 0, run.stderr)
+        [simulation] = run.named("simulate_packages")
+        self.assertEqual(simulation["package_ids"], sorted(LULO_IDS + SECURITY_IDS))
+        self.assertEqual(simulation["flags"], (1 << ONLY_TRUSTED) | (1 << 2))
+        order = [entry["call"] for entry in run.calls]
+        self.assertLess(order.index("simulate_packages"), order.index("update_packages"))
         self.assertEqual(self.downloads(run), [sorted(LULO_IDS + SECURITY_IDS)])
         self.assertEqual(len(run.named("offline_trigger")), 1)
+
+    def test_destructive_automatic_plan_is_left_for_system_settings(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS[:1]),
+                "simulation_packages": [
+                    {"id": pk_id("libc6", "2.42-1"), "info": 13},
+                    {"id": LULO_IDS[0], "info": 11},
+                ],
+            }
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(len(run.named("simulate_packages")), 1)
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertEqual(run.status, "version=1\nupdates=1\nrestart-required=0\n")
+        [notification] = run.notifications()
+        self.assertEqual(notification["parameters"][3], "Updates available")
+        self.assertIn("1 update is available", notification["parameters"][4])
+
+    def test_simulation_failure_fails_closed_and_leaves_updates_for_review(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS[:1]),
+                "simulation_error": {
+                    "domain": CLIENT_DOMAIN,
+                    "code": TRANSACTION_ERROR_BASE + ERROR_NO_NETWORK,
+                },
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertEqual(run.stderr, "rmac-update-check: simulate failed: no-network\n")
+        [notification] = run.notifications()
+        self.assertIn("1 update is available", notification["parameters"][4])
+
+    def test_unreadable_offline_state_prevents_replacing_a_prepared_transaction(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS[:1]) + updates(OTHER_IDS[:1]),
+                "offline_action_error": {
+                    "domain": OFFLINE_DOMAIN,
+                    "code": 0,
+                },
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(run.named("simulate_packages"), [])
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertEqual(
+            run.stderr, "rmac-update-check: offline-state failed: offline-failed\n"
+        )
+        self.assertEqual(
+            run.status, "version=1\nupdates=2\nrestart-required=1\n"
+        )
+        [notification] = run.notifications()
+        self.assertIn("could not be verified", notification["parameters"][4])
+
+    def test_scheduled_action_with_unreadable_prepared_ids_fails_closed(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS[:1]) + updates(OTHER_IDS[:1]),
+                "offline_action": OFFLINE_REBOOT,
+                "prepared_ids_error": {
+                    "domain": OFFLINE_DOMAIN,
+                    "code": 0,
+                },
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(run.named("simulate_packages"), [])
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertEqual(
+            run.stderr, "rmac-update-check: offline-state failed: offline-failed\n"
+        )
+        self.assertEqual(
+            run.status, "version=1\nupdates=2\nrestart-required=1\n"
+        )
+        [notification] = run.notifications()
+        self.assertIn("could not be verified", notification["parameters"][4])
+
+    def test_power_off_action_fails_closed_instead_of_replacing_scheduled_update(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS[:1]) + updates(OTHER_IDS[:1]),
+                "offline_action": OFFLINE_POWER_OFF,
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(run.named("simulate_packages"), [])
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertEqual(
+            run.stderr, "rmac-update-check: offline-state failed: unexpected-action\n"
+        )
+        self.assertEqual(
+            run.status, "version=1\nupdates=2\nrestart-required=1\n"
+        )
+
+    def test_empty_or_unknown_simulation_cannot_schedule_updates(self):
+        for packages, error_class in (([], "empty-plan"),
+                                      ([{"id": LULO_IDS[0], "info": 999}], "incomplete-plan")):
+            with self.subTest(error_class=error_class):
+                run = run_program({
+                    "updates": updates(LULO_IDS[:1]),
+                    "simulation_packages": packages,
+                })
+                self.assertEqual(run.returncode, 1)
+                self.assertEqual(run.named("update_packages"), [])
+                self.assertEqual(run.named("offline_trigger"), [])
+                self.assertIn(f"simulate failed: {error_class}", run.stderr)
+
+    def test_simulation_missing_a_requested_package_cannot_schedule_updates(self):
+        run = run_program(
+            {
+                "updates": updates(LULO_IDS[:2]),
+                # A successful, non-empty simulation is still incomplete if
+                # PackageKit omitted one of the requested update IDs.
+                "simulation_packages": [
+                    {"id": LULO_IDS[0], "info": 11},
+                ],
+            }
+        )
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(len(run.named("simulate_packages")), 1)
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertIn("simulate failed: incomplete-plan", run.stderr)
 
     def test_download_off_downloads_and_schedules_nothing(self):
         run = run_program(
@@ -803,7 +1114,7 @@ class AutomaticUpdatesTests(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(run.named("update_packages"), [])
         self.assertEqual(run.named("offline_trigger"), [])
-        self.assertEqual(run.named("offline_get_action"), [])
+        self.assertEqual(len(run.named("offline_get_action")), 1)
         [notification] = run.notifications()
         self.assertEqual(notification["parameters"][3], "Updates available")
         self.assertEqual(
@@ -972,10 +1283,41 @@ class AutomaticUpdatesTests(unittest.TestCase):
     def test_no_updates_writes_a_zero_status(self):
         run = run_program({"updates": []})
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertEqual(run.named("offline_get_action"), [])
+        self.assertEqual(len(run.named("offline_get_action")), 1)
         self.assertEqual(
             run.status, "version=1\nupdates=0\nrestart-required=0\n"
         )
+
+    def test_no_offered_updates_still_reports_a_scheduled_restart(self):
+        run = run_program({"updates": [], "offline_action": OFFLINE_REBOOT})
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertEqual(run.named("offline_cancel_with_flags"), [])
+        self.assertEqual(run.status, "version=1\nupdates=0\nrestart-required=1\n")
+        self.assertIn("unlisted-scheduled-plan", run.stderr)
+        [notification] = run.notifications()
+        self.assertIn("could not be verified", notification["parameters"][4])
+
+    def test_downloads_off_still_reports_a_scheduled_restart(self):
+        run = run_program(
+            {"updates": updates(LULO_IDS[:1]), "offline_action": OFFLINE_REBOOT},
+            config="download-updates=false\n",
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(run.named("update_packages"), [])
+        self.assertEqual(run.named("offline_trigger"), [])
+        self.assertEqual(run.status, "version=1\nupdates=1\nrestart-required=1\n")
+
+    def test_unreadable_offline_state_with_no_updates_warns_before_restart(self):
+        run = run_program({
+            "updates": [],
+            "offline_action_error": {"domain": OFFLINE_DOMAIN, "code": 0},
+        })
+        self.assertEqual(run.returncode, 1)
+        self.assertEqual(run.status, "version=1\nupdates=0\nrestart-required=1\n")
+        [notification] = run.notifications()
+        self.assertIn("could not be verified", notification["parameters"][4])
 
     def test_failed_check_leaves_the_status_file_alone(self):
         run = run_program(

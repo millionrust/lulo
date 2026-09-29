@@ -62,12 +62,28 @@ impl FinderView {
                 this.operation_notice = None;
                 match prepared {
                     Ok(batch) if batch.conflicts.is_empty() => {
+                        if matches!(batch.label, "Copying" | "Duplicating") {
+                            this.pending_select = None;
+                            this.pending_select_many = batch
+                                .ready
+                                .iter()
+                                .filter(|task| {
+                                    task.destination.parent() == Some(this.cwd.as_path())
+                                        && (batch.label == "Duplicating"
+                                            || task.source.parent() == task.destination.parent())
+                                })
+                                .map(|task| task.destination.clone())
+                                .collect();
+                        }
                         this.start_transfer_with_retained(
                             batch.label,
                             batch.ready,
-                            batch.keep_unfinished_in_clipboard,
-                            batch.skipped_moves,
-                            batch.play_drop_sound,
+                            TransferStartOptions {
+                                keep_unfinished_in_clipboard: batch.keep_unfinished_in_clipboard,
+                                retained_clipboard: batch.skipped_moves,
+                                play_drop_sound: batch.play_drop_sound,
+                                completion: None,
+                            },
                             cx,
                         );
                     }
@@ -168,12 +184,28 @@ impl FinderView {
                             Some("Skipped the conflicting items; nothing was changed".into());
                         cx.notify();
                     } else {
+                        if matches!(batch.label, "Copying" | "Duplicating") {
+                            this.pending_select = None;
+                            this.pending_select_many = batch
+                                .ready
+                                .iter()
+                                .filter(|task| {
+                                    task.destination.parent() == Some(this.cwd.as_path())
+                                        && (batch.label == "Duplicating"
+                                            || task.source.parent() == task.destination.parent())
+                                })
+                                .map(|task| task.destination.clone())
+                                .collect();
+                        }
                         this.start_transfer_with_retained(
                             batch.label,
                             batch.ready,
-                            batch.keep_unfinished_in_clipboard,
-                            batch.skipped_moves,
-                            batch.play_drop_sound,
+                            TransferStartOptions {
+                                keep_unfinished_in_clipboard: batch.keep_unfinished_in_clipboard,
+                                retained_clipboard: batch.skipped_moves,
+                                play_drop_sound: batch.play_drop_sound,
+                                completion: None,
+                            },
                             cx,
                         );
                     }

@@ -28,7 +28,7 @@ impl FinderView {
         sort_key: SortKey,
         compress_label: Option<String>,
         can_open_with: bool,
-        can_paste: bool,
+        _can_paste: bool,
         trash_view: bool,
         applications_view: bool,
         undo_label: Option<String>,
@@ -81,6 +81,7 @@ impl FinderView {
             return m
                 .submenu("View", Self::build_view_submenu(pos))
                 .submenu("Sort By", Self::build_sort_submenu(pos, sort_key))
+                .item("Show View Options", Box::new(ShowViewOptions))
                 .separator()
                 .command_item(
                     "Select All",
@@ -124,40 +125,67 @@ impl FinderView {
                 .command_item("Quick Look", rmac_ui::shortcuts::SPACE, Box::new(QuickLook))
                 .separator()
                 .command_item("Copy", rmac_ui::shortcuts::COPY, Box::new(CopyItems))
+                .item("Share…", Box::new(ShareItems))
                 .separator()
-                .header("Tags")
-                .checked_item_with_swatch("Red", tag_checks[0], swatch(0), Box::new(TagRed))
-                .checked_item_with_swatch("Orange", tag_checks[1], swatch(1), Box::new(TagOrange))
-                .checked_item_with_swatch("Yellow", tag_checks[2], swatch(2), Box::new(TagYellow))
-                .checked_item_with_swatch("Green", tag_checks[3], swatch(3), Box::new(TagGreen))
-                .checked_item_with_swatch("Blue", tag_checks[4], swatch(4), Box::new(TagBlue))
-                .checked_item_with_swatch("Purple", tag_checks[5], swatch(5), Box::new(TagPurple))
-                .checked_item_with_swatch("Gray", tag_checks[6], swatch(6), Box::new(TagGray));
+                .submenu(
+                    "label",
+                    rmac_ui::ContextMenu::new(pos)
+                        .checked_item_with_swatch("Red", tag_checks[0], swatch(0), Box::new(TagRed))
+                        .checked_item_with_swatch(
+                            "Orange",
+                            tag_checks[1],
+                            swatch(1),
+                            Box::new(TagOrange),
+                        )
+                        .checked_item_with_swatch(
+                            "Yellow",
+                            tag_checks[2],
+                            swatch(2),
+                            Box::new(TagYellow),
+                        )
+                        .checked_item_with_swatch(
+                            "Green",
+                            tag_checks[3],
+                            swatch(3),
+                            Box::new(TagGreen),
+                        )
+                        .checked_item_with_swatch(
+                            "Blue",
+                            tag_checks[4],
+                            swatch(4),
+                            Box::new(TagBlue),
+                        )
+                        .checked_item_with_swatch(
+                            "Purple",
+                            tag_checks[5],
+                            swatch(5),
+                            Box::new(TagPurple),
+                        )
+                        .checked_item_with_swatch(
+                            "Gray",
+                            tag_checks[6],
+                            swatch(6),
+                            Box::new(TagGray),
+                        ),
+                )
+                .separator()
+                .item("Quick Actions", Box::new(QuickActions));
         } else {
             m = m.command_item(
                 "New Folder",
                 rmac_ui::shortcuts::NEW_FOLDER,
                 Box::new(NewFolder),
             );
-            if can_paste {
-                m = m.command_item(
-                    "Paste Item",
-                    rmac_ui::shortcuts::PASTE,
-                    Box::new(PasteItems),
-                );
-            }
             m = m
                 .separator()
                 .command_item("Get Info", rmac_ui::shortcuts::INFO, Box::new(GetInfo))
                 .separator()
                 .submenu("View", Self::build_view_submenu(pos))
+                .item("Use Groups", Box::new(UseGroups))
                 .submenu("Sort By", Self::build_sort_submenu(pos, sort_key))
+                .item("Show View Options", Box::new(ShowViewOptions))
                 .separator()
-                .command_item(
-                    "Select All",
-                    rmac_ui::shortcuts::SELECT_ALL,
-                    Box::new(SelectAll),
-                );
+                .item("Import from iPhone", Box::new(ImportFromIphone));
         }
         m
     }

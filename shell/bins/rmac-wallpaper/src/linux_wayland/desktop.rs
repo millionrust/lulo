@@ -244,7 +244,7 @@ fn format_size(bytes: u64) -> String {
         unit += 1;
     }
     if value < 10.0 {
-        format!("{value:.1} {}", units[unit])
+        format!("{:.1} {}", (value * 10.0 + 0.5).floor() / 10.0, units[unit])
     } else {
         format!("{value:.0} {}", units[unit])
     }

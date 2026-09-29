@@ -24,10 +24,12 @@ It:
      parked window is on the board when Shut Down is asked for;
   3. fires the `shutdown-dialog` dispatch socket, exactly as a second press of
      the power button would (rmac_shortcuts::power_key::SHUTDOWN_DIALOG_SHORTCUT),
-     and clicks the dialog's Shut Down button over AT-SPI;
+     and sends a real virtual pointer click to the dialog's Shut Down button;
   4. checks both windows (the parked one included) were asked to close and
      that the fake `systemctl poweroff` ran;
-  5. repeats for Restart (`systemctl reboot`).
+  5. repeats for Restart (`systemctl reboot`), then pointer-clicks the logo
+     menu, Shut Down… row and that route's confirmation button; the blocked
+     app recovery and final Log Out route use pointer clicks too.
 
 Isolation is run_lulo.py's: a private dbus-run-session, a temporary HOME and
 XDG_RUNTIME_DIR, wayland-0/wayland-1 held so no socket can collide with the
@@ -46,6 +48,7 @@ import fcntl
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -62,6 +65,7 @@ import wlinput  # noqa: E402
 
 LAVAPIPE = "/usr/share/vulkan/icd.d/lvp_icd.json"
 GTK_APP_ID = "org.example.ShutdownTest"
+OUTPUT_W, OUTPUT_H = 1440, 900
 
 
 def app_id_for(title: str) -> str:
@@ -97,6 +101,26 @@ class Run:
         self.args = args
         self.env = dict(os.environ)
         run_lulo.refuse_live_session(self.env)
+        fake_systemctl = shutil.which("systemctl", path=self.env.get("PATH", ""))
+        fakebin = work / "fakebin"
+        expected_fake = fakebin / "systemctl"
+        expected_script = (
+            f'#!/bin/sh\necho "$@" >> "{work / "systemctl-calls.log"}"\nexit 0\n'
+        ).encode()
+        # resolve() on both paths makes a symlink to the host systemctl look
+        # like the expected fake. Compare the PATH entry lexically and refuse
+        # symlinks at either fakebin boundary before any scenario can run.
+        if (
+            fake_systemctl is None
+            or os.path.abspath(fake_systemctl) != os.path.abspath(expected_fake)
+            or fakebin.is_symlink()
+            or expected_fake.is_symlink()
+            or not expected_fake.is_file()
+            or not os.access(expected_fake, os.X_OK)
+            or expected_fake.stat().st_size != len(expected_script)
+            or expected_fake.read_bytes() != expected_script
+        ):
+            raise SystemExit("refusing shutdown run: fake systemctl is not first on PATH")
         self.runtime = Path(self.env["XDG_RUNTIME_DIR"])
         self.out = work / "logs"
         self.out.mkdir(exist_ok=True)
@@ -245,6 +269,31 @@ class Run:
     def find_button(self, label: str):
         return self.find_node(("push button", "button"), lambda name: name == label)
 
+    def click_node(self, node: object) -> bool:
+        """Click an AT-SPI node's center with the isolated virtual pointer."""
+        import pyatspi
+
+        if node is None:
+            return False
+        try:
+            box = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+            if box.width <= 0 or box.height <= 0:
+                return False
+            self.keys.move(box.x + box.width / 2, box.y + box.height / 2,
+                           OUTPUT_W, OUTPUT_H)
+            # Give niri time to focus the popup after the pointer enters it.
+            time.sleep(0.25)
+            self.keys.button(True)
+            time.sleep(0.03)
+            self.keys.button(False)
+            time.sleep(0.1)
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    def click_button(self, label: str) -> bool:
+        return self.click_node(self.find_button(label))
+
     def find_menu_item(self, prefix: str):
         # Log Out's own item reads "Log Out {account name}…" (main.rs
         # `system_menu`'s `logout_label`), so this matches by prefix.
@@ -299,7 +348,10 @@ class Run:
             plain.terminate()
             parking.terminate()
             return
-        button.queryAction().doAction(0)
+        clicked = self.click_button(verb)
+        self.check(f"{verb}: confirmation accepted a real pointer click", clicked)
+        if not clicked:
+            return
 
         closed = self.wait_for(
             lambda: not self.window(app_id_for(plain_title))
@@ -345,7 +397,11 @@ class Run:
         if button is None:
             blocker.terminate()
             return
-        button.queryAction().doAction(0)
+        clicked = self.click_node(button)
+        self.check("Blocked: Shut Down accepts a real pointer click", clicked)
+        if not clicked:
+            blocker.terminate()
+            return
 
         # QUIT_ALL_GRACE is 30 s (menu_model.rs); give it a margin either way.
         time.sleep(33)
@@ -366,7 +422,10 @@ class Run:
         self.check("Blocked: a fresh Shut Down still shows the dialog", button)
         if button is None:
             return
-        button.queryAction().doAction(0)
+        clicked = self.click_node(button)
+        self.check("Blocked: the fresh Shut Down accepts a real pointer click", clicked)
+        if not clicked:
+            return
         new_calls = self.wait_for(lambda: self.systemctl_calls()[before_calls:] or None, 10)
         self.check("Blocked: Shut Down completes normally once nothing blocks it",
                    new_calls and new_calls[-1].strip() == "poweroff", f"calls={new_calls}")
@@ -384,17 +443,26 @@ class Run:
         self.check("Menu: the logo menu is on the bar (AT-SPI)", logo)
         if logo is None:
             return
-        logo.queryAction().doAction(0)
+        if not self.click_node(logo):
+            self.check("Menu: the logo accepts a real pointer click", False)
+            return
+        self.check("Menu: the logo accepts a real pointer click", True)
         item = self.wait_for(lambda: self.find_menu_item("Shut Down…"), 10, 0.3)
         self.check("Menu: the system menu lists Shut Down…", item)
         if item is None:
             return
-        item.queryAction().doAction(0)
+        if not self.click_node(item):
+            self.check("Menu: Shut Down… accepts a real pointer click", False)
+            return
+        self.check("Menu: Shut Down… accepts a real pointer click", True)
         button = self.wait_for(lambda: self.find_button("Shut Down"), 10, 0.3)
         self.check("Menu: the confirmation shows its own Shut Down button", button)
         if button is None:
             return
-        button.queryAction().doAction(0)
+        clicked = self.click_node(button)
+        self.check("Menu: the confirmation accepts a real pointer click", clicked)
+        if not clicked:
+            return
         new_calls = self.wait_for(lambda: self.systemctl_calls()[before_calls:] or None, 10)
         self.check("Menu: Shut Down… reaches the fake systemctl too",
                    new_calls and new_calls[-1].strip() == "poweroff", f"calls={new_calls}")
@@ -410,17 +478,26 @@ class Run:
         self.check("Log Out: the logo menu is on the bar (AT-SPI)", logo)
         if logo is None:
             return
-        logo.queryAction().doAction(0)
+        clicked = self.click_node(logo)
+        self.check("Log Out: the logo accepts a real pointer click", clicked)
+        if not clicked:
+            return
         item = self.wait_for(lambda: self.find_menu_item("Log Out"), 10, 0.3)
         self.check("Log Out: the system menu lists Log Out…", item)
         if item is None:
             return
-        item.queryAction().doAction(0)
+        clicked = self.click_node(item)
+        self.check("Log Out: the menu row accepts a real pointer click", clicked)
+        if not clicked:
+            return
         button = self.wait_for(lambda: self.find_button("Log Out"), 10, 0.3)
         self.check("Log Out: the confirmation shows its own Log Out button", button)
         if button is None:
             return
-        button.queryAction().doAction(0)
+        clicked = self.click_node(button)
+        self.check("Log Out: confirmation accepts a real pointer click", clicked)
+        if not clicked:
+            return
         self.check("Log Out: niri actually quits (no systemctl involved)",
                    self.wait_for(lambda: self.children[1].poll() is not None, 15))
 

@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
@@ -21,10 +22,30 @@ const MAX_RECORDS: usize = 512;
 const RETAIN_READY_RECORDS: usize = 20;
 const MAX_TRASH_INFO_BYTES: u64 = 16 * 1024;
 
+thread_local! {
+    static CURRENT_BATCH: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// A synchronous file operation archives each completed item in one Undo
+/// action. The scope is confined to its background worker thread.
+pub(crate) fn with_undo_batch<T>(operation: impl FnOnce() -> T) -> T {
+    struct Reset(Option<String>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            CURRENT_BATCH.with(|current| *current.borrow_mut() = self.0.take());
+        }
+    }
+    let previous =
+        CURRENT_BATCH.with(|current| current.borrow_mut().replace(Uuid::new_v4().to_string()));
+    let _reset = Reset(previous);
+    operation()
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum UndoKind {
     Copy,
+    NewFolder,
     Move,
     Replace,
     MoveReplace,
@@ -77,6 +98,8 @@ pub(crate) struct TrashUndoSeed {
 struct UndoRecord {
     version: u32,
     id: String,
+    #[serde(default)]
+    batch_id: Option<String>,
     kind: UndoKind,
     stage: UndoStage,
     created_seconds: u64,
@@ -121,6 +144,7 @@ impl UndoRecord {
         let record = Self {
             version: UNDO_VERSION,
             id,
+            batch_id: CURRENT_BATCH.with(|current| current.borrow().clone()),
             kind: seed.kind,
             stage: UndoStage::ForwardPending,
             created_seconds: created.as_secs(),
@@ -170,6 +194,7 @@ impl UndoRecord {
         let record = Self {
             version: UNDO_VERSION,
             id,
+            batch_id: CURRENT_BATCH.with(|current| current.borrow().clone()),
             kind: seed.kind,
             stage: UndoStage::ForwardPending,
             created_seconds: created.as_secs(),
@@ -269,6 +294,10 @@ impl UndoRecord {
         if self.version != UNDO_VERSION
             || self.id != expected_id
             || Uuid::parse_str(&self.id).is_err()
+            || self
+                .batch_id
+                .as_ref()
+                .is_some_and(|id| Uuid::parse_str(id).is_err())
         {
             return Err(invalid_data("undo receipt identity or version is invalid"));
         }
@@ -356,7 +385,7 @@ impl UndoRecord {
             ));
         }
         match self.kind {
-            UndoKind::Copy
+            UndoKind::Copy | UndoKind::NewFolder
                 if !matches!(
                     self.stage,
                     UndoStage::ForwardPending | UndoStage::Ready | UndoStage::CleanupStaged
@@ -471,9 +500,8 @@ pub(crate) struct UndoAvailability {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct UndoOutcome {
     pub(crate) label: String,
-    /// Where undoing a Move to Trash put the file back, so Files can select
-    /// it there, as Finder does. `None` for every other kind of undo.
-    pub(crate) restored_to: Option<PathBuf>,
+    /// Every item restored by a Move or Move to Trash Undo.
+    pub(crate) restored_to: Vec<PathBuf>,
 }
 
 impl UndoStore {
@@ -533,6 +561,35 @@ impl UndoStore {
         }
         self.persist(&record, true)?;
         self.prune_ready()
+    }
+
+    /// Register a newly created, empty folder with the same identity-bound
+    /// cleanup used by Copy Undo. If its contents change, Undo refuses to
+    /// remove it rather than deleting anything the user added.
+    pub(crate) fn archive_created_folder(&self, path: &Path) -> io::Result<()> {
+        require_empty_directory(path)?;
+        let parent = path
+            .parent()
+            .ok_or_else(|| invalid_data("new folder has no parent"))?;
+        let id = Uuid::new_v4().to_string();
+        let snapshot = TreeSnapshot::capture(path)?;
+        require_empty_directory(path)?;
+        self.archive(UndoSeed {
+            id: id.clone(),
+            kind: UndoKind::NewFolder,
+            source: parent.to_path_buf(),
+            destination: path.to_path_buf(),
+            backup: None,
+            source_snapshot: snapshot.clone(),
+            destination_snapshot: snapshot,
+            replaced_snapshot: None,
+            forward_record: self
+                .root
+                .parent()
+                .unwrap_or(&self.root)
+                .join(format!("{id}.json")),
+        })?;
+        self.activate(&id)
     }
 
     #[cfg(any(target_os = "linux", test))]
@@ -613,35 +670,58 @@ impl UndoStore {
     ) -> io::Result<Option<UndoOutcome>> {
         let _lock = self.acquire_lock()?;
         self.promote_detached_forward_receipts()?;
-        let Some(mut record) = self.latest_record()? else {
+        let Some(record) = self.latest_record()? else {
             return Ok(None);
         };
         let label = undo_label(&record);
-        self.resume_inferred(&mut record)?;
-        if !self.record_path(&record.id).exists() {
-            return Ok(Some(UndoOutcome {
-                label,
-                restored_to: None,
-            }));
+        let mut records = if let Some(batch_id) = record.batch_id.as_ref() {
+            self.read_records()?
+                .into_iter()
+                .filter(|candidate| {
+                    candidate.batch_id.as_ref() == Some(batch_id)
+                        && candidate.stage != UndoStage::ForwardPending
+                })
+                .collect::<Vec<_>>()
+        } else {
+            vec![record]
+        };
+        records.sort_by_key(|record| {
+            (
+                record.created_seconds,
+                record.created_nanoseconds,
+                record.id.clone(),
+            )
+        });
+        let mut restored_to = Vec::new();
+        for mut record in records.into_iter().rev() {
+            self.resume_inferred(&mut record)?;
+            if !self.record_path(&record.id).exists() {
+                continue;
+            }
+            if cancel.load(Ordering::Acquire) {
+                return Err(interrupted());
+            }
+            match record.kind {
+                UndoKind::Copy | UndoKind::NewFolder => {
+                    self.undo_copy(&mut record, cancel, progress)?
+                }
+                UndoKind::Move => self.undo_move(fs, &mut record, cancel, progress)?,
+                UndoKind::Replace => self.undo_replace(&mut record, cancel, progress)?,
+                UndoKind::MoveReplace => {
+                    self.undo_move_replace(fs, &mut record, cancel, progress)?
+                }
+                UndoKind::Trash => self.undo_trash(&mut record, cancel, progress)?,
+                UndoKind::Restore => self.undo_restore(&mut record, cancel, progress)?,
+            }
+            // Undoing a Move to Trash or a Move (including a rename, which is
+            // a same-folder Move) puts an item back at its own source() path,
+            // which nothing else already has selected; Copy's undo removes
+            // something, and Replace/MoveReplace restore a destination the
+            // caller already has selected.
+            if matches!(record.kind, UndoKind::Trash | UndoKind::Move) {
+                restored_to.push(record.source());
+            }
         }
-        if cancel.load(Ordering::Acquire) {
-            return Err(interrupted());
-        }
-        match record.kind {
-            UndoKind::Copy => self.undo_copy(&mut record, cancel, progress)?,
-            UndoKind::Move => self.undo_move(fs, &mut record, cancel, progress)?,
-            UndoKind::Replace => self.undo_replace(&mut record, cancel, progress)?,
-            UndoKind::MoveReplace => self.undo_move_replace(fs, &mut record, cancel, progress)?,
-            UndoKind::Trash => self.undo_trash(&mut record, cancel, progress)?,
-            UndoKind::Restore => self.undo_restore(&mut record, cancel, progress)?,
-        }
-        // Undoing a Move to Trash or a Move (including a rename, which is
-        // a same-folder Move) puts an item back at its own source() path,
-        // which nothing else already has selected; Copy's undo removes
-        // something, and Replace/MoveReplace restore a destination the
-        // caller already has selected.
-        let restored_to =
-            matches!(record.kind, UndoKind::Trash | UndoKind::Move).then(|| record.source());
         Ok(Some(UndoOutcome { label, restored_to }))
     }
 
@@ -725,7 +805,7 @@ impl UndoStore {
 
         if record.stage == UndoStage::Ready {
             match record.kind {
-                UndoKind::Copy => {
+                UndoKind::Copy | UndoKind::NewFolder => {
                     if !entry_exists(&record.destination())?
                         && record
                             .destination_snapshot
@@ -790,7 +870,7 @@ impl UndoStore {
         if record.stage == UndoStage::CleanupStaged {
             let cleanup = record.cleanup();
             if entry_exists(&cleanup)? {
-                remove_bound_tree(&cleanup, &record.destination_snapshot)?;
+                remove_undo_cleanup(record, &cleanup)?;
             }
             if !entry_exists(&cleanup)? {
                 self.finish(record)?;
@@ -1052,8 +1132,13 @@ impl UndoStore {
         if record.stage != UndoStage::Ready {
             return Err(invalid_data("copy undo is in an unsupported state"));
         }
-        if !record.source_snapshot.still_matches(&record.source())? {
+        if record.kind != UndoKind::NewFolder
+            && !record.source_snapshot.still_matches(&record.source())?
+        {
             return Err(changed());
+        }
+        if record.kind == UndoKind::NewFolder {
+            require_empty_directory(&record.destination())?;
         }
         if cancel.load(Ordering::Acquire) {
             return Err(interrupted());
@@ -1393,7 +1478,7 @@ impl UndoStore {
     fn finish_cleanup(&self, record: &UndoRecord) -> io::Result<()> {
         let cleanup = record.cleanup();
         if entry_exists(&cleanup)? {
-            remove_bound_tree(&cleanup, &record.destination_snapshot)?;
+            remove_undo_cleanup(record, &cleanup)?;
         }
         if entry_exists(&cleanup)? {
             return Err(changed());
@@ -1683,7 +1768,7 @@ fn undo_label(record: &UndoRecord) -> String {
             .source()
             .file_name()
             .map(|name| name.to_string_lossy().into_owned()),
-        UndoKind::Copy | UndoKind::Replace => record
+        UndoKind::Copy | UndoKind::NewFolder | UndoKind::Replace => record
             .destination()
             .file_name()
             .map(|name| name.to_string_lossy().into_owned()),
@@ -1692,6 +1777,7 @@ fn undo_label(record: &UndoRecord) -> String {
     .unwrap_or_else(|| "item".to_string());
     let verb = match record.kind {
         UndoKind::Copy => "Undo Copy",
+        UndoKind::NewFolder => "Undo New Folder",
         UndoKind::Move => "Undo Move",
         UndoKind::Replace => "Undo Replace",
         UndoKind::MoveReplace => "Undo Move and Replace",
@@ -1721,17 +1807,48 @@ fn bounded_display_name(name: &str) -> String {
     output
 }
 
+fn require_empty_directory(path: &Path) -> io::Result<()> {
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(changed());
+    }
+    if let Some(entry) = fs::read_dir(path)?.next() {
+        entry?;
+        return Err(io::Error::new(
+            io::ErrorKind::DirectoryNotEmpty,
+            "the new folder contains items and cannot be undone safely",
+        ));
+    }
+    Ok(())
+}
+
+fn remove_undo_cleanup(record: &UndoRecord, path: &Path) -> io::Result<()> {
+    if record.kind != UndoKind::NewFolder {
+        return remove_bound_tree(path, &record.destination_snapshot);
+    }
+    if !record.destination_snapshot.same_root_object(path)? {
+        return Err(changed());
+    }
+    // remove_dir is atomic with the empty-directory condition. In particular,
+    // it cannot delete a file added while the Undo receipt was being staged.
+    fs::remove_dir(path)?;
+    sync_directory(
+        path.parent()
+            .ok_or_else(|| invalid_data("Undo cleanup has no parent"))?,
+    )
+}
+
 fn remove_bound_tree(path: &Path, expected: &TreeSnapshot) -> io::Result<()> {
     if !expected.same_root_object(path)? {
+        return Err(changed());
+    }
+    if !expected.still_matches_after_rename(path)? {
         return Err(changed());
     }
     let metadata = fs::symlink_metadata(path)?;
     if metadata.is_dir() && !metadata.file_type().is_symlink() {
         fs::remove_dir_all(path)?;
     } else {
-        if !expected.still_matches_after_rename(path)? {
-            return Err(changed());
-        }
         fs::remove_file(path)?;
     }
     sync_directory(
@@ -1930,6 +2047,49 @@ mod tests {
 
     struct CrossCopyFileSystem {
         cancel_after_copy: bool,
+    }
+
+    #[test]
+    fn undo_created_folder_refuses_to_delete_user_contents() {
+        let root = TestDirectory::new("new-folder-undo");
+        let store = UndoStore::open(root.0.join("undo")).unwrap();
+        let folder = root.0.join("untitled folder");
+        fs::create_dir(&folder).unwrap();
+        store.archive_created_folder(&folder).unwrap();
+        fs::write(folder.join("keep.txt"), b"keep").unwrap();
+        assert!(store
+            .execute_latest(
+                &crate::file_ops::RealFileSystem,
+                &AtomicBool::new(false),
+                &mut |_| {}
+            )
+            .is_err());
+        assert_eq!(fs::read(folder.join("keep.txt")).unwrap(), b"keep");
+    }
+
+    #[test]
+    fn one_undo_removes_all_new_folders_in_a_batch() {
+        let root = TestDirectory::new("batch-undo");
+        let store = UndoStore::open(root.0.join("undo")).unwrap();
+        let first = root.0.join("first");
+        let second = root.0.join("second");
+        with_undo_batch(|| {
+            for folder in [&first, &second] {
+                fs::create_dir(folder).unwrap();
+                store.archive_created_folder(folder).unwrap();
+            }
+        });
+        assert_eq!(store.count().unwrap(), 2);
+        store
+            .execute_latest(
+                &crate::file_ops::RealFileSystem,
+                &AtomicBool::new(false),
+                &mut |_| {},
+            )
+            .unwrap();
+        assert!(!first.exists());
+        assert!(!second.exists());
+        assert_eq!(store.count().unwrap(), 0);
     }
 
     impl FileSystem for CrossCopyFileSystem {

@@ -274,6 +274,7 @@ pub(crate) struct WaylandClientState {
     momentum_generation: u64,
     enter_token: Option<()>,
     button_pressed: Option<MouseButton>,
+    pending_window_move: Option<PendingWindowMove>,
     mouse_focused_window: Option<WaylandWindowStatePtr>,
     keyboard_focused_window: Option<WaylandWindowStatePtr>,
     pub(crate) loop_handle: LoopHandle<'static, WaylandClientStatePtr>,
@@ -301,6 +302,38 @@ pub struct ClickState {
     last_click: Instant,
     last_location: Point<Pixels>,
     current_count: usize,
+}
+
+/// Keep the press serial until movement proves this was a title-bar drag.
+struct PendingWindowMove {
+    window: WaylandWindowStatePtr,
+    position: Point<Pixels>,
+    serial: u32,
+}
+
+const WINDOW_MOVE_THRESHOLD: Pixels = px(4.0);
+
+fn moved_past_window_drag_threshold(start: Point<Pixels>, current: Point<Pixels>) -> bool {
+    let delta = current - start;
+    delta.x.abs() > WINDOW_MOVE_THRESHOLD || delta.y.abs() > WINDOW_MOVE_THRESHOLD
+}
+
+#[cfg(test)]
+mod window_move_tests {
+    use super::*;
+
+    #[test]
+    fn clicks_with_small_pointer_jitter_remain_clicks() {
+        let press = point(px(100.0), px(80.0));
+        assert!(!moved_past_window_drag_threshold(
+            press,
+            point(px(104.0), px(76.0))
+        ));
+        assert!(moved_past_window_drag_threshold(
+            press,
+            point(px(104.1), px(80.0))
+        ));
+    }
 }
 
 pub(crate) struct KeyRepeat {
@@ -787,6 +820,7 @@ impl WaylandClient {
             vertical_modifier: -1.0,
             horizontal_modifier: -1.0,
             button_pressed: None,
+            pending_window_move: None,
             mouse_focused_window: None,
             keyboard_focused_window: None,
             loop_handle: handle.clone(),
@@ -1933,6 +1967,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                 state.serial_tracker.update(SerialKind::MouseEnter, serial);
                 state.mouse_location = Some(position);
                 state.button_pressed = None;
+                state.pending_window_move = None;
 
                 if let Some(window) = get_window(&mut state, &surface.id()) {
                     state.mouse_focused_window = Some(window.clone());
@@ -1977,6 +2012,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                     state.mouse_focused_window = None;
                     state.mouse_location = None;
                     state.button_pressed = None;
+                    state.pending_window_move = None;
                     state.cursor_hidden_window = None;
 
                     drop(state);
@@ -1996,6 +2032,20 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                 state.restore_cursor_after_hide();
 
                 if let Some(window) = state.mouse_focused_window.clone() {
+                    let start_move = state.pending_window_move.take().and_then(|pending| {
+                        if state.button_pressed == Some(MouseButton::Left)
+                            && pending.window.ptr_eq(&window)
+                            && moved_past_window_drag_threshold(
+                                pending.position,
+                                state.mouse_location.unwrap(),
+                            )
+                        {
+                            Some(pending.serial)
+                        } else {
+                            state.pending_window_move = Some(pending);
+                            None
+                        }
+                    });
                     if window.is_blocked() {
                         let default_style = CursorStyle::Arrow;
                         if state.cursor_style != Some(default_style) {
@@ -2033,6 +2083,9 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                         modifiers: state.modifiers,
                     });
                     drop(state);
+                    if let Some(serial) = start_move {
+                        window.start_window_move_with_serial(serial);
+                    }
                     window.handle_input(input);
                 }
             }
@@ -2094,11 +2147,13 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                         state.click.last_location = state.mouse_location.unwrap();
 
                         state.button_pressed = Some(button);
+                        state.pending_window_move = None;
 
                         if let Some(window) = state.mouse_focused_window.clone() {
+                            let position = state.mouse_location.unwrap();
                             let input = PlatformInput::MouseDown(MouseDownEvent {
                                 button,
-                                position: state.mouse_location.unwrap(),
+                                position,
                                 modifiers: state.modifiers,
                                 click_count: state.click.current_count,
                                 first_mouse: state.enter_token.take().is_some(),
@@ -2108,13 +2163,18 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                                 && window.hit_test_window_control()
                                     == Some(gpui::WindowControlArea::Drag)
                             {
-                                window.start_window_move();
+                                client.borrow_mut().pending_window_move = Some(PendingWindowMove {
+                                    window: window.clone(),
+                                    position,
+                                    serial,
+                                });
                             }
                             window.handle_input(input);
                         }
                     }
                     wl_pointer::ButtonState::Released => {
                         state.button_pressed = None;
+                        state.pending_window_move = None;
 
                         if let Some(window) = state.mouse_focused_window.clone() {
                             let input = PlatformInput::MouseUp(MouseUpEvent {
@@ -2791,7 +2851,7 @@ fn start_momentum(state: &mut WaylandClientState) {
         Timer::from_duration(MOMENTUM_TICK),
         move |_, _, this: &mut WaylandClientStatePtr| {
             let client = this.get_client();
-            let mut state = client.borrow_mut();
+            let state = client.borrow();
             if state.momentum_generation != generation {
                 return TimeoutAction::Drop;
             }

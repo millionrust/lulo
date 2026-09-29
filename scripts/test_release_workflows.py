@@ -55,6 +55,68 @@ def test_every_action_is_pinned_by_commit_sha():
             )
 
 
+def test_release_container_images_are_pinned_by_digest():
+    release = _load(RELEASE)
+    images = [
+        job["container"]["image"]
+        for job in release["jobs"].values()
+        if isinstance(job.get("container"), dict)
+    ]
+    assert images, "release workflow defines no container images"
+    reviewed_image = (
+        "ubuntu:26.04@sha256:"
+        "2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b"
+    )
+    assert images == [reviewed_image] * len(images), (
+        "release container images must use the reviewed Ubuntu 26.04 digest: "
+        f"{images}"
+    )
+
+
+def test_rustup_bootstrap_uses_versioned_binaries_and_fixed_content_hashes():
+    release = _load(RELEASE)
+    env = release["env"]
+    assert env["RMAC_RUSTUP_VERSION"] == "1.28.2"
+    assert env["RMAC_RUSTUP_AMD64_SHA256"] == (
+        "20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c"
+    )
+    assert env["RMAC_RUSTUP_ARM64_SHA256"] == (
+        "e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c"
+    )
+
+    install_steps = [
+        step
+        for job in release["jobs"].values()
+        for step in job.get("steps", ())
+        if step.get("name", "").startswith("Install the pinned Rust toolchain")
+    ]
+    assert install_steps, "release workflow defines no rustup bootstrap steps"
+    for step in install_steps:
+        script = step["run"]
+        assert "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/" in script
+        assert "sha256sum --check --status" in script
+        assert "./rustup-init -y --no-modify-path" in script
+        assert "https://sh.rustup.rs" not in script
+
+
+def test_cargo_cyclonedx_source_archive_is_content_pinned():
+    release = _load(RELEASE)
+    env = release["env"]
+    assert env["RMAC_CARGO_CYCLONEDX_VERSION"] == "0.5.9"
+    assert env["RMAC_CARGO_CYCLONEDX_SHA256"] == (
+        "5d162f67705f0f5038759d73bf546a083bf30e8677c2e944b416bca48d9d69a8"
+    )
+    install = next(
+        step["run"]
+        for step in release["jobs"]["sbom"]["steps"]
+        if step.get("name") == "Install cargo-cyclonedx"
+    )
+    assert "https://static.crates.io/crates/cargo-cyclonedx/" in install
+    assert "sha256sum --check --status" in install
+    assert "cargo install --locked --path" in install
+    assert "cargo install cargo-cyclonedx --locked --version" not in install
+
+
 def test_one_action_version_is_pinned_to_one_commit_everywhere():
     # A second SHA for the same "# vX.Y.Z" label means one of them is not the
     # tag's commit (for example an annotated tag object's own SHA).
@@ -203,7 +265,7 @@ def test_niri_packages_build_in_the_ubuntu_container_and_gate_the_release():
     jobs = document["jobs"]
     for architecture in ("amd64", "arm64"):
         job = jobs[f"build-third-party-{architecture}"]
-        assert job["container"]["image"] == "ubuntu:26.04"
+        assert job["container"]["image"].startswith("ubuntu:26.04@sha256:")
         script = "\n".join(step.get("run", "") for step in job["steps"])
         assert "scripts/linux/build-niri-packages.sh" in script
         assert "--build-deps system" in script

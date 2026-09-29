@@ -254,18 +254,28 @@ impl FinderView {
             .pr(px(TRAILING_MARGIN))
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|t, _, _, _| t.dragging = true),
+                cx.listener(|t, event: &MouseDownEvent, _, _| t.dragging = Some(event.position)),
             )
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|t, _, _, _| t.dragging = false),
+                cx.listener(|t, _, _, _| t.dragging = None),
             )
-            .on_mouse_move(cx.listener(|t, _, window, _| {
-                if t.dragging {
-                    t.dragging = false;
+            .on_mouse_move(cx.listener(|t, event: &MouseMoveEvent, window, _| {
+                if event.pressed_button == Some(MouseButton::Left)
+                    && t.dragging.is_some_and(|press| {
+                        let delta = event.position - press;
+                        delta.x.abs() > px(4.0) || delta.y.abs() > px(4.0)
+                    })
+                {
+                    t.dragging = None;
                     window.start_window_move();
                 }
             }))
+            .on_click(|event, _, cx| {
+                if event.click_count() == 2 {
+                    rmac_ui::double_click_title_bar_action(cx);
+                }
+            })
             .when_some(leading, |toolbar, leading| {
                 toolbar.child(leading.mr(px(TOOLBAR_LEADING_GAP)))
             })

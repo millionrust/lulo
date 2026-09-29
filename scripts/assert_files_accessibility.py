@@ -14,6 +14,8 @@ seeded folder, RMAC_FILES_FOLDER, holding `alpha.txt`, `beta folder/` and
   field's selection (the name up to its extension, since b8428ab5);
 - Text.setCaretOffset moves the rename field's caret, and focusing the row
   again ends the rename without changing the file.
+- Get Info for a folder exposes its asynchronously calculated size and item
+  count as accessible text.
 """
 
 from __future__ import annotations
@@ -125,9 +127,43 @@ row.queryComponent().grabFocus()
 support.wait_for(lambda: not support.nodes_with(app(), "entry", "Name"), "the rename to end")
 assert os.path.exists(os.path.join(FOLDER, "alpha.txt")), "alpha.txt was renamed"
 
+found = listing()
+assert found, "the listing went away before Get Info"
+support.click({support.name(item): item for item in found[1]}["beta folder"])
+
+
+def beta_selected():
+    found = listing()
+    if not found:
+        return False
+    return [support.name(n) for n in found[1] if "selected" in support.states(n)] == ["beta folder"]
+
+
+support.wait_for(beta_selected, "beta folder to be selected")
+support.activate_menu("org.rmac.Files.Menu", "finder::GetInfo")
+
+
+def folder_size_visible():
+    root = app()
+    if root is None:
+        return False
+    frames = support.nodes_with(root, "frame", "beta folder Info")
+    if not frames:
+        return False
+    return any(
+        "6 bytes" in support.name(node) and "1 item" in support.name(node)
+        for node in support.descendants(frames[0])
+    )
+
+
+support.wait_for(folder_size_visible, "folder Info to expose 6 bytes for 1 item")
+if DUMP:
+    support.dump(app(), DUMP + ".info")
+
 print(
     "AT-SPI Files: "
     f"{len(items)} items with kind descriptions and click/selection, {len(places)} sidebar places, "
     f"click selects, Rename opens a focused Name entry (selection {rename_selection}), "
-    "setCaretOffset moves the caret, refocusing the row ends the rename"
+    "setCaretOffset moves the caret, refocusing the row ends the rename, "
+    "folder Get Info exposes 6 bytes for 1 item"
 )

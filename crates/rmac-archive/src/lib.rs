@@ -50,6 +50,8 @@ pub enum Error {
     Damaged,
     /// The user stopped the job.
     Cancelled,
+    /// Expanding would exceed the disk-space or absolute output budget.
+    ExpansionLimit,
     Io(io::Error),
 }
 
@@ -59,6 +61,7 @@ impl fmt::Display for Error {
             Self::Unsupported => formatter.write_str("unsupported format"),
             Self::Damaged => formatter.write_str("damaged archive"),
             Self::Cancelled => formatter.write_str("cancelled"),
+            Self::ExpansionLimit => formatter.write_str("archive expansion limit exceeded"),
             Self::Io(error) => error.fmt(formatter),
         }
     }
@@ -70,6 +73,8 @@ impl From<io::Error> for Error {
     fn from(error: io::Error) -> Self {
         if error.kind() == io::ErrorKind::Other && error.to_string() == CANCELLED {
             Self::Cancelled
+        } else if error.kind() == io::ErrorKind::Other && error.to_string() == EXPANSION_LIMIT {
+            Self::ExpansionLimit
         } else {
             Self::Io(error)
         }
@@ -77,6 +82,7 @@ impl From<io::Error> for Error {
 }
 
 const CANCELLED: &str = "rmac-archive: cancelled";
+const EXPANSION_LIMIT: &str = "rmac-archive: expansion limit exceeded";
 
 /// Not `Interrupted`: std's read loops (`read_exact`, `read_to_end`, copy)
 /// silently retry that kind, so a cancelled read would spin forever.
@@ -94,6 +100,9 @@ pub fn expand_error_message(archive: &Path, error: &Error) -> Option<String> {
         .unwrap_or_else(|| "/".to_owned());
     match error {
         Error::Cancelled => None,
+        Error::ExpansionLimit => Some(format!(
+            "Unable to expand “{name}” because it would use too much disk space."
+        )),
         Error::Unsupported => Some(format!(
             "Unable to expand “{name}”. It is in an unsupported format."
         )),
@@ -120,6 +129,9 @@ pub fn compress_error_message(items: &[std::path::PathBuf], error: &Error) -> Op
         .unwrap_or_else(|| "/".to_owned());
     match error {
         Error::Cancelled => None,
+        Error::ExpansionLimit => Some(format!(
+            "Unable to archive {subject} into “{folder}”. (Error 79 - Inappropriate file type or format.)"
+        )),
         Error::Unsupported | Error::Damaged => Some(format!(
             "Unable to archive {subject} into “{folder}”. (Error 79 - Inappropriate file type or format.)"
         )),

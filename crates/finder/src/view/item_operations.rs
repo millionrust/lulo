@@ -9,6 +9,11 @@ const FILE_TAG_XATTR: &str = "user.rmac.tag";
 const FILE_TAGS: [&str; 7] = ["red", "orange", "yellow", "green", "blue", "purple", "gray"];
 
 impl FinderView {
+    pub(super) fn menu_unavailable(&mut self, message: &'static str, cx: &mut Context<Self>) {
+        self.menu_at = None;
+        self.operation_notice = Some(message.into());
+        cx.notify();
+    }
     /// Finder-style color tags persisted in an app-owned extended attribute.
     /// This avoids touching file contents or ownership.
     pub(super) fn set_selected_tag(&mut self, tag: &'static str, cx: &mut Context<Self>) {
@@ -79,45 +84,77 @@ impl FinderView {
         if self.block_mutation_during_transfer(cx) {
             return;
         }
-        let path = unique_path(self.cwd.join("untitled folder"));
-        if let Err(failure) = file_ops::create_folder(&file_ops::RealFileSystem, &path) {
-            self.record_operation_failures(vec![failure], cx);
-            return;
-        }
-
-        let Some(entry) = entry_for(&path) else {
-            self.operation_error = Some("The folder was created but could not be displayed".into());
-            self.reload(cx);
-            return;
-        };
-        if self.view == ViewMode::List {
-            self.root_entries.push(entry.clone());
-            sort_entries(&mut self.root_entries, self.sort_key, self.sort_asc);
-            self.rebuild_list_entries();
-        } else {
-            self.entries.push(entry.clone());
-            sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
-            self.root_entries.push(entry.clone());
-            sort_entries(&mut self.root_entries, self.sort_key, self.sort_asc);
-        }
-        let Some(index) = self.entries.iter().position(|entry| entry.path == path) else {
-            self.reload(cx);
-            return;
-        };
-        self.selected.clear();
-        self.selected.insert(index);
-        self.anchor = Some(index);
-        if self.view == ViewMode::Column {
-            self.column_selection = Some(entry);
-        }
         self.operation_error = None;
-        self.rename_start(window, cx);
+        let Some(journal) = self.operation_journal.clone() else {
+            self.operation_error =
+                Some("File-operation recovery is unavailable; New Folder is disabled".into());
+            cx.notify();
+            return;
+        };
+        let cwd = self.cwd.clone();
+        let window_handle = window.window_handle();
+        self.new_folder_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move {
+                    let path = unique_path(cwd.join("untitled folder"));
+                    file_ops::create_folder(&file_ops::RealFileSystem, &path)
+                        .map_err(|error| error.detail)?;
+                    journal
+                        .undo_store()
+                        .archive_created_folder(&path)
+                        .map_err(|error| {
+                            format!(
+                                "New folder was created, but Undo could not be recorded: {error}"
+                            )
+                        })?;
+                    let availability = journal
+                        .undo_store()
+                        .latest()
+                        .map_err(|error| error.to_string())?;
+                    let entry = entry_for(&path).ok_or_else(|| {
+                        "The folder was created but could not be displayed".to_owned()
+                    })?;
+                    Ok::<_, String>((path, entry, availability))
+                })
+                .await;
+            let _ = cx.update_window(window_handle, |_, window, cx| {
+                let _ = this.update(cx, |this: &mut FinderView, cx| {
+                    this.new_folder_busy = false;
+                    match result {
+                        Ok((path, entry, availability)) => {
+                            this.undo_available = availability;
+                            if path.parent() == Some(this.cwd.as_path()) {
+                                this.root_entries.retain(|item| item.path != path);
+                                this.root_entries.push(entry.clone());
+                                sort_entries(&mut this.root_entries, this.sort_key, this.sort_asc);
+                                let group = this.current_options().group_by;
+                                view_options::group_entries(&mut this.root_entries, group);
+                                this.rebuild_list_entries();
+                                if let Some(index) =
+                                    this.entries.iter().position(|item| item.path == path)
+                                {
+                                    this.select_single(index);
+                                    if this.view == ViewMode::Column {
+                                        this.column_selection = Some(entry);
+                                    }
+                                    this.rename_start(window, cx);
+                                }
+                            }
+                        }
+                        Err(error) => this.operation_error = Some(error.into()),
+                    }
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
     }
 
     pub(super) fn duplicate(&mut self, cx: &mut Context<Self>) {
         let mut tasks = Vec::new();
-        let mut destinations = BTreeSet::new();
-        let mut first_destination = None;
         for src in self.selected_paths() {
             let stem = src
                 .file_stem()
@@ -129,9 +166,7 @@ impl FinderView {
                 None => format!("{stem} copy"),
             };
             let destination_dir = src.parent().unwrap_or(self.cwd.as_path());
-            let dst = unique_path_avoiding(destination_dir.join(copy_name), &destinations);
-            destinations.insert(dst.clone());
-            first_destination.get_or_insert_with(|| dst.clone());
+            let dst = destination_dir.join(copy_name);
             tasks.push(file_ops::TransferTask {
                 kind: file_ops::TransferKind::Copy,
                 source: src,
@@ -139,8 +174,7 @@ impl FinderView {
             });
         }
         // Select the new copy once it lands, as Finder does.
-        self.pending_select = first_destination;
-        self.start_transfer("Duplicating", tasks, false, cx);
+        self.start_transfer_with_conflicts("Duplicating", tasks, false, false, cx);
     }
 
     /// File ▸ Make Alias: a symbolic link next to each selected item, named

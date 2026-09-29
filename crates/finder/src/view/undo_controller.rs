@@ -7,6 +7,7 @@ impl FinderView {
         #[cfg(not(any(target_os = "linux", test)))]
         let trash_busy = false;
         if self.transfer.is_some()
+            || self.new_folder_busy
             || self.undo_operation.is_some()
             || trash_busy
             || self.conflict_preflight
@@ -149,7 +150,12 @@ impl FinderView {
                                     this.operation_error = None;
                                     // Select the item Undo just put back, as
                                     // Finder does (FILES-46).
-                                    this.pending_select = outcome.restored_to;
+                                    if outcome.restored_to.len() == 1 {
+                                        this.pending_select = outcome.restored_to.into_iter().next();
+                                    } else {
+                                        this.pending_select = None;
+                                        this.pending_select_many = outcome.restored_to;
+                                    }
                                 }
                                 Ok(None) => {
                                     this.operation_notice =

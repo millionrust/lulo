@@ -5,9 +5,13 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).parent / "verify-security-review.py"
@@ -19,6 +23,13 @@ SPEC.loader.exec_module(verify)
 
 
 class SecurityReviewTests(unittest.TestCase):
+    def test_contract_only_run_does_not_claim_candidate_evidence(self):
+        output = StringIO()
+        with patch.object(sys, "argv", [str(SCRIPT)]), redirect_stdout(output):
+            self.assertEqual(verify.main(), 0)
+        self.assertIn("contract inventory verified", output.getvalue())
+        self.assertIn("candidate evidence not supplied", output.getvalue())
+
     def test_committed_review_covers_every_named_goal_domain(self):
         contract = verify.load_contract()
         self.assertEqual(len(contract["domains"]), 10)
@@ -48,6 +59,58 @@ class SecurityReviewTests(unittest.TestCase):
             with self.assertRaisesRegex(verify.SecurityError, "differs"):
                 verify.load_contract(path)
 
+    def test_source_inventory_rejects_symlink_substitution(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            root.mkdir()
+            target = root / "real-source.md"
+            target.write_text("different source", encoding="utf-8")
+            (root / "source.md").symlink_to(target)
+            with patch.object(verify, "REPO_ROOT", root):
+                with self.assertRaises(verify.SecurityError):
+                    verify._read_repo_source("source.md")
+
+    def test_regular_file_reader_does_not_follow_symlink_swap(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.md"
+            target = root / "secret.md"
+            source.write_text("reviewed source", encoding="utf-8")
+            target.write_text("replacement", encoding="utf-8")
+            open_file = verify.os.open
+
+            def swap_then_open(path, flags, *args, **kwargs):
+                if Path(path) == source:
+                    source.unlink()
+                    source.symlink_to(target)
+                return open_file(path, flags, *args, **kwargs)
+
+            with patch.object(verify.os, "open", side_effect=swap_then_open):
+                with self.assertRaises(verify.SecurityError):
+                    verify._read_regular(source)
+
+    def test_source_reader_does_not_follow_parent_directory_swap(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            parent = root / "docs"
+            parent.mkdir(parents=True)
+            (parent / "source.md").write_text("reviewed", encoding="utf-8")
+            replacement = Path(temporary) / "replacement"
+            replacement.mkdir()
+            (replacement / "source.md").write_text("unreviewed", encoding="utf-8")
+            open_file = verify.os.open
+
+            def swap_then_open(path, flags, *args, **kwargs):
+                if path == "docs":
+                    parent.rename(root / "old-docs")
+                    parent.symlink_to(replacement)
+                return open_file(path, flags, *args, **kwargs)
+
+            with patch.object(verify, "REPO_ROOT", root):
+                with patch.object(verify.os, "open", side_effect=swap_then_open):
+                    with self.assertRaises(verify.SecurityError):
+                        verify._read_repo_source("docs/source.md")
+
     def test_evidence_requires_zero_findings_all_checks_and_stations(self):
         contract = verify.load_contract()
         revision = "d" * 40
@@ -58,17 +121,51 @@ class SecurityReviewTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "evidence.json"
             path.write_text(json.dumps(document), encoding="utf-8")
-            verify.verify_evidence(
-                contract, path, tier="alpha", revision=revision
-            )
+            with patch.object(verify, "_verify_checkout"):
+                verify.verify_evidence(
+                    contract, path, tier="alpha", revision=revision
+                )
+            self.assertEqual(set(document["source_sha256"]), set(verify.REVIEW_SOURCES))
+            first_source = verify.REVIEW_SOURCES[0]
+            document["source_sha256"][first_source] = "0" * 64
+            path.write_text(json.dumps(document), encoding="utf-8")
+            with patch.object(verify, "_verify_checkout"):
+                with self.assertRaisesRegex(verify.SecurityError, "source_sha256"):
+                    verify.verify_evidence(
+                        contract, path, tier="alpha", revision=revision
+                    )
+            document["source_sha256"][first_source] = verify.evidence_template(
+                contract, "alpha", revision
+            )["source_sha256"][first_source]
             document["open_findings"].append(
                 {"id": "SEC-1", "severity": "critical"}
             )
             path.write_text(json.dumps(document), encoding="utf-8")
-            with self.assertRaisesRegex(verify.SecurityError, "open_findings"):
-                verify.verify_evidence(
-                    contract, path, tier="alpha", revision=revision
-                )
+            with patch.object(verify, "_verify_checkout"):
+                with self.assertRaisesRegex(verify.SecurityError, "open_findings"):
+                    verify.verify_evidence(
+                        contract, path, tier="alpha", revision=revision
+                    )
+
+    def test_evidence_revision_requires_matching_clean_checkout(self):
+        revision = "d" * 40
+        def completed(code: int, output: bytes) -> subprocess.CompletedProcess[bytes]:
+            return subprocess.CompletedProcess(["git"], code, output, b"")
+
+        with patch.object(verify.subprocess, "run", side_effect=[
+            completed(0, revision.encode() + b"\n"), completed(0, b""),
+        ]):
+            verify._verify_checkout(revision)
+        with patch.object(verify.subprocess, "run", side_effect=[
+            completed(0, ("a" * 40).encode() + b"\n"), completed(0, b""),
+        ]):
+            with self.assertRaisesRegex(verify.SecurityError, "revision differs"):
+                verify._verify_checkout(revision)
+        with patch.object(verify.subprocess, "run", side_effect=[
+            completed(0, revision.encode() + b"\n"), completed(0, b" M src/main.rs\n"),
+        ]):
+            with self.assertRaisesRegex(verify.SecurityError, "clean checkout"):
+                verify._verify_checkout(revision)
 
 
 class FixedFindingGuardTests(unittest.TestCase):

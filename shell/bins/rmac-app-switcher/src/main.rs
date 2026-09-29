@@ -19,7 +19,7 @@ pub(crate) mod linux_wayland {
     use std::collections::BTreeMap;
     use std::path::PathBuf;
     use std::rc::Rc;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use gpui::{
         div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px, rgba,
@@ -43,6 +43,8 @@ pub(crate) mod linux_wayland {
     const RELEASE_GRACE: Duration = Duration::from_millis(80);
     /// Never keep an invisible exclusive surface that never got the keyboard.
     const ACTIVATION_TIMEOUT: Duration = Duration::from_millis(1_000);
+    const QUIT_READBACK_TIMEOUT: Duration = Duration::from_millis(500);
+    const QUIT_READBACK_INTERVAL: Duration = Duration::from_millis(25);
     const HIDDEN_SIZE: f32 = 1.0;
     const NAMESPACE: &str = "rmac-app-switcher";
 
@@ -237,6 +239,7 @@ pub(crate) mod linux_wayland {
         saw_command: bool,
         was_active: bool,
         closing: bool,
+        pending_quit: bool,
     }
 
     impl SwitcherView {
@@ -289,6 +292,7 @@ pub(crate) mod linux_wayland {
                 saw_command: false,
                 was_active: false,
                 closing: false,
+                pending_quit: false,
             }
         }
 
@@ -385,43 +389,104 @@ pub(crate) mod linux_wayland {
 
         /// ⌘Q while the switcher is open quits the selected application and
         /// keeps the switcher up for the rest.
-        fn quit_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        fn quit_selected(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+            if self.pending_quit {
+                return;
+            }
             let Some(app) = self.session.selected_app().cloned() else {
+                return;
+            };
+            let Some(service) = self.service.upgrade() else {
+                return;
+            };
+            let Some(handle) = service.read(cx).open else {
                 return;
             };
             let Some(snapshot) = self.snapshot(cx) else {
                 return;
             };
             let windows = rmac_compositor::windows_of_application(&snapshot, &app.app_id);
-            cx.spawn(async move |_, _cx: &mut AsyncApp| {
-                let mut store = rmac_compositor::ParkingStore::load_default();
-                for window in &windows {
-                    store.forget(*window);
-                }
-                for window in windows {
+            self.pending_quit = true;
+            cx.spawn(async move |_, cx: &mut AsyncApp| {
+                for window in windows.iter().copied() {
                     let action = Action::CloseWindow { window };
                     if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
                         eprintln!("app switcher could not quit a window: {error:?}");
                     }
                 }
+
+                // A close request can be refused by an app's own guard (for
+                // example, Text Editor's unsaved-document sheet). Reconcile
+                // only after niri reports which windows actually survived.
+                let deadline = Instant::now() + QUIT_READBACK_TIMEOUT;
+                let mut latest_snapshot = None;
+                loop {
+                    match rmac_compositor_niri::snapshot().await {
+                        Ok(snapshot) => {
+                            let closed = windows.iter().all(|target| {
+                                !snapshot.windows.iter().any(|window| window.id == *target)
+                            });
+                            latest_snapshot = Some(snapshot);
+                            if closed || Instant::now() >= deadline {
+                                break;
+                            }
+                        }
+                        Err(error) => {
+                            eprintln!("app switcher could not read windows after quit: {error}");
+                            break;
+                        }
+                    }
+                    cx.background_executor().timer(QUIT_READBACK_INTERVAL).await;
+                }
+                let Some(snapshot) = latest_snapshot else {
+                    let _ = handle.update(cx, |view, _, cx| {
+                        view.pending_quit = false;
+                        cx.notify();
+                    });
+                    return;
+                };
+                let remaining = rmac_compositor::windows_of_application(&snapshot, &app.app_id);
+                let remaining_ids = remaining
+                    .iter()
+                    .copied()
+                    .collect::<std::collections::BTreeSet<_>>();
+                let mut store = rmac_compositor::ParkingStore::load_default();
+                for window in &windows {
+                    if !remaining_ids.contains(window) {
+                        store.forget(*window);
+                    }
+                }
                 if let Err(error) = store.save_default() {
                     eprintln!("app switcher could not save the parking set: {error}");
                 }
+
+                let readback = snapshot.clone();
+                let (apps, items) = service.update(cx, |service, _| {
+                    if remaining.is_empty() {
+                        service.recency.forget(&app.app_id);
+                    }
+                    let apps = service.recency.applications(&readback);
+                    let items = apps
+                        .iter()
+                        .map(|app| (app.app_id.clone(), service.item(app)))
+                        .collect();
+                    (apps, items)
+                });
+                let _ = handle.update(cx, |view, window, cx| {
+                    view.pending_quit = false;
+                    if !view.session.replace_apps(apps) {
+                        view.close(window, cx);
+                        return;
+                    }
+                    view.items = items;
+                    view.layout = model::layout(view.session.apps.len(), view.display_width);
+                    if view.revealed {
+                        window.resize(Size::new(px(view.layout.width), px(view.layout.height)));
+                    }
+                    cx.notify();
+                });
             })
             .detach();
-            let _ = self
-                .service
-                .update(cx, |service, _| service.recency.forget(&app.app_id));
-            self.items.remove(&app.app_id);
-            if !self.session.remove(&app.app_id) {
-                self.close(window, cx);
-                return;
-            }
-            self.layout = model::layout(self.session.apps.len(), self.display_width);
-            if self.revealed {
-                window.resize(Size::new(px(self.layout.width), px(self.layout.height)));
-            }
-            cx.notify();
         }
 
         /// ⌘H hides the selected application (parks its windows) and keeps

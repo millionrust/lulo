@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 
 
@@ -88,6 +89,48 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(_read_regular(path)).hexdigest()
 
 
+def _checkout_revision() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify", "HEAD"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise BetaError("Beta checkout revision cannot be verified") from error
+    revision = result.stdout.decode("ascii", "replace").strip()
+    if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise BetaError("Beta checkout revision cannot be verified")
+    return revision
+
+
+def _require_clean_checkout() -> None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--untracked-files=all"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise BetaError("Beta checkout cleanliness cannot be verified") from error
+    if result.returncode != 0:
+        raise BetaError("Beta checkout cleanliness cannot be verified")
+    if result.stdout:
+        raise BetaError("Beta evidence requires a clean checkout")
+
+
+def _verify_checkout(revision: str) -> None:
+    if _checkout_revision() != revision:
+        raise BetaError("Beta evidence revision differs from the checkout")
+    _require_clean_checkout()
+
+
 def _source_inventory() -> tuple[tuple[str, ...], tuple[str, ...]]:
     for relative in SOURCES.values():
         _read_regular(REPO_ROOT / relative)
@@ -103,12 +146,19 @@ def _source_inventory() -> tuple[tuple[str, ...], tuple[str, ...]]:
         ]
     ):
         raise BetaError("Beta hardware source inventory is invalid")
-    names = tuple(
-        journey.get("name")
-        for journey in journeys.get("journeys", [])
-        if isinstance(journey, dict)
-    ) if isinstance(journeys, dict) else ()
-    if len(names) != 10 or len(set(names)) != 10:
+    journey_entries = journeys.get("journeys") if isinstance(journeys, dict) else None
+    if not isinstance(journey_entries, list) or len(journey_entries) != 10:
+        raise BetaError("Beta journey source inventory is invalid")
+    names_list: list[str] = []
+    for journey in journey_entries:
+        if not isinstance(journey, dict):
+            raise BetaError("Beta journey source inventory is invalid")
+        name = journey.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise BetaError("Beta journey source inventory is invalid")
+        names_list.append(name)
+    names = tuple(names_list)
+    if len(set(names)) != 10:
         raise BetaError("Beta journey source inventory is invalid")
     return tuple(hardware["release_tiers"]["beta"]), names
 
@@ -150,6 +200,7 @@ def evidence_template(
         "checks": [{"check": check, "status": "pending"} for check in CHECKS],
         "cohort": {
             "duration_days": 0,
+            "minimum_days_per_participant": 0,
             "participant_days": 0,
             "participants": 0,
             "station_participants": {
@@ -162,7 +213,8 @@ def evidence_template(
             {"class": defect, "open_count": 0, "status": "pending"}
             for defect in DEFECT_CLASSES
         ],
-        "format": 1,
+        # Evidence format 2 adds the minimum individual participation duration.
+        "format": 2,
         "journeys": [
             {"attempts": 0, "name": journey, "passed": 0, "status": "pending"}
             for journey in journeys
@@ -185,6 +237,7 @@ def verify_evidence(
     version: str,
     revision: str,
 ) -> None:
+    _verify_checkout(revision)
     document = _load_json(path)
     template = evidence_template(contract, version, revision)
     if not isinstance(document, dict) or set(document) != set(template):
@@ -216,19 +269,26 @@ def verify_evidence(
     cohort = document.get("cohort")
     if not isinstance(cohort, dict) or set(cohort) != {
         "duration_days",
+        "minimum_days_per_participant",
         "participant_days",
         "participants",
         "station_participants",
         "status",
     }:
         raise BetaError("Beta cohort fields are not exact")
-    numeric = ("duration_days", "participant_days", "participants")
+    numeric = (
+        "duration_days",
+        "minimum_days_per_participant",
+        "participant_days",
+        "participants",
+    )
     if any(type(cohort.get(field)) is not int for field in numeric):
         raise BetaError("Beta cohort measurements are invalid")
     station_participants = cohort.get("station_participants")
     if (
         cohort.get("status") != "pass"
         or cohort["duration_days"] < 14
+        or cohort["minimum_days_per_participant"] < 14
         or cohort["participants"] < 20
         or cohort["participant_days"] < cohort["participants"] * 14
         or not isinstance(station_participants, dict)
@@ -299,7 +359,11 @@ def main() -> int:
             return 0
     except BetaError as error:
         parser.exit(4, f"verify-beta-candidate: {error}\n")
-    print(f"rmac Beta contract verified ({len(CHECKS)} promotion checks)")
+    print(
+        "rmac Beta contract inventory verified "
+        f"({len(CHECKS)} promotion checks; "
+        f"{'candidate evidence verified' if arguments.evidence is not None else 'candidate evidence not supplied'})"
+    )
     return 0
 
 

@@ -538,6 +538,20 @@ def row_name_matches_pid(name: str, pid: int) -> bool:
     return expected_row_label(DISPOSABLE_COMMAND_NAME, pid) in name
 
 
+def named_process_cells(row) -> list[str]:
+    """Return the accessible names of named table cells directly under a row."""
+
+    names = []
+    try:
+        for index in range(row.getChildCount()):
+            cell = row.getChildAtIndex(index)
+            if cell.getRoleName() == "table cell" and cell.name:
+                names.append(cell.name)
+    except (LookupError, RuntimeError):
+        return []
+    return names
+
+
 def count_process_rows() -> int:
     """How many "table row" nodes (excluding the header row, which carries
     no accessible name) are currently exposed over AT-SPI -- used only to
@@ -735,6 +749,17 @@ def run_journey(token: str) -> dict[str, Any]:
                 )
             )
             return build_report(steps, gaps, started_at_unix_ms)
+
+        cell_names = named_process_cells(row)
+        steps.append(
+            make_step(
+                "process_row_cells_accessible",
+                bool(cell_names),
+                "the process row exposes named table cells over AT-SPI"
+                if cell_names
+                else "the process row has no named table-cell children over AT-SPI",
+            )
+        )
 
         # Forward-compatible real path: a future build that wires
         # accessibility.rs's model into the live table will reach here and

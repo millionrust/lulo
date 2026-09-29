@@ -2,6 +2,7 @@
 
 use gpui::{Context, Entity};
 use rmac_ui::TableState;
+use std::time::Instant;
 use sysinfo::Networks;
 
 use crate::cpu_ticks;
@@ -17,6 +18,7 @@ pub(crate) struct Sampler {
     pub(crate) interfaces: Vec<NetIface>,
     prev_cpu_ticks: Option<[u64; 4]>,
     pub(crate) cpu_split: Option<(f32, f32, f32)>,
+    last_sample: Option<Instant>,
 }
 
 impl Sampler {
@@ -28,6 +30,7 @@ impl Sampler {
             interfaces: Vec::new(),
             prev_cpu_ticks: None,
             cpu_split: None,
+            last_sample: None,
         }
     }
 
@@ -36,6 +39,14 @@ impl Sampler {
         table: &Entity<TableState<ProcessTableDelegate>>,
         cx: &mut Context<MonitorView>,
     ) {
+        let now = Instant::now();
+        let elapsed_secs = self
+            .last_sample
+            .replace(now)
+            .map_or(REFRESH_SECS, |previous| {
+                now.duration_since(previous).as_secs_f64()
+            })
+            .max(0.001);
         if let Some(now) = cpu_ticks::read() {
             if let Some(previous) = self.prev_cpu_ticks {
                 self.cpu_split = cpu_ticks::split(previous, now);
@@ -60,8 +71,8 @@ impl Sampler {
                 name: name.clone(),
                 total_recv: data.total_received(),
                 total_sent: data.total_transmitted(),
-                recv_rate: data.received() as f64 / REFRESH_SECS,
-                sent_rate: data.transmitted() as f64 / REFRESH_SECS,
+                recv_rate: data.received() as f64 / elapsed_secs,
+                sent_rate: data.transmitted() as f64 / elapsed_secs,
             })
             .collect();
         self.interfaces.sort_by(|left, right| {
@@ -93,15 +104,15 @@ impl Sampler {
                     let usage = process.disk_usage();
                     (read + usage.read_bytes, write + usage.written_bytes)
                 });
-            aggregates.disk_read_rate = read as f64 / REFRESH_SECS;
-            aggregates.disk_write_rate = write as f64 / REFRESH_SECS;
+            aggregates.disk_read_rate = read as f64 / elapsed_secs;
+            aggregates.disk_write_rate = write as f64 / elapsed_secs;
 
             resync_selection(state, cx);
             state.refresh(cx);
         });
 
-        aggregates.net_recv_rate = network_received as f64 / REFRESH_SECS;
-        aggregates.net_sent_rate = network_sent as f64 / REFRESH_SECS;
+        aggregates.net_recv_rate = network_received as f64 / elapsed_secs;
+        aggregates.net_sent_rate = network_sent as f64 / elapsed_secs;
         (aggregates.net_total_recv, aggregates.net_total_sent) =
             self.interfaces
                 .iter()

@@ -50,6 +50,7 @@ impl FinderView {
         &self,
         window_active: bool,
         window_height: f32,
+        content_width: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         // Recursive content matches may not contain the query in their names.
@@ -263,25 +264,6 @@ impl FinderView {
                                 .child(detail),
                         )
                     })
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
-                            if selected
-                                && !this.trash_view
-                                && !this.applications_view
-                                && !ev.modifiers.platform
-                                && !ev.modifiers.shift
-                            {
-                                cx.stop_propagation();
-                                this.rename_start(window, cx);
-                            }
-                        }),
-                    )
-                    .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
-                        if selected {
-                            cx.stop_propagation();
-                        }
-                    }))
                     .into_any_element(),
             };
 
@@ -452,7 +434,16 @@ impl FinderView {
             .collect::<Vec<_>>();
         let navigation_indices = visible_indices.clone();
         let horizontal_navigation = matches!(self.view, ViewMode::Icon | ViewMode::Gallery);
-        let icon_columns = if show_icons { self.icon_columns() } else { 1 };
+        // Scroll bounds still describe the previous view on the frame that
+        // handles ⌘1. Use the current layout width for keyboard grid moves.
+        let icon_columns = if show_icons {
+            let (cell_width, _) = self.icon_cell();
+            ((content_width - ICON_GRID_LEFT) / cell_width)
+                .floor()
+                .max(1.0) as usize
+        } else {
+            1
+        };
 
         // Icon-grid tiles. Gallery owns a distinct preview + filmstrip tree.
         let mut tiles: Vec<gpui::AnyElement> = Vec::new();
@@ -527,25 +518,6 @@ impl FinderView {
                             primary_text()
                         })
                         .child(e.name.clone())
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
-                                if selected
-                                    && !this.trash_view
-                                    && !this.applications_view
-                                    && !ev.modifiers.platform
-                                    && !ev.modifiers.shift
-                                {
-                                    cx.stop_propagation();
-                                    this.rename_start(window, cx);
-                                }
-                            }),
-                        )
-                        .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
-                            if selected {
-                                cx.stop_propagation();
-                            }
-                        }))
                         .into_any_element(),
                 };
                 tiles.push(

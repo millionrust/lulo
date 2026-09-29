@@ -578,6 +578,18 @@ pub const SWITCH_WIDTH: f32 = 54.0;
 pub const SWITCH_HEIGHT: f32 = 24.0;
 pub const SWITCH_KNOB_WIDTH: f32 = 32.0;
 pub const SWITCH_KNOB_HEIGHT: f32 = 20.0;
+/// The Sound menu's volume slider (Control Centre's Sound module,
+/// 2026-09-29 live capture on macOS 26: a 4 pt track — matching the
+/// already-guessed `SWITCH_HEIGHT / 6` — with an 18 × 14 pt pill knob
+/// centred on it, flanked by a mute and a max-volume glyph 8 pt from the
+/// track). The standalone menu-bar Sound extra was not captured (enabling
+/// it requires a persistent System Settings change outside this pass); this
+/// reuses Control Centre's numbers, which already matched the panel's other
+/// measured constants (width, row insets) exactly.
+pub const SLIDER_TRACK_HEIGHT: f32 = SWITCH_HEIGHT / 6.0;
+pub const SLIDER_KNOB_WIDTH: f32 = 18.0;
+pub const SLIDER_KNOB_HEIGHT: f32 = 14.0;
+pub const SLIDER_ICON_GAP: f32 = 8.0;
 pub const MAX_LISTED_NETWORKS: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -635,6 +647,13 @@ impl StatusAction {
 pub enum BadgeGlyph {
     Wifi(u8),
     LowPower,
+    /// An audio output device (Sound menu's Output list). Every device
+    /// shares one glyph: `rmac_audio` does not report a device type to
+    /// pick a more specific icon by.
+    Speaker,
+    /// A paired Bluetooth device (Bluetooth menu's Devices list). Every
+    /// device shares one glyph for the same reason as `Speaker`.
+    BluetoothDevice,
 }
 
 impl BadgeGlyph {
@@ -644,6 +663,8 @@ impl BadgeGlyph {
             Self::Wifi(2) => "wifi-2",
             Self::Wifi(_) => "wifi-3",
             Self::LowPower => "battery-low",
+            Self::Speaker => "volume-high",
+            Self::BluetoothDevice => "bluetooth-glyph",
         }
     }
 }
@@ -683,14 +704,18 @@ pub enum StatusRow {
     /// The extra point that closes a badge group before its separator.
     GroupEnd,
     /// The Sound menu's output-volume slider (0–100). Dragged with the
-    /// pointer only, like the switches above — not measured on the Mac (no
-    /// capture of the menu-bar Sound dropdown exists yet), so the height is
-    /// chosen to sit between a plain item and a badge row.
+    /// pointer only, like the switches above. Row height, track and knob
+    /// measured from Control Centre's Sound module (Mac, 2026-09-29); the
+    /// standalone menu-bar Sound dropdown itself was not captured (enabling
+    /// it needs a persistent System Settings change outside this pass).
     Slider {
         value: u8,
     },
     /// A plain item with a trailing checkmark when it is the active choice
-    /// (Sound's Output list, Bluetooth's Devices list).
+    /// (Focus's Do Not Disturb). Sound's Output list and Bluetooth's
+    /// Devices list use `Badge` instead — measured on the Mac, 2026-09-29,
+    /// they are icon-circle rows coloured for the current device, not
+    /// checkmarked items.
     Check {
         label: String,
         checked: bool,
@@ -709,7 +734,12 @@ impl StatusRow {
             Self::Badge { .. } => 32.0,
             Self::Detail(_) => 16.0,
             Self::GroupEnd => 1.0,
-            Self::Slider { .. } => 28.0,
+            // Was a guessed 28 (between a plain item and a badge row).
+            // Control Centre's Sound module, 2026-09-29 live capture: the
+            // gap from the Title row's bottom to the "Output" section
+            // header's row is 40 pt = this row + one 9 pt separator, so the
+            // slider row is 31 — the same height as Title.
+            Self::Slider { .. } => 31.0,
         }
     }
 
@@ -1075,9 +1105,10 @@ pub struct SoundMenuInput<'a> {
     pub error: Option<&'a str>,
 }
 
-/// The Sound menu: header, output-volume slider, the Output device list with
-/// a check on the current device, then Sound Settings… (PipeWire/pactl via
-/// `rmac-audio`, the same backend Control Center's Sound module uses).
+/// The Sound menu: header, output-volume slider, the Output device list as
+/// icon-circle badges coloured for the current device, then Sound
+/// Settings… (PipeWire/pactl via `rmac-audio`, the same backend Control
+/// Center's Sound module uses).
 pub fn sound_menu_rows(input: SoundMenuInput<'_>) -> Vec<StatusRow> {
     let settings = StatusRow::Item {
         label: "Sound Settings…".into(),
@@ -1113,10 +1144,17 @@ pub fn sound_menu_rows(input: SoundMenuInput<'_>) -> Vec<StatusRow> {
             rows.push(StatusRow::Separator);
             rows.push(StatusRow::Header("Output".into()));
             for device in &audio.outputs {
-                rows.push(StatusRow::Check {
+                // Mac (2026-09-29, Control Centre's Sound module): each
+                // Output row is a 26 pt icon-circle badge, not a plain item
+                // with a trailing checkmark — the same row style as Wi-Fi's
+                // networks, and the current device is shown by the badge's
+                // colour (`on`), not a checkmark.
+                rows.push(StatusRow::Badge {
                     label: device.name.clone(),
-                    checked: device.is_default,
-                    action: StatusAction::SelectOutput(device.id.clone()),
+                    glyph: BadgeGlyph::Speaker,
+                    on: device.is_default,
+                    locked: false,
+                    action: Some(StatusAction::SelectOutput(device.id.clone())),
                 });
             }
             rows.push(StatusRow::GroupEnd);
@@ -1136,12 +1174,12 @@ pub struct BluetoothMenuInput<'a> {
     pub error: Option<&'a str>,
 }
 
-/// The Bluetooth menu: header with the power switch, the Devices list
-/// (connected devices checked, click to connect or disconnect), then
-/// Bluetooth Settings… (BlueZ via `rmac-bluetooth`, the same authority
-/// System Settings' Bluetooth pane uses). Only paired devices are listed, as
-/// on macOS's menu-bar dropdown; raw discovery results belong to the
-/// Settings pane's pairing flow, not this menu.
+/// The Bluetooth menu: header with the power switch, the Devices list as
+/// icon-circle badges coloured for the connected device (click to connect
+/// or disconnect), then Bluetooth Settings… (BlueZ via `rmac-bluetooth`,
+/// the same authority System Settings' Bluetooth pane uses). Only paired
+/// devices are listed, as on macOS's menu-bar dropdown; raw discovery
+/// results belong to the Settings pane's pairing flow, not this menu.
 pub fn bluetooth_menu_rows(input: BluetoothMenuInput<'_>) -> Vec<StatusRow> {
     let settings = StatusRow::Item {
         label: "Bluetooth Settings…".into(),
@@ -1193,10 +1231,15 @@ pub fn bluetooth_menu_rows(input: BluetoothMenuInput<'_>) -> Vec<StatusRow> {
             rows.push(StatusRow::Info("No Devices".into()));
         } else {
             for device in devices {
-                rows.push(StatusRow::Check {
+                // Same row style as the Sound menu's Output list (Mac,
+                // 2026-09-29): an icon-circle badge, coloured for the
+                // connected device rather than checkmarked.
+                rows.push(StatusRow::Badge {
                     label: device.name.clone(),
-                    checked: device.connected,
-                    action: StatusAction::SetBluetoothConnected(device.id.clone()),
+                    glyph: BadgeGlyph::BluetoothDevice,
+                    on: device.connected,
+                    locked: false,
+                    action: Some(StatusAction::SetBluetoothConnected(device.id.clone())),
                 });
             }
         }
@@ -2488,7 +2531,7 @@ mod tests {
 
     #[test]
     fn new_status_rows_report_their_measured_heights() {
-        assert_eq!(StatusRow::Slider { value: 50 }.height(), 28.0);
+        assert_eq!(StatusRow::Slider { value: 50 }.height(), 31.0);
         assert_eq!(
             StatusRow::Check {
                 label: "x".into(),
@@ -2594,7 +2637,7 @@ mod tests {
     }
 
     #[test]
-    fn bluetooth_menu_lists_paired_devices_connected_first_with_a_check() {
+    fn bluetooth_menu_lists_paired_devices_connected_first_as_badges() {
         let snapshot = rmac_bluetooth::Snapshot {
             available: true,
             powered: true,
@@ -2617,8 +2660,8 @@ mod tests {
                 "title:Bluetooth",
                 "---",
                 "head:Devices",
-                "check:*AirPods",
-                "check:Wireless Keyboard",
+                "badge:AirPods",
+                "badge:Wireless Keyboard",
                 "end",
                 "---",
                 "item:Bluetooth Settings…",
@@ -2631,6 +2674,15 @@ mod tests {
                 ..
             }
         ));
+        assert!(matches!(
+            rows[3],
+            StatusRow::Badge {
+                on: true,
+                glyph: BadgeGlyph::BluetoothDevice,
+                ..
+            }
+        ));
+        assert!(matches!(rows[4], StatusRow::Badge { on: false, .. }));
         assert_eq!(
             rows[3].action(),
             Some(StatusAction::SetBluetoothConnected("a".into()))

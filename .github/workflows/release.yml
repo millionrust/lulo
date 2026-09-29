@@ -35,6 +35,12 @@ env:
   # Pinned once here so the SBOM job and docs/release-process.md agree on
   # which exact cargo-cyclonedx release is trusted.
   RMAC_CARGO_CYCLONEDX_VERSION: "0.5.9"
+  # Keep these content pins in sync with the official rustup 1.28.2
+  # archive and the cargo-cyclonedx 0.5.9 crates.io archive.
+  RMAC_RUSTUP_VERSION: "1.28.2"
+  RMAC_RUSTUP_AMD64_SHA256: "20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c"
+  RMAC_RUSTUP_ARM64_SHA256: "e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c"
+  RMAC_CARGO_CYCLONEDX_SHA256: "5d162f67705f0f5038759d73bf546a083bf30e8677c2e944b416bca48d9d69a8"
 
 jobs:
   dependency-policy:
@@ -73,7 +79,7 @@ jobs:
     # the amd64/arm64 runner decision and its risks (container disk space in
     # particular has not been validated against a real run).
     container:
-      image: ubuntu:26.04
+      image: ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
     env:
       DEBIAN_FRONTEND: noninteractive
       RUSTUP_HOME: /usr/local/rustup
@@ -132,8 +138,18 @@ jobs:
           sudo -E -u builder bash -lc '
             set -euo pipefail
             export PATH="'"$CARGO_HOME"'/bin:$PATH"
-            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
-              | sh -s -- -y --profile minimal --default-toolchain none
+            case "$(dpkg --print-architecture)" in
+              amd64) rustup_host=x86_64-unknown-linux-gnu; rustup_sha256="$RMAC_RUSTUP_AMD64_SHA256" ;;
+              arm64) rustup_host=aarch64-unknown-linux-gnu; rustup_sha256="$RMAC_RUSTUP_ARM64_SHA256" ;;
+              *) echo "unsupported runner architecture" >&2; exit 1 ;;
+            esac
+            curl --proto "=https" --tlsv1.2 -sSf \
+              "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/$rustup_host/rustup-init" \
+              -o rustup-init
+            printf '%s  rustup-init\n' "$rustup_sha256" | sha256sum --check --status
+            chmod +x rustup-init
+            ./rustup-init -y --no-modify-path --profile minimal --default-toolchain none
+            rm rustup-init
             cd "'"$GITHUB_WORKSPACE"'"
             rustup show active-toolchain
             rustup toolchain install 1.95.0 --profile minimal
@@ -183,7 +199,7 @@ jobs:
     if: ${{ vars.RMAC_HAS_ARM64_RUNNER == 'true' }}
     runs-on: [self-hosted, linux, arm64]
     container:
-      image: ubuntu:26.04
+      image: ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
     env:
       DEBIAN_FRONTEND: noninteractive
       RUSTUP_HOME: /usr/local/rustup
@@ -240,8 +256,18 @@ jobs:
           sudo -E -u builder bash -lc '
             set -euo pipefail
             export PATH="'"$CARGO_HOME"'/bin:$PATH"
-            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
-              | sh -s -- -y --profile minimal --default-toolchain none
+            case "$(dpkg --print-architecture)" in
+              amd64) rustup_host=x86_64-unknown-linux-gnu; rustup_sha256="$RMAC_RUSTUP_AMD64_SHA256" ;;
+              arm64) rustup_host=aarch64-unknown-linux-gnu; rustup_sha256="$RMAC_RUSTUP_ARM64_SHA256" ;;
+              *) echo "unsupported runner architecture" >&2; exit 1 ;;
+            esac
+            curl --proto "=https" --tlsv1.2 -sSf \
+              "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/$rustup_host/rustup-init" \
+              -o rustup-init
+            printf '%s  rustup-init\n' "$rustup_sha256" | sha256sum --check --status
+            chmod +x rustup-init
+            ./rustup-init -y --no-modify-path --profile minimal --default-toolchain none
+            rm rustup-init
             cd "'"$GITHUB_WORKSPACE"'"
             rustup show active-toolchain
             rustup toolchain install 1.95.0 --profile minimal
@@ -290,7 +316,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     container:
-      image: ubuntu:26.04
+      image: ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
     env:
       DEBIAN_FRONTEND: noninteractive
       RUSTUP_HOME: /usr/local/rustup
@@ -345,8 +371,18 @@ jobs:
           sudo -E -u builder bash -lc '
             set -euo pipefail
             export PATH="'"$CARGO_HOME"'/bin:$PATH"
-            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
-              | sh -s -- -y --profile minimal --default-toolchain none
+            case "$(dpkg --print-architecture)" in
+              amd64) rustup_host=x86_64-unknown-linux-gnu; rustup_sha256="$RMAC_RUSTUP_AMD64_SHA256" ;;
+              arm64) rustup_host=aarch64-unknown-linux-gnu; rustup_sha256="$RMAC_RUSTUP_ARM64_SHA256" ;;
+              *) echo "unsupported runner architecture" >&2; exit 1 ;;
+            esac
+            curl --proto "=https" --tlsv1.2 -sSf \
+              "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/$rustup_host/rustup-init" \
+              -o rustup-init
+            printf '%s  rustup-init\n' "$rustup_sha256" | sha256sum --check --status
+            chmod +x rustup-init
+            ./rustup-init -y --no-modify-path --profile minimal --default-toolchain none
+            rm rustup-init
             rustup toolchain install 1.95.0 --profile minimal
           '
 
@@ -379,7 +415,7 @@ jobs:
     runs-on: [self-hosted, linux, arm64]
     timeout-minutes: 120
     container:
-      image: ubuntu:26.04
+      image: ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
     env:
       DEBIAN_FRONTEND: noninteractive
       RUSTUP_HOME: /usr/local/rustup
@@ -434,8 +470,18 @@ jobs:
           sudo -E -u builder bash -lc '
             set -euo pipefail
             export PATH="'"$CARGO_HOME"'/bin:$PATH"
-            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
-              | sh -s -- -y --profile minimal --default-toolchain none
+            case "$(dpkg --print-architecture)" in
+              amd64) rustup_host=x86_64-unknown-linux-gnu; rustup_sha256="$RMAC_RUSTUP_AMD64_SHA256" ;;
+              arm64) rustup_host=aarch64-unknown-linux-gnu; rustup_sha256="$RMAC_RUSTUP_ARM64_SHA256" ;;
+              *) echo "unsupported runner architecture" >&2; exit 1 ;;
+            esac
+            curl --proto "=https" --tlsv1.2 -sSf \
+              "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/$rustup_host/rustup-init" \
+              -o rustup-init
+            printf '%s  rustup-init\n' "$rustup_sha256" | sha256sum --check --status
+            chmod +x rustup-init
+            ./rustup-init -y --no-modify-path --profile minimal --default-toolchain none
+            rm rustup-init
             rustup toolchain install 1.95.0 --profile minimal
           '
 
@@ -470,7 +516,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     container:
-      image: ubuntu:26.04
+      image: ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
     env:
       DEBIAN_FRONTEND: noninteractive
       RUSTUP_HOME: /usr/local/rustup
@@ -509,8 +555,18 @@ jobs:
           sudo -E -u builder bash -lc '
             set -euo pipefail
             export PATH="'"$CARGO_HOME"'/bin:$PATH"
-            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
-              | sh -s -- -y --profile minimal --default-toolchain none
+            case "$(dpkg --print-architecture)" in
+              amd64) rustup_host=x86_64-unknown-linux-gnu; rustup_sha256="$RMAC_RUSTUP_AMD64_SHA256" ;;
+              arm64) rustup_host=aarch64-unknown-linux-gnu; rustup_sha256="$RMAC_RUSTUP_ARM64_SHA256" ;;
+              *) echo "unsupported runner architecture" >&2; exit 1 ;;
+            esac
+            curl --proto "=https" --tlsv1.2 -sSf \
+              "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/$rustup_host/rustup-init" \
+              -o rustup-init
+            printf '%s  rustup-init\n' "$rustup_sha256" | sha256sum --check --status
+            chmod +x rustup-init
+            ./rustup-init -y --no-modify-path --profile minimal --default-toolchain none
+            rm rustup-init
             rustup toolchain install 1.95.0 --profile minimal
           '
 
@@ -547,7 +603,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     container:
-      image: ubuntu:26.04
+      image: ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
     env:
       DEBIAN_FRONTEND: noninteractive
       RUSTUP_HOME: /usr/local/rustup
@@ -610,8 +666,18 @@ jobs:
           sudo -E -u builder bash -lc '
             set -euo pipefail
             export PATH="'"$CARGO_HOME"'/bin:$PATH"
-            curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs \
-              | sh -s -- -y --profile minimal --default-toolchain none
+            case "$(dpkg --print-architecture)" in
+              amd64) rustup_host=x86_64-unknown-linux-gnu; rustup_sha256="$RMAC_RUSTUP_AMD64_SHA256" ;;
+              arm64) rustup_host=aarch64-unknown-linux-gnu; rustup_sha256="$RMAC_RUSTUP_ARM64_SHA256" ;;
+              *) echo "unsupported runner architecture" >&2; exit 1 ;;
+            esac
+            curl --proto "=https" --tlsv1.2 -sSf \
+              "https://static.rust-lang.org/rustup/archive/$RMAC_RUSTUP_VERSION/$rustup_host/rustup-init" \
+              -o rustup-init
+            printf '%s  rustup-init\n' "$rustup_sha256" | sha256sum --check --status
+            chmod +x rustup-init
+            ./rustup-init -y --no-modify-path --profile minimal --default-toolchain none
+            rm rustup-init
             rustup toolchain install 1.95.0 --profile minimal --component clippy,rustfmt
           '
 
@@ -648,7 +714,17 @@ jobs:
         run: rustup show active-toolchain
 
       - name: Install cargo-cyclonedx
-        run: cargo install cargo-cyclonedx --locked --version "$RMAC_CARGO_CYCLONEDX_VERSION"
+        run: |
+          crate="cargo-cyclonedx-${RMAC_CARGO_CYCLONEDX_VERSION}.crate"
+          curl --proto "=https" --tlsv1.2 -sSf \
+            "https://static.crates.io/crates/cargo-cyclonedx/${crate}" \
+            -o "$crate"
+          printf '%s  %s\n' "$RMAC_CARGO_CYCLONEDX_SHA256" "$crate" \
+            | sha256sum --check --status
+          mkdir cargo-cyclonedx-source
+          tar -xzf "$crate" -C cargo-cyclonedx-source
+          cargo install --locked --path \
+            "cargo-cyclonedx-source/cargo-cyclonedx-${RMAC_CARGO_CYCLONEDX_VERSION}"
 
       - name: Generate the workspace SBOM
         run: cargo cyclonedx --format json --all
@@ -850,7 +926,7 @@ jobs:
     if: ${{ vars.RMAC_ARCHIVE_SIGNING_FINGERPRINT != '' }}
     runs-on: ubuntu-latest
     container:
-      image: ubuntu:26.04
+      image: ubuntu:26.04@sha256:2260313b31c8c011cd2eebe728008efac1b3982be73eb71348ea2648d2c0e09b
     env:
       DEBIAN_FRONTEND: noninteractive
     steps:

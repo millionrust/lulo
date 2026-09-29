@@ -1,0 +1,37 @@
+{
+  "format": 1,
+  "date": "2026-09-28",
+  "source_revision": "8ba31b82",
+  "installed_package": "rmac-session 0.9.0~beta.1-38",
+  "scope": "installed shell binaries in a private nested Sway/niri session with a fake systemctl and virtual pointer; no live input or real power commands",
+  "binary_sha256": {
+    "rmac-top-bar": "5f83e04a6a376ed11c2279fc566a891d0a0d790090a7cabbc68e4443dfda9e90",
+    "rmac-dock": "9e93a8e1ade0e8c43675068d289588d8a013afa6b45d0206993bef8b3ed18444",
+    "rmac-shortcut-dispatch": "3b17b91f6945a8adf3997833898e58b11f6cb8bc177b0b4c5a44d8a351775306"
+  },
+  "runner_sha256": "c5803d481f92fb9c8aec85582d4b969e10c5eca71474ce728f570ca8e81855c3",
+  "runs": [
+    {
+      "mode": "pointer-only",
+      "passed": 15,
+      "total": 15,
+      "exit_code": 0,
+      "fake_systemctl_calls": ["suspend", "reboot", "poweroff"]
+    },
+    {
+      "mode": "full",
+      "passed": 37,
+      "total": 37,
+      "exit_code": 0,
+      "fake_systemctl_calls": [
+        "suspend", "reboot", "poweroff", "poweroff", "poweroff",
+        "poweroff", "poweroff", "reboot", "reboot"
+      ]
+    }
+  ],
+  "limits": [
+    "The menu's Shut Down and Restart rows were reached with virtual keyboard navigation before their confirmations were pointer-clicked.",
+    "The physical power key, live niri compositor, and host power actions were not exercised.",
+    "This runner predates the new pointer-click change in run_shutdown.py; the updated shutdown-completion journey still needs a Linux run."
+  ]
+}

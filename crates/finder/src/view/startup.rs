@@ -141,8 +141,19 @@ impl FinderView {
         cx.observe(&query, |_, _, cx| cx.notify()).detach();
         // Pressing Return runs a recursive Spotlight search of the whole folder tree.
         cx.subscribe(&query, |this, _input, ev: &InputEvent, cx| {
-            if let InputEvent::PressEnter { .. } = ev {
-                this.recursive_search(cx);
+            match ev {
+                InputEvent::PressEnter { .. } => this.recursive_search(cx),
+                InputEvent::Change if this.query.read(cx).value().is_empty() => {
+                    this.search_open = false;
+                    // Clearing a recursive-search query leaves the search
+                    // result set, so reload the current folder as Finder does.
+                    if this.showing_recursive_search() {
+                        this.reload(cx);
+                    } else {
+                        cx.notify();
+                    }
+                }
+                _ => {}
             }
         })
         .detach();
@@ -195,6 +206,7 @@ impl FinderView {
             // Another app may have copied files while this window was in
             // the background.
             if window.is_window_active() {
+                this.publish_app_menu_state(cx);
                 this.refresh_pasteboard_state(cx);
             }
             if !window.is_window_active()

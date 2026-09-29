@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a startup-only smoke for the first-party apps without behavior scenarios.
+"""Run a startup-only smoke for packaged and installed first-party apps.
 
 This runner starts each app once in a private D-Bus session, fresh HOME/XDG
 directories, and a headless Sway compositor. It records only startup readiness,
@@ -33,25 +33,32 @@ class AppSpec:
     binary: str
     fixture: Optional[str] = None
     mode: str = "window"
+    window_app_id: Optional[str] = None
 
 
-# These are the nine packaged GUI apps omitted by the existing behavior suite.
+# Several installed apps also have behavior scenarios; startup readiness stays
+# useful as a cheaper check that their packaged entry points create windows.
 # App Drawer is started in its explicit supervised show mode, which opens its
 # overlay without dispatching into the live shell's shortcut endpoint.
 APP_SPECS = (
-    AppSpec("archive-utility", "rmac-archive-utility", "zip", "archive"),
+    AppSpec("archive-utility", "rmac-archive-utility", "zip", "archive", "org.rmac.ArchiveUtility"),
     AppSpec("app-drawer", "rmac-app-drawer", mode="layer"),
-    AppSpec("clock", "rmac-clock"),
-    AppSpec("notes", "rmac-notes"),
-    AppSpec("player", "rmac-player", "wav"),
-    AppSpec("preview", "rmac-preview", "pdf"),
-    AppSpec("system-monitor", "rmac-system-monitor"),
-    AppSpec("terminal", "rmac-terminal"),
-    AppSpec("weather", "rmac-weather"),
+    AppSpec("clock", "rmac-clock", window_app_id="org.rmac.Clock"),
+    AppSpec("notes", "rmac-notes", window_app_id="org.rmac.Notes"),
+    AppSpec("player", "rmac-player", "wav", window_app_id="org.rmac.Player"),
+    AppSpec("preview", "rmac-preview", "pdf", window_app_id="org.rmac.Preview"),
+    AppSpec("system-monitor", "rmac-system-monitor", window_app_id="org.rmac.SystemMonitor"),
+    AppSpec("terminal", "rmac-terminal", window_app_id="org.rmac.Terminal"),
+    AppSpec("weather", "rmac-weather", window_app_id="org.rmac.Weather"),
+    AppSpec("calculator", "rmac-calculator", window_app_id="org.rmac.Calculator"),
+    AppSpec("system-settings", "rmac-system-settings", window_app_id="org.rmac.SystemSettings"),
+    AppSpec("text-editor", "rmac-text-editor", window_app_id="org.rmac.TextEditor"),
+    AppSpec("files", "rmac-files", "files", window_app_id="org.rmac.Files"),
 )
 
 DEFAULT_TIMEOUT = 20.0
 OUTPUT_SIZE = (1280, 800)
+READINESS_STABILITY_SECONDS = 0.5
 
 
 def fixture_arguments(spec: AppSpec, fixture_dir: Path) -> list[str]:
@@ -61,6 +68,8 @@ def fixture_arguments(spec: AppSpec, fixture_dir: Path) -> list[str]:
         return [str(fixture_dir / "smoke-audio.wav")]
     if spec.fixture == "pdf":
         return [str(fixture_dir / "smoke-document.pdf")]
+    if spec.fixture == "files":
+        return ["--path", str(fixture_dir)]
     return ["--service", "--show"] if spec.app_id == "app-drawer" else []
 
 
@@ -275,6 +284,25 @@ class NestedSway:
             walk(tree)
         return pids
 
+    def has_window(self, pid: int, expected_app_id: Optional[str] = None) -> bool:
+        """Check that this process owns a mapped window with the requested app ID."""
+
+        def walk(node: dict[str, Any]) -> bool:
+            if (
+                node.get("pid") == pid
+                and node.get("type") in {"con", "floating_con"}
+                and (expected_app_id is None or node.get("app_id") == expected_app_id)
+            ):
+                return True
+            return any(
+                walk(child)
+                for child in node.get("nodes", []) + node.get("floating_nodes", [])
+                if isinstance(child, dict)
+            )
+
+        tree = self.tree()
+        return isinstance(tree, dict) and walk(tree)
+
     def close(self) -> None:
         if getattr(self, "process", None) is not None and self.process.poll() is None:
             self.process.terminate()
@@ -325,6 +353,22 @@ def _terminate_group(process: subprocess.Popen[Any]) -> None:
         pass
     if process.poll() is None:
         process.wait(5)
+
+
+def readiness_is_stable(
+    process: subprocess.Popen[Any],
+    readiness_check: Any,
+    duration: float = READINESS_STABILITY_SECONDS,
+) -> bool:
+    """Require the process and its observable readiness to persist briefly."""
+    deadline = time.monotonic() + duration
+    while True:
+        if process.poll() is not None or not readiness_check():
+            return False
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return True
+        time.sleep(min(0.1, remaining))
 
 
 def reap_private_processes(runtime: Path) -> list[int]:
@@ -408,19 +452,27 @@ def run_app(
                         break
                     record.update(outcome="failed", reason_code="process_exited_before_ready")
                     break
-                mapped = process.pid in sway.pids_with_windows()
+                mapped = sway.has_window(process.pid, spec.window_app_id)
                 if mapped or spec.mode == "layer":
                     accessible, window_count = _atspi_window(process.pid)
                     if accessible:
-                        readiness = "accessible_layer_surface" if spec.mode == "layer" else "mapped_and_accessible"
-                        record.update(outcome="passed", readiness=readiness)
+                        def ready_now() -> bool:
+                            if spec.mode == "layer":
+                                return _atspi_window(process.pid)[0]
+                            return sway.has_window(process.pid, spec.window_app_id) and _atspi_window(process.pid)[0]
+
+                        if readiness_is_stable(process, ready_now):
+                            readiness = "accessible_layer_surface" if spec.mode == "layer" else "mapped_and_accessible"
+                            record.update(outcome="passed", readiness=readiness)
+                        else:
+                            record.update(outcome="failed", reason_code="readiness_not_stable")
                         break
                 time.sleep(0.15)
             else:
                 record.update(
                     outcome="failed",
                     reason_code="startup_timeout",
-                    mapped=process.pid in sway.pids_with_windows(),
+                    mapped=sway.has_window(process.pid, spec.window_app_id),
                     accessible_frames=window_count,
                 )
     except (OSError, subprocess.SubprocessError):
@@ -501,7 +553,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--apps",
         nargs="+",
         choices=[spec.app_id for spec in APP_SPECS],
-        help="run only selected app IDs (default: all nine)",
+        help="run only selected app IDs (default: all thirteen)",
     )
     parser.add_argument("--_inner-work", type=Path, help=argparse.SUPPRESS)
     return parser

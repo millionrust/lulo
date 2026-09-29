@@ -81,6 +81,8 @@ git -C "$repo_root" diff --quiet --ignore-submodules -- \
   || fail "tracked worktree changes make the result non-reproducible"
 git -C "$repo_root" diff --cached --quiet --ignore-submodules -- \
   || fail "staged changes make the result non-reproducible"
+[[ -z "$(git -C "$repo_root" ls-files --others --exclude-standard)" ]] \
+  || fail "untracked source files make the result non-reproducible"
 require_space "$build_minimum_kib" "two-build package check"
 
 staging="$(mktemp -d "$output_parent/.rmac-native-reproducibility.XXXXXX")"

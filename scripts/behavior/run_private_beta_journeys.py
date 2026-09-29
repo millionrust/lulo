@@ -69,6 +69,22 @@ def wait_for(predicate, timeout: float = 12.0):
     return None
 
 
+def has_typed_command_roundtrip(text: str, marker: str) -> bool:
+    """Require the command echo and its exact output on separate lines.
+
+    A raw occurrence count can pass when the terminal echoes duplicated input
+    or when a marker appears twice in one accessibility text run. The exact
+    output line must follow a line containing the command that was sent.
+    """
+    lines = [line.strip() for line in text.splitlines()]
+    command = f"echo {marker}"
+    command_lines = [index for index, line in enumerate(lines) if command in line]
+    return any(
+        any(line == marker for line in lines[index + 1 :])
+        for index in command_lines
+    )
+
+
 def inner(args, work: Path) -> int:
     session = run_power_dialogs.Run(args, work)
     rows = []
@@ -90,7 +106,7 @@ def inner(args, work: Path) -> int:
                 if grid is None:
                     return None
                 text = grid.queryText().getText(0, -1)
-                return text if text.count("RMAC_BETA_TERMINAL_OK") >= 2 else None
+                return text if has_typed_command_roundtrip(text, "RMAC_BETA_TERMINAL_OK") else None
 
             value = wait_for(command_and_output, timeout=8)
             occurrences = value.count("RMAC_BETA_TERMINAL_OK") if value else 0

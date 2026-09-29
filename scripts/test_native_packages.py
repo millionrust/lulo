@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -29,6 +31,7 @@ def load_script(name: str, filename: str):
 
 
 builder = load_script("build_native_packages", "build-native-packages.py")
+package_verifier = load_script("verify_native_packages", "verify-native-packages.py")
 
 
 def write_elf(path: Path, machine: int, *, executable_type: int = 3) -> None:
@@ -45,6 +48,93 @@ def populate_binary_directory(directory: Path, machine: int) -> None:
 
 
 class NativePackageContractTests(unittest.TestCase):
+    def test_checksum_manifest_rejects_duplicate_archive_records(self):
+        line = "a" * 64 + "  rmac-apps_0.9.0~beta.1-38_amd64.deb\n"
+        package_verifier._verify_checksum_manifest(line.encode("ascii"), [line])
+        with self.assertRaisesRegex(
+            package_verifier.VerificationError,
+            "checksum manifest differs",
+        ):
+            package_verifier._verify_checksum_manifest(
+                (line + line).encode("ascii"), [line]
+            )
+
+    def test_build_host_path_scan_rejects_home_locations_across_chunks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / "binary"
+            binary.write_bytes(
+                b"x" * (64 * 1024 - 9)
+                + b"\0/home/alice/project/src/main.rs\0"
+            )
+            with self.assertRaisesRegex(
+                package_verifier.VerificationError,
+                "contains a build-host home path",
+            ):
+                package_verifier._scan_binary_for_build_host_home(
+                    binary, package_verifier.MAX_PACKAGE_SET_SCAN_BYTES
+                )
+
+            binary.write_bytes(b"debug text mentions /home/ and /Users/ only")
+            scanned = package_verifier._scan_binary_for_build_host_home(
+                binary, package_verifier.MAX_PACKAGE_SET_SCAN_BYTES
+            )
+            self.assertEqual(scanned, binary.stat().st_size)
+
+            binary.write_bytes(b"location: /Users/alice/checkout/rmac/src/lib.rs\0")
+            with self.assertRaisesRegex(
+                package_verifier.VerificationError,
+                "contains a build-host home path",
+            ):
+                package_verifier._scan_binary_for_build_host_home(
+                    binary, package_verifier.MAX_PACKAGE_SET_SCAN_BYTES
+                )
+
+    def test_build_host_path_scan_rejects_symlink_and_exhausted_budget(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            binary = Path(temporary) / "binary"
+            binary.write_bytes(b"ordinary executable bytes")
+            link = Path(temporary) / "linked-binary"
+            link.symlink_to(binary)
+            with self.assertRaisesRegex(
+                package_verifier.VerificationError, "not a regular file"
+            ):
+                package_verifier._scan_binary_for_build_host_home(link, 100)
+            with self.assertRaisesRegex(
+                package_verifier.VerificationError, "exceeds its size limit"
+            ):
+                package_verifier._scan_binary_for_build_host_home(
+                    binary, binary.stat().st_size - 1
+                )
+
+    def test_native_build_remaps_checkout_and_cargo_home_paths(self):
+        script = (LINUX_SCRIPTS / "build-native-inputs.sh").read_text(
+            encoding="utf-8"
+        )
+        block = script.split('cargo_home="${CARGO_HOME:-$HOME/.cargo}"', 1)[1]
+        block = 'cargo_home="${CARGO_HOME:-$HOME/.cargo}"' + block.split("\nfi\n", 1)[0] + "\nfi\n"
+        environment = {**os.environ, "HOME": "/build/user", "CARGO_HOME": "/build/cargo"}
+        environment.pop("CARGO_ENCODED_RUSTFLAGS", None)
+        environment["RUSTFLAGS"] = "-Cdebuginfo=0"
+        plain = subprocess.run(
+            ["bash", "-c", f"repo_root=/build/repo\n{block}\nprintf '%s' \"$RUSTFLAGS\""],
+            env=environment, capture_output=True, check=True,
+        )
+        self.assertEqual(
+            plain.stdout.decode(),
+            "-Cdebuginfo=0 --remap-path-prefix=/build/repo=/rmac "
+            "--remap-path-prefix=/build/cargo=/cargo",
+        )
+        environment["CARGO_ENCODED_RUSTFLAGS"] = "-Cdebuginfo=0"
+        encoded = subprocess.run(
+            ["bash", "-c", f"repo_root=/build/repo\n{block}\nprintf '%s' \"$CARGO_ENCODED_RUSTFLAGS\""],
+            env=environment, capture_output=True, check=True,
+        )
+        self.assertEqual(
+            encoded.stdout,
+            b"-Cdebuginfo=0\x1f--remap-path-prefix=/build/repo=/rmac"
+            b"\x1f--remap-path-prefix=/build/cargo=/cargo",
+        )
+
     def test_shipping_shell_hosts_are_explicit_and_runtime_backed(self):
         self.assertEqual(
             set(contract.SHIPPING_SHELL_SOURCES),

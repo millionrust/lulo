@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 
 
@@ -146,6 +148,8 @@ DOMAINS = (
             "docs/dependency-policy.md",
             "docs/native-packaging.md",
             "docs/flatpak-packaging.md",
+            "packaging/flatpak/decisions.json",
+            "scripts/linux/verify-flatpak-package.py",
             "scripts/linux/verify-native-packages.py",
         ),
     ),
@@ -193,26 +197,47 @@ DOMAINS = (
         ("docs/about.md", "docs/privacy-security.md", "docs/chaos-soak.md"),
     ),
 )
+REVIEW_SOURCES = tuple(
+    sorted({source for _, _, sources in DOMAINS for source in sources})
+)
 
 
 class SecurityError(RuntimeError):
     """A bounded security-review verification failure."""
 
 
-def _read_regular(path: Path) -> bytes:
+def _read_regular(path: Path, *, dir_fd: int | None = None) -> bytes:
+    descriptor = None
     try:
-        metadata = path.lstat()
+        descriptor = os.open(
+            path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=dir_fd
+        )
+        metadata = os.fstat(descriptor)
     except OSError as error:
         raise SecurityError(f"required security file is unavailable: {path.name}") from error
-    if path.is_symlink() or not stat.S_ISREG(metadata.st_mode):
-        raise SecurityError(f"required security path is not regular: {path.name}")
-    if metadata.st_size > MAX_BYTES:
-        raise SecurityError(f"required security file is too large: {path.name}")
     try:
-        raw = path.read_bytes()
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = None
+            if not stat.S_ISREG(metadata.st_mode):
+                raise SecurityError(f"required security path is not regular: {path.name}")
+            if metadata.st_size > MAX_BYTES:
+                raise SecurityError(f"required security file is too large: {path.name}")
+            raw = stream.read(MAX_BYTES + 1)
+            after = os.fstat(stream.fileno())
+    except SecurityError:
+        raise
     except OSError as error:
         raise SecurityError(f"required security file cannot be read: {path.name}") from error
-    if len(raw) != metadata.st_size:
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    if len(raw) > MAX_BYTES:
+        raise SecurityError(f"required security file is too large: {path.name}")
+    if (
+        len(raw) != metadata.st_size
+        or (metadata.st_dev, metadata.st_ino, metadata.st_size, metadata.st_mtime_ns)
+        != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+    ):
         raise SecurityError(f"required security file changed while reading: {path.name}")
     return raw
 
@@ -226,6 +251,32 @@ def _load_json(path: Path) -> object:
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(_read_regular(path)).hexdigest()
+
+
+def _read_repo_source(relative: str) -> bytes:
+    """Read a manifest source without allowing symlink substitution."""
+    relative_path = Path(relative)
+    if not relative_path.parts or relative_path.is_absolute() or ".." in relative_path.parts:
+        raise SecurityError("security review source escapes the repository")
+    directory = None
+    try:
+        directory = os.open(
+            REPO_ROOT.resolve(), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        )
+        for part in relative_path.parts[:-1]:
+            child = os.open(
+                part,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=directory,
+            )
+            os.close(directory)
+            directory = child
+        return _read_regular(Path(relative_path.parts[-1]), dir_fd=directory)
+    except OSError as error:
+        raise SecurityError("security review source is not a regular repository file") from error
+    finally:
+        if directory is not None:
+            os.close(directory)
 
 
 def _source_inventory() -> tuple[dict[str, list[str]], set[str]]:
@@ -279,12 +330,7 @@ def load_contract(path: Path = CONTRACT_PATH) -> dict[str, object]:
         raise SecurityError("security review differs from the reviewed threat boundary")
     for _, _, sources in DOMAINS:
         for relative in sources:
-            source = (REPO_ROOT / relative).resolve()
-            try:
-                source.relative_to(REPO_ROOT.resolve())
-            except ValueError as error:
-                raise SecurityError("security review source escapes the repository") from error
-            _read_regular(source)
+            _read_repo_source(relative)
     _source_inventory()
     return document
 
@@ -310,17 +356,43 @@ def evidence_template(
     return {
         "contract_sha256": _sha256(CONTRACT_PATH),
         "environment": contract["environment"],
-        "format": 1,
+        "format": 2,
         "hardware_manifest_sha256": _sha256(HARDWARE_PATH),
         "journey_manifest_sha256": _sha256(JOURNEY_PATH),
         "open_findings": [],
         "results": expected_results(contract, "pending"),
         "revision": revision,
+        "source_sha256": {
+            relative: hashlib.sha256(_read_repo_source(relative)).hexdigest()
+            for relative in REVIEW_SOURCES
+        },
         "stations": [
             {"id": station, "status": "pending"} for station in tiers[tier]
         ],
         "tier": tier,
     }
+
+
+def _verify_checkout(revision: str) -> None:
+    """Require security station evidence for this clean candidate checkout."""
+    try:
+        head = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify", "HEAD"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, check=False, timeout=5,
+        )
+        status = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--untracked-files=all"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, check=False, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise SecurityError("security checkout cannot be verified") from error
+    current = head.stdout.decode("ascii", "replace").strip()
+    if head.returncode != 0 or current != revision:
+        raise SecurityError("security evidence revision differs from the checkout")
+    if status.returncode != 0 or status.stdout:
+        raise SecurityError("security evidence requires a clean checkout")
 
 
 def verify_evidence(
@@ -330,6 +402,7 @@ def verify_evidence(
     tier: str,
     revision: str,
 ) -> None:
+    _verify_checkout(revision)
     document = _load_json(evidence_path)
     template = evidence_template(contract, tier, revision)
     if not isinstance(document, dict) or set(document) != set(template):
@@ -379,7 +452,14 @@ def main() -> int:
             return 0
     except SecurityError as error:
         parser.exit(4, f"verify-security-review: {error}\n")
-    print(f"rmac security review verified ({len(expected_results(contract))} checks)")
+    evidence_status = (
+        "candidate evidence verified"
+        if arguments.evidence is not None else "candidate evidence not supplied"
+    )
+    print(
+        "rmac security review contract inventory verified "
+        f"({len(expected_results(contract))} checks; {evidence_status})"
+    )
     return 0
 
 

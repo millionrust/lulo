@@ -73,6 +73,8 @@ pub const QUIT: Shortcut = Shortcut::new("cmd-q", "⌘Q");
 pub const ENTER: Shortcut = Shortcut::new("enter", "↩");
 pub const ESCAPE: Shortcut = Shortcut::new("escape", "Esc");
 pub const SPACE: Shortcut = Shortcut::new("space", "Space");
+/// Finder's alternate Quick Look shortcut. Space remains available there too.
+pub const QUICK_LOOK: Shortcut = Shortcut::new("cmd-y", "⌘Y");
 pub const LEFT: Shortcut = Shortcut::new("left", "←");
 pub const RIGHT: Shortcut = Shortcut::new("right", "→");
 pub const UP: Shortcut = Shortcut::new("up", "↑");
@@ -134,6 +136,7 @@ mod tests {
         ENTER,
         ESCAPE,
         SPACE,
+        QUICK_LOOK,
         LEFT,
         RIGHT,
         UP,

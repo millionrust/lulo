@@ -18,6 +18,12 @@ pub fn default_shortcuts() -> Vec<ShortcutSpec> {
     vec![
         shortcut("launcher", "Open Spotlight", "LOGO+space", "Mod+Space"),
         shortcut(
+            "notification-center",
+            "Open Notification Center",
+            "LOGO+CTRL+n",
+            "Mod+Ctrl+N",
+        ),
+        shortcut(
             "lock",
             "Lock the Lulo OS session",
             "LOGO+CTRL+q",

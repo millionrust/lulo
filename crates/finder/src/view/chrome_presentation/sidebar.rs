@@ -1,14 +1,40 @@
 use super::*;
 use gpui_component::scroll::ScrollableElement as _;
 
+fn place_is_selected(
+    kind: PlaceKind,
+    name: &str,
+    path: &Path,
+    cwd: &Path,
+    trash_view: bool,
+    applications_view: bool,
+    result_title: Option<&str>,
+) -> bool {
+    match kind {
+        PlaceKind::Trash => trash_view,
+        PlaceKind::Applications => applications_view,
+        PlaceKind::Recents => !trash_view && !applications_view && result_title == Some("Recents"),
+        PlaceKind::Tag => {
+            !trash_view
+                && !applications_view
+                && result_title.and_then(|title| title.strip_prefix("Tag: ")) == Some(name)
+        }
+        _ => !trash_view && !applications_view && result_title.is_none() && cwd == path,
+    }
+}
+
 impl FinderView {
     fn render_place(&self, p: &Place, cx: &Context<Self>) -> impl IntoElement {
         let is_tag = p.kind == PlaceKind::Tag;
-        let selected = match p.kind {
-            PlaceKind::Trash => self.trash_view,
-            PlaceKind::Applications => self.applications_view,
-            _ => !is_tag && !self.trash_view && !self.applications_view && self.cwd == p.path,
-        };
+        let selected = place_is_selected(
+            p.kind,
+            p.name.as_ref(),
+            &p.path,
+            &self.cwd,
+            self.trash_view,
+            self.applications_view,
+            self.result_title.as_ref().map(|title| title.as_ref()),
+        );
         let key = format!("{}-{}", p.name, p.path.display());
 
         // design-lab/finder.html: glyph box centred 19 in, label at 35; a tag
@@ -376,5 +402,66 @@ impl FinderView {
                         cx.listener(|this, _, _, _| this.finish_sidebar_resize()),
                     ),
             )
+    }
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::{place_is_selected, PlaceKind};
+    use std::path::Path;
+
+    #[test]
+    fn sidebar_selection_tracks_recents_and_the_exact_tag_view() {
+        let cwd = Path::new("/home/user");
+        let empty = Path::new("");
+        let selected =
+            |kind, name, title| place_is_selected(kind, name, empty, cwd, false, false, title);
+
+        assert!(selected(PlaceKind::Recents, "Recents", Some("Recents")));
+        assert!(!selected(PlaceKind::Recents, "Recents", Some("Tag: Blue")));
+        assert!(selected(PlaceKind::Tag, "Blue", Some("Tag: Blue")));
+        assert!(!selected(PlaceKind::Tag, "Blue", Some("Tag: Red")));
+        assert!(!selected(PlaceKind::Tag, "Blue", Some("Tag: Blue extra")));
+    }
+
+    #[test]
+    fn ordinary_places_keep_path_selection_and_special_views_suppress_it() {
+        let home = Path::new("/home/user");
+        assert!(!place_is_selected(
+            PlaceKind::Item,
+            "Home",
+            home,
+            home,
+            false,
+            false,
+            Some("Recents"),
+        ));
+        assert!(place_is_selected(
+            PlaceKind::Item,
+            "Home",
+            home,
+            home,
+            false,
+            false,
+            None,
+        ));
+        assert!(!place_is_selected(
+            PlaceKind::Item,
+            "Home",
+            home,
+            home,
+            false,
+            true,
+            None,
+        ));
+        assert!(place_is_selected(
+            PlaceKind::Applications,
+            "Applications",
+            Path::new(""),
+            home,
+            false,
+            true,
+            None,
+        ));
     }
 }

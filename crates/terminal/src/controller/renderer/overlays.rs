@@ -9,6 +9,7 @@ impl TerminalView {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let status = self.find_status_label();
+        let view = cx.entity();
         div()
             .absolute()
             .top(px(40.0))
@@ -59,15 +60,24 @@ impl TerminalView {
             .child(
                 div()
                     .id("find-close")
+                    .role(Role::Button)
+                    .aria_label("Close Find")
                     .text_color(rmac_ui::mac::text_secondary())
                     .child("×")
                     .on_click(cx.listener(|this, _, window, cx| {
-                        this.capture_active_search_query(cx);
-                        this.tabs[this.active].ui.search_open = false;
-                        window.focus(&this.focus, cx);
-                        cx.notify();
-                    })),
+                        this.close_find(window, cx);
+                    }))
+                    .on_a11y_action(AccessibleAction::Click, move |_, window, cx| {
+                        view.update(cx, |this, cx| this.close_find(window, cx));
+                    }),
             )
+    }
+
+    fn close_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.capture_active_search_query(cx);
+        self.tabs[self.active].ui.search_open = false;
+        window.focus(&self.focus, cx);
+        cx.notify();
     }
 
     pub(super) fn render_context_menu(&self, state: rmac_ui::ContextMenuState) -> impl IntoElement {

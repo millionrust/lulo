@@ -98,18 +98,24 @@ Three Low findings from the
 with a mitigation. They still count against the security gate.
 
 - **SR-15, build paths in binaries.** A package built on your own machine
-  names your home directory in its panic messages. Released packages are
-  built on GitHub's runners, so this affects only packages you build
-  yourself; don't share those.
-- **SR-18, release build inputs.** The release workflow installs rustup,
-  the Ubuntu container and some build tools by tag or version rather than
-  by hash. Actions are pinned by commit, Rust dependencies are locked and
-  checked by cargo-deny, and every package carries a provenance attestation
-  that `install.sh --from-release` verifies.
+  may name your home directory in its panic messages. Source builds now remap
+  the checkout and Cargo home paths, and native package verification now scans
+  inventoried executables for home-directory paths. A fresh package build has
+  not yet passed that check. Don't share locally built packages until their
+  binaries are checked.
+- **SR-18, release build inputs.** Release containers, the rustup installer,
+  and the `cargo-cyclonedx` source archive now have content pins in source.
+  Rust toolchain artifacts are still selected by version, and the changed
+  workflow has not had a native release run. Actions are pinned by commit,
+  Rust dependencies are locked and checked by cargo-deny, and every package
+  carries a provenance attestation that `install.sh --from-release` verifies.
 - **SR-29, automatic updates can remove a package.** The daily automatic
-  update schedules Lulo OS and security updates for the next restart
-  without first checking whether they remove anything. Only signed,
-  trusted packages are used. To review every update yourself, turn off
+  updater in the installed `8ba31b82` build schedules Lulo OS and security
+  updates for the next restart without first checking whether they remove
+  anything. The newer source also re-simulates previously scheduled plans and
+  cancels still-matching unsafe or unverifiable offline triggers, but has not
+  been installed or tested with native PackageKit.
+  Only signed, trusted packages are used. To review every update yourself, turn off
   the Automatic Updates switches in System Settings > General > Software
   Update and use Update Now, which shows any removal before it proceeds.
 

@@ -20,6 +20,15 @@ impl Settings {
 
         let mut body = div().v_flex();
         if self.storage.is_empty() {
+            if self.system_data_loading {
+                return body
+                    .child(
+                        Progress::indeterminate()
+                            .label("Loading storage volumes…")
+                            .mb_3(),
+                    )
+                    .child(footer_buttons(vec![refresh]));
+            }
             return body
                 .child(
                     EmptyState::new("No storage volumes available")

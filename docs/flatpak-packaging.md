@@ -83,6 +83,16 @@ The authoritative matrix is
   and activates arbitrary reviewed host applications.
 - System Settings remains native because its purpose is coordinated system
   D-Bus, polkit, package, hardware, privacy, and session mutation.
+- Calculator and Clock are native while their otherwise small sandbox
+  boundaries and Linux acceptance runs remain unreviewed.
+- Preview is native pending a portal-backed document-open acceptance run and
+  a reviewed manifest.
+- Weather remains native until its required forecast network access and
+  privacy policy have a reviewed sandbox permission set.
+- Player remains native until local media, playback, and MPRIS integration
+  have a reviewed portal and permission model.
+- Archive Utility remains native until its arbitrary archive-read and
+  extraction-write authority has a reviewed filesystem/portal boundary.
 - Shell components remain trusted native session processes. Granting a sandbox
   the compositor, layer-shell, system-service, and cross-application authority
   they require would weaken isolation while misrepresenting their trust role.

@@ -39,6 +39,15 @@ class ReleaseContractRunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(runner.ContractSuiteError, "differs"):
                 runner.load_suite(path)
 
+    def test_rejects_boolean_minimum_free_space(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "suite.json"
+            document = json.loads(runner.SUITE_PATH.read_text(encoding="utf-8"))
+            document["minimum_free_gib"] = True
+            path.write_text(json.dumps(document), encoding="utf-8")
+            with self.assertRaisesRegex(runner.ContractSuiteError, "must be integers"):
+                runner.load_suite(path)
+
     def test_stage_runner_propagates_failure_without_shell(self):
         passing = {
             "command": ["$PYTHON", "-c", "raise SystemExit(0)"],

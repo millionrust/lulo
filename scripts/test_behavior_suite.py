@@ -332,6 +332,35 @@ class CompareTests(unittest.TestCase):
         Path(handle.name).unlink()
         self.assertEqual([e["status"] for e in evaluated], ["pass"])
 
+    def test_compare_does_not_drop_results_without_scenarios_or_expectations(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "area").mkdir()
+            (root / "area" / "no-expectation.json").write_text(json.dumps({
+                "title": "No expectation", "app": "files",
+                "steps": [{"observe": "window", "facts": ["windows"]}],
+            }))
+            evaluated = compare.evaluate({"results": [
+                {"scenario": "area/unknown", "lulo": {}},
+                {"scenario": "area/no-expectation", "lulo": {}},
+            ]}, root)
+
+        self.assertEqual([entry["status"] for entry in evaluated], ["fail", "fail"])
+        self.assertEqual([entry["mismatches"][0]["actual"] for entry in evaluated], ["missing", "missing"])
+
+    def test_compare_cli_rejects_an_empty_result_set(self):
+        import contextlib
+        import io
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "empty.json"
+            path.write_text('{"results": []}', encoding="utf-8")
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(compare.main([str(path)]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

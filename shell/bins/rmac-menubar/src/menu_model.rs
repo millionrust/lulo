@@ -1402,9 +1402,9 @@ pub struct Confirmation {
     /// title, as on the Mac.
     pub icon: &'static str,
     /// Log Out, Restart and Shut Down show a live "If you do nothing…"
-    /// countdown and the "Reopen windows…" checkbox in place of `detail`;
-    /// the power-button dialog has neither (measured on macOS 26.2: it
-    /// never auto-runs, so unlike the menu items it carries no countdown).
+    /// countdown in place of `detail`; the power-button dialog has no
+    /// countdown (measured on macOS 26.2: it never auto-runs). The reopen
+    /// windows option is omitted until session restore can honor it.
     pub countdown: bool,
 }
 
@@ -1412,9 +1412,9 @@ pub struct Confirmation {
 /// macOS 26.2 (scanning a Retina capture for the panel's opaque edges:
 /// ~531 px / 2 = ~265 pt, rounded).
 pub const CONFIRMATION_WIDTH: f32 = 264.0;
-/// Height of the same dialog (icon + two-line title + countdown body +
-/// checkbox + buttons), measured the same way.
-pub const CONFIRMATION_HEIGHT: f32 = 288.0;
+/// Height of the confirmation without a reopen-windows checkbox. The Mac's
+/// measured 288 pt layout includes that control; this panel trims its 24 pt.
+pub const CONFIRMATION_HEIGHT: f32 = 264.0;
 /// The power-button dialog has four buttons. S: not measured on the Mac
 /// (reachable only by holding the physical power key, which this audit
 /// does not press); width kept at its prior estimate.
@@ -1426,11 +1426,6 @@ pub const POWER_DIALOG_HEIGHT: f32 = 200.0;
 /// runs on its own, as on the Mac (measured on macOS 26.2: starts at 60
 /// and counts down one per second).
 pub const CONFIRMATION_COUNTDOWN: Duration = Duration::from_secs(60);
-/// Label of the checkbox Log Out, Restart and Shut Down all show, unchecked
-/// by default (measured on macOS 26.2 — note it reads "logging in", not
-/// "logging back in").
-pub const REOPEN_WINDOWS_LABEL: &str = "Reopen windows when logging in";
-
 const fn button(
     label: &'static str,
     action: Option<&'static str>,
@@ -1489,9 +1484,8 @@ pub fn system_confirmation(action: &str) -> Confirmation {
         // capture); no button is the blue/default one and Return does
         // nothing there (K: this is Apple's guard against an accidental
         // press of the physical power key triggering a shutdown), and it
-        // carries no countdown or "Reopen windows" checkbox — holding the
-        // key does not arm an unattended shutdown the way the menu items
-        // do.
+        // carries no countdown — holding the key does not arm an unattended
+        // shutdown the way the menu items do.
         POWER_DIALOG_ACTION => Confirmation {
             title: "Are you sure you want to shut down your computer now?",
             detail: "",
@@ -1528,28 +1522,21 @@ pub fn confirmation_default_action(action: &str) -> Option<&'static str> {
         .and_then(|button| button.action)
 }
 
-/// One control Tab can land keyboard focus on inside a confirmation: one of
-/// its buttons (`system_confirmation`'s left-to-right order), or the
-/// "Reopen windows…" checkbox the three timed confirmations show below
-/// their body text. On the Mac, Tab and Shift-Tab cycle every such control,
+/// One control Tab can land keyboard focus on inside a confirmation. Tab and
+/// Shift-Tab cycle every button,
 /// Space activates whichever one has focus, and Return always runs the
 /// default button regardless of focus (`confirmation_default_action`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConfirmationControl {
     Button(usize),
-    ReopenCheckbox,
 }
 
 /// `action`'s focusable controls, in tab order.
 pub fn confirmation_controls(action: &str) -> Vec<ConfirmationControl> {
     let confirmation = system_confirmation(action);
-    let mut controls = (0..confirmation.buttons.len())
+    (0..confirmation.buttons.len())
         .map(ConfirmationControl::Button)
-        .collect::<Vec<_>>();
-    if confirmation.countdown {
-        controls.push(ConfirmationControl::ReopenCheckbox);
-    }
-    controls
+        .collect()
 }
 
 /// Where keyboard focus starts when `action`'s confirmation opens: its
@@ -2806,21 +2793,19 @@ mod tests {
     }
 
     #[test]
-    fn a_timed_confirmation_tabs_through_cancel_confirm_then_the_checkbox() {
+    fn a_timed_confirmation_tabs_through_cancel_and_confirm() {
         let controls = confirmation_controls("system::shutdown");
         assert_eq!(
             controls,
             vec![
                 ConfirmationControl::Button(0),
                 ConfirmationControl::Button(1),
-                ConfirmationControl::ReopenCheckbox,
             ]
         );
         // Cancel, Confirm: Shut Down is the second (default) button.
         assert_eq!(confirmation_initial_focus("system::shutdown"), 1);
-        assert_eq!(confirmation_next_focus(controls.len(), 1, true), 2);
-        assert_eq!(confirmation_next_focus(controls.len(), 2, true), 0);
-        assert_eq!(confirmation_next_focus(controls.len(), 0, false), 2);
+        assert_eq!(confirmation_next_focus(controls.len(), 1, true), 0);
+        assert_eq!(confirmation_next_focus(controls.len(), 0, false), 1);
     }
 
     #[test]

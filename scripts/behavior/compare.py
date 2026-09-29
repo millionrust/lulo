@@ -37,10 +37,18 @@ def evaluate(results: dict[str, Any], root: Path = sc.SCENARIO_ROOT) -> list[dic
         sid = entry["scenario"]
         path = root / f"{sid}.json"
         if not path.exists():
+            out.append({"scenario": sid, "title": sid, "status": "fail",
+                        "mismatches": [{"observation": "*", "fact": "*", "field": "scenario",
+                                        "expected": "current scenario file", "actual": "missing",
+                                        "rule": "exact"}], "spec": {"title": sid}})
             continue
         scenario = sc.load(path)
         expected_path = sc.expectation_path(path)
         if not expected_path.exists():
+            out.append({"scenario": sid, "title": scenario["title"], "status": "fail",
+                        "mismatches": [{"observation": "*", "fact": "*", "field": "Mac expectation",
+                                        "expected": "recorded expectation", "actual": "missing",
+                                        "rule": "exact"}], "spec": scenario})
             continue
         expected = json.loads(expected_path.read_text())
         actual = entry.get("lulo", {})
@@ -88,7 +96,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         for section, lines in rows.items():
             print(f"\n{section}\n")
             print("\n".join(lines))
-    return 0 if passed == len(evaluated) else 1
+    return 0 if evaluated and passed == len(evaluated) else 1
 
 
 if __name__ == "__main__":

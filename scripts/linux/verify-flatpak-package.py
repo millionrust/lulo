@@ -9,24 +9,35 @@ from pathlib import Path
 import re
 import stat
 import sys
-import tomllib
 from typing import NamedTuple
 from urllib.parse import parse_qs, urlparse
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.9 on the Mac validation host
+    import tomli as tomllib
 
 
 class VerificationError(RuntimeError):
     pass
 
 
-APP_IDS = {
-    "org.rmac.TextEditor",
-    "org.rmac.Notes",
-    "org.rmac.Files",
-    "org.rmac.Terminal",
-    "org.rmac.SystemMonitor",
-    "org.rmac.AppDrawer",
-    "org.rmac.SystemSettings",
+APP_BINARIES = {
+    "org.rmac.TextEditor": "rmac-text-editor",
+    "org.rmac.Notes": "rmac-notes",
+    "org.rmac.Files": "rmac-files",
+    "org.rmac.Terminal": "rmac-terminal",
+    "org.rmac.SystemMonitor": "rmac-system-monitor",
+    "org.rmac.AppDrawer": "rmac-app-drawer",
+    "org.rmac.SystemSettings": "rmac-system-settings",
+    "org.rmac.Calculator": "rmac-calculator",
+    "org.rmac.Clock": "rmac-clock",
+    "org.rmac.Weather": "rmac-weather",
+    "org.rmac.Preview": "rmac-preview",
+    "org.rmac.Player": "rmac-player",
+    "org.rmac.ArchiveUtility": "rmac-archive-utility",
 }
+APP_IDS = set(APP_BINARIES)
 TEXT_EDITOR_ID = "org.rmac.TextEditor"
 TEXT_EDITOR_PERMISSIONS = {"--socket=wayland", "--device=dri"}
 FORBIDDEN_PERMISSION_PREFIXES = (
@@ -69,16 +80,24 @@ def verify_decisions(document: dict) -> None:
     if [entry.get("id") for entry in eligible] != [TEXT_EDITOR_ID]:
         raise VerificationError("only the reviewed Text Editor may currently be sandboxed")
     text_editor = by_id[TEXT_EDITOR_ID]
+    if text_editor.get("distribution") != "flatpak-and-native":
+        raise VerificationError("Text Editor Flatpak distribution decision changed")
     if text_editor.get("manifest") != "org.rmac.TextEditor.json":
         raise VerificationError("Text Editor must bind its exact manifest")
     if set(text_editor.get("permissions", [])) != TEXT_EDITOR_PERMISSIONS:
         raise VerificationError("Text Editor decision permissions changed")
 
     for entry in applications:
+        if entry.get("binary") != APP_BINARIES[entry["id"]]:
+            raise VerificationError(f"{entry['id']} binary differs from its packaged application")
+        if entry.get("distribution") not in {"native", "native-pending-flatpak", "flatpak-and-native"}:
+            raise VerificationError(f"{entry['id']} distribution is invalid")
         authority = entry.get("authority")
         if not isinstance(authority, str) or not authority.strip():
             raise VerificationError(f"{entry.get('id')} has no authority rationale")
         if entry.get("sandbox_eligible") is not True:
+            if entry.get("distribution") == "flatpak-and-native":
+                raise VerificationError(f"{entry['id']} cannot claim a Flatpak distribution")
             if entry.get("manifest") is not None or entry.get("permissions") != []:
                 raise VerificationError(
                     f"{entry.get('id')} cannot carry a sandbox manifest or permissions"
@@ -488,12 +507,43 @@ def verify_offline_driver(path: Path) -> None:
     verify_offline_driver_text(text)
 
 
+def verify_packaged_inventory(root: Path) -> None:
+    directory = root / "packaging/rmac-apps/applications"
+    expected = {f"{app_id}.desktop" for app_id in APP_IDS}
+    try:
+        actual = {path.name for path in directory.glob("*.desktop")}
+    except OSError as error:
+        raise VerificationError("packaged application inventory is unavailable") from error
+    if actual != expected:
+        raise VerificationError("sandbox decisions do not cover the packaged application inventory")
+    for app_id, binary in APP_BINARIES.items():
+        path = directory / f"{app_id}.desktop"
+        try:
+            metadata = path.lstat()
+            if path.is_symlink() or not stat.S_ISREG(metadata.st_mode) or metadata.st_size > MAX_DRIVER_BYTES:
+                raise VerificationError(f"packaged desktop entry is invalid: {app_id}")
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError) as error:
+            raise VerificationError(f"packaged desktop entry is unavailable: {app_id}") from error
+        in_entry = False
+        commands = []
+        for line in lines:
+            if line.startswith("["):
+                in_entry = line == "[Desktop Entry]"
+            elif in_entry and line.startswith("Exec="):
+                words = line.removeprefix("Exec=").split()
+                commands.append(words[0] if words else "")
+        if commands != [f"/usr/bin/{binary}"]:
+            raise VerificationError(f"packaged desktop command differs: {app_id}")
+
+
 def verify_repository(root: Path) -> None:
     package = root / "packaging/flatpak"
     decisions = read_json(package / "decisions.json")
     manifest = read_json(package / "org.rmac.TextEditor.json")
     sources = read_json(package / "cargo-sources.json")
     verify_decisions(decisions)
+    verify_packaged_inventory(root)
     verify_manifest(manifest)
     verify_component_paths(root)
     verify_cargo_sources(

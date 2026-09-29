@@ -119,6 +119,45 @@ class PackageLifecycleTests(unittest.TestCase):
         ):
             lifecycle._run(["dpkg"], tools={"dpkg": "/usr/bin/dpkg"})
 
+    def test_installed_application_payload_failure_fails_lifecycle(self):
+        verifier = mock.Mock()
+        verifier.verify_installed_host.side_effect = ValueError("payload mismatch")
+        with mock.patch.object(
+            lifecycle, "_load_script", return_value=verifier
+        ) as load_script:
+            with self.assertRaisesRegex(
+                lifecycle.LifecycleError, "installed application payload check failed"
+            ):
+                lifecycle._verify_application_host()
+        load_script.assert_called_once_with(
+            "rmac_lifecycle_application", "verify-application-package.py"
+        )
+        verifier.verify_installed_host.assert_called_once_with(Path("/"))
+
+    def test_installed_checkpoint_invokes_application_payload_verifier(self):
+        native = mock.Mock()
+        session = mock.Mock()
+        with (
+            mock.patch.object(
+                lifecycle, "_load_script", side_effect=[native, session]
+            ),
+            mock.patch.object(lifecycle, "_require_versions"),
+            mock.patch.object(
+                lifecycle,
+                "_verify_application_host",
+                side_effect=lifecycle.LifecycleError("app payload changed"),
+            ) as verify_app,
+            self.assertRaisesRegex(lifecycle.LifecycleError, "app payload changed"),
+        ):
+            lifecycle._verify_installed(
+                Path("/candidate"),
+                ("0.9.0~beta.1-38", "amd64", {"packages": []}),
+                tools={"dpkg-deb": "/usr/bin/dpkg-deb"},
+            )
+        native.verify_directory.assert_called_once()
+        verify_app.assert_called_once_with()
+        session.verify_installed_host.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -47,6 +47,7 @@ mod wifi;
 use settings_style as style;
 use state::Settings;
 use view_helpers::*;
+#[cfg(test)]
 use wifi::{wifi_pane_is_visible, wifi_pane_scan_should_start_on_navigation};
 
 use std::borrow::Cow;

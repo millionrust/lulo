@@ -53,16 +53,19 @@ impl Background {
 #[serde(default)]
 pub(super) struct FolderOptions {
     pub(super) preferred_view: Option<ViewMode>,
+    pub(super) view: ViewMode,
     pub(super) browse_in_view: bool,
     pub(super) group_by: GroupBy,
     pub(super) sort_by: SortKey,
     pub(super) icon_size: f32,
     pub(super) grid_spacing: f32,
     pub(super) text_size: u8,
+    pub(super) list_text_size: u8,
     pub(super) label_right: bool,
     pub(super) show_item_info: bool,
     pub(super) show_icon_preview: bool,
     pub(super) background: Background,
+    pub(super) picture_path: Option<PathBuf>,
     pub(super) list_large_icons: bool,
     /// Date Modified, Date Created, Date Last Opened, Date Added, Size, Kind,
     /// Version, Comments, Tags, in that order.
@@ -74,16 +77,19 @@ impl Default for FolderOptions {
     fn default() -> Self {
         Self {
             preferred_view: None,
+            view: ViewMode::List,
             browse_in_view: false,
             group_by: GroupBy::None,
             sort_by: SortKey::Name,
             icon_size: 64.0,
             grid_spacing: 54.0,
-            text_size: 13,
+            text_size: ICON_LABEL_SIZE as u8,
+            list_text_size: 13,
             label_right: false,
             show_item_info: false,
             show_icon_preview: true,
             background: Background::Default,
+            picture_path: None,
             list_large_icons: false,
             columns: [true, false, false, false, true, true, false, false, false],
             relative_dates: true,
@@ -98,6 +104,11 @@ impl FolderOptions {
             && self.grid_spacing.is_finite()
             && (0.0..=100.0).contains(&self.grid_spacing)
             && (10..=20).contains(&self.text_size)
+            && (10..=20).contains(&self.list_text_size)
+            && self
+                .picture_path
+                .as_ref()
+                .is_none_or(|path| path.is_absolute() && path.as_os_str().len() <= 4096)
     }
 }
 
@@ -107,12 +118,132 @@ enum Field {
     Browse,
     ItemInfo,
     Preview,
-    LargeIcons,
     RelativeDates,
     CalculateSizes,
     Column(usize),
 }
+
+pub(super) fn group_title(entry: &Entry, group: GroupBy) -> Option<String> {
+    match group {
+        GroupBy::None => None,
+        GroupBy::Name => Some(
+            entry
+                .name
+                .chars()
+                .next()
+                .unwrap_or('#')
+                .to_uppercase()
+                .to_string(),
+        ),
+        GroupBy::Kind => Some(entry.kind.to_string()),
+        GroupBy::Date => Some(
+            entry
+                .modified
+                .split(" at ")
+                .next()
+                .unwrap_or("Other")
+                .to_string(),
+        ),
+        GroupBy::Size => Some(
+            if entry.is_dir {
+                "Folders"
+            } else if entry.size_bytes < 1_000_000 {
+                "Small files"
+            } else if entry.size_bytes < 100_000_000 {
+                "Medium files"
+            } else {
+                "Large files"
+            }
+            .to_string(),
+        ),
+    }
+}
+fn directory_size(root: PathBuf, cancelled: &AtomicBool) -> Option<u64> {
+    let mut stack = vec![root];
+    let mut total = 0_u64;
+    while let Some(directory) = stack.pop() {
+        if cancelled.load(Ordering::Relaxed) {
+            return None;
+        }
+        let Ok(children) = std::fs::read_dir(directory) else {
+            continue;
+        };
+        for child in children.flatten() {
+            if cancelled.load(Ordering::Relaxed) {
+                return None;
+            }
+            let Ok(metadata) = std::fs::symlink_metadata(child.path()) else {
+                continue;
+            };
+            if metadata.file_type().is_symlink() {
+                continue;
+            }
+            if metadata.is_dir() {
+                stack.push(child.path());
+            } else if metadata.is_file() {
+                total = total.saturating_add(metadata.len());
+            }
+        }
+    }
+    Some(total)
+}
+
+pub(super) fn group_entries(entries: &mut [Entry], group: GroupBy) {
+    if group != GroupBy::None {
+        // Stable sort keeps the selected Sort By order within each group.
+        entries.sort_by_cached_key(|entry| group_title(entry, group));
+    }
+}
+
 impl FinderView {
+    pub(super) fn start_size_scan(&mut self, cx: &mut Context<Self>) {
+        if let Some(cancel) = self.size_scan_cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        self.directory_sizes.clear();
+        if !self.current_options().calculate_sizes {
+            cx.notify();
+            return;
+        }
+        let directories = self
+            .entries
+            .iter()
+            .filter(|entry| entry.is_dir)
+            .map(|entry| entry.path.clone())
+            .collect::<Vec<_>>();
+        if directories.is_empty() {
+            return;
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.size_scan_cancel = Some(cancel.clone());
+        let path = self.cwd.clone();
+        let generation = self.directory_generation;
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let worker_cancel = cancel.clone();
+            let sizes = cx
+                .background_executor()
+                .spawn(async move {
+                    directories
+                        .into_iter()
+                        .filter_map(|directory| {
+                            directory_size(directory.clone(), &worker_cancel)
+                                .map(|size| (directory, size))
+                        })
+                        .collect::<std::collections::HashMap<_, _>>()
+                })
+                .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.cwd == path
+                    && this.directory_generation == generation
+                    && !cancel.load(Ordering::Relaxed)
+                {
+                    this.directory_sizes = sizes;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
     pub(super) fn current_options(&self) -> FolderOptions {
         self.folder_options
             .get(&self.cwd)
@@ -121,18 +252,32 @@ impl FinderView {
     }
     pub(super) fn change_options(
         &mut self,
-        change: impl FnOnce(&mut FolderOptions),
+        change: impl Fn(&mut FolderOptions),
         cx: &mut Context<Self>,
     ) {
         let mut options = self.current_options();
+        let calculate_was_enabled = options.calculate_sizes;
         change(&mut options);
         if !options.valid() {
             return;
         }
         self.icon_size = options.icon_size;
-        self.sort_key = options.sort_by;
-        sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
+        if self.sort_key != options.sort_by || self.current_options().group_by != options.group_by {
+            self.sort_key = options.sort_by;
+            sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
+            group_entries(&mut self.entries, options.group_by);
+            self.selected.clear();
+        }
+        let calculate_is_enabled = options.calculate_sizes;
+        if self.folder_options.len() >= 128 && !self.folder_options.contains_key(&self.cwd) {
+            if let Some(oldest) = self.folder_options.keys().next().cloned() {
+                self.folder_options.remove(&oldest);
+            }
+        }
         self.folder_options.insert(self.cwd.clone(), options);
+        if calculate_was_enabled != calculate_is_enabled {
+            self.start_size_scan(cx);
+        }
         self.persist_finder_state();
         cx.notify();
     }
@@ -144,7 +289,6 @@ impl FinderView {
                 Field::Browse => o.browse_in_view = value,
                 Field::ItemInfo => o.show_item_info = value,
                 Field::Preview => o.show_icon_preview = value,
-                Field::LargeIcons => o.list_large_icons = value,
                 Field::RelativeDates => o.relative_dates = value,
                 Field::CalculateSizes => o.calculate_sizes = value,
                 Field::Column(i) => o.columns[i] = value,
@@ -159,17 +303,59 @@ impl FinderView {
         self.view_options_open = !self.view_options_open;
         cx.notify();
     }
-    pub(super) fn restore_folder_options(&mut self) {
+    pub(super) fn restore_folder_options(&mut self, cx: &mut Context<Self>) {
         if self.options_path.as_ref() == Some(&self.cwd) {
             return;
         }
         self.options_path = Some(self.cwd.clone());
-        let o = self.current_options();
-        if let Some(view) = o.preferred_view {
-            self.view = view;
+        if let Some(cancel) = self.size_scan_cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
         }
+        self.directory_sizes.clear();
+        let stored = self.folder_options.contains_key(&self.cwd);
+        let inherited = self.browse_view.take();
+        let o = self.current_options();
+        self.view = o.preferred_view.unwrap_or_else(|| {
+            if stored {
+                o.view
+            } else {
+                inherited.unwrap_or(o.view)
+            }
+        });
         self.icon_size = o.icon_size;
         self.sort_key = o.sort_by;
+        self.icon_size_slider = cx.new(|_| {
+            SliderState::new()
+                .min(32.0)
+                .max(128.0)
+                .step(4.0)
+                .default_value(o.icon_size)
+        });
+        cx.subscribe(
+            &self.icon_size_slider,
+            |this, _, event: &SliderEvent, cx| {
+                if let SliderEvent::Change(value) = event {
+                    this.change_icon_size(value.start().clamp(32.0, 128.0), cx);
+                }
+            },
+        )
+        .detach();
+        self.grid_spacing_slider = cx.new(|_| {
+            SliderState::new()
+                .min(0.0)
+                .max(100.0)
+                .step(2.0)
+                .default_value(o.grid_spacing)
+        });
+        cx.subscribe(
+            &self.grid_spacing_slider,
+            |this, _, event: &SliderEvent, cx| {
+                if let SliderEvent::Change(value) = event {
+                    this.change_options(|o| o.grid_spacing = value.start().clamp(0.0, 100.0), cx);
+                }
+            },
+        )
+        .detach();
     }
     fn checkbox(
         &self,
@@ -201,7 +387,7 @@ impl FinderView {
             .label(label)
             .selected(selected)
             .on_change(move |_, _, cx| {
-                entity.update(cx, |this, cx| this.change_options(choose, cx));
+                entity.update(cx, |this, cx| this.change_options(&choose, cx));
             })
     }
     fn cycle(
@@ -222,7 +408,7 @@ impl FinderView {
                 Button::new(id, format!("{value}  ⌄"))
                     .xsmall()
                     .on_click(move |_, _, cx| {
-                        entity.update(cx, |this, cx| this.change_options(change, cx));
+                        entity.update(cx, |this, cx| this.change_options(&change, cx));
                     }),
             )
     }
@@ -233,6 +419,7 @@ impl FinderView {
         let mut panel = div()
             .id("finder-view-options")
             .role(Role::Dialog)
+            .key_context("Finder")
             .aria_label(format!("{name} View Options"))
             .absolute()
             .top(px(34.0))
@@ -250,11 +437,23 @@ impl FinderView {
             .text_color(rmac_ui::mac::text());
         panel = panel.child(
             div()
+                .relative()
                 .h(px(26.0))
                 .flex_none()
                 .flex()
                 .items_center()
                 .justify_center()
+                .child(
+                    div().absolute().left(px(5.0)).top(px(2.0)).child(
+                        Button::new("vo-close", "×")
+                            .ghost()
+                            .xsmall()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.view_options_open = false;
+                                cx.notify();
+                            })),
+                    ),
+                )
                 .child(name),
         );
         panel = panel.child(
@@ -340,19 +539,12 @@ impl FinderView {
                             .horizontal()
                             .accessible_name("Icon size"),
                     )
-                    .child(self.cycle(
-                        "vo-grid",
-                        "Grid spacing:",
-                        format!("{}", o.grid_spacing as u32),
-                        |o| {
-                            o.grid_spacing = if o.grid_spacing >= 100.0 {
-                                0.0
-                            } else {
-                                o.grid_spacing + 10.0
-                            }
-                        },
-                        cx,
-                    )),
+                    .child("Grid spacing:")
+                    .child(
+                        Slider::new(&self.grid_spacing_slider)
+                            .horizontal()
+                            .accessible_name("Grid spacing"),
+                    ),
             );
             panel = panel.child(
                 div()
@@ -421,16 +613,42 @@ impl FinderView {
                 .border_b_1()
                 .border_color(rmac_ui::mac::separator())
                 .child("Background:");
+            let selected_picture = self.selected_entry().and_then(|entry| {
+                entry
+                    .path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .filter(|extension| {
+                        ["png", "jpg", "jpeg", "gif", "webp", "bmp"]
+                            .contains(&extension.to_ascii_lowercase().as_str())
+                    })
+                    .map(|_| entry.path.clone())
+            });
             for kind in [Background::Default, Background::Colour, Background::Picture] {
+                let picture = selected_picture.clone();
                 background = background.child(self.choice(
                     format!("vo-background-{}", kind.label()),
                     kind.label(),
                     o.background == kind,
-                    move |o| o.background = kind,
+                    move |o| {
+                        o.background = kind;
+                        if kind == Background::Picture {
+                            if let Some(path) = picture.clone() {
+                                o.picture_path = Some(path);
+                            }
+                        }
+                    },
                     cx,
                 ));
             }
-            panel = panel.child(background);
+            panel = panel.child(
+                background.child(
+                    div()
+                        .text_size(rmac_ui::text_px(10.0))
+                        .text_color(rmac_ui::mac::text_secondary())
+                        .child("Select an image, then choose Picture"),
+                ),
+            );
         } else if mode == ViewMode::List {
             panel = panel.child(
                 div()
@@ -461,12 +679,12 @@ impl FinderView {
                     .child(self.cycle(
                         "vo-text",
                         "Text size:",
-                        o.text_size.to_string(),
+                        o.list_text_size.to_string(),
                         |o| {
-                            o.text_size = if o.text_size >= 20 {
+                            o.list_text_size = if o.list_text_size >= 20 {
                                 10
                             } else {
-                                o.text_size + 1
+                                o.list_text_size + 1
                             }
                         },
                         cx,
@@ -566,5 +784,22 @@ impl FinderView {
                     })),
             ),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn calculate_sizes_skips_symlink_cycles() {
+        let root =
+            std::env::temp_dir().join(format!("rmac-view-options-size-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("nested")).unwrap();
+        std::fs::write(root.join("nested/file"), b"12345").unwrap();
+        std::os::unix::fs::symlink(&root, root.join("nested/cycle")).unwrap();
+        let cancel = AtomicBool::new(false);
+        assert_eq!(directory_size(root.clone(), &cancel), Some(5));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

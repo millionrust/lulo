@@ -2,7 +2,7 @@ use super::*;
 
 impl FinderView {
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
-        self.restore_folder_options();
+        self.restore_folder_options(cx);
         if self.trash_view {
             self.reload_trash(cx);
             return;
@@ -203,6 +203,7 @@ impl FinderView {
         let show_hidden = self.show_hidden;
         let key = self.sort_key;
         let asc = self.sort_asc;
+        let group = self.current_options().group_by;
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
@@ -210,6 +211,7 @@ impl FinderView {
                     match read_entries_checked(&path, show_hidden, expected_identity) {
                         Ok((identity, mut entries)) => {
                             sort_entries(&mut entries, key, asc);
+                            view_options::group_entries(&mut entries, group);
                             let free = refresh_free_space.then(|| free_space(&path));
                             Ok((identity, entries, free))
                         }
@@ -239,6 +241,7 @@ impl FinderView {
                             tab.identity = Some(identity);
                         }
                         this.entries = entries;
+                        this.start_size_scan(cx);
                         let entry_paths = this
                             .entries
                             .iter()

@@ -96,7 +96,14 @@ impl Render for FinderView {
             .rounded(px(rmac_ui::mac::radius_large_surface()))
             .overflow_hidden()
             .text_color(label())
+            .on_action(cx.listener(|this, _: &ShowViewOptions, _, cx| this.toggle_view_options(cx)))
             .capture_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if this.view_options_open && event.keystroke.key.as_str() == "escape" {
+                    this.view_options_open = false;
+                    cx.stop_propagation();
+                    cx.notify();
+                    return;
+                }
                 if this.go_to.is_some() {
                     // Typing goes to the path field; these keys drive the sheet.
                     match event.keystroke.key.as_str() {

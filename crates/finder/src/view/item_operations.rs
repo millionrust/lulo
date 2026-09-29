@@ -92,6 +92,8 @@ impl FinderView {
         };
         self.entries.push(entry.clone());
         sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
+        let group = self.current_options().group_by;
+        view_options::group_entries(&mut self.entries, group);
         let Some(index) = self.entries.iter().position(|entry| entry.path == path) else {
             self.reload(cx);
             return;

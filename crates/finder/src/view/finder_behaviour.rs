@@ -64,7 +64,9 @@ impl FinderView {
     pub(super) fn icon_cell(&self) -> (f32, f32) {
         (
             self.icon_size + ICON_CELL_EXTRA_WIDTH + (self.current_options().grid_spacing - 54.0),
-            self.icon_size + ICON_CELL_EXTRA_HEIGHT,
+            self.icon_size
+                + ICON_CELL_EXTRA_HEIGHT
+                + (self.current_options().grid_spacing - 54.0) * 0.5,
         )
     }
 

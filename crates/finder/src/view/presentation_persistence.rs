@@ -227,6 +227,7 @@ impl FinderView {
             return;
         }
         self.view = mode;
+        self.change_options(|options| options.view = mode, cx);
         if mode != ViewMode::Column {
             self.column_selection = None;
         }
@@ -294,6 +295,9 @@ impl FinderView {
     /// after this runs, so the save happens before `remove_window`, not
     /// after.
     pub(super) fn close_finder_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(cancel) = self.size_scan_cancel.take() {
+            cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         self.finder_persistence.close(self.finder_state());
         for info_window in self.info_windows.drain(..) {
             let _ = cx.update_window(*info_window, |_, window, _| window.remove_window());

@@ -357,6 +357,9 @@ impl FinderView {
             self.sort_asc = true;
         }
         sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
+        let group = self.current_options().group_by;
+        view_options::group_entries(&mut self.entries, group);
+        self.change_options(|o| o.sort_by = key, cx);
         self.search_relevance_order = false;
         self.selected.clear();
         cx.notify();

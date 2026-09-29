@@ -66,6 +66,17 @@ impl FinderView {
             .filter(|entry| q.is_empty() || entry.name.to_lowercase().contains(&q))
             .count();
         let listing_name = self.title();
+        let options = self.current_options();
+        let list_icon = if options.list_large_icons {
+            24.0
+        } else {
+            LIST_ICON
+        };
+        let list_row_height = if options.list_large_icons {
+            30.0
+        } else {
+            LIST_ROW_HEIGHT
+        };
 
         // design-lab/finder.html: a 28 pt header, 11 pt labels, the sorted
         // column in semibold with its chevron, 1 × 16 column dividers and a
@@ -127,6 +138,21 @@ impl FinderView {
                 .on_click(cx.listener(move |this, _, _, cx| this.set_sort(key, cx)))
         };
 
+        let plain_head = |id: &'static str, text: &'static str, width: f32| {
+            div()
+                .id(id)
+                .h_full()
+                .w(px(width))
+                .flex_none()
+                .flex()
+                .items_center()
+                .pl(px(LIST_CELL_TEXT_X))
+                .truncate()
+                .text_size(rmac_ui::text_px(LIST_HEADER_TEXT))
+                .text_color(chrome_text())
+                .child(text)
+        };
+
         let header = div()
             .h(px(LIST_HEADER_HEIGHT))
             .flex_none()
@@ -143,40 +169,82 @@ impl FinderView {
                         SortKey::Name,
                         None,
                         false,
-                        LIST_DISCLOSURE_X + LIST_DISCLOSURE_WIDTH + LIST_ICON + LIST_ICON_TO_NAME,
+                        LIST_DISCLOSURE_X + LIST_DISCLOSURE_WIDTH + list_icon + LIST_ICON_TO_NAME,
                     ))
-                    .child(head(
-                        "head-date",
-                        "Date Modified",
-                        SortKey::Date,
-                        Some(DATE_W),
-                        true,
-                        LIST_CELL_TEXT_X,
-                    ))
-                    .child(head(
-                        "head-size",
-                        "Size",
-                        SortKey::Size,
-                        Some(SIZE_W),
-                        true,
-                        LIST_CELL_TEXT_X,
-                    ))
-                    .child(head(
-                        "head-kind",
-                        "Kind",
-                        SortKey::Kind,
-                        Some(KIND_W),
-                        true,
-                        LIST_CELL_TEXT_X,
-                    )),
+                    .when(options.columns[0], |header| {
+                        header.child(head(
+                            "head-date",
+                            "Date Modified",
+                            SortKey::Date,
+                            Some(DATE_W),
+                            true,
+                            LIST_CELL_TEXT_X,
+                        ))
+                    })
+                    .when(options.columns[1], |header| {
+                        header.child(plain_head("head-created", "Date Created", DATE_W))
+                    })
+                    .when(options.columns[2], |header| {
+                        header.child(plain_head("head-opened", "Date Last Opened", DATE_W))
+                    })
+                    .when(options.columns[3], |header| {
+                        header.child(plain_head("head-added", "Date Added", DATE_W))
+                    })
+                    .when(options.columns[4], |header| {
+                        header.child(head(
+                            "head-size",
+                            "Size",
+                            SortKey::Size,
+                            Some(SIZE_W),
+                            true,
+                            LIST_CELL_TEXT_X,
+                        ))
+                    })
+                    .when(options.columns[5], |header| {
+                        header.child(head(
+                            "head-kind",
+                            "Kind",
+                            SortKey::Kind,
+                            Some(KIND_W),
+                            true,
+                            LIST_CELL_TEXT_X,
+                        ))
+                    })
+                    .when(options.columns[6], |header| {
+                        header.child(plain_head("head-version", "Version", SIZE_W))
+                    })
+                    .when(options.columns[7], |header| {
+                        header.child(plain_head("head-comments", "Comments", DATE_W))
+                    })
+                    .when(options.columns[8], |header| {
+                        header.child(plain_head("head-tags", "Tags", KIND_W))
+                    }),
             )
             .child(div().h(px(0.5)).flex_none().bg(hairline()));
 
         let mut rows: Vec<gpui::AnyElement> = Vec::new();
         let mut stripe_index = 0usize;
+        let mut previous_list_group: Option<String> = None;
         for (ix, e) in self.entries.iter().enumerate() {
             if !q.is_empty() && !e.name.to_lowercase().contains(&q) {
                 continue;
+            }
+            if let Some(group) = view_options::group_title(e, options.group_by) {
+                if previous_list_group.as_ref() != Some(&group) {
+                    rows.push(
+                        div()
+                            .h(px(24.0))
+                            .px_3()
+                            .flex()
+                            .items_center()
+                            .text_size(rmac_ui::text_px(11.0))
+                            .font_weight(rmac_ui::mac::SEMIBOLD)
+                            .text_color(rmac_ui::mac::text_secondary())
+                            .child(group.clone())
+                            .into_any_element(),
+                    );
+                    previous_list_group = Some(group);
+                }
             }
             let striped = stripe_index % 2 == 1;
             let position = stripe_index;
@@ -199,26 +267,30 @@ impl FinderView {
                 .as_ref()
                 .and_then(|application| application.icon.clone())
                 .map_or_else(
-                    || match self.thumbs.get(&e.path) {
+                    || match self
+                        .thumbs
+                        .get(&e.path)
+                        .filter(|_| options.show_icon_preview)
+                    {
                         Some(thumbnail) => div()
-                            .size(px(LIST_ICON))
+                            .size(px(list_icon))
                             .flex_none()
                             .flex()
                             .items_center()
                             .justify_center()
                             .child(
                                 img(thumbnail.clone())
-                                    .max_w(px(LIST_ICON))
-                                    .max_h(px(LIST_ICON - 4.0))
+                                    .max_w(px(list_icon))
+                                    .max_h(px(list_icon - 4.0))
                                     .rounded(px(2.0)),
                             )
                             .into_any_element(),
-                        None => item_artwork(e.is_dir, &e.name, LIST_ICON),
+                        None => item_artwork(e.is_dir, &e.name, list_icon),
                     },
                     |path| {
                         img(path)
-                            .w(px(LIST_ICON))
-                            .h(px(LIST_ICON))
+                            .w(px(list_icon))
+                            .h(px(list_icon))
                             .rounded(px(rmac_ui::mac::radius_menu_item()))
                             .into_any_element()
                     },
@@ -302,11 +374,11 @@ impl FinderView {
                 .h(px(if has_search_detail {
                     38.0
                 } else {
-                    LIST_ROW_HEIGHT
+                    list_row_height
                 }))
                 .mx(px(LIST_ROW_INSET))
                 .rounded(px(ROW_RADIUS))
-                .text_size(rmac_ui::text_px(13.0))
+                .text_size(rmac_ui::text_px(f32::from(options.list_text_size)))
                 .when(selected, |el: Stateful<Div>| {
                     el.bg(selection(window_active))
                 })
@@ -339,34 +411,126 @@ impl FinderView {
                         .child(row_icon)
                         .child(name_cell),
                 )
-                .child(
-                    div()
-                        .w(px(DATE_W))
-                        .flex_none()
-                        .pl(px(LIST_CELL_TEXT_X))
-                        .truncate()
-                        .text_color(sub)
-                        .child(e.modified.clone()),
-                )
-                .child(
-                    div()
-                        .w(px(SIZE_W))
-                        .flex_none()
-                        .flex()
-                        .justify_end()
-                        .pr(px(LIST_SIZE_TRAILING))
-                        .text_color(sub)
-                        .child(e.size.clone()),
-                )
-                .child(
-                    div()
-                        .w(px(KIND_W))
-                        .flex_none()
-                        .pl(px(LIST_CELL_TEXT_X))
-                        .text_color(sub)
-                        .truncate()
-                        .child(e.kind.clone()),
-                )
+                .when(options.columns[0], |row| {
+                    row.child(
+                        div()
+                            .w(px(DATE_W))
+                            .flex_none()
+                            .pl(px(LIST_CELL_TEXT_X))
+                            .truncate()
+                            .text_color(sub)
+                            .child(if options.relative_dates {
+                                e.modified.clone()
+                            } else {
+                                e.modified_absolute.clone()
+                            }),
+                    )
+                })
+                .when(options.columns[1], |row| {
+                    row.child(
+                        div()
+                            .w(px(DATE_W))
+                            .flex_none()
+                            .pl(px(LIST_CELL_TEXT_X))
+                            .truncate()
+                            .text_color(sub)
+                            .child(if options.relative_dates {
+                                e.created.clone()
+                            } else {
+                                e.created_absolute.clone()
+                            }),
+                    )
+                })
+                .when(options.columns[2], |row| {
+                    row.child(
+                        div()
+                            .w(px(DATE_W))
+                            .flex_none()
+                            .pl(px(LIST_CELL_TEXT_X))
+                            .truncate()
+                            .text_color(sub)
+                            .child(if options.relative_dates {
+                                e.last_opened.clone()
+                            } else {
+                                e.last_opened_absolute.clone()
+                            }),
+                    )
+                })
+                .when(options.columns[3], |row| {
+                    row.child(
+                        div()
+                            .w(px(DATE_W))
+                            .flex_none()
+                            .pl(px(LIST_CELL_TEXT_X))
+                            .truncate()
+                            .text_color(sub)
+                            .child(if options.relative_dates {
+                                e.added.clone()
+                            } else {
+                                e.added_absolute.clone()
+                            }),
+                    )
+                })
+                .when(options.columns[4], |row| {
+                    row.child(
+                        div()
+                            .w(px(SIZE_W))
+                            .flex_none()
+                            .flex()
+                            .justify_end()
+                            .pr(px(LIST_SIZE_TRAILING))
+                            .text_color(sub)
+                            .child(if options.calculate_sizes && e.is_dir {
+                                self.directory_sizes
+                                    .get(&e.path)
+                                    .map(|size| human_size(*size).into())
+                                    .unwrap_or_else(|| "--".into())
+                            } else {
+                                e.size.clone()
+                            }),
+                    )
+                })
+                .when(options.columns[5], |row| {
+                    row.child(
+                        div()
+                            .w(px(KIND_W))
+                            .flex_none()
+                            .pl(px(LIST_CELL_TEXT_X))
+                            .text_color(sub)
+                            .truncate()
+                            .child(e.kind.clone()),
+                    )
+                })
+                .when(options.columns[6], |row| {
+                    row.child(
+                        div()
+                            .w(px(SIZE_W))
+                            .flex_none()
+                            .pl(px(LIST_CELL_TEXT_X))
+                            .text_color(sub)
+                            .child("--"),
+                    )
+                })
+                .when(options.columns[7], |row| {
+                    row.child(
+                        div()
+                            .w(px(DATE_W))
+                            .flex_none()
+                            .pl(px(LIST_CELL_TEXT_X))
+                            .text_color(sub)
+                            .child("--"),
+                    )
+                })
+                .when(options.columns[8], |row| {
+                    row.child(
+                        div()
+                            .w(px(KIND_W))
+                            .flex_none()
+                            .pl(px(LIST_CELL_TEXT_X))
+                            .text_color(sub)
+                            .child("--"),
+                    )
+                })
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
@@ -461,9 +625,27 @@ impl FinderView {
             let (tile_width, tile_height) = self.icon_cell();
             let label_width = ICON_LABEL_MAX_WIDTH.min(tile_width - 16.0);
             let mut position = 0usize;
+            let mut previous_icon_group: Option<String> = None;
             for (ix, e) in self.entries.iter().enumerate() {
                 if !q.is_empty() && !e.name.to_lowercase().contains(&q) {
                     continue;
+                }
+                if let Some(group) = view_options::group_title(e, options.group_by) {
+                    if previous_icon_group.as_ref() != Some(&group) {
+                        tiles.push(
+                            div()
+                                .w_full()
+                                .h(px(28.0))
+                                .flex()
+                                .items_center()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .font_weight(rmac_ui::mac::SEMIBOLD)
+                                .text_color(rmac_ui::mac::text_secondary())
+                                .child(group.clone())
+                                .into_any_element(),
+                        );
+                        previous_icon_group = Some(group);
+                    }
                 }
                 let tile_position = position;
                 position += 1;
@@ -479,7 +661,11 @@ impl FinderView {
                         .rounded(px(icon_size * 0.22))
                         .into_any_element()
                 } else {
-                    match self.thumbs.get(&e.path) {
+                    match self
+                        .thumbs
+                        .get(&e.path)
+                        .filter(|_| options.show_icon_preview)
+                    {
                         Some(t) => img(t.clone())
                             .max_w(px(icon_size))
                             .max_h(px(icon_size - 6.0))
@@ -517,7 +703,7 @@ impl FinderView {
                         .when(selected, |el: Stateful<Div>| {
                             el.bg(selection(window_active))
                         })
-                        .text_size(rmac_ui::text_px(ICON_LABEL_SIZE))
+                        .text_size(rmac_ui::text_px(f32::from(options.text_size)))
                         .line_height(px(15.0))
                         .text_center()
                         .line_clamp(2)
@@ -562,7 +748,8 @@ impl FinderView {
                     .w(px(tile_width))
                     .h(px(tile_height))
                     .flex_none()
-                    .v_flex()
+                    .flex()
+                    .when(!options.label_right, |tile| tile.flex_col())
                     .items_center()
                     .child(
                         // The selected plate grows 4 pt around the icon;
@@ -581,6 +768,18 @@ impl FinderView {
                             .child(visual),
                     )
                     .child(tile_label)
+                    .when(options.show_item_info, |tile| {
+                        tile.child(
+                            div()
+                                .text_size(rmac_ui::text_px(10.0))
+                                .text_color(rmac_ui::mac::text_secondary())
+                                .child(if e.is_dir {
+                                    "Folder".to_string()
+                                } else {
+                                    e.size.to_string()
+                                }),
+                        )
+                    })
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
@@ -720,6 +919,10 @@ impl FinderView {
                         .min_h(px(0.0))
                         .overflow_y_scroll()
                         .track_scroll(&self.icon_scroll)
+                        .when(
+                            options.background == view_options::Background::Colour,
+                            |grid| grid.bg(rmac_ui::mac::accent_subtle()),
+                        )
                         .child(
                             div()
                                 .relative()
@@ -730,6 +933,14 @@ impl FinderView {
                                 .flex()
                                 .flex_wrap()
                                 .content_start()
+                                .when_some(
+                                    if options.background == view_options::Background::Picture {
+                                        options.picture_path.clone()
+                                    } else {
+                                        None
+                                    },
+                                    |grid, picture| grid.child(img(picture).absolute().size_full()),
+                                )
                                 .children(tiles)
                                 .when_some(marquee, |grid, bounds| {
                                     grid.child(
@@ -835,7 +1046,6 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
             .on_action(cx.listener(|this, _: &Compress, _, cx| this.compress_selection(cx)))
             .on_action(cx.listener(|this, _: &GetInfo, window, cx| this.get_info(window, cx)))
-            .on_action(cx.listener(|this, _: &ShowViewOptions, _, cx| this.toggle_view_options(cx)))
             .on_action(
                 cx.listener(|this, _: &ViewAsIcons, _, cx| {
                     this.select_view_mode(ViewMode::Icon, cx)

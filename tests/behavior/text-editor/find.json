@@ -3,6 +3,7 @@
   "app": "text-editor",
   "launch": {},
   "steps": [
+    {"wait": 4},
     {"type": "hello world hello"},
     {"key": "cmd-f"},
     {"observe": "find", "facts": ["focus"]},

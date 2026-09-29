@@ -886,6 +886,16 @@ class LuloRun:
             entries.append(rel.as_posix() + ("/" if path.is_dir() else ""))
         return {"entries": entries}
 
+    def fact_saved_documents(self) -> dict[str, Any]:
+        """Read the isolated Documents folder after a Text Editor Save sheet."""
+        directory = Path(self.env["HOME"]) / "Documents"
+        names = sorted(path.name for path in directory.iterdir() if path.is_file())
+        contents = {
+            name: (directory / name).read_bytes()[:4096].decode("utf-8", "replace")
+            for name in names
+        }
+        return {"entries": names, "contents": contents}
+
     # -- steps -------------------------------------------------------------
 
     def ensure_alive(self) -> None:

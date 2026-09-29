@@ -1,0 +1,13 @@
+{
+  "title": "Return saves the edited Untitled document to Documents and closes its window",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {"key": "cmd-n", "settle": 1.2},
+    {"type": "Hello"},
+    {"key": "cmd-w", "settle": 1.2},
+    {"type": "SheetCheck"},
+    {"key": "return", "settle": 1.2},
+    {"observe": "saved", "facts": ["windows", "saved_documents", "dialog"]}
+  ]
+}

@@ -87,8 +87,8 @@ impl FinderView {
         }
     }
 
-    /// Tab accepts the edit and starts the item that followed it before the
-    /// list is sorted again under the new name.
+    /// Tab accepts the edit and advances to the item that followed it before
+    /// the list is sorted again under the new name. Finder leaves list focus.
     pub(super) fn rename_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some((path, input)) = self.renaming.take() else {
             return;
@@ -110,40 +110,12 @@ impl FinderView {
             self.reload(cx);
             return;
         }
-        if let Some((destination, receiver)) = scheduled {
-            self.pending_select = Some(destination);
-            let window_handle = window.window_handle();
-            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-                if receiver.recv().await != Ok(true) {
-                    return;
-                }
-                let _ = cx.update_window(window_handle, |_, window, cx| {
-                    let _ = this.update(cx, |this: &mut FinderView, cx| {
-                        if let Some(index) = next_path.as_ref().and_then(|path| {
-                            this.entries.iter().position(|entry| &entry.path == path)
-                        }) {
-                            this.select_single(index);
-                            this.rename_start(window, cx);
-                            // Supersede the transfer's reload, which captured
-                            // the state before this inline editor existed.
-                            this.reload(cx);
-                        }
-                    });
-                });
-            })
-            .detach();
+        if let Some((destination, _)) = scheduled {
+            self.pending_select = next_path.or(Some(destination));
             cx.notify();
             return;
         }
-        if let Some(index) =
-            next_path.and_then(|path| self.entries.iter().position(|entry| entry.path == path))
-        {
-            self.pending_select = None;
-            self.select_single(index);
-            self.rename_start(window, cx);
-        } else {
-            self.pending_select = Some(path);
-        }
+        self.pending_select = next_path.or(Some(path));
         self.reload(cx);
     }
 
@@ -241,10 +213,12 @@ impl FinderView {
         self.start_transfer_with_retained(
             "Renaming",
             vec![task],
-            false,
-            Vec::new(),
-            false,
-            Some(sender),
+            TransferStartOptions {
+                keep_unfinished_in_clipboard: false,
+                retained_clipboard: Vec::new(),
+                play_drop_sound: false,
+                completion: Some(sender),
+            },
             cx,
         );
         self.transfer.is_some().then_some((destination, receiver))

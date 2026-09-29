@@ -10,6 +10,13 @@ pub(super) enum TransferEvent {
     },
 }
 
+pub(super) struct TransferStartOptions {
+    pub(super) keep_unfinished_in_clipboard: bool,
+    pub(super) retained_clipboard: Vec<PathBuf>,
+    pub(super) play_drop_sound: bool,
+    pub(super) completion: Option<async_channel::Sender<bool>>,
+}
+
 pub(super) enum UndoEvent {
     Progress(file_ops::CopyActivity),
     Finished {

@@ -36,12 +36,15 @@ impl FinderView {
         &mut self,
         label: &'static str,
         tasks: Vec<file_ops::TransferTask>,
-        keep_unfinished_in_clipboard: bool,
-        retained_clipboard: Vec<PathBuf>,
-        play_drop_sound: bool,
-        completion: Option<async_channel::Sender<bool>>,
+        options: TransferStartOptions,
         cx: &mut Context<Self>,
     ) {
+        let TransferStartOptions {
+            keep_unfinished_in_clipboard,
+            retained_clipboard,
+            play_drop_sound,
+            completion,
+        } = options;
         if tasks.is_empty() {
             return;
         }

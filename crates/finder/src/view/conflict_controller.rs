@@ -78,10 +78,12 @@ impl FinderView {
                         this.start_transfer_with_retained(
                             batch.label,
                             batch.ready,
-                            batch.keep_unfinished_in_clipboard,
-                            batch.skipped_moves,
-                            batch.play_drop_sound,
-                            None,
+                            TransferStartOptions {
+                                keep_unfinished_in_clipboard: batch.keep_unfinished_in_clipboard,
+                                retained_clipboard: batch.skipped_moves,
+                                play_drop_sound: batch.play_drop_sound,
+                                completion: None,
+                            },
                             cx,
                         );
                     }
@@ -198,10 +200,12 @@ impl FinderView {
                         this.start_transfer_with_retained(
                             batch.label,
                             batch.ready,
-                            batch.keep_unfinished_in_clipboard,
-                            batch.skipped_moves,
-                            batch.play_drop_sound,
-                            None,
+                            TransferStartOptions {
+                                keep_unfinished_in_clipboard: batch.keep_unfinished_in_clipboard,
+                                retained_clipboard: batch.skipped_moves,
+                                play_drop_sound: batch.play_drop_sound,
+                                completion: None,
+                            },
                             cx,
                         );
                     }

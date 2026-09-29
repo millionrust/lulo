@@ -8,12 +8,14 @@ impl Settings {
         cx: &Context<Self>,
     ) -> Option<AnyElement> {
         let target = self.clock_confirmation.as_ref()?;
+        let twenty_four_hour = self.clock_uses_24_hour();
         let current = self
             .time
             .as_ref()
             .map(|snapshot| {
                 snapshot.formatted_local_time_at(
                     current_system_time_usec().unwrap_or(snapshot.time_usec),
+                    twenty_four_hour,
                 )
             })
             .unwrap_or_else(|| "Unavailable".into());
@@ -49,8 +51,9 @@ impl Settings {
         )
     }
     /// macOS 26 Date & Time (design-lab/settings.html): the automatic switch,
-    /// the date and time with Set… while automatic time is off, and the time
-    /// zone with Set…, each in its own group; Refresh sits under them.
+    /// the date and time (Mac style, with Set… while automatic time is off)
+    /// and the 24-Hour Time switch (SET-78) in one group, then the time
+    /// zone with Set…; Refresh sits under them.
     pub(in crate::controller) fn render_date_time(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let refresh_view = view.clone();
@@ -84,8 +87,12 @@ impl Settings {
             },
         );
 
+        let twenty_four_hour = self.clock_uses_24_hour();
         let now: SharedString = snapshot
-            .formatted_local_time_at(current_system_time_usec().unwrap_or(snapshot.time_usec))
+            .formatted_local_time_at(
+                current_system_time_usec().unwrap_or(snapshot.time_usec),
+                twenty_four_hour,
+            )
             .into();
         let clock_row = if let Some(editor) = &self.clock_editor {
             let review_view = view.clone();
@@ -177,9 +184,23 @@ impl Settings {
             )
         };
 
+        let format_view = view.clone();
+        let twenty_four_hour_row = switch_row(
+            "date-time-24-hour",
+            "24-Hour Time",
+            None,
+            twenty_four_hour,
+            !self.shell_settings_busy && self.shell_settings.is_some(),
+            move |enabled, _, cx| {
+                format_view.update(cx, |settings, cx| {
+                    settings.apply_menu_bar_change(MenuBarChange::TwentyFourHour(enabled), cx)
+                });
+            },
+        );
+
         let mut cards = vec![
             card(vec![automatic]),
-            card(vec![clock_row]),
+            card(vec![clock_row, twenty_four_hour_row]),
             card(vec![timezone_row]),
         ];
         if snapshot.timezones_truncated {

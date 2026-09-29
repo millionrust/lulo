@@ -48,6 +48,21 @@ impl Settings {
         Self::start_watchers(cx, catalog_event_rx);
 
         let (sections, selected, nav, navigation_persistence) = Self::initial_navigation(cx);
+        // Whether the very first pane shown is already Wi-Fi, so the
+        // continuous-scan watcher (SET-14) doesn't also treat that as a
+        // fresh "opened from elsewhere" transition and double up on the
+        // scan `start_snapshot_loads` already kicks off at launch.
+        let wifi_pane_was_visible = nav.is_empty()
+            && sections
+                .get(selected.0)
+                .and_then(|section| section.get(selected.1))
+                .is_some_and(|category| category.name.as_ref() == "Wi-Fi");
+        // A window opened straight onto the Wi-Fi pane (`--pane wifi`)
+        // never runs `sync_wifi_pane_scan_on_navigation`'s own "just became
+        // visible" transition, so start its periodic scan loop here
+        // instead; every other case starts it from that transition.
+        let wifi_pane_scan_task =
+            wifi_pane_was_visible.then(|| Self::spawn_wifi_pane_scan_loop(cx));
 
         Self {
             system_data_loading: true,
@@ -285,6 +300,9 @@ impl Settings {
             wifi_interface: None,
             wifi_networks: Vec::new(),
             wifi_saved_networks: Vec::new(),
+            wifi_scanning: false,
+            wifi_pane_was_visible,
+            wifi_pane_scan_task,
 
             bluetooth_available: false,
             bluetooth_loading: true,

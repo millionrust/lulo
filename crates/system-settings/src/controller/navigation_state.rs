@@ -154,6 +154,7 @@ impl Settings {
         } else if let Some(parent) = category_parent(self.current().name.as_ref()) {
             self.select_category(parent, window, cx);
         }
+        self.sync_wifi_pane_scan_on_navigation(cx);
         cx.notify();
     }
 
@@ -163,6 +164,7 @@ impl Settings {
                 self.nav.push(page);
             }
         }
+        self.sync_wifi_pane_scan_on_navigation(cx);
         cx.notify();
     }
 
@@ -182,6 +184,7 @@ impl Settings {
             self.refresh_update_status(cx);
         }
         self.sidebar_focused = false;
+        self.sync_wifi_pane_scan_on_navigation(cx);
         cx.notify();
     }
 
@@ -208,6 +211,7 @@ impl Settings {
                 self.forward.clear();
             }
         }
+        self.sync_wifi_pane_scan_on_navigation(cx);
         cx.notify();
     }
 
@@ -274,6 +278,7 @@ impl Settings {
         self.forward.clear();
         self.compact_sidebar_open = false;
         self.navigation_persistence.schedule(pane_id);
+        self.sync_wifi_pane_scan_on_navigation(cx);
         cx.notify();
         true
     }

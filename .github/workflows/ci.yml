@@ -106,7 +106,7 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
 
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: python3 scripts/check-rustfmt.py
 
       - name: Check shared-control boundary
         run: bash scripts/check-shared-controls.sh
@@ -195,7 +195,7 @@ jobs:
           key: ${{ runner.os }}-2604-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
 
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: python3 scripts/check-rustfmt.py
 
       - name: Run Clippy
         run: cargo clippy --locked --keep-going --workspace --all-targets --all-features -- -D warnings

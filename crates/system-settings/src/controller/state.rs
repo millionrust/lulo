@@ -120,11 +120,27 @@ pub(super) struct Settings {
     /// Subpages popped by Back, replayed by Forward; cleared by any new
     /// navigation, as in the Mac toolbar.
     pub(super) forward: Vec<SubPage>,
+    /// Top-level categories left behind by choosing a different one
+    /// (`select_position`, whether from a sidebar click or a search
+    /// result), popped by Back once `nav` itself is empty — the Mac's own
+    /// "Wi-Fi → Sound → Back returns to Wi-Fi" history (SET-02). Browsing
+    /// the sidebar's own highlight with arrow keys does not push here
+    /// (`select_position_keeping_focus`), only committing to a category
+    /// does.
+    pub(super) pane_history: Vec<(usize, usize)>,
+    /// Categories popped by Back into `pane_history`, replayed by Forward;
+    /// cleared by any newly committed navigation.
+    pub(super) pane_forward: Vec<(usize, usize)>,
     /// The sidebar last took a click, so its selection draws in the accent
     /// (grey once the detail is used or the window is not key).
     pub(super) sidebar_focused: bool,
     pub(super) search: Entity<InputState>,
     pub(super) search_selection: usize,
+    /// Whether Down/Up has been pressed since the query last changed: the
+    /// Mac's search results start with nothing highlighted, so the first
+    /// press lands on `search_selection`'s current value (0, the top
+    /// result) instead of skipping straight past it.
+    pub(super) search_result_focused: bool,
     pub(super) compact_sidebar_open: bool,
     /// Trackpad's selected tab (Point & Click, Scroll & Zoom).
     pub(super) trackpad_tab: usize,
@@ -143,6 +159,10 @@ pub(super) struct Settings {
     /// pane's first control returns to the sidebar, since this handle is a
     /// tab-stop boundary rather than a stop of its own.
     pub(super) content_focus: FocusHandle,
+    /// The search results list's own focus boundary: Down in the search
+    /// field moves here (a `Role::List`, not a `Role::TextInput`) so
+    /// assistive technology sees focus leave the field, matching the Mac.
+    pub(super) results_focus: FocusHandle,
     pub(super) native_window_title: String,
     pub(super) focused_once: bool,
     pub(super) wifi_error: Option<SharedString>,

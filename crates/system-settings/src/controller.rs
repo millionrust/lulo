@@ -139,9 +139,9 @@ use gpui::{
 use gpui_component::{menu::PopupMenuItem, Icon, IconName, StyledExt as _};
 use navigation_persistence::NavigationPersistence;
 use rmac_ui::{
-    AccessibleTextInput as _, Button, Checkbox, EmptyState, InputState, ListRow, PopUpButton,
-    Progress, SearchField, Slider, SliderEvent, SliderState, Spinner, TextField, Toast, ToastKind,
-    Toggle,
+    AccessibleTextInput as _, Button, Checkbox, EmptyState, InputEvent, InputState, ListRow,
+    PopUpButton, Progress, SearchField, Slider, SliderEvent, SliderState, Spinner, TextField,
+    Toast, ToastKind, Toggle,
 };
 
 #[derive(rust_embed::RustEmbed)]

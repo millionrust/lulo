@@ -36,7 +36,7 @@ impl EditorView {
                     .ghost()
                     .with_size(Size::Small)
                     .tooltip("Previous match")
-                    .on_click(cx.listener(|this, _, window, cx| this.find_prev(window, cx))),
+                    .on_click(cx.listener(|this, _, _, cx| this.find_prev(cx))),
             )
             .child(
                 Button::new("find-next", "")
@@ -44,7 +44,7 @@ impl EditorView {
                     .ghost()
                     .with_size(Size::Small)
                     .tooltip("Next match")
-                    .on_click(cx.listener(|this, _, window, cx| this.find_next(window, cx))),
+                    .on_click(cx.listener(|this, _, _, cx| this.find_next(cx))),
             )
             .child(
                 div()

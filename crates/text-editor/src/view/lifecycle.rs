@@ -41,13 +41,24 @@ impl EditorView {
                 this.on_buffer_changed(cx);
             }
         });
-        // Live match recompute as the query is edited.
-        let sub_find = cx.subscribe(&find_input, |this, _input, ev: &InputEvent, cx| {
-            if matches!(ev, InputEvent::Change) {
+        // Live match recompute as the query is edited; Return submits the
+        // search (Shift+Return repeats backward), the way TextEdit's own
+        // Find field does — `find_input` is single-line, so GPUI's
+        // `InputState` never inserts a newline for Enter, only emits this.
+        let sub_find = cx.subscribe(&find_input, |this, _input, ev: &InputEvent, cx| match ev {
+            InputEvent::Change => {
                 this.current = 0;
                 this.recompute_matches(cx);
                 cx.notify();
             }
+            InputEvent::PressEnter { shift, .. } => {
+                if *shift {
+                    this.find_prev(cx);
+                } else {
+                    this.submit_find(cx);
+                }
+            }
+            _ => {}
         });
 
         cx.bind_keys([

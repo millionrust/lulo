@@ -157,6 +157,11 @@ def verify_manifest(document: dict) -> None:
 VENDOR = "cargo/vendor"
 GIT_CACHE = "flatpak-cargo/git"
 GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+COMPONENT_PATHS = {
+    "gpui-component": ("vendor/gpui-component/crates/ui", "0.5.2"),
+    "gpui-component-assets": ("vendor/gpui-component/crates/assets", "0.5.1"),
+    "gpui-component-macros": ("vendor/gpui-component/crates/macros", "0.5.1"),
+}
 GIT_COPY = re.compile(
     r'^cp -r --reflink=auto "(flatpak-cargo/git/[^"/]+)/([^"]+)" "cargo/vendor/([^"/]+)"$'
 )
@@ -232,6 +237,38 @@ def git_packages(lock_path: Path) -> dict[str, GitPackage]:
 def git_checkout(package: GitPackage) -> str:
     repository = package.repository.rsplit("/", 1)[1]
     return f"{GIT_CACHE}/{repository}-{package.commit[:7]}"
+
+
+def verify_component_paths(root: Path) -> None:
+    """The repository source includes the three patched, locked path crates."""
+    packages = _read_lock(root / "Cargo.lock").get("package", [])
+    for name, (path, version) in COMPONENT_PATHS.items():
+        matches = [package for package in packages if package.get("name") == name]
+        if len(matches) != 1 or matches[0].get("version") != version or "source" in matches[0]:
+            raise VerificationError(f"vendored path crate {name} differs from Cargo.lock")
+        manifest = tomllib.loads((root / path / "Cargo.toml").read_text(encoding="utf-8"))
+        declared = manifest.get("package", {})
+        if (declared.get("name"), declared.get("version")) != (name, version):
+            raise VerificationError(f"vendored path crate {name} has the wrong manifest")
+
+    root_manifest = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
+    patches = root_manifest.get("patch", {}).get(
+        "https://github.com/longbridge/gpui-component.git", {}
+    )
+    for name in ("gpui-component", "gpui-component-assets"):
+        path, version = COMPONENT_PATHS[name]
+        if patches.get(name) != {"version": f"={version}", "path": path}:
+            raise VerificationError(f"vendored path crate {name} is not patched into Cargo")
+
+    workspace = tomllib.loads(
+        (root / "vendor/gpui-component/Cargo.toml").read_text(encoding="utf-8")
+    )
+    dependencies = workspace.get("workspace", {}).get("dependencies", {})
+    for name in ("gpui-component-assets", "gpui-component-macros"):
+        path, version = COMPONENT_PATHS[name]
+        relative_path = path.removeprefix("vendor/gpui-component/")
+        if dependencies.get(name) != {"path": relative_path, "version": version}:
+            raise VerificationError(f"vendored workspace does not resolve {name}")
 
 
 def verify_cargo_sources(
@@ -456,6 +493,7 @@ def verify_repository(root: Path) -> None:
     sources = read_json(package / "cargo-sources.json")
     verify_decisions(decisions)
     verify_manifest(manifest)
+    verify_component_paths(root)
     verify_cargo_sources(
         sources,
         registry_packages(root / "Cargo.lock"),

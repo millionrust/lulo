@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 
 SCRIPT = Path(__file__).parent / "linux/verify-flatpak-package.py"
@@ -95,10 +96,29 @@ class FlatpakPackageTests(unittest.TestCase):
         with self.assertRaisesRegex(verify.VerificationError, "escaped its checkout"):
             verify.verify_cargo_sources(sources, self.locked, self.git_locked)
 
+    def test_vendored_component_patch_must_point_to_locked_path(self):
+        original = Path.read_text
+
+        def changed_patch(path, *args, **kwargs):
+            contents = original(path, *args, **kwargs)
+            if path == ROOT / "Cargo.toml":
+                return contents.replace(
+                    'gpui-component = { version = "=0.5.2", path = "vendor/gpui-component/crates/ui" }',
+                    'gpui-component = { version = "=0.5.2", path = "vendor/other/crates/ui" }',
+                    1,
+                )
+            return contents
+
+        with mock.patch.object(Path, "read_text", changed_patch):
+            with self.assertRaisesRegex(
+                verify.VerificationError, "not patched into Cargo"
+            ):
+                verify.verify_component_paths(ROOT)
+
     def test_offline_candidate_phase_cannot_weaken_download_refusal(self):
-        driver = (
-            ROOT / "scripts/linux/build-flatpak-candidate.sh"
-        ).read_text(encoding="utf-8")
+        driver = (ROOT / "scripts/linux/build-flatpak-candidate.sh").read_text(
+            encoding="utf-8"
+        )
         weakened = driver.replace("--disable-download", "--disable-updates", 1)
         with self.assertRaisesRegex(verify.VerificationError, "offline build"):
             verify.verify_offline_driver_text(weakened)

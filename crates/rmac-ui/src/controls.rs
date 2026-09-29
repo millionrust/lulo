@@ -454,6 +454,7 @@ impl RenderOnce for PopUpButtonTrigger {
             .id(self.id)
             .role(Role::ComboBox)
             .aria_expanded(open)
+            .aria_label(self.value.clone())
             .aria_value(self.value)
             .cursor_default()
             .h(px(metrics.control_height_regular))

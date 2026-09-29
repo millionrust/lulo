@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Text Editor Save sheet</title>
+<link rel="stylesheet" href="lab.css">
+<style>
+.sample{width:680px;height:510px;margin:40px auto;position:relative;background:var(--window);border-radius:16px;overflow:hidden;box-shadow:0 12px 32px #0007}
+.titlebar{height:32px;background:var(--sidebar);display:flex;align-items:center;padding-left:82px;font-size:13px;font-weight:600;color:var(--label)}
+.dim{position:absolute;inset:32px 0 0;background:#0005}
+.save-sheet{box-sizing:border-box;position:absolute;top:32px;left:50%;transform:translateX(-50%);width:458px;height:367px;padding:30px 26px 20px;border-radius:0 0 12px 12px;background:var(--sheet);color:var(--label);box-shadow:0 12px 24px #0008;display:flex;flex-direction:column}
+.save-sheet h2{font-size:15px;line-height:20px;margin:0 0 10px}.save-sheet p{font-size:13px;line-height:18px;margin:0 0 22px;color:var(--label-2)}
+.form-row{display:flex;align-items:center;gap:12px;height:38px;font-size:13px}.form-row label{width:140px;text-align:right}.form-row .control{flex:1;border-radius:6px;background:var(--fill-control);padding:6px 9px}.selection{background:var(--accent);color:white}.actions{display:flex;gap:8px;margin-top:auto}.actions button{border:0;border-radius:7px;padding:6px 20px;background:var(--btn-secondary);color:inherit}.actions .delete{margin-right:auto;background:var(--btn-destructive);color:white}.actions .save{background:var(--accent);color:white}
+</style>
+<div class="sample"><div class="titlebar">Untitled — Edited</div><div class="dim"></div>
+<div class="save-sheet"><h2>Do you want to keep this new document “Untitled”?</h2>
+<p>You can choose to save your changes or delete this document immediately. You can’t undo this action.</p>
+<div class="form-row"><label>Save As:</label><div class="control"><span class="selection">Untitled</span></div></div>
+<div class="form-row"><label>Where:</label><div class="control">Documents　⌄</div></div>
+<div class="form-row"><label>Plain Text Encoding:</label><div class="control">Unicode (UTF-8)　⌄</div></div>
+<div class="actions"><button class="delete">Delete</button><button>Cancel</button><button class="save">Save</button></div></div></div></html>

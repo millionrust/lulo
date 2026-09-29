@@ -60,6 +60,39 @@ enum Pending {
     Close,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum SaveLocation {
+    #[default]
+    Documents,
+    Desktop,
+    Home,
+    Downloads,
+    Other,
+}
+
+impl SaveLocation {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Documents => "Documents",
+            Self::Desktop => "Desktop",
+            Self::Home => "Home",
+            Self::Downloads => "Downloads",
+            Self::Other => "Other…",
+        }
+    }
+
+    fn directory(self) -> Option<PathBuf> {
+        let home = std::env::var_os("HOME").map(PathBuf::from)?;
+        match self {
+            Self::Documents => Some(home.join("Documents")),
+            Self::Desktop => Some(home.join("Desktop")),
+            Self::Home => Some(home),
+            Self::Downloads => Some(home.join("Downloads")),
+            Self::Other => None,
+        }
+    }
+}
+
 /// The content a duplicate window ([`startup::open_duplicate_window`]) opens
 /// with: TextEdit's File ▸ Duplicate copies the buffer exactly, formatting
 /// included, into a new window with no path.
@@ -88,7 +121,7 @@ enum ActiveAlert {
     /// The buffer is dirty before `Pending` on a document that has never
     /// been saved (a path-backed one autosaves instead, see `guarded`) —
     /// the Mac's Save sheet: Delete / Cancel / Save.
-    ConfirmSave(Pending),
+    ConfirmSave(Option<Pending>),
     /// The opened document no longer matches its retained exact revision.
     Conflict,
     /// The external bytes reviewed immediately before an explicit overwrite.
@@ -154,6 +187,8 @@ struct EditorView {
     replace_mode: bool,
     find_input: Entity<InputState>,
     replace_input: Entity<InputState>,
+    save_name_input: Entity<InputState>,
+    save_location: SaveLocation,
     /// Byte offsets of every match of the current query in the buffer.
     matches: Vec<usize>,
     /// Index into `matches` of the active match.

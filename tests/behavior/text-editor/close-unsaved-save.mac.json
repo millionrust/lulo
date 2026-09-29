@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "scenario": "text-editor/close-unsaved-save",
+  "platform": "Task contract (no Mac recording)",
+  "observations": {
+    "saved": {
+      "windows": {"count": 1, "front": "Untitled", "titles": ["Untitled"]},
+      "saved_documents": {"entries": ["SheetCheck.txt"], "contents": {"SheetCheck.txt": "Hello"}},
+      "dialog": {"present": false}
+    }
+  }
+}

@@ -33,8 +33,26 @@ impl EditorView {
             self.save_with(Some(pending), window, cx);
             return;
         }
-        self.alert = Some(ActiveAlert::ConfirmSave(pending));
-        let _ = rmac_sound::play_alert();
+        self.show_save_sheet(Some(pending), window, cx);
+    }
+
+    pub(super) fn show_save_sheet(
+        &mut self,
+        then: Option<Pending>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let name = self.filename().to_string();
+        self.save_name_input.update(cx, |input, cx| {
+            input.set_value(name.clone(), window, cx);
+            input.focus(window, cx);
+            input.set_selected_range(0..name.len(), cx);
+        });
+        self.save_location = SaveLocation::Documents;
+        self.alert = Some(ActiveAlert::ConfirmSave(then));
+        if then.is_some() {
+            let _ = rmac_sound::play_alert();
+        }
         cx.notify();
     }
 
@@ -74,7 +92,7 @@ impl EditorView {
                     }
                 }
             }
-            Some(ActiveAlert::ConfirmSave(pending)) => self.save_with(Some(pending), window, cx),
+            Some(ActiveAlert::ConfirmSave(pending)) => self.save_sheet(pending, window, cx),
             Some(ActiveAlert::Conflict) => self.save_conflicting_copy(window, cx),
             Some(ActiveAlert::ConfirmOverwrite { reviewed_revision }) => {
                 self.overwrite_conflicting_document(reviewed_revision, window, cx);
@@ -98,11 +116,11 @@ impl EditorView {
                     self.load_document_path(path, "The file could not be opened.", window, cx);
                 }
             }
-            Some(ActiveAlert::ConfirmSave(pending)) => {
+            Some(ActiveAlert::ConfirmSave(Some(pending))) => {
                 if self.clear_recovery(cx) {
                     self.perform(pending, window, cx);
                 } else {
-                    self.alert = Some(ActiveAlert::ConfirmSave(pending));
+                    self.alert = Some(ActiveAlert::ConfirmSave(Some(pending)));
                 }
             }
             _ => {}

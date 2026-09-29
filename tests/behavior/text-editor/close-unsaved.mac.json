@@ -3,6 +3,7 @@
   "scenario": "text-editor/close-unsaved",
   "platform": "macOS 26.2",
   "recorded": "2026-09-25",
+  "cancelled-period-source": "Task requirement; this extra key step was not rerecorded on the Mac",
   "observations": {
     "asked": {
       "dialog": {
@@ -34,6 +35,10 @@
           "Untitled"
         ]
       }
+    },
+    "cancelled-period": {
+      "dialog": {"present": false},
+      "windows": {"count": 1, "front": "Untitled", "titles": ["Untitled"]}
     }
   }
 }

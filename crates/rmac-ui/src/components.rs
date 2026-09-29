@@ -187,12 +187,18 @@ pub struct Dialog {
     aria_label: Option<SharedString>,
     initial_focus: InitialFocus,
     extra_key_down: Vec<KeyDownListener>,
+    attached: bool,
 }
 
 /// A key handler a dialog runs alongside its own key handling.
 type KeyDownListener = Box<dyn Fn(&KeyDownEvent, &mut Window, &mut App)>;
 
 impl Dialog {
+    /// Place a document sheet directly below the window title bar.
+    pub fn attached(mut self) -> Self {
+        self.attached = true;
+        self
+    }
     /// Narrow the dialog's accessible role (`alert_with_icon` uses this for
     /// `Role::AlertDialog`).
     fn role(mut self, role: Role) -> Self {
@@ -201,7 +207,7 @@ impl Dialog {
     }
 
     /// Set the dialog's accessible name.
-    fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
         self.aria_label = Some(label.into());
         self
     }
@@ -240,7 +246,11 @@ impl RenderOnce for Dialog {
             .absolute()
             .inset_0()
             .flex()
-            .items_center()
+            .when(self.attached, |el| {
+                el.items_start()
+                    .pt(px(rmac_design::Metrics::default().titlebar_height))
+            })
+            .when(!self.attached, |el| el.items_center())
             .justify_center()
             .bg(mac::scrim())
             // Swallow clicks on the scrim so they don't fall through to the app.
@@ -282,6 +292,7 @@ pub fn dialog(id: impl Into<ElementId>, content: impl IntoElement) -> Dialog {
         aria_label: None,
         initial_focus: InitialFocus::First,
         extra_key_down: Vec::new(),
+        attached: false,
     }
 }
 

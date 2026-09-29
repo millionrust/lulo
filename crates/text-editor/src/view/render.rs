@@ -2,6 +2,7 @@ mod alert;
 mod chrome;
 mod find;
 mod rtf;
+mod save_sheet;
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -23,7 +24,7 @@ use crate::{
 
 use super::{
     responsive_layout::EditorLayout, ActiveAlert, AssistiveEdit, EditorView, ExternalChange,
-    Pending, CTX,
+    Pending, SaveLocation, CTX,
 };
 
 /// Text origin from the window's left edge (the Mac's caret sits at x 9).
@@ -156,6 +157,20 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 this.guarded(Pending::Close, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &crate::SheetWhereDocuments, _, cx| { this.save_location = SaveLocation::Documents; cx.notify(); }))
+            .on_action(cx.listener(|this, _: &crate::SheetWhereDesktop, _, cx| { this.save_location = SaveLocation::Desktop; cx.notify(); }))
+            .on_action(cx.listener(|this, _: &crate::SheetWhereHome, _, cx| { this.save_location = SaveLocation::Home; cx.notify(); }))
+            .on_action(cx.listener(|this, _: &crate::SheetWhereDownloads, _, cx| { this.save_location = SaveLocation::Downloads; cx.notify(); }))
+            .on_action(cx.listener(|this, _: &crate::SheetWhereOther, window, cx| {
+                if let Some(ActiveAlert::ConfirmSave(then)) = this.alert.take() {
+                    this.save_location = SaveLocation::Other;
+                    this.save_sheet(then, window, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &crate::SheetEncodingUtf8, _, cx| { this.text_format.encoding = document::TextEncoding::Utf8; this.refresh_dirty_state(cx); }))
+            .on_action(cx.listener(|this, _: &crate::SheetEncodingUtf8Bom, _, cx| { this.text_format.encoding = document::TextEncoding::Utf8Bom; this.refresh_dirty_state(cx); }))
+            .on_action(cx.listener(|this, _: &crate::SheetEncodingUtf16Le, _, cx| { this.text_format.encoding = document::TextEncoding::Utf16Le; this.refresh_dirty_state(cx); }))
+            .on_action(cx.listener(|this, _: &crate::SheetEncodingUtf16Be, _, cx| { this.text_format.encoding = document::TextEncoding::Utf16Be; this.refresh_dirty_state(cx); }))
             // The custom red traffic light dispatches RequestClose — route it
             // through the same unsaved-changes guard so closes aren't silent.
             .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
@@ -310,7 +325,7 @@ impl Render for EditorView {
                 // a 13 pt pitch (JetBrains Mono stands in for Menlo). The
                 // wrapper names the document for assistive technologies and
                 // accepts their SetValue / ReplaceSelectedText edits.
-                let editable = !(recovery_loading || self.print_busy);
+                let editable = !(recovery_loading || self.print_busy || self.file_busy);
                 div()
                     .id("document-body")
                     .role(Role::MultilineTextInput)

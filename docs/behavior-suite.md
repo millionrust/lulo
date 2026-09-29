@@ -143,12 +143,10 @@ tested binary so mixed dev builds are visible.
 - The private bus can start only three services: the AT-SPI bus, `xdg-desktop-portal`, and the
   `rmac-file-chooser` from `--bin-dir`, which is what opens Save panels. The installed rmac
   services never start. At the end the runner stops every process still using its runtime
-  directory. `text-editor/save-untitled` requires the `rmac-file-chooser` executable in one of
-  the supplied `--bin-dir` or `--shell-bin-dir` directories; the runner fails before launching
-  the app if it is absent. Running only a fresh `rmac-text-editor` binary leaves the private
-  portal without a FileChooser backend and cannot test Save-panel behavior. On a cold D-Bus
-  activation, the chooser can take several seconds to register its AT-SPI window; that scenario
-  waits before observing or sending Escape so it does not race panel startup.
+  directory. `text-editor/save-untitled` now exercises the attached in-window sheet and needs
+  only `rmac-text-editor`. The chooser binary is needed when a scenario opens the portal through
+  Where ▸ Other…. On a cold D-Bus activation, the chooser can take several seconds to register
+  its AT-SPI window.
 - It starts its own headless Sway and holds `wayland-0`/`wayland-1`'s lock files so its socket
   is never named `wayland-1`.
 - It injects input only through `wlinput.py`. That script is a pure-Python virtual keyboard and

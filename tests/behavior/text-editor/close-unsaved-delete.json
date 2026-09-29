@@ -1,0 +1,12 @@
+{
+  "title": "Delete discards an edited Untitled document and closes its window",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {"key": "cmd-n", "settle": 1.2},
+    {"type": "Discard me"},
+    {"key": "cmd-w", "settle": 1.2},
+    {"select": "Delete", "settle": 1.2},
+    {"observe": "discarded", "facts": ["windows", "saved_documents", "dialog"]}
+  ]
+}

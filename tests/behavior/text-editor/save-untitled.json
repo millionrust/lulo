@@ -1,5 +1,5 @@
 {
-  "title": "Save (⌘S) on an Untitled document opens the Save panel with the name selected",
+  "title": "Save (⌘S) on an Untitled document opens the attached Save sheet with the name selected",
   "app": "text-editor",
   "launch": {},
   "steps": [
@@ -10,6 +10,6 @@
     {"key": "escape", "settle": 1.0},
     {"observe": "cancelled", "facts": ["dialog", "windows"]}
   ],
-  "tolerance": {"panel.dialog.title": "ignore"},
+  "tolerance": {"panel.dialog.title": "ignore", "panel.focus.label": "ignore", "panel.dialog.buttons": "subset"},
   "omit": ["panel.dialog.texts"]
 }

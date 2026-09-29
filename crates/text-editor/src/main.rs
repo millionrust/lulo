@@ -48,6 +48,15 @@ gpui::actions!(
         OpenRecent8,
         OpenRecent9,
         ClearRecentMenu,
+        SheetWhereDocuments,
+        SheetWhereDesktop,
+        SheetWhereHome,
+        SheetWhereDownloads,
+        SheetWhereOther,
+        SheetEncodingUtf8,
+        SheetEncodingUtf8Bom,
+        SheetEncodingUtf16Le,
+        SheetEncodingUtf16Be,
     ]
 );
 

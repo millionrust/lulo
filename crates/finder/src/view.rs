@@ -120,7 +120,6 @@ actions!(
         ShareItems,
         QuickActions,
         UseGroups,
-        ShowViewOptions,
         ImportFromIphone,
         MoveToTrash,
         RestoreItems,

@@ -294,6 +294,10 @@ impl UndoRecord {
         if self.version != UNDO_VERSION
             || self.id != expected_id
             || Uuid::parse_str(&self.id).is_err()
+            || self
+                .batch_id
+                .as_ref()
+                .is_some_and(|id| Uuid::parse_str(id).is_err())
         {
             return Err(invalid_data("undo receipt identity or version is invalid"));
         }

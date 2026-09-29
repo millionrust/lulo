@@ -281,6 +281,7 @@ impl FinderView {
             recovery_open: false,
             recovery_busy: false,
             transfer: None,
+            new_folder_busy: false,
             conflict_preflight: false,
             conflict_batch: None,
             conflict_busy: false,

@@ -150,7 +150,7 @@ fn unique_copy_path_avoiding(source: &Path, reserved: &BTreeSet<PathBuf>) -> Pat
             None => format!("{stem}{suffix}"),
         };
         let candidate = parent.join(name);
-        if !candidate.exists() && !reserved.contains(&candidate) {
+        if !occupied(&candidate) && !reserved.contains(&candidate) {
             return candidate;
         }
     }
@@ -233,7 +233,7 @@ pub(crate) fn resolve_conflict_task(
 }
 
 pub(crate) fn unique_path_avoiding(path: PathBuf, reserved: &BTreeSet<PathBuf>) -> PathBuf {
-    if !path.exists() && !reserved.contains(&path) {
+    if !occupied(&path) && !reserved.contains(&path) {
         return path;
     }
     let parent = path.parent().map(Path::to_path_buf).unwrap_or_default();
@@ -250,11 +250,20 @@ pub(crate) fn unique_path_avoiding(path: PathBuf, reserved: &BTreeSet<PathBuf>) 
             None => format!("{stem} {suffix}"),
         };
         let candidate = parent.join(name);
-        if !candidate.exists() && !reserved.contains(&candidate) {
+        if !occupied(&candidate) && !reserved.contains(&candidate) {
             return candidate;
         }
     }
     path
+}
+
+fn occupied(path: &Path) -> bool {
+    // `exists` follows symlinks and reports false for a broken one. A broken
+    // link still owns its name, and an unreadable directory is never free.
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => true,
+        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+    }
 }
 
 #[cfg(test)]

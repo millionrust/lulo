@@ -335,6 +335,7 @@ struct FinderView {
     recovery_open: bool,
     recovery_busy: bool,
     transfer: Option<ActiveTransfer>,
+    new_folder_busy: bool,
     conflict_preflight: bool,
     conflict_batch: Option<ConflictBatch>,
     conflict_busy: bool,

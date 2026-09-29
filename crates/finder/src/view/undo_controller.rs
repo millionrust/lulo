@@ -7,6 +7,7 @@ impl FinderView {
         #[cfg(not(any(target_os = "linux", test)))]
         let trash_busy = false;
         if self.transfer.is_some()
+            || self.new_folder_busy
             || self.undo_operation.is_some()
             || trash_busy
             || self.conflict_preflight

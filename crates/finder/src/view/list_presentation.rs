@@ -280,8 +280,12 @@ impl FinderView {
             (first_row..last_row)
                 .map(|position| {
                     let row = self.render_list_row(
-                        visible_list_indices[position], position, visible_list_indices.len(),
-                        row_height, window_active, cx,
+                        visible_list_indices[position],
+                        position,
+                        visible_list_indices.len(),
+                        row_height,
+                        window_active,
+                        cx,
                     );
                     div()
                         .v_flex()
@@ -598,11 +602,7 @@ impl FinderView {
                             .pt(px(LIST_ROWS_TOP))
                             .child(div().h(px(offsets[first_row])).flex_none())
                             .children(list_rows)
-                            .child(
-                                div()
-                                    .h(px(total_height - offsets[last_row]))
-                                    .flex_none(),
-                            )
+                            .child(div().h(px(total_height - offsets[last_row])).flex_none())
                             .child(filler),
                     )
                     .on_mouse_down(
@@ -941,7 +941,11 @@ impl FinderView {
     ) -> Stateful<Div> {
         let e = &self.entries[ix];
         let options = self.current_options();
-        let list_icon = if options.list_large_icons { 24.0 } else { LIST_ICON };
+        let list_icon = if options.list_large_icons {
+            24.0
+        } else {
+            LIST_ICON
+        };
         let entity = cx.entity();
         let depth = if self.trash_view || self.applications_view || self.search_summary.is_some() {
             0
@@ -972,7 +976,11 @@ impl FinderView {
             .as_ref()
             .and_then(|application| application.icon.clone())
             .map_or_else(
-                || match self.thumbs.get(&e.path).filter(|_| options.show_icon_preview) {
+                || match self
+                    .thumbs
+                    .get(&e.path)
+                    .filter(|_| options.show_icon_preview)
+                {
                     Some(thumbnail) => div()
                         .size(px(list_icon))
                         .flex_none()
@@ -1008,61 +1016,62 @@ impl FinderView {
         let row_is_dir = e.is_dir;
         let search_detail = e.search_detail.clone();
 
-        let name_cell: gpui::AnyElement = match &self.renaming {
-            Some((rename_path, input)) if rename_path == &e.path => div()
-                .id("rename-field")
-                .role(Role::TextInput)
-                .aria_label("Name")
-                .key_context("FinderRename")
-                .on_action(cx.listener(|this, _: &RenameNextItem, window, cx| {
-                    this.rename_next(window, cx)
-                }))
-                .accessible_text_input(input, cx)
-                .pl(px(LIST_ICON_TO_NAME))
-                .flex_1()
-                .child(TextField::new(input).appearance(true))
-                .into_any_element(),
-            _ => div()
-                .id(SharedString::from(format!(
-                    "list-name-{}",
-                    e.path.display()
-                )))
-                .pl(px(LIST_ICON_TO_NAME))
-                .flex_1()
-                .min_w(px(0.0))
-                .v_flex()
-                .justify_center()
-                .child(div().truncate().text_color(primary).child(e.name.clone()))
-                .when_some(search_detail, |el, detail| {
-                    el.child(
-                        div()
-                            .truncate()
-                            .text_size(rmac_ui::text_px(11.0))
-                            .text_color(sub)
-                            .child(detail),
+        let name_cell: gpui::AnyElement =
+            match &self.renaming {
+                Some((rename_path, input)) if rename_path == &e.path => div()
+                    .id("rename-field")
+                    .role(Role::TextInput)
+                    .aria_label("Name")
+                    .key_context("FinderRename")
+                    .on_action(cx.listener(|this, _: &RenameNextItem, window, cx| {
+                        this.rename_next(window, cx)
+                    }))
+                    .accessible_text_input(input, cx)
+                    .pl(px(LIST_ICON_TO_NAME))
+                    .flex_1()
+                    .child(TextField::new(input).appearance(true))
+                    .into_any_element(),
+                _ => div()
+                    .id(SharedString::from(format!(
+                        "list-name-{}",
+                        e.path.display()
+                    )))
+                    .pl(px(LIST_ICON_TO_NAME))
+                    .flex_1()
+                    .min_w(px(0.0))
+                    .v_flex()
+                    .justify_center()
+                    .child(div().truncate().text_color(primary).child(e.name.clone()))
+                    .when_some(search_detail, |el, detail| {
+                        el.child(
+                            div()
+                                .truncate()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .text_color(sub)
+                                .child(detail),
+                        )
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                            if selected
+                                && !this.trash_view
+                                && !this.applications_view
+                                && !ev.modifiers.platform
+                                && !ev.modifiers.shift
+                            {
+                                cx.stop_propagation();
+                                this.rename_start(window, cx);
+                            }
+                        }),
                     )
-                })
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
-                        if selected
-                            && !this.trash_view
-                            && !this.applications_view
-                            && !ev.modifiers.platform
-                            && !ev.modifiers.shift
-                        {
+                    .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                        if selected {
                             cx.stop_propagation();
-                            this.rename_start(window, cx);
                         }
-                    }),
-                )
-                .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
-                    if selected {
-                        cx.stop_propagation();
-                    }
-                }))
-                .into_any_element(),
-        };
+                    }))
+                    .into_any_element(),
+            };
 
         accessible_item(
             div().id(SharedString::from(format!("row-{}", e.path.display()))),
@@ -1173,126 +1182,126 @@ impl FinderView {
                 .child(row_icon)
                 .child(name_cell),
         )
-                .when(options.columns[0], |row| {
-                    row.child(
-                        div()
-                            .w(px(DATE_W))
-                            .flex_none()
-                            .pl(px(LIST_CELL_TEXT_X))
-                            .truncate()
-                            .text_color(sub)
-                            .child(if options.relative_dates {
-                                e.modified.clone()
-                            } else {
-                                e.modified_absolute.clone()
-                            }),
-                    )
-                })
-                .when(options.columns[1], |row| {
-                    row.child(
-                        div()
-                            .w(px(DATE_W))
-                            .flex_none()
-                            .pl(px(LIST_CELL_TEXT_X))
-                            .truncate()
-                            .text_color(sub)
-                            .child(if options.relative_dates {
-                                e.created.clone()
-                            } else {
-                                e.created_absolute.clone()
-                            }),
-                    )
-                })
-                .when(options.columns[2], |row| {
-                    row.child(
-                        div()
-                            .w(px(DATE_W))
-                            .flex_none()
-                            .pl(px(LIST_CELL_TEXT_X))
-                            .truncate()
-                            .text_color(sub)
-                            .child(if options.relative_dates {
-                                e.last_opened.clone()
-                            } else {
-                                e.last_opened_absolute.clone()
-                            }),
-                    )
-                })
-                .when(options.columns[3], |row| {
-                    row.child(
-                        div()
-                            .w(px(DATE_W))
-                            .flex_none()
-                            .pl(px(LIST_CELL_TEXT_X))
-                            .truncate()
-                            .text_color(sub)
-                            .child(if options.relative_dates {
-                                e.added.clone()
-                            } else {
-                                e.added_absolute.clone()
-                            }),
-                    )
-                })
-                .when(options.columns[4], |row| {
-                    row.child(
-                        div()
-                            .w(px(SIZE_W))
-                            .flex_none()
-                            .flex()
-                            .justify_end()
-                            .pr(px(LIST_SIZE_TRAILING))
-                            .text_color(sub)
-                            .child(if options.calculate_sizes && e.is_dir {
-                                self.directory_sizes
-                                    .get(&e.path)
-                                    .map(|size| human_size(*size).into())
-                                    .unwrap_or_else(|| "--".into())
-                            } else {
-                                e.size.clone()
-                            }),
-                    )
-                })
-                .when(options.columns[5], |row| {
-                    row.child(
-                        div()
-                            .w(px(KIND_W))
-                            .flex_none()
-                            .pl(px(LIST_CELL_TEXT_X))
-                            .text_color(sub)
-                            .truncate()
-                            .child(e.kind.clone()),
-                    )
-                })
-                .when(options.columns[6], |row| {
-                    row.child(
-                        div()
-                            .w(px(SIZE_W))
-                            .flex_none()
-                            .pl(px(LIST_CELL_TEXT_X))
-                            .text_color(sub)
-                            .child("--"),
-                    )
-                })
-                .when(options.columns[7], |row| {
-                    row.child(
-                        div()
-                            .w(px(DATE_W))
-                            .flex_none()
-                            .pl(px(LIST_CELL_TEXT_X))
-                            .text_color(sub)
-                            .child("--"),
-                    )
-                })
-                .when(options.columns[8], |row| {
-                    row.child(
-                        div()
-                            .w(px(KIND_W))
-                            .flex_none()
-                            .pl(px(LIST_CELL_TEXT_X))
-                            .text_color(sub)
-                            .child("--"),
-                    )
-                })
+        .when(options.columns[0], |row| {
+            row.child(
+                div()
+                    .w(px(DATE_W))
+                    .flex_none()
+                    .pl(px(LIST_CELL_TEXT_X))
+                    .truncate()
+                    .text_color(sub)
+                    .child(if options.relative_dates {
+                        e.modified.clone()
+                    } else {
+                        e.modified_absolute.clone()
+                    }),
+            )
+        })
+        .when(options.columns[1], |row| {
+            row.child(
+                div()
+                    .w(px(DATE_W))
+                    .flex_none()
+                    .pl(px(LIST_CELL_TEXT_X))
+                    .truncate()
+                    .text_color(sub)
+                    .child(if options.relative_dates {
+                        e.created.clone()
+                    } else {
+                        e.created_absolute.clone()
+                    }),
+            )
+        })
+        .when(options.columns[2], |row| {
+            row.child(
+                div()
+                    .w(px(DATE_W))
+                    .flex_none()
+                    .pl(px(LIST_CELL_TEXT_X))
+                    .truncate()
+                    .text_color(sub)
+                    .child(if options.relative_dates {
+                        e.last_opened.clone()
+                    } else {
+                        e.last_opened_absolute.clone()
+                    }),
+            )
+        })
+        .when(options.columns[3], |row| {
+            row.child(
+                div()
+                    .w(px(DATE_W))
+                    .flex_none()
+                    .pl(px(LIST_CELL_TEXT_X))
+                    .truncate()
+                    .text_color(sub)
+                    .child(if options.relative_dates {
+                        e.added.clone()
+                    } else {
+                        e.added_absolute.clone()
+                    }),
+            )
+        })
+        .when(options.columns[4], |row| {
+            row.child(
+                div()
+                    .w(px(SIZE_W))
+                    .flex_none()
+                    .flex()
+                    .justify_end()
+                    .pr(px(LIST_SIZE_TRAILING))
+                    .text_color(sub)
+                    .child(if options.calculate_sizes && e.is_dir {
+                        self.directory_sizes
+                            .get(&e.path)
+                            .map(|size| human_size(*size).into())
+                            .unwrap_or_else(|| "--".into())
+                    } else {
+                        e.size.clone()
+                    }),
+            )
+        })
+        .when(options.columns[5], |row| {
+            row.child(
+                div()
+                    .w(px(KIND_W))
+                    .flex_none()
+                    .pl(px(LIST_CELL_TEXT_X))
+                    .text_color(sub)
+                    .truncate()
+                    .child(e.kind.clone()),
+            )
+        })
+        .when(options.columns[6], |row| {
+            row.child(
+                div()
+                    .w(px(SIZE_W))
+                    .flex_none()
+                    .pl(px(LIST_CELL_TEXT_X))
+                    .text_color(sub)
+                    .child("--"),
+            )
+        })
+        .when(options.columns[7], |row| {
+            row.child(
+                div()
+                    .w(px(DATE_W))
+                    .flex_none()
+                    .pl(px(LIST_CELL_TEXT_X))
+                    .text_color(sub)
+                    .child("--"),
+            )
+        })
+        .when(options.columns[8], |row| {
+            row.child(
+                div()
+                    .w(px(KIND_W))
+                    .flex_none()
+                    .pl(px(LIST_CELL_TEXT_X))
+                    .text_color(sub)
+                    .child("--"),
+            )
+        })
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, ev: &MouseDownEvent, window, cx| {

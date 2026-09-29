@@ -276,7 +276,10 @@ impl FinderView {
                 let selected = self.selected_paths().into_iter().collect::<BTreeSet<_>>();
                 sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
                 group_entries(&mut self.entries, options.group_by);
-                self.selected = self.entries.iter().enumerate()
+                self.selected = self
+                    .entries
+                    .iter()
+                    .enumerate()
                     .filter_map(|(index, entry)| selected.contains(&entry.path).then_some(index))
                     .collect();
                 self.anchor = self.selected.iter().next().copied();

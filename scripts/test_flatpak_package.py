@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).parent / "linux/verify-flatpak-package.py"

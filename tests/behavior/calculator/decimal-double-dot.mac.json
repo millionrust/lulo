@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "scenario": "calculator/decimal-double-dot",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "display_value": {
+      "display": {
+        "value": "3.1415"
+      }
+    }
+  }
+}

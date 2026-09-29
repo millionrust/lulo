@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "calculator/clear-during-entry",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "entry_cleared": {
+      "display": {
+        "value": "12+"
+      }
+    },
+    "continued": {
+      "display": {
+        "value": "17"
+      }
+    }
+  }
+}

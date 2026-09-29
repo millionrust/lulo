@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "calculator/percent-chain",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "percent_applied": {
+      "display": {
+        "value": "200-10%"
+      }
+    },
+    "result": {
+      "display": {
+        "value": "180"
+      }
+    }
+  }
+}

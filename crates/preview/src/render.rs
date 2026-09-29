@@ -299,7 +299,19 @@ pub fn encode_print_jpeg(
     pixels: &RgbaImage,
     rotation: Rotation,
 ) -> Result<(Vec<u8>, u32, u32), String> {
-    let bounded = image::imageops::thumbnail(pixels, MAX_PRINT_IMAGE_SIDE, MAX_PRINT_IMAGE_SIDE);
+    if pixels.width() == 0 || pixels.height() == 0 {
+        return Err("the image has no pixels".into());
+    }
+    let scale = (f64::from(MAX_PRINT_IMAGE_SIDE) / f64::from(pixels.width()))
+        .min(f64::from(MAX_PRINT_IMAGE_SIDE) / f64::from(pixels.height()))
+        .min(1.0);
+    let width = (f64::from(pixels.width()) * scale).round().max(1.0) as u32;
+    let height = (f64::from(pixels.height()) * scale).round().max(1.0) as u32;
+    let bounded = if scale < 1.0 {
+        image::imageops::resize(pixels, width, height, image::imageops::FilterType::Triangle)
+    } else {
+        pixels.clone()
+    };
     let rotated = rotate(&bounded, rotation);
     let (width, height) = rotated.dimensions();
     let mut rgb = image::RgbImage::new(width, height);

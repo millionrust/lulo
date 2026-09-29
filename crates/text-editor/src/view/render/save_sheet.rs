@@ -2,8 +2,10 @@
 //! in design-lab/text-editor-save-sheet.html.
 
 use super::*;
-use gpui::AnyElement;
+use gpui::prelude::FluentBuilder as _;
+use gpui::{Animation, AnimationExt as _, AnyElement};
 use rmac_ui::{DialogButtonKind, PopUpButton};
+use std::time::Duration;
 
 fn row(label: &'static str, control: impl IntoElement) -> impl IntoElement {
     div()
@@ -36,6 +38,7 @@ impl EditorView {
     pub(super) fn render_save_sheet(&self, cx: &mut Context<Self>) -> AnyElement {
         let closing = matches!(self.alert, Some(ActiveAlert::ConfirmSave(Some(_))));
         let where_popup = PopUpButton::new("save-sheet-where", self.save_location.label())
+            .form()
             .dropdown_menu(|menu, _, _| {
                 menu.menu("Documents", Box::new(crate::SheetWhereDocuments))
                     .menu("Desktop", Box::new(crate::SheetWhereDesktop))
@@ -48,6 +51,7 @@ impl EditorView {
             "save-sheet-encoding",
             encoding_label(self.text_format.encoding),
         )
+        .form()
         .dropdown_menu(|menu, _, _| {
             menu.menu("Unicode (UTF-8)", Box::new(crate::SheetEncodingUtf8))
                 .menu(
@@ -77,6 +81,7 @@ impl EditorView {
             .border_1()
             .border_color(mac::separator())
             .shadow_xl()
+            .relative()
             .occlude()
             .child(
                 div()
@@ -94,7 +99,7 @@ impl EditorView {
                     .text_size(rmac_ui::text_px(13.0))
                     .text_color(mac::text_secondary())
                     .child(
-                        "You can choose to save your changes, or delete this document immediately.",
+                        "You can choose to save your changes or delete this document immediately. You can’t undo this action.",
                     ),
             )
             .child(row(
@@ -145,6 +150,11 @@ impl EditorView {
                             cx.listener(|this, _, window, cx| this.alert_confirm(window, cx)),
                         ),
                     ),
+            )
+            .with_animation(
+                "text-editor-save-sheet-slide",
+                Animation::new(Duration::from_millis(180)),
+                |sheet, progress| sheet.top(px(-32.0 * (1.0 - progress))),
             );
         rmac_ui::dialog("text-editor-save-sheet", card)
             .aria_label(format!(

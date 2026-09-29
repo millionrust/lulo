@@ -12,11 +12,6 @@ impl EditorView {
             return self.render_save_sheet(cx);
         }
         use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
-        // TE-18: Esc must cancel the Save sheet (only) — every other alert
-        // here already has an unambiguous Cancel button reachable by mouse,
-        // and several (Recover, Conflict) have no safe "this is Cancel"
-        // default, so Esc is left to do nothing for them rather than guess.
-        let escape_cancels = matches!(&alert, ActiveAlert::ConfirmSave(_));
         let (title, message, buttons): (String, String, Vec<gpui::AnyElement>) = match alert {
             ActiveAlert::Recover(prompt) => (
                 "Recover unsaved changes?".to_owned(),
@@ -118,18 +113,6 @@ impl EditorView {
                     .into_any_element()],
             ),
         };
-        let dialog = rmac_ui::alert(title, message, buttons);
-        if escape_cancels {
-            dialog
-                .capture_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
-                    if event.keystroke.key.as_str() == "escape" {
-                        cx.stop_propagation();
-                        this.alert_cancel(cx);
-                    }
-                }))
-                .into_any_element()
-        } else {
-            dialog.into_any_element()
-        }
+        rmac_ui::alert(title, message, buttons).into_any_element()
     }
 }

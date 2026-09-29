@@ -312,7 +312,7 @@ impl Render for EditorView {
                 // a 13 pt pitch (JetBrains Mono stands in for Menlo). The
                 // wrapper names the document for assistive technologies and
                 // accepts their SetValue / ReplaceSelectedText edits.
-                let editable = !(recovery_loading || self.print_busy);
+                let editable = !(recovery_loading || self.print_busy || self.file_busy);
                 div()
                     .id("document-body")
                     .role(Role::MultilineTextInput)

@@ -53,7 +53,13 @@ impl EditorView {
             let saved_path = path.clone();
             let result = cx
                 .background_executor()
-                .spawn(async move { save_document_copy(&saved_path, None, &save_content, format) })
+                .spawn(async move {
+                    if saved_path.symlink_metadata().is_ok() {
+                        Err(SaveFailure::DestinationExists)
+                    } else {
+                        save_document_copy(&saved_path, None, &save_content, format)
+                    }
+                })
                 .await;
             let _ = this.update_in(cx, |this, window, cx| {
                 if result.is_ok() {

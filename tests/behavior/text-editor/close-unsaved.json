@@ -1,5 +1,5 @@
 {
-  "title": "Closing (⌘W) an edited Untitled document asks to save; Escape cancels",
+  "title": "Closing an edited Untitled document shows the Save sheet; Escape and ⌘. cancel",
   "app": "text-editor",
   "launch": {},
   "steps": [
@@ -7,6 +7,9 @@
     {"key": "cmd-w", "settle": 1.2},
     {"observe": "asked", "facts": ["dialog"]},
     {"key": "escape"},
-    {"observe": "cancelled", "facts": ["dialog", "windows"]}
+    {"observe": "cancelled", "facts": ["dialog", "windows"]},
+    {"key": "cmd-w", "settle": 1.2},
+    {"key": "cmd-."},
+    {"observe": "cancelled-period", "facts": ["dialog", "windows"]}
   ]
 }

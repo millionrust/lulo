@@ -15,6 +15,7 @@ pub(super) enum SaveFailure {
     Codec(document::CodecError),
     Storage(storage::SaveDocumentError),
     ConflictingCopyDestination,
+    DestinationExists,
 }
 
 impl std::fmt::Display for SaveFailure {
@@ -24,6 +25,9 @@ impl std::fmt::Display for SaveFailure {
             Self::Storage(error) => error.fmt(formatter),
             Self::ConflictingCopyDestination => formatter.write_str(
                 "Save a Copy requires a different file; the conflicting source was not changed",
+            ),
+            Self::DestinationExists => formatter.write_str(
+                "a document with that name already exists; choose another name or use Other… to review the destination",
             ),
         }
     }

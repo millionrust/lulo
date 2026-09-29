@@ -87,7 +87,10 @@ against the staged binaries finds five apps above the 0.3% idle CPU target in
 private software-rendered Sway: Text Editor 40.53%, Weather 39.93%, Clock
 32.43%, System Monitor 19.63%, and Files 0.80%. Each is one 30-second idle
 window, not an installed-desktop percentile; the result confirms the gate
-needs further work and an installed rerun. Neither fake power checks nor private UI
+needs further work and an installed rerun. The later 2026-09-29
+[release-binary candidate](perf/idle-cpu-2026-09-29.md) passes the corrected
+five-app idle budgets in the live session, but has not been packaged.
+Neither fake power checks nor private UI
 checks prove real host poweroff or full visual parity.
 
 Visual parity is not established by the behavior or startup passes. One local
@@ -105,7 +108,7 @@ provenance, but a human must still review their visible differences.
 | 2 | Accessibility remains a release gate: AT-SPI `EditableText` is absent upstream; ACC-08 and role/name/action gaps remain; Control-F2 is nested-confirmed but not Orca-confirmed; and no owner-run Orca/I3 audit exists. See journeys 1–5 and 8–9 below. | agent / owner / upstream | L |
 | 3 | The amd64 package set from `0e3fa470` was installed on the reference PC using `~/install-lulo.sh`. The native pair and pinned compositor packages pass `verify-native-packages.py`, all four SHA-256 checks pass, and installed binaries pass 9/9 startup, 41/41 power-dialog, and 28/28 nested shutdown checks; 24/27 selected behaviors match the Mac recordings. The GNOME-only installer succeeded on the reference PC; a clean Ubuntu 26.04 install/upgrade/uninstall run and GitHub Actions Release workflow remain unexercised. Green dev CI does not exercise that release pipeline. | agent / owner VM | L |
 | 4 | Security gate remains **Fail**. Three accepted Low findings remain (SR-15, SR-18, SR-29), and 24 of 80 checks need native-station evidence; no Beta station has run. The verifier must continue to fail closed until its evidence requirements are met. | agent / owner stations | L |
-| 5 | Release-binary performance evidence covers nine apps in the earlier `8ae3a9eb` package set: all nine pass warm-launch budgets, but Files, System Monitor, Text Editor, Clock, and Weather exceed the 0.3% idle CPU budget. The `0e3fa470` set includes a later Files watcher fix that passed a focused 60-second sample at 0.03% CPU, but a separate single-run private-Sway sample of the installed Files binary measured 0.767% over 30 seconds. The corrected private sampler now has one 30-second installed-binary sample for all eleven apps, including App Drawer and Preview; these environments are not directly comparable, and full five-launch/60-second performance budgets have not been rerun on this package. Frame pacing, input response, soak memory, and NVIDIA results remain unmeasured. See the [2026-09-27 report](perf/reference-laptop-2026-09-27-release.md). | agent | M |
+| 5 | Nine apps passed the earlier warm-launch budget. The five idle CPU offenders now pass in a live, sequential 60-second [release-binary candidate run](perf/idle-cpu-2026-09-29.md), with the corrected 2.5% System Monitor and 0.5% shell budgets. That candidate is not installed; the old package remains above idle limits. Frame pacing, input response, soak memory, and NVIDIA results remain unmeasured. | agent | M |
 | 6 | Release-facing install/readiness language still needs the owner's decision before publication so README and install guidance match the early-access Beta scope. | **owner** | S |
 
 **What changed this pass, with real evidence:** journeys 2 (Files), 3
@@ -186,8 +189,8 @@ JSON/parsing logic, not a live run.
 | Metric | Budget | Status |
 |---|---|---|
 | Warm launch to interactive | p95 ≤ 500 ms (900 ms Files/Terminal) | **Pass for nine measured apps** on the 2026-09-27 `8ae3a9eb` release build: all used the ready-file marker, with p95 from 150.1 ms (Text Editor) to 290.7 ms (Notes). App Drawer and Preview now have single private first-frame samples of 282.4 ms and 328.7 ms on the installed `0e3fa470` binaries, but no five-launch p95. See [release-binary report](perf/reference-laptop-2026-09-27-release.md). |
-| Idle CPU | ≤ 0.3%/app, ≤ 1% shell combined | **Fail on the release package:** Files 4.57%, System Monitor 4.45%, Clock 1.87%, Text Editor 0.70%, Weather 0.70% in the corrected isolated 60-second run; the other four measured apps pass. A `dev` Files fix passes a focused release-binary probe at 0.03%, but is not yet packaged. Shell values remain from the 2026-09-25 read-only run (combined under 1%) and were excluded from this run. |
-| Idle wake-ups | none while nothing changes | **Fail or needs attribution on the release package:** Files 27.333/s, Clock 12.417/s, Text Editor 6.133/s, Weather 6.483/s, and System Monitor 3.233/s. The `dev` Files fix measured 0.050/s in a focused probe. Clock's visible second hand and System Monitor's live metrics account for some expected activity, but their CPU budgets still fail. See [release-binary report](perf/reference-laptop-2026-09-27-release.md). |
+| Idle CPU | ≤ 0.3%/normal app, ≤ 2.5% System Monitor, ≤ 0.5% shell combined | **Pass on the 2026-09-29 release-binary candidate:** Text Editor 0.000%, Clock 0.050%, System Monitor 2.017%, Files 0.033%, Weather 0.000%; shell services combined 0.200%. Each app ran alone for 60 seconds with private XDG directories. The candidate is not yet installed as a package. See [before/after report](perf/idle-cpu-2026-09-29.md). |
+| Idle wake-ups | none while nothing changes | **Static app timers fixed; proxy improved:** Text Editor 9.050 → 0.000 context switches/s, Weather 8.450 → 0.000, Files 0.633 → 0.050, Clock 5.267 → 0.267, System Monitor 3.800 → 1.367; shell combined 2.150 → 1.300. Clock advances at minute boundaries and System Monitor samples visible metrics every five seconds. Context switches are a wake-up proxy, not exact frame counts. See [before/after report](perf/idle-cpu-2026-09-29.md). |
 | Input to visible response | p95 ≤ 50 ms | **Not yet run** — no frame-timing harness exists yet |
 | 60/120 Hz animation frame budget | ≥ 99% / ≥ 95% within budget | **Not yet run** — `docs/performance-baseline.md` notes no per-frame trace is available yet |
 | Memory (8-hour soak) | per-app budget, no leak | **Not yet run** |
@@ -199,8 +202,10 @@ Earlier evidence: [system audit](perf/reference-laptop-2026-09-24.md),
 [release-binary run](perf/reference-laptop-2026-09-27-release.md) used a
 temporary HOME and XDG directories per app, no Cargo contention, and one app
 at a time. Its marker and XDG writes are outside Files' watched HOME and parent;
-the earlier layout inflated Files' result. **Status: Fail** — five apps exceed idle CPU budget; frame pacing,
-input response, soak memory, and NVIDIA results remain unmeasured.
+the earlier layout inflated Files' result. The newer
+[candidate run](perf/idle-cpu-2026-09-29.md) passes the corrected idle CPU
+budgets; it has not yet been installed. Frame pacing, input response, soak
+memory, and NVIDIA results remain unmeasured.
 
 ## 3. Accessibility gates (todo.md)
 
@@ -366,11 +371,12 @@ the items below explain the remaining gates in more detail:
    Local amd64 candidate packages pass their artifact and native-pair checks,
    but the install/upgrade/uninstall path and GitHub Actions Release workflow
    still need end-to-end evidence.
-3. **Performance: release binaries exceed idle budgets.** Nine apps pass
-   warm-launch budgets, while Files, System Monitor, Text Editor, Clock, and
-   Weather exceed the per-app idle CPU target in the packaged candidate.
-   A later `dev` Files watcher fix passed a focused probe, but is not in that
-   package. Input latency, frame pacing, soak memory and NVIDIA remain open.
+3. **Performance: the new idle candidate is not installed.** Nine apps pass
+   the earlier warm-launch budgets. Files, System Monitor, Text Editor,
+   Clock, and Weather now pass their idle CPU budgets in the live
+   [2026-09-29 release-binary run](perf/idle-cpu-2026-09-29.md), but the
+   installed package is older. Input latency, frame pacing, soak memory and
+   NVIDIA remain open.
 4. **Security review: Fail (source review done, gate not met).**
    [docs/security-review-0.9.0-beta.1.md](security-review-0.9.0-beta.1.md)
    and its canonical summary `docs/security-review-0.9.0-beta.1.json` cover

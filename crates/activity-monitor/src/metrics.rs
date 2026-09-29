@@ -122,7 +122,7 @@ pub(crate) struct NetIface {
     pub(crate) sent_rate: f64,
 }
 
-pub(crate) const REFRESH_SECS: f64 = 2.0;
+pub(crate) const REFRESH_SECS: f64 = 5.0;
 
 pub(crate) fn format_mem(bytes: u64) -> String {
     const KB: f64 = 1024.0;
@@ -191,7 +191,7 @@ mod tests {
         }
         assert_eq!(history.len(), History::CAP);
         assert_eq!(history[0], 5.0);
-        assert_eq!(REFRESH_SECS, 2.0);
+        assert_eq!(REFRESH_SECS, 5.0);
     }
 
     #[test]

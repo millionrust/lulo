@@ -15,7 +15,7 @@ const MAX_SETTINGS_BYTES: usize = 64 * 1024;
 pub const MAX_CACHE_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_PLACES: usize = 20;
 /// A forecast younger than this is shown without refetching.
-pub const FRESH_SECONDS: i64 = 15 * 60;
+pub const FRESH_SECONDS: i64 = 60 * 60;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 #[serde(default)]

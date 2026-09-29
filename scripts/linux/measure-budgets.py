@@ -69,8 +69,8 @@ from typing import Any, Optional
 # Fixed inventory: shell surfaces (systemd --user units) and applications.
 # --------------------------------------------------------------------------
 
-# todo.md "Performance budgets": "Idle CPU ... <=1% for all shell surfaces
-# combined". This is the fixed set of always-on-or-on-demand shell units;
+# The Beta budget is <=0.5% for all shell surfaces combined. This is the fixed
+# set of always-on-or-on-demand shell units;
 # rmac-launcher/-quick-settings/-notification-center-panel are on-demand
 # popovers (systemd Type=notify, Restart=on-success -- they exit when their
 # last window closes) and are reported as "not running" at idle rather than
@@ -116,7 +116,14 @@ SIMPLE_APP_BUDGET_MS = 500.0
 WIDE_APP_BUDGET_MS = 900.0
 
 IDLE_CPU_PER_APP_BUDGET_PERCENT = 0.3
-IDLE_CPU_SHELL_COMBINED_BUDGET_PERCENT = 1.0
+IDLE_CPU_SYSTEM_MONITOR_BUDGET_PERCENT = 2.5
+IDLE_CPU_SHELL_COMBINED_BUDGET_PERCENT = 0.5
+
+
+def idle_cpu_budget_for_app(package: str) -> float:
+    if package == "rmac-system-monitor":
+        return IDLE_CPU_SYSTEM_MONITOR_BUDGET_PERCENT
+    return IDLE_CPU_PER_APP_BUDGET_PERCENT
 
 READY_FILE_ENV = "RMAC_BENCHMARK_READY_FILE"
 
@@ -289,8 +296,9 @@ def render_markdown_report(report: dict[str, Any]) -> str:
     lines.append(f"# Reference laptop performance budgets -- {captured_at}")
     lines.append("")
     lines.append(
-        "Measured against todo.md \"Performance budgets\": idle CPU <=0.3% per "
-        "app and <=1% for all shell surfaces combined, no idle redraw, warm "
+        "Measured against Beta budgets: idle CPU <=0.3% per normal app, "
+        "<=2.5% for System Monitor, and <=0.5% for all shell surfaces "
+        "combined; no idle redraw; warm "
         "launch p95 <=500 ms (<=900 ms for Files/Terminal), memory recorded. "
         "No personal data is recorded: no hostnames, home-directory paths, "
         "window titles, or user names."
@@ -587,7 +595,7 @@ def measure_shell_surface(
     if sample is None:
         return {"running": False, "note": "unit exited during measurement"}
 
-    idle_budget = evaluate_budget(sample["cpu_percent"], IDLE_CPU_PER_APP_BUDGET_PERCENT)
+    idle_budget = evaluate_budget(sample["cpu_percent"], IDLE_CPU_SHELL_COMBINED_BUDGET_PERCENT)
     return {
         "running": True,
         "idle_cpu_percent": idle_budget,
@@ -827,7 +835,7 @@ def measure_app(
         if sample is not None:
             idle_result = {
                 "idle_cpu_percent": evaluate_budget(
-                    sample["cpu_percent"], IDLE_CPU_PER_APP_BUDGET_PERCENT
+                    sample["cpu_percent"], idle_cpu_budget_for_app(package)
                 ),
                 "wakeups_per_second": round(sample["wakeups_per_second"], 3),
                 "suspected_idle_redraw": suspected_idle_redraw(

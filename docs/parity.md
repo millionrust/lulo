@@ -564,10 +564,11 @@ Window shape (1024×768, 4-tab toolbar) matches the Mac.
 | CLOCK-03 | P2 | S | Missing | Mac Alarms have a sound picker. / Lulo always uses the Alert cue. | `ring.rs:189` |
 | CLOCK-04 | P2 | S | Missing | Mac World Clock cities can be reordered and switched to a list. / Lulo only adds/removes. | `view.rs:525-652` |
 | CLOCK-05 | P2 | S | Missing | Mac Clock follows Light mode. / Lulo is Dark-only (fixed 0x1E1E1E fill). | `crates/clock/src/metrics.rs:13` |
-| CLOCK-06 | P2 | S | Missing | An idle Mac clock uses no CPU. / Lulo's ticker wakes every 250 ms on every tab even when idle. | `view.rs:35-36,134-157` |
+| CLOCK-06 | P2 | S | Fixed `0263e125` | An idle Mac clock uses no CPU. / Lulo now schedules World Clock at minute boundaries, waits for file events on static tabs, and stops redraws while inactive. The 60-second release candidate measured 0.050% CPU, down from 0.400%. | `crates/clock/src/view.rs` |
 | CLOCK-07 | P2 | S | Partial | Mac: the toolbar "+" ("Add an alarm") slides down a 514×391 sheet: time picker, "Repeat:" S M T W T F S toggles (Sunday first), "Label:" field with placeholder "Alarm", "Sound:" popup (Radial (Default)), Snooze checkbox, "Snooze Duration:" popup (9 min), Cancel · Save (default); Esc doesn't dismiss it while the time field has focus. / Lulo: a 340 pt in-window card "Add Alarm": 7:00 AM steppers, Repeat M…S (Monday first), Label pre-filled with the text "Alarm", Snooze switch — no Sound or Snooze Duration. | `crates/clock/src/view.rs:838` |
 | CLOCK-08 | P1 | S | Fixed `b3d367fb` | Mac: an empty Alarms tab shows only "No Alarms". / Lulo: now shows only centered "No Alarms" text, no icon — the old glyph was a `w_full()` SVG stretched across the whole window instead of the small icon design-lab measured. | `crates/clock/src/view.rs` (`render_alarms`) |
 | CLOCK-09 | P2 | S | Missing | Mac File: Start Recent Timer ▸, Close, Close All; View: the four tabs plus View Digital/Analogue Stopwatch; no New item (adding is the toolbar +). / Lulo File has New ⌘N and View has Start or Stop / Lap or Reset (not Mac rows); Edit lacks Delete and Spelling/Substitutions/Transformations/Speech. | `CLOCK_MENUS` |
+| CLOCK-10 | P2 | S | Missing | Mac World Clock has a moving second hand. / Lulo hides it so the idle World view can repaint only when its minute-resolution time changes. | `crates/clock/src/view.rs` (`SHOW_SECOND_HAND`) |
 
 ### Player
 

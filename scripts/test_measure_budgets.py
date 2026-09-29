@@ -164,6 +164,13 @@ class WarmLaunchBudgetTests(unittest.TestCase):
         self.assertEqual(measure_budgets.warm_launch_budget_ms("rmac-notes"), 500.0)
 
 
+class IdleCpuBudgetTests(unittest.TestCase):
+    def test_monitor_and_shell_have_their_own_beta_limits(self):
+        self.assertEqual(measure_budgets.idle_cpu_budget_for_app("rmac-system-monitor"), 2.5)
+        self.assertEqual(measure_budgets.idle_cpu_budget_for_app("rmac-weather"), 0.3)
+        self.assertEqual(measure_budgets.IDLE_CPU_SHELL_COMBINED_BUDGET_PERCENT, 0.5)
+
+
 class EvaluateBudgetTests(unittest.TestCase):
     def test_within_budget(self):
         result = measure_budgets.evaluate_budget(0.2, 0.3)

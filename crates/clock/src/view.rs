@@ -1,6 +1,7 @@
 //! The Clock window: toolbar tabs, World Clock, Alarms, Stopwatch, Timers.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -11,6 +12,7 @@ use gpui::{
     ScrollWheelEvent, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
     WindowControlArea,
 };
+use notify::Watcher as _;
 use rmac_clock::alarms::{Alarm, Days};
 use rmac_clock::changes::Change;
 use rmac_clock::cities::{self, City};
@@ -33,10 +35,11 @@ use crate::{
 const LAND_SVG: &str = include_str!("../assets/world-land.svg");
 /// Hundredths need a fast refresh while the Stopwatch runs on screen.
 const FAST_TICK: Duration = Duration::from_millis(33);
-/// Clock faces and countdowns display whole seconds; repaint at that cadence.
+/// Running countdowns display whole seconds; repaint at that cadence.
 const SECOND_TICK: Duration = Duration::from_secs(1);
-/// Static tabs only need an occasional check for changes made by the ring process.
-const IDLE_TICK: Duration = Duration::from_secs(5);
+/// The World Clock shows minute precision. A second hand would force a full
+/// software-rendered window repaint every second while otherwise idle.
+const SHOW_SECOND_HAND: bool = false;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Tab {
@@ -53,13 +56,21 @@ const TABS: [(Tab, &str); 4] = [
     (Tab::Timers, "Timers"),
 ];
 
-fn ticker_delay(tab: Tab, stopwatch_running: bool, timers_running: bool) -> Duration {
+fn ticker_delay(
+    tab: Tab,
+    stopwatch_running: bool,
+    timers_running: bool,
+    now: u64,
+) -> Option<Duration> {
     if tab == Tab::Stopwatch && stopwatch_running {
-        FAST_TICK
-    } else if tab == Tab::World || (tab == Tab::Timers && timers_running) {
-        SECOND_TICK
+        Some(FAST_TICK)
+    } else if tab == Tab::World {
+        let period = if SHOW_SECOND_HAND { 1_000 } else { 60_000 };
+        Some(Duration::from_millis(period - now % period))
+    } else if tab == Tab::Timers && timers_running {
+        Some(SECOND_TICK)
     } else {
-        IDLE_TICK
+        None
     }
 }
 
@@ -76,6 +87,16 @@ fn ticker_should_redraw(
     state_changed: bool,
 ) -> bool {
     state_changed || ticker_needs_redraw(tab, stopwatch_running, timers_running)
+}
+
+fn should_reload_state(event: &notify::Result<notify::Event>, state_path: &Path) -> bool {
+    match event {
+        Err(_) => true,
+        Ok(event) => {
+            !matches!(event.kind, notify::EventKind::Access(_))
+                && event.paths.iter().any(|path| path == state_path)
+        }
+    }
 }
 
 /// A rendered map and what it was rendered for.
@@ -98,6 +119,8 @@ pub(crate) struct ClockView {
     tab: Tab,
     state: State,
     state_mtime: Option<SystemTime>,
+    _state_watcher: Option<notify::RecommendedWatcher>,
+    ticker_wake: async_channel::Sender<()>,
     zone: Zone,
     zones: HashMap<&'static str, Zone>,
     land: Option<Arc<Land>>,
@@ -116,7 +139,13 @@ pub(crate) struct ClockView {
 
 impl ClockView {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let _ = window;
+        cx.observe_window_activation(window, |view, window, cx| {
+            let _ = view.ticker_wake.try_send(());
+            if window.is_window_active() {
+                cx.notify();
+            }
+        })
+        .detach();
         let (state, error) = match store::load() {
             Ok(state) => (state, None),
             Err(error) => (
@@ -126,11 +155,31 @@ impl ClockView {
                 ))),
             ),
         };
+        let (ticker_wake, ticker_events) = async_channel::bounded(1);
+        let state_watcher = store::state_path().and_then(|path| {
+            let directory = path.parent()?;
+            std::fs::create_dir_all(directory).ok()?;
+            let sender = ticker_wake.clone();
+            let watched_path = path.clone();
+            let mut watcher =
+                notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+                    if should_reload_state(&event, &watched_path) {
+                        let _ = sender.try_send(());
+                    }
+                })
+                .ok()?;
+            watcher
+                .watch(directory, notify::RecursiveMode::NonRecursive)
+                .ok()?;
+            Some(watcher)
+        });
         let mut view = Self {
             focus: cx.focus_handle(),
             tab: Tab::World,
             state,
             state_mtime: state_mtime(),
+            _state_watcher: state_watcher,
+            ticker_wake,
             zone: tz::local_zone(),
             zones: HashMap::new(),
             land: Land::parse(LAND_SVG).map(Arc::new),
@@ -155,33 +204,57 @@ impl ClockView {
         // Make sure the ring schedule matches the saved state (for example
         // after an update moved the binary).
         view.persist(None, cx);
-        view.start_ticker(cx);
+        view.start_ticker(window, ticker_events, cx);
         view
     }
 
-    fn start_ticker(&self, cx: &mut Context<Self>) {
-        cx.spawn(async move |this, cx| loop {
-            let (tab, stopwatch_running, timers_running) = this
-                .update(cx, |view, _| {
+    fn start_ticker(
+        &self,
+        window: &mut Window,
+        ticker_events: async_channel::Receiver<()>,
+        cx: &mut Context<Self>,
+    ) {
+        cx.spawn_in(window, async move |this, cx| loop {
+            let (tab, stopwatch_running, timers_running, active) = this
+                .update_in(cx, |view, window, _| {
                     (
                         view.tab,
                         view.state.stopwatch.phase() == Phase::Running,
                         view.state.timers.iter().any(|timer| timer.is_running()),
+                        window.is_window_active(),
                     )
                 })
-                .unwrap_or((Tab::Alarms, false, false));
-            cx.background_executor()
-                .timer(ticker_delay(tab, stopwatch_running, timers_running))
-                .await;
+                .unwrap_or((Tab::Alarms, false, false, false));
+            let delay = active
+                .then(|| ticker_delay(tab, stopwatch_running, timers_running, now_millis()))
+                .flatten();
+            let timer_expired = futures_lite::future::race(
+                async {
+                    if let Some(delay) = delay {
+                        cx.background_executor().timer(delay).await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                    true
+                },
+                async {
+                    let _ = ticker_events.recv().await;
+                    false
+                },
+            )
+            .await;
             if this
-                .update(cx, |view, cx| {
+                .update_in(cx, |view, window, cx| {
                     let changed = view.reload_if_changed();
-                    if ticker_should_redraw(
-                        view.tab,
-                        view.state.stopwatch.phase() == Phase::Running,
-                        view.state.timers.iter().any(|timer| timer.is_running()),
-                        changed,
-                    ) {
+                    if window.is_window_active()
+                        && (timer_expired || changed)
+                        && ticker_should_redraw(
+                            view.tab,
+                            view.state.stopwatch.phase() == Phase::Running,
+                            view.state.timers.iter().any(|timer| timer.is_running()),
+                            changed,
+                        )
+                    {
                         cx.notify();
                     }
                 })
@@ -197,7 +270,7 @@ impl ClockView {
     /// finished timer going away).
     fn reload_if_changed(&mut self) -> bool {
         let mtime = state_mtime();
-        if mtime.is_some() && mtime != self.state_mtime {
+        if mtime != self.state_mtime {
             self.state_mtime = mtime;
             if let Ok(state) = store::load() {
                 let changed = state != self.state;
@@ -212,6 +285,7 @@ impl ClockView {
     /// thread.
     fn change(&mut self, change: Change, cx: &mut Context<Self>) {
         change.apply(&mut self.state);
+        let _ = self.ticker_wake.try_send(());
         self.persist(Some(change), cx);
         cx.notify();
     }
@@ -269,6 +343,7 @@ impl ClockView {
     fn set_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
         self.tab = tab;
         self.picker = None;
+        let _ = self.ticker_wake.try_send(());
         cx.notify();
     }
 
@@ -1644,7 +1719,9 @@ fn clock_face(center_x: f32, center_y: f32, diameter: f32, time: WallTime) -> im
                     let orange: Hsla = rgb(m::SECOND_HAND).into();
                     hand(hour, radius * 0.5, 0.0, 3.0, black, window);
                     hand(minute, radius * 0.8, 0.0, 2.5, black, window);
-                    hand(second, radius * 0.88, 12.0, 1.0, orange, window);
+                    if SHOW_SECOND_HAND {
+                        hand(second, radius * 0.88, 12.0, 1.0, orange, window);
+                    }
                     let mut dot = PathBuilder::fill();
                     let steps = 16;
                     for step in 0..=steps {
@@ -1658,7 +1735,7 @@ fn clock_face(center_x: f32, center_y: f32, diameter: f32, time: WallTime) -> im
                     }
                     dot.close();
                     if let Ok(dot) = dot.build() {
-                        window.paint_path(dot, orange);
+                        window.paint_path(dot, if SHOW_SECOND_HAND { orange } else { black });
                     }
                 },
             )
@@ -1802,26 +1879,54 @@ mod ticker_tests {
 
     #[test]
     fn idle_tabs_sleep_and_do_not_redraw_until_state_changes() {
-        assert_eq!(ticker_delay(Tab::Alarms, false, false), IDLE_TICK);
+        assert_eq!(ticker_delay(Tab::Alarms, false, false, 0), None);
         assert!(!ticker_needs_redraw(Tab::Alarms, false, false));
-        assert_eq!(ticker_delay(Tab::Stopwatch, false, false), IDLE_TICK);
+        assert_eq!(ticker_delay(Tab::Stopwatch, false, false, 0), None);
         assert!(!ticker_needs_redraw(Tab::Stopwatch, false, false));
         assert!(ticker_should_redraw(Tab::Alarms, false, false, true));
     }
 
     #[test]
-    fn visible_clocks_and_running_countdowns_refresh_once_per_second() {
-        assert_eq!(ticker_delay(Tab::World, false, false), SECOND_TICK);
+    fn world_clocks_follow_minute_boundaries_and_countdowns_follow_seconds() {
+        assert_eq!(
+            ticker_delay(Tab::World, false, false, 0),
+            Some(Duration::from_secs(60))
+        );
+        assert_eq!(
+            ticker_delay(Tab::World, false, false, 59_999),
+            Some(Duration::from_millis(1))
+        );
         assert!(ticker_needs_redraw(Tab::World, false, false));
-        assert_eq!(ticker_delay(Tab::Timers, false, true), SECOND_TICK);
+        assert_eq!(ticker_delay(Tab::Timers, false, true, 0), Some(SECOND_TICK));
         assert!(ticker_needs_redraw(Tab::Timers, false, true));
-        assert_eq!(ticker_delay(Tab::Timers, false, false), IDLE_TICK);
+        assert_eq!(ticker_delay(Tab::Timers, false, false, 0), None);
         assert!(!ticker_needs_redraw(Tab::Timers, false, false));
     }
 
     #[test]
     fn running_stopwatch_keeps_hundredth_second_updates() {
-        assert_eq!(ticker_delay(Tab::Stopwatch, true, false), FAST_TICK);
+        assert_eq!(
+            ticker_delay(Tab::Stopwatch, true, false, 0),
+            Some(FAST_TICK)
+        );
         assert!(ticker_needs_redraw(Tab::Stopwatch, true, false));
+    }
+
+    #[test]
+    fn state_watcher_ignores_reads_and_unrelated_files() {
+        let path = Path::new("/config/rmac/clock.json");
+        let access = notify::Event::new(notify::EventKind::Access(notify::event::AccessKind::Read))
+            .add_path(path.to_path_buf());
+        let other = notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Any))
+            .add_path("/config/rmac/other.json".into());
+        let changed = notify::Event::new(notify::EventKind::Modify(notify::event::ModifyKind::Any))
+            .add_path(path.to_path_buf());
+        assert!(!should_reload_state(&Ok(access), path));
+        assert!(!should_reload_state(&Ok(other), path));
+        assert!(should_reload_state(&Ok(changed), path));
+        assert!(should_reload_state(
+            &Err(notify::Error::generic("watch lost")),
+            path
+        ));
     }
 }

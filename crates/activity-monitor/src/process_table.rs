@@ -336,7 +336,7 @@ impl ProcessTableDelegate {
         let cpu_ready = self.refresh_count >= 2;
 
         // Frequency and static CPU metadata do not change on this screen; only
-        // refresh usage deltas on the two-second sampling path.
+        // refresh usage deltas on the configured sampling path.
         self.system.refresh_cpu_usage();
         self.system.refresh_memory();
         self.system.refresh_processes_specifics(

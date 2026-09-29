@@ -1,0 +1,146 @@
+{
+  "apps": {
+    "rmac-clock": {
+      "display_name": "Clock",
+      "frame_timing": "not_measured",
+      "idle": {
+        "idle_cpu_percent": {
+          "budget": 0.3,
+          "value": 0.05,
+          "within_budget": true
+        },
+        "pss_mib": 97.1,
+        "suspected_idle_redraw": false,
+        "wakeups_per_second": 0.267
+      },
+      "warm_launch": {
+        "interactive_marker": "ready_file",
+        "median_ms": 362.3,
+        "p95_ms": {
+          "budget": 500.0,
+          "value": 362.323,
+          "within_budget": true
+        },
+        "samples_ms": [
+          362.3
+        ]
+      }
+    },
+    "rmac-files": {
+      "display_name": "Files",
+      "frame_timing": "not_measured",
+      "idle": {
+        "idle_cpu_percent": {
+          "budget": 0.3,
+          "value": 0.033,
+          "within_budget": true
+        },
+        "pss_mib": 94.1,
+        "suspected_idle_redraw": false,
+        "wakeups_per_second": 0.05
+      },
+      "warm_launch": {
+        "interactive_marker": "ready_file",
+        "median_ms": 383.9,
+        "p95_ms": {
+          "budget": 900.0,
+          "value": 383.932,
+          "within_budget": true
+        },
+        "samples_ms": [
+          383.9
+        ]
+      }
+    },
+    "rmac-system-monitor": {
+      "display_name": "System Monitor",
+      "frame_timing": "not_measured",
+      "idle": {
+        "idle_cpu_percent": {
+          "budget": 2.5,
+          "value": 2.017,
+          "within_budget": true
+        },
+        "pss_mib": 97.3,
+        "suspected_idle_redraw": true,
+        "wakeups_per_second": 1.367
+      },
+      "warm_launch": {
+        "interactive_marker": "ready_file",
+        "median_ms": 1316.6,
+        "p95_ms": {
+          "budget": 500.0,
+          "value": 1316.57,
+          "within_budget": false
+        },
+        "samples_ms": [
+          1316.6
+        ]
+      }
+    },
+    "rmac-text-editor": {
+      "display_name": "Text Editor",
+      "frame_timing": "not_measured",
+      "idle": {
+        "idle_cpu_percent": {
+          "budget": 0.3,
+          "value": 0.0,
+          "within_budget": true
+        },
+        "pss_mib": 92.7,
+        "suspected_idle_redraw": false,
+        "wakeups_per_second": 0.0
+      },
+      "warm_launch": {
+        "interactive_marker": "ready_file",
+        "median_ms": 362.4,
+        "p95_ms": {
+          "budget": 500.0,
+          "value": 362.439,
+          "within_budget": true
+        },
+        "samples_ms": [
+          362.4
+        ]
+      }
+    },
+    "rmac-weather": {
+      "display_name": "Weather",
+      "frame_timing": "not_measured",
+      "idle": {
+        "idle_cpu_percent": {
+          "budget": 0.3,
+          "value": 0.0,
+          "within_budget": true
+        },
+        "pss_mib": 88.4,
+        "suspected_idle_redraw": false,
+        "wakeups_per_second": 0.0
+      },
+      "warm_launch": {
+        "interactive_marker": "ready_file",
+        "median_ms": 372.3,
+        "p95_ms": {
+          "budget": 500.0,
+          "value": 372.34,
+          "within_budget": true
+        },
+        "samples_ms": [
+          372.3
+        ]
+      }
+    }
+  },
+  "captured_at": "2026-09-29T12:00:21Z",
+  "rustc_processes": 0,
+  "schema_version": 1,
+  "settings": {
+    "idle_seconds": 60.0,
+    "repetitions": 1,
+    "settle_seconds": 3.0,
+    "startup_timeout": 10.0,
+    "wakeup_threshold_per_second": 0.5,
+    "warmups": 0
+  },
+  "shell_surfaces": {}
+}

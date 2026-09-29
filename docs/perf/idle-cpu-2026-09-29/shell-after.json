@@ -1,0 +1,100 @@
+{
+  "budget_cpu_percent_one_core": 0.5,
+  "captured_at": "2026-09-29T12:06:41Z",
+  "context_switches_per_second": 1.3,
+  "cpu_percent_one_core": 0.2,
+  "note": "Context switches are a wake-up proxy; active units were sampled concurrently.",
+  "seconds": 60.0,
+  "units": {
+    "rmac-app-switcher": {
+      "context_switches_per_second": 0.0,
+      "cpu_percent_one_core": 0.0,
+      "pid": 3476,
+      "running_throughout": true
+    },
+    "rmac-clipboard": {
+      "context_switches_per_second": 0.017,
+      "cpu_percent_one_core": 0.0,
+      "pid": 3477,
+      "running_throughout": true
+    },
+    "rmac-dock": {
+      "context_switches_per_second": 0.0,
+      "cpu_percent_one_core": 0.017,
+      "pid": 3478,
+      "running_throughout": true
+    },
+    "rmac-focus": {
+      "context_switches_per_second": 0.267,
+      "cpu_percent_one_core": 0.0,
+      "pid": 3479,
+      "running_throughout": true
+    },
+    "rmac-launcher": {
+      "context_switches_per_second": 0.0,
+      "cpu_percent_one_core": 0.0,
+      "pid": 3482,
+      "running_throughout": true
+    },
+    "rmac-mission-control": {
+      "context_switches_per_second": 0.0,
+      "cpu_percent_one_core": 0.0,
+      "pid": 3484,
+      "running_throughout": true
+    },
+    "rmac-notification-center": {
+      "context_switches_per_second": 0.0,
+      "cpu_percent_one_core": 0.0,
+      "pid": 3487,
+      "running_throughout": true
+    },
+    "rmac-notification-center-panel": {
+      "context_switches_per_second": 0.0,
+      "cpu_percent_one_core": 0.0,
+      "pid": 3815,
+      "running_throughout": true
+    },
+    "rmac-osd": {
+      "context_switches_per_second": 0.0,
+      "cpu_percent_one_core": 0.017,
+      "pid": 3490,
+      "running_throughout": true
+    },
+    "rmac-quick-settings": {
+      "context_switches_per_second": 0.0,
+      "cpu_percent_one_core": 0.0,
+      "pid": 3539,
+      "running_throughout": true
+    },
+    "rmac-screenshot": {
+      "context_switches_per_second": 0.0,
+      "cpu_percent_one_core": 0.0,
+      "pid": 3492,
+      "running_throughout": true
+    },
+    "rmac-session-supervisor": {
+      "context_switches_per_second": 0.833,
+      "cpu_percent_one_core": 0.017,
+      "pid": 3474,
+      "running_throughout": true
+    },
+    "rmac-shortcut-broker": {
+      "context_switches_per_second": 0.0,
+      "cpu_percent_one_core": 0.0,
+      "pid": 3952,
+      "running_throughout": true
+    },
+    "rmac-top-bar": {
+      "context_switches_per_second": 0.083,
+      "cpu_percent_one_core": 0.067,
+      "pid": 3493,
+      "running_throughout": true
+    },
+    "rmac-wallpaper": {
+      "context_switches_per_second": 0.1,
+      "cpu_percent_one_core": 0.083,
+      "pid": 3495,
+      "running_throughout": true
+    }
+  }
+}

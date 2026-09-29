@@ -1,0 +1,36 @@
+{
+  "format": 1,
+  "results": [
+    {
+      "scenario": "text-editor/find",
+      "title": "Find (⌘F) focuses the find field; typing searches",
+      "status": "pass",
+      "mismatches": [],
+      "lulo": {
+        "format": 1,
+        "scenario": "text-editor/find",
+        "observations": {
+          "find": {
+            "focus": {
+              "role": "text-field",
+              "label": "Find"
+            }
+          },
+          "typed": {
+            "focus": {
+              "role": "text-field",
+              "value": "hello",
+              "selection": [
+                5,
+                5
+              ],
+              "selected_text": "",
+              "selected_all": false,
+              "label": "Find"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

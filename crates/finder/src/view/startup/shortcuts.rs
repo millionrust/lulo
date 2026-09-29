@@ -79,6 +79,11 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             QuickLook,
             Some("Finder"),
         ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::QUICK_LOOK.keystroke,
+            QuickLook,
+            Some("Finder"),
+        ),
         KeyBinding::new(rmac_ui::shortcuts::INFO.keystroke, GetInfo, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::NEW_TAB.keystroke,

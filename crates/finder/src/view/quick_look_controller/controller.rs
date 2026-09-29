@@ -1,7 +1,7 @@
 use super::*;
 
 impl FinderView {
-    /// Space: open the floating Quick Look panel on the selection, or close
+    /// Space or ⌘Y: open the floating Quick Look panel on the selection, or close
     /// it when it is already open (Space toggles, as on the Mac).
     pub(in crate::view) fn quick_look(&mut self, cx: &mut Context<Self>) {
         if self

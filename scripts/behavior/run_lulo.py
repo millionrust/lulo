@@ -55,7 +55,6 @@ KEEP_ENV = {"PATH", "LANG", "TERM", "USER", "LOGNAME", "SHELL", "CARGO_TARGET_DI
 TEXT_ROLES = {"text-field", "text-area", "search-field", "combo-box"}
 DIALOG_ROLES = {"dialog", "alert", "file chooser"}
 HELPER_APPS = {"rmac-file-chooser"}
-FILE_CHOOSER_SCENARIO = "text-editor/save-untitled"
 
 
 def calculator_visible_size(width: Optional[int], height: Optional[int]) -> tuple[Optional[int], Optional[int]]:
@@ -92,13 +91,6 @@ def content_viewport(candidates: list[tuple[int, int, int, int]]) -> tuple[int, 
     if not wide:
         raise StepFailed("no on-screen Files content viewport to context-click")
     return min(wide, key=lambda box: box[2] * box[3])
-
-
-def scenarios_need_file_chooser(scenarios: list[str]) -> bool:
-    """The default run includes Save on Untitled, which needs the portal backend."""
-
-    selected = sc.scenario_paths(only=scenarios)
-    return any(sc.scenario_id(path) == FILE_CHOOSER_SCENARIO for path in selected)
 
 
 class Unsupported(RuntimeError):
@@ -201,12 +193,6 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
     try:
         binary_directories = [Path(p) for p in args.bin_dir + args.shell_bin_dir]
         chooser = find_file_chooser_binary(binary_directories)
-        if scenarios_need_file_chooser(args.scenarios) and chooser is None:
-            raise SystemExit(
-                "text-editor/save-untitled requires the rmac-file-chooser binary; "
-                "build -p rmac-file-chooser and include its directory with "
-                "--bin-dir or --shell-bin-dir"
-            )
         env = isolated_environment(work)
         refuse_live_session(env)
         # A session bus that can activate only the AT-SPI bus launcher: the

@@ -139,11 +139,6 @@ class ScenarioFileTests(unittest.TestCase):
                 names = {s["observe"] for s in scenario["steps"] if "observe" in s}
                 self.assertEqual(set(data["observations"]), names)
 
-    def test_save_untitled_requires_the_portal_backend(self):
-        self.assertTrue(run_lulo.scenarios_need_file_chooser([]))
-        self.assertTrue(run_lulo.scenarios_need_file_chooser(["text-editor/save-untitled"]))
-        self.assertFalse(run_lulo.scenarios_need_file_chooser(["text-editor/find"]))
-
     def test_file_chooser_can_live_in_either_binary_directory(self):
         import tempfile
 

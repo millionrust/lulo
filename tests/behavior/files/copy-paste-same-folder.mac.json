@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "scenario": "files/copy-paste-same-folder",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "pasted": {
+      "files": {
+        "entries": [
+          "report copy.txt",
+          "report.txt"
+        ]
+      },
+      "selection": {
+        "items": [
+          "report copy.txt"
+        ]
+      }
+    }
+  }
+}

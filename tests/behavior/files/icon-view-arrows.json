@@ -1,0 +1,37 @@
+{
+  "title": "Arrow keys move the selection through the icon grid",
+  "app": "files",
+  "setup": {
+    "files": {
+      "a.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "b.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "c.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "reveal": "a.txt"
+  },
+  "steps": [
+    {
+      "key": "cmd-1"
+    },
+    {
+      "key": "down"
+    },
+    {
+      "observe": "down",
+      "facts": [
+        "selection"
+      ]
+    },
+    {
+      "key": "up"
+    },
+    {
+      "observe": "up",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

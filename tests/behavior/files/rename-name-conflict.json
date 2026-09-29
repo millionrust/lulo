@@ -1,0 +1,40 @@
+{
+  "title": "Renaming a file to a name already used in the folder shows an alert",
+  "app": "files",
+  "setup": {
+    "files": {
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "notes.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "reveal": "report.txt"
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "type": "notes"
+    },
+    {
+      "key": "return",
+      "settle": 1.2
+    },
+    {
+      "observe": "alert",
+      "facts": [
+        "dialog"
+      ]
+    },
+    {
+      "key": "escape"
+    }
+  ],
+  "tolerance": {
+    "alert.dialog.buttons": "subset"
+  }
+}

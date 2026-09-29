@@ -165,6 +165,23 @@ impl FinderView {
     /// reload can run before an active transfer has created its destination,
     /// so keep that pending selection for the transfer's reload.
     pub(super) fn select_pending(&mut self, cx: &mut Context<Self>) {
+        if !self.pending_select_many.is_empty() {
+            if self.transfer.is_some() || self.conflict_preflight || self.conflict_batch.is_some() {
+                return;
+            }
+            self.selected = self
+                .entries
+                .iter()
+                .enumerate()
+                .filter_map(|(index, entry)| {
+                    self.pending_select_many.contains(&entry.path).then_some(index)
+                })
+                .collect();
+            self.anchor = self.selected.iter().next().copied();
+            self.pending_select_many.clear();
+            cx.notify();
+            return;
+        }
         let Some(path) = self.pending_select.as_ref() else {
             return;
         };

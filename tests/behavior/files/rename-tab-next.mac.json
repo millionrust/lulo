@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "scenario": "files/rename-tab-next",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "next_editing": {
+      "focus": {
+        "role": "list",
+        "value": null,
+        "selection": null,
+        "selected_text": null,
+        "selected_all": null,
+        "label": "list view"
+      },
+      "files": {
+        "entries": [
+          "b.txt",
+          "first.txt"
+        ]
+      }
+    }
+  }
+}

@@ -116,15 +116,17 @@ impl FinderView {
         cx.background_executor()
             .spawn(async move {
                 let progress_events = events.clone();
-                let report = file_ops::execute_transfers(
-                    &file_ops::RealFileSystem,
-                    Some(journal.as_ref()),
-                    &tasks,
-                    &cancel,
-                    move |progress| {
-                        let _ = progress_events.try_send(TransferEvent::Progress(progress));
-                    },
-                );
+                let report = undo_journal::with_undo_batch(|| {
+                    file_ops::execute_transfers(
+                        &file_ops::RealFileSystem,
+                        Some(journal.as_ref()),
+                        &tasks,
+                        &cancel,
+                        move |progress| {
+                            let _ = progress_events.try_send(TransferEvent::Progress(progress));
+                        },
+                    )
+                });
                 let recovery_reviews = journal
                     .recover_unambiguous()
                     .and_then(|_| journal.review_pending());

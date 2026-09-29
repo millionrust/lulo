@@ -1,4 +1,5 @@
 use std::ffi::OsString;
+use std::cell::RefCell;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read as _, Write as _};
 use std::os::unix::ffi::{OsStrExt as _, OsStringExt as _};
@@ -21,10 +22,29 @@ const MAX_RECORDS: usize = 512;
 const RETAIN_READY_RECORDS: usize = 20;
 const MAX_TRASH_INFO_BYTES: u64 = 16 * 1024;
 
+thread_local! {
+    static CURRENT_BATCH: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+/// A synchronous file operation archives each completed item in one Undo
+/// action. The scope is confined to its background worker thread.
+pub(crate) fn with_undo_batch<T>(operation: impl FnOnce() -> T) -> T {
+    struct Reset(Option<String>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            CURRENT_BATCH.with(|current| *current.borrow_mut() = self.0.take());
+        }
+    }
+    let previous = CURRENT_BATCH.with(|current| current.borrow_mut().replace(Uuid::new_v4().to_string()));
+    let _reset = Reset(previous);
+    operation()
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum UndoKind {
     Copy,
+    NewFolder,
     Move,
     Replace,
     MoveReplace,
@@ -77,6 +97,8 @@ pub(crate) struct TrashUndoSeed {
 struct UndoRecord {
     version: u32,
     id: String,
+    #[serde(default)]
+    batch_id: Option<String>,
     kind: UndoKind,
     stage: UndoStage,
     created_seconds: u64,
@@ -121,6 +143,7 @@ impl UndoRecord {
         let record = Self {
             version: UNDO_VERSION,
             id,
+            batch_id: CURRENT_BATCH.with(|current| current.borrow().clone()),
             kind: seed.kind,
             stage: UndoStage::ForwardPending,
             created_seconds: created.as_secs(),
@@ -170,6 +193,7 @@ impl UndoRecord {
         let record = Self {
             version: UNDO_VERSION,
             id,
+            batch_id: CURRENT_BATCH.with(|current| current.borrow().clone()),
             kind: seed.kind,
             stage: UndoStage::ForwardPending,
             created_seconds: created.as_secs(),
@@ -356,7 +380,7 @@ impl UndoRecord {
             ));
         }
         match self.kind {
-            UndoKind::Copy
+            UndoKind::Copy | UndoKind::NewFolder
                 if !matches!(
                     self.stage,
                     UndoStage::ForwardPending | UndoStage::Ready | UndoStage::CleanupStaged
@@ -535,6 +559,27 @@ impl UndoStore {
         self.prune_ready()
     }
 
+    /// Register a newly created, empty folder with the same identity-bound
+    /// cleanup used by Copy Undo. If its contents change, Undo refuses to
+    /// remove it rather than deleting anything the user added.
+    pub(crate) fn archive_created_folder(&self, path: &Path) -> io::Result<()> {
+        let parent = path.parent().ok_or_else(|| invalid_data("new folder has no parent"))?;
+        let id = Uuid::new_v4().to_string();
+        let snapshot = TreeSnapshot::capture(path)?;
+        self.archive(UndoSeed {
+            id: id.clone(),
+            kind: UndoKind::NewFolder,
+            source: parent.to_path_buf(),
+            destination: path.to_path_buf(),
+            backup: None,
+            source_snapshot: snapshot.clone(),
+            destination_snapshot: snapshot,
+            replaced_snapshot: None,
+            forward_record: self.root.parent().unwrap_or(&self.root).join(format!("{id}.json")),
+        })?;
+        self.activate(&id)
+    }
+
     #[cfg(any(target_os = "linux", test))]
     pub(crate) fn archive_trash(&self, seed: TrashUndoSeed) -> io::Result<()> {
         let _lock = self.acquire_lock()?;
@@ -613,22 +658,35 @@ impl UndoStore {
     ) -> io::Result<Option<UndoOutcome>> {
         let _lock = self.acquire_lock()?;
         self.promote_detached_forward_receipts()?;
-        let Some(mut record) = self.latest_record()? else {
+        let Some(record) = self.latest_record()? else {
             return Ok(None);
         };
         let label = undo_label(&record);
+        let mut records = if let Some(batch_id) = record.batch_id.as_ref() {
+            self.read_records()?
+                .into_iter()
+                .filter(|candidate| {
+                    candidate.batch_id.as_ref() == Some(batch_id)
+                        && candidate.stage != UndoStage::ForwardPending
+                })
+                .collect::<Vec<_>>()
+        } else {
+            vec![record]
+        };
+        records.sort_by_key(|record| {
+            (record.created_seconds, record.created_nanoseconds, record.id.clone())
+        });
+        let mut restored_to = None;
+        for mut record in records.into_iter().rev() {
         self.resume_inferred(&mut record)?;
         if !self.record_path(&record.id).exists() {
-            return Ok(Some(UndoOutcome {
-                label,
-                restored_to: None,
-            }));
+            continue;
         }
         if cancel.load(Ordering::Acquire) {
             return Err(interrupted());
         }
         match record.kind {
-            UndoKind::Copy => self.undo_copy(&mut record, cancel, progress)?,
+            UndoKind::Copy | UndoKind::NewFolder => self.undo_copy(&mut record, cancel, progress)?,
             UndoKind::Move => self.undo_move(fs, &mut record, cancel, progress)?,
             UndoKind::Replace => self.undo_replace(&mut record, cancel, progress)?,
             UndoKind::MoveReplace => self.undo_move_replace(fs, &mut record, cancel, progress)?,
@@ -640,8 +698,10 @@ impl UndoStore {
         // which nothing else already has selected; Copy's undo removes
         // something, and Replace/MoveReplace restore a destination the
         // caller already has selected.
-        let restored_to =
-            matches!(record.kind, UndoKind::Trash | UndoKind::Move).then(|| record.source());
+        if matches!(record.kind, UndoKind::Trash | UndoKind::Move) {
+            restored_to = Some(record.source());
+        }
+        }
         Ok(Some(UndoOutcome { label, restored_to }))
     }
 
@@ -725,7 +785,7 @@ impl UndoStore {
 
         if record.stage == UndoStage::Ready {
             match record.kind {
-                UndoKind::Copy => {
+                UndoKind::Copy | UndoKind::NewFolder => {
                     if !entry_exists(&record.destination())?
                         && record
                             .destination_snapshot
@@ -1052,7 +1112,9 @@ impl UndoStore {
         if record.stage != UndoStage::Ready {
             return Err(invalid_data("copy undo is in an unsupported state"));
         }
-        if !record.source_snapshot.still_matches(&record.source())? {
+        if record.kind != UndoKind::NewFolder
+            && !record.source_snapshot.still_matches(&record.source())?
+        {
             return Err(changed());
         }
         if cancel.load(Ordering::Acquire) {
@@ -1683,7 +1745,7 @@ fn undo_label(record: &UndoRecord) -> String {
             .source()
             .file_name()
             .map(|name| name.to_string_lossy().into_owned()),
-        UndoKind::Copy | UndoKind::Replace => record
+        UndoKind::Copy | UndoKind::NewFolder | UndoKind::Replace => record
             .destination()
             .file_name()
             .map(|name| name.to_string_lossy().into_owned()),
@@ -1692,6 +1754,7 @@ fn undo_label(record: &UndoRecord) -> String {
     .unwrap_or_else(|| "item".to_string());
     let verb = match record.kind {
         UndoKind::Copy => "Undo Copy",
+        UndoKind::NewFolder => "Undo New Folder",
         UndoKind::Move => "Undo Move",
         UndoKind::Replace => "Undo Replace",
         UndoKind::MoveReplace => "Undo Move and Replace",

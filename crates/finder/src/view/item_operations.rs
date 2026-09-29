@@ -79,10 +79,18 @@ impl FinderView {
         if self.block_mutation_during_transfer(cx) {
             return;
         }
+        self.operation_error = None;
         let path = unique_path(self.cwd.join("untitled folder"));
         if let Err(failure) = file_ops::create_folder(&file_ops::RealFileSystem, &path) {
             self.record_operation_failures(vec![failure], cx);
             return;
+        }
+        if let Some(journal) = self.operation_journal.as_ref() {
+            if let Err(error) = journal.undo_store().archive_created_folder(&path) {
+                self.operation_error = Some(format!("New folder was created, but Undo could not be recorded: {error}").into());
+            } else {
+                self.undo_available = journal.undo_store().latest().ok().flatten();
+            }
         }
 
         let Some(entry) = entry_for(&path) else {
@@ -102,14 +110,13 @@ impl FinderView {
         if self.view == ViewMode::Column {
             self.column_selection = Some(entry);
         }
-        self.operation_error = None;
         self.rename_start(window, cx);
     }
 
     pub(super) fn duplicate(&mut self, cx: &mut Context<Self>) {
         let mut tasks = Vec::new();
         let mut destinations = BTreeSet::new();
-        let mut first_destination = None;
+        let mut new_selection = Vec::new();
         for src in self.selected_paths() {
             let stem = src
                 .file_stem()
@@ -123,7 +130,7 @@ impl FinderView {
             let destination_dir = src.parent().unwrap_or(self.cwd.as_path());
             let dst = unique_path_avoiding(destination_dir.join(copy_name), &destinations);
             destinations.insert(dst.clone());
-            first_destination.get_or_insert_with(|| dst.clone());
+            new_selection.push(dst.clone());
             tasks.push(file_ops::TransferTask {
                 kind: file_ops::TransferKind::Copy,
                 source: src,
@@ -131,7 +138,8 @@ impl FinderView {
             });
         }
         // Select the new copy once it lands, as Finder does.
-        self.pending_select = first_destination;
+        self.pending_select = None;
+        self.pending_select_many = new_selection;
         self.start_transfer("Duplicating", tasks, false, cx);
     }
 

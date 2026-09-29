@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "scenario": "files/paste-twice-numbering",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "pasted_twice": {
+      "files": {
+        "entries": [
+          "report copy 2.txt",
+          "report copy.txt",
+          "report.txt"
+        ]
+      },
+      "selection": {
+        "items": [
+          "report copy 2.txt"
+        ]
+      }
+    }
+  }
+}

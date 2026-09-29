@@ -89,7 +89,7 @@ impl FinderView {
                     let mut completed = 0usize;
                     let mut processed = 0usize;
                     let mut cancelled = false;
-                    for path in paths {
+                    undo_journal::with_undo_batch(|| { for path in paths {
                         if cancel.load(Ordering::Acquire) {
                             cancelled = true;
                             break;
@@ -118,7 +118,7 @@ impl FinderView {
                         }
                         processed += 1;
                         let _ = events.try_send(TrashEvent::Progress { processed, total });
-                    }
+                    } });
                     if completed > 0 && !cfg!(test) {
                         let _ = rmac_sound::play(rmac_sound::Cue::Trash);
                     }

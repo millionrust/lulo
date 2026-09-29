@@ -1,0 +1,23 @@
+{
+  "format": 1,
+  "scenario": "files/select-cmd-click-toggle",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "added": {
+      "selection": {
+        "items": [
+          "a.txt",
+          "c.txt"
+        ]
+      }
+    },
+    "removed": {
+      "selection": {
+        "items": [
+          "a.txt"
+        ]
+      }
+    }
+  }
+}

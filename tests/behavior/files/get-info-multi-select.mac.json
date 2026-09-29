@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "scenario": "files/get-info-multi-select",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "info": {
+      "windows": {
+        "count": 3,
+        "front": "b.txt Info"
+      }
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "title": "Return renames a file in icon view with only the name before the extension selected",
+  "app": "files",
+  "setup": {
+    "files": {
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "other.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "reveal": "report.txt"
+  },
+  "steps": [
+    {
+      "key": "cmd-1"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "observe": "editing",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "type": "notes"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "observe": "renamed",
+      "facts": [
+        "files",
+        "selection"
+      ]
+    }
+  ]
+}

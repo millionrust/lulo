@@ -882,6 +882,9 @@ impl FinderView {
                 if this.renaming.is_some() {
                     if ev.keystroke.key.as_str() == "escape" {
                         this.rename_cancel(window, cx);
+                    } else if ev.keystroke.key.as_str() == "tab" {
+                        cx.stop_propagation();
+                        this.rename_next(window, cx);
                     }
                     return;
                 }

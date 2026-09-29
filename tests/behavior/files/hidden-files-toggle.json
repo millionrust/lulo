@@ -1,0 +1,38 @@
+{
+  "title": "⌘⇧. toggles hidden files; a dot file appears then disappears",
+  "app": "files",
+  "setup": {
+    "files": {
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      ".hidden.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "cmd-shift-.",
+      "settle": 1.2
+    },
+    {
+      "observe": "shown",
+      "facts": [
+        "files"
+      ]
+    },
+    {
+      "key": "cmd-shift-.",
+      "settle": 1.2
+    },
+    {
+      "observe": "hidden_again",
+      "facts": [
+        "files"
+      ]
+    }
+  ]
+}

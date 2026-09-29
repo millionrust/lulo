@@ -1,0 +1,43 @@
+{
+  "title": "Tab moves keyboard focus between the sidebar, the item list and the toolbar",
+  "app": "files",
+  "setup": {
+    "files": {
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "observe": "list_focused",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "tab",
+      "settle": 0.6
+    },
+    {
+      "observe": "next_focus",
+      "facts": [
+        "focus"
+      ]
+    }
+  ],
+  "omit": [
+    "list_focused.focus.value",
+    "list_focused.focus.label",
+    "next_focus.focus.value",
+    "next_focus.focus.label"
+  ],
+  "tolerance": {
+    "list_focused.focus.role": "ignore",
+    "next_focus.focus.role": "ignore"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "scenario": "files/duplicate-multi-select",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "duplicated": {
+      "files": {
+        "entries": [
+          "a copy.txt",
+          "a.txt",
+          "b copy.txt",
+          "b.txt"
+        ]
+      },
+      "selection": {
+        "items": [
+          "a copy.txt",
+          "b copy.txt"
+        ]
+      }
+    }
+  }
+}

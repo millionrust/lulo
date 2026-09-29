@@ -79,6 +79,25 @@ impl FinderView {
         self.reload(cx);
     }
 
+    /// Tab accepts the edit and starts the item that followed it before the
+    /// list is sorted again under the new name.
+    pub(super) fn rename_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let next_path = self.renaming.as_ref().and_then(|(path, _)| {
+            let index = self.entries.iter().position(|entry| &entry.path == path)?;
+            self.entries
+                .get((index + 1) % self.entries.len())
+                .map(|entry| entry.path.clone())
+        });
+        self.rename_commit(window, cx);
+        if let Some(index) =
+            next_path.and_then(|path| self.entries.iter().position(|entry| entry.path == path))
+        {
+            self.pending_select = None;
+            self.select_single(index);
+            self.rename_start(window, cx);
+        }
+    }
+
     /// Escape while renaming: cancel, discard the typed text and return
     /// focus to the list, as Finder does. The list's own key handler skips
     /// its navigation while `renaming` is set, so it calls this instead.
@@ -114,6 +133,19 @@ impl FinderView {
             .unwrap_or(self.cwd.as_path())
             .join(new_name);
         if destination.exists() {
+            let stem = destination.file_stem().unwrap_or_default().to_string_lossy();
+            let extension = destination
+                .extension()
+                .map(|ext| format!(".{}", ext.to_string_lossy()))
+                .unwrap_or_default();
+            self.rename_conflict = Some(
+                if extension.is_empty() {
+                    format!("The name “{stem}” is already taken. Please choose a different name.")
+                } else {
+                    format!("The name “{stem}” with extension “{extension}” is already taken. Please choose a different name.")
+                }
+                .into(),
+            );
             self.record_operation_failures(
                 vec![file_ops::Failure::message(
                     file_ops::Operation::Rename,

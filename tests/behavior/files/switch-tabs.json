@@ -1,0 +1,52 @@
+{
+  "title": "⌘⇧] and ⌘⇧[ switch between tabs in the same window",
+  "app": "files",
+  "setup": {
+    "files": {
+      "Projects/": null,
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-t",
+      "settle": 1.2
+    },
+    {
+      "select": "Projects"
+    },
+    {
+      "key": "cmd-down",
+      "settle": 1.2
+    },
+    {
+      "key": "cmd-shift-["
+    },
+    {
+      "observe": "first_tab",
+      "facts": [
+        "windows"
+      ],
+      "settle": 1.0
+    },
+    {
+      "key": "cmd-shift-]"
+    },
+    {
+      "observe": "second_tab",
+      "facts": [
+        "windows"
+      ],
+      "settle": 1.0
+    }
+  ],
+  "omit": [
+    "first_tab.windows.front",
+    "first_tab.windows.titles",
+    "second_tab.windows.front",
+    "second_tab.windows.titles"
+  ]
+}

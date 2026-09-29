@@ -1,0 +1,29 @@
+{
+  "format": 1,
+  "scenario": "files/type-to-select-repeat",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "first": {
+      "selection": {
+        "items": [
+          "apple.txt"
+        ]
+      }
+    },
+    "second": {
+      "selection": {
+        "items": [
+          "apple.txt"
+        ]
+      }
+    },
+    "third": {
+      "selection": {
+        "items": [
+          "apple.txt"
+        ]
+      }
+    }
+  }
+}

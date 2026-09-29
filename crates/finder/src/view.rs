@@ -307,6 +307,8 @@ struct FinderView {
     go_to: Option<go_to_folder_controller::GoToSheet>,
     /// An item Go to Folder named, selected once its folder loads.
     pending_select: Option<PathBuf>,
+    /// Destinations of one multi-item operation, selected together on reload.
+    pending_select_many: Vec<PathBuf>,
     open_with: Option<OpenWithPicker>,
     open_generation: u64,
     quick_look: Option<QuickLookPanel>,
@@ -318,6 +320,7 @@ struct FinderView {
     search_relevance_order: bool,
     operation_notice: Option<SharedString>,
     operation_error: Option<SharedString>,
+    rename_conflict: Option<SharedString>,
     operation_journal: Option<Arc<operation_journal::Journal>>,
     journal_loading: bool,
     undo_available: Option<undo_journal::UndoAvailability>,

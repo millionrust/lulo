@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "scenario": "files/select-shift-click-range",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "range_selected": {
+      "selection": {
+        "items": [
+          "a.txt",
+          "b.txt",
+          "c.txt"
+        ]
+      }
+    }
+  }
+}

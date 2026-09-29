@@ -62,6 +62,15 @@ impl FinderView {
                 this.operation_notice = None;
                 match prepared {
                     Ok(batch) if batch.conflicts.is_empty() => {
+                        if batch.label == "Copying" {
+                            this.pending_select = None;
+                            this.pending_select_many = batch
+                                .ready
+                                .iter()
+                                .filter(|task| task.destination.parent() == Some(this.cwd.as_path()))
+                                .map(|task| task.destination.clone())
+                                .collect();
+                        }
                         this.start_transfer_with_retained(
                             batch.label,
                             batch.ready,
@@ -168,6 +177,15 @@ impl FinderView {
                             Some("Skipped the conflicting items; nothing was changed".into());
                         cx.notify();
                     } else {
+                        if batch.label == "Copying" {
+                            this.pending_select = None;
+                            this.pending_select_many = batch
+                                .ready
+                                .iter()
+                                .filter(|task| task.destination.parent() == Some(this.cwd.as_path()))
+                                .map(|task| task.destination.clone())
+                                .collect();
+                        }
                         this.start_transfer_with_retained(
                             batch.label,
                             batch.ready,

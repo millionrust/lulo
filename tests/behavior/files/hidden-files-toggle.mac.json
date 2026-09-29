@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "scenario": "files/hidden-files-toggle",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "shown": {
+      "files": {
+        "entries": [
+          "report.txt"
+        ]
+      }
+    },
+    "hidden_again": {
+      "files": {
+        "entries": [
+          "report.txt"
+        ]
+      }
+    }
+  }
+}

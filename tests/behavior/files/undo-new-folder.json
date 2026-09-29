@@ -1,0 +1,33 @@
+{
+  "title": "Undo (⌘Z) after New Folder (⇧⌘N) removes the folder it created",
+  "app": "files",
+  "setup": {
+    "files": {
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "cmd-shift-n"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "key": "cmd-z",
+      "settle": 1.2
+    },
+    {
+      "observe": "undone",
+      "facts": [
+        "files"
+      ]
+    }
+  ]
+}

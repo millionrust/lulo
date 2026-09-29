@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "scenario": "files/copy-paste-into-subfolder",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "pasted": {
+      "files": {
+        "entries": [
+          "Projects/",
+          "Projects/report.txt",
+          "report.txt"
+        ]
+      },
+      "selection": {
+        "items": []
+      }
+    }
+  }
+}

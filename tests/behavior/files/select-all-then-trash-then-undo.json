@@ -1,0 +1,42 @@
+{
+  "title": "Select All (⌘A), Move to Trash (⌘⌫) removes every item, Undo (⌘Z) restores them all",
+  "app": "files",
+  "setup": {
+    "files": {
+      "a.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "b.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "c.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "cmd-a"
+    },
+    {
+      "key": "cmd-backspace",
+      "settle": 1.2
+    },
+    {
+      "observe": "trashed",
+      "facts": [
+        "files"
+      ]
+    },
+    {
+      "key": "cmd-z",
+      "settle": 1.2
+    },
+    {
+      "observe": "restored",
+      "facts": [
+        "files"
+      ]
+    }
+  ]
+}

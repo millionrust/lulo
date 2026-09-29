@@ -1,0 +1,32 @@
+{
+  "title": "Undo (⌘Z) after Duplicate (⌘D) removes the duplicate",
+  "app": "files",
+  "setup": {
+    "files": {
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "reveal": "report.txt"
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "cmd-d",
+      "settle": 1.2
+    },
+    {
+      "key": "cmd-z",
+      "settle": 1.2
+    },
+    {
+      "observe": "undone",
+      "facts": [
+        "files",
+        "selection"
+      ]
+    }
+  ]
+}

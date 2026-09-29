@@ -73,7 +73,15 @@ pub(crate) fn prepare_conflict_batch(
     let mut conflicts = VecDeque::new();
     let mut reserved_destinations = BTreeSet::new();
 
-    for task in tasks {
+    for mut task in tasks {
+        // Finder treats pasting a copied item into its own folder as
+        // Duplicate. Resolve the name during the background preflight, so
+        // no conflict sheet can offer to replace the source with itself.
+        if matches!(task.kind, file_ops::TransferKind::Copy)
+            && task.source == task.destination
+        {
+            task.destination = unique_copy_path_avoiding(&task.source, &reserved_destinations);
+        }
         let requested_destination = task.destination.clone();
         let kind = match &task.kind {
             file_ops::TransferKind::Copy => ConflictTransferKind::Copy,
@@ -118,6 +126,32 @@ pub(crate) fn prepare_conflict_batch(
         keep_unfinished_in_clipboard,
         play_drop_sound,
     })
+}
+
+fn unique_copy_path_avoiding(source: &Path, reserved: &BTreeSet<PathBuf>) -> PathBuf {
+    let parent = source.parent().unwrap_or_else(|| Path::new("/"));
+    let stem = source
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let extension = source.extension().map(|ext| ext.to_string_lossy().into_owned());
+    for number in 1..10_000 {
+        let suffix = if number == 1 {
+            " copy".to_owned()
+        } else {
+            format!(" copy {number}")
+        };
+        let name = match &extension {
+            Some(ext) => format!("{stem}{suffix}.{ext}"),
+            None => format!("{stem}{suffix}"),
+        };
+        let candidate = parent.join(name);
+        if !candidate.exists() && !reserved.contains(&candidate) {
+            return candidate;
+        }
+    }
+    // A saturated namespace remains a conflict, never an overwrite.
+    source.to_path_buf()
 }
 
 pub(crate) fn resolve_conflict_task(

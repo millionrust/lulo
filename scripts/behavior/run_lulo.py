@@ -25,6 +25,7 @@ import argparse
 import errno
 import json
 import os
+import re
 import shutil
 import signal
 import struct
@@ -745,6 +746,25 @@ class LuloRun:
             titles.remove(front)
             titles.insert(0, front)
         return {"count": len(plain), "front": front, "titles": titles}
+
+    def fact_info(self) -> dict[str, Any]:
+        """Check the accessible Size row in the frontmost Get Info window."""
+        frame = self.active_frame()
+        if frame is None or not name(frame).endswith(" Info"):
+            return {"size_bytes_present": False, "item_count_present": False}
+        values = []
+        for node in descendants(frame, limit=3000):
+            label = name(node)
+            if label:
+                values.append(label)
+            value, _, _ = text_of(node)
+            if value:
+                values.append(value)
+        joined = " ".join(values)
+        return {
+            "size_bytes_present": bool(re.search(r"\b\d[\d,]*\s+bytes?\b", joined, re.I)),
+            "item_count_present": bool(re.search(r"\b\d[\d,]*\s+items?\b", joined, re.I)),
+        }
 
     def fact_window_size(self) -> dict[str, Any]:
         """Visible compositor bounds for runtime-sized calculator windows."""

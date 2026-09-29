@@ -8,6 +8,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
     }
     // Keyboard shortcuts → actions (handled on the focused list).
     cx.bind_keys([
+        KeyBinding::new("tab", RenameNextItem, Some("FinderRename > Input")),
         KeyBinding::new(
             rmac_ui::shortcuts::SELECT_ALL.keystroke,
             SelectAll,

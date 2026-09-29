@@ -410,6 +410,10 @@ impl FinderView {
                         .id("rename-field")
                         .role(Role::TextInput)
                         .aria_label("Name")
+                        .key_context("FinderRename")
+                        .on_action(cx.listener(|this, _: &RenameNextItem, window, cx| {
+                            this.rename_next(window, cx)
+                        }))
                         .accessible_text_input(input, cx)
                         .mt(px(ICON_LABEL_GAP - ICON_PLATE_GROW))
                         .w(px(label_width))
@@ -739,6 +743,21 @@ impl FinderView {
                 cx.listener(|this, _: &TagPurple, _, cx| this.set_selected_tag("purple", cx)),
             )
             .on_action(cx.listener(|this, _: &TagGray, _, cx| this.set_selected_tag("gray", cx)))
+            .on_action(cx.listener(|this, _: &ShareItems, _, cx| {
+                this.menu_unavailable("Sharing is not available", cx)
+            }))
+            .on_action(cx.listener(|this, _: &QuickActions, _, cx| {
+                this.menu_unavailable("No Quick Actions are available", cx)
+            }))
+            .on_action(cx.listener(|this, _: &UseGroups, _, cx| {
+                this.menu_unavailable("Grouping is not available", cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowViewOptions, _, cx| {
+                this.menu_unavailable("View Options are not available", cx)
+            }))
+            .on_action(cx.listener(|this, _: &ImportFromIphone, _, cx| {
+                this.menu_unavailable("No iPhone is available to import from", cx)
+            }))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
             .on_action(cx.listener(|this, _: &GoBack, _, cx| this.go_back(cx)))
             .on_action(cx.listener(|this, _: &GoForward, _, cx| this.go_forward(cx)))
@@ -994,6 +1013,10 @@ impl FinderView {
                 .id("rename-field")
                 .role(Role::TextInput)
                 .aria_label("Name")
+                .key_context("FinderRename")
+                .on_action(cx.listener(|this, _: &RenameNextItem, window, cx| {
+                    this.rename_next(window, cx)
+                }))
                 .accessible_text_input(input, cx)
                 .pl(px(LIST_ICON_TO_NAME))
                 .flex_1()

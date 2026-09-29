@@ -262,10 +262,10 @@ impl FinderView {
                 self.clip_cut = false;
             }
         }
-        // Items that vanished since they were copied are skipped; a
-        // symbolic link counts as itself, whether or not its target exists.
-        self.clipboard
-            .retain(|path| path.is_absolute() && path.symlink_metadata().is_ok());
+        // File existence is checked by the background conflict preflight and
+        // transfer worker. Avoid one metadata syscall per copied item on the
+        // UI thread, especially for slow mounts.
+        self.clipboard.retain(|path| path.is_absolute());
         if self.clipboard.is_empty() {
             self.clip_cut = false;
             self.operation_notice = Some("There are no files on the clipboard to paste".into());

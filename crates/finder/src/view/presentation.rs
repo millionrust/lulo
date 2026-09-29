@@ -60,6 +60,23 @@ impl Render for FinderView {
         let go_to_sheet = self.render_go_to_folder(cx);
         let archive_sheet = self.render_archive_job(cx);
         let archive_alert = self.render_archive_alert(cx);
+        let rename_alert = self.rename_conflict.clone().map(|title| {
+            rmac_ui::alert(
+                title,
+                "",
+                vec![rmac_ui::dialog_button(
+                    "rename-conflict-ok",
+                    "OK",
+                    rmac_ui::DialogButtonKind::Primary,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.rename_conflict = None;
+                    cx.notify();
+                }))
+                .into_any_element()],
+            )
+            .into_any_element()
+        });
         let help_dialog = self.help_open.then(|| {
             rmac_ui::alert(
                 "Files Help",
@@ -459,6 +476,7 @@ impl Render for FinderView {
             .when_some(open_with_dialog, |el, dialog| el.child(dialog))
             .when_some(archive_sheet, |el, sheet| el.child(sheet))
             .when_some(archive_alert, |el, dialog| el.child(dialog))
+            .when_some(rename_alert, |el, dialog| el.child(dialog))
             .when_some(help_dialog, |el, dialog| el.child(dialog))
     }
 }

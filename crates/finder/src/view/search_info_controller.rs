@@ -288,24 +288,30 @@ impl InfoWindow {
     ) {
         let path = self.entry.path.clone();
         let new_name = input.read(cx).value().to_string();
-        let renamed = self.owner.update(cx, |owner, cx| {
-            let destination = owner.rename_path_to(&path, &new_name, cx);
-            if destination.is_some() {
-                owner.reload(cx);
-            }
-            destination
-        });
+        let renamed = self
+            .owner
+            .update(cx, |owner, cx| owner.rename_path_to(&path, &new_name, cx));
         match renamed {
-            Ok(Some(destination)) => {
-                if let Some(entry) = entry_for(&destination) {
-                    self.entry = entry;
-                    self.details = file_info(&self.entry);
-                    let name = self.entry.name.clone();
-                    let title = format!("{} Info", name);
-                    window.set_window_title(&title);
-                    input.update(cx, |state, cx| state.set_value(name, window, cx));
-                    cx.notify();
-                }
+            Ok(Some((destination, completion))) => {
+                let window_handle = window.window_handle();
+                cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                    if completion.recv().await != Ok(true) {
+                        return;
+                    }
+                    let _ = cx.update_window(window_handle, |_, window, cx| {
+                        let _ = this.update(cx, |this: &mut InfoWindow, cx| {
+                            if let Some(entry) = entry_for(&destination) {
+                                this.entry = entry;
+                                this.details = file_info(&this.entry);
+                                let name = this.entry.name.clone();
+                                window.set_window_title(&format!("{name} Info"));
+                                input.update(cx, |state, cx| state.set_value(name, window, cx));
+                                cx.notify();
+                            }
+                        });
+                    });
+                })
+                .detach();
             }
             Err(_) => window.remove_window(),
             Ok(None) => {}

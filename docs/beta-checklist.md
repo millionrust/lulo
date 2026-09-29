@@ -114,13 +114,13 @@ provenance, but a human must still review their visible differences.
 ### Proposed Beta 1 / Beta 2 split (2026-09-29, needs the owner's yes)
 
 Beta 1 is an early-access build for a small cohort on the reference class of
-hardware. These gates need hardware, time or a person that Beta 1 does not
-have. The proposal is to report them honestly as **Not yet run** and make them
+hardware. These gates need hardware or a person that Beta 1 does not have.
+The owner's direction (2026-09-29): Beta 1 must be genuinely good, so every
+product-quality and performance gate, including the 8-hour soak, stays in Beta 1. The proposal is to report them honestly as **Not yet run** and make them
 **Beta 2 gates**, not to waive them or mark them as passing:
 
 | Gate | Why it moves | Beta 1 disclosure |
 |---|---|---|
-| Memory 8-hour soak | Needs an unattended overnight run on the reference PC | known-limitations.md: long-session memory is unmeasured |
 | NVIDIA station repeat | No NVIDIA hardware in the station matrix | known-limitations.md: tested on Intel graphics only |
 | Formal Orca/I3 accessibility audit (journey 9) | Only the owner may enable Orca; the AT-SPI `EditableText` gap is upstream | known-limitations.md: screen-reader support is incomplete |
 | Security native-station evidence (24 of 80 checks) | Needs Beta stations that don't exist yet | The verifier keeps failing closed; the 56 checks that ran are reported |
@@ -209,7 +209,7 @@ JSON/parsing logic, not a live run.
 | Idle wake-ups | none while nothing changes | **Static app timers fixed; proxy improved:** Text Editor 9.050 → 0.000 context switches/s, Weather 8.450 → 0.000, Files 0.633 → 0.050, Clock 5.267 → 0.267, System Monitor 3.800 → 1.367; shell combined 2.150 → 1.300. Clock advances at minute boundaries and System Monitor samples visible metrics every five seconds. Context switches are a wake-up proxy, not exact frame counts. See [before/after report](perf/idle-cpu-2026-09-29.md). |
 | Input to visible response | p95 ≤ 50 ms | **Not yet run** — no frame-timing harness exists yet |
 | 60/120 Hz animation frame budget | ≥ 99% / ≥ 95% within budget | **Not yet run** — `docs/performance-baseline.md` notes no per-frame trace is available yet |
-| Memory (8-hour soak) | per-app budget, no leak | **Not yet run** — proposed Beta 2 gate (see the split above) |
+| Memory (8-hour soak) | per-app budget, no leak | **Not yet run** — stays a Beta 1 gate; run overnight on the reference PC in a nested session |
 | Repeat on an NVIDIA system | required before Beta | **Not yet run** — no NVIDIA station in the matrix yet; proposed Beta 2 gate |
 
 Earlier evidence: [system audit](perf/reference-laptop-2026-09-24.md),

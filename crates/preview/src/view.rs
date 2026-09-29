@@ -1741,7 +1741,12 @@ impl PreviewView {
                     .id("preview-drag")
                     .absolute()
                     .size_full()
-                    .window_control_area(WindowControlArea::Drag),
+                    .window_control_area(WindowControlArea::Drag)
+                    .on_click(|event, _, cx| {
+                        if event.click_count() == 2 {
+                            rmac_ui::double_click_title_bar_action(cx);
+                        }
+                    }),
             )
             .child(
                 div()

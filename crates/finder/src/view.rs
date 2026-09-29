@@ -380,7 +380,7 @@ struct FinderView {
     delete_confirmation: Option<DeleteConfirmation>,
     /// Free space on the current volume (bytes), read once per navigation.
     free_bytes: Option<u64>,
-    dragging: bool,
+    dragging: Option<Point<Pixels>>,
     focus: FocusHandle,
     native_window_title: String,
     watcher: Option<RecommendedWatcher>,

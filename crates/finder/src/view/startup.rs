@@ -339,7 +339,7 @@ impl FinderView {
             #[cfg(any(target_os = "linux", test))]
             delete_confirmation: None,
             free_bytes: None,
-            dragging: false,
+            dragging: None,
             focus,
             native_window_title: "Files".into(),
             watcher,

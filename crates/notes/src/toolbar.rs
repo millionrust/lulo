@@ -77,18 +77,32 @@ impl NotesView {
         element
             .on_mouse_down(
                 gpui::MouseButton::Left,
-                cx.listener(|this, _, _, _| this.dragging = true),
+                cx.listener(|this, event: &gpui::MouseDownEvent, _, _| {
+                    this.dragging = Some(event.position)
+                }),
             )
             .on_mouse_up(
                 gpui::MouseButton::Left,
-                cx.listener(|this, _, _, _| this.dragging = false),
+                cx.listener(|this, _, _, _| this.dragging = None),
             )
-            .on_mouse_move(cx.listener(|this, _, window, _| {
-                if this.dragging {
-                    this.dragging = false;
-                    window.start_window_move();
+            .on_mouse_move(
+                cx.listener(|this, event: &gpui::MouseMoveEvent, window, _| {
+                    if event.pressed_button == Some(gpui::MouseButton::Left)
+                        && this.dragging.is_some_and(|press| {
+                            let delta = event.position - press;
+                            delta.x.abs() > px(4.0) || delta.y.abs() > px(4.0)
+                        })
+                    {
+                        this.dragging = None;
+                        window.start_window_move();
+                    }
+                }),
+            )
+            .on_click(|event, _, cx| {
+                if event.click_count() == 2 {
+                    rmac_ui::double_click_title_bar_action(cx);
                 }
-            }))
+            })
     }
 
     /// The editor column's toolbar.

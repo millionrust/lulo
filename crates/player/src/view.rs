@@ -801,7 +801,14 @@ impl PlayerView {
                     .id("player-drag")
                     .absolute()
                     .size_full()
-                    .window_control_area(WindowControlArea::Drag),
+                    .window_control_area(WindowControlArea::Drag)
+                    .when(!audio, |bar| {
+                        bar.on_click(|event, _, cx| {
+                            if event.click_count() == 2 {
+                                rmac_ui::double_click_title_bar_action(cx);
+                            }
+                        })
+                    }),
             )
             .child(
                 div()

@@ -48,7 +48,10 @@ use settings_style as style;
 use state::Settings;
 use view_helpers::*;
 #[cfg(test)]
-use wifi::{wifi_pane_is_visible, wifi_pane_scan_should_start_on_navigation};
+use wifi::{
+    wifi_pane_is_visible, wifi_pane_scan_should_start_on_navigation,
+    wifi_pane_scan_should_stop_on_navigation,
+};
 
 use std::borrow::Cow;
 use std::path::PathBuf;
@@ -131,7 +134,7 @@ use gpui::{
     AssetSource, ClipboardItem, Context, Div, ElementId, Entity, FocusHandle, Focusable as _, Hsla,
     InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton, ObjectFit,
     ParentElement, Render, Result, Role, SharedString, StatefulInteractiveElement as _, Styled,
-    StyledImage as _, Svg, Window,
+    StyledImage as _, Svg, Task, Window,
 };
 use gpui_component::{menu::PopupMenuItem, Icon, IconName, StyledExt as _};
 use navigation_persistence::NavigationPersistence;

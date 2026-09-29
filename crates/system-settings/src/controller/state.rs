@@ -279,6 +279,12 @@ pub(super) struct Settings {
     /// navigation change, so opening it (arriving from elsewhere, not just
     /// the periodic timer) can be told apart from staying on it.
     pub(super) wifi_pane_was_visible: bool,
+    /// The Wi-Fi pane's periodic-scan timer, live only while the pane is
+    /// visible: `None` whenever it's hidden or the pane has never been
+    /// opened, so no timer wakes up at all outside that window (SET-14).
+    /// Dropping it (set back to `None`, or the whole `Settings` entity
+    /// dropping) cancels the loop.
+    pub(super) wifi_pane_scan_task: Option<Task<()>>,
 
     // Bluetooth
     pub(super) bluetooth_available: bool,

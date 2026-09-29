@@ -20,7 +20,6 @@ impl Settings {
         Self::start_updates_locale_watchers(cx);
         Self::start_hardware_watchers(cx);
         Self::start_network_watchers(cx);
-        Self::start_wifi_pane_scan_loop(cx);
         Self::start_snapshot_loads(cx);
         Self::start_appearance_watchers(cx);
         Self::start_apps_focus_watchers(cx, catalog_event_rx);

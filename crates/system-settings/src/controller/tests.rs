@@ -12,8 +12,9 @@ use super::{
     theme_stream_snapshot_is_current, time_stream_snapshot_is_current,
     update_stream_snapshot_is_current, vpn_stream_snapshot_is_current, wallpaper_selection,
     wifi_pane_is_visible, wifi_pane_scan_should_start_on_navigation,
-    wifi_stream_snapshot_is_current, DockChange, MenuBarChange, ShellSettingsMutation,
-    SpotlightAuthority, SpotlightChange, WallpaperChange, WallpaperTarget,
+    wifi_pane_scan_should_stop_on_navigation, wifi_stream_snapshot_is_current, DockChange,
+    MenuBarChange, ShellSettingsMutation, SpotlightAuthority, SpotlightChange, WallpaperChange,
+    WallpaperTarget,
 };
 
 #[test]
@@ -130,6 +131,34 @@ fn wifi_pane_scan_starts_only_on_the_transition_into_view() {
     assert!(!wifi_pane_scan_should_start_on_navigation(true, true));
     assert!(!wifi_pane_scan_should_start_on_navigation(false, false));
     assert!(!wifi_pane_scan_should_start_on_navigation(false, true));
+}
+
+#[test]
+fn wifi_pane_scan_stops_only_on_the_transition_out_of_view() {
+    // Leaving the Wi-Fi pane cancels its periodic scan loop outright, so no
+    // timer wakes up at all while it's hidden (idle CPU stays at zero).
+    assert!(wifi_pane_scan_should_stop_on_navigation(false, true));
+    // Never having been visible, still not being visible, or staying on it
+    // all leave whatever loop state already holds alone: nothing to cancel
+    // in the first two cases, and the loop should keep running in the
+    // third.
+    assert!(!wifi_pane_scan_should_stop_on_navigation(false, false));
+    assert!(!wifi_pane_scan_should_stop_on_navigation(true, true));
+    assert!(!wifi_pane_scan_should_stop_on_navigation(true, false));
+}
+
+#[test]
+fn wifi_pane_scan_start_and_stop_are_mutually_exclusive() {
+    // Every (now, was) combination trips at most one of the two rules, so
+    // `sync_wifi_pane_scan_on_navigation` never both starts and cancels the
+    // loop on the same navigation event.
+    for now in [false, true] {
+        for was in [false, true] {
+            let starts = wifi_pane_scan_should_start_on_navigation(now, was);
+            let stops = wifi_pane_scan_should_stop_on_navigation(now, was);
+            assert!(!(starts && stops), "now={now} was={was}");
+        }
+    }
 }
 
 #[test]

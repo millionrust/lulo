@@ -2851,7 +2851,7 @@ fn start_momentum(state: &mut WaylandClientState) {
         Timer::from_duration(MOMENTUM_TICK),
         move |_, _, this: &mut WaylandClientStatePtr| {
             let client = this.get_client();
-            let mut state = client.borrow_mut();
+            let state = client.borrow();
             if state.momentum_generation != generation {
                 return TimeoutAction::Drop;
             }

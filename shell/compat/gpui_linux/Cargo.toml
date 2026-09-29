@@ -16,6 +16,7 @@ path = "src/gpui_linux.rs"
 [features]
 default = ["wayland", "x11"]
 test-support = ["gpui/test-support"]
+nightly_coverage = []
 wayland = [
     "bitflags",
     "gpui_wgpu",

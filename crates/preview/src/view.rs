@@ -780,7 +780,7 @@ impl PreviewView {
                 cx.background_executor()
                     .spawn(async move {
                         let (jpeg, width, height) = render::encode_print_jpeg(&pixels, rotation)?;
-                        Ok::<_, String>(crate::pdfwriter::wrap_jpeg(&jpeg, width, height))
+                        Ok::<_, String>(rmac_preview::pdfwriter::wrap_jpeg(&jpeg, width, height))
                     })
                     .await
             } else {

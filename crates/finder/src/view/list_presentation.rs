@@ -750,10 +750,16 @@ impl FinderView {
                 this.menu_unavailable("No Quick Actions are available", cx)
             }))
             .on_action(cx.listener(|this, _: &UseGroups, _, cx| {
-                this.menu_unavailable("Grouping is not available", cx)
-            }))
-            .on_action(cx.listener(|this, _: &ShowViewOptions, _, cx| {
-                this.menu_unavailable("View Options are not available", cx)
+                this.change_options(
+                    |options| {
+                        options.group_by = if options.group_by == view_options::GroupBy::None {
+                            view_options::GroupBy::Name
+                        } else {
+                            view_options::GroupBy::None
+                        };
+                    },
+                    cx,
+                )
             }))
             .on_action(cx.listener(|this, _: &ImportFromIphone, _, cx| {
                 this.menu_unavailable("No iPhone is available to import from", cx)

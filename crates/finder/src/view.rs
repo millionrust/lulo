@@ -55,11 +55,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use gpui::{
-    actions, div, img, prelude::FluentBuilder as _, px, svg, uniform_list, AccessibleAction,
-    AppContext as _, AssetSource, ClickEvent, Context, Div, Entity, ExternalPaths, FocusHandle,
-    Focusable as _, Hsla, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent,
-    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render, Result,
-    Role, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Svg, Toggled, Window,
+    actions, div, img, prelude::FluentBuilder as _, px, svg, AccessibleAction, AppContext as _,
+    AssetSource, ClickEvent, Context, Div, Entity, ExternalPaths, FocusHandle, Focusable as _,
+    Hsla, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton,
+    MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render, Result, Role,
+    SharedString, Stateful, StatefulInteractiveElement as _, Styled, Svg, Toggled, Window,
 };
 use gpui_component::{Icon, IconName, Root, StyledExt as _};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -272,6 +272,7 @@ struct FinderView {
     expanded: BTreeSet<PathBuf>,
     child_entries: HashMap<PathBuf, Vec<Entry>>,
     list_depths: Vec<usize>,
+    list_scroll: gpui::ScrollHandle,
     watched_children: BTreeSet<PathBuf>,
     selected: BTreeSet<usize>,
     anchor: Option<usize>,

@@ -1,6 +1,36 @@
 use super::*;
 
 impl FinderView {
+    pub(super) fn scroll_list_row_into_view(&self, position: usize) {
+        if self.view != ViewMode::List {
+            return;
+        }
+        let viewport = f32::from(self.list_scroll.bounds().size.height);
+        if viewport <= 0.0 {
+            return;
+        }
+        let row_height = if self
+            .entries
+            .iter()
+            .any(|entry| entry.search_detail.is_some())
+        {
+            38.0
+        } else {
+            LIST_ROW_HEIGHT
+        };
+        let top = (-f32::from(self.list_scroll.offset().y)).max(0.0);
+        let row_top = LIST_ROWS_TOP + position as f32 * row_height;
+        let target = if row_top < top {
+            row_top
+        } else if row_top + row_height > top + viewport {
+            row_top + row_height - viewport
+        } else {
+            return;
+        };
+        self.list_scroll
+            .set_offset(gpui::point(px(0.0), px(-target.max(0.0))));
+    }
+
     pub(super) fn list_row_index(&self, path: &Path) -> Option<usize> {
         self.entries.iter().position(|entry| entry.path == path)
     }

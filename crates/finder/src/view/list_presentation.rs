@@ -190,11 +190,32 @@ impl FinderView {
         } else {
             LIST_ROW_HEIGHT
         };
+        let scroll_top = (-f32::from(self.list_scroll.offset().y)).max(0.0);
+        let first_row = ((scroll_top / row_height).floor() as usize)
+            .saturating_sub(8)
+            .min(visible_list_indices.len());
+        let row_limit = (window_height / row_height).ceil() as usize + 16;
+        let last_row = (first_row + row_limit).min(visible_list_indices.len());
+        let list_rows = if self.view == ViewMode::List {
+            (first_row..last_row)
+                .map(|position| {
+                    self.render_list_row(
+                        visible_list_indices[position],
+                        position,
+                        visible_list_indices.len(),
+                        row_height,
+                        window_active,
+                        cx,
+                    )
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         let filler = div()
-            .absolute()
-            .top(px(LIST_ROWS_TOP + stripe_index as f32 * row_height))
-            .left(px(0.0))
-            .right(px(0.0))
+            .flex_1()
+            .min_h(px(0.0))
+            .overflow_hidden()
             .v_flex()
             .children((stripe_index..stripe_index + FILLER_STRIPES).map(|index| {
                 div()
@@ -442,38 +463,27 @@ impl FinderView {
                     .id("file-list")
                     .role(Role::ListBox)
                     .aria_label(listing_name.clone())
-                    .relative()
-                    .v_flex()
                     .flex_1()
                     .min_h(px(0.0))
-                    .pt(px(LIST_ROWS_TOP))
-                    .overflow_hidden()
-                    .child(filler)
-                    .child({
-                        let indices = visible_list_indices.clone();
-                        uniform_list(
-                            "file-list-rows",
-                            indices.len(),
-                            cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
-                                range
-                                    .map(|position| {
-                                        this.render_list_row(
-                                            indices[position],
-                                            position,
-                                            indices.len(),
-                                            row_height,
-                                            window_active,
-                                            cx,
-                                        )
-                                    })
-                                    .collect::<Vec<_>>()
-                            }),
-                        )
-                        .with_sizing_behavior(gpui::ListSizingBehavior::Auto)
-                        .w_full()
-                        .flex_1()
-                        .min_h(px(0.0))
-                    })
+                    .overflow_y_scroll()
+                    .track_scroll(&self.list_scroll)
+                    .on_scroll_wheel(
+                        cx.listener(|_, _: &gpui::ScrollWheelEvent, _, cx| cx.notify()),
+                    )
+                    .child(
+                        div()
+                            .min_h(gpui::relative(1.0))
+                            .v_flex()
+                            .pt(px(LIST_ROWS_TOP))
+                            .child(div().h(px(first_row as f32 * row_height)).flex_none())
+                            .children(list_rows)
+                            .child(
+                                div()
+                                    .h(px((stripe_index - last_row) as f32 * row_height))
+                                    .flex_none(),
+                            )
+                            .child(filler),
+                    )
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, window, cx| {
@@ -729,6 +739,7 @@ impl FinderView {
                 if let Some(position) = select_position {
                     if !navigation_indices.is_empty() {
                         this.select_single(navigation_indices[position]);
+                        this.scroll_list_row_into_view(position);
                         cx.notify();
                     }
                 } else if let Some(text) = type_select_text(ev) {
@@ -761,7 +772,7 @@ impl FinderView {
         row_height: f32,
         window_active: bool,
         cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
+    ) -> Stateful<Div> {
         let e = &self.entries[ix];
         let entity = cx.entity();
         let depth = if self.trash_view || self.applications_view || self.search_summary.is_some() {
@@ -1076,6 +1087,5 @@ impl FinderView {
                     }))
             },
         )
-        .into_any_element()
     }
 }

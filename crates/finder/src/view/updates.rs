@@ -130,6 +130,9 @@ impl FinderView {
             .parent()
             .filter(|parent| *parent != self.cwd)
             .map(Path::to_path_buf);
+        if self.watched.as_ref() != Some(&self.cwd) {
+            self.list_scroll.set_offset(gpui::point(px(0.0), px(0.0)));
+        }
         if self.watched.as_ref() != Some(&self.cwd)
             || self.watched_parent.as_ref() != expected_parent.as_ref()
         {

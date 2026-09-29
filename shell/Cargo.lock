@@ -5169,6 +5169,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rmac-quick-settings-system"
+version = "0.9.0-beta.1"
+dependencies = [
+ "rmac-audio",
+ "rmac-bluetooth",
+ "rmac-focus-linux",
+ "rmac-network",
+ "rmac-power",
+ "rmac-quick-settings",
+ "rmac-shell-settings",
+ "rmac-sound",
+]
+
+[[package]]
 name = "rmac-recent-documents"
 version = "0.9.0-beta.1"
 dependencies = [
@@ -5321,6 +5335,8 @@ dependencies = [
  "rmac-app-launch",
  "rmac-app-menu",
  "rmac-apps",
+ "rmac-audio",
+ "rmac-bluetooth",
  "rmac-compositor",
  "rmac-compositor-niri",
  "rmac-desktop",
@@ -5332,6 +5348,7 @@ dependencies = [
  "rmac-osd",
  "rmac-places",
  "rmac-power",
+ "rmac-quick-settings-system",
  "rmac-recent-documents",
  "rmac-search",
  "rmac-shell-layer",

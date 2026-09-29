@@ -69,10 +69,10 @@ alongside it.
        real shift-click, command-click or double-click, instead of the plain Finder "select" Apple Event
        (which only sets selection state and cannot extend a range, toggle an item, or open a folder). The
        Mac recorder locates the named item on screen and clicks it through Quartz, the same way `context`
-       already does for right-clicks. **The Lulo runner does not implement this yet** — `run_lulo.py`'s
-       `click_item` always sends a single unmodified left click; it needs a `count` (already supported by
-       `wlinput.py`'s pointer `click(..., count=)`) and a held-modifier option (hold the virtual keyboard's
-       shift/cmd key around the pointer click) before scenarios using `modifiers`/`double` can run on Lulo.
+       already does for right-clicks. The Lulo runner mirrors this: `run_lulo.py`'s `click_item` passes
+       `count` (2 for `double`) and `modifiers` through to `wlinput.py`'s pointer `click(..., count=,
+       modifiers=)`, which holds the virtual keyboard's shift/cmd key down around the pointer click. A
+       plain `select` with neither field still sends exactly one unmodified left click.
      - `focus_desktop`.
      - `observe`: records facts.
      - Any step can take `settle` (seconds to wait after it; the default is 0.8).

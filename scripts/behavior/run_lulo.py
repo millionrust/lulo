@@ -897,7 +897,7 @@ class LuloRun:
         inner = focused[0].get("window_rect") or {"x": 0, "y": 0}
         return rect["x"] + inner.get("x", 0), rect["y"] + inner.get("y", 0)
 
-    def click_item(self, label: str, button: str) -> None:
+    def click_item(self, label: str, button: str, count: int = 1, modifiers: Optional[list[str]] = None) -> None:
         frame = self.active_frame()
         target = None
         for node in descendants(frame, limit=4000) if frame is not None else []:
@@ -911,7 +911,7 @@ class LuloRun:
             raise StepFailed(f"{label!r} has no on-screen extents")
         ox, oy = self.window_origin()
         x, y = ox + box[0] + min(40, box[2] // 2), oy + box[1] + box[3] // 2
-        self.nested.input.click(x, y, OUTPUT_W, OUTPUT_H, button=button)
+        self.nested.input.click(x, y, OUTPUT_W, OUTPUT_H, button=button, count=count, modifiers=modifiers)
 
     def context_background(self) -> None:
         """Right-click an empty point in the Files list viewport."""
@@ -944,7 +944,15 @@ class LuloRun:
                 time.sleep(float(step["wait"]))
                 continue
             elif "select" in step:
-                self.click_item(step["select"], "left")
+                # A plain select (no modifiers/double) sends exactly the
+                # same single unmodified left click as before. modifiers
+                # (shift/cmd) and double are a real shift-click,
+                # command-click or double-click, matching mac_click.py.
+                self.click_item(
+                    step["select"], "left",
+                    count=2 if step.get("double") else 1,
+                    modifiers=step.get("modifiers"),
+                )
             elif "context" in step:
                 if step["context"] == "background":
                     self.context_background()

@@ -835,6 +835,7 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
             .on_action(cx.listener(|this, _: &Compress, _, cx| this.compress_selection(cx)))
             .on_action(cx.listener(|this, _: &GetInfo, window, cx| this.get_info(window, cx)))
+            .on_action(cx.listener(|this, _: &ShowViewOptions, _, cx| this.toggle_view_options(cx)))
             .on_action(
                 cx.listener(|this, _: &ViewAsIcons, _, cx| {
                     this.select_view_mode(ViewMode::Icon, cx)

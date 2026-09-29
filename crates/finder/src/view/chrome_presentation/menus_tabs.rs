@@ -81,6 +81,7 @@ impl FinderView {
             return m
                 .submenu("View", Self::build_view_submenu(pos))
                 .submenu("Sort By", Self::build_sort_submenu(pos, sort_key))
+                .item("Show View Options", Box::new(ShowViewOptions))
                 .separator()
                 .command_item(
                     "Select All",
@@ -152,6 +153,7 @@ impl FinderView {
                 .separator()
                 .submenu("View", Self::build_view_submenu(pos))
                 .submenu("Sort By", Self::build_sort_submenu(pos, sort_key))
+                .item("Show View Options", Box::new(ShowViewOptions))
                 .separator()
                 .command_item(
                     "Select All",

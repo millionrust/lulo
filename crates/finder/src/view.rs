@@ -44,9 +44,10 @@ mod trash_task_controller;
 mod trash_updates;
 mod undo_controller;
 mod updates;
+mod view_options;
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -96,6 +97,7 @@ use rmac_pasteboard as pasteboard;
 use search_helpers::*;
 use selection_controller::accessible_item;
 use transient_state::*;
+use view_options::FolderOptions;
 
 pub(crate) use presentation_support::sanitize_dialog_name;
 
@@ -139,6 +141,7 @@ actions!(
         ViewAsList,
         ViewAsColumns,
         ViewAsGallery,
+        ShowViewOptions,
         SortByName,
         SortByDate,
         SortBySize,
@@ -230,7 +233,7 @@ struct Section {
     places: Vec<Place>,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 enum SortKey {
     Name,
     Date,
@@ -284,6 +287,10 @@ struct FinderView {
     sidebar_width: f32,
     resizing_sidebar: bool,
     finder_persistence: FinderPersistence,
+    folder_options: BTreeMap<PathBuf, FolderOptions>,
+    default_options: FolderOptions,
+    options_path: Option<PathBuf>,
+    view_options_open: bool,
     col_stack: Vec<PathBuf>,
     /// Column view can select an item several directories below `cwd`, so an
     /// index into `entries` is not sufficient. Keep the selected entry itself

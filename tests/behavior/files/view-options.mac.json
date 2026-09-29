@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "scenario": "files/view-options",
+  "platform": "macOS 26",
+  "recorded": "2026-09-29",
+  "observations": {
+    "icon_options": {
+      "windows": {"count": 2},
+      "dialog": {"present": false}
+    }
+  }
+}

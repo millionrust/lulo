@@ -1,0 +1,13 @@
+{
+  "title": "Show View Options (⌘J) opens folder options without blocking the folder",
+  "app": "files",
+  "setup": {"files": {"example.txt": "View options fixture.\n"}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "cmd-1"},
+    {"key": "cmd-j", "settle": 0.5},
+    {"observe": "icon_options", "facts": ["windows", "dialog"]},
+    {"key": "cmd-j"}
+  ],
+  "omit": ["icon_options.windows.front", "icon_options.windows.titles"]
+}

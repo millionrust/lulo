@@ -2,6 +2,7 @@ use super::*;
 
 impl FinderView {
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
+        self.restore_folder_options();
         if self.trash_view {
             self.reload_trash(cx);
             return;

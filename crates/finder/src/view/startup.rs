@@ -158,7 +158,8 @@ impl FinderView {
         cx.subscribe(&icon_size_slider, |this, _, event: &SliderEvent, cx| {
             if let SliderEvent::Change(value) = event {
                 this.icon_size = value.start().clamp(48.0, 88.0);
-                cx.notify();
+                let size = this.icon_size;
+                this.change_icon_size(size, cx);
             }
         })
         .detach();
@@ -244,6 +245,10 @@ impl FinderView {
             sidebar_width: presentation.sidebar_width,
             resizing_sidebar: false,
             finder_persistence,
+            folder_options: restored.folders,
+            default_options: restored.defaults,
+            options_path: None,
+            view_options_open: false,
             col_stack: vec![cwd],
             column_selection: None,
             sort_key: SortKey::Name,

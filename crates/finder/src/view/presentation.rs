@@ -413,6 +413,9 @@ impl Render for FinderView {
                     .when(self.trash_view, |el| el.child(self.render_trash_bar(cx)))
                     .child(self.render_list(window_active, window_height, cx)),
             )
+            .when(self.view_options_open, |el| {
+                el.child(self.render_view_options(cx))
+            })
             .when_some(go_to_sheet, |el, sheet| el.child(sheet))
             .when_some(menu_at, |el, state| {
                 let menu = match menu_purpose {

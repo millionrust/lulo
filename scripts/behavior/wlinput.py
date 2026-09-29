@@ -360,10 +360,25 @@ class Wayland:
             time.sleep(0.04)
         self.button(False, button)
 
-    def click(self, x: float, y: float, width: int, height: int, button: str = "left", count: int = 1) -> None:
+    def click(self, x: float, y: float, width: int, height: int, button: str = "left", count: int = 1,
+              modifiers: Optional[list[str]] = None) -> None:
+        """Click, optionally holding keyboard modifiers for the duration (a
+        real shift-click or command-click) and/or clicking `count` times in
+        place (a double-click when count=2). With no modifiers this sends
+        exactly the same events as before."""
+
         code = {"left": 0x110, "right": 0x111, "middle": 0x112}[button]
         self.move(x, y, width, height)
         time.sleep(0.05)
+        mods = modifiers or []
+        mask = 0
+        for mod in mods:
+            mod_code, bit = MODIFIER_KEYS[mod]
+            self._key(mod_code, True)
+            mask |= bit
+            self._modifiers(mask)
+        if mods:
+            self.roundtrip()
         for _ in range(count):
             self._send(self.pointer, 2, struct.pack("<III", self._time(), code, 1))
             self._send(self.pointer, 4, b"")
@@ -373,6 +388,13 @@ class Wayland:
             self._send(self.pointer, 4, b"")
             self.roundtrip()
             time.sleep(0.06)
+        for mod in reversed(mods):
+            mod_code, bit = MODIFIER_KEYS[mod]
+            self._key(mod_code, False)
+            mask &= ~bit
+            self._modifiers(mask)
+        if mods:
+            self.roundtrip()
 
     def close(self) -> None:
         try:

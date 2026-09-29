@@ -781,6 +781,7 @@ class LuloRun:
         if node is None:
             return {"present": False}
         texts, buttons, default = [], [], None
+        focused_button = None
         for child in descendants(node, limit=2000):
             r = role(child)
             if r in {"label", "static", "heading", "paragraph"} and name(child):
@@ -790,7 +791,13 @@ class LuloRun:
                 buttons.append((round(box[1] / 6), box[0], name(child)))
                 if has_state(child, pyatspi.STATE_IS_DEFAULT):
                     default = name(child)
+                if has_state(child, pyatspi.STATE_FOCUSED):
+                    focused_button = name(child)
         buttons.sort()
+        # AccessKit's AT-SPI adapter does not publish IS_DEFAULT. For a
+        # one-button alert, its focused button is also its Return action.
+        if default is None and role(node) == "alert" and len(buttons) == 1:
+            default = focused_button
         sentence = next((t for t in texts if len(t.split()) >= 3), None)
         result = {"present": True, "title": name(node) or sentence, "texts": texts,
                   "buttons": [b[2] for b in buttons]}

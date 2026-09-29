@@ -80,7 +80,8 @@ pub(crate) fn prepare_conflict_batch(
         // no conflict sheet can offer to replace the source with itself.
         if matches!(&task.kind, file_ops::TransferKind::Copy) {
             if same_file_in_same_directory(&task.source, &task.destination) {
-                task.destination = unique_copy_path_avoiding(&task.source, &reserved_destinations);
+                task.destination =
+                    unique_copy_path_avoiding(&task.destination, &reserved_destinations);
             } else if label == "Duplicating" {
                 task.destination = unique_path_avoiding(task.destination, &reserved_destinations);
             }

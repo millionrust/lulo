@@ -350,8 +350,6 @@ mod linux_wayland {
             .detach();
             watch_menu_owners(cx);
             watch_menu_changes(cx);
-            watch_sound_changes(cx);
-            watch_bluetooth_changes(cx);
             let mut status = Self {
                 update: rmac_shell_runtime::Update::default(),
                 menu_app_id: None,
@@ -488,52 +486,6 @@ mod linux_wayland {
                 }
             }
             eprintln!("stopped following application menus: the session bus closed");
-        })
-        .detach();
-    }
-
-    /// Re-read the audio snapshot whenever PipeWire reports a change (a
-    /// volume nudged elsewhere, a device plugged in), so the Sound menu's
-    /// slider and Output list stay live while it is open. The watch waits on
-    /// the PipeWire monitor stream; nothing polls.
-    fn watch_sound_changes(cx: &mut Context<ShellStatus>) {
-        let (sender, changes) = async_channel::bounded(4);
-        cx.background_executor()
-            .spawn(async move {
-                if let Err(error) = rmac_audio::watch(sender).await {
-                    eprintln!("stopped following sound changes: {error}");
-                }
-            })
-            .detach();
-        cx.spawn(async move |this, cx| {
-            while changes.recv().await.is_ok() {
-                if this.update(cx, ShellStatus::reload_sound).is_err() {
-                    return;
-                }
-            }
-        })
-        .detach();
-    }
-
-    /// Re-read the Bluetooth snapshot whenever BlueZ reports a change (a
-    /// device connects or disconnects elsewhere, the adapter powers on), so
-    /// the Bluetooth menu's Devices list stays live while it is open. The
-    /// watch waits on BlueZ's D-Bus signals; nothing polls.
-    fn watch_bluetooth_changes(cx: &mut Context<ShellStatus>) {
-        let (sender, changes) = async_channel::bounded(4);
-        cx.background_executor()
-            .spawn(async move {
-                if let Err(error) = rmac_bluetooth::watch(sender).await {
-                    eprintln!("stopped following Bluetooth changes: {error}");
-                }
-            })
-            .detach();
-        cx.spawn(async move |this, cx| {
-            while changes.recv().await.is_ok() {
-                if this.update(cx, ShellStatus::reload_bluetooth).is_err() {
-                    return;
-                }
-            }
         })
         .detach();
     }
@@ -976,6 +928,52 @@ mod linux_wayland {
         _blur: Subscription,
     }
 
+    /// Re-read the audio snapshot whenever PipeWire reports a change (a
+    /// volume nudged elsewhere, a device plugged in), so the Sound menu's
+    /// slider and Output list stay live while it is open. The watch waits on
+    /// the PipeWire monitor stream; nothing polls.
+    fn watch_sound_changes(cx: &mut Context<TopBar>) {
+        let (sender, changes) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                if let Err(error) = rmac_audio::watch(sender).await {
+                    eprintln!("stopped following sound changes: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |this, cx| {
+            while changes.recv().await.is_ok() {
+                if this.update(cx, TopBar::reload_sound).is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Re-read the Bluetooth snapshot whenever BlueZ reports a change (a
+    /// device connects or disconnects elsewhere, the adapter powers on), so
+    /// the Bluetooth menu's Devices list stays live while it is open. The
+    /// watch waits on BlueZ's D-Bus signals; nothing polls.
+    fn watch_bluetooth_changes(cx: &mut Context<TopBar>) {
+        let (sender, changes) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                if let Err(error) = rmac_bluetooth::watch(sender).await {
+                    eprintln!("stopped following Bluetooth changes: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |this, cx| {
+            while changes.recv().await.is_ok() {
+                if this.update(cx, TopBar::reload_bluetooth).is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+    }
+
     impl TopBar {
         fn new(
             display_id: DisplayId,
@@ -993,6 +991,8 @@ mod linux_wayland {
             let blur = cx.on_blur(&blur_focus, window, |this, window, cx| {
                 this.close_menu(window, cx);
             });
+            watch_sound_changes(cx);
+            watch_bluetooth_changes(cx);
             Self {
                 display_id,
                 output_uuid,

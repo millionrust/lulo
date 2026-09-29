@@ -214,6 +214,13 @@ impl FinderView {
             cx.notify();
             return;
         }
+        let column_path = if self.view == ViewMode::Column {
+            self.column_selection
+                .as_ref()
+                .map(|entry| entry.path.clone())
+        } else {
+            None
+        };
         if self.view != mode && !self.trash_view && !self.applications_view {
             self.view = mode;
             if self.search_summary.is_none() {
@@ -224,6 +231,13 @@ impl FinderView {
         }
         if mode != ViewMode::Column {
             self.column_selection = None;
+            if let Some(path) = column_path {
+                self.selected.clear();
+                self.anchor = self.entries.iter().position(|entry| entry.path == path);
+                if let Some(index) = self.anchor {
+                    self.selected.insert(index);
+                }
+            }
         }
         self.select_first_for_gallery(cx);
         self.operation_error = None;

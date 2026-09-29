@@ -443,6 +443,7 @@ impl FinderView {
                     .role(Role::ListBox)
                     .aria_label(listing_name.clone())
                     .relative()
+                    .v_flex()
                     .flex_1()
                     .min_h(px(0.0))
                     .pt(px(LIST_ROWS_TOP))

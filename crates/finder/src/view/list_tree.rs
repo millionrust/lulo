@@ -58,9 +58,6 @@ impl FinderView {
             }
         }
         cx.notify();
-        if self.child_entries.contains_key(&path) {
-            return;
-        }
         let generation = self.directory_generation;
         let show_hidden = self.show_hidden;
         let key = self.sort_key;
@@ -142,6 +139,7 @@ mod tests {
     fn expanded_rows_keep_parent_order_and_depth() {
         let root = PathBuf::from("/tmp/folder");
         let child = root.join("child");
+        let grandchild = child.join("grandchild");
         let make = |path: PathBuf| Entry {
             name: path
                 .file_name()
@@ -161,8 +159,8 @@ mod tests {
         };
         let mut children = HashMap::new();
         children.insert(root.clone(), vec![make(child.clone())]);
-        children.insert(child.clone(), vec![make(child.join("grandchild"))]);
-        let expanded = BTreeSet::from([root.clone(), child.clone()]);
+        children.insert(child.clone(), vec![make(grandchild.clone())]);
+        let mut expanded = BTreeSet::from([root.clone(), child.clone()]);
         let mut rows = Vec::new();
         let mut depths = Vec::new();
         append_rows(
@@ -175,8 +173,22 @@ mod tests {
         );
         assert_eq!(
             rows.iter().map(|row| &row.path).collect::<Vec<_>>(),
-            vec![&root, &child, &child.join("grandchild")]
+            vec![&root, &child, &grandchild]
         );
         assert_eq!(depths, [0, 1, 2]);
+
+        expanded.remove(&root);
+        rows.clear();
+        depths.clear();
+        append_rows(
+            &[make(root.clone())],
+            0,
+            &expanded,
+            &children,
+            &mut rows,
+            &mut depths,
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].path, root);
     }
 }

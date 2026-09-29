@@ -855,11 +855,7 @@ mod linux_wayland {
         /// stale countdown tick or auto-timeout from a closed dialog never
         /// fires.
         confirmation_generation: u64,
-        /// "Reopen windows when logging in" checkbox state; unchecked by
-        /// default, as on the Mac.
-        confirmation_reopen: bool,
-        /// Which control (a button or the checkbox) Tab has moved keyboard
-        /// focus to inside the open confirmation
+        /// Which button Tab has moved keyboard focus to inside the open confirmation
         /// (`menu_model::confirmation_controls`'s order); Space activates
         /// it, Return always runs the default button regardless.
         confirmation_focus: usize,
@@ -1016,7 +1012,6 @@ mod linux_wayland {
                 pending_system_action: None,
                 confirmation_started_at: None,
                 confirmation_generation: 0,
-                confirmation_reopen: false,
                 confirmation_focus: 0,
                 status_menu: None,
                 status_selected: None,
@@ -1103,7 +1098,6 @@ mod linux_wayland {
         /// runs on its own.
         fn start_confirmation(&mut self, action: String, cx: &mut Context<Self>) {
             self.pending_system_action = Some(action.clone());
-            self.confirmation_reopen = false;
             self.confirmation_focus = menu_model::confirmation_initial_focus(&action);
             self.confirmation_generation = self.confirmation_generation.saturating_add(1);
             let generation = self.confirmation_generation;
@@ -2743,10 +2737,6 @@ mod linux_wayland {
                     "space" => {
                         let controls = menu_model::confirmation_controls(&action);
                         match controls.get(self.confirmation_focus) {
-                            Some(menu_model::ConfirmationControl::ReopenCheckbox) => {
-                                self.confirmation_reopen = !self.confirmation_reopen;
-                                cx.notify();
-                            }
                             Some(menu_model::ConfirmationControl::Button(index)) => {
                                 let confirmed = menu_model::system_confirmation(&action)
                                     .buttons
@@ -3597,7 +3587,6 @@ mod linux_wayland {
                     } else {
                         confirmation.detail.to_owned()
                     };
-                    let reopen_checked = self.confirmation_reopen;
                     let focus_controls = menu_model::confirmation_controls(&action);
                     let focused = focus_controls.get(self.confirmation_focus).copied();
                     let focus_ring = |el: gpui::Stateful<gpui::Div>| {
@@ -3689,50 +3678,6 @@ mod linux_wayland {
                                 .w_full()
                                 .text_color(rgba(tokens::secondary_text()))
                                 .child(body_text),
-                        );
-                    }
-                    if confirmation.countdown {
-                        let check_id = format!("system-confirmation-{display_id}-{action}-reopen");
-                        let is_focused =
-                            focused == Some(menu_model::ConfirmationControl::ReopenCheckbox);
-                        body = body.child(
-                            div()
-                                .id(check_id)
-                                .role(Role::Switch)
-                                .aria_label(menu_model::REOPEN_WINDOWS_LABEL)
-                                .w_full()
-                                .flex()
-                                .items_center()
-                                .gap_2()
-                                .cursor_pointer()
-                                .when(is_focused, focus_ring)
-                                .on_click(cx.listener(move |this, _, _, cx| {
-                                    cx.stop_propagation();
-                                    this.confirmation_reopen = !this.confirmation_reopen;
-                                    cx.notify();
-                                }))
-                                .child(
-                                    div()
-                                        .w(px(16.0))
-                                        .h(px(16.0))
-                                        .rounded_full()
-                                        .border_1()
-                                        .border_color(rgba(tokens::separator()))
-                                        .when(reopen_checked, |style| {
-                                            style.bg(rgba(tokens::accent()))
-                                        })
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .children(reopen_checked.then(|| {
-                                            svg()
-                                                .w(px(10.0))
-                                                .h(px(10.0))
-                                                .path(menu_icon_path("checkmark"))
-                                                .text_color(rgba(tokens::on_accent()))
-                                        })),
-                                )
-                                .child(menu_model::REOPEN_WINDOWS_LABEL),
                         );
                     }
                     panel = panel.child(
@@ -4976,40 +4921,37 @@ mod linux_wayland {
     /// only once every window has gone; an app still open after
     /// `QUIT_ALL_GRACE` cancels the request and a notice names it.
     fn quit_all_then(action: String, cx: &mut App) {
+        eprintln!("Lulo session action {action}: confirmation activated");
         cx.spawn(async move |cx: &mut gpui::AsyncApp| {
             let started = Instant::now();
             let mut asked = false;
             loop {
                 let snapshot = match rmac_compositor_niri::snapshot().await {
                     Ok(snapshot) => snapshot,
-                    Err(error) if !asked => {
-                        // No window list to work from: the compositor itself
-                        // is failing, and ending the session is the way out.
-                        eprintln!("could not read windows before {action}: {error:?}");
-                        break;
-                    }
                     Err(error) if menu_model::quit_all_gives_up_on_errors(started.elapsed()) => {
-                        // The compositor never came back within the same
-                        // grace period an unresponsive app gets: retrying
-                        // forever would leave Shut Down, Restart and Log Out
-                        // silently stuck with no window list to judge by, so
-                        // this gives up waiting and ends the session, same
-                        // as losing the compositor before any window was
-                        // ever asked to close.
+                        // Whether the first read or a later read failed, we
+                        // cannot verify which windows remain. Do not hand off
+                        // while their unsaved-work guards may still be open.
                         eprintln!(
-                            "giving up re-reading windows during {action} after {:?}: {error:?}",
+                            "could not verify windows during {action} after {:?}: {error:?}",
                             started.elapsed()
                         );
-                        break;
+                        let (summary, body) = quit_all_readback_failure_copy(&action);
+                        cx.update(|cx| post_system_notice(summary, body, cx));
+                        return;
                     }
                     Err(error) => {
-                        eprintln!("could not re-read windows during {action}: {error:?}");
+                        eprintln!("could not read windows during {action}: {error:?}");
                         cx.background_executor().timer(QUIT_ALL_CHECK).await;
                         continue;
                     }
                 };
                 if !asked {
                     asked = true;
+                    eprintln!(
+                        "Lulo session action {action}: requesting {} window closes",
+                        snapshot.windows.len()
+                    );
                     for window in &snapshot.windows {
                         let close = rmac_compositor::Action::CloseWindow { window: window.id };
                         if let Err(error) = rmac_compositor_niri::execute_action(&close).await {
@@ -5030,12 +4972,17 @@ mod linux_wayland {
                         cx.background_executor().timer(QUIT_ALL_CHECK).await;
                     }
                     QuitAllProgress::Interrupted(apps) => {
+                        eprintln!(
+                            "Lulo session action {action}: cancelled after {} application names remained",
+                            apps.len()
+                        );
                         let (summary, body) = quit_all_interrupted_copy(&action, &apps);
                         cx.update(|cx| post_system_notice(summary, body, cx));
                         return;
                     }
                 }
             }
+            eprintln!("Lulo session action {action}: handing off to system command");
             cx.update(|cx| match action.as_str() {
                 // Bare names, resolved through this process's own `PATH`:
                 // checked live (`/proc/<top-bar-pid>/environ`) as part of
@@ -5046,8 +4993,12 @@ mod linux_wayland {
                 // placed first on PATH (this crate's own regression
                 // scripts) can still intercept them; an absolute path
                 // would bypass that and run the real command instead.
-                "system::restart" => spawn_command("systemctl", &["reboot"], cx),
-                "system::shutdown" => spawn_command("systemctl", &["poweroff"], cx),
+                "system::restart" => {
+                    spawn_power_command("system::restart", "systemctl", &["reboot"], cx)
+                }
+                "system::shutdown" => {
+                    spawn_power_command("system::shutdown", "systemctl", &["poweroff"], cx)
+                }
                 _ => spawn_command(
                     "niri",
                     &["msg", "action", "quit", "--skip-confirmation"],
@@ -5056,6 +5007,20 @@ mod linux_wayland {
             });
         })
         .detach();
+    }
+
+    fn quit_all_readback_failure_copy(action: &str) -> (String, String) {
+        let verb = match action {
+            "system::restart" => "Restart",
+            "system::shutdown" => "Shut Down",
+            _ => "Log Out",
+        };
+        (
+            format!("Could Not {verb}"),
+            format!(
+                "Lulo could not verify that open windows are ready to close. Try {verb} again."
+            ),
+        )
     }
 
     /// A transient notice through the session's notification server.
@@ -5091,6 +5056,89 @@ mod linux_wayland {
                 }
             })
             .detach();
+    }
+
+    fn power_failure_copy(action: &str, reason: &str) -> (String, String) {
+        let verb = match action {
+            "system::restart" => "Restart",
+            _ => "Shut Down",
+        };
+        (
+            format!("Could Not {verb}"),
+            format!("{verb} did not start: {reason}"),
+        )
+    }
+
+    fn power_failure_detail(stderr: &[u8], fallback: &str) -> String {
+        let detail = String::from_utf8_lossy(stderr)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let detail: String = detail.chars().take(240).collect();
+        if detail.is_empty() {
+            fallback.to_owned()
+        } else {
+            detail
+        }
+    }
+
+    /// Run the final power command and tell the user if logind rejects it
+    /// or the command cannot be started. A successful invocation remains
+    /// quiet because the session is expected to end immediately.
+    fn spawn_power_command(
+        action: &'static str,
+        program: &'static str,
+        args: &'static [&'static str],
+        cx: &mut App,
+    ) {
+        let mut command = Command::new(program);
+        command.args(args);
+        cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                command.stdin(Stdio::null()).stdout(Stdio::null()).output()
+            })
+            .await;
+            let reason = match result {
+                Ok(output) if output.status.success() => return,
+                Ok(output) => power_failure_detail(&output.stderr, &output.status.to_string()),
+                Err(error) => error.to_string(),
+            };
+            let (summary, body) = power_failure_copy(action, &reason);
+            eprintln!("{}: {}", summary, body);
+            cx.update(|cx| post_system_notice(summary, body, cx));
+        })
+        .detach();
+    }
+
+    #[cfg(test)]
+    mod power_failure_tests {
+        use super::{power_failure_copy, power_failure_detail};
+
+        #[test]
+        fn power_command_failure_names_the_action_and_reason() {
+            assert_eq!(
+                power_failure_copy("system::shutdown", "exit status: 1"),
+                (
+                    "Could Not Shut Down".to_owned(),
+                    "Shut Down did not start: exit status: 1".to_owned()
+                )
+            );
+            assert_eq!(
+                power_failure_copy("system::restart", "permission denied"),
+                (
+                    "Could Not Restart".to_owned(),
+                    "Restart did not start: permission denied".to_owned()
+                )
+            );
+            assert_eq!(
+                power_failure_detail(b"Failed to power off:\nAccess denied\n", "exit status: 1"),
+                "Failed to power off: Access denied"
+            );
+            assert_eq!(
+                power_failure_detail(b"\n", "exit status: 1"),
+                "exit status: 1"
+            );
+        }
     }
 
     fn dispatch_recent_item(path: PathBuf, cx: &mut App) {

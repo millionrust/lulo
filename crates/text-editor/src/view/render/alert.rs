@@ -8,6 +8,9 @@ impl EditorView {
         alert: ActiveAlert,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        if matches!(alert, ActiveAlert::ConfirmSave(_)) {
+            return self.render_save_sheet(cx);
+        }
         use rmac_ui::DialogButtonKind::{Destructive, Normal, Primary};
         // TE-18: Esc must cancel the Save sheet (only) — every other alert
         // here already has an unambiguous Cancel button reachable by mouse,
@@ -45,30 +48,7 @@ impl EditorView {
                         .into_any_element(),
                 ],
             ),
-            ActiveAlert::ConfirmSave(_) => (
-                // TE-18: this only ever fires for a document that has never
-                // been saved (`guarded` autosaves a path-backed one instead)
-                // — the Mac's Save sheet for a new "Untitled" document.
-                format!(
-                    "Do you want to keep this new document “{}”?",
-                    self.filename()
-                ),
-                "You can choose to save your changes, or delete this document immediately."
-                    .to_owned(),
-                vec![
-                    rmac_ui::dialog_button("alert-delete", "Delete", Destructive)
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.alert_secondary(window, cx)),
-                        )
-                        .into_any_element(),
-                    rmac_ui::dialog_button("alert-cancel", "Cancel", Normal)
-                        .on_click(cx.listener(|this, _, _, cx| this.alert_cancel(cx)))
-                        .into_any_element(),
-                    rmac_ui::dialog_button("alert-save", "Save", Primary)
-                        .on_click(cx.listener(|this, _, window, cx| this.alert_confirm(window, cx)))
-                        .into_any_element(),
-                ],
-            ),
+            ActiveAlert::ConfirmSave(_) => unreachable!(),
             ActiveAlert::Conflict => (
                 "The document changed in another application.".to_owned(),
                 "Text Editor did not overwrite the external version. Reload discards this local buffer, Save a Copy preserves it at a new location, and Overwrite requires a fresh review plus another exact preflight."

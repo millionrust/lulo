@@ -13,6 +13,7 @@ impl EditorView {
         let input = rmac_editor::multiline("", window, cx);
         let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
+        let save_name_input = cx.new(|cx| InputState::new(window, cx).default_value("Untitled"));
 
         // TextEdit-style untitled numbering: only a window that opens with
         // no path (never one about to load a file) claims a number, freed
@@ -72,6 +73,7 @@ impl EditorView {
                 Some(CTX),
             ),
             KeyBinding::new(rmac_ui::shortcuts::ESCAPE.keystroke, CloseBar, Some(CTX)),
+            KeyBinding::new("cmd-.", CloseBar, Some(CTX)),
             KeyBinding::new(
                 rmac_ui::shortcuts::ZOOM_IN.keystroke,
                 IncreaseFont,
@@ -250,6 +252,8 @@ impl EditorView {
             replace_mode: false,
             find_input,
             replace_input,
+            save_name_input,
+            save_location: SaveLocation::default(),
             matches: Vec::new(),
             current: 0,
             // TextEdit's plain-text default: Menlo 11 (JetBrains Mono here).

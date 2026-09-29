@@ -3,11 +3,78 @@
 use super::*;
 
 impl EditorView {
+    pub(super) fn save_sheet(
+        &mut self,
+        then: Option<Pending>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let name = self.save_name_input.read(cx).text().to_string();
+        let name = name.trim();
+        if name.is_empty()
+            || name == "."
+            || name == ".."
+            || name.contains('/')
+            || name.contains('\\')
+        {
+            self.alert = Some(ActiveAlert::ConfirmSave(then));
+            self.status_notice = Some("Choose a valid document name.".into());
+            cx.notify();
+            return;
+        }
+        if self.save_location == SaveLocation::Other {
+            self.save_to_new_path_named(
+                self.document_text(cx),
+                self.text_format,
+                then,
+                None,
+                Some(name.to_owned()),
+                window,
+                cx,
+            );
+            return;
+        }
+        let Some(directory) = self.save_location.directory() else {
+            self.alert = Some(ActiveAlert::ConfirmSave(then));
+            return;
+        };
+        let path = directory.join(name);
+        let path = if path.extension().is_none() {
+            path.with_extension("txt")
+        } else {
+            path
+        };
+        let content = self.document_text(cx);
+        let format = self.text_format;
+        self.file_busy = true;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let save_content = content.clone();
+            let saved_path = path.clone();
+            let result = cx
+                .background_executor()
+                .spawn(async move { save_document_copy(&saved_path, None, &save_content, format) })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                if result.is_ok() {
+                    this.release_untitled_slot();
+                    this.path = Some(path);
+                }
+                this.finish_document_save(result, content, then, window, cx);
+            });
+        })
+        .detach();
+    }
+
     pub(super) fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.file_busy || self.file_action_blocked() {
             return;
         }
-        self.save_with(None, window, cx);
+        if self.path.is_none() {
+            self.show_save_sheet(None, window, cx);
+        } else {
+            self.save_with(None, window, cx);
+        }
     }
 
     pub(super) fn save_as(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -81,6 +148,27 @@ impl EditorView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.save_to_new_path_named(
+            content,
+            format,
+            then,
+            forbidden_destination,
+            None,
+            window,
+            cx,
+        );
+    }
+
+    pub(super) fn save_to_new_path_named(
+        &mut self,
+        content: String,
+        format: document::TextFormat,
+        then: Option<Pending>,
+        forbidden_destination: Option<PathBuf>,
+        name: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let directory = self
             .path
             .as_deref()
@@ -92,15 +180,17 @@ impl EditorView {
         // "Untitled" — no extension — because the extension is implied by
         // the format, not typed; a saved document's own name (with its
         // extension) is suggested as-is.
-        let suggested_name = self
-            .path
-            .as_deref()
-            .and_then(Path::file_name)
-            .and_then(|name| name.to_str())
-            .unwrap_or("Untitled");
+        let suggested_name = name.unwrap_or_else(|| {
+            self.path
+                .as_deref()
+                .and_then(Path::file_name)
+                .and_then(|name| name.to_str())
+                .unwrap_or("Untitled")
+                .to_owned()
+        });
         self.file_busy = true;
         cx.notify();
-        let receiver = cx.prompt_for_new_path(&directory, Some(suggested_name));
+        let receiver = cx.prompt_for_new_path(&directory, Some(&suggested_name));
         cx.spawn_in(window, async move |this, cx| {
             // Save-As was cancelled or failed: do NOT run the pending action,
             // so unsaved changes are preserved instead of silently discarded.

@@ -255,9 +255,11 @@ def verify_component_paths(root: Path) -> None:
     patches = root_manifest.get("patch", {}).get(
         "https://github.com/longbridge/gpui-component.git", {}
     )
+    root_dependencies = root_manifest.get("workspace", {}).get("dependencies", {})
     for name in ("gpui-component", "gpui-component-assets"):
         path, version = COMPONENT_PATHS[name]
-        if patches.get(name) != {"version": f"={version}", "path": path}:
+        local_dependency = {"version": f"={version}", "path": path}
+        if patches.get(name) != local_dependency or root_dependencies.get(name) != local_dependency:
             raise VerificationError(f"vendored path crate {name} is not patched into Cargo")
 
     workspace = tomllib.loads(

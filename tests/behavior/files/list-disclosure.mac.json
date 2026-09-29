@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "files/list-disclosure",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "child": {"selection": {"items": ["plan.txt"]}},
+    "collapsed": {"selection": {"items": ["report.txt"]}}
+  }
+}

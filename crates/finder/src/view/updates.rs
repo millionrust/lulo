@@ -202,6 +202,12 @@ impl FinderView {
         let show_hidden = self.show_hidden;
         let key = self.sort_key;
         let asc = self.sort_asc;
+        let expanded = self
+            .expanded
+            .iter()
+            .filter(|folder| folder.starts_with(&path))
+            .cloned()
+            .collect::<Vec<_>>();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
@@ -210,7 +216,13 @@ impl FinderView {
                         Ok((identity, mut entries)) => {
                             sort_entries(&mut entries, key, asc);
                             let free = refresh_free_space.then(|| free_space(&path));
-                            Ok((identity, entries, free))
+                            let children = expanded.into_iter().filter_map(|folder| {
+                                read_entries_checked(&folder, show_hidden, None).ok().map(|(_, mut rows)| {
+                                    sort_entries(&mut rows, key, asc);
+                                    (folder, rows)
+                                })
+                            }).collect::<HashMap<_, _>>();
+                            Ok((identity, entries, children, free))
                         }
                         Err(error) => Err((
                             error.kind(),
@@ -225,7 +237,7 @@ impl FinderView {
                     return;
                 }
                 match result {
-                    Ok((identity, entries, free)) => {
+                    Ok((identity, entries, children, free)) => {
                         if this
                             .operation_error
                             .as_ref()
@@ -237,7 +249,9 @@ impl FinderView {
                         if let Some(tab) = this.tabs.get_mut(this.active) {
                             tab.identity = Some(identity);
                         }
-                        this.entries = entries;
+                        this.root_entries = entries;
+                        this.child_entries = children;
+                        this.rebuild_list_entries();
                         let entry_paths = this
                             .entries
                             .iter()

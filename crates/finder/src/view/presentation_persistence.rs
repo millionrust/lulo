@@ -214,7 +214,14 @@ impl FinderView {
             cx.notify();
             return;
         }
-        self.view = mode;
+        if self.view != mode && !self.trash_view && !self.applications_view {
+            self.view = mode;
+            if self.search_summary.is_none() {
+                self.rebuild_list_entries();
+            }
+        } else {
+            self.view = mode;
+        }
         if mode != ViewMode::Column {
             self.column_selection = None;
         }

@@ -1,0 +1,16 @@
+{
+  "title": "List disclosure expands a folder inline and keyboard arrows move through its children",
+  "app": "files",
+  "setup": {"files": {"Projects/": null, "Projects/plan.txt": "Plan\n", "report.txt": "Report\n"}},
+  "launch": {"reveal": "Projects"},
+  "steps": [
+    {"key": "cmd-2"},
+    {"key": "cmd-right"},
+    {"key": "down"},
+    {"observe": "child", "facts": ["selection"]},
+    {"key": "up"},
+    {"key": "cmd-left"},
+    {"key": "down"},
+    {"observe": "collapsed", "facts": ["selection"]}
+  ]
+}

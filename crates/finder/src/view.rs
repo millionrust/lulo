@@ -19,6 +19,7 @@ mod go_to_folder_controller;
 mod item_operations;
 mod lifecycle_controller;
 mod list_presentation;
+mod list_tree;
 mod mount_controller;
 mod navigation;
 mod open_with_controller;
@@ -46,7 +47,7 @@ mod undo_controller;
 mod updates;
 
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -54,11 +55,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use gpui::{
-    actions, div, img, prelude::FluentBuilder as _, px, svg, AccessibleAction, AppContext as _,
-    AssetSource, ClickEvent, Context, Div, Entity, ExternalPaths, FocusHandle, Focusable as _,
-    Hsla, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent, MouseButton,
-    MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render, Result, Role,
-    SharedString, Stateful, StatefulInteractiveElement as _, Styled, Svg, Toggled, Window,
+    actions, div, img, prelude::FluentBuilder as _, px, svg, uniform_list, AccessibleAction,
+    AppContext as _, AssetSource, ClickEvent, Context, Div, Entity, ExternalPaths, FocusHandle,
+    Focusable as _, Hsla, InteractiveElement as _, IntoElement, KeyBinding, KeyDownEvent,
+    MouseButton, MouseDownEvent, MouseMoveEvent, ParentElement, Pixels, Point, Render, Result,
+    Role, SharedString, Stateful, StatefulInteractiveElement as _, Styled, Svg, Toggled, Window,
 };
 use gpui_component::{Icon, IconName, Root, StyledExt as _};
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
@@ -266,6 +267,11 @@ struct FinderView {
     directory_generation: u64,
     thumbs: std::collections::HashMap<PathBuf, PathBuf>,
     entries: Vec<Entry>,
+    /// Direct children of cwd; entries includes descendants only in list view.
+    root_entries: Vec<Entry>,
+    expanded: BTreeSet<PathBuf>,
+    child_entries: HashMap<PathBuf, Vec<Entry>>,
+    list_depths: Vec<usize>,
     selected: BTreeSet<usize>,
     anchor: Option<usize>,
     clipboard: Vec<PathBuf>,

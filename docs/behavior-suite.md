@@ -199,12 +199,14 @@ Title-bar movement runs in nested niri as well, because Sway does not exercise G
 Settings plus a GTK window with the virtual pointer, and checks niri's reported positions. It
 also has an `assert_double_click_zoom` check for the default Zoom action (SET-33): the first
 double-click should fill the working area without going under the Dock's exclusive zone, and a
-second should restore the window's previous size. As of this writing that check's first assertion
-fails for every app tried; debug tracing showed the synthetic double-click never reaches GPUI at
-all over a `WindowControlArea::Drag` region in this harness (see the docstring on
-`assert_double_click_zoom` in the script), so it is not evidence of a bug in the Zoom toggle
-itself -- that is covered by `cargo test -p rmac-shell-settings -p rmac-ui`. Floating edge resizing
-remains open in WIN-10:
+second should restore the window's previous size. On the merged branch, three
+clean nested runs each passed 15/18 checks: dragging and left-edge resizing
+worked, but Settings stayed at its old frame after the double-click, so Zoom,
+screen fit and Dock clearance failed. Instrumentation confirmed clicks 1 and 2
+reach Settings' GPUI handler and its niri resize request returns success. The
+same resize commands sent later from the runner do change the frame. SET-33
+therefore remains partial; see the runner's `assert_double_click_zoom` note.
+Floating edge resizing for other windows remains open in WIN-10:
 
 ```sh
 python3 scripts/behavior/run_window_move.py --niri ~/rmac-niri-build/target/release/niri \

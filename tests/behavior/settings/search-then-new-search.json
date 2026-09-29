@@ -1,0 +1,33 @@
+{
+  "title": "A second Settings search replaces the first search's results",
+  "app": "settings",
+  "launch": {},
+  "steps": [
+    {
+      "key": "cmd-f"
+    },
+    {
+      "type": "network",
+      "settle": 1.2
+    },
+    {
+      "observe": "first_query",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "cmd-a"
+    },
+    {
+      "type": "displays",
+      "settle": 1.2
+    },
+    {
+      "observe": "second_query",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

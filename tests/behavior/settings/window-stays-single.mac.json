@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "scenario": "settings/window-stays-single",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "still_one": {
+      "windows": {
+        "count": 1
+      }
+    }
+  }
+}

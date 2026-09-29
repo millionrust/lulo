@@ -1,0 +1,28 @@
+{
+  "title": "↓ after a Settings search moves focus onto the first result row",
+  "app": "settings",
+  "launch": {},
+  "steps": [
+    {
+      "key": "cmd-f"
+    },
+    {
+      "type": "wallpaper",
+      "settle": 1.2
+    },
+    {
+      "key": "down",
+      "settle": 0.6
+    },
+    {
+      "observe": "focused_result",
+      "facts": [
+        "focus"
+      ]
+    }
+  ],
+  "omit": [
+    "focused_result.focus.value",
+    "focused_result.focus.label"
+  ]
+}

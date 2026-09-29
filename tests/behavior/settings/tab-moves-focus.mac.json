@@ -1,0 +1,27 @@
+{
+  "format": 1,
+  "scenario": "settings/tab-moves-focus",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "initial": {
+      "focus": {
+        "role": "search-field",
+        "selection": [
+          8,
+          8
+        ],
+        "selected_text": "",
+        "selected_all": false
+      }
+    },
+    "after_tab": {
+      "focus": {
+        "role": "text",
+        "selection": null,
+        "selected_text": null,
+        "selected_all": null
+      }
+    }
+  }
+}

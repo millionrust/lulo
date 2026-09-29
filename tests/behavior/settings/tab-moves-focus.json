@@ -1,0 +1,36 @@
+{
+  "title": "Tab moves keyboard focus from the search field into the sidebar list",
+  "app": "settings",
+  "launch": {},
+  "steps": [
+    {
+      "observe": "initial",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "cmd-f"
+    },
+    {
+      "key": "tab",
+      "settle": 0.6
+    },
+    {
+      "observe": "after_tab",
+      "facts": [
+        "focus"
+      ]
+    }
+  ],
+  "omit": [
+    "initial.focus.value",
+    "initial.focus.label",
+    "after_tab.focus.value",
+    "after_tab.focus.label"
+  ],
+  "tolerance": {
+    "initial.focus.role": "ignore",
+    "after_tab.focus.role": "ignore"
+  }
+}

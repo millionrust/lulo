@@ -1,0 +1,31 @@
+{
+  "title": "Settings only ever has one window, even after search and navigation",
+  "app": "settings",
+  "launch": {},
+  "steps": [
+    {
+      "key": "cmd-f"
+    },
+    {
+      "type": "wallpaper",
+      "settle": 1.2
+    },
+    {
+      "key": "down"
+    },
+    {
+      "key": "return",
+      "settle": 1.2
+    },
+    {
+      "observe": "still_one",
+      "facts": [
+        "windows"
+      ]
+    }
+  ],
+  "omit": [
+    "still_one.windows.front",
+    "still_one.windows.titles"
+  ]
+}

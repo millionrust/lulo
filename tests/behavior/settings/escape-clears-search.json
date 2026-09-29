@@ -1,0 +1,24 @@
+{
+  "title": "Escape clears the Settings search field back to empty",
+  "app": "settings",
+  "launch": {},
+  "steps": [
+    {
+      "key": "cmd-f"
+    },
+    {
+      "type": "wallpaper",
+      "settle": 1.0
+    },
+    {
+      "key": "escape",
+      "settle": 0.8
+    },
+    {
+      "observe": "cleared",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

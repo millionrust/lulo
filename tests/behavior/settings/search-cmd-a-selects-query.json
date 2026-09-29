@@ -1,0 +1,28 @@
+{
+  "title": "⌘A inside the Settings search field selects the whole typed query",
+  "app": "settings",
+  "launch": {},
+  "steps": [
+    {
+      "key": "cmd-f"
+    },
+    {
+      "type": "wallpaper",
+      "settle": 1.0
+    },
+    {
+      "key": "cmd-a",
+      "settle": 0.4
+    },
+    {
+      "observe": "selected",
+      "facts": [
+        "focus"
+      ]
+    }
+  ],
+  "omit": [
+    "selected.focus.value",
+    "selected.focus.selected_text"
+  ]
+}

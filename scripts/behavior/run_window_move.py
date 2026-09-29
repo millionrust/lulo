@@ -286,8 +286,66 @@ class Run:
             changed = abs(mg[0] - sx) > 30 or abs(mg[1] - sy) > 30
             self.check("Settings title bar remains movable", changed, f"{(sx, sy)} -> {mg[:2]}")
             self.assert_edge_resize("org.rmac.SystemSettings", "Settings")
+            self.assert_double_click_zoom("org.rmac.SystemSettings", "Settings")
         process.terminate()
         process.wait(10)
+
+    def assert_double_click_zoom(self, app_id: str, title: str) -> None:
+        """Double-clicking the title bar Zooms (SET-33), then Zooms back.
+
+        The default double-click action is Zoom: a toggle between the
+        window's user size and the working area, routed through
+        `send_window_action` so it lands on niri as a real floating-frame
+        request rather than GPUI's own no-op `zoom_window()`. The shipped
+        Dock runs in this nested session (menubar does not), so the
+        "never under the Dock" check below only covers the Dock's
+        exclusive zone.
+        """
+        window = self.window(app_id)
+        if not window:
+            return
+        x, y, width, height = self.geometry(window)
+        # Click well clear of the traffic lights, near the left edge.
+        title_bar_point = (x + width * 0.65, y + 12)
+        self.pointer.click(*self.parent_point(*title_bar_point), self.parent_width,
+                           self.parent_height, count=2)
+        zoomed = self.wait_for(
+            lambda: (candidate := self.window(app_id))
+            if candidate and self.geometry(candidate)[2:] != (width, height) else None,
+            4.0,
+        )
+        zoomed_geometry = self.geometry(zoomed) if zoomed else (x, y, width, height)
+        grew = (zoomed_geometry[2] > width + 80 or zoomed_geometry[3] > height + 80)
+        self.check(f"{title} title-bar double-click Zooms", grew,
+                   f"{(width, height)} -> {zoomed_geometry[2:]}")
+        zx, zy, zw, zh = zoomed_geometry
+        fits_output = (
+            zx >= -1 and zy >= -1
+            and zx + zw <= self.width + 1
+            and zy + zh <= self.height + 1
+        )
+        # A real fill against the Dock's exclusive zone measurably stops
+        # short of the full output height; reaching all the way down means
+        # the Dock reservation was ignored (the owner's "goes under the
+        # Dock" report).
+        clears_dock = zy + zh < self.height - 5
+        self.check(f"Zoomed {title} stays on screen", fits_output, str(zoomed_geometry))
+        self.check(f"Zoomed {title} never goes under the Dock", clears_dock,
+                   f"bottom={zy + zh}, output height={self.height}")
+
+        # A second double-click Zooms back to the user's previous size.
+        restore_point = (zx + zw * 0.65, zy + 12)
+        self.pointer.click(*self.parent_point(*restore_point), self.parent_width,
+                           self.parent_height, count=2)
+        restored = self.wait_for(
+            lambda: (candidate := self.window(app_id))
+            if candidate and self.geometry(candidate)[2:] != zoomed_geometry[2:] else None,
+            4.0,
+        )
+        restored_geometry = self.geometry(restored) if restored else zoomed_geometry
+        back = (abs(restored_geometry[2] - width) < 30 and abs(restored_geometry[3] - height) < 30)
+        self.check(f"A second double-click restores {title}'s previous size", back,
+                   f"{(width, height)} -> {restored_geometry[2:]}")
 
     def run(self) -> int:
         self.start()

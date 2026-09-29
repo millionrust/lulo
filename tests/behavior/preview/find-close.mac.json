@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "scenario": "preview/find-close",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "find_open": {
+      "focus": {
+        "role": "search-field",
+        "label": null
+      }
+    },
+    "find_closed": {
+      "focus": {
+        "role": "search-field",
+        "value": "",
+        "selection": [
+          0,
+          0
+        ],
+        "selected_text": "",
+        "selected_all": false,
+        "label": null
+      },
+      "windows": {
+        "count": 1,
+        "front": "guide.pdf – 1 page"
+      }
+    }
+  }
+}

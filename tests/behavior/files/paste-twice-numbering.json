@@ -1,0 +1,35 @@
+{
+  "title": "Pasting the same copied file twice makes “name copy” then “name copy 2”",
+  "app": "files",
+  "setup": {
+    "files": {
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "reveal": "report.txt"
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "cmd-c"
+    },
+    {
+      "key": "cmd-v",
+      "settle": 1.5
+    },
+    {
+      "key": "cmd-v",
+      "settle": 1.5
+    },
+    {
+      "observe": "pasted_twice",
+      "facts": [
+        "files",
+        "selection"
+      ]
+    }
+  ]
+}

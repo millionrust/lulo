@@ -1,0 +1,21 @@
+{
+  "title": "Select All (⌘A) in an empty folder selects nothing",
+  "app": "files",
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "cmd-a"
+    },
+    {
+      "observe": "none_selected",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

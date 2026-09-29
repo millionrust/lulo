@@ -1,0 +1,40 @@
+{
+  "title": "⌘W closes the front Finder window; Finder keeps running",
+  "app": "files",
+  "setup": {
+    "files": {
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-n",
+      "settle": 1.2
+    },
+    {
+      "observe": "two_windows",
+      "facts": [
+        "windows"
+      ]
+    },
+    {
+      "key": "cmd-w",
+      "settle": 1.2
+    },
+    {
+      "observe": "one_window",
+      "facts": [
+        "windows"
+      ]
+    }
+  ],
+  "omit": [
+    "two_windows.windows.front",
+    "two_windows.windows.titles",
+    "one_window.windows.front",
+    "one_window.windows.titles"
+  ]
+}

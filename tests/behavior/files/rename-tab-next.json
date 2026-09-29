@@ -1,0 +1,38 @@
+{
+  "title": "Tab while renaming commits the current name and starts renaming the next item",
+  "app": "files",
+  "setup": {
+    "files": {
+      "a.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "b.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "reveal": "a.txt"
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "type": "first"
+    },
+    {
+      "key": "tab",
+      "settle": 1.0
+    },
+    {
+      "observe": "next_editing",
+      "facts": [
+        "focus",
+        "files"
+      ]
+    },
+    {
+      "key": "escape"
+    }
+  ]
+}

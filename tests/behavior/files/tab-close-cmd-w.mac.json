@@ -1,0 +1,24 @@
+{
+  "format": 1,
+  "scenario": "files/tab-close-cmd-w",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "two_tabs": {
+      "windows": {
+        "count": 1
+      },
+      "tabs": {
+        "count": 2
+      }
+    },
+    "one_tab": {
+      "windows": {
+        "count": 1
+      },
+      "tabs": {
+        "count": 1
+      }
+    }
+  }
+}

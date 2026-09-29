@@ -190,7 +190,18 @@ impl FinderView {
         } else {
             LIST_ROW_HEIGHT
         };
-        let scroll_top = (-f32::from(self.list_scroll.offset().y)).max(0.0);
+        let measured_height = f32::from(self.list_scroll.bounds().size.height);
+        let viewport_height = if measured_height > 1.0 {
+            measured_height
+        } else {
+            window_height
+        };
+        let max_scroll = (LIST_ROWS_TOP + visible_list_indices.len() as f32 * row_height
+            - viewport_height)
+            .max(0.0);
+        let scroll_top = (-f32::from(self.list_scroll.offset().y))
+            .max(0.0)
+            .min(max_scroll);
         let first_row = ((scroll_top / row_height).floor() as usize)
             .saturating_sub(8)
             .min(visible_list_indices.len());

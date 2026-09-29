@@ -637,7 +637,7 @@ Shell states audit, 2026-09-25. Mac: macOS 26.2 on the owner's Mac, read live th
 | Menu bar | Bluetooth / Sound / Focus items | live (not in the owner's bar) | code (not in bar) | BAR-03 |
 | Menu bar | Clock opens Notification Centre; second click closes; Esc closes | live | code + live (dispatch) | — |
 | Menu bar | Privacy indicator dot/pill | live | code | BAR-09 |
-| Control Centre | Default grid (Wi-Fi, Bluetooth, AirDrop, Now Playing, Stage Manager, Screen Mirroring, appearance, Screenshot, Focus, Display, Sound, Edit Controls) | live | live | CC-02, CC-03, CC-06, CC-07 |
+| Control Centre | Default grid (Wi-Fi, Bluetooth, AirDrop, Now Playing, Stage Manager, Screen Mirroring, appearance, Screenshot, Focus, Display, Sound, Edit Controls) | live | live (re-confirmed 2026-09-29: `rmac-quick-settings` in a nested sway+niri, opened over its real `$XDG_RUNTIME_DIR/rmac/shortcut-quick-settings.sock` via `rmac-shortcut-dispatch quick-settings` — the same socket a real shortcut uses, no broker/portal needed, no click or key injected. Grid, icon styles and the Wi-Fi/Bluetooth/Low Power/Screenshot/Focus/Display/Sound rows all matched the Mac's shapes and icon glyphs closely; Now Playing/AirDrop/Stage Manager/mirroring/appearance/Edit Controls absent as CC-02/03/06/07 already say. Blur (CC-01) still not verified this way — the headless test output has no textured background to blur against.) | CC-02, CC-03, CC-06, CC-07 |
 | Control Centre | Wi-Fi expanded | live (menu) | code | — |
 | Control Centre | Bluetooth expanded | ref | code | — |
 | Control Centre | AirDrop expanded | ref | code | CC-07 |
@@ -650,6 +650,7 @@ Shell states audit, 2026-09-25. Mac: macOS 26.2 on the owner's Mac, read live th
 | Control Centre | Expand/collapse animation, Esc, second click | ref | code + live | CC-10 |
 | Control Centre | Glass over the desktop | live | live | CC-11 |
 | Notification Centre | List, heading, clear button, Edit Widgets pill, ✕ Clear All menu | live | live + code | NC-09, NC-04 |
+| Notification Centre | 2026-09-29: tried the same nested sway+niri + real dispatch-socket method that worked for Control Centre (`rmac-shortcut-dispatch notification-center` against `rmac-notification-center`'s own socket). `rmac-notification-center` needs a D-Bus session bus at all (added a private `dbus-daemon --session` — without one it prints "notification service failed (Bus)"); with one, it runs with no error but never creates its dispatch socket within several seconds, so the dispatch call fails with ENOENT. Its systemd unit claims `org.freedesktop.impl.portal.desktop.rmac` as a portal backend (`Type=dbus`), so it may be waiting on `xdg-desktop-portal` itself, which this pass did not stand up. Not fixed this pass — needs a nested session with a real `xdg-desktop-portal` (or a documented way to skip that wait for evidence capture, mirroring `RMAC_CAPTURE_MENU`). | — |
 | Notification Centre | Card right-click menu (Mute 1 h/Today, Turn Off, Settings…) | live | code | NC-08 |
 | Notification Centre | Widget gallery (search, category sidebar, sizes) | live | code | DESK-05 |
 | Notification Centre | Group stack, Show Less, hover ✕ | ref | code + live (installed build still lists every card singly) | NC-03 |

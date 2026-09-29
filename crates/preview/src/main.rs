@@ -167,7 +167,7 @@ fn open_recent_menu_entry(index: usize, cx: &mut App) {
             })
             .await;
         if let Some(path) = path {
-            let _ = cx.update(|cx| open_window(vec![path], cx));
+            cx.update(|cx| open_window(vec![path], cx));
         }
     })
     .detach();

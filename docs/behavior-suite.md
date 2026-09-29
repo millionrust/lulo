@@ -27,6 +27,15 @@ tested binary so mixed dev builds are visible.
 
 ## Add a scenario
 
+The folder-size Get Info scenario is staged at
+`docs/behavior-pending/files/get-info-folder-size.json`. Its `info` fact checks
+whether the focused Info window exposes a byte size and item count through
+accessibility. Move it into `tests/behavior/files/`, then run the Mac recorder
+and keep the recorded `.mac.json` alongside it. The 2026-09-28 Mac recording
+attempt stopped before opening a scenario window because System Events returned
+`-10827`; the behavior suite requires a real Mac recording, so this pending
+scenario is not part of CI yet.
+
 1. Write `tests/behavior/<area>/<name>.json`. `area` is `files`, `text-editor`, `settings`,
    `calculator`, `preview` or `desktop`.
 

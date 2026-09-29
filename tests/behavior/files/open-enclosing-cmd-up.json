@@ -1,0 +1,33 @@
+{
+  "title": "Open Enclosing Folder (⌘↑) moves up one level and selects the folder you came from",
+  "app": "files",
+  "setup": {
+    "files": {
+      "Projects/": null,
+      "Projects/notes.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "reveal": "Projects/notes.txt"
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "cmd-up",
+      "settle": 1.2
+    },
+    {
+      "observe": "up",
+      "facts": [
+        "selection",
+        "windows"
+      ]
+    }
+  ],
+  "omit": [
+    "up.windows.front",
+    "up.windows.titles"
+  ]
+}

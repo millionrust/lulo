@@ -1,0 +1,39 @@
+{
+  "title": "Column view (⌘3): → drills into a folder's column and ← goes back up",
+  "app": "files",
+  "setup": {
+    "files": {
+      "Projects/": null,
+      "Projects/notes.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "reveal": "Projects"
+  },
+  "steps": [
+    {
+      "key": "cmd-3"
+    },
+    {
+      "key": "right",
+      "settle": 1.0
+    },
+    {
+      "observe": "drilled",
+      "facts": [
+        "selection"
+      ]
+    },
+    {
+      "key": "left",
+      "settle": 1.0
+    },
+    {
+      "observe": "back",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

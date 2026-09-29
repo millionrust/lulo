@@ -1,0 +1,60 @@
+{
+  "title": "⌘[ goes back and ⌘] goes forward through Finder navigation history",
+  "app": "files",
+  "setup": {
+    "files": {
+      "Projects/": null,
+      "Projects/notes.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "select": "Projects"
+    },
+    {
+      "key": "cmd-down",
+      "settle": 1.2
+    },
+    {
+      "observe": "inside",
+      "facts": [
+        "windows"
+      ]
+    },
+    {
+      "key": "cmd-["
+    },
+    {
+      "observe": "back",
+      "facts": [
+        "windows",
+        "selection"
+      ],
+      "settle": 1.0
+    },
+    {
+      "key": "cmd-]"
+    },
+    {
+      "observe": "forward",
+      "facts": [
+        "windows"
+      ],
+      "settle": 1.0
+    }
+  ],
+  "omit": [
+    "inside.windows.front",
+    "inside.windows.titles",
+    "back.windows.front",
+    "back.windows.titles",
+    "forward.windows.front",
+    "forward.windows.titles"
+  ]
+}

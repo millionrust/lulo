@@ -1,0 +1,42 @@
+{
+  "title": "A copied file pastes into a different folder, leaving the original where it was",
+  "app": "files",
+  "setup": {
+    "files": {
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "Projects/": null
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "select": "report.txt"
+    },
+    {
+      "key": "cmd-c"
+    },
+    {
+      "select": "Projects"
+    },
+    {
+      "key": "cmd-down",
+      "settle": 1.2
+    },
+    {
+      "key": "cmd-v",
+      "settle": 1.5
+    },
+    {
+      "observe": "pasted",
+      "facts": [
+        "files",
+        "selection"
+      ]
+    }
+  ]
+}

@@ -54,6 +54,14 @@ tested binary so mixed dev builds are visible.
      - `type`: ASCII text.
      - `wait`: seconds.
      - `select` or `context`: click or right-click the item with that name. After `context: "background"`, `select` can activate a named context-menu item. For Files, `context: "background"` right-clicks an empty point in the list viewport.
+     - `select` also takes `modifiers` (a list including `"shift"` and/or `"cmd"`) and `double` (bool) for a
+       real shift-click, command-click or double-click, instead of the plain Finder "select" Apple Event
+       (which only sets selection state and cannot extend a range, toggle an item, or open a folder). The
+       Mac recorder locates the named item on screen and clicks it through Quartz, the same way `context`
+       already does for right-clicks. **The Lulo runner does not implement this yet** — `run_lulo.py`'s
+       `click_item` always sends a single unmodified left click; it needs a `count` (already supported by
+       `wlinput.py`'s pointer `click(..., count=)`) and a held-modifier option (hold the virtual keyboard's
+       shift/cmd key around the pointer click) before scenarios using `modifiers`/`double` can run on Lulo.
      - `focus_desktop`.
      - `observe`: records facts.
      - Any step can take `settle` (seconds to wait after it; the default is 0.8).

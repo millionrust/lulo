@@ -1,0 +1,49 @@
+{
+  "title": "Typing the same letter again cycles the selection through names that start with it",
+  "app": "files",
+  "setup": {
+    "files": {
+      "apple.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "apricot.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "avocado.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "type": "a",
+      "settle": 1.0
+    },
+    {
+      "observe": "first",
+      "facts": [
+        "selection"
+      ]
+    },
+    {
+      "type": "a",
+      "settle": 1.0
+    },
+    {
+      "observe": "second",
+      "facts": [
+        "selection"
+      ]
+    },
+    {
+      "type": "a",
+      "settle": 1.0
+    },
+    {
+      "observe": "third",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

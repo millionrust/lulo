@@ -9,14 +9,40 @@
 //! - `=` with no second operand reuses the first (`5 + =` gives `10`).
 //!   Repeating `=` repeats the last operation (`2 + 3 = =` gives `8`), and a
 //!   freshly typed number followed by `=` applies it again (`10 =` gives `13`).
-//! - The clear key reads `C` while there is an entry to clear. `C` clears only
-//!   that entry and keeps the pending operation. `AC` clears everything.
+//! - **The display is formula-first**, like `crate::scientific`'s (see that
+//!   module's doc comment): while an operator is pending, `display()` shows
+//!   the whole formula so far (`"12+"`, `"200-10%"`), not just the current
+//!   entry. It falls back to a plain number only once nothing is pending
+//!   (after `=`, or with no operator ever pressed). Confirmed on the Mac
+//!   (macOS 26.2, 2026-09-29, `tests/behavior/calculator/clear-during-entry.json`
+//!   and `.../percent-chain.json`): typing `12+` and pressing C shows `12+`,
+//!   not `0`; `200-10%` shows the typed formula verbatim, including the `%`,
+//!   not the resolved `20`.
+//! - The clear key reads `C` and only ever clears the current entry — it
+//!   never discards a pending operator, even with nothing typed for the
+//!   right operand yet (confirmed by the same `clear-during-entry`
+//!   recording: `C` right after `12+`, with no digits typed since, leaves
+//!   `12+` on the display rather than resetting to `0`). `AC` clears
+//!   everything, but only once the calculator is genuinely idle (no pending
+//!   operator, nothing typed).
 //! - `%` divides by 100 unless the pending operation is `+` or `−`. Then it
 //!   takes that percentage of the first operand (`50 + 10 %` shows `5`).
+//!   The formula display keeps the typed digits and a literal `%`
+//!   (`"50+10%"`), not the resolved share, until `=`.
+//! - `±` on the number currently being entered wraps it in parentheses in
+//!   the formula display (`"(-5)"`), matching `crate::scientific`'s
+//!   negate. A settled result (after `=`, with nothing pending) that
+//!   happens to be negative shows a plain `-5`, no parens — confirmed on
+//!   the Mac (`tests/behavior/calculator/plus-minus.json`,
+//!   `plus-minus-after-result.json`, run in Scientific mode but the same
+//!   display model; `negative-number-entry.json`'s settled `-2` result is
+//!   never wrapped).
 //! - The display holds at most 9 significant digits. Larger or smaller values
 //!   switch to scientific notation (`1e9`, `1.2345679e-12`).
-//! - Division by zero, or any result that is not finite, shows `Error`. The
-//!   next digit starts over.
+//! - Division by zero shows `Undefined`; any other result that is not
+//!   finite (overflow) shows `Error`. Confirmed on the Mac (macOS 26.2,
+//!   2026-09-29, `tests/behavior/calculator/divide-by-zero.json`). The next
+//!   digit starts over either way.
 
 /// Most digits the user can type into one entry, and most significant digits
 /// the display shows, like macOS.
@@ -26,8 +52,21 @@ pub const MAX_DIGITS: usize = 9;
 /// the exponent this keeps long results within the display.
 const MAX_SCIENTIFIC_DIGITS: usize = 8;
 
-/// The text shown for a failed calculation.
+/// The text shown for a failed calculation that is not a division by zero
+/// (overflow, or any other non-finite result).
 pub const ERROR_TEXT: &str = "Error";
+
+/// The text shown specifically for a division by zero. Confirmed on the Mac
+/// (macOS 26.2, 2026-09-29, `tests/behavior/calculator/divide-by-zero.json`):
+/// `5 ÷ 0 =` shows `Undefined`, not `Error`.
+pub const UNDEFINED_TEXT: &str = "Undefined";
+
+/// Why `Operator::apply` failed, so the caller can pick between
+/// [`ERROR_TEXT`] and [`UNDEFINED_TEXT`].
+enum ApplyError {
+    DivideByZero,
+    Overflow,
+}
 
 /// One completed calculation, newest kept at the end. The history tape (the
 /// sidebar button, CALC-01/CALC-03) shows these newest-first and lets the
@@ -59,15 +98,21 @@ impl Operator {
         }
     }
 
-    fn apply(self, left: f64, right: f64) -> Option<f64> {
+    fn apply(self, left: f64, right: f64) -> Result<f64, ApplyError> {
+        if matches!(self, Self::Divide) && right == 0.0 {
+            return Err(ApplyError::DivideByZero);
+        }
         let value = match self {
             Self::Add => left + right,
             Self::Subtract => left - right,
             Self::Multiply => left * right,
-            Self::Divide if right == 0.0 => return None,
             Self::Divide => left / right,
         };
-        value.is_finite().then_some(value)
+        if value.is_finite() {
+            Ok(value)
+        } else {
+            Err(ApplyError::Overflow)
+        }
     }
 }
 
@@ -119,6 +164,19 @@ pub struct Calculator {
     /// The operation `=` repeats.
     last: Option<(Operator, f64)>,
     error: bool,
+    /// The failed calculation was specifically a division by zero, so
+    /// `display()` shows [`UNDEFINED_TEXT`] rather than [`ERROR_TEXT`].
+    undefined: bool,
+    /// The current entry/value is shown wrapped in parens (`"(-5)"`) because
+    /// `±` just made it negative. Cleared by every other action, so it only
+    /// ever marks the operand `±` most recently touched — see the module
+    /// doc comment.
+    negated: bool,
+    /// Set by `%`: the literal formula text to show for the current operand
+    /// (`"10%"`) instead of its resolved numeric value, until something
+    /// else changes the entry. The resolved value still lives in `value`/
+    /// `entry` for arithmetic; this only overrides the display.
+    percent_suffix: Option<String>,
     /// The secondary line above the result, such as `3.66+3.59`.
     expression: String,
     /// Every calculation `=` has completed, newest last. Survives `AC` and
@@ -145,14 +203,45 @@ impl Calculator {
         }
     }
 
-    /// The main display text, grouped and rounded for display.
+    /// The main display text: the whole pending formula while an operator
+    /// is active (`"12+"`, `"200-10%"`), or the plain current entry/value
+    /// once nothing is pending. See the module doc comment.
     pub fn display(&self) -> String {
         if self.error {
-            return ERROR_TEXT.to_owned();
+            let text = if self.undefined {
+                UNDEFINED_TEXT
+            } else {
+                ERROR_TEXT
+            };
+            return text.to_owned();
         }
-        match &self.entry {
+        match self.accumulator.zip(self.pending) {
+            Some((left, operator)) => {
+                let mut text = format!("{}{}", format_value(left), operator.symbol());
+                if self.operand_ready {
+                    text.push_str(&self.operand_text());
+                }
+                text
+            }
+            None => self.operand_text(),
+        }
+    }
+
+    /// The current operand's display text: a literal `%` suffix if one was
+    /// just typed, parens around a value `±` just negated, or the plain
+    /// formatted entry/value otherwise.
+    fn operand_text(&self) -> String {
+        if let Some(suffix) = &self.percent_suffix {
+            return suffix.clone();
+        }
+        let text = match &self.entry {
             Some(entry) => format_entry(entry),
             None => format_value(self.value),
+        };
+        if self.negated && text.starts_with('-') {
+            format!("({text})")
+        } else {
+            text
         }
     }
 
@@ -176,8 +265,12 @@ impl Calculator {
         }
     }
 
+    /// `C` whenever there is anything to abandon — a typed entry, or a
+    /// pending operator even with nothing typed for the right operand yet.
+    /// `AC` only once the calculator is fully idle. Confirmed on the Mac:
+    /// see the module doc comment's `clear-during-entry` note.
     pub fn clear_label(&self) -> ClearLabel {
-        if self.entry_active && !self.error {
+        if !self.error && (self.entry_active || self.pending.is_some()) {
             ClearLabel::Clear
         } else {
             ClearLabel::AllClear
@@ -189,9 +282,11 @@ impl Calculator {
     }
 
     /// The value ⌘C puts on the clipboard: the display without grouping
-    /// separators, so it pastes cleanly into other apps.
+    /// separators or the `±` parens, so it pastes cleanly into other apps
+    /// (and back into this calculator: `paste`'s `parse_number` does not
+    /// accept parens).
     pub fn copy_text(&self) -> String {
-        self.display().replace(',', "")
+        self.display().replace(',', "").replace(['(', ')'], "")
     }
 
     /// Paste a number as the current entry. Returns false and changes nothing
@@ -210,6 +305,8 @@ impl Calculator {
         self.entry = None;
         self.operand_ready = true;
         self.entry_active = true;
+        self.negated = false;
+        self.percent_suffix = None;
         self.update_expression();
         true
     }
@@ -229,10 +326,11 @@ impl Calculator {
         }
     }
 
-    fn fail(&mut self) {
+    fn fail(&mut self, undefined: bool) {
         let history = std::mem::take(&mut self.history);
         *self = Self {
             error: true,
+            undefined,
             history,
             ..Self::default()
         };
@@ -251,6 +349,8 @@ impl Calculator {
     }
 
     fn digit(&mut self, digit: u8) {
+        self.negated = false;
+        self.percent_suffix = None;
         let digit = char::from(b'0' + digit.min(9));
         match self.entry.as_mut() {
             Some(entry) if !self.error => {
@@ -269,6 +369,8 @@ impl Calculator {
     }
 
     fn decimal(&mut self) {
+        self.negated = false;
+        self.percent_suffix = None;
         match self.entry.as_mut() {
             Some(entry) if !self.error => {
                 if !entry.contains('.') && entry_digits(entry) < MAX_DIGITS {
@@ -284,15 +386,17 @@ impl Calculator {
         if self.error {
             return;
         }
+        self.negated = false;
+        self.percent_suffix = None;
         if let (Some(left), Some(pending), true) =
             (self.accumulator, self.pending, self.operand_ready)
         {
             match pending.apply(left, self.current()) {
-                Some(value) => {
+                Ok(value) => {
                     self.value = value;
                     self.entry = None;
                 }
-                None => return self.fail(),
+                Err(reason) => return self.fail(matches!(reason, ApplyError::DivideByZero)),
             }
         }
         self.commit_entry();
@@ -308,6 +412,8 @@ impl Calculator {
         if self.error {
             return;
         }
+        self.negated = false;
+        self.percent_suffix = None;
         let (left, operator, right) = match (self.pending, self.accumulator, self.last) {
             (Some(operator), Some(left), _) => {
                 let right = if self.operand_ready {
@@ -324,8 +430,9 @@ impl Calculator {
                 return;
             }
         };
-        let Some(value) = operator.apply(left, right) else {
-            return self.fail();
+        let value = match operator.apply(left, right) {
+            Ok(value) => value,
+            Err(reason) => return self.fail(matches!(reason, ApplyError::DivideByZero)),
         };
         self.expression = format!(
             "{}{}{}",
@@ -350,7 +457,13 @@ impl Calculator {
         if self.error {
             return;
         }
+        self.negated = false;
         let current = self.current();
+        // The formula display keeps the operand as literally typed, plus a
+        // `%` (`"10%"`), not the resolved share — confirmed on the Mac
+        // (module doc comment, `percent-chain.json`). Captured before the
+        // entry is cleared below.
+        let operand_text = self.operand_text();
         let value = match (self.pending, self.accumulator) {
             (Some(Operator::Add | Operator::Subtract), Some(left)) => left * current / 100.0,
             _ => current / 100.0,
@@ -359,6 +472,7 @@ impl Calculator {
         self.entry = None;
         self.operand_ready = true;
         self.entry_active = true;
+        self.percent_suffix = Some(format!("{operand_text}%"));
         self.update_expression();
     }
 
@@ -366,6 +480,7 @@ impl Calculator {
         if self.error {
             return;
         }
+        self.percent_suffix = None;
         if let Some(entry) = self.entry.as_mut() {
             match entry.strip_prefix('-') {
                 Some(unsigned) => *entry = unsigned.to_owned(),
@@ -379,6 +494,10 @@ impl Calculator {
             self.operand_ready = true;
             self.entry_active = true;
         }
+        // Marks the operand as freshly toggled, so `operand_text()` wraps
+        // it in parens while it is still negative. See the module doc
+        // comment.
+        self.negated = true;
         self.update_expression();
     }
 
@@ -394,6 +513,8 @@ impl Calculator {
         self.value = 0.0;
         self.operand_ready = false;
         self.entry_active = false;
+        self.negated = false;
+        self.percent_suffix = None;
         self.update_expression();
     }
 
@@ -409,6 +530,7 @@ impl Calculator {
         if self.error {
             return self.all_clear();
         }
+        self.percent_suffix = None;
         let Some(entry) = self.entry.as_mut() else {
             return;
         };
@@ -652,7 +774,9 @@ mod tests {
     #[test]
     fn operators_evaluate_immediately_without_precedence() {
         let calculator = run("2+3*");
-        assert_eq!(calculator.display(), "5");
+        // Formula-first: the display shows the folded accumulator (5) and
+        // the newly pending operator, not just the number.
+        assert_eq!(calculator.display(), "5×");
         assert_eq!(calculator.highlighted_operator(), Some(Multiply));
         assert_eq!(shows("2+3*4="), "20");
         assert_eq!(shows("10-2-3="), "5");
@@ -662,7 +786,7 @@ mod tests {
     fn pressing_another_operator_replaces_the_pending_one() {
         let calculator = run("5+*");
         assert_eq!(calculator.highlighted_operator(), Some(Multiply));
-        assert_eq!(calculator.display(), "5");
+        assert_eq!(calculator.display(), "5×");
         assert_eq!(shows("5+*2="), "10");
         assert_eq!(shows("5+-*/2="), "2.5");
     }
@@ -735,24 +859,45 @@ mod tests {
         assert_eq!(calculator.display(), "0");
         assert_eq!(calculator.clear_label(), ClearLabel::AllClear);
         assert_eq!(run("2+3=").clear_label(), ClearLabel::AllClear);
-        assert_eq!(run("2+").clear_label(), ClearLabel::AllClear);
+        // Confirmed on the Mac (`clear-during-entry.json`): once an
+        // operator is pending, the clear key reads `C`, even with nothing
+        // typed for the right operand yet.
+        assert_eq!(run("2+").clear_label(), ClearLabel::Clear);
     }
 
     #[test]
     fn c_clears_only_the_entry_and_keeps_the_pending_operation() {
         let mut calculator = run("5+3");
         calculator.press(Clear);
-        assert_eq!(calculator.display(), "0");
+        // The formula stays on the display — see the module doc comment.
+        assert_eq!(calculator.display(), "5+");
         assert_eq!(calculator.highlighted_operator(), Some(Add));
-        assert_eq!(calculator.clear_label(), ClearLabel::AllClear);
+        // The operator is still pending, so the key still reads `C`.
+        assert_eq!(calculator.clear_label(), ClearLabel::Clear);
         calculator.press(Digit(2));
         calculator.press(Equals);
         assert_eq!(calculator.display(), "7");
     }
 
     #[test]
-    fn ac_clears_everything() {
+    fn clear_never_discards_a_pending_operator_on_its_own() {
+        // Confirmed on the Mac (`clear-during-entry.json`): with an
+        // operator pending, `C` only ever clears the entry, however many
+        // times it is pressed. The calculation is abandoned only by
+        // completing it with `=`, never by `C` alone.
         let mut calculator = run("5+3c");
+        calculator.press(Clear);
+        assert_eq!(calculator.highlighted_operator(), Some(Add));
+        assert_eq!(calculator.display(), "5+");
+        calculator.press(Digit(4));
+        calculator.press(Equals);
+        assert_eq!(calculator.display(), "9");
+    }
+
+    #[test]
+    fn ac_clears_everything_once_idle() {
+        let mut calculator = run("2+3=");
+        assert_eq!(calculator.clear_label(), ClearLabel::AllClear);
         calculator.press(Clear);
         assert_eq!(calculator.highlighted_operator(), None);
         assert_eq!(calculator.expression(), "");
@@ -760,65 +905,77 @@ mod tests {
         calculator.press(Equals);
         assert_eq!(calculator.display(), "4");
         // The repeat operation is gone too.
-        let mut calculator = run("2+3=cc");
+        let mut calculator = run("2+3=c");
         calculator.press(Equals);
         assert_eq!(calculator.display(), "0");
     }
 
     #[test]
     fn toggle_sign() {
-        assert_eq!(shows("5n"), "-5");
+        // ± wraps the operand it just negated in parens, matching
+        // `crate::scientific` — see the module doc comment. Typing a digit
+        // moves past that momentary state, so `n5` (toggle, then type)
+        // settles back to a plain `-5`.
+        assert_eq!(shows("5n"), "(-5)");
         assert_eq!(shows("5nn"), "5");
-        assert_eq!(shows("n"), "-0");
+        assert_eq!(shows("n"), "(-0)");
         assert_eq!(shows("n5"), "-5");
-        assert_eq!(shows("2+3=n"), "-5");
+        assert_eq!(shows("2+3=n"), "(-5)");
         assert_eq!(shows("9-n3="), "12");
-        assert_eq!(shows("1.5n"), "-1.5");
+        assert_eq!(shows("1.5n"), "(-1.5)");
     }
 
     #[test]
     fn toggle_sign_after_an_operator_starts_a_negative_operand() {
         let calculator = run("7*n");
-        assert_eq!(calculator.display(), "-0");
+        assert_eq!(calculator.display(), "7×(-0)");
         assert_eq!(calculator.highlighted_operator(), None);
         assert_eq!(shows("7*n2="), "-14");
     }
 
     #[test]
     fn percent_of_a_plain_number_divides_by_one_hundred() {
-        assert_eq!(shows("50%"), "0.5");
-        assert_eq!(shows("5%%"), "0.0005");
+        // The formula display keeps the literal `%` (confirmed on the Mac,
+        // `percent-chain.json`); the resolved share still drives later
+        // arithmetic (`percent_with_add_or_subtract_takes_a_share_of_the_first_operand`
+        // checks that through `=`).
+        assert_eq!(shows("50%"), "50%");
+        assert_eq!(shows("5%%"), "5%%");
     }
 
     #[test]
     fn percent_with_add_or_subtract_takes_a_share_of_the_first_operand() {
-        assert_eq!(shows("50+10%"), "5");
+        assert_eq!(shows("50+10%"), "50+10%");
         assert_eq!(shows("50+10%="), "55");
         assert_eq!(shows("200-15%="), "170");
-        assert_eq!(shows("50+%"), "25");
+        assert_eq!(shows("50+%"), "50+50%");
     }
 
     #[test]
     fn percent_with_multiply_or_divide_divides_by_one_hundred() {
-        assert_eq!(shows("200*10%"), "0.1");
+        assert_eq!(shows("200*10%"), "200×10%");
         assert_eq!(shows("200*10%="), "20");
         assert_eq!(shows("50/50%="), "100");
     }
 
     #[test]
-    fn divide_by_zero_shows_error() {
+    fn divide_by_zero_shows_undefined() {
+        // Confirmed on the Mac (macOS 26.2, 2026-09-29,
+        // `tests/behavior/calculator/divide-by-zero.json`): a division by
+        // zero reads `Undefined`, distinct from the generic `Error` an
+        // overflow shows (`overflow_is_an_error`).
         let calculator = run("5/0=");
-        assert_eq!(calculator.display(), "Error");
+        assert_eq!(calculator.display(), "Undefined");
         assert!(calculator.is_error());
         assert_eq!(calculator.clear_label(), ClearLabel::AllClear);
         assert_eq!(calculator.highlighted_operator(), None);
-        assert_eq!(shows("0/0="), "Error");
-        assert_eq!(shows("5/0+"), "Error");
+        assert_eq!(shows("0/0="), "Undefined");
+        assert_eq!(shows("5/0+"), "Undefined");
     }
 
     #[test]
     fn error_ignores_operators_and_a_digit_starts_over() {
-        assert_eq!(shows("5/0=+="), "Error");
+        assert_eq!(shows("5/0=+="), "Undefined");
         assert_eq!(shows("5/0=7"), "7");
         assert_eq!(shows("5/0=7+1="), "8");
         assert_eq!(shows("5/0=c"), "0");
@@ -840,7 +997,9 @@ mod tests {
     fn backspace_leaves_a_result_alone() {
         assert_eq!(shows("2+3=b"), "5");
         let calculator = run("2+b");
-        assert_eq!(calculator.display(), "2");
+        // Backspace with nothing typed for the operand is a no-op; the
+        // pending formula stays on the display.
+        assert_eq!(calculator.display(), "2+");
         assert_eq!(calculator.highlighted_operator(), Some(Add));
     }
 
@@ -850,7 +1009,7 @@ mod tests {
         assert_eq!(shows("123456789*1000="), "1.2345679e11");
         assert_eq!(shows("999999999*999999999="), "1e18");
         assert_eq!(shows("987654321*987654321="), "9.7546106e17");
-        assert_eq!(shows("123456789*-"), "123,456,789");
+        assert_eq!(shows("123456789*-"), "123,456,789−");
         assert_eq!(shows("99999999*9="), "899,999,991");
     }
 

@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "calculator/backspace-key",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "one_digit_removed": {
+      "display": {
+        "value": "12"
+      }
+    },
+    "back_to_zero": {
+      "display": {
+        "value": "0"
+      }
+    }
+  }
+}

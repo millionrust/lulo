@@ -1,0 +1,23 @@
+{
+  "format": 1,
+  "scenario": "desktop/new-folder-named",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "named": {
+      "focus": {
+        "role": "group",
+        "value": null,
+        "selection": null,
+        "selected_text": null,
+        "selected_all": null,
+        "label": "desktop"
+      },
+      "files": {
+        "entries": [
+          "Scratch/"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "calculator/second-key-function",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "e_to_the_2": {
+      "display": {
+        "value": "7.3890561"
+      }
+    },
+    "two_to_the_3": {
+      "display": {
+        "value": "9"
+      }
+    }
+  }
+}

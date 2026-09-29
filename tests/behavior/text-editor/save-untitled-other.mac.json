@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "text-editor/save-untitled-other",
+  "platform": "Task contract (no Mac recording)",
+  "observations": {
+    "portal": {"dialog": {"present": true}}
+  }
+}

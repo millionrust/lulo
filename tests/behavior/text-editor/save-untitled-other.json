@@ -1,0 +1,13 @@
+{
+  "title": "Where ▸ Other… opens the isolated file chooser portal",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {"key": "cmd-s", "settle": 1.2},
+    {"select": "Documents", "settle": 0.5},
+    {"select": "Other…", "settle": 1.5},
+    {"wait": 4},
+    {"observe": "portal", "facts": ["dialog"]}
+  ],
+  "tolerance": {"portal.dialog.title": "ignore", "portal.dialog.buttons": "ignore", "portal.dialog.texts": "ignore"}
+}

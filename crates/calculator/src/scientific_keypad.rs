@@ -192,9 +192,12 @@ pub fn key_face(key: Key, second: bool, angle: AngleMode) -> KeyFace {
         Key::Operator(BinaryOp::Subtract) => KeyFace::Glyph("icons/calculator/minus.svg"),
         Key::Operator(BinaryOp::Multiply) => KeyFace::Glyph("icons/calculator/multiply.svg"),
         Key::Operator(BinaryOp::Divide) => KeyFace::Glyph("icons/calculator/divide.svg"),
-        // Never placed on the keypad directly (Power/YRoot keys are used
-        // instead), kept only so this match stays exhaustive over `BinaryOp`.
-        Key::Operator(BinaryOp::Power | BinaryOp::Root | BinaryOp::LogBase) => KeyFace::Text("xʸ"),
+        // Never placed on the keypad directly (Power/YRoot/ExpOrYPower keys
+        // are used instead), kept only so this match stays exhaustive over
+        // `BinaryOp`.
+        Key::Operator(BinaryOp::Power | BinaryOp::YPower | BinaryOp::Root | BinaryOp::LogBase) => {
+            KeyFace::Text("xʸ")
+        }
         Key::Second => KeyFace::Text("2nd"),
         Key::Square => KeyFace::Text("x²"),
         Key::Cube => KeyFace::Text("x³"),
@@ -259,7 +262,9 @@ pub fn key_name(key: Key) -> &'static str {
         Key::Operator(BinaryOp::Subtract) => "subtract",
         Key::Operator(BinaryOp::Multiply) => "multiply",
         Key::Operator(BinaryOp::Divide) => "divide",
-        Key::Operator(BinaryOp::Power | BinaryOp::Root | BinaryOp::LogBase) => "operator",
+        Key::Operator(BinaryOp::Power | BinaryOp::YPower | BinaryOp::Root | BinaryOp::LogBase) => {
+            "operator"
+        }
         Key::Second => "second",
         Key::Square => "square",
         Key::Cube => "cube",

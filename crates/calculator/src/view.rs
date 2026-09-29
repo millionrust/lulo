@@ -746,9 +746,10 @@ impl CalculatorView {
     }
 }
 
-/// Replace a plain exponent's Unicode superscript digit with its ASCII
-/// equivalent, for the accessible text only (the visible glyph keeps the
-/// real superscript). Measured on the Mac (macOS 26.2, 2026-09-25,
+/// Replace a plain exponent's Unicode superscript digit, and a typeset
+/// minus sign used as the subtract operator, with their ASCII equivalents,
+/// for the accessible text only (the visible glyphs keep the real
+/// superscript and minus). Measured on the Mac (macOS 26.2, 2026-09-25,
 /// `tests/behavior/calculator/scientific.json`): Scientific's `x²` shows a
 /// raised "2" on screen, but AX reads the display's value as the plain
 /// digits "22", not "2²" — Calculator's exponent is a baseline-offset
@@ -762,11 +763,20 @@ impl CalculatorView {
 /// (`"sin⁻¹({d})"` and friends), which is not an exponent and has no
 /// capture saying it should flatten too; every other superscript glyph
 /// (`ʸ`, `ᵧ`, …) is left alone for the same reason.
+///
+/// Also measured (macOS 26.2, 2026-09-29,
+/// `tests/behavior/calculator/percent-chain.json`): Basic's formula display
+/// draws the subtract operator as a typeset minus (`−`, U+2212, what
+/// `Operator::symbol`/`BinaryOp::symbol` return for on-screen rendering),
+/// but AX reads it back as a plain ASCII hyphen-minus (`-`), same as a
+/// negative number's sign. Only `−` is flattened here — `×`/`÷` have no
+/// bare-ASCII equivalent and are unmeasured.
 fn flatten_superscript_digits(text: &str) -> String {
     text.chars()
         .map(|c| match c {
             '²' => '2',
             '³' => '3',
+            '−' => '-',
             other => other,
         })
         .collect()

@@ -66,9 +66,17 @@ pub enum BinaryOp {
     Subtract,
     Multiply,
     Divide,
-    /// `xʸ` (and `2nd`'s `yˣ`, which uses the same maths): the left operand
-    /// raised to the right.
+    /// `xʸ`: the left operand (already on the display) raised to the right
+    /// (typed after the key).
     Power,
+    /// `2nd`'s `yˣ`. Confirmed on the Mac (macOS 26.2, 2026-09-29,
+    /// `tests/behavior/calculator/second-key-function.mac.json` and a
+    /// direct re-check with the operands swapped): unlike `xʸ`, `yˣ` raises
+    /// the *second* typed number to the *first* — `2 yˣ 3 =` reads as "y to
+    /// the x" with `x` already on the display (2) and `y` typed next (3),
+    /// giving `3² = 9`, not `2³ = 8`. This was assumed to share `Power`'s
+    /// maths before being checked live; it does not.
+    YPower,
     /// `ʸ√x`: the right-operand-th root of the left.
     Root,
     /// `2nd`'s `logᵧ`: log base *right* of *left*.
@@ -82,19 +90,19 @@ impl BinaryOp {
             Self::Subtract => "−",
             Self::Multiply => "×",
             Self::Divide => "÷",
-            Self::Power => "^",
+            Self::Power | Self::YPower => "^",
             Self::Root => "ʸ√",
             Self::LogBase => "logᵧ",
         }
     }
 
     /// Higher binds tighter. `Add`/`Subtract` < `Multiply`/`Divide` <
-    /// `Power`/`Root`/`LogBase`, all left-associative.
+    /// `Power`/`YPower`/`Root`/`LogBase`, all left-associative.
     fn precedence(self) -> u8 {
         match self {
             Self::Add | Self::Subtract => 1,
             Self::Multiply | Self::Divide => 2,
-            Self::Power | Self::Root | Self::LogBase => 3,
+            Self::Power | Self::YPower | Self::Root | Self::LogBase => 3,
         }
     }
 
@@ -106,6 +114,9 @@ impl BinaryOp {
             Self::Divide if right == 0.0 => return None,
             Self::Divide => left / right,
             Self::Power => left.powf(right),
+            // See the `YPower` doc comment: the operands are swapped
+            // relative to `Power`.
+            Self::YPower => right.powf(left),
             Self::Root if right == 0.0 => return None,
             Self::Root if left < 0.0 => {
                 // An odd-integer root of a negative number is real (e.g.
@@ -235,6 +246,13 @@ pub struct ScientificCalculator {
     /// bare typed number followed by `=`, which the Mac treats as a no-op
     /// (`ac.equals_alone_does_nothing` in `engine.rs`'s Basic tests).
     has_operation: bool,
+    /// The current entry/value is shown wrapped in parens (`"(-5)"`)
+    /// because `±` just made it negative. Cleared by every other action.
+    /// Confirmed on the Mac (macOS 26.2, 2026-09-29,
+    /// `tests/behavior/calculator/plus-minus.json`,
+    /// `.../plus-minus-after-result.json`): mirrors `engine::Calculator`'s
+    /// `negated` — see that module's doc comment.
+    negated: bool,
     history: Vec<HistoryEntry>,
 }
 
@@ -301,7 +319,7 @@ impl ScientificCalculator {
             Key::Factorial => self.apply_fn(|d| format!("{d}!"), factorial),
             Key::ExpOrYPower => {
                 if self.second {
-                    self.push_operator(BinaryOp::Power);
+                    self.push_operator(BinaryOp::YPower);
                 } else {
                     self.apply_fn(|d| format!("eˣ({d})"), |v| Some(v.exp()));
                 }
@@ -340,17 +358,34 @@ impl ScientificCalculator {
     /// being typed. Falls back to the resting value when nothing is pending
     /// — the Mac's own behaviour, confirmed live (`display()` shows
     /// `"2+3×"`, `"2²"` or `"(1÷5)"` before `=`, not a computed number).
+    /// A value `±` just negated is wrapped in its own parens on top of
+    /// that (`"(-5)"`), confirmed on the Mac
+    /// (`tests/behavior/calculator/plus-minus.json`,
+    /// `.../plus-minus-after-result.json`) — see the `negated` field.
     pub fn display(&self) -> String {
         if self.error {
             return ERROR_TEXT.to_owned();
         }
         let mut text = terms_display(&self.terms);
         match &self.entry {
-            Some(entry) => text.push_str(&format_scientific_entry(entry)),
-            None if self.terms.is_empty() => return format_value(self.value),
+            Some(entry) => {
+                text.push_str(&self.negated_operand_text(&format_scientific_entry(entry)))
+            }
+            None if self.terms.is_empty() => {
+                return self.negated_operand_text(&format_value(self.value))
+            }
             None => {}
         }
         text
+    }
+
+    /// Wrap `operand` in parens when `±` just made it negative.
+    fn negated_operand_text(&self, operand: &str) -> String {
+        if self.negated && operand.starts_with('-') {
+            format!("({operand})")
+        } else {
+            operand.to_owned()
+        }
     }
 
     /// The secondary expression line above the result. Empty when idle.
@@ -402,9 +437,10 @@ impl ScientificCalculator {
         &self.history
     }
 
-    /// The value ⌘C puts on the clipboard.
+    /// The value ⌘C puts on the clipboard, without the `±` parens (`paste`'s
+    /// `parse_number` does not accept them).
     pub fn copy_text(&self) -> String {
-        self.display().replace(',', "")
+        self.display().replace(',', "").replace(['(', ')'], "")
     }
 
     /// Paste a number as a fresh operand, or load a history result back in.
@@ -462,6 +498,7 @@ impl ScientificCalculator {
     }
 
     fn digit(&mut self, digit: u8) {
+        self.negated = false;
         let digit = char::from(b'0' + digit.min(9));
         match self.entry.as_mut() {
             Some(entry) if !self.error => {
@@ -489,6 +526,7 @@ impl ScientificCalculator {
     }
 
     fn decimal(&mut self) {
+        self.negated = false;
         match self.entry.as_mut() {
             Some(entry) if !self.error => {
                 if !entry.contains('e') && !entry.contains('.') && entry_digits(entry) < MAX_DIGITS
@@ -527,6 +565,7 @@ impl ScientificCalculator {
         if self.error {
             self.all_clear();
         }
+        self.negated = false;
         self.entry = None;
         if matches!(self.terms.last(), Some(Term::Value { .. })) {
             self.terms.pop();
@@ -601,6 +640,7 @@ impl ScientificCalculator {
         if self.error {
             return;
         }
+        self.negated = false;
         if let Some(entry) = self.entry.take() {
             self.terms.push(Term::Value {
                 value: parse_current_entry(&entry),
@@ -628,6 +668,7 @@ impl ScientificCalculator {
         if self.error {
             return;
         }
+        self.negated = false;
         if let Some(entry) = self.entry.take() {
             self.terms.push(Term::Value {
                 value: parse_current_entry(&entry),
@@ -723,6 +764,7 @@ impl ScientificCalculator {
         if self.error {
             return;
         }
+        self.negated = false;
         let current = self.current();
         let scale = match self.terms.last() {
             Some(Term::Op(BinaryOp::Add | BinaryOp::Subtract)) => {
@@ -780,6 +822,9 @@ impl ScientificCalculator {
             self.operand_ready = true;
             self.entry_active = true;
         }
+        // Marks the operand as freshly toggled, so `display()` wraps it in
+        // parens while it is still negative. See the `negated` field.
+        self.negated = true;
     }
 
     fn clear(&mut self) {
@@ -798,6 +843,7 @@ impl ScientificCalculator {
         self.value = 0.0;
         self.operand_ready = false;
         self.entry_active = false;
+        self.negated = false;
     }
 
     fn all_clear(&mut self) {
@@ -1294,11 +1340,22 @@ mod tests {
         calculator.press(Equals);
         assert_eq!(calculator.display(), "1");
 
+        // yˣ swaps its operands relative to xʸ (see the `BinaryOp::YPower`
+        // doc comment): `3 yˣ 2` is `2³`, not `3²`.
         let mut calculator = calc();
         press_digits(&mut calculator, "3");
         calculator.press(Second);
         calculator.press(Key::ExpOrYPower);
         press_digits(&mut calculator, "2");
+        calculator.press(Equals);
+        assert_eq!(calculator.display(), "8");
+
+        // The scenario actually recorded on the Mac: `2 yˣ 3` is `3² = 9`.
+        let mut calculator = calc();
+        press_digits(&mut calculator, "2");
+        calculator.press(Second);
+        calculator.press(Key::ExpOrYPower);
+        press_digits(&mut calculator, "3");
         calculator.press(Equals);
         assert_eq!(calculator.display(), "9");
 

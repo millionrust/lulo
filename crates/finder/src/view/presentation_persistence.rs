@@ -221,6 +221,13 @@ impl FinderView {
         } else {
             None
         };
+        if mode == ViewMode::Column && self.view != ViewMode::Column {
+            self.col_stack = vec![self.cwd.clone()];
+            self.column_selection = self.selected_entry().cloned();
+            if let Some(entry) = self.column_selection.as_ref().filter(|entry| entry.is_dir) {
+                self.col_stack.push(entry.path.clone());
+            }
+        }
         if self.view != mode && !self.trash_view && !self.applications_view {
             self.view = mode;
             if self.search_summary.is_none() {
@@ -239,6 +246,7 @@ impl FinderView {
                 }
             }
         }
+        self.view = mode;
         self.select_first_for_gallery(cx);
         self.operation_error = None;
         self.persist_finder_state();

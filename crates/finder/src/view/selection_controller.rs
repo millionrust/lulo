@@ -1,6 +1,14 @@
 use super::*;
 
 impl FinderView {
+    /// The moving end of a keyboard range; `anchor` remains its fixed end.
+    pub(super) fn selection_lead(&self) -> Option<usize> {
+        let anchor = self.anchor?;
+        let first = self.selected.first().copied().unwrap_or(anchor);
+        let last = self.selected.last().copied().unwrap_or(anchor);
+        Some(if first < anchor { first } else { last })
+    }
+
     pub(super) fn select_single(&mut self, index: usize) {
         self.column_selection = None;
         self.selected.clear();

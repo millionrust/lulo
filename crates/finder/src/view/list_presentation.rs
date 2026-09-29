@@ -50,6 +50,7 @@ impl FinderView {
         &self,
         window_active: bool,
         window_height: f32,
+        content_width: f32,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         // Recursive content matches may not contain the query in their names.
@@ -248,7 +249,16 @@ impl FinderView {
             .collect::<Vec<_>>();
         let navigation_indices = visible_indices.clone();
         let horizontal_navigation = matches!(self.view, ViewMode::Icon | ViewMode::Gallery);
-        let icon_columns = if show_icons { self.icon_columns() } else { 1 };
+        // Scroll bounds still describe the previous view on the frame that
+        // handles ⌘1. Use the current layout width for keyboard grid moves.
+        let icon_columns = if show_icons {
+            let (cell_width, _) = self.icon_cell();
+            ((content_width - ICON_GRID_LEFT) / cell_width)
+                .floor()
+                .max(1.0) as usize
+        } else {
+            1
+        };
 
         // Icon-grid tiles. Gallery owns a distinct preview + filmstrip tree.
         let mut tiles: Vec<gpui::AnyElement> = Vec::new();
@@ -323,25 +333,6 @@ impl FinderView {
                             primary_text()
                         })
                         .child(e.name.clone())
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
-                                if selected
-                                    && !this.trash_view
-                                    && !this.applications_view
-                                    && !ev.modifiers.platform
-                                    && !ev.modifiers.shift
-                                {
-                                    cx.stop_propagation();
-                                    this.rename_start(window, cx);
-                                }
-                            }),
-                        )
-                        .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
-                            if selected {
-                                cx.stop_propagation();
-                            }
-                        }))
                         .into_any_element(),
                 };
                 tiles.push(
@@ -717,18 +708,29 @@ impl FinderView {
                         _ => {}
                     }
                 }
-                let current = this.anchor.and_then(|anchor| {
-                    navigation_indices.iter().position(|index| *index == anchor)
+                let current_index = this.selection_lead();
+                let current = current_index.and_then(|index| {
+                    navigation_indices
+                        .iter()
+                        .position(|visible| *visible == index)
                 });
                 let last = navigation_indices.len().saturating_sub(1);
                 // Icon view moves by whole rows vertically, as in Finder.
                 let vertical_step = icon_columns.max(1);
                 let select_position = match ev.keystroke.key.as_str() {
+                    "down" if this.view == ViewMode::Gallery => None,
+                    "up" if this.view == ViewMode::Gallery => None,
                     "down" => Some(
                         current
-                            .map(|position| position + vertical_step)
-                            .unwrap_or(0)
-                            .min(last),
+                            .map(|position| {
+                                let below = position + vertical_step;
+                                if below <= last {
+                                    below
+                                } else {
+                                    position
+                                }
+                            })
+                            .unwrap_or(0),
                     ),
                     "right" if horizontal_navigation => {
                         Some(current.map(|position| position + 1).unwrap_or(0).min(last))
@@ -749,8 +751,15 @@ impl FinderView {
                 };
                 if let Some(position) = select_position {
                     if !navigation_indices.is_empty() {
-                        this.select_single(navigation_indices[position]);
-                        this.scroll_list_row_into_view(position);
+                        let index = navigation_indices[position];
+                        if ev.keystroke.modifiers.shift {
+                            this.handle_click(index, false, true);
+                        } else {
+                            this.select_single(index);
+                        }
+                        if this.view == ViewMode::List {
+                            this.scroll_list_row_into_view(position);
+                        }
                         cx.notify();
                     }
                 } else if let Some(text) = type_select_text(ev) {

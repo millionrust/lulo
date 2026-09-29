@@ -411,7 +411,17 @@ impl Render for FinderView {
                     })
                     .when(multi, |el| el.child(self.render_tabs(cx)))
                     .when(self.trash_view, |el| el.child(self.render_trash_bar(cx)))
-                    .child(self.render_list(window_active, window_height, cx)),
+                    .child(self.render_list(
+                        window_active,
+                        window_height,
+                        f32::from(window.bounds().size.width)
+                            - if layout.sidebar_visible {
+                                self.sidebar_width
+                            } else {
+                                0.0
+                            },
+                        cx,
+                    )),
             )
             .when_some(go_to_sheet, |el, sheet| el.child(sheet))
             .when_some(menu_at, |el, state| {

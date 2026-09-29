@@ -341,6 +341,7 @@ pub fn folder_images(path: &Path) -> Vec<PathBuf> {
 #[cfg(test)]
 mod print_tests {
     use super::*;
+    use image::GenericImageView as _;
 
     #[test]
     fn print_jpeg_preserves_rotation_and_bounds_dimensions() {

@@ -50,7 +50,9 @@ impl EditorView {
         });
         self.save_location = SaveLocation::Documents;
         self.alert = Some(ActiveAlert::ConfirmSave(then));
-        let _ = rmac_sound::play_alert();
+        if then.is_some() {
+            let _ = rmac_sound::play_alert();
+        }
         cx.notify();
     }
 

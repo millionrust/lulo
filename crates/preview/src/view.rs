@@ -735,21 +735,20 @@ impl PreviewView {
 
     // ---- print --------------------------------------------------------------
 
-    /// File ▸ Print… (⌘P) for a PDF: the document's own bytes go straight to
-    /// the print portal — nothing is re-rendered, so what prints matches
-    /// what's on screen exactly. Printing an image isn't implemented yet
-    /// (see `crate::pdfwriter` for the building block a later pass would use
-    /// to wrap one in a page first, the same way `Export as PDF…` would).
+    /// File ▸ Print… (⌘P): PDFs go to the print portal unchanged; images use
+    /// the currently displayed orientation/rotation in a bounded one-page
+    /// PDF. The portal still owns printer choice and its native print UI.
     #[cfg(target_os = "linux")]
     fn print_document(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.print_busy {
             return;
         }
         let Some(slot) = self.slot() else { return };
-        if slot.kind() != Some(Kind::Pdf) {
-            eprintln!("rmac-preview: printing an image isn't supported yet");
-            return;
-        }
+        let image = match slot.loaded().map(|loaded| &loaded.content) {
+            Some(Content::Image(image)) => Some((image.pixels.clone(), slot.rotation)),
+            Some(Content::Pdf(_)) => None,
+            None => return,
+        };
         let path = slot.path.clone();
         let title = slot.name.clone();
         let raw_window =
@@ -777,10 +776,18 @@ impl PreviewView {
         };
         self.print_busy = true;
         cx.spawn_in(window, async move |this, cx| {
-            let pdf = cx
-                .background_executor()
-                .spawn(async move { std::fs::read(&path) })
-                .await;
+            let pdf = if let Some((pixels, rotation)) = image {
+                cx.background_executor()
+                    .spawn(async move {
+                        let (jpeg, width, height) = render::encode_print_jpeg(&pixels, rotation)?;
+                        Ok::<_, String>(crate::pdfwriter::wrap_jpeg(&jpeg, width, height))
+                    })
+                    .await
+            } else {
+                cx.background_executor()
+                    .spawn(async move { std::fs::read(&path).map_err(|error| error.to_string()) })
+                    .await
+            };
             let outcome = match pdf {
                 Ok(pdf) => rmac_print_linux::print_prepared_document(
                     rmac_print_linux::PreparedPrintDocument { pdf, ..request },
@@ -788,7 +795,7 @@ impl PreviewView {
                 .await
                 .map_err(|error| error.to_string()),
                 Err(error) => Err(format!(
-                    "the document could not be read to print it: {error}"
+                    "the document could not be prepared to print: {error}"
                 )),
             };
             let _ = this.update_in(cx, |this, _, cx| {

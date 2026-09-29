@@ -136,6 +136,11 @@ def load_suite(path: Path = SUITE_PATH) -> dict[str, object]:
         document = json.loads(_read_regular(path))
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise ContractSuiteError("release-contract suite JSON is invalid") from error
+    if isinstance(document, dict) and any(
+        type(document.get(field)) is not int
+        for field in ("format", "minimum_free_gib", "timeout_seconds_per_stage")
+    ):
+        raise ContractSuiteError("release-contract numeric fields must be integers")
     expected = {
         "format": 1,
         "minimum_free_gib": 15,

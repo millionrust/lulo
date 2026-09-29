@@ -60,6 +60,23 @@ function run(argv) {
     };
   }
 
+  if (facts.indexOf("info") >= 0) {
+    var infoText = [];
+    if (focusedWin && baseline.indexOf(focusedKey) < 0) {
+      walk(focusedWin, 15, function (el) {
+        if (A(el, "AXRole") === "AXStaticText") {
+          var value = str(A(el, "AXValue")) || str(A(el, "AXTitle"));
+          if (value) infoText.push(value);
+        }
+      });
+    }
+    var infoJoined = infoText.join(" ");
+    out.info = {
+      size_bytes_present: /\b\d[\d,]*\s+bytes?\b/i.test(infoJoined),
+      item_count_present: /\b\d[\d,]*\s+items?\b/i.test(infoJoined)
+    };
+  }
+
   if (facts.indexOf("focus") >= 0) {
     var f = A(proc, "AXFocusedUIElement");
     if (f) {

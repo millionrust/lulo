@@ -8,9 +8,11 @@ then checks:
 
 - the folder sidebar and the note list are `list box`es of named `list
   item`s with exactly one selected, through the Selection interface;
-- New Note and New Folder expose names and Click actions; Checklist, Add
-  Photo… and Move Note… have names in the newly created note state; the
-  in-note Find controls expose Click actions and can be closed;
+- New Note, New Folder, Checklist, Add Photo…, Move Note…, More, View
+  Options, and the in-note Find controls expose names and Click actions when
+  enabled. Folder Actions is named and correctly disabled in the initial
+  All Notes state, where no folder is selected. More and View Options open
+  and close with AT-SPI Click and expose their expanded state;
 - Search, Title, Body and Tags are named `entry` nodes with a Text interface,
   and no unnamed entry is left over from the field's inner input;
 - grabbing focus on Title focuses it (AccessKit's Focus action) and its
@@ -136,8 +138,33 @@ body = fields_now("Body")
 body_text, body_caret, _ = support.text_of(body)
 assert 0 <= body_caret <= len(body_text)
 
+# ACC-08 acceptance gate: require stable native Click actions, including the
+# three controls whose actions were missing intermittently in prior live runs.
 for label in ("Checklist", "Add Photo…", "Move Note…"):
-    named_button(label)
+    named_clickable_button(label)
+
+# A named Click must actually open and close each controlled popover. The
+# trigger's expanded state gives a stable AT-SPI observation without choosing
+# a menu command that would mutate this disposable note.
+for label in ("More", "View Options"):
+    assert support.click(named_clickable_button(label)), f"{label} did not open"
+    support.wait_for(
+        lambda: "expanded" in support.states(named_button(label)),
+        f"{label} to expose its expanded state",
+    )
+    assert support.click(named_clickable_button(label)), f"{label} did not close"
+    support.wait_for(
+        lambda: "expanded" not in support.states(named_button(label)),
+        f"{label} to clear its expanded state",
+    )
+
+# Folder Actions is disabled while All Notes is selected, so require its name
+# and absence of the AT-SPI enabled/sensitive states.
+folder_actions = named_button("Folder Actions")
+assert "enabled" not in support.states(folder_actions), (
+    "Folder Actions is enabled without a selected folder"
+)
+assert "sensitive" not in support.states(folder_actions)
 named_clickable_button("New Folder")
 
 support.activate_menu("org.rmac.Notes.Menu", "notes::FindInNote")

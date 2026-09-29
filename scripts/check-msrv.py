@@ -13,9 +13,13 @@ so it is cheap enough to run on every PR.
 
 from __future__ import annotations
 
-import sys
-import tomllib
 from pathlib import Path
+import sys
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.9 on the Mac validation host
+    import tomli as tomllib
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 

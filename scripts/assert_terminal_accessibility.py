@@ -9,7 +9,8 @@ RMAC_TERMINAL_PROMPT (see scripts/linux/run-content-accessibility.sh). Checks:
 - its text holds the marker, one line per screen line;
 - the caret sits right after the prompt, at the live insertion point;
 - line navigation (TEXT_BOUNDARY_LINE_START) returns one line, not the
-  whole screen.
+  whole screen;
+- Find exposes a named, actionable Close button that dismisses the panel.
 """
 
 from __future__ import annotations
@@ -59,8 +60,23 @@ lines = text.count("\n") + 1
 assert lines > 2, f"expected one line per screen row, got {lines}"
 assert not selections, f"no selection was made, but AT-SPI reports {selections}"
 
+support.activate_menu("org.rmac.Terminal.Menu", "terminal::Find")
+
+
+def close_find_button():
+    app = support.find_app(APP)
+    buttons = support.nodes_with(app, "push button", "Close Find") if app else []
+    return buttons[0] if len(buttons) == 1 else None
+
+
+close_find = support.wait_for(close_find_button, "Terminal's named Close Find button")
+assert "click" in support.actions(close_find), "Close Find has no AT-SPI click action"
+assert support.click(close_find), "AT-SPI Close Find click returned false"
+support.wait_for(lambda: close_find_button() is None, "Find panel to close")
+
 print(
     "AT-SPI Terminal: "
     f"{len(text)} characters over {lines} lines, caret {caret} after the prompt, "
-    f"line navigation returns single lines, focused={'focused' in support.states(terminal)}"
+    f"line navigation returns single lines, focused={'focused' in support.states(terminal)}; "
+    "Close Find is actionable"
 )

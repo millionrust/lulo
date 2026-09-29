@@ -138,6 +138,8 @@
         "docs/dependency-policy.md",
         "docs/native-packaging.md",
         "docs/flatpak-packaging.md",
+        "packaging/flatpak/decisions.json",
+        "scripts/linux/verify-flatpak-package.py",
         "scripts/linux/verify-native-packages.py"
       ]
     },

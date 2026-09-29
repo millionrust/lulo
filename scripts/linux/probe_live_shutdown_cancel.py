@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Safely inspect the live top-bar Shut Down confirmation over AT-SPI.
+"""Safely inspect the live top-bar Shut Down menu row over AT-SPI.
 
-This probe may activate only the menu toggle, the "Shut Down…" menu row,
-and the confirmation's Cancel button. It never activates Confirm and contains
-no power, session, pointer, keyboard-injection, or service-mutation command.
+The filename is retained for existing invocations. Opening the confirmation
+starts a 60-second automatic shutdown countdown, so this probe stops at the
+menu row and never activates it. Only the menu toggle can be clicked.
 Run as the expected logged-in user over SSH or in that user's graphical shell.
 """
 from __future__ import annotations
@@ -172,9 +172,6 @@ class AtspiBackend:
         allowed = {
             ("push button", "menu"),
             ("button", "menu"),
-            ("menu item", "Shut Down…"),
-            ("push button", "Cancel"),
-            ("button", "Cancel"),
         }
         if identity not in allowed:
             raise ProbeError(f"refusing AT-SPI activation outside the safe allowlist: {identity!r}")
@@ -194,27 +191,12 @@ class AtspiBackend:
             time.sleep(POLL_SECONDS)
         raise ProbeError(f"timed out waiting for {label}")
 
-    def cancel_confirmation(self, timeout: float = 8.0) -> bool:
-        """Only activate Cancel when both confirmation buttons are present."""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if self.has_confirmation():
-                cancel = self.find("push button", "Cancel")
-                if cancel is not None:
-                    self.activate_click(cancel)
-                    self.wait(lambda: not self.has_confirmation(), "confirmation to close", 5.0)
-                    return True
-            time.sleep(POLL_SECONDS)
-        return False
-
 
 def run_probe(backend: AtspiBackend, report: Callable[[str], None] = print) -> None:
-    """Open the confirmation, report its presence, and always cancel it."""
+    """Check the live menu row without starting its auto-shutdown countdown."""
     if backend.has_confirmation() or backend.find("menu item", "Shut Down…") is not None:
         raise ProbeError("refusing: the system menu or confirmation was already open")
     menu_may_be_open = False
-    confirmation_may_be_open = False
-    cancelled = False
     try:
         logo = backend.wait(lambda: backend.find("push button", "menu"), "top-bar menu button")
         report("state: live top-bar menu button found")
@@ -222,27 +204,10 @@ def run_probe(backend: AtspiBackend, report: Callable[[str], None] = print) -> N
         backend.activate_click(logo)
         menu_item = backend.wait(lambda: backend.find("menu item", "Shut Down…"),
                                  "Shut Down… menu item")
-        report("state: system menu open; Shut Down… row found")
-        confirmation_may_be_open = True
-        backend.activate_click(menu_item)
-        backend.wait(backend.has_confirmation, "Shut Down confirmation with Cancel and Shut Down buttons")
-        report("state: confirmation visible; Confirm was not activated")
-        cancelled = backend.cancel_confirmation()
-        if not cancelled:
-            raise ProbeError("could not activate Cancel and verify the confirmation closed")
-        report("state: Cancel activated; confirmation closed; no power action requested")
-        menu_may_be_open = True  # Cancel returns to the system menu.
+        if menu_item is None:
+            raise ProbeError("Shut Down… row is unavailable")
+        report("state: system menu open; Shut Down… row found; confirmation not opened")
     finally:
-        if confirmation_may_be_open and not cancelled:
-            report("cleanup: attempting Cancel; Confirm remains forbidden")
-            try:
-                if backend.cancel_confirmation(timeout=12.0):
-                    cancelled = True
-                    report("cleanup: Cancel activated; confirmation closed")
-                elif backend.has_confirmation():
-                    report("cleanup: Cancel unavailable; confirmation may remain open")
-            except BaseException as error:  # noqa: BLE001
-                report(f"cleanup: Cancel attempt failed: {error}")
         try:
             confirmation_still_open = backend.has_confirmation()
         except BaseException as error:  # noqa: BLE001
@@ -260,7 +225,7 @@ def run_probe(backend: AtspiBackend, report: Callable[[str], None] = print) -> N
                         backend.wait(lambda: backend.find("menu item", "Shut Down…") is None,
                                      "system menu to close", 3.0)
                         report("cleanup: system menu closed")
-                elif cancelled:
+                else:
                     report("cleanup: system menu already closed")
             except BaseException as error:  # noqa: BLE001
                 report(f"cleanup: system menu may remain open: {error}")
@@ -283,7 +248,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"refused/failed safely: {error}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
-        print("interrupted; cleanup path attempted Cancel", file=sys.stderr)
+        print("interrupted; menu cleanup attempted", file=sys.stderr)
         return 130
     return 0
 

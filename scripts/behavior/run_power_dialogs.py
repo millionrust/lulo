@@ -19,8 +19,8 @@ a real pointer click on the bar's own logo grants niri's on-demand
 layer-shell surface real keyboard focus (an AT-SPI `doAction` never does
 that), for:
 
-  - Tab / Shift-Tab moving focus between a confirmation's buttons and its
-    "Reopen windows…" checkbox, wrapping at both ends
+  - Tab / Shift-Tab moving focus between a confirmation's buttons, wrapping
+    at both ends
     (`menu_model::confirmation_next_focus`);
   - Return always running the *default* button regardless of where Tab left
     the focus (`menu_model::confirmation_default_action`);
@@ -85,6 +85,26 @@ class Run:
         self.args = args
         self.env = dict(os.environ)
         run_lulo.refuse_live_session(self.env)
+        fake_systemctl = shutil.which("systemctl", path=self.env.get("PATH", ""))
+        fakebin = work / "fakebin"
+        expected_fake = fakebin / "systemctl"
+        expected_script = (
+            f'#!/bin/sh\necho "$@" >> "{work / "systemctl-calls.log"}"\nexit 0\n'
+        ).encode()
+        # resolve() on both paths makes a symlink to the host systemctl look
+        # like the expected fake. Compare the PATH entry lexically and refuse
+        # symlinks at either fakebin boundary before any scenario can run.
+        if (
+            fake_systemctl is None
+            or os.path.abspath(fake_systemctl) != os.path.abspath(expected_fake)
+            or fakebin.is_symlink()
+            or expected_fake.is_symlink()
+            or not expected_fake.is_file()
+            or not os.access(expected_fake, os.X_OK)
+            or expected_fake.stat().st_size != len(expected_script)
+            or expected_fake.read_bytes() != expected_script
+        ):
+            raise SystemExit("refusing power-dialog run: fake systemctl is not first on PATH")
         self.runtime = Path(self.env["XDG_RUNTIME_DIR"])
         self.out = work / "logs"
         self.out.mkdir(exist_ok=True)
@@ -334,6 +354,11 @@ class Run:
         button = self.find_button(label)
         return button is not None and self.click_node(button)
 
+    def click_menu_item(self, item_prefix: str) -> bool:
+        """Re-find and pointer-click the named menu row by its AT-SPI extents."""
+        item = self.find_menu_item(item_prefix)
+        return item is not None and self.click_node(item)
+
     def open_system_menu(self) -> bool:
         """A real click on the logo, granting the bar real keyboard focus
         the same way it opens the menu for a mouse user."""
@@ -397,8 +422,8 @@ class Run:
         self.check(f"{label}: opens its own confirmation from the Lulo menu",
                    self.retry_until(lambda: self.open_confirmation_via_menu(item_prefix),
                                     lambda: self.find_button(label)))
-        # Tab away from the default button (onto the "Reopen…" checkbox),
-        # then Shift-Tab back — Return must still run Shut Down/Restart/Log
+        # Tab away from the default button, then Shift-Tab back — Return
+        # must still run Shut Down/Restart/Log
         # Out however Tab left the ring, exactly like AppKit's Return.
         self.keys.key("tab")
         time.sleep(0.1)
@@ -424,6 +449,51 @@ class Run:
         self.check(f"{label}: confirmation accepts a pointer click", self.click_button(label))
         new_calls = self.wait_for(lambda: self.systemctl_calls()[before:] or None, 10)
         self.check(f"{label}: pointer click runs {systemctl_verb!r}",
+                   new_calls and new_calls[-1].strip() == systemctl_verb,
+                   f"calls={new_calls}")
+
+    def pointer_menu_runs_confirmation(self, item_prefix: str, label: str,
+                                       systemctl_verb: str) -> None:
+        """Use pointer input for the logo, menu row, and confirmation button."""
+        before = len(self.systemctl_calls())
+        menu_closed = not any(
+            self.find_menu_item(prefix)
+            for prefix in ("Shut Down…", "Restart…", "Log Out")
+        )
+        dialog_closed = not any(
+            self.find_button(button)
+            for button in ("Restart", "Sleep", "Cancel", "Shut Down")
+        )
+        self.check(f"{label}: all-pointer journey starts with menus closed",
+                   menu_closed and dialog_closed)
+        if not (menu_closed and dialog_closed):
+            return
+        opened_menu = self.open_system_menu()
+        self.check(f"{label}: pointer journey opens the Lulo menu", opened_menu)
+        if not opened_menu:
+            return
+        row = self.wait_for(lambda: self.find_menu_item(item_prefix), 10, 0.3)
+        self.check(f"{label}: pointer journey finds the {item_prefix!r} row", row is not None)
+        if row is None:
+            self.keys.key("escape")
+            return
+        clicked_row = self.click_menu_item(item_prefix)
+        self.check(f"{label}: pointer journey clicks the {item_prefix!r} row", clicked_row)
+        if not clicked_row:
+            self.keys.key("escape")
+            return
+        dialog = self.wait_for(lambda: self.find_button(label), 10, 0.3)
+        self.check(f"{label}: pointer journey opens its confirmation", dialog is not None)
+        if dialog is None:
+            self.keys.key("escape")
+            return
+        clicked_button = self.click_button(label)
+        self.check(f"{label}: pointer journey clicks the confirmation", clicked_button)
+        if not clicked_button:
+            self.keys.key("escape")
+            return
+        new_calls = self.wait_for(lambda: self.systemctl_calls()[before:] or None, 10)
+        self.check(f"{label}: all-pointer journey runs fake systemctl {systemctl_verb!r}",
                    new_calls and new_calls[-1].strip() == systemctl_verb,
                    f"calls={new_calls}")
 
@@ -747,6 +817,8 @@ class Run:
             for label, verb in (("Cancel", None), ("Sleep", "suspend"),
                                 ("Restart", "reboot"), ("Shut Down", "poweroff")):
                 self.click_power_dialog_button(label, verb)
+            self.pointer_menu_runs_confirmation("Shut Down…", "Shut Down", "poweroff")
+            self.pointer_menu_runs_confirmation("Restart…", "Restart", "reboot")
             return self.finish()
         self.power_dialog_tab_and_space()
         self.menu_escape_cancels("Shut Down…", "Shut Down")
@@ -755,6 +827,8 @@ class Run:
         self.menu_escape_cancels("Restart…", "Restart")
         self.menu_return_runs_the_default_regardless_of_tab("Restart…", "Restart", "reboot")
         self.menu_click_runs_confirmation("Restart…", "Restart", "reboot")
+        self.pointer_menu_runs_confirmation("Shut Down…", "Shut Down", "poweroff")
+        self.pointer_menu_runs_confirmation("Restart…", "Restart", "reboot")
         # Last: Log Out really ends this test's own nested niri.
         self.menu_return_runs_the_default_regardless_of_tab("Log Out", "Log Out", None)
         return self.finish()

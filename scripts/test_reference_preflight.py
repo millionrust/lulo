@@ -2,7 +2,9 @@
 
 import importlib.util
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -112,9 +114,31 @@ class ReferencePreflightTests(unittest.TestCase):
         failures = evaluate(host)
         self.assertIn("an integrated or discrete Vulkan GPU was not proven", failures)
         self.assertIn(
-            "tracked worktree changes make the evidence non-reproducible",
+            "worktree changes make the evidence non-reproducible",
             failures,
         )
+
+    def test_worktree_clean_check_rejects_untracked_source_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(
+                ["git", "-C", str(repo), "config", "user.name", "Preflight Test"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "config", "user.email", "test@example.invalid"],
+                check=True,
+            )
+            (repo / "tracked.py").write_text("pass\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "tracked.py"], check=True)
+            subprocess.run(
+                ["git", "-C", str(repo), "commit", "-qm", "baseline"], check=True
+            )
+
+            self.assertTrue(reference_preflight.worktree_is_clean(repo))
+            (repo / "untracked.py").write_text("release input\n", encoding="utf-8")
+            self.assertFalse(reference_preflight.worktree_is_clean(repo))
 
     def test_rejects_missing_portal_frontend_authorities(self):
         failures = evaluate(

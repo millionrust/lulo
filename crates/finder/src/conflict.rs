@@ -1,6 +1,7 @@
 //! Snapshot-bound Keep Both, Replace, and Skip decisions for Files transfers.
 
 use std::collections::{BTreeSet, VecDeque};
+use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 
 use crate::{file_ops, operation_journal, view::sanitize_dialog_name};
@@ -78,7 +79,7 @@ pub(crate) fn prepare_conflict_batch(
         // Duplicate. Resolve the name during the background preflight, so
         // no conflict sheet can offer to replace the source with itself.
         if matches!(&task.kind, file_ops::TransferKind::Copy) {
-            if task.source == task.destination {
+            if same_file_in_same_directory(&task.source, &task.destination) {
                 task.destination = unique_copy_path_avoiding(&task.source, &reserved_destinations);
             } else if label == "Duplicating" {
                 task.destination = unique_path_avoiding(task.destination, &reserved_destinations);
@@ -128,6 +129,28 @@ pub(crate) fn prepare_conflict_batch(
         keep_unfinished_in_clipboard,
         play_drop_sound,
     })
+}
+
+fn same_file_in_same_directory(source: &Path, destination: &Path) -> bool {
+    if source == destination {
+        return true;
+    }
+    let Some((source_parent, destination_parent)) = source.parent().zip(destination.parent())
+    else {
+        return false;
+    };
+    let (Ok(source_dir), Ok(destination_dir), Ok(source_item), Ok(destination_item)) = (
+        std::fs::metadata(source_parent),
+        std::fs::metadata(destination_parent),
+        std::fs::symlink_metadata(source),
+        std::fs::symlink_metadata(destination),
+    ) else {
+        return false;
+    };
+    source_dir.dev() == destination_dir.dev()
+        && source_dir.ino() == destination_dir.ino()
+        && source_item.dev() == destination_item.dev()
+        && source_item.ino() == destination_item.ino()
 }
 
 fn unique_copy_path_avoiding(source: &Path, reserved: &BTreeSet<PathBuf>) -> PathBuf {
@@ -342,6 +365,33 @@ mod tests {
             root.0.join("report copy 2.txt")
         );
         assert!(std::fs::symlink_metadata(link).is_ok());
+    }
+
+    #[test]
+    fn same_folder_copy_recognizes_an_aliased_parent_path() {
+        let root = TestDirectory::new("aliased-folder");
+        let folder = root.0.join("actual");
+        std::fs::create_dir(&folder).unwrap();
+        std::os::unix::fs::symlink(&folder, root.0.join("alias")).unwrap();
+        let source = folder.join("report.txt");
+        std::fs::write(&source, b"original").unwrap();
+        let destination = root.0.join("alias/report.txt");
+        let batch = prepare_conflict_batch(
+            "Copying",
+            vec![file_ops::TransferTask {
+                kind: file_ops::TransferKind::Copy,
+                source,
+                destination: destination.clone(),
+            }],
+            false,
+            false,
+        )
+        .unwrap();
+        assert!(batch.conflicts.is_empty());
+        assert_eq!(
+            batch.ready[0].destination,
+            root.0.join("alias/report copy.txt")
+        );
     }
 
     #[test]

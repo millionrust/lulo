@@ -581,6 +581,7 @@ const FILES_MENUS: &[MenuSpec] = &[
                 separator
             ),
             item!("Quick Look", "finder::QuickLook", "Space"),
+            item!("Show View Options", "finder::ShowViewOptions", "⌘J"),
         ],
     },
     MenuSpec {

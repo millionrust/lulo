@@ -150,15 +150,30 @@ impl FinderView {
         let icon_size = 64.0;
         let icon_size_slider = cx.new(|_| {
             SliderState::new()
-                .min(48.0)
-                .max(88.0)
+                .min(32.0)
+                .max(128.0)
                 .step(4.0)
                 .default_value(icon_size)
         });
         cx.subscribe(&icon_size_slider, |this, _, event: &SliderEvent, cx| {
             if let SliderEvent::Change(value) = event {
                 this.icon_size = value.start().clamp(48.0, 88.0);
-                cx.notify();
+                let size = this.icon_size;
+                this.change_icon_size(size, cx);
+            }
+        })
+        .detach();
+
+        let grid_spacing_slider = cx.new(|_| {
+            SliderState::new()
+                .min(0.0)
+                .max(100.0)
+                .step(2.0)
+                .default_value(54.0)
+        });
+        cx.subscribe(&grid_spacing_slider, |this, _, event: &SliderEvent, cx| {
+            if let SliderEvent::Change(value) = event {
+                this.change_options(|o| o.grid_spacing = value.start().clamp(0.0, 100.0), cx);
             }
         })
         .detach();
@@ -191,6 +206,11 @@ impl FinderView {
         .detach();
         let restored = FinderPersistence::restore();
         let presentation = restored.presentation;
+        let mut default_options = restored.defaults.clone();
+        if restored.folders.is_empty() {
+            // Preserve the pre-options window preference when migrating its state.
+            default_options.view = presentation.view;
+        }
         let (restored_paths, active) = if restore_tabs {
             restored.restorable_session(&home)
         } else {
@@ -250,6 +270,11 @@ impl FinderView {
             sidebar_width: presentation.sidebar_width,
             resizing_sidebar: false,
             finder_persistence,
+            folder_options: restored.folders,
+            default_options,
+            options_path: None,
+            browse_view: None,
+            view_options_open: false,
             col_stack: vec![cwd],
             column_selection: None,
             sort_key: SortKey::Name,
@@ -257,6 +282,9 @@ impl FinderView {
             query,
             icon_size,
             icon_size_slider,
+            grid_spacing_slider,
+            directory_sizes: Default::default(),
+            size_scan_cancel: None,
             back: Vec::new(),
             fwd: Vec::new(),
             file_words,

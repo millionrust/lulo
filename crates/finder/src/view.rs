@@ -45,9 +45,10 @@ mod trash_task_controller;
 mod trash_updates;
 mod undo_controller;
 mod updates;
+mod view_options;
 
 use std::borrow::Cow;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -97,6 +98,7 @@ use rmac_pasteboard as pasteboard;
 use search_helpers::*;
 use selection_controller::accessible_item;
 use transient_state::*;
+use view_options::FolderOptions;
 
 pub(crate) use presentation_support::sanitize_dialog_name;
 
@@ -140,6 +142,7 @@ actions!(
         ViewAsList,
         ViewAsColumns,
         ViewAsGallery,
+        ShowViewOptions,
         SortByName,
         SortByDate,
         SortBySize,
@@ -188,6 +191,13 @@ struct Entry {
     is_dir: bool,
     size: SharedString,
     modified: SharedString,
+    modified_absolute: SharedString,
+    created: SharedString,
+    created_absolute: SharedString,
+    last_opened: SharedString,
+    last_opened_absolute: SharedString,
+    added: SharedString,
+    added_absolute: SharedString,
     kind: SharedString,
     size_bytes: u64,
     mtime: SystemTime,
@@ -231,7 +241,7 @@ struct Section {
     places: Vec<Place>,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 enum SortKey {
     Name,
     Date,
@@ -292,6 +302,11 @@ struct FinderView {
     sidebar_width: f32,
     resizing_sidebar: bool,
     finder_persistence: FinderPersistence,
+    folder_options: BTreeMap<PathBuf, FolderOptions>,
+    default_options: FolderOptions,
+    options_path: Option<PathBuf>,
+    browse_view: Option<ViewMode>,
+    view_options_open: bool,
     col_stack: Vec<PathBuf>,
     /// Column view can select an item several directories below `cwd`, so an
     /// index into `entries` is not sufficient. Keep the selected entry itself
@@ -302,6 +317,9 @@ struct FinderView {
     query: gpui::Entity<InputState>,
     icon_size: f32,
     icon_size_slider: Entity<SliderState>,
+    grid_spacing_slider: Entity<SliderState>,
+    directory_sizes: std::collections::HashMap<PathBuf, u64>,
+    size_scan_cancel: Option<Arc<AtomicBool>>,
     back: Vec<PathBuf>,
     fwd: Vec<PathBuf>,
     file_words: rmac_locale::FileVocabulary,

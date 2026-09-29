@@ -59,6 +59,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("cmd-2", ViewAsList, Some("Finder")),
         KeyBinding::new("cmd-3", ViewAsColumns, Some("Finder")),
         KeyBinding::new("cmd-4", ViewAsGallery, Some("Finder")),
+        KeyBinding::new("cmd-j", ShowViewOptions, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::OPEN_SELECTION.keystroke,
             OpenItems,

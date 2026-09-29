@@ -68,6 +68,10 @@ pub(super) struct FinderState {
     pub(super) presentation: PresentationState,
     pub(super) tabs: Vec<PathBuf>,
     pub(super) active_tab: usize,
+    #[serde(default)]
+    pub(super) folders: std::collections::BTreeMap<PathBuf, super::view_options::FolderOptions>,
+    #[serde(default)]
+    pub(super) defaults: super::view_options::FolderOptions,
 }
 
 impl FinderState {
@@ -80,6 +84,8 @@ impl FinderState {
             presentation,
             tabs,
             active_tab,
+            folders: Default::default(),
+            defaults: Default::default(),
         };
         state.is_valid().then_some(state)
     }
@@ -105,6 +111,12 @@ impl FinderState {
     fn is_valid(&self) -> bool {
         self.presentation.is_valid()
             && self.tabs.len() <= MAX_RESTORED_TABS
+            && self.folders.len() <= 128
+            && self.defaults.valid()
+            && self
+                .folders
+                .iter()
+                .all(|(path, options)| path.is_absolute() && options.valid())
             && if self.tabs.is_empty() {
                 self.active_tab == 0
             } else {
@@ -236,6 +248,7 @@ impl FinderView {
         } else {
             self.view = mode;
         }
+        self.change_options(|options| options.view = mode, cx);
         if mode != ViewMode::Column {
             self.column_selection = None;
             if let Some(path) = column_path {
@@ -298,7 +311,10 @@ impl FinderView {
                 }
             })
             .collect();
-        FinderState::checked(presentation, tabs, self.active)
+        let mut state = FinderState::checked(presentation, tabs, self.active)?;
+        state.folders = self.folder_options.clone();
+        state.defaults = self.default_options.clone();
+        Some(state)
     }
 
     /// ⌘W with one tab, the traffic-light close button, and any close
@@ -308,6 +324,9 @@ impl FinderView {
     /// after this runs, so the save happens before `remove_window`, not
     /// after.
     pub(super) fn close_finder_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(cancel) = self.size_scan_cancel.take() {
+            cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         self.finder_persistence.close(self.finder_state());
         for info_window in self.info_windows.drain(..) {
             let _ = cx.update_window(*info_window, |_, window, _| window.remove_window());
@@ -563,6 +582,29 @@ mod tests {
     }
 
     #[test]
+    fn folder_view_options_round_trip_without_changing_other_folders() {
+        let path = test_path("folder-options");
+        let store = FinderStateStore::at(path.clone());
+        let mut state =
+            FinderState::checked(PresentationState::default(), vec![PathBuf::from("/tmp")], 0)
+                .unwrap();
+        let mut options = super::super::view_options::FolderOptions::default();
+        options.icon_size = 80.0;
+        options.columns[0] = false;
+        state
+            .folders
+            .insert(PathBuf::from("/tmp/one"), options.clone());
+        store.save(&state).unwrap();
+        let loaded = store.load().unwrap().unwrap();
+        assert_eq!(
+            loaded.folders.get(&PathBuf::from("/tmp/one")),
+            Some(&options)
+        );
+        assert_eq!(loaded.folders.get(&PathBuf::from("/tmp/two")), None);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
     fn state_round_trips_and_recovers_from_primary_corruption() {
         let path = test_path("round-trip");
         let store = FinderStateStore::at(path.clone());
@@ -594,6 +636,8 @@ mod tests {
                 presentation,
                 tabs: Vec::new(),
                 active_tab: 0,
+                folders: Default::default(),
+                defaults: Default::default(),
             })
         );
         std::fs::remove_dir_all(parent).unwrap();

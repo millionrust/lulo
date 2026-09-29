@@ -90,15 +90,19 @@ impl FinderView {
             self.reload(cx);
             return;
         };
+        let group = self.current_options().group_by;
         if self.view == ViewMode::List {
             self.root_entries.push(entry.clone());
             sort_entries(&mut self.root_entries, self.sort_key, self.sort_asc);
+            view_options::group_entries(&mut self.root_entries, group);
             self.rebuild_list_entries();
         } else {
             self.entries.push(entry.clone());
             sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
             self.root_entries.push(entry.clone());
             sort_entries(&mut self.root_entries, self.sort_key, self.sort_asc);
+            view_options::group_entries(&mut self.entries, group);
+            view_options::group_entries(&mut self.root_entries, group);
         }
         let Some(index) = self.entries.iter().position(|entry| entry.path == path) else {
             self.reload(cx);

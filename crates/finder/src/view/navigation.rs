@@ -135,6 +135,7 @@ impl FinderView {
         }
         self.trash_view = false;
         self.applications_view = false;
+        self.browse_view = self.current_options().browse_in_view.then_some(self.view);
         self.back.push(self.cwd.clone());
         self.fwd.clear();
         self.cwd = path;

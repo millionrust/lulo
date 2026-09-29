@@ -373,6 +373,11 @@ impl FinderView {
             for rows in self.child_entries.values_mut() {
                 sort_entries(rows, self.sort_key, self.sort_asc);
             }
+            let group = self.current_options().group_by;
+            view_options::group_entries(&mut self.root_entries, group);
+            for rows in self.child_entries.values_mut() {
+                view_options::group_entries(rows, group);
+            }
             self.rebuild_list_entries();
         } else {
             sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
@@ -382,7 +387,14 @@ impl FinderView {
                     sort_entries(rows, self.sort_key, self.sort_asc);
                 }
             }
+            let group = self.current_options().group_by;
+            view_options::group_entries(&mut self.entries, group);
+            view_options::group_entries(&mut self.root_entries, group);
+            for rows in self.child_entries.values_mut() {
+                view_options::group_entries(rows, group);
+            }
         }
+        self.change_options(|options| options.sort_by = key, cx);
         self.search_relevance_order = false;
         self.selected.clear();
         cx.notify();

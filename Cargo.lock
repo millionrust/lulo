@@ -2314,7 +2314,6 @@ dependencies = [
 [[package]]
 name = "gpui-component"
 version = "0.5.2"
-source = "git+https://github.com/longbridge/gpui-component.git?rev=0775df394083c1ed74f36f846b78868d1267398f#0775df394083c1ed74f36f846b78868d1267398f"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2362,7 +2361,6 @@ dependencies = [
 [[package]]
 name = "gpui-component-assets"
 version = "0.5.1"
-source = "git+https://github.com/longbridge/gpui-component.git?rev=0775df394083c1ed74f36f846b78868d1267398f#0775df394083c1ed74f36f846b78868d1267398f"
 dependencies = [
  "anyhow",
  "gpui",
@@ -2376,7 +2374,6 @@ dependencies = [
 [[package]]
 name = "gpui-component-macros"
 version = "0.5.1"
-source = "git+https://github.com/longbridge/gpui-component.git?rev=0775df394083c1ed74f36f846b78868d1267398f#0775df394083c1ed74f36f846b78868d1267398f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5363,6 +5360,8 @@ dependencies = [
 name = "rmac-activity-monitor"
 version = "0.9.0-beta.1"
 dependencies = [
+ "async-channel",
+ "futures-lite",
  "gpui",
  "gpui-component",
  "libc",
@@ -5531,10 +5530,13 @@ dependencies = [
 name = "rmac-clock"
 version = "0.9.0-beta.1"
 dependencies = [
+ "async-channel",
+ "futures-lite",
  "gpui",
  "gpui-component",
  "gpui-component-assets",
  "image",
+ "notify",
  "rmac-sound",
  "rmac-storage",
  "rmac-ui",

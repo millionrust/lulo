@@ -301,6 +301,7 @@ struct FinderView {
     menu_purpose: MenuPurpose,
     help_open: bool,
     renaming: Option<(PathBuf, gpui::Entity<InputState>)>,
+    rename_click_generation: u64,
     show_hidden: bool,
     view: ViewMode,
     sidebar_visible: bool,

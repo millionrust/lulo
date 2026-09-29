@@ -276,6 +276,7 @@ impl FinderView {
             clip_cut: false,
             pasteboard_has_files: false,
             renaming: None,
+            rename_click_generation: 0,
             show_hidden: false,
             view: presentation.view,
             sidebar_visible: presentation.sidebar_visible,

@@ -1022,6 +1022,7 @@ impl FinderView {
         let row_is_dir = e.is_dir;
         let search_detail = e.search_detail.clone();
 
+        let rename_click_path = e.path.clone();
         let name_cell: gpui::AnyElement =
             match &self.renaming {
                 Some((rename_path, input)) if rename_path == &e.path => div()
@@ -1060,19 +1061,46 @@ impl FinderView {
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                            this.rename_click_generation =
+                                this.rename_click_generation.wrapping_add(1);
                             if selected
                                 && !this.trash_view
                                 && !this.applications_view
                                 && !ev.modifiers.platform
                                 && !ev.modifiers.shift
+                                && ev.click_count == 1
                             {
                                 cx.stop_propagation();
-                                this.rename_start(window, cx);
+                                let generation = this.rename_click_generation;
+                                let path = rename_click_path.clone();
+                                let cwd = this.cwd.clone();
+                                let window_handle = window.window_handle();
+                                cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                                    // Defer rename past the platform's double-click interval.
+                                    // A second press cancels it and lets the row open normally.
+                                    cx.background_executor()
+                                        .timer(std::time::Duration::from_millis(450))
+                                        .await;
+                                    let _ = cx.update_window(window_handle, |_, window, cx| {
+                                        let _ = this.update(cx, |this: &mut FinderView, cx| {
+                                            if this.rename_click_generation == generation
+                                                && this.cwd == cwd
+                                                && this.renaming.is_none()
+                                                && this
+                                                    .selected_entry()
+                                                    .is_some_and(|entry| entry.path == path)
+                                            {
+                                                this.rename_start(window, cx);
+                                            }
+                                        });
+                                    });
+                                })
+                                .detach();
                             }
                         }),
                     )
-                    .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
-                        if selected {
+                    .on_click(cx.listener(move |_, ev: &ClickEvent, _, cx| {
+                        if selected && ev.click_count() == 1 {
                             cx.stop_propagation();
                         }
                     }))
@@ -1311,6 +1339,7 @@ impl FinderView {
         .on_mouse_down(
             MouseButton::Left,
             cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                this.rename_click_generation = this.rename_click_generation.wrapping_add(1);
                 cx.stop_propagation();
                 if ev.modifiers.control {
                     if let Some(index) = this.list_row_index(&left_row_path) {

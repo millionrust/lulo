@@ -210,18 +210,6 @@ impl Session {
         true
     }
 
-    /// Drop a quit application and keep the selection on its neighbour.
-    /// Returns false when nothing is left to show.
-    pub fn remove(&mut self, app_id: &str) -> bool {
-        if let Some(index) = self.apps.iter().position(|app| app.app_id == app_id) {
-            self.apps.remove(index);
-            if self.selected > index || self.selected >= self.apps.len() {
-                self.selected = self.selected.saturating_sub(1);
-            }
-        }
-        !self.apps.is_empty()
-    }
-
     pub fn mark_hidden(&mut self, app_id: &str) {
         if let Some(app) = self.apps.iter_mut().find(|app| app.app_id == app_id) {
             app.hidden = true;
@@ -476,13 +464,6 @@ mod tests {
         assert_eq!(Session::open(vec![app("a")], false).unwrap().selected, 0);
         assert!(Session::open(vec![], false).is_none());
 
-        session.select(2);
-        assert!(session.remove("c"));
-        assert_eq!(session.selected_app().unwrap().app_id, "b");
-        session.select(0);
-        assert!(session.remove("b"));
-        assert_eq!(session.selected_app().unwrap().app_id, "a");
-        assert!(!session.remove("a"));
     }
 
     #[test]

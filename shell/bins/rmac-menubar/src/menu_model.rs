@@ -584,6 +584,9 @@ pub const MAX_LISTED_NETWORKS: usize = 8;
 pub enum StatusMenuKind {
     Wifi,
     Battery,
+    Sound,
+    Bluetooth,
+    Focus,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -598,13 +601,33 @@ pub enum StatusAction {
     /// Dismiss a failed energy-mode mutation's banner without changing
     /// anything.
     DismissBatteryError,
+    /// Switch the output device in the Sound menu's Output list, by id.
+    SelectOutput(String),
+    /// Dismiss a failed Sound mutation's banner without changing anything.
+    DismissSoundError,
+    ToggleBluetooth,
+    /// Connect or disconnect a known Bluetooth device, by id. The current
+    /// connection state is read at execution time, so the row never bakes
+    /// in a stale direction.
+    SetBluetoothConnected(String),
+    /// Dismiss a failed Bluetooth mutation's banner without changing
+    /// anything.
+    DismissBluetoothError,
+    /// Turn Do Not Disturb on or off from the Focus menu.
+    ToggleFocus,
+    /// Dismiss a failed Focus mutation's banner without changing anything.
+    DismissFocusError,
 }
 
 impl StatusAction {
     /// Whether choosing it dismisses the menu (switches, the disclosure and
-    /// error dismissals act in place, as on macOS).
+    /// error dismissals act in place, as on macOS). Selecting a Sound
+    /// output, like joining a Wi-Fi network, closes the menu once chosen.
     pub fn closes_menu(&self) -> bool {
-        matches!(self, Self::Join(_) | Self::OpenSettings(_))
+        matches!(
+            self,
+            Self::Join(_) | Self::OpenSettings(_) | Self::SelectOutput(_)
+        )
     }
 }
 
@@ -659,6 +682,20 @@ pub enum StatusRow {
     Detail(String),
     /// The extra point that closes a badge group before its separator.
     GroupEnd,
+    /// The Sound menu's output-volume slider (0–100). Dragged with the
+    /// pointer only, like the switches above — not measured on the Mac (no
+    /// capture of the menu-bar Sound dropdown exists yet), so the height is
+    /// chosen to sit between a plain item and a badge row.
+    Slider {
+        value: u8,
+    },
+    /// A plain item with a trailing checkmark when it is the active choice
+    /// (Sound's Output list, Bluetooth's Devices list).
+    Check {
+        label: String,
+        checked: bool,
+        action: StatusAction,
+    },
 }
 
 impl StatusRow {
@@ -666,19 +703,20 @@ impl StatusRow {
         match self {
             Self::Title { .. } => 31.0,
             Self::Info(_) => 20.0,
-            Self::Item { .. } | Self::Disclosure { .. } => 24.0,
+            Self::Item { .. } | Self::Disclosure { .. } | Self::Check { .. } => 24.0,
             Self::Separator => 9.0,
             Self::Header(_) => 23.0,
             Self::Badge { .. } => 32.0,
             Self::Detail(_) => 16.0,
             Self::GroupEnd => 1.0,
+            Self::Slider { .. } => 28.0,
         }
     }
 
     pub fn action(&self) -> Option<StatusAction> {
         match self {
             Self::Title { action, .. } | Self::Badge { action, .. } => action.clone(),
-            Self::Item { action, .. } => Some(action.clone()),
+            Self::Item { action, .. } | Self::Check { action, .. } => Some(action.clone()),
             Self::Disclosure { .. } => Some(StatusAction::ToggleOtherNetworks),
             _ => None,
         }
@@ -739,6 +777,9 @@ pub fn parse_capture_status(value: &str) -> Option<(StatusMenuKind, bool)> {
         "wifi" => Some((StatusMenuKind::Wifi, false)),
         "wifi-option" => Some((StatusMenuKind::Wifi, true)),
         "battery" => Some((StatusMenuKind::Battery, false)),
+        "sound" => Some((StatusMenuKind::Sound, false)),
+        "bluetooth" => Some((StatusMenuKind::Bluetooth, false)),
+        "focus" => Some((StatusMenuKind::Focus, false)),
         _ => None,
     }
 }
@@ -1015,6 +1056,175 @@ pub fn battery_menu_rows(
         label: "Battery Settings…".into(),
         warning: false,
         action: StatusAction::OpenSettings("battery"),
+    });
+    rows
+}
+
+pub struct SoundMenuInput<'a> {
+    pub audio: Option<&'a rmac_audio::Snapshot>,
+    /// The last output-volume or output-selection mutation failure, shown
+    /// until dismissed.
+    pub error: Option<&'a str>,
+}
+
+/// The Sound menu: header, output-volume slider, the Output device list with
+/// a check on the current device, then Sound Settings… (PipeWire/pactl via
+/// `rmac-audio`, the same backend Control Center's Sound module uses).
+pub fn sound_menu_rows(input: SoundMenuInput<'_>) -> Vec<StatusRow> {
+    let settings = StatusRow::Item {
+        label: "Sound Settings…".into(),
+        warning: false,
+        action: StatusAction::OpenSettings("sound"),
+    };
+    let error_row = input.error.map(|error| StatusRow::Item {
+        label: error.to_string(),
+        warning: true,
+        action: StatusAction::DismissSoundError,
+    });
+    let title = StatusRow::Title {
+        label: "Sound".into(),
+        value: None,
+        switch: None,
+        action: None,
+    };
+    let Some(audio) = input.audio.filter(|audio| audio.available) else {
+        let mut rows = vec![title];
+        rows.extend(error_row);
+        rows.push(StatusRow::Info("Sound Unavailable".into()));
+        rows.push(StatusRow::Separator);
+        rows.push(settings);
+        return rows;
+    };
+    let mut rows = vec![title];
+    rows.extend(error_row);
+    if audio.has_output {
+        rows.push(StatusRow::Slider {
+            value: audio.output.volume.min(100),
+        });
+        if !audio.outputs.is_empty() {
+            rows.push(StatusRow::Separator);
+            rows.push(StatusRow::Header("Output".into()));
+            for device in &audio.outputs {
+                rows.push(StatusRow::Check {
+                    label: device.name.clone(),
+                    checked: device.is_default,
+                    action: StatusAction::SelectOutput(device.id.clone()),
+                });
+            }
+            rows.push(StatusRow::GroupEnd);
+        }
+    } else {
+        rows.push(StatusRow::Info("No Output Device".into()));
+    }
+    rows.push(StatusRow::Separator);
+    rows.push(settings);
+    rows
+}
+
+pub struct BluetoothMenuInput<'a> {
+    pub bluetooth: Option<&'a rmac_bluetooth::Snapshot>,
+    /// The last power or connect/disconnect mutation failure, shown until
+    /// dismissed.
+    pub error: Option<&'a str>,
+}
+
+/// The Bluetooth menu: header with the power switch, the Devices list
+/// (connected devices checked, click to connect or disconnect), then
+/// Bluetooth Settings… (BlueZ via `rmac-bluetooth`, the same authority
+/// System Settings' Bluetooth pane uses). Only paired devices are listed, as
+/// on macOS's menu-bar dropdown; raw discovery results belong to the
+/// Settings pane's pairing flow, not this menu.
+pub fn bluetooth_menu_rows(input: BluetoothMenuInput<'_>) -> Vec<StatusRow> {
+    let settings = StatusRow::Item {
+        label: "Bluetooth Settings…".into(),
+        warning: false,
+        action: StatusAction::OpenSettings("bluetooth"),
+    };
+    let error_row = input.error.map(|error| StatusRow::Item {
+        label: error.to_string(),
+        warning: true,
+        action: StatusAction::DismissBluetoothError,
+    });
+    let Some(bluetooth) = input.bluetooth else {
+        let mut rows = vec![StatusRow::Title {
+            label: "Bluetooth".into(),
+            value: None,
+            switch: None,
+            action: None,
+        }];
+        rows.extend(error_row);
+        rows.push(StatusRow::Separator);
+        rows.push(settings);
+        return rows;
+    };
+    let mut rows = vec![StatusRow::Title {
+        label: "Bluetooth".into(),
+        value: None,
+        switch: bluetooth.available.then_some(bluetooth.powered),
+        action: bluetooth.available.then_some(StatusAction::ToggleBluetooth),
+    }];
+    rows.extend(error_row);
+    if !bluetooth.available {
+        rows.push(StatusRow::Info("Bluetooth Unavailable".into()));
+    } else if bluetooth.powered {
+        let mut devices: Vec<&rmac_bluetooth::Device> = bluetooth
+            .devices
+            .iter()
+            .filter(|device| device.paired)
+            .collect();
+        devices.sort_by(|left, right| {
+            right
+                .connected
+                .cmp(&left.connected)
+                .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        rows.push(StatusRow::Separator);
+        rows.push(StatusRow::Header("Devices".into()));
+        if devices.is_empty() {
+            rows.push(StatusRow::Info("No Devices".into()));
+        } else {
+            for device in devices {
+                rows.push(StatusRow::Check {
+                    label: device.name.clone(),
+                    checked: device.connected,
+                    action: StatusAction::SetBluetoothConnected(device.id.clone()),
+                });
+            }
+        }
+        rows.push(StatusRow::GroupEnd);
+    }
+    rows.push(StatusRow::Separator);
+    rows.push(settings);
+    rows
+}
+
+/// The Focus menu: header, a Do Not Disturb toggle sharing state with
+/// Control Center and the notification center, then Focus Settings….
+pub fn focus_menu_rows(enabled: Option<bool>, error: Option<&str>) -> Vec<StatusRow> {
+    let mut rows = vec![StatusRow::Title {
+        label: "Focus".into(),
+        value: None,
+        switch: None,
+        action: None,
+    }];
+    if let Some(error) = error {
+        rows.push(StatusRow::Item {
+            label: error.to_string(),
+            warning: true,
+            action: StatusAction::DismissFocusError,
+        });
+    }
+    rows.push(StatusRow::Check {
+        label: "Do Not Disturb".into(),
+        checked: enabled.unwrap_or(false),
+        action: StatusAction::ToggleFocus,
+    });
+    rows.push(StatusRow::Separator);
+    rows.push(StatusRow::Item {
+        label: "Focus Settings…".into(),
+        warning: false,
+        action: StatusAction::OpenSettings("focus"),
     });
     rows
 }
@@ -1775,6 +1985,10 @@ mod tests {
                 StatusRow::Badge { label, .. } => format!("badge:{label}"),
                 StatusRow::Detail(label) => format!("detail:{label}"),
                 StatusRow::GroupEnd => "end".into(),
+                StatusRow::Slider { value } => format!("slider:{value}"),
+                StatusRow::Check { label, checked, .. } => {
+                    format!("check:{}{label}", if *checked { "*" } else { "" })
+                }
             })
             .collect()
     }
@@ -2232,6 +2446,249 @@ mod tests {
         assert!(matches!(rows[4], StatusRow::Badge { on: true, .. }));
         // Measured Battery menu without the per-app energy section.
         assert_eq!(status_menu_height(&rows), 159.5);
+    }
+
+    #[test]
+    fn new_status_rows_report_their_measured_heights() {
+        assert_eq!(StatusRow::Slider { value: 50 }.height(), 28.0);
+        assert_eq!(
+            StatusRow::Check {
+                label: "x".into(),
+                checked: true,
+                action: StatusAction::ToggleFocus,
+            }
+            .height(),
+            24.0
+        );
+    }
+
+    #[test]
+    fn the_volume_slider_is_not_keyboard_selectable_like_the_title_switch() {
+        let rows = vec![
+            StatusRow::Title {
+                label: "Sound".into(),
+                value: None,
+                switch: None,
+                action: None,
+            },
+            StatusRow::Slider { value: 10 },
+            StatusRow::Item {
+                label: "Sound Settings…".into(),
+                warning: false,
+                action: StatusAction::OpenSettings("sound"),
+            },
+        ];
+        assert!(!rows[1].selectable());
+        assert_eq!(next_status_selection(&rows, None, true), Some(2));
+    }
+
+    #[test]
+    fn selecting_a_sound_output_closes_the_menu_like_joining_wifi() {
+        assert!(StatusAction::SelectOutput("id".into()).closes_menu());
+        assert!(!StatusAction::ToggleBluetooth.closes_menu());
+        assert!(!StatusAction::SetBluetoothConnected("id".into()).closes_menu());
+        assert!(!StatusAction::ToggleFocus.closes_menu());
+    }
+
+    #[test]
+    fn sound_menu_shows_unavailable_state_without_a_slider() {
+        let rows = sound_menu_rows(SoundMenuInput {
+            audio: None,
+            error: None,
+        });
+        assert_eq!(
+            labels(&rows),
+            [
+                "title:Sound",
+                "info:Sound Unavailable",
+                "---",
+                "item:Sound Settings…"
+            ]
+        );
+    }
+
+    #[test]
+    fn sound_menu_lists_the_volume_slider_when_output_is_available() {
+        let snapshot = rmac_audio::Snapshot {
+            available: true,
+            has_output: true,
+            output: rmac_audio::Level {
+                volume: 42,
+                muted: false,
+            },
+            ..Default::default()
+        };
+        let rows = sound_menu_rows(SoundMenuInput {
+            audio: Some(&snapshot),
+            error: None,
+        });
+        assert_eq!(
+            labels(&rows),
+            ["title:Sound", "slider:42", "---", "item:Sound Settings…"]
+        );
+    }
+
+    #[test]
+    fn sound_menu_surfaces_a_dismissible_error() {
+        let snapshot = rmac_audio::Snapshot {
+            available: true,
+            has_output: true,
+            ..Default::default()
+        };
+        let rows = sound_menu_rows(SoundMenuInput {
+            audio: Some(&snapshot),
+            error: Some("boom"),
+        });
+        assert_eq!(labels(&rows)[1], "item:boom");
+        assert_eq!(rows[1].action(), Some(StatusAction::DismissSoundError));
+    }
+
+    fn bt_device(id: &str, name: &str, paired: bool, connected: bool) -> rmac_bluetooth::Device {
+        rmac_bluetooth::Device {
+            id: id.into(),
+            name: name.into(),
+            address: "AA:BB:CC:DD:EE:FF".into(),
+            kind: "headset".into(),
+            paired,
+            trusted: paired,
+            connected,
+        }
+    }
+
+    #[test]
+    fn bluetooth_menu_lists_paired_devices_connected_first_with_a_check() {
+        let snapshot = rmac_bluetooth::Snapshot {
+            available: true,
+            powered: true,
+            discoverable: false,
+            discovering: false,
+            adapter_name: Some("Adapter".into()),
+            devices: vec![
+                bt_device("b", "Wireless Keyboard", true, false),
+                bt_device("a", "AirPods", true, true),
+                bt_device("c", "Unknown Scanner", false, false),
+            ],
+        };
+        let rows = bluetooth_menu_rows(BluetoothMenuInput {
+            bluetooth: Some(&snapshot),
+            error: None,
+        });
+        assert_eq!(
+            labels(&rows),
+            [
+                "title:Bluetooth",
+                "---",
+                "head:Devices",
+                "check:*AirPods",
+                "check:Wireless Keyboard",
+                "end",
+                "---",
+                "item:Bluetooth Settings…",
+            ]
+        );
+        assert!(matches!(
+            rows[0],
+            StatusRow::Title {
+                switch: Some(true),
+                ..
+            }
+        ));
+        assert_eq!(
+            rows[3].action(),
+            Some(StatusAction::SetBluetoothConnected("a".into()))
+        );
+    }
+
+    #[test]
+    fn bluetooth_menu_reports_unavailable_and_powered_off_states() {
+        let unavailable = rmac_bluetooth::Snapshot::default();
+        assert_eq!(
+            labels(&bluetooth_menu_rows(BluetoothMenuInput {
+                bluetooth: Some(&unavailable),
+                error: None,
+            })),
+            [
+                "title:Bluetooth",
+                "info:Bluetooth Unavailable",
+                "---",
+                "item:Bluetooth Settings…"
+            ]
+        );
+        let off = rmac_bluetooth::Snapshot {
+            available: true,
+            powered: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            labels(&bluetooth_menu_rows(BluetoothMenuInput {
+                bluetooth: Some(&off),
+                error: None,
+            })),
+            ["title:Bluetooth", "---", "item:Bluetooth Settings…"]
+        );
+    }
+
+    #[test]
+    fn bluetooth_menu_shows_no_devices_when_none_are_paired() {
+        let snapshot = rmac_bluetooth::Snapshot {
+            available: true,
+            powered: true,
+            devices: vec![bt_device("x", "Nearby Speaker", false, false)],
+            ..Default::default()
+        };
+        let rows = bluetooth_menu_rows(BluetoothMenuInput {
+            bluetooth: Some(&snapshot),
+            error: None,
+        });
+        assert_eq!(
+            labels(&rows),
+            [
+                "title:Bluetooth",
+                "---",
+                "head:Devices",
+                "info:No Devices",
+                "end",
+                "---",
+                "item:Bluetooth Settings…"
+            ]
+        );
+    }
+
+    #[test]
+    fn focus_menu_shows_the_dnd_toggle_and_settings_link() {
+        let rows = focus_menu_rows(Some(true), None);
+        assert_eq!(
+            labels(&rows),
+            [
+                "title:Focus",
+                "check:*Do Not Disturb",
+                "---",
+                "item:Focus Settings…"
+            ]
+        );
+        assert_eq!(rows[1].action(), Some(StatusAction::ToggleFocus));
+
+        let off = focus_menu_rows(Some(false), None);
+        assert_eq!(labels(&off)[1], "check:Do Not Disturb");
+
+        let unknown = focus_menu_rows(None, None);
+        assert_eq!(labels(&unknown)[1], "check:Do Not Disturb");
+    }
+
+    #[test]
+    fn focus_menu_surfaces_a_dismissible_error() {
+        let rows = focus_menu_rows(Some(false), Some("boom"));
+        assert_eq!(
+            labels(&rows),
+            [
+                "title:Focus",
+                "item:boom",
+                "check:Do Not Disturb",
+                "---",
+                "item:Focus Settings…"
+            ]
+        );
+        assert_eq!(rows[1].action(), Some(StatusAction::DismissFocusError));
     }
 
     #[test]

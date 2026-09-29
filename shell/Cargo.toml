@@ -28,6 +28,8 @@ rmac-app-menu = { version = "=0.9.0-beta.1", path = "../crates/rmac-app-menu" }
 rmac-appearance = { version = "=0.9.0-beta.1", path = "../crates/rmac-appearance" }
 rmac-appearance-portal = { version = "=0.9.0-beta.1", path = "../crates/rmac-appearance-portal" }
 rmac-archive = { version = "=0.9.0-beta.1", path = "../crates/rmac-archive" }
+rmac-audio = { version = "=0.9.0-beta.1", path = "../crates/rmac-audio" }
+rmac-bluetooth = { version = "=0.9.0-beta.1", path = "../crates/rmac-bluetooth" }
 rmac-compositor = { version = "=0.9.0-beta.1", path = "../crates/rmac-compositor" }
 rmac-compositor-niri = { version = "=0.9.0-beta.1", path = "../crates/rmac-compositor-niri" }
 rmac-design = { version = "=0.9.0-beta.1", path = "../crates/rmac-design" }
@@ -44,6 +46,7 @@ rmac-places-system = { version = "=0.9.0-beta.1", path = "../crates/rmac-places-
 rmac-power = { version = "=0.9.0-beta.1", path = "../crates/rmac-power" }
 rmac-recent-documents = { version = "=0.9.0-beta.1", path = "../crates/rmac-recent-documents" }
 rmac-process = { version = "=0.9.0-beta.1", path = "../crates/rmac-process" }
+rmac-quick-settings-system = { version = "=0.9.0-beta.1", path = "../crates/rmac-quick-settings-system" }
 rmac-screen-reader = { version = "=0.9.0-beta.1", path = "../crates/rmac-screen-reader" }
 rmac-search = { version = "=0.9.0-beta.1", path = "../crates/rmac-search" }
 rmac-storage = { version = "=0.9.0-beta.1", path = "../crates/rmac-storage" }

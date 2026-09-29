@@ -24,11 +24,13 @@ mod linux_wayland {
     use gpui::{
         canvas, div, layer_shell::*, point, prelude::*, px, rgba, svg, AnyElement, AnyWindowHandle,
         App, AssetSource, Bounds, BoxShadow, ClickEvent, Context, DisplayId, Entity, FocusHandle,
-        FontWeight, KeyDownEvent, ModifiersChangedEvent, PlatformDisplay, QuitMode, Role,
-        SharedString, Size, Subscription, Window, WindowBackgroundAppearance, WindowBounds,
-        WindowHandle, WindowKind, WindowOptions,
+        FontWeight, KeyDownEvent, ModifiersChangedEvent, MouseButton, MouseDownEvent,
+        MouseMoveEvent, MouseUpEvent, PlatformDisplay, QuitMode, Role, SharedString, Size,
+        Subscription, Window, WindowBackgroundAppearance, WindowBounds, WindowHandle, WindowKind,
+        WindowOptions,
     };
     use gpui_platform::application;
+    use rmac_quick_settings_system::{Backend as _, SystemBackend};
     use rmac_shell_ui::tokens;
     use rmac_shell_ui::{
         app_display_name, delay_until_next_clock_tick, top_bar_active_app_name,
@@ -39,10 +41,11 @@ mod linux_wayland {
 
     use crate::menu_model::{
         self, app_menu_height, app_menu_item_top, app_menu_width, battery_menu_rows,
-        menu_item_icon, next_status_selection, quit_all_interrupted_copy, quit_all_progress,
-        split_shortcut, status_menu_height, status_menu_left, wifi_menu_rows, BadgeGlyph,
-        IconColumn, LowBatteryWatch, QuitAllProgress, StatusAction, StatusMenuKind, StatusRow,
-        WifiMenuInput, QUIT_ALL_CHECK,
+        bluetooth_menu_rows, focus_menu_rows, menu_item_icon, next_status_selection,
+        quit_all_interrupted_copy, quit_all_progress, sound_menu_rows, split_shortcut,
+        status_menu_height, status_menu_left, wifi_menu_rows, BadgeGlyph, BluetoothMenuInput,
+        IconColumn, LowBatteryWatch, QuitAllProgress, SoundMenuInput, StatusAction, StatusMenuKind,
+        StatusRow, WifiMenuInput, QUIT_ALL_CHECK,
     };
 
     // Measured from the reference Mac 2026-09-18 (FEEL_SPEC.md §C.2): the bar
@@ -347,6 +350,8 @@ mod linux_wayland {
             .detach();
             watch_menu_owners(cx);
             watch_menu_changes(cx);
+            watch_sound_changes(cx);
+            watch_bluetooth_changes(cx);
             let mut status = Self {
                 update: rmac_shell_runtime::Update::default(),
                 menu_app_id: None,
@@ -483,6 +488,52 @@ mod linux_wayland {
                 }
             }
             eprintln!("stopped following application menus: the session bus closed");
+        })
+        .detach();
+    }
+
+    /// Re-read the audio snapshot whenever PipeWire reports a change (a
+    /// volume nudged elsewhere, a device plugged in), so the Sound menu's
+    /// slider and Output list stay live while it is open. The watch waits on
+    /// the PipeWire monitor stream; nothing polls.
+    fn watch_sound_changes(cx: &mut Context<ShellStatus>) {
+        let (sender, changes) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                if let Err(error) = rmac_audio::watch(sender).await {
+                    eprintln!("stopped following sound changes: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |this, cx| {
+            while changes.recv().await.is_ok() {
+                if this.update(cx, ShellStatus::reload_sound).is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Re-read the Bluetooth snapshot whenever BlueZ reports a change (a
+    /// device connects or disconnects elsewhere, the adapter powers on), so
+    /// the Bluetooth menu's Devices list stays live while it is open. The
+    /// watch waits on BlueZ's D-Bus signals; nothing polls.
+    fn watch_bluetooth_changes(cx: &mut Context<ShellStatus>) {
+        let (sender, changes) = async_channel::bounded(4);
+        cx.background_executor()
+            .spawn(async move {
+                if let Err(error) = rmac_bluetooth::watch(sender).await {
+                    eprintln!("stopped following Bluetooth changes: {error}");
+                }
+            })
+            .detach();
+        cx.spawn(async move |this, cx| {
+            while changes.recv().await.is_ok() {
+                if this.update(cx, ShellStatus::reload_bluetooth).is_err() {
+                    return;
+                }
+            }
         })
         .detach();
     }
@@ -876,6 +927,31 @@ mod linux_wayland {
         battery_menu: Option<rmac_power::Snapshot>,
         /// The last energy-mode mutation failure, visible until dismissed.
         battery_error: Option<String>,
+        /// The Sound menu's live audio snapshot, kept fresh by
+        /// [`Self::watch_sound_changes`] as well as reloaded on open.
+        sound_menu: Option<rmac_audio::Snapshot>,
+        /// The last volume or output-selection mutation failure, visible
+        /// until dismissed.
+        sound_error: Option<String>,
+        /// While the pointer is down on the Sound menu's volume slider,
+        /// further moves (within the row) drag the value instead of
+        /// requiring another click.
+        status_dragging_volume: bool,
+        /// The volume slider's track bounds (left, width) in window
+        /// coordinates, recorded while painting so a click or drag can turn
+        /// an x position into a volume.
+        volume_track: Rc<RefCell<(f32, f32)>>,
+        /// The Bluetooth menu's live snapshot, kept fresh by
+        /// [`Self::watch_bluetooth_changes`] as well as reloaded on open.
+        bluetooth_menu: Option<rmac_bluetooth::Snapshot>,
+        /// The last power or connect/disconnect mutation failure, visible
+        /// until dismissed.
+        bluetooth_error: Option<String>,
+        /// The Focus menu's Do Not Disturb state, reloaded each time the
+        /// menu opens (Control Center's own source of truth).
+        focus_menu: Option<bool>,
+        /// The last Focus mutation failure, visible until dismissed.
+        focus_error: Option<String>,
         /// Each status item's highlight edges (left, right), recorded while
         /// painting, so its menu opens exactly under it.
         status_slots: Rc<RefCell<BTreeMap<StatusMenuKind, (f32, f32)>>>,
@@ -952,6 +1028,14 @@ mod linux_wayland {
                 wifi_error: None,
                 battery_menu: None,
                 battery_error: None,
+                sound_menu: None,
+                sound_error: None,
+                status_dragging_volume: false,
+                volume_track: Rc::new(RefCell::new((0.0, 1.0))),
+                bluetooth_menu: None,
+                bluetooth_error: None,
+                focus_menu: None,
+                focus_error: None,
                 status_slots: Rc::new(RefCell::new(BTreeMap::new())),
                 fullscreen,
                 revealed: !fullscreen,
@@ -1728,7 +1812,75 @@ mod linux_wayland {
                     })
                     .detach();
                 }
+                // Sound and Bluetooth also stay live while open through
+                // `watch_sound_changes`/`watch_bluetooth_changes`; opening
+                // just asks for one immediate refresh. Focus has no watch
+                // wired up yet, so it only reloads on open, like Battery.
+                StatusMenuKind::Sound => self.reload_sound(cx),
+                StatusMenuKind::Bluetooth => self.reload_bluetooth(cx),
+                StatusMenuKind::Focus => self.reload_focus(cx),
             }
+        }
+
+        /// Refresh the Sound menu's audio snapshot. Shared by the initial
+        /// open and by `watch_sound_changes`; only notifies while the Sound
+        /// menu is actually open.
+        fn reload_sound(&mut self, cx: &mut Context<Self>) {
+            cx.spawn(async move |this, cx| {
+                let snapshot = cx
+                    .background_executor()
+                    .spawn(async move { blocking::unblock(|| rmac_audio::snapshot().ok()).await })
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    this.sound_menu = snapshot;
+                    if this.status_menu == Some(StatusMenuKind::Sound) {
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+        }
+
+        /// Refresh the Bluetooth menu's snapshot. Shared by the initial open
+        /// and by `watch_bluetooth_changes`; only notifies while the
+        /// Bluetooth menu is actually open.
+        fn reload_bluetooth(&mut self, cx: &mut Context<Self>) {
+            cx.spawn(async move |this, cx| {
+                let snapshot = cx
+                    .background_executor()
+                    .spawn(
+                        async move { blocking::unblock(|| rmac_bluetooth::snapshot().ok()).await },
+                    )
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    this.bluetooth_menu = snapshot;
+                    if this.status_menu == Some(StatusMenuKind::Bluetooth) {
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
+        }
+
+        /// Refresh the Focus menu's Do Not Disturb state from the same
+        /// authority Control Center reads.
+        fn reload_focus(&mut self, cx: &mut Context<Self>) {
+            cx.spawn(async move |this, cx| {
+                let enabled = cx
+                    .background_executor()
+                    .spawn(async move {
+                        blocking::unblock(|| SystemBackend.focus().ok().map(|state| state.enabled))
+                            .await
+                    })
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    this.focus_menu = enabled;
+                    if this.status_menu == Some(StatusMenuKind::Focus) {
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
         }
 
         fn status_rows(&self, kind: StatusMenuKind) -> Vec<StatusRow> {
@@ -1746,6 +1898,17 @@ mod linux_wayland {
                 }),
                 StatusMenuKind::Battery => {
                     battery_menu_rows(self.battery_menu.as_ref(), self.battery_error.as_deref())
+                }
+                StatusMenuKind::Sound => sound_menu_rows(SoundMenuInput {
+                    audio: self.sound_menu.as_ref(),
+                    error: self.sound_error.as_deref(),
+                }),
+                StatusMenuKind::Bluetooth => bluetooth_menu_rows(BluetoothMenuInput {
+                    bluetooth: self.bluetooth_menu.as_ref(),
+                    error: self.bluetooth_error.as_deref(),
+                }),
+                StatusMenuKind::Focus => {
+                    focus_menu_rows(self.focus_menu, self.focus_error.as_deref())
                 }
             }
         }
@@ -1885,7 +2048,216 @@ mod linux_wayland {
                     self.battery_error = None;
                     cx.notify();
                 }
+                StatusAction::SelectOutput(device) => {
+                    let Some(data) = self.sound_menu.as_mut() else {
+                        return;
+                    };
+                    // Flip the check now; the reload confirms or reverts it.
+                    for output in &mut data.outputs {
+                        output.is_default = output.id == device;
+                    }
+                    self.sound_error = None;
+                    cx.notify();
+                    cx.spawn(async move |this, cx| {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async move {
+                                blocking::unblock(move || SystemBackend.set_default_output(&device))
+                                    .await
+                            })
+                            .await;
+                        let _ = this.update(cx, |this, cx| {
+                            if let Err(error) = result {
+                                eprintln!("could not change the output device: {error}");
+                                this.sound_error =
+                                    Some(format!("Couldn't change the output device: {error}"));
+                            }
+                            if this.status_menu == Some(StatusMenuKind::Sound) {
+                                this.load_status_menu(StatusMenuKind::Sound, false, cx);
+                            } else {
+                                cx.notify();
+                            }
+                        });
+                    })
+                    .detach();
+                }
+                StatusAction::DismissSoundError => {
+                    self.sound_error = None;
+                    cx.notify();
+                }
+                StatusAction::ToggleBluetooth => {
+                    let Some(data) = self.bluetooth_menu.as_mut() else {
+                        return;
+                    };
+                    let powered = !data.powered;
+                    data.powered = powered;
+                    self.bluetooth_error = None;
+                    cx.notify();
+                    cx.spawn(async move |this, cx| {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async move {
+                                blocking::unblock(move || {
+                                    SystemBackend.set_bluetooth_powered(powered)
+                                })
+                                .await
+                            })
+                            .await;
+                        let _ = this.update(cx, |this, cx| {
+                            if let Err(error) = result {
+                                eprintln!(
+                                    "could not turn Bluetooth {}: {error}",
+                                    if powered { "on" } else { "off" }
+                                );
+                                this.bluetooth_error = Some(format!(
+                                    "Couldn't turn Bluetooth {}: {error}",
+                                    if powered { "on" } else { "off" }
+                                ));
+                            }
+                            if this.status_menu == Some(StatusMenuKind::Bluetooth) {
+                                this.load_status_menu(StatusMenuKind::Bluetooth, false, cx);
+                            } else {
+                                cx.notify();
+                            }
+                        });
+                    })
+                    .detach();
+                }
+                StatusAction::SetBluetoothConnected(device) => {
+                    let Some(data) = self.bluetooth_menu.as_mut() else {
+                        return;
+                    };
+                    let Some(target) = data.devices.iter_mut().find(|item| item.id == device)
+                    else {
+                        return;
+                    };
+                    let connect = !target.connected;
+                    target.connected = connect;
+                    self.bluetooth_error = None;
+                    cx.notify();
+                    cx.spawn(async move |this, cx| {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async move {
+                                blocking::unblock(move || {
+                                    SystemBackend.set_bluetooth_device_connected(&device, connect)
+                                })
+                                .await
+                            })
+                            .await;
+                        let _ = this.update(cx, |this, cx| {
+                            if let Err(error) = result {
+                                eprintln!(
+                                    "could not {} the Bluetooth device: {error}",
+                                    if connect { "connect" } else { "disconnect" }
+                                );
+                                this.bluetooth_error = Some(format!(
+                                    "Couldn't {} the device: {error}",
+                                    if connect { "connect" } else { "disconnect" }
+                                ));
+                            }
+                            if this.status_menu == Some(StatusMenuKind::Bluetooth) {
+                                this.load_status_menu(StatusMenuKind::Bluetooth, false, cx);
+                            } else {
+                                cx.notify();
+                            }
+                        });
+                    })
+                    .detach();
+                }
+                StatusAction::DismissBluetoothError => {
+                    self.bluetooth_error = None;
+                    cx.notify();
+                }
+                StatusAction::ToggleFocus => {
+                    let Some(enabled) = self.focus_menu else {
+                        return;
+                    };
+                    let target = !enabled;
+                    self.focus_menu = Some(target);
+                    self.focus_error = None;
+                    cx.notify();
+                    cx.spawn(async move |this, cx| {
+                        let result = cx
+                            .background_executor()
+                            .spawn(async move {
+                                blocking::unblock(move || SystemBackend.set_focus_enabled(target))
+                                    .await
+                            })
+                            .await;
+                        let _ = this.update(cx, |this, cx| {
+                            if let Err(error) = result {
+                                eprintln!(
+                                    "could not turn Do Not Disturb {}: {error}",
+                                    if target { "on" } else { "off" }
+                                );
+                                this.focus_error = Some(format!(
+                                    "Couldn't turn Do Not Disturb {}: {error}",
+                                    if target { "on" } else { "off" }
+                                ));
+                            }
+                            if this.status_menu == Some(StatusMenuKind::Focus) {
+                                this.load_status_menu(StatusMenuKind::Focus, false, cx);
+                            } else {
+                                cx.notify();
+                            }
+                        });
+                    })
+                    .detach();
+                }
+                StatusAction::DismissFocusError => {
+                    self.focus_error = None;
+                    cx.notify();
+                }
             }
+        }
+
+        /// The volume the Sound slider's track implies for a pointer at
+        /// window-x `x`, from the bounds `render_status_row` last recorded
+        /// for it.
+        fn volume_at(&self, x: f32) -> u8 {
+            let (left, width) = *self.volume_track.borrow();
+            let fraction = if width > 0.0 {
+                ((x - left) / width).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            (fraction * 100.0).round() as u8
+        }
+
+        /// Update the Sound slider's value optimistically. Called on every
+        /// drag step; the backend is only asked to change the volume once
+        /// the drag settles (`commit_output_volume`), so scrubbing never
+        /// spawns a subprocess per frame.
+        fn preview_output_volume(&mut self, value: u8, cx: &mut Context<Self>) {
+            if let Some(data) = self.sound_menu.as_mut() {
+                data.output.volume = value;
+            }
+            cx.notify();
+        }
+
+        /// Send the Sound slider's current value to the audio backend. Called
+        /// on mouse down (a click jumps straight there) and on mouse up
+        /// (a drag settles), never on every intermediate move.
+        fn commit_output_volume(&mut self, value: u8, cx: &mut Context<Self>) {
+            self.preview_output_volume(value, cx);
+            self.sound_error = None;
+            cx.spawn(async move |this, cx| {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        blocking::unblock(move || SystemBackend.set_output_volume(value)).await
+                    })
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    if let Err(error) = result {
+                        eprintln!("could not change the volume: {error}");
+                        this.sound_error = Some(format!("Couldn't change the volume: {error}"));
+                        cx.notify();
+                    }
+                });
+            })
+            .detach();
         }
 
         fn handle_status_key(
@@ -1990,13 +2362,19 @@ mod linux_wayland {
                     }))
                     .children(switch.map(|on| {
                         let knob = if on { palette.knob } else { 0xFFFFFFFF };
+                        // Wi-Fi and Bluetooth share this row; the label
+                        // names whichever radio the switch belongs to.
+                        let radio = match &action {
+                            Some(StatusAction::ToggleBluetooth) => "Bluetooth",
+                            _ => "Wi-Fi",
+                        };
                         div()
                             .id(format!("status-switch-{}", self.display_id))
                             .role(Role::Switch)
                             .aria_label(if on {
-                                "Turn Wi-Fi Off"
+                                format!("Turn {radio} Off")
                             } else {
-                                "Turn Wi-Fi On"
+                                format!("Turn {radio} On")
                             })
                             .relative()
                             .flex_none()
@@ -2169,6 +2547,118 @@ mod linux_wayland {
                     .child(label)
                     .into_any_element(),
                 StatusRow::GroupEnd => div().id(id).flex_none().h(px(height)).into_any_element(),
+                StatusRow::Check { label, checked, .. } => {
+                    interactive(div().id(id).role(Role::MenuItem).aria_label(label.clone()))
+                        .pl(px(row_text_pad))
+                        .pr(px(9.4))
+                        .child(div().flex_1().whitespace_nowrap().child(label))
+                        .when(checked, |row| {
+                            row.child(
+                                svg()
+                                    .flex_none()
+                                    .w(px(menu_model::MENU_ICON_BOX))
+                                    .h(px(menu_model::MENU_ICON_BOX))
+                                    .path(menu_icon_path("checkmark"))
+                                    .text_color(rgba(palette.status_text)),
+                            )
+                        })
+                        .into_any_element()
+                }
+                StatusRow::Slider { value } => {
+                    let track = self.volume_track.clone();
+                    // The fill lags the track's own measurement by one frame
+                    // (the canvas below records it while painting), the same
+                    // way `status_slots` positions each status menu under
+                    // its icon; layout is stable frame to frame, so this
+                    // settles immediately and never drifts visibly.
+                    let (_, track_width) = *self.volume_track.borrow();
+                    let fill_width = (track_width * f32::from(value).min(100.0) / 100.0).max(0.0);
+                    div()
+                        .id(id)
+                        .role(Role::Slider)
+                        .aria_label("Output Volume")
+                        .aria_numeric_value(f64::from(value))
+                        .aria_min_numeric_value(0.0)
+                        .aria_max_numeric_value(100.0)
+                        .h(px(height))
+                        .mx(px(menu_model::ROW_INSET - EDGE))
+                        .px(px(row_text_pad))
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .cursor_pointer()
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &MouseDownEvent, _, cx| {
+                                cx.stop_propagation();
+                                this.status_dragging_volume = true;
+                                let value = this.volume_at(event.position.x.into());
+                                this.commit_output_volume(value, cx);
+                            }),
+                        )
+                        .on_mouse_move(cx.listener(move |this, event: &MouseMoveEvent, _, cx| {
+                            if this.status_dragging_volume {
+                                let value = this.volume_at(event.position.x.into());
+                                this.preview_output_volume(value, cx);
+                            }
+                        }))
+                        .on_mouse_up(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &MouseUpEvent, _, cx| {
+                                if this.status_dragging_volume {
+                                    this.status_dragging_volume = false;
+                                    let value = this.volume_at(event.position.x.into());
+                                    this.commit_output_volume(value, cx);
+                                }
+                            }),
+                        )
+                        .on_mouse_up_out(
+                            MouseButton::Left,
+                            cx.listener(move |this, _: &MouseUpEvent, _, cx| {
+                                if this.status_dragging_volume {
+                                    this.status_dragging_volume = false;
+                                    let value = this
+                                        .sound_menu
+                                        .as_ref()
+                                        .map_or(0, |data| data.output.volume.min(100));
+                                    this.commit_output_volume(value, cx);
+                                }
+                            }),
+                        )
+                        .child(
+                            div()
+                                .id(format!("volume-track-{}", self.display_id))
+                                .relative()
+                                .flex_1()
+                                .h(px(menu_model::SWITCH_HEIGHT / 6.0))
+                                .rounded(px(menu_model::SWITCH_HEIGHT / 12.0))
+                                .bg(rgba(palette.switch_off))
+                                .child(
+                                    canvas(
+                                        move |bounds, _, _| {
+                                            *track.borrow_mut() = (
+                                                f32::from(bounds.left()),
+                                                f32::from(bounds.right() - bounds.left()),
+                                            );
+                                        },
+                                        |_, _, _, _| {},
+                                    )
+                                    .absolute()
+                                    .inset_0(),
+                                )
+                                .child(
+                                    div()
+                                        .absolute()
+                                        .left_0()
+                                        .top_0()
+                                        .bottom_0()
+                                        .w(px(fill_width))
+                                        .rounded(px(menu_model::SWITCH_HEIGHT / 12.0))
+                                        .bg(rgba(palette.status_text)),
+                                ),
+                        )
+                        .into_any_element()
+                }
             }
         }
 
@@ -3429,6 +3919,9 @@ mod linux_wayland {
                     .aria_label(match kind {
                         StatusMenuKind::Wifi => "Wi-Fi",
                         StatusMenuKind::Battery => "Battery",
+                        StatusMenuKind::Sound => "Sound",
+                        StatusMenuKind::Bluetooth => "Bluetooth",
+                        StatusMenuKind::Focus => "Focus",
                     })
                     .absolute()
                     .top(px(menu_top))
@@ -3564,14 +4057,20 @@ mod linux_wayland {
                                 .map(|(index, indicator)| {
                                     let icon = indicator_icon_path(indicator.kind);
                                     let is_battery = indicator.kind == TopBarIndicatorKind::Battery;
-                                    // Wi-Fi and Battery open their own menus
-                                    // under the icon; the rest open Control
-                                    // Center.
+                                    // Every indicator but VPN and
+                                    // Notifications opens its own menu under
+                                    // the icon; VPN still falls through to
+                                    // Control Center.
                                     let menu_kind = match indicator.kind {
                                         TopBarIndicatorKind::Network => Some(StatusMenuKind::Wifi),
                                         TopBarIndicatorKind::Battery => {
                                             Some(StatusMenuKind::Battery)
                                         }
+                                        TopBarIndicatorKind::Sound => Some(StatusMenuKind::Sound),
+                                        TopBarIndicatorKind::Bluetooth => {
+                                            Some(StatusMenuKind::Bluetooth)
+                                        }
+                                        TopBarIndicatorKind::Focus => Some(StatusMenuKind::Focus),
                                         _ => None,
                                     };
                                     let slots = self.status_slots.clone();
@@ -3881,6 +4380,9 @@ mod linux_wayland {
     fn open_settings_pane(pane: &'static str, cx: &mut App) {
         let args: &'static [&'static str] = match pane {
             "battery" => &["--pane", "battery"],
+            "sound" => &["--pane", "sound"],
+            "bluetooth" => &["--pane", "bluetooth"],
+            "focus" => &["--pane", "focus"],
             _ => &["--pane", "wifi"],
         };
         spawn_command("/usr/bin/rmac-system-settings", args, cx);

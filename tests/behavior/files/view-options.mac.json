@@ -1,12 +1,23 @@
 {
   "format": 1,
   "scenario": "files/view-options",
-  "platform": "macOS 26",
+  "platform": "macOS 26.2",
   "recorded": "2026-09-29",
   "observations": {
     "icon_options": {
-      "windows": {"count": 2},
-      "dialog": {"present": false}
+      "windows": {
+        "count": 2
+      },
+      "dialog": {
+        "present": false
+      }
+    },
+    "selection_while_open": {
+      "selection": {
+        "items": [
+          "example.txt"
+        ]
+      }
     }
   }
 }

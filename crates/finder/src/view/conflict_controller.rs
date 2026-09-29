@@ -81,6 +81,7 @@ impl FinderView {
                             batch.keep_unfinished_in_clipboard,
                             batch.skipped_moves,
                             batch.play_drop_sound,
+                            None,
                             cx,
                         );
                     }
@@ -200,6 +201,7 @@ impl FinderView {
                             batch.keep_unfinished_in_clipboard,
                             batch.skipped_moves,
                             batch.play_drop_sound,
+                            None,
                             cx,
                         );
                     }

@@ -6,6 +6,7 @@ pub(super) enum TransferEvent {
         report: file_ops::TransferReport,
         recovery_reviews: std::io::Result<Vec<operation_journal::RecoveryReview>>,
         undo_availability: std::io::Result<Option<undo_journal::UndoAvailability>>,
+        completion: Option<async_channel::Sender<bool>>,
     },
 }
 

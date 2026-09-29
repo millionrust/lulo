@@ -39,6 +39,7 @@ impl FinderView {
         keep_unfinished_in_clipboard: bool,
         retained_clipboard: Vec<PathBuf>,
         play_drop_sound: bool,
+        completion: Option<async_channel::Sender<bool>>,
         cx: &mut Context<Self>,
     ) {
         if tasks.is_empty() {
@@ -119,6 +120,7 @@ impl FinderView {
                     report,
                     recovery_reviews,
                     undo_availability,
+                    completion,
                 });
             })
             .detach();
@@ -142,7 +144,11 @@ impl FinderView {
                             report,
                             recovery_reviews,
                             undo_availability,
+                            completion,
                         } => {
+                            let completed = report.processed == 1
+                                && report.failures.is_empty()
+                                && !report.cancelled;
                             let play_drop_sound = this.transfer.as_ref().is_some_and(|transfer| {
                                 transfer.play_drop_sound
                                     && report.processed != 0
@@ -218,6 +224,9 @@ impl FinderView {
                                 );
                             }
                             this.reload(cx);
+                            if let Some(completion) = completion {
+                                let _ = completion.try_send(completed);
+                            }
                         }
                     })
                     .is_err()

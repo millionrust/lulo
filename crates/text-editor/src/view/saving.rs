@@ -2,6 +2,14 @@
 
 use super::*;
 
+struct NewPathRequest {
+    content: String,
+    format: document::TextFormat,
+    then: Option<Pending>,
+    forbidden_destination: Option<PathBuf>,
+    suggested_name: Option<String>,
+}
+
 impl EditorView {
     pub(super) fn save_sheet(
         &mut self,
@@ -23,12 +31,14 @@ impl EditorView {
             return;
         }
         if self.save_location == SaveLocation::Other {
-            self.save_to_new_path_named(
-                self.document_text(cx),
-                self.text_format,
-                then,
-                None,
-                Some(name.to_owned()),
+            self.save_to_new_path_request(
+                NewPathRequest {
+                    content: self.document_text(cx),
+                    format: self.text_format,
+                    then,
+                    forbidden_destination: None,
+                    suggested_name: Some(name.to_owned()),
+                },
                 window,
                 cx,
             );
@@ -154,27 +164,32 @@ impl EditorView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.save_to_new_path_named(
-            content,
-            format,
-            then,
-            forbidden_destination,
-            None,
+        self.save_to_new_path_request(
+            NewPathRequest {
+                content,
+                format,
+                then,
+                forbidden_destination,
+                suggested_name: None,
+            },
             window,
             cx,
         );
     }
 
-    pub(super) fn save_to_new_path_named(
+    fn save_to_new_path_request(
         &mut self,
-        content: String,
-        format: document::TextFormat,
-        then: Option<Pending>,
-        forbidden_destination: Option<PathBuf>,
-        name: Option<String>,
+        request: NewPathRequest,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let NewPathRequest {
+            content,
+            format,
+            then,
+            forbidden_destination,
+            suggested_name,
+        } = request;
         let directory = self
             .path
             .as_deref()
@@ -186,7 +201,7 @@ impl EditorView {
         // "Untitled" — no extension — because the extension is implied by
         // the format, not typed; a saved document's own name (with its
         // extension) is suggested as-is.
-        let suggested_name = name.unwrap_or_else(|| {
+        let suggested_name = suggested_name.unwrap_or_else(|| {
             self.path
                 .as_deref()
                 .and_then(Path::file_name)

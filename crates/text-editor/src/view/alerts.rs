@@ -116,13 +116,11 @@ impl EditorView {
                     self.load_document_path(path, "The file could not be opened.", window, cx);
                 }
             }
-            Some(ActiveAlert::ConfirmSave(pending)) => {
-                if let Some(pending) = pending {
-                    if self.clear_recovery(cx) {
-                        self.perform(pending, window, cx);
-                    } else {
-                        self.alert = Some(ActiveAlert::ConfirmSave(Some(pending)));
-                    }
+            Some(ActiveAlert::ConfirmSave(Some(pending))) => {
+                if self.clear_recovery(cx) {
+                    self.perform(pending, window, cx);
+                } else {
+                    self.alert = Some(ActiveAlert::ConfirmSave(Some(pending)));
                 }
             }
             _ => {}

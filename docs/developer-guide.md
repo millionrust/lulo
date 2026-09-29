@@ -129,7 +129,7 @@ sudo apt-get install --yes \
 
 ```sh
 cargo build --locked --workspace
-cargo fmt --all -- --check
+python3 scripts/check-rustfmt.py
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --workspace --all-features
 cargo deny --locked --log-level error check

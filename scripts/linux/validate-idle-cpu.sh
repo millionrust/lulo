@@ -36,7 +36,7 @@ touch \
 
 cargo metadata --offline --format-version 1 > /dev/null
 (cd shell && cargo metadata --offline --format-version 1 > /dev/null)
-cargo fmt --all -- --check > "$output_dir/root-fmt.log" 2>&1
+python3 scripts/check-rustfmt.py > "$output_dir/root-fmt.log" 2>&1
 (cd shell && cargo fmt --all -- --check > "$output_dir/shell-fmt.log" 2>&1)
 rustup run 1.95.0 rustfmt --edition 2024 --check \
     vendor/gpui-component/crates/ui/src/input/blink_cursor.rs \

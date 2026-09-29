@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "files/open-enclosing-cmd-up",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "up": {
+      "selection": {
+        "items": [
+          "Projects"
+        ]
+      },
+      "windows": {
+        "count": 1
+      }
+    }
+  }
+}

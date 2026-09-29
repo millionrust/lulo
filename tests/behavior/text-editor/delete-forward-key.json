@@ -1,0 +1,26 @@
+{
+  "title": "Forward Delete removes the character ahead of the caret",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "Hello world"
+    },
+    {
+      "key": "cmd-left"
+    },
+    {
+      "key": "forwarddelete",
+      "settle": 0.6
+    },
+    {
+      "observe": "deleted_forward",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

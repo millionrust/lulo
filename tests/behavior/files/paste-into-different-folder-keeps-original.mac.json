@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "scenario": "files/paste-into-different-folder-keeps-original",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "original_still_there": {
+      "files": {
+        "entries": [
+          "Projects/",
+          "Projects/report.txt",
+          "report.txt"
+        ]
+      }
+    }
+  }
+}

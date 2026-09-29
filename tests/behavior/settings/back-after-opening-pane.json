@@ -1,0 +1,37 @@
+{
+  "title": "⌘[ goes back to the previous Settings view after opening a pane from search",
+  "app": "settings",
+  "launch": {},
+  "steps": [
+    {
+      "key": "cmd-f"
+    },
+    {
+      "type": "wallpaper",
+      "settle": 1.2
+    },
+    {
+      "key": "down"
+    },
+    {
+      "key": "return",
+      "settle": 1.2
+    },
+    {
+      "observe": "pane_open",
+      "facts": [
+        "windows"
+      ]
+    },
+    {
+      "key": "cmd-["
+    },
+    {
+      "observe": "back",
+      "facts": [
+        "windows"
+      ],
+      "settle": 1.0
+    }
+  ]
+}

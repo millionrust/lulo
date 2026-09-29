@@ -1,0 +1,26 @@
+{
+  "title": "Pressing a second operator before entering the next number replaces the pending operator",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "type": "5+",
+      "settle": 0.4
+    },
+    {
+      "type": "*3="
+    },
+    {
+      "observe": "result",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

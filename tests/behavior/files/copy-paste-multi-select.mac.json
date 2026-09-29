@@ -1,0 +1,18 @@
+{
+  "format": 1,
+  "scenario": "files/copy-paste-multi-select",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "pasted": {
+      "files": {
+        "entries": [
+          "a copy.txt",
+          "a.txt",
+          "b copy.txt",
+          "b.txt"
+        ]
+      }
+    }
+  }
+}

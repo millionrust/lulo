@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "scenario": "preview/close-window",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "open": {
+      "windows": {
+        "count": 1,
+        "front": "guide.pdf – 1 page"
+      }
+    },
+    "closed": {
+      "windows": {
+        "count": 0,
+        "front": null
+      }
+    }
+  }
+}

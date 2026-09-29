@@ -1,0 +1,40 @@
+{
+  "title": "Backspace removes the last digit of the current entry",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "type": "123"
+    },
+    {
+      "key": "backspace",
+      "settle": 0.4
+    },
+    {
+      "observe": "one_digit_removed",
+      "facts": [
+        "display"
+      ]
+    },
+    {
+      "key": "backspace",
+      "settle": 0.4
+    },
+    {
+      "key": "backspace",
+      "settle": 0.4
+    },
+    {
+      "observe": "back_to_zero",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

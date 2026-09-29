@@ -1,0 +1,23 @@
+{
+  "title": "A second decimal point in the same number is ignored",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "type": "3.14.15",
+      "settle": 0.6
+    },
+    {
+      "observe": "display_value",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

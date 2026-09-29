@@ -1,0 +1,34 @@
+{
+  "title": "New Folder (⇧⌘N) with a file selected deselects it and selects the new folder instead",
+  "app": "files",
+  "setup": {
+    "files": {
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "select": "report.txt"
+    },
+    {
+      "key": "cmd-shift-n",
+      "settle": 1.2
+    },
+    {
+      "observe": "created",
+      "facts": [
+        "focus",
+        "selection"
+      ]
+    },
+    {
+      "key": "escape"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "title": "New Folder (⇧⌘N) on the desktop, typed name and Return, names and keeps it selected",
+  "app": "desktop",
+  "launch": {},
+  "steps": [
+    {
+      "focus_desktop": true
+    },
+    {
+      "key": "cmd-shift-n",
+      "settle": 1.5
+    },
+    {
+      "type": "Scratch"
+    },
+    {
+      "key": "return",
+      "settle": 1.0
+    },
+    {
+      "observe": "named",
+      "facts": [
+        "focus",
+        "files"
+      ]
+    }
+  ]
+}

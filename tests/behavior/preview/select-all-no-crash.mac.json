@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "scenario": "preview/select-all-no-crash",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "no_dialog": {
+      "dialog": {
+        "present": false
+      },
+      "windows": {
+        "count": 1,
+        "front": "guide.pdf – 1 page"
+      }
+    }
+  }
+}

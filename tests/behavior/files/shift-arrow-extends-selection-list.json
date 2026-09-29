@@ -1,0 +1,41 @@
+{
+  "title": "Shift+↓ in list view extends the selection downward one row at a time",
+  "app": "files",
+  "setup": {
+    "files": {
+      "a.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "b.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "c.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "d.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "reveal": "a.txt"
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "shift-down"
+    },
+    {
+      "key": "shift-down"
+    },
+    {
+      "observe": "extended",
+      "facts": [
+        "selection"
+      ]
+    },
+    {
+      "key": "down"
+    },
+    {
+      "observe": "collapsed",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

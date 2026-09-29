@@ -1,0 +1,48 @@
+{
+  "title": "Command-click toggles one item into (and back out of) the current selection",
+  "app": "files",
+  "setup": {
+    "files": {
+      "a.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "b.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "c.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "select": "a.txt"
+    },
+    {
+      "select": "c.txt",
+      "modifiers": [
+        "cmd"
+      ],
+      "settle": 1.0
+    },
+    {
+      "observe": "added",
+      "facts": [
+        "selection"
+      ]
+    },
+    {
+      "select": "c.txt",
+      "modifiers": [
+        "cmd"
+      ],
+      "settle": 1.0
+    },
+    {
+      "observe": "removed",
+      "facts": [
+        "selection"
+      ]
+    }
+  ]
+}

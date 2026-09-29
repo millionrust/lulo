@@ -27,6 +27,17 @@ tested binary so mixed dev builds are visible.
 
 ## Add a scenario
 
+15 scenarios are staged at `docs/behavior-pending/calculator/*.json` (13) and
+`docs/behavior-pending/desktop/*.json` (2), written and schema-validated but not
+yet Mac-recorded, because the Mac recorder's own preconditions blocked recording
+them on 2026-09-29: Calculator was already running (the recorder refuses to record
+while it's already open, by design — see `MacRun.setup()` — and never quits an app
+it did not start) and Finder had two of the owner's own windows open (Downloads,
+Applications), which blocks the Desktop scenario's "no Finder windows" precondition.
+Move each into `tests/behavior/<area>/`, then run the Mac recorder once Calculator
+is closed and Finder's real windows are gone, and keep the recorded `.mac.json`
+alongside it.
+
 1. Write `tests/behavior/<area>/<name>.json`. `area` is `files`, `text-editor`, `settings`,
    `calculator`, `preview` or `desktop`.
 
@@ -54,6 +65,14 @@ tested binary so mixed dev builds are visible.
      - `type`: ASCII text.
      - `wait`: seconds.
      - `select` or `context`: click or right-click the item with that name. After `context: "background"`, `select` can activate a named context-menu item. For Files, `context: "background"` right-clicks an empty point in the list viewport.
+     - `select` also takes `modifiers` (a list including `"shift"` and/or `"cmd"`) and `double` (bool) for a
+       real shift-click, command-click or double-click, instead of the plain Finder "select" Apple Event
+       (which only sets selection state and cannot extend a range, toggle an item, or open a folder). The
+       Mac recorder locates the named item on screen and clicks it through Quartz, the same way `context`
+       already does for right-clicks. **The Lulo runner does not implement this yet** — `run_lulo.py`'s
+       `click_item` always sends a single unmodified left click; it needs a `count` (already supported by
+       `wlinput.py`'s pointer `click(..., count=)`) and a held-modifier option (hold the virtual keyboard's
+       shift/cmd key around the pointer click) before scenarios using `modifiers`/`double` can run on Lulo.
      - `focus_desktop`.
      - `observe`: records facts.
      - Any step can take `settle` (seconds to wait after it; the default is 0.8).

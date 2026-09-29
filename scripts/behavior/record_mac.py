@@ -269,8 +269,18 @@ class MacRun:
         if self.app == "desktop":
             if guard.get("windows"):
                 raise Stop("a Finder window has focus; stopped before typing on the desktop")
-        elif guard.get("focused_window") is None and guard.get("ours") and guard.get("ours") == guard.get("windows"):
-            return  # Finder reports no focused window while renaming; every window is ours
+        elif guard.get("focused_window") is None and guard.get("ours"):
+            # Finder reports no focused window while renaming (AXFocusedWindow
+            # goes briefly null for the window whose inline field we just
+            # typed into). frontmost is already confirmed to be Finder above,
+            # and "ours" being non-zero means the window we opened is still
+            # open, so this is safe even when the owner has other Finder
+            # windows open too (requiring every window to be ours made every
+            # Return-based rename scenario fail whenever a second Finder
+            # window existed, e.g. tests/behavior/files/rename-file.json
+            # against a Finder with a Downloads and an Applications window
+            # open, 2026-09-29).
+            return
         elif not guard.get("focused_window_is_ours"):
             raise Stop(f"the focused window is not one this scenario opened ({guard}); stopped before typing")
 
@@ -287,9 +297,78 @@ class MacRun:
         self.check_target()
         osascript(f'tell application "System Events" to keystroke {as_string(text)}')
 
-    def select(self, name: str) -> None:
+    def _locate_item(self, name: str) -> tuple[float, float]:
+        """The on-screen centre of a Finder row or icon named `name` in the
+        focused window, found the same way `context()` finds the selected
+        item, but by title instead of selection state. Used for a real
+        click (shift-click, command-click, double-click), which a Finder
+        "select" Apple Event cannot produce."""
+
+        script = f"""
+function run() {{
+  var se = Application("System Events");
+  var p = se.processes.byName({json.dumps(self.process)});
+  var w = p.attributes.byName("AXFocusedWindow").value();
+  function A(el, n) {{ try {{ return el.attributes.byName(n).value(); }} catch (e) {{ return undefined; }} }}
+  function nameOf(el) {{
+    var t = A(el, "AXTitle");
+    if (t) return t;
+    // List view nests the name a couple of levels down (AXRow > AXCell >
+    // AXStaticText/AXTextField); icon view puts it closer to the top.
+    var found = null;
+    function dig(node, depth) {{
+      if (found || depth < 0) return;
+      var role = A(node, "AXRole");
+      if (role === "AXStaticText" || role === "AXTextField") {{
+        var v = A(node, "AXValue") || A(node, "AXTitle");
+        if (v) {{ found = v; return; }}
+      }}
+      var kids = A(node, "AXChildren") || [];
+      for (var j = 0; j < kids.length; j++) dig(kids[j], depth - 1);
+    }}
+    dig(el, 4);
+    return found;
+  }}
+  var hit = null;
+  function walk(el, d) {{
+    if (hit || d < 0) return;
+    var role = A(el, "AXRole");
+    if ((role === "AXRow" || role === "AXImage" || role === "AXGroup") && nameOf(el) === {json.dumps(name)}) {{ hit = el; return; }}
+    var k = A(el, "AXChildren") || [];
+    for (var i = 0; i < k.length; i++) walk(k[i], d - 1);
+  }}
+  walk(w, 14);
+  if (!hit) return "none";
+  var pos = A(hit, "AXPosition"), size = A(hit, "AXSize");
+  if (!pos || !size) return "none";
+  return [pos[0] + Math.min(40, size[0] / 2), pos[1] + size[1] / 2].join(" ");
+}}"""
+        where = osascript(script, js=True)
+        if where == "none":
+            raise Stop(f"no on-screen Finder item named {name!r} to click")
+        x, y = (float(value) for value in where.split())
+        return x, y
+
+    def select(self, name: str, modifiers: Optional[list[str]] = None, double: bool = False) -> None:
         if self.process != "Finder":
             raise Stop("select is only defined for Finder scenarios")
+        if not self.menu_open and (modifiers or double):
+            # A real click, not a Finder "select" Apple Event: shift-click
+            # extends the selection, command-click toggles an item into it,
+            # and a double-click opens the item — none of which "select"
+            # (which only sets AX selection state) can produce.
+            self.check_target()
+            x, y = self._locate_item(name)
+            self.check_target()
+            args = ["left", str(x), str(y)]
+            if double:
+                args += ["--count", "2"]
+            if modifiers and "shift" in modifiers:
+                args.append("--shift")
+            if modifiers and "cmd" in modifiers:
+                args.append("--cmd")
+            subprocess.run([sys.executable, str(HERE / "mac_click.py"), *args], check=True, timeout=10)
+            return
         if self.menu_open:
             self.check_target()
             script = f"""
@@ -459,7 +538,7 @@ function run() {{
                 time.sleep(float(step["wait"]))
                 continue
             elif "select" in step:
-                self.select(step["select"])
+                self.select(step["select"], modifiers=step.get("modifiers"), double=bool(step.get("double")))
             elif "context" in step:
                 self.context(step["context"])
             elif "menu" in step:

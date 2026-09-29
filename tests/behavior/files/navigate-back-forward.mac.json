@@ -1,0 +1,26 @@
+{
+  "format": 1,
+  "scenario": "files/navigate-back-forward",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "inside": {
+      "windows": {
+        "count": 1
+      }
+    },
+    "back": {
+      "windows": {
+        "count": 1
+      },
+      "selection": {
+        "items": []
+      }
+    },
+    "forward": {
+      "windows": {
+        "count": 1
+      }
+    }
+  }
+}

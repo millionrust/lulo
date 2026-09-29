@@ -1,0 +1,46 @@
+{
+  "title": "⌘F opens a search field in the toolbar; typing filters the window to matches",
+  "app": "files",
+  "setup": {
+    "files": {
+      "apple.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "banana.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "cherry.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "cmd-f",
+      "settle": 1.0
+    },
+    {
+      "observe": "opened",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "type": "banana",
+      "settle": 1.5
+    },
+    {
+      "observe": "typed",
+      "facts": [
+        "focus"
+      ]
+    }
+  ],
+  "omit": [
+    "opened.focus.value",
+    "opened.focus.selection",
+    "opened.focus.selected_text",
+    "opened.focus.selected_all",
+    "opened.focus.label"
+  ]
+}

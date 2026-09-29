@@ -1,0 +1,44 @@
+{
+  "title": "⌘W with two tabs closes only the front tab; the window stays open",
+  "app": "files",
+  "setup": {
+    "files": {
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-t",
+      "settle": 1.2
+    },
+    {
+      "observe": "two_tabs",
+      "facts": [
+        "windows",
+        "tabs"
+      ]
+    },
+    {
+      "key": "cmd-w",
+      "settle": 1.2
+    },
+    {
+      "observe": "one_tab",
+      "facts": [
+        "windows",
+        "tabs"
+      ]
+    }
+  ],
+  "omit": [
+    "two_tabs.windows.front",
+    "two_tabs.windows.titles",
+    "two_tabs.tabs.titles",
+    "one_tab.windows.front",
+    "one_tab.windows.titles",
+    "one_tab.tabs.titles"
+  ]
+}

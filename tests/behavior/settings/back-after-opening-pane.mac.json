@@ -1,0 +1,26 @@
+{
+  "format": 1,
+  "scenario": "settings/back-after-opening-pane",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "pane_open": {
+      "windows": {
+        "count": 1,
+        "front": "Wallpaper",
+        "titles": [
+          "Wallpaper"
+        ]
+      }
+    },
+    "back": {
+      "windows": {
+        "count": 1,
+        "front": "Menu Bar",
+        "titles": [
+          "Menu Bar"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "title": "Undo (⌘Z) after New Folder on the desktop removes the folder it created",
+  "app": "desktop",
+  "launch": {},
+  "steps": [
+    {
+      "focus_desktop": true
+    },
+    {
+      "key": "cmd-shift-n",
+      "settle": 1.5
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "key": "cmd-z",
+      "settle": 1.2
+    },
+    {
+      "observe": "undone",
+      "facts": [
+        "files"
+      ]
+    }
+  ]
+}

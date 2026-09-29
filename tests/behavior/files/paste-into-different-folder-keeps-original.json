@@ -1,0 +1,45 @@
+{
+  "title": "Pasting a copy into a different folder leaves the original file in the source folder",
+  "app": "files",
+  "setup": {
+    "files": {
+      "report.txt": "Behaviour-suite fixture. Safe to delete.\n",
+      "Projects/": null
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "select": "report.txt"
+    },
+    {
+      "key": "cmd-c"
+    },
+    {
+      "select": "Projects"
+    },
+    {
+      "key": "cmd-down",
+      "settle": 1.2
+    },
+    {
+      "key": "cmd-v",
+      "settle": 1.5
+    },
+    {
+      "key": "cmd-up",
+      "settle": 1.2
+    },
+    {
+      "observe": "original_still_there",
+      "facts": [
+        "files"
+      ]
+    }
+  ]
+}

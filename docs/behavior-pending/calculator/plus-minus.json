@@ -1,0 +1,31 @@
+{
+  "title": "± negates the number being entered",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "key": "cmd-2"
+    },
+    {
+      "type": "5"
+    },
+    {
+      "click_key": "negate",
+      "row": 4,
+      "col": 6,
+      "settle": 0.6
+    },
+    {
+      "observe": "negated",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

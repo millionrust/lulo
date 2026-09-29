@@ -1,0 +1,49 @@
+{
+  "title": "⌘F finds text; ⌘G repeats forward and ⌘⇧G repeats backward",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {
+      "wait": 4
+    },
+    {
+      "type": "hello world hello there hello"
+    },
+    {
+      "key": "cmd-f"
+    },
+    {
+      "type": "hello"
+    },
+    {
+      "key": "return",
+      "settle": 0.8
+    },
+    {
+      "observe": "first_match",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "cmd-g",
+      "settle": 0.8
+    },
+    {
+      "observe": "next_match",
+      "facts": [
+        "focus"
+      ]
+    },
+    {
+      "key": "cmd-shift-g",
+      "settle": 0.8
+    },
+    {
+      "observe": "prev_match",
+      "facts": [
+        "focus"
+      ]
+    }
+  ]
+}

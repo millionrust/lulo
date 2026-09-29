@@ -1,0 +1,28 @@
+{
+  "title": "Get Info (⌘I) on a folder opens an Info window naming the folder",
+  "app": "files",
+  "setup": {
+    "files": {
+      "Projects/": null,
+      "Projects/notes.txt": "Behaviour-suite fixture. Safe to delete.\n"
+    }
+  },
+  "launch": {
+    "reveal": "Projects"
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "cmd-i",
+      "settle": 1.2
+    },
+    {
+      "observe": "info",
+      "facts": [
+        "windows"
+      ]
+    }
+  ]
+}

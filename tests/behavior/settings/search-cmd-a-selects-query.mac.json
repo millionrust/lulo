@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "scenario": "settings/search-cmd-a-selects-query",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-29",
+  "observations": {
+    "selected": {
+      "focus": {
+        "role": "search-field",
+        "selection": [
+          0,
+          9
+        ],
+        "selected_all": true,
+        "label": "Search"
+      }
+    }
+  }
+}

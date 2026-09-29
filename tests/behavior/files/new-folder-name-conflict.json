@@ -1,0 +1,31 @@
+{
+  "title": "New Folder (⇧⌘N) when “untitled folder” already exists numbers the new one",
+  "app": "files",
+  "setup": {
+    "files": {
+      "untitled folder/": null
+    }
+  },
+  "launch": {
+    "folder": "."
+  },
+  "steps": [
+    {
+      "key": "cmd-2"
+    },
+    {
+      "key": "cmd-shift-n",
+      "settle": 1.2
+    },
+    {
+      "observe": "created",
+      "facts": [
+        "focus",
+        "files"
+      ]
+    },
+    {
+      "key": "escape"
+    }
+  ]
+}

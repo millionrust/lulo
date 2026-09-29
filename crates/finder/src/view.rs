@@ -104,6 +104,7 @@ actions!(
     [
         NewFolder,
         RenameItem,
+        RenameNextItem,
         Duplicate,
         MakeAlias,
         TagRed,

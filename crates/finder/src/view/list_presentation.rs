@@ -241,6 +241,10 @@ impl FinderView {
                     .id("rename-field")
                     .role(Role::TextInput)
                     .aria_label("Name")
+                    .key_context("FinderRename")
+                    .on_action(cx.listener(|this, _: &RenameNextItem, window, cx| {
+                        this.rename_next(window, cx)
+                    }))
                     .accessible_text_input(input, cx)
                     .pl(px(LIST_ICON_TO_NAME))
                     .flex_1()
@@ -502,6 +506,10 @@ impl FinderView {
                         .id("rename-field")
                         .role(Role::TextInput)
                         .aria_label("Name")
+                        .key_context("FinderRename")
+                        .on_action(cx.listener(|this, _: &RenameNextItem, window, cx| {
+                            this.rename_next(window, cx)
+                        }))
                         .accessible_text_input(input, cx)
                         .mt(px(ICON_LABEL_GAP - ICON_PLATE_GROW))
                         .w(px(label_width))
@@ -786,12 +794,6 @@ impl FinderView {
             .role(Role::ListBox)
             .track_focus(&self.focus)
             .key_context("Finder")
-            .capture_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                if this.renaming.is_some() && ev.keystroke.key.as_str() == "tab" {
-                    cx.stop_propagation();
-                    this.rename_next(window, cx);
-                }
-            }))
             .on_action(cx.listener(|this, _: &NewFolder, window, cx| this.new_folder(window, cx)))
             .on_action(
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_selected(window, cx)),

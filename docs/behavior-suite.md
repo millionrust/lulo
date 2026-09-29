@@ -27,6 +27,17 @@ tested binary so mixed dev builds are visible.
 
 ## Add a scenario
 
+15 scenarios are staged at `docs/behavior-pending/calculator/*.json` (13) and
+`docs/behavior-pending/desktop/*.json` (2), written and schema-validated but not
+yet Mac-recorded, because the Mac recorder's own preconditions blocked recording
+them on 2026-09-29: Calculator was already running (the recorder refuses to record
+while it's already open, by design — see `MacRun.setup()` — and never quits an app
+it did not start) and Finder had two of the owner's own windows open (Downloads,
+Applications), which blocks the Desktop scenario's "no Finder windows" precondition.
+Move each into `tests/behavior/<area>/`, then run the Mac recorder once Calculator
+is closed and Finder's real windows are gone, and keep the recorded `.mac.json`
+alongside it.
+
 1. Write `tests/behavior/<area>/<name>.json`. `area` is `files`, `text-editor`, `settings`,
    `calculator`, `preview` or `desktop`.
 

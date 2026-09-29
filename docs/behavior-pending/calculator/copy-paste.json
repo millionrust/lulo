@@ -1,0 +1,39 @@
+{
+  "title": "⌘C copies the displayed number; ⌘V after clearing pastes it back",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "type": "42"
+    },
+    {
+      "key": "cmd-c"
+    },
+    {
+      "key": "escape",
+      "settle": 0.4
+    },
+    {
+      "observe": "cleared",
+      "facts": [
+        "display"
+      ]
+    },
+    {
+      "key": "cmd-v",
+      "settle": 0.6
+    },
+    {
+      "observe": "pasted",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

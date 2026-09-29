@@ -1,0 +1,27 @@
+{
+  "title": "A percent result can feed straight into another operation",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "type": "50%",
+      "settle": 0.4
+    },
+    {
+      "type": "+10=",
+      "settle": 0.6
+    },
+    {
+      "observe": "result",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

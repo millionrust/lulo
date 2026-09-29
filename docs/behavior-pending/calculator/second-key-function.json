@@ -1,0 +1,61 @@
+{
+  "title": "2nd swaps eˣ for yˣ, changing what the key below it computes",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "key": "cmd-2"
+    },
+    {
+      "type": "2"
+    },
+    {
+      "click_key": "exp-or-y-power",
+      "row": 1,
+      "col": 4,
+      "settle": 0.6
+    },
+    {
+      "type": "="
+    },
+    {
+      "observe": "e_to_the_2",
+      "facts": [
+        "display"
+      ]
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "click_key": "second",
+      "row": 1,
+      "col": 0,
+      "settle": 0.6
+    },
+    {
+      "type": "2"
+    },
+    {
+      "click_key": "exp-or-y-power",
+      "row": 1,
+      "col": 4,
+      "settle": 0.6
+    },
+    {
+      "type": "3="
+    },
+    {
+      "observe": "two_to_the_3",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

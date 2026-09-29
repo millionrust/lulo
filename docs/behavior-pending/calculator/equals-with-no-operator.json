@@ -1,0 +1,23 @@
+{
+  "title": "= with no operator entered leaves the display showing the number typed",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "type": "5=",
+      "settle": 0.6
+    },
+    {
+      "observe": "unchanged",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

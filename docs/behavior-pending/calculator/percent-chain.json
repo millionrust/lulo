@@ -1,0 +1,32 @@
+{
+  "title": "% computes relative to the other operand, then = finishes the calculation",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "type": "200-10%",
+      "settle": 0.6
+    },
+    {
+      "observe": "percent_applied",
+      "facts": [
+        "display"
+      ]
+    },
+    {
+      "type": "="
+    },
+    {
+      "observe": "result",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

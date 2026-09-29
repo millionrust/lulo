@@ -1,0 +1,23 @@
+{
+  "title": "Dividing by zero shows the real macOS Calculator error state",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "type": "5/0=",
+      "settle": 0.6
+    },
+    {
+      "observe": "error_state",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

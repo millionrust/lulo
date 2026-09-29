@@ -1,0 +1,37 @@
+{
+  "title": "± on a computed result negates the result",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "key": "cmd-2"
+    },
+    {
+      "type": "9-3="
+    },
+    {
+      "observe": "result",
+      "facts": [
+        "display"
+      ]
+    },
+    {
+      "click_key": "negate",
+      "row": 4,
+      "col": 6,
+      "settle": 0.6
+    },
+    {
+      "observe": "negated",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

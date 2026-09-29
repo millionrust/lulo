@@ -1,0 +1,36 @@
+{
+  "title": "C during a pending operation clears only the current entry, not the pending operator",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "type": "12+",
+      "settle": 0.4
+    },
+    {
+      "key": "escape",
+      "settle": 0.4
+    },
+    {
+      "observe": "entry_cleared",
+      "facts": [
+        "display"
+      ]
+    },
+    {
+      "type": "5="
+    },
+    {
+      "observe": "continued",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

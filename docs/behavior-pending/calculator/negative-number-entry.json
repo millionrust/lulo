@@ -1,0 +1,23 @@
+{
+  "title": "Typing a leading minus before any digit is entered",
+  "app": "calculator",
+  "launch": {},
+  "steps": [
+    {
+      "key": "escape"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "type": "-5+3=",
+      "settle": 0.6
+    },
+    {
+      "observe": "result",
+      "facts": [
+        "display"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "source_revision": "8ba31b82",
+  "installed_package": "rmac-apps 0.9.0~beta.1-38",
+  "scope": "one repeat launch per app, private nested Sway software rendering, three-second settle and 30-second idle sample, no input",
+  "results": [
+    {
+      "app": "rmac-text-editor",
+      "binary_sha256": "c89a2ed964baa21afb2052eada0ab8c3cfc39858769bda137caa4b04482606df",
+      "startup_ms": 328.3,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 39.433,
+      "idle_context_switches_per_second": 9.233,
+      "idle_pss_mib": 156.6
+    },
+    {
+      "app": "rmac-weather",
+      "binary_sha256": "36f993392adab80bf6093aeac927f8bc4f6fa9955f1246731b1f517fe9eec9fc",
+      "startup_ms": 334.1,
+      "idle_seconds": 30.0,
+      "idle_cpu_percent_one_core": 41.766,
+      "idle_context_switches_per_second": 10.0,
+      "idle_pss_mib": 152.1
+    }
+  ],
+  "limits": [
+    "These are single repeat samples of the installed binaries, not warm-launch percentiles or an installed-desktop measurement.",
+    "Nested Sway uses software rendering; context switches are a wake-up proxy, not rendered frames.",
+    "The repeat establishes the high idle CPU is reproducible in the same private setup, not its cause."
+  ]
+}

@@ -25,7 +25,7 @@ The verifier therefore fails, as it should:
 python3 scripts/verify-security-review.py \
   --evidence docs/security-review-0.9.0-beta.1.json \
   --tier beta --revision <reviewed revision in the JSON>
-# verify-security-review: security evidence open_findings differs
+# The historical format 1 summary fails closed under the format 2 verifier.
 ```
 
 ## Scope and method
@@ -52,6 +52,12 @@ python3 scripts/verify-security-review.py \
   check and no finding against it is open. `pending` means the check needs
   native or station evidence, or has an open finding. `pass` never claims
   native proof. `stations` all remain `pending`.
+- **Evidence format:** format 2 pins a SHA-256 for every unique source file
+  listed by the review contract. Any source change makes the summary stale;
+  regenerate it and re-review the changed source. Format 1 summaries are
+  incompatible with this binding. Candidate verification also requires its
+  revision to match a clean current checkout. The checked-in JSON remains a
+  historical format 1 report and is not accepted as current promotion evidence.
 
 Of the 80 checks, 56 are `pass` and 24 are `pending` (the JSON is canonical).
 
@@ -115,9 +121,15 @@ Partly fixed; the rest stays open below:
 
 | ID | Severity | Boundary | Evidence | Exploit scenario | Recommended fix |
 |---|---|---|---|---|---|
-| SR-15 | Low | packages | There is no `--remap-path-prefix`. Panic locations keep `$CARGO_HOME/…` and `../crates/*` absolute paths (`Cargo.toml:162-167` strips symbols only). | Local and reference-PC builds embed `/home/<user>/…`. `check-native-reproducibility.sh` builds twice on one host, so it cannot catch this. | Remap `$CARGO_HOME` and the repository root in `build-native-inputs.sh`, and scan packaged binaries for `/home/` and `/Users/`. Not done here: it changes every release binary and needs a build to verify. |
-| SR-18 | Low (partly fixed) | packages | rustup is installed by `curl \| sh`, the `ubuntu:26.04` container is pinned by tag, and `cargo install` is pinned by version only (`release.yml`). | Supply-chain drift. | Pin by digest or hash. (The manifest mode check and the publisher's keyring source are fixed.) |
-| SR-29 | Low (new, fresh pass) | updates | `scripts/linux/rmac-update-check` schedules the automatic set (Lulo OS and security updates) as a PackageKit offline update with a download-only `UpdatePackages` and `offline_trigger`, without a `SIMULATE` pass. System Settings' Update Now simulates and stops a plan with removals for confirmation (`rmac-updates-linux` `packagekit_prepare_offline`); the daily run does not. | An update whose dependencies need a removal is applied unattended at the next restart. It is still a trusted, signed package from a configured archive, so this is data safety, not an authenticity gap. | Simulate the automatic set with `ONLY_TRUSTED \| SIMULATE` first and leave it for review in System Settings when the plan removes or obsoletes anything. |
+| SR-15 | Low | packages | `build-native-inputs.sh` now remaps the repository root and Cargo home in rustc paths, and `verify-native-packages.py` rejects inventoried ELF binaries containing home-directory paths. Focused tests pass, but a fresh package set has not passed the scanner. | Without remapping, local and reference-PC builds can embed `/home/<user>/…`; `check-native-reproducibility.sh` builds twice on one host, so it cannot catch this. | Build fresh native inputs and run package verification to establish that the remapping removes builder-specific `/home/` or `/Users/` paths. |
+| SR-18 | Low (source fix pending native run) | packages | Release containers pin the reviewed Ubuntu 26.04 index digest. The rustup installer and `cargo-cyclonedx` source archive have checked SHA-256 pins in `release.yml`; focused workflow tests pass. Rust 1.95.0 toolchain artifacts remain version-selected, and no native release workflow has run with these changes. | Supply-chain drift or a broken release job. | Run the release workflow on native builders and review the resulting artifacts and provenance before closing this finding. |
+| SR-29 | Low (source fix pending install) | updates | The installed `8ba31b82` update checker schedules the automatic set without a `SIMULATE` pass. Current source simulates with `ONLY_TRUSTED \| SIMULATE` before downloads, including when an automatic update was already scheduled. A destructive, incomplete or stale prepared plan cancels the still-matching offline trigger noninteractively; if cancellation fails, it reports the failure and warns before restart. The simulation must include every exact requested package ID, so a safe-looking dependency subset cannot authorize omitted updates. Unreadable scheduled state stops new work but cannot prove an existing trigger was revoked, so the checker warns before restart. If PackageKit reports a scheduled restart with no offered updates, the checker keeps the trigger and warns that the plan cannot be verified. The restart indicator also reads PackageKit when automatic downloads are off. All 63 fake PackageKit tests pass. Native PackageKit and installed-package evidence are still owed. | On the installed build, an update whose dependencies need a removal could be applied unattended at the next restart. It remains a data-safety risk rather than an authenticity gap. | Build and install the source fix, then verify safe, destructive, incomplete, stale-prepared, and cancellation-failure cases on a disposable native station before closing this finding. |
+
+A read-only PackageKitGlib probe on the reference PC on 2026-09-28 found
+`offline_get_action() == 3` (`UNSET`), so no offline update was scheduled at
+that moment. It also found `offline_cancel_with_flags` and `OfflineFlags.NONE`
+in the installed API. It did not invoke cancellation or test the new checker
+on the native PackageKit service.
 
 ### Beta decision
 
@@ -130,16 +142,16 @@ Beta with this risk and mitigation; each has a Known issues note in
 
 | ID | Severity | Decision | Risk | Mitigation until fixed |
 |---|---|---|---|---|
-| SR-15 | Low | Accept for Beta | A binary built on a person's machine names that machine's home directory in panic locations; nothing else leaks. | Release `.deb`s are built only by `release.yml` on GitHub runners, whose paths name no person; locally built packages are not distributed. |
-| SR-18 | Low | Accept for Beta | A compromised rustup script, `ubuntu:26.04` tag or crates.io release of a build tool could reach a release build. | Actions are pinned by commit SHA (SR-16), builds use `Cargo.lock` with `--locked`, `cargo-deny` gates advisories and licences (SR-05), outputs carry a workflow-bound provenance attestation that `install.sh` now requires (SR-17), and the APT publisher re-verifies every input (SR-12). |
-| SR-29 | Low | Accept for Beta | An automatic update that needs a package removal happens at restart without a confirmation. | Only `ONLY_TRUSTED` packages from signed archives are scheduled; the automatic set is limited to Lulo OS's five packages and packages PackageKit marks as security updates; turning off the Automatic Updates switches (or the timer) stops it; Update Now in System Settings simulates and asks. |
+| SR-15 | Low | Accept for Beta | A binary built on a person's machine may name that machine's home directory in panic locations; nothing else leaks. | Current native-build source remaps checkout and Cargo-home paths, and package verification scans inventoried ELF binaries. A fresh build still needs to pass that verification. Do not distribute locally built artifacts without checking them. |
+| SR-18 | Low | Accept for Beta | A release build can still fail or drift in untested toolchain artifact selection; the new content-pinned workflow has not had a native run. | Release containers, rustup installer, and `cargo-cyclonedx` archive are content-pinned in source. Actions are pinned by commit SHA (SR-16), builds use `Cargo.lock` with `--locked`, `cargo-deny` gates advisories and licences (SR-05), outputs carry a workflow-bound provenance attestation that `install.sh` now requires (SR-17), and the APT publisher re-verifies every input (SR-12). |
+| SR-29 | Low | Accept for Beta | The installed build can apply an automatic update that needs a package removal at restart without confirmation. | Current source re-simulates automatic updates, including a previously scheduled set, and cancels unsafe or unverifiable offline triggers; it still needs a native build and PackageKit run. Until then, turn off Automatic Updates (or its timer) and use Update Now in System Settings, which simulates and asks. |
 
 **Informational, no severity:**
 
 - Files rename accepts `/` (a move, with `RENAME_NOREPLACE`).
 - Trash restore canonicalises the parent without re-checking the drive root; this is not exploitable (EXDEV and a uid check stop it).
 - There is a tiny race in clipboard history between reading the offered types and reading the data.
-- There is no cap on the expanded size of an archive (same as the Mac).
+- Archive expansion now budgets output against free space measured before extraction, subtracts a 1 GiB reserve, and limits one expansion to 16 GiB (8 GiB for tar.xz because its decoded tar and extracted files coexist). Concurrent disk writes can reduce that reserve; ordinary disk-full errors still clean up the staged output. This source change has passed scoped Mac tests but still needs native Linux validation before release.
 - `LaunchSpec` derives `Debug` including its arguments; nothing logs it.
 - The portal `ActionInvoked` signal is broadcast rather than addressed to the portal.
 - `Request.Close` accepts any caller, as the reference backends do.
@@ -257,10 +269,10 @@ Legend:
 | Check | Verdict | Evidence |
 |---|---|---|
 | architecture-and-file-inventory-exact | pass | `scripts/linux/verify-native-packages.py:390-436` (see SR-18 for the mode check) |
-| artifact-contains-no-build-host-data | pending (SR-15) | |
+| artifact-contains-no-build-host-data | pending (SR-15) | Source remapping and bounded packaged-ELF scan are in place; fresh native artifact evidence is required. |
 | dependency-and-advisory-policy-passes | pending (native) | `deny.toml` is sound; SR-05 fixed; the release does not deny-check the `shell/` workspace (`ci.yml:278-284` does); cargo-deny was not run here |
 | license-inventory-complete | pending (native) | Rust dependencies are covered; non-Rust assets are not established |
-| native-and-sandbox-boundaries-explicit | pass | Flatpak `finish-args` are `--socket=wayland --device=dri` only; maintainer scripts touch only `/etc/keyd/rmac.conf` (`packaging/rmac-session/debian/postinst`, `postrm`) |
+| native-and-sandbox-boundaries-explicit | pass (source policy) | `packaging/flatpak/decisions.json` covers all thirteen packaged apps and `verify-flatpak-package.py` binds each decision to its desktop executable; only Text Editor has a reviewed Flatpak manifest with `--socket=wayland --device=dri`. Maintainer scripts touch only `/etc/keyd/rmac.conf` (`packaging/rmac-session/debian/postinst`, `postrm`). Native station proof remains separate. |
 | rollback-and-uninstall-tested | pending (native) | |
 | signature-and-origin-claims-bounded | pass | SR-14 and SR-17 fixed: the release attestation is mandatory and workflow-bound; without `gh` only an explicit `--allow-unattested` installs |
 | unpackaged-executables-rejected | pass | `verify-native-packages.py:430-436`; no setuid in source |

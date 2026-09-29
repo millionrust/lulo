@@ -1,24 +1,21 @@
-# Live Shut Down confirmation probe
+# Live Shut Down menu-row probe
 
-`scripts/linux/probe_live_shutdown_cancel.py` observes the installed top bar on
-its active local Wayland session using AT-SPI. It opens the system menu,
-activates the `Shut Down…` row to reveal the confirmation, reports the visible
-`Cancel` and `Shut Down` controls, then activates **Cancel** and verifies that
-the confirmation closes.
+`scripts/linux/probe_live_shutdown_cancel.py` retains its old filename for
+existing invocations. It now opens the installed top bar's system menu over
+AT-SPI, verifies that the `Shut Down…` row exists, and closes the menu. It
+never activates that row or opens the confirmation.
 
-The probe uses AT-SPI `click` actions only. Its only permitted activations are
-the top-bar menu button, the `Shut Down…` menu row, and the confirmation's
-`Cancel` button. It never activates the `Shut Down` confirmation button and
-contains no power, restart, suspend, logout, pointer injection, keyboard
-injection, or service mutation call. Since opening this confirmation starts
-the product's 60-second countdown, it cancels immediately and retries Cancel
-in cleanup if an error occurs after opening the dialog.
+The old probe opened the confirmation and then clicked Cancel. That is not a
+safe automated live test: the confirmation starts a 60-second countdown whose
+default action shuts down the computer. If AT-SPI or the probe fails after
+opening it, cleanup cannot guarantee Cancel. Confirmation and completion
+behavior belong in the private nested suites with a fake `systemctl`.
 
-It refuses to interact unless it runs as the fixed expected user (`jacob`) and discovers exactly one active, local, seat0 Wayland session for
-that user, with `wayland-1`, the matching `/run/user/<uid>` bus, and the
-corresponding Wayland socket. The session checks use read-only `loginctl` and
-`systemctl --user show-environment` queries.
-It also refuses to change an already open system menu or confirmation.
+The probe may activate only the top-bar menu toggle. It refuses to interact
+unless it runs as the expected user (`jacob`) and discovers exactly one active,
+local, seat0 Wayland session for that user, with `wayland-1` and the matching
+user bus and Wayland socket. It also leaves an already open menu or
+confirmation untouched.
 
 On the reference laptop, run:
 
@@ -27,9 +24,7 @@ ssh -o BatchMode=yes jacob@192.168.18.52 'python3 -' \
   < scripts/linux/probe_live_shutdown_cancel.py
 ```
 
-A successful run records that AT-SPI could open and cancel the installed
-confirmation. It does not test physical pointer activation or the final power
-action; the probe deliberately cannot perform either.
-The installed pyatspi bridge may emit cache/signature warnings on stderr even
-when the probe's state checks pass; use the exit status and state lines as the
-result.
+A pass establishes only that AT-SPI can open the system menu and find its Shut
+Down row. It does not test the confirmation's pointer behavior or actual
+poweroff. The installed pyatspi bridge may emit cache/signature warnings on
+stderr; use the exit status and state lines as the result.

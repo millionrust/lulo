@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -42,6 +43,90 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(sc.mac_keystroke("escape"), (None, 53, []))
         self.assertEqual(sc.mac_keystroke("down"), (None, 125, []))
         self.assertEqual(sc.mac_keystroke("space"), (None, 49, []))
+
+
+class ClickTests(unittest.TestCase):
+    """wlinput.Wayland.click, without a real compositor: build a bare
+    instance (skip __init__, which needs a live socket) and record the
+    wire-protocol sends `click()` makes."""
+
+    def _client(self):
+        client = object.__new__(wlinput.Wayland)
+        client.pointer = 501
+        client.keyboard = 502
+        client.started = time.monotonic()
+        client.calls: list[tuple[int, int]] = []
+        client._send = lambda object_id, opcode, payload, fds=None: client.calls.append((object_id, opcode))
+        client.roundtrip = lambda: None
+        return client
+
+    def test_plain_click_is_unchanged_a_single_unmodified_left_click(self):
+        client = self._client()
+        client.click(10, 20, 100, 100)
+        # motion+frame (move), then one button-down+frame, one button-up+frame; no keyboard traffic.
+        self.assertEqual(client.calls, [(client.pointer, 1), (client.pointer, 4),
+                                         (client.pointer, 2), (client.pointer, 4),
+                                         (client.pointer, 2), (client.pointer, 4)])
+
+    def test_double_click_sends_two_button_press_release_pairs(self):
+        client = self._client()
+        client.click(10, 20, 100, 100, count=2)
+        button_events = [opcode for object_id, opcode in client.calls if object_id == client.pointer]
+        self.assertEqual(button_events.count(2), 4)  # two down + two up
+
+    def test_shift_click_holds_shift_around_the_pointer_click(self):
+        client = self._client()
+        client.click(10, 20, 100, 100, modifiers=["shift"])
+        keyboard_calls = [i for i, (object_id, _opcode) in enumerate(client.calls) if object_id == client.keyboard]
+        pointer_buttons = [i for i, (object_id, opcode) in enumerate(client.calls)
+                            if object_id == client.pointer and opcode == 2]
+        self.assertTrue(keyboard_calls and pointer_buttons)
+        # Shift goes down before the first click and up after the last.
+        self.assertLess(keyboard_calls[0], pointer_buttons[0])
+        self.assertGreater(keyboard_calls[-1], pointer_buttons[-1])
+        # Exactly one press and one release of the modifier key itself (plus one wl_keyboard.modifiers each).
+        self.assertEqual(len(keyboard_calls), 4)
+
+    def test_cmd_click_uses_the_super_key(self):
+        client = self._client()
+        client.click(10, 20, 100, 100, modifiers=["cmd"])
+        keyboard_calls = [i for i, (object_id, _opcode) in enumerate(client.calls) if object_id == client.keyboard]
+        self.assertEqual(len(keyboard_calls), 4)
+
+    def test_no_modifiers_means_no_keyboard_traffic(self):
+        client = self._client()
+        client.click(10, 20, 100, 100, modifiers=[])
+        self.assertTrue(all(object_id == client.pointer for object_id, _opcode in client.calls))
+
+
+class SelectStepTests(unittest.TestCase):
+    """run_lulo.LuloRun.run_steps' "select" branch threads modifiers/double
+    through to click_item without needing a live AT-SPI tree or compositor."""
+
+    def _run(self, step):
+        run = object.__new__(run_lulo.LuloRun)
+        run.scenario = {"steps": [{**step, "settle": 0}]}
+        run.settle = 0
+        run.ensure_alive = lambda: None
+        calls = []
+        run.click_item = lambda label, button, count=1, modifiers=None: calls.append((label, button, count, modifiers))
+        run.run_steps(limit=1)
+        return calls
+
+    def test_plain_select_is_unchanged_a_single_left_click_no_modifiers(self):
+        self.assertEqual(self._run({"select": "a.txt"}), [("a.txt", "left", 1, None)])
+
+    def test_shift_click_select_passes_modifiers_through(self):
+        self.assertEqual(self._run({"select": "c.txt", "modifiers": ["shift"]}),
+                          [("c.txt", "left", 1, ["shift"])])
+
+    def test_cmd_click_select_passes_modifiers_through(self):
+        self.assertEqual(self._run({"select": "c.txt", "modifiers": ["cmd"]}),
+                          [("c.txt", "left", 1, ["cmd"])])
+
+    def test_double_select_sends_count_two(self):
+        self.assertEqual(self._run({"select": "Projects", "double": True}),
+                          [("Projects", "left", 2, None)])
 
 
 class GuardTests(unittest.TestCase):

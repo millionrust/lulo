@@ -884,9 +884,15 @@ impl FinderView {
                     "up" if this.view == ViewMode::Gallery => None,
                     "down" => Some(
                         current
-                            .map(|position| position + vertical_step)
-                            .unwrap_or(0)
-                            .min(last),
+                            .map(|position| {
+                                let below = position + vertical_step;
+                                if below <= last {
+                                    below
+                                } else {
+                                    position
+                                }
+                            })
+                            .unwrap_or(0),
                     ),
                     "right" if horizontal_navigation => {
                         Some(current.map(|position| position + 1).unwrap_or(0).min(last))

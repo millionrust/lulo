@@ -11,15 +11,30 @@ use rmac_compositor::TileRegion;
 
 use crate::{components, mac, text_px};
 
-/// A window-management request from the traffic lights or the green
-/// button's Move & Resize menu, carried out by the compositor.
+/// A window-management request from the traffic lights, the green button's
+/// Move & Resize menu, or a title-bar double-click, carried out by the
+/// compositor.
 #[derive(Clone, Copy)]
 enum WindowAction {
     ToggleFullscreen,
     Fill,
+    /// Toggle between the window's user size and the working area, exactly
+    /// as ⌥-clicking the green button and 🌐⌃F/🌐⌃R do (SET-33): fill it if
+    /// it has no recorded pre-zoom frame, or put it back if it does.
+    Zoom,
     Tile(TileRegion),
     Minimize,
 }
+
+/// The height rmac's menu bar reserves (`rmac-menubar`'s own `BAR_HEIGHT`)
+/// and the Dock's reservation (`rmac-dock`'s own `EXCLUSIVE_ZONE`, WIN-02),
+/// duplicated here the same way `rmac-mission-control` duplicates them for
+/// its own WIN-01 tile history: [`WindowAction::Zoom`] needs the same
+/// menu-bar/Dock insets to convert a window's current frame into the
+/// [`rmac_compositor::FramePercent`] `TileHistoryStore` already speaks, so
+/// double-click Zoom and 🌐⌃F/🌐⌃R interoperate on the one saved file.
+const MENU_BAR_INSET: f64 = 29.0;
+const DOCK_INSET: f64 = 89.0;
 
 /// Route a window control through the niri compositor. GPUI's own window
 /// controls are no-ops under niri's floating policy, and niri has no native
@@ -27,37 +42,155 @@ enum WindowAction {
 /// window. Minimize parks the window on `rmac-parking` and records where it
 /// came from so the app menu's Show All can restore it (§2.2).
 fn send_window_action(action: WindowAction, cx: &mut App) {
-    cx.spawn(async move |_cx: &mut gpui::AsyncApp| {
-        let pid = std::process::id() as i32;
-        let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
-            return;
-        };
-        let window = snapshot
-            .windows
-            .iter()
-            .filter(|window| window.pid == Some(pid))
-            .min_by_key(|window| i32::from(!window.focused))
-            .map(|window| window.id);
-        let Some(window) = window else { return };
-        let action = match action {
-            WindowAction::ToggleFullscreen => {
-                rmac_compositor::Action::FullscreenWindow { window, on: true }
-            }
-            WindowAction::Fill => rmac_compositor::Action::FillWindow { window },
-            WindowAction::Tile(region) => rmac_compositor::Action::TileWindow { window, region },
-            WindowAction::Minimize => {
-                // The one minimize path every app shares: record the origin,
-                // picture the window for its Dock tile, then park it.
-                if let Err(error) = rmac_compositor_niri::minimize_window_in(snapshot, window).await
-                {
-                    eprintln!("could not minimize: {error}");
-                }
-                return;
-            }
-        };
-        let _ = rmac_compositor_niri::execute_action(&action).await;
+    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+        perform_window_action(action, cx).await;
     })
     .detach();
+}
+
+/// The body of [`send_window_action`], split out so the title bar's
+/// double-click handler can resolve the saved
+/// [`rmac_shell_settings::DoubleClickTitleBarAction`] off the main thread
+/// first, then perform the same action the traffic lights use.
+async fn perform_window_action(action: WindowAction, cx: &mut gpui::AsyncApp) {
+    let pid = std::process::id() as i32;
+    let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
+        return;
+    };
+    let window = snapshot
+        .windows
+        .iter()
+        .filter(|window| window.pid == Some(pid))
+        .min_by_key(|window| i32::from(!window.focused))
+        .map(|window| window.id);
+    let Some(window) = window else { return };
+    let action = match action {
+        WindowAction::ToggleFullscreen => {
+            rmac_compositor::Action::FullscreenWindow { window, on: true }
+        }
+        WindowAction::Fill => rmac_compositor::Action::FillWindow { window },
+        WindowAction::Zoom => {
+            // The tile-history file is small but this is still disk I/O, so
+            // it runs on the background executor rather than the task this
+            // future was spawned on (no UI-thread work).
+            cx.background_executor()
+                .spawn(async move { zoom_action(&snapshot, window) })
+                .await
+        }
+        WindowAction::Tile(region) => rmac_compositor::Action::TileWindow { window, region },
+        WindowAction::Minimize => {
+            // The one minimize path every app shares: record the origin,
+            // picture the window for its Dock tile, then park it.
+            if let Err(error) = rmac_compositor_niri::minimize_window_in(snapshot, window).await {
+                eprintln!("could not minimize: {error}");
+            }
+            return;
+        }
+    };
+    let _ = rmac_compositor_niri::execute_action(&action).await;
+}
+
+/// [`WindowAction::Zoom`]'s toggle: read `TileHistoryStore` (shared with
+/// 🌐⌃F Fill and 🌐⌃R Return to Previous Size, WIN-01), and either put the
+/// window back where it was before the last zoom, or fill the working area
+/// and remember the frame it filled from.
+fn zoom_action(
+    snapshot: &rmac_compositor::Snapshot,
+    window: rmac_compositor::WindowId,
+) -> rmac_compositor::Action {
+    let mut history = rmac_compositor::TileHistoryStore::load_default();
+    let live = snapshot
+        .windows
+        .iter()
+        .map(|live_window| live_window.id)
+        .collect::<Vec<_>>();
+    history.prune(&live);
+    let action = if let Some(frame) = history.take(window) {
+        rmac_compositor::Action::SetWindowFrame {
+            window,
+            x: rmac_compositor::Distance(frame.x),
+            y: rmac_compositor::Distance(frame.y),
+            width: rmac_compositor::Distance(frame.width),
+            height: rmac_compositor::Distance(frame.height),
+        }
+    } else {
+        if let Some(percent) = zoom_frame_percent(snapshot, window) {
+            history.record(window, percent);
+        }
+        rmac_compositor::Action::FillWindow { window }
+    };
+    if let Err(error) = history.save_default() {
+        eprintln!("could not save the tile history: {error}");
+    }
+    action
+}
+
+/// `window`'s current frame as a [`rmac_compositor::FramePercent`] of its
+/// output's working area, the same conversion
+/// `rmac-mission-control`'s `tile_history_percent` performs for the
+/// keyboard shortcuts.
+fn zoom_frame_percent(
+    snapshot: &rmac_compositor::Snapshot,
+    window: rmac_compositor::WindowId,
+) -> Option<rmac_compositor::FramePercent> {
+    let rect = rmac_compositor::window_logical_rect(snapshot, window)?;
+    let found = snapshot.windows.iter().find(|w| w.id == window)?;
+    let workspace = snapshot
+        .workspaces
+        .iter()
+        .find(|workspace| Some(workspace.id) == found.workspace)?;
+    let output = snapshot
+        .outputs
+        .iter()
+        .find(|output| Some(&output.id) == workspace.output.as_ref())?;
+    let logical = output.logical.as_ref()?;
+    rmac_compositor::frame_to_percent(
+        logical.size.width,
+        logical.size.height,
+        MENU_BAR_INSET,
+        DOCK_INSET,
+        rect.x,
+        rect.y,
+        rect.width,
+        rect.height,
+    )
+}
+
+/// Resolve Desktop & Dock's "Double-click a window's title bar to" setting
+/// off the main thread, then perform the resulting action the same way the
+/// traffic lights do (SET-33). Reads the shell-settings file fresh on every
+/// double-click rather than polling or caching it. Public so an app with its
+/// own drag region (System Settings' toolbar, Weather's and Clock's title
+/// areas) can bind the same double-click behaviour `client_bar` uses.
+pub fn double_click_title_bar_action(cx: &mut App) {
+    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
+        let setting = cx
+            .background_executor()
+            .spawn(async { load_double_click_title_bar_action() })
+            .await;
+        match setting {
+            rmac_shell_settings::DoubleClickTitleBarAction::Zoom => {
+                perform_window_action(WindowAction::Zoom, cx).await
+            }
+            rmac_shell_settings::DoubleClickTitleBarAction::Fill => {
+                perform_window_action(WindowAction::Fill, cx).await
+            }
+            rmac_shell_settings::DoubleClickTitleBarAction::Minimize => {
+                perform_window_action(WindowAction::Minimize, cx).await
+            }
+            rmac_shell_settings::DoubleClickTitleBarAction::DoNothing => {}
+        }
+    })
+    .detach();
+}
+
+/// The saved double-click action, or the Mac's own default (Zoom) when the
+/// shell-settings store cannot be read.
+fn load_double_click_title_bar_action() -> rmac_shell_settings::DoubleClickTitleBarAction {
+    rmac_shell_settings::ShellSettingsStore::from_environment()
+        .and_then(|store| store.load())
+        .map(|snapshot| snapshot.settings.double_click_title_bar)
+        .unwrap_or_default()
 }
 
 /// Minimize this process's focused window, the same way the yellow traffic
@@ -553,10 +686,12 @@ impl RenderOnce for TrafficLights {
                 hover_menu.update(cx, |menu, cx| menu.set_hover(Some(hovered), None, cx));
             })
             .on_click(move |event, _, cx| {
-                // ⌥-click fills instead of entering full screen, as on macOS.
+                // A plain click enters full screen, as macOS 26's green
+                // button does; ⌥-click Zooms instead (SET-33), toggling
+                // between the window's user size and the working area.
                 send_window_action(
                     if event.modifiers().alt {
-                        WindowAction::Fill
+                        WindowAction::Zoom
                     } else {
                         WindowAction::ToggleFullscreen
                     },
@@ -669,7 +804,11 @@ fn client_bar(height: f32, base: Hsla, children: impl IntoElement) -> impl IntoE
         .border_b_1()
         .border_color(base)
         .window_control_area(WindowControlArea::Drag)
-        .on_double_click(|_, window, _| window.zoom_window())
+        // SET-33: GPUI's own `zoom_window()` is a no-op under niri's floating
+        // policy, so this routes through the same compositor path as the
+        // traffic lights, honouring Desktop & Dock's saved double-click
+        // action instead of always zooming.
+        .on_double_click(|_, _, cx| double_click_title_bar_action(cx))
         .child(div().h_full().flex_1().child(children))
 }
 

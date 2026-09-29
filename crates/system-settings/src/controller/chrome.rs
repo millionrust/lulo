@@ -5,13 +5,14 @@ use super::*;
 use gpui::{Stateful, WindowControlArea};
 use gpui_component::InteractiveElementExt as _;
 
-/// A region that moves the window when dragged and zooms it on a
-/// double-click, like the Mac's toolbar and sidebar header.
+/// A region that moves the window when dragged and, on a double-click,
+/// performs Desktop & Dock's saved double-click action (SET-33) like the
+/// Mac's toolbar and sidebar header.
 fn drag_region(id: &'static str) -> Stateful<Div> {
     div()
         .id(id)
         .window_control_area(WindowControlArea::Drag)
-        .on_double_click(|_, window, _| window.zoom_window())
+        .on_double_click(|_, _, cx| rmac_ui::double_click_title_bar_action(cx))
 }
 
 impl Settings {

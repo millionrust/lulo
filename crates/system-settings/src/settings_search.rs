@@ -138,6 +138,10 @@ pub(crate) fn terms_for_pane(name: &str) -> &'static [&'static str] {
             "hot corners",
             "show indicators for open applications",
             "show suggested and recent apps in Dock",
+            "double-click a window's title bar",
+            "double-click title bar",
+            "zoom",
+            "minimize windows",
         ],
         "Menu Bar" => &[
             "menu bar items",

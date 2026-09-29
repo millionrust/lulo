@@ -20,6 +20,7 @@ rmac-recent-documents.workspace = true
 rmac-compositor.workspace = true
 rmac-compositor-niri.workspace = true
 rmac-design.workspace = true
+rmac-shell-settings.workspace = true
 rmac-theme.workspace = true
 rmac-window-state.workspace = true
 

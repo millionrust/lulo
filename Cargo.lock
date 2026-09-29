@@ -6774,6 +6774,7 @@ dependencies = [
  "rmac-compositor-niri",
  "rmac-design",
  "rmac-recent-documents",
+ "rmac-shell-settings",
  "rmac-theme",
  "rmac-window-state",
 ]

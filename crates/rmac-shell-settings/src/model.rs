@@ -326,6 +326,39 @@ impl ClickWallpaperToReveal {
     }
 }
 
+/// Desktop & Dock › "Double-click a window's title bar to" (macOS Windows
+/// group, SET-33/SET-89). `Zoom` is the Mac default: toggle the window
+/// between its user size and the working area (above the Dock, below the
+/// menu bar), the same toggle the green button's ⌥-click performs. `Fill`
+/// and `Minimize` match the traffic lights' Fill and the yellow light.
+/// `DoNothing` disables the double-click. Read live by rmac-ui's shared
+/// title bar (`crates/rmac-ui/src/chrome.rs` `client_bar`), which resolves
+/// it fresh on each double-click rather than polling.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DoubleClickTitleBarAction {
+    #[default]
+    Zoom,
+    Minimize,
+    Fill,
+    DoNothing,
+}
+
+impl DoubleClickTitleBarAction {
+    /// Every choice, in the order System Settings lists them.
+    pub const ALL: [Self; 4] = [Self::Zoom, Self::Minimize, Self::Fill, Self::DoNothing];
+
+    /// The pop-up title System Settings shows for this choice.
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Zoom => "Zoom",
+            Self::Minimize => "Minimize",
+            Self::Fill => "Fill",
+            Self::DoNothing => "Do Nothing",
+        }
+    }
+}
+
 /// What a Dock stack shows itself as (Desktop & Dock's "Display as").
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -414,6 +447,9 @@ pub struct ShellSettings {
     pub hot_corners: HotCornerSettings,
     /// Read live by `rmac-mission-control`, which moves the windows.
     pub click_wallpaper_to_reveal: ClickWallpaperToReveal,
+    /// Desktop & Dock › "Double-click a window's title bar to". Read live by
+    /// every rmac app's shared title bar (SET-33).
+    pub double_click_title_bar: DoubleClickTitleBarAction,
 }
 
 impl Default for ShellSettings {
@@ -443,6 +479,7 @@ impl Default for ShellSettings {
             spotlight: SpotlightSettings::default(),
             hot_corners: HotCornerSettings::default(),
             click_wallpaper_to_reveal: ClickWallpaperToReveal::Always,
+            double_click_title_bar: DoubleClickTitleBarAction::Zoom,
         }
     }
 }

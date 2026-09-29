@@ -463,7 +463,6 @@ mod tests {
         );
         assert_eq!(Session::open(vec![app("a")], false).unwrap().selected, 0);
         assert!(Session::open(vec![], false).is_none());
-
     }
 
     #[test]

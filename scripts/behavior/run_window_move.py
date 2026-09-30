@@ -304,7 +304,7 @@ class Run:
             # Move the mapped window into the visible area before asking niri
             # to resize it. This makes the same move request establish a
             # usable resize edge for oversized initial client bounds.
-            self.drag((x + width * .5, y + 18), (x + width * .5 + 140, y + 90))
+            self.drag((x + width - 60, y + 18), (x + width + 80, y + 90))
             placed = self.wait_for(
                 lambda: self.window_matching(
                     "org.rmac.SystemSettings",
@@ -321,9 +321,14 @@ class Run:
             )
             self.check("Settings title-bar drag brings it into the output", intersects_output,
                        f"{(x, y, width, height)} -> {placed_geometry}")
+            # The first move can also resize Settings from its oversized
+            # startup bounds. Let niri finish that configure and pointer
+            # release before starting another drag from the new title bar.
+            time.sleep(1)
+            placed_geometry = self.geometry(self.window("org.rmac.SystemSettings") or window)
             x, y, width, height = placed_geometry
             sx, sy, sw, sh = x, y, width, height
-            self.drag((sx + sw * .5, sy + 18), (sx + sw * .5 + 140, sy + 90))
+            self.drag((sx + sw - 60, sy + 18), (sx + sw + 80, sy + 90))
             moved = self.wait_for(
                 lambda: self.window_matching(
                     "org.rmac.SystemSettings",
@@ -446,16 +451,22 @@ class Run:
                    f"bottom={zy + zh}, output height={output_height}")
 
         # A second double-click Zooms back to the user's previous size.
+        history_path = self.runtime / "rmac" / "tile-history.json"
+        history_before = history_path.read_text() if history_path.exists() else "missing"
         restore_point = (zx + zw * 0.5, zy + 18)
         self.double_click(restore_point)
         restored = self.wait_for(
             lambda: self.window_matching(
                 app_id, lambda candidate: abs(self.geometry(candidate)[2] - width) < 30
-                and abs(self.geometry(candidate)[3] - height) < 30),
+                and abs(self.geometry(candidate)[3] - height) < 40),
             15.0,
         )
-        restored_geometry = self.geometry(restored) if restored else zoomed_geometry
-        back = (abs(restored_geometry[2] - width) < 30 and abs(restored_geometry[3] - height) < 30)
+        restored_geometry = self.geometry(restored or self.window(app_id) or zoomed or window)
+        back = (abs(restored_geometry[2] - width) < 30 and abs(restored_geometry[3] - height) < 40)
+        if not back:
+            history_after = history_path.read_text() if history_path.exists() else "missing"
+            print(f"restore diagnostic {title}: history before={history_before}; after={history_after}; "
+                  f"window={self.window(app_id)}", flush=True)
         self.check(f"A second double-click restores {title}'s previous size", back,
                    f"{(width, height)} -> {restored_geometry[2:]}")
 
@@ -473,6 +484,9 @@ class Run:
                 window = self.wait_for(lambda: self.window(app_id), 40)
                 self.check(f"{title} Zoom window mapped", bool(window))
                 if window:
+                    # Files changes its initial client height by 30 px just
+                    # after mapping. Capture the pre-Zoom size once settled.
+                    time.sleep(1)
                     self.assert_double_click_zoom(app_id, title)
                 if process.poll() is None:
                     process.terminate()

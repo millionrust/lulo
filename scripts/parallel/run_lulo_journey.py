@@ -104,7 +104,7 @@ class Driver:
             return None
         return next((w for w in self.session.windows() if w.get("pid") == process.pid), None)
 
-    def capture(self, destination: Path, full=False):
+    def capture(self, destination: Path, full=False, fast=False):
         geom = None
         if not full and self.window():
             x, y, w, h = self.session.geometry(self.window())
@@ -118,6 +118,8 @@ class Driver:
         cmd = ["grim", "-o", "HEADLESS-1"]
         if geom:
             cmd += ["-g", geom]
+        if fast:
+            cmd += ["-t", "ppm"]
         cmd.append(str(destination))
         env = {**self.session.env, "WAYLAND_DISPLAY": self.session.sway_display}
         result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=10)
@@ -221,7 +223,7 @@ class Driver:
                                             "action": pending, **(timing or {})})
                 else:
                     full = kind == "launch" or step.get("scope") == "full"
-                    timing = journey.measure(lambda p: self.capture(p, full=full),
+                    timing = journey.measure(lambda p: self.capture(p, full=full, fast=True),
                                              lambda: self.action(step), self.scratch)
                     pending = {kind: step[kind], "index": index}
         except (RuntimeError, OSError, subprocess.SubprocessError, wlinput.InjectorError) as error:

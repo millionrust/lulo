@@ -2153,18 +2153,28 @@ fn inset_by_tiling(mut bounds: Bounds<Pixels>, inset: Pixels, tiling: Tiling) ->
 }
 
 fn surface_geometry(state: &WaylandWindowState) -> Bounds<i32> {
-    inset_by_tiling(
-        state.bounds.map_origin(|_| px(0.0)),
-        state.inset(),
-        state.tiling,
-    )
+    geometry_inside_frame(state.bounds.size, state.inset(), state.tiling)
+}
+
+fn geometry_inside_frame(size: Size<Pixels>, inset: Pixels, tiling: Tiling) -> Bounds<i32> {
+    inset_by_tiling(Bounds::new(Point::default(), size), inset, tiling)
     .map(|v| f32::from(v) as i32)
     .map_size(|v| if v <= 0 { 1 } else { v })
 }
 
 #[cfg(test)]
 mod rmac_frame_loop_tests {
-    use super::frame_loop_parked;
+    use super::{frame_loop_parked, geometry_inside_frame};
+    use gpui::{Tiling, px, size};
+
+    #[test]
+    fn mapped_and_resized_window_geometry_excludes_client_frame() {
+        let geometry = geometry_inside_frame(size(px(824.0), px(624.0)), px(12.0), Tiling::default());
+        assert_eq!(geometry.origin.x, 12);
+        assert_eq!(geometry.origin.y, 12);
+        assert_eq!(geometry.size.width, 800);
+        assert_eq!(geometry.size.height, 600);
+    }
 
     #[test]
     fn a_drawing_window_is_not_parked() {

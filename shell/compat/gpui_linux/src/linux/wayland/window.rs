@@ -1595,7 +1595,7 @@ impl PlatformWindow for WaylandWindow {
             .executor
             .spawn(async move {
                 state_ptr.resize(size);
-                let state = state_ptr.borrow();
+                let state = state_ptr.state.borrow();
                 let window_geometry = Bounds {
                     origin: Point::default(),
                     size,

@@ -1,0 +1,19 @@
+{
+  "title": "Dragging Files items to the Dock Bin and Desktop moves both files",
+  "app": "files",
+  "setup": {
+    "files": {
+      "drag-to-bin.txt": "bin drag\n",
+      "drag-to-desktop.txt": "desktop drag\n"
+    }
+  },
+  "launch": {"folder": "."},
+  "steps": [
+    {"observe": "after-bin", "facts": ["files"]},
+    {"observe": "after-desktop", "facts": ["files"]}
+  ],
+  "drags": [
+    {"source": "drag-to-bin.txt", "target": "dock-bin"},
+    {"source": "drag-to-desktop.txt", "target": "desktop"}
+  ]
+}

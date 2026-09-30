@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
-import os
-import shutil
+import json
 import subprocess
 import sys
 import tempfile
@@ -67,6 +66,9 @@ def inner(args: argparse.Namespace) -> int:
     run = run_window_move.Run(args, args.inner)
     try:
         run.start()
+        scenario = json.loads((run_window_move.REPO / "tests/behavior/files/drag-to-dock-and-desktop.json")
+                              .read_text())
+        fixtures = scenario["setup"]["files"]
         source_dir = Path(run.env["HOME"]) / "Documents" / "Drag Source"
         source_dir.mkdir(parents=True)
         bin_dir = Path(args.bin_dir)
@@ -85,15 +87,15 @@ def inner(args: argparse.Namespace) -> int:
         if bin_point is None:
             return run.finish()
 
-        trash_source = source_dir / "drag-to-bin.txt"
-        trash_source.write_text("bin drag\n")
+        trash_source = source_dir / scenario["drags"][0]["source"]
+        trash_source.write_text(fixtures[trash_source.name])
         run.wait_for(lambda: accessible_point(files.pid, trash_source.name), 10)
         drag_once(run, files.pid, trash_source.name, bin_point)
         trash_destination = Path(run.env["XDG_DATA_HOME"]) / "Trash" / "files" / trash_source.name
         check_move(run, trash_source, trash_destination, "Files → Dock Bin moves file to Trash")
 
-        desktop_source = source_dir / "drag-to-desktop.txt"
-        desktop_source.write_text("desktop drag\n")
+        desktop_source = source_dir / scenario["drags"][1]["source"]
+        desktop_source.write_text(fixtures[desktop_source.name])
         run.wait_for(lambda: accessible_point(files.pid, desktop_source.name), 10)
         files_rect = run.window("org.rmac.Files")["rect"]
         candidates = [(run.width - 80, 120), (80, 120), (run.width - 80, run.height - 180)]

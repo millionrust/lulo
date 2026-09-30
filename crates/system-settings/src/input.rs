@@ -12,6 +12,7 @@ pub(super) enum InputChange {
     MouseMiddleEmulation(bool),
     MouseAccelSpeed(f64),
     MouseAccelProfile(rmac_input::AccelProfile),
+    MouseScrollWithMiddleButton(bool),
     MousePrecisionPreset {
         speed: f64,
         profile: rmac_input::AccelProfile,
@@ -25,7 +26,10 @@ pub(super) enum InputChange {
     TouchpadDwt(bool),
     TouchpadDragLock(bool),
     TouchpadSecondaryClick(rmac_input::SecondaryClick),
-    TouchscreenEnabled(bool),
+    TrackpointAccelSpeed(f64),
+    TrackpointAccelProfile(rmac_input::AccelProfile),
+    TrackpointScrollWithMiddleButton(bool),
+    TouchEnabled(bool),
 }
 
 impl InputChange {
@@ -43,6 +47,9 @@ impl InputChange {
             Self::MouseMiddleEmulation(value) => settings.mouse.middle_emulation = value,
             Self::MouseAccelSpeed(value) => settings.mouse.accel_speed = value,
             Self::MouseAccelProfile(value) => settings.mouse.accel_profile = value,
+            Self::MouseScrollWithMiddleButton(value) => {
+                settings.mouse_scroll_with_middle_button = value
+            }
             Self::MousePrecisionPreset { speed, profile } => {
                 settings.mouse.accel_speed = speed;
                 settings.mouse.accel_profile = profile;
@@ -58,7 +65,12 @@ impl InputChange {
             Self::TouchpadDwt(value) => settings.touchpad.disable_while_typing = value,
             Self::TouchpadDragLock(value) => settings.touchpad.drag_lock = value,
             Self::TouchpadSecondaryClick(value) => settings.touchpad.secondary_click = value,
-            Self::TouchscreenEnabled(value) => settings.touchscreen_enabled = value,
+            Self::TrackpointAccelSpeed(value) => settings.trackpoint.accel_speed = value,
+            Self::TrackpointAccelProfile(value) => settings.trackpoint.accel_profile = value,
+            Self::TrackpointScrollWithMiddleButton(value) => {
+                settings.trackpoint_scroll_with_middle_button = value
+            }
+            Self::TouchEnabled(value) => settings.touch.enabled = value,
         }
     }
 }
@@ -144,6 +156,14 @@ pub(super) const MOUSE_SPEEDS: [InputOption; 5] = [
     ("Default", InputChange::MouseAccelSpeed(0.0)),
     ("0.5", InputChange::MouseAccelSpeed(0.5)),
     ("Fast", InputChange::MouseAccelSpeed(1.0)),
+];
+
+pub(super) const TRACKPOINT_SPEEDS: [InputOption; 5] = [
+    ("Slow", InputChange::TrackpointAccelSpeed(-1.0)),
+    ("−0.5", InputChange::TrackpointAccelSpeed(-0.5)),
+    ("Default", InputChange::TrackpointAccelSpeed(0.0)),
+    ("0.5", InputChange::TrackpointAccelSpeed(0.5)),
+    ("Fast", InputChange::TrackpointAccelSpeed(1.0)),
 ];
 
 pub(super) const TOUCHPAD_SPEEDS: [InputOption; 5] = [

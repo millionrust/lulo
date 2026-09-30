@@ -26,6 +26,32 @@ fn enter_content_focus(content_focus: &FocusHandle, window: &mut Window, cx: &mu
 }
 
 impl Settings {
+    pub(super) fn pane_available(&self, name: &str) -> bool {
+        !self.hardware_ready || self.hardware.allows_pane(name)
+    }
+
+    pub(super) fn apply_hardware(&mut self, hardware: Capabilities, cx: &mut Context<Self>) {
+        // Only the first scan (startup, or the initial `--pane` launch
+        // argument) can redirect away from an unavailable pane. A later
+        // udev-triggered rescan only updates the rows/gating *within* the
+        // pane the person is already looking at; it must never evict them
+        // to General just because one rescan raced a device that was still
+        // settling (macOS never does this to an open pane either).
+        let was_ready = self.hardware_ready;
+        self.hardware = hardware;
+        self.hardware_ready = true;
+        if !was_ready && !self.pane_available(self.current().name.as_ref()) {
+            if let Some(position) = category_position(&self.sections, "General") {
+                self.selected = position;
+                self.nav.clear();
+                self.forward.clear();
+                self.pane_history.clear();
+                self.pane_forward.clear();
+            }
+        }
+        cx.notify();
+    }
+
     pub(super) fn current(&self) -> &Category {
         &self.sections[self.selected.0][self.selected.1]
     }
@@ -52,7 +78,9 @@ impl Settings {
                     .iter()
                     .enumerate()
                     .filter_map(move |(category_index, category)| {
-                        crate::settings_search::match_rank(category, query)
+                        self.pane_available(category.name.as_ref())
+                            .then(|| crate::settings_search::match_rank(category, query))
+                            .flatten()
                             .map(|rank| (rank, section_index, category_index))
                     })
             })
@@ -97,7 +125,10 @@ impl Settings {
                 section
                     .iter()
                     .enumerate()
-                    .filter(|(_, category)| category_parent(category.name.as_ref()).is_none())
+                    .filter(|(_, category)| {
+                        category_parent(category.name.as_ref()).is_none()
+                            && self.pane_available(category.name.as_ref())
+                    })
                     .map(move |(category_index, _)| (section_index, category_index))
             })
             .collect()
@@ -277,7 +308,9 @@ impl Settings {
             .find_map(|(section, items)| {
                 items
                     .iter()
-                    .position(|category| category.name.as_ref() == name)
+                    .position(|category| {
+                        category.name.as_ref() == name && self.pane_available(name)
+                    })
                     .map(|item| (section, item))
             })
     }
@@ -340,6 +373,9 @@ impl Settings {
         else {
             return false;
         };
+        if !self.pane_available(category.name.as_ref()) {
+            return false;
+        }
         let Some(pane_id) = pane_id_for_category_name(category.name.as_ref()) else {
             return false;
         };

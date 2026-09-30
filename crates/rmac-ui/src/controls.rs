@@ -920,6 +920,8 @@ pub struct Toggle {
     size: SwitchSize,
     pending: bool,
     label: Option<SharedString>,
+    accessible_label: Option<SharedString>,
+    accessible_description: Option<SharedString>,
     disabled: bool,
     tooltip: Option<SharedString>,
     on_change: Option<ToggleHandler>,
@@ -933,6 +935,8 @@ impl Toggle {
             size: SwitchSize::Regular,
             pending: false,
             label: None,
+            accessible_label: None,
+            accessible_description: None,
             disabled: false,
             tooltip: None,
             on_change: None,
@@ -967,6 +971,17 @@ impl Toggle {
 
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    /// Name the switch without adding a second visible label beside it.
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.accessible_label = Some(label.into());
+        self
+    }
+
+    pub fn aria_description(mut self, description: impl Into<SharedString>) -> Self {
+        self.accessible_description = Some(description.into());
         self
     }
 
@@ -1053,9 +1068,12 @@ impl RenderOnce for Toggle {
             ToggleState::Off => Toggled::False,
             ToggleState::Mixed => Toggled::Mixed,
         };
-        // The visible label doubles as the accessible name; the tooltip is
-        // the fallback for icon-only switches that have none.
-        let accessible_name = self.label.or(self.tooltip.clone());
+        // Keep a separate accessible name for settings rows whose visible
+        // label sits beside the switch rather than inside it.
+        let accessible_name = self
+            .accessible_label
+            .or(self.label)
+            .or(self.tooltip.clone());
         let focus_handle = window
             .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
             .read(cx)
@@ -1073,6 +1091,9 @@ impl RenderOnce for Toggle {
             .when(disabled, |el| el.opacity(0.5))
             .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
             .child(content);
+        if let Some(description) = self.accessible_description {
+            switch = crate::accessibility::with_description(switch, description);
+        }
         if let Some(tooltip) = self.tooltip {
             switch = switch.tooltip(move |window, cx| {
                 ComponentTooltip::new(tooltip.clone()).build(window, cx)

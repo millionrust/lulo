@@ -30,10 +30,11 @@ impl Settings {
         self.mac_keyboard_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_keyboard::status() })
-                .await;
+            // `rmac_keyboard::status()` shells out to keyd/localed; run it
+            // off GPUI's background executor, the same way the input
+            // snapshot load is (LINUX-HW-03) -- that executor is not safe
+            // for spawning child processes from.
+            let result = blocking::unblock(rmac_keyboard::status).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_mac_keyboard_update(result);
                 cx.notify();
@@ -62,10 +63,9 @@ impl Settings {
         self.mac_keyboard_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_keyboard::apply(&target) })
-                .await;
+            // See `refresh_mac_keyboard`: keep this off GPUI's background
+            // executor too.
+            let result = blocking::unblock(move || rmac_keyboard::apply(&target)).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_mac_keyboard_update(result);
                 // localed's layout and options changed too.

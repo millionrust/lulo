@@ -3,6 +3,7 @@ mod connectivity;
 mod controller;
 mod displays;
 mod focus;
+mod hardware;
 mod input;
 mod navigation;
 mod notifications;

@@ -5,6 +5,45 @@ use super::*;
 impl Settings {
     pub(super) fn start_hardware_watchers(cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            // `crate::hardware::current()` shells out to `busctl` for
+            // fingerprint devices; GPUI's `background_executor()` is not
+            // safe to spawn child processes from -- doing so here left
+            // `has_pointing_stick`/`has_external_mouse` stuck at their
+            // defaults forever, so the Mouse pane never showed its content
+            // (LINUX-HW-03). `blocking::unblock` runs it on the dedicated
+            // blocking-task pool the rest of Settings already uses for
+            // `Command`-spawning work.
+            let hardware = blocking::unblock(crate::hardware::current).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.apply_hardware(hardware, cx)
+            });
+        })
+        .detach();
+
+        #[cfg(target_os = "linux")]
+        {
+            let (hardware_events, hardware_rx) = async_channel::bounded(1);
+            cx.background_executor()
+                .spawn(crate::hardware::watch(hardware_events))
+                .detach();
+            cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                while hardware_rx.recv().await.is_ok() {
+                    // See above: keep this off GPUI's background executor.
+                    let hardware = blocking::unblock(crate::hardware::current).await;
+                    if this
+                        .update(cx, |this: &mut Settings, cx| {
+                            this.apply_hardware(hardware, cx)
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .detach();
+        }
+
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
                 .spawn(async { rmac_bluetooth::snapshot() })

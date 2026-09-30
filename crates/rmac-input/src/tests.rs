@@ -65,7 +65,7 @@ fn reads_known_values_and_explicit_false_flags() {
         settings.touchpad.secondary_click,
         SecondaryClick::CornerClick
     );
-    assert!(settings.touchscreen_enabled);
+    assert!(settings.touch.enabled);
 }
 
 #[test]
@@ -83,15 +83,103 @@ fn touch_off_round_trips_through_managed_config() {
         files: Vec::new(),
         missing_optional_files: Vec::new(),
     };
-    current.settings.touchscreen_enabled = false;
+    current.settings.touch.enabled = false;
     let source = update_managed_source(&authority, &current.settings).unwrap();
     let parsed = KdlDocument::parse_v1(source.strip_prefix(MANAGED_HEADER).unwrap()).unwrap();
     let input = parsed.get("input").unwrap().children().unwrap();
     let touch = input.get("touch").unwrap().children().unwrap();
     assert_eq!(flag(touch, "off"), Some(true));
-    current.settings.touchscreen_enabled = true;
+    current.settings.touch.enabled = true;
     apply_input(input, &mut current);
-    assert!(!current.settings.touchscreen_enabled);
+    assert!(!current.settings.touch.enabled);
+}
+
+#[test]
+fn touch_and_pointing_stick_round_trip_through_managed_config() {
+    let source = "input { trackpoint { accel-speed 0.25; scroll-method \"on-button-down\"; scroll-button 274; }; touch { off; map-to-output \"eDP-1\"; }; }\n";
+    let parsed = effective(source);
+    assert_eq!(parsed.settings.trackpoint.accel_speed, 0.25);
+    assert!(parsed.settings.trackpoint_scroll_with_middle_button);
+    assert!(!parsed.settings.touch.enabled);
+    assert_eq!(
+        parsed.settings.touch.map_to_output.as_deref(),
+        Some("eDP-1")
+    );
+    let authority = Authority {
+        main_path: PathBuf::from("/config.kdl"),
+        main_source: source.into(),
+        managed_path: PathBuf::from("/.rmac-input.kdl"),
+        managed_source: None,
+        has_managed_include: false,
+        safe_to_write: true,
+        detail: None,
+        effective: parsed,
+        files: vec![],
+        missing_optional_files: vec![],
+    };
+    let mut changed = authority.effective.settings.clone();
+    changed.trackpoint.accel_speed = -0.5;
+    changed.trackpoint_scroll_with_middle_button = false;
+    changed.touch.enabled = true;
+    changed.touch.map_to_output = Some("HDMI-A-1".into());
+    let managed = update_managed_source(&authority, &changed).unwrap();
+    let document = parse_managed_document(&managed).unwrap();
+    let mut reread = authority.effective;
+    apply_input(
+        document.get("input").unwrap().children().unwrap(),
+        &mut reread,
+    );
+    assert_eq!(reread.settings, changed);
+}
+
+#[test]
+fn generated_session_uses_persistent_input_entrypoint() {
+    let root = test_directory("generated-session");
+    let directory = root.join("rmac/niri");
+    std::fs::create_dir_all(&directory).unwrap();
+    let session = directory.join("session.kdl");
+    let persistent = directory.join("config.kdl");
+    std::fs::write(
+        &session,
+        "include \"config.kdl\"\ninclude \"shortcuts-generated.kdl\"\n",
+    )
+    .unwrap();
+    std::fs::write(&persistent, "input { touch {} }\n").unwrap();
+    assert_eq!(persistent_rmac_config(&session), persistent);
+    std::fs::write(&session, "include \"other.kdl\"\n").unwrap();
+    assert_eq!(persistent_rmac_config(&session), session);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn mouse_classified_stick_uses_mouse_scroll_authority() {
+    let parsed =
+        effective("input { mouse { scroll-method \"on-button-down\"; scroll-button 274; }; }\n");
+    assert!(parsed.settings.mouse_scroll_with_middle_button);
+    let authority = Authority {
+        main_path: PathBuf::from("/config.kdl"),
+        main_source: String::new(),
+        managed_path: PathBuf::from("/.rmac-input.kdl"),
+        managed_source: None,
+        has_managed_include: false,
+        safe_to_write: true,
+        detail: None,
+        effective: parsed,
+        files: vec![],
+        missing_optional_files: vec![],
+    };
+    let mut changed = authority.effective.settings.clone();
+    changed.mouse_scroll_with_middle_button = false;
+    let managed = update_managed_source(&authority, &changed).unwrap();
+    assert!(managed.contains("scroll-method \"no-scroll\""));
+    assert!(!managed.contains("scroll-button"));
+    let document = parse_managed_document(&managed).unwrap();
+    let mut reread = authority.effective;
+    apply_input(
+        document.get("input").unwrap().children().unwrap(),
+        &mut reread,
+    );
+    assert_eq!(reread.settings, changed);
 }
 
 #[test]

@@ -150,7 +150,7 @@ impl Settings {
                     ));
                 }
 
-                if output.primary {
+                if output.primary && self.hardware.has_backlight {
                     if let Some(percentage) = self.brightness {
                         controls.push(value_slider_row(
                             "Brightness",

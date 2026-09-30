@@ -66,80 +66,90 @@ impl Settings {
                 .into_any_element()
         };
         cards.push(section_header("Menu Bar Controls"));
-        cards.push(card(vec![
-            control(
+        let mut controls = Vec::new();
+        if self.hardware.has_wifi {
+            controls.push(control(
                 "menu-bar-network",
                 "icons/wifi.svg",
                 accent(),
                 "Wi-Fi",
                 indicators.network,
                 MenuBarChange::Network,
-            ),
-            control(
-                "menu-bar-vpn",
-                "icons/key.svg",
-                accent(),
-                "VPN",
-                indicators.vpn,
-                MenuBarChange::Vpn,
-            ),
-            control(
+            ));
+        }
+        controls.push(control(
+            "menu-bar-vpn",
+            "icons/key.svg",
+            accent(),
+            "VPN",
+            indicators.vpn,
+            MenuBarChange::Vpn,
+        ));
+        if self.hardware.has_bluetooth {
+            controls.push(control(
                 "menu-bar-bluetooth",
                 "icons/bluetooth.svg",
                 accent(),
                 "Bluetooth",
                 indicators.bluetooth,
                 MenuBarChange::Bluetooth,
-            ),
-            control(
-                "menu-bar-sound",
-                "icons/volume-2.svg",
-                hsl(0xff2d55),
-                "Sound",
-                indicators.sound,
-                MenuBarChange::Sound,
-            ),
-            control(
+            ));
+        }
+        controls.push(control(
+            "menu-bar-sound",
+            "icons/volume-2.svg",
+            hsl(0xff2d55),
+            "Sound",
+            indicators.sound,
+            MenuBarChange::Sound,
+        ));
+        if self.hardware.has_battery {
+            controls.push(control(
                 "menu-bar-battery",
                 "icons/battery-charging.svg",
                 hsl(0x34c759),
                 "Battery",
                 indicators.power,
                 MenuBarChange::Power,
-            ),
-            control(
-                "menu-bar-focus",
-                "icons/moon.svg",
-                hsl(0x5e5ce6),
-                "Focus",
-                indicators.focus,
-                MenuBarChange::Focus,
-            ),
-            control(
-                "menu-bar-notifications",
-                "icons/bell.svg",
-                hsl(0xff3b30),
-                "Notifications",
-                indicators.notifications,
-                MenuBarChange::Notifications,
-            ),
-        ]));
+            ));
+        }
+        controls.push(control(
+            "menu-bar-focus",
+            "icons/moon.svg",
+            hsl(0x5e5ce6),
+            "Focus",
+            indicators.focus,
+            MenuBarChange::Focus,
+        ));
+        controls.push(control(
+            "menu-bar-notifications",
+            "icons/bell.svg",
+            hsl(0xff3b30),
+            "Notifications",
+            indicators.notifications,
+            MenuBarChange::Notifications,
+        ));
+        cards.push(card(controls));
 
-        let percentage_view = view.clone();
-        cards.push(card(vec![row_base()
-            .child(text_block("Show battery percentage".into(), None))
-            .child(
-                Toggle::new("menu-bar-battery-percentage")
-                    .checked(indicators.battery_percentage)
-                    .disabled(!enabled || !indicators.power)
-                    .on_click(move |value, _, cx| {
-                        percentage_view.update(cx, |settings, cx| {
-                            settings
-                                .apply_menu_bar_change(MenuBarChange::BatteryPercentage(*value), cx)
-                        });
-                    }),
-            )
-            .into_any_element()]));
+        if self.hardware.has_battery {
+            let percentage_view = view.clone();
+            cards.push(card(vec![row_base()
+                .child(text_block("Show battery percentage".into(), None))
+                .child(
+                    Toggle::new("menu-bar-battery-percentage")
+                        .checked(indicators.battery_percentage)
+                        .disabled(!enabled || !indicators.power)
+                        .on_click(move |value, _, cx| {
+                            percentage_view.update(cx, |settings, cx| {
+                                settings.apply_menu_bar_change(
+                                    MenuBarChange::BatteryPercentage(*value),
+                                    cx,
+                                )
+                            });
+                        }),
+                )
+                .into_any_element()]));
+        }
         self.pane(cards)
     }
 }

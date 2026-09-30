@@ -45,10 +45,14 @@ impl Settings {
         self.input_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_input::snapshot() })
-                .await;
+            // `rmac_input::snapshot()` shells out to niri (`niri msg`, `niri
+            // validate`); `blocking::unblock` runs it on the dedicated
+            // blocking-task pool the rest of Settings already uses for any
+            // `Command`-spawning work (sound.rs, spotlight.rs, wallpaper.rs,
+            // …). GPUI's own `background_executor()` is not safe for
+            // spawning child processes from — doing so here left `input`
+            // stuck "Loading…" forever (LINUX-HW-03).
+            let result = blocking::unblock(rmac_input::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_input_update(result, cx);
                 this.flush_input_stream_refresh(cx);
@@ -68,10 +72,9 @@ impl Settings {
         self.input_generation = self.input_generation.wrapping_add(1);
         let generation = self.input_generation;
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_input::snapshot() })
-                .await;
+            // See `refresh_input`: this must run off GPUI's background
+            // executor, not on it.
+            let result = blocking::unblock(rmac_input::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.input_stream_refreshing = false;
                 if input_stream_snapshot_is_current(
@@ -110,10 +113,29 @@ impl Settings {
         self.input_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_input::save(&settings) })
-                .await;
+            // See `refresh_input`: `save()` also shells out to niri.
+            let result = blocking::unblock(move || rmac_input::save(&settings)).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_input_update(result, cx);
+                this.flush_input_stream_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    pub(super) fn map_touch_to_output(&mut self, output: Option<String>, cx: &mut Context<Self>) {
+        if self.input_loading || self.input_busy || !self.input.can_configure {
+            return;
+        }
+        let mut settings = self.input.settings.clone();
+        settings.touch.map_to_output = output;
+        self.input_generation = self.input_generation.wrapping_add(1);
+        self.input_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            // See `refresh_input`: `save()` also shells out to niri.
+            let result = blocking::unblock(move || rmac_input::save(&settings)).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_input_update(result, cx);
                 this.flush_input_stream_refresh(cx);

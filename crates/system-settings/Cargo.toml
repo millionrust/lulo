@@ -47,6 +47,7 @@ rmac-power.workspace = true
 rmac-privacy.workspace = true
 rmac-privacy-linux.workspace = true
 rmac-portal.workspace = true
+rmac-process.workspace = true
 rmac-recent-documents.workspace = true
 rmac-screen-reader.workspace = true
 rmac-storage.workspace = true

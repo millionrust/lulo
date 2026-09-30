@@ -19,6 +19,10 @@ input {
         repeat-delay 225
         repeat-rate 11
     }
+    touch {
+        // Enabled by default. Settings writes off and map-to-output to its
+        // persistent managed input include when the user changes them.
+    }
     // The power button belongs to the Lulo OS lock coordinator, which holds
     // logind's handle-power-key inhibitor while the session runs (the way
     // GNOME does) and gets each press through the XF86PowerOff bind below.

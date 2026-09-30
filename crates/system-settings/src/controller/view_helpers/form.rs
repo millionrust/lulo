@@ -365,16 +365,21 @@ pub(in crate::controller) fn switch_row(
     enabled: bool,
     on_change: impl Fn(bool, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
+    let title = title.into();
     let has_subtitle = subtitle.is_some();
+    let toggle = Toggle::new(id)
+        .aria_label(title.clone())
+        .checked(checked)
+        .disabled(!enabled)
+        .on_click(move |value, window, cx| on_change(*value, window, cx));
+    let toggle = match subtitle.clone() {
+        Some(description) => toggle.aria_description(description),
+        None => toggle,
+    };
     row_base()
         .when(has_subtitle, |row| row.items_start())
-        .child(text_block(title.into(), subtitle))
-        .child(
-            Toggle::new(id)
-                .checked(checked)
-                .disabled(!enabled)
-                .on_click(move |value, window, cx| on_change(*value, window, cx)),
-        )
+        .child(text_block(title, subtitle))
+        .child(toggle)
         .into_any_element()
 }
 
@@ -534,9 +539,13 @@ pub(in crate::controller) fn stepped_slider_row(
     enabled: bool,
     on_pick: IndexHandler,
 ) -> AnyElement {
+    let title = title.into();
     row_base()
         .items_start()
-        .child(text_block(title.into(), None))
+        .id(SharedString::from(format!("{id}-row")))
+        .role(Role::Group)
+        .aria_label(title.clone())
+        .child(text_block(title, None))
         .child(stepped_slider(
             id,
             steps,

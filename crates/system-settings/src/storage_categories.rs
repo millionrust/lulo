@@ -162,17 +162,19 @@ fn walk(
             }
             if file_type.is_dir() {
                 if is_bulk_directory(&entry.file_name()) {
+                    // These bytes already belong to the volume's used total;
+                    // leaving them in residual System Data avoids another walk.
                     *truncated = true;
                     continue;
                 }
-                if let Ok(metadata) = entry.metadata() {
-                    if device_of_metadata(&metadata) == device {
+                if let Ok(metadata) = std::fs::symlink_metadata(entry.path()) {
+                    if metadata.is_dir() && device_of_metadata(&metadata) == device {
                         stack.push(entry.path());
                     }
                 }
             } else if file_type.is_file() {
-                if let Ok(metadata) = entry.metadata() {
-                    if device_of_metadata(&metadata) == device {
+                if let Ok(metadata) = std::fs::symlink_metadata(entry.path()) {
+                    if metadata.is_file() && device_of_metadata(&metadata) == device {
                         total = total.saturating_add(allocated(&metadata));
                     }
                 }
@@ -435,6 +437,21 @@ mod tests {
     }
 
     #[test]
+    fn cancellation_after_progress_skips_remaining_categories() {
+        let home = scratch("cancel-progress");
+        std::fs::create_dir_all(home.join("Documents")).unwrap();
+        let cancelled = AtomicBool::new(false);
+        let mut updates = 0;
+        let result = measure_with_progress(&home, home.clone(), &cancelled, |_| {
+            updates += 1;
+            cancelled.store(true, Ordering::Relaxed);
+        });
+        assert!(result.is_none());
+        assert_eq!(updates, 1);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
     fn cache_round_trip_rejects_other_home_and_version() {
         let home = scratch("cache");
         let path = home.join("state/categories.json");
@@ -455,6 +472,12 @@ mod tests {
         assert!(load_cache_at(&path, Path::new("/other"), Path::new("/")).is_none());
         let mut stored: StoredCategories =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        stored.measured_at = now_secs() - REFRESH_AFTER.as_secs() - 1;
+        std::fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
+        assert_eq!(
+            load_cache_at(&path, &home, Path::new("/")).map(|(_, fresh)| fresh),
+            Some(false)
+        );
         stored.version += 1;
         std::fs::write(&path, serde_json::to_vec(&stored).unwrap()).unwrap();
         assert!(load_cache_at(&path, &home, Path::new("/")).is_none());

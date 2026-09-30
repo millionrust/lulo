@@ -24,6 +24,18 @@ python3 scripts/parallel/compare.py --mac /tmp/rmac-parallel-mac \
 
 The Lulo runner holds `/tmp/lulo-journey.lock`; the Mac runner holds the
 directory `/tmp/mac-gui.lock`. Both always release their lock in `finally`.
+
+To benchmark Settings › Storage without reading the owner's home, run the
+private nested runner against an installed or freshly built binary:
+
+```sh
+python3 scripts/behavior/run_lulo.py --bin-dir target/iterate --benchmark-storage 200000
+```
+
+It creates 200,000 empty files under a temporary `HOME/Documents`, keeps one
+Settings instance open, and reports time to the capacity label, first
+category, completion, and Settings process CPU time. It removes the synthetic
+tree and temporary XDG directories when it exits.
 Mac input is gated by the same AX ownership check as `record_mac.py`. Notes,
 Dock/window management, status menus and Spotlight are marked Mac-unsafe in
 their journey definitions; they run on Lulo only. Mac Terminal accepts only

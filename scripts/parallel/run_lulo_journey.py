@@ -251,12 +251,6 @@ class Driver:
             if step[kind] in {"power", "ctrl-power", "cmd-alt-escape", "cmd-alt-s"}:
                 raise RuntimeError("refusing session or device-control shortcut")
             self.session.pointer.key(step[kind])
-            if step[kind] == "cmd-space":
-                command = [str(Path(self.args.bin_dir) / "rmac-shortcut-dispatch"), "launcher"]
-                outcome = subprocess.run(command, env=self.session.env, capture_output=True,
-                                         text=True, timeout=10)
-                if outcome.returncode:
-                    raise RuntimeError(f"Spotlight dispatch failed: {outcome.stderr[-120:]}")
         elif kind == "type":
             self.session.pointer.type_text(step[kind].replace("$SANDBOX", str(self.sandbox)))
         elif kind == "drag_window":
@@ -271,8 +265,9 @@ class Driver:
                 lambda: (candidate := self.window())
                 if candidate and (abs(self.session.geometry(candidate)[0] - x) > 20 or
                                   abs(self.session.geometry(candidate)[1] - y) > 20) else None, 4)
-            if not moved:
-                after = self.session.geometry(self.window()) if self.window() else None
+            after = self.session.geometry(self.window()) if self.window() else None
+            if not moved and (after is None or
+                              (abs(after[0] - x) <= 20 and abs(after[1] - y) <= 20)):
                 raise RuntimeError(f"nested niri reported no window movement after drag: {(x, y)} -> {after}")
 
     def run(self, name: str) -> dict:
@@ -295,10 +290,11 @@ class Driver:
                         issues.append({"index": index, "action": pending,
                                        "error": "Save did not create the document in the journey sandbox"})
                     if step.get("expect_window") and not any(
-                        w.get("app_id") == step["expect_window"] for w in self.session.windows()
+                        w.get("app_id") == step["expect_window"] and w.get("is_focused")
+                        for w in self.session.windows()
                     ):
                         issues.append({"index": index, "action": pending,
-                                       "error": f"expected {step['expect_window']} window is absent"})
+                                       "error": f"expected {step['expect_window']} window is not focused"})
                     result["steps"].append({"name": step[kind], "image": destination.name,
                                             "region": self.capture_region(step.get("scope") == "full"),
                                             "action": pending, **(timing or {})})

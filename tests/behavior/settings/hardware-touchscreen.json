@@ -1,0 +1,12 @@
+{
+  "title": "Touchscreen hardware exposes its Settings pane and display mapping",
+  "app": "settings",
+  "launch": {},
+  "steps": [
+    {"key": "cmd-f"},
+    {"type": "touchscreen", "settle": 1.0},
+    {"key": "down"},
+    {"key": "return", "settle": 1.0},
+    {"observe": "touchscreen_pane", "facts": ["windows"]}
+  ]
+}

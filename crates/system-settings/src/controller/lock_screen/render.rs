@@ -121,6 +121,15 @@ impl Settings {
                 ),
             ]));
         }
+        if self.hardware.fprintd_supported {
+            cards.push(section_header("Fingerprint"));
+            cards.push(card(vec![value_button_row(
+                "Fingerprint reader",
+                None,
+                Some("Supported by fprintd".into()),
+                None,
+            )]));
+        }
         let lock_view = view.clone();
         let refresh_view = view.clone();
         cards.push(footer_buttons(vec![

@@ -106,6 +106,25 @@ fn touch_and_pointing_stick_round_trip_through_managed_config() {
 }
 
 #[test]
+fn generated_session_uses_persistent_input_entrypoint() {
+    let root = test_directory("generated-session");
+    let directory = root.join("rmac/niri");
+    std::fs::create_dir_all(&directory).unwrap();
+    let session = directory.join("session.kdl");
+    let persistent = directory.join("config.kdl");
+    std::fs::write(
+        &session,
+        "include \"config.kdl\"\ninclude \"shortcuts-generated.kdl\"\n",
+    )
+    .unwrap();
+    std::fs::write(&persistent, "input { touch {} }\n").unwrap();
+    assert_eq!(persistent_rmac_config(&session), persistent);
+    std::fs::write(&session, "include \"other.kdl\"\n").unwrap();
+    assert_eq!(persistent_rmac_config(&session), session);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn keyboard_merges_but_pointing_sections_replace() {
     let mut effective = effective(CONFIG);
     let later = KdlDocument::parse_v1(

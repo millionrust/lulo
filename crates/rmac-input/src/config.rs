@@ -87,6 +87,7 @@ pub(super) fn config_path() -> Result<Option<ConfigLocation>, Error> {
                 "NIRI_CONFIG must be an absolute path",
             ));
         }
+        let path = persistent_rmac_config(&path);
         return Ok(path.is_file().then_some(ConfigLocation {
             path,
             writable_user_config: true,
@@ -111,6 +112,36 @@ pub(super) fn config_path() -> Result<Option<ConfigLocation>, Error> {
         path: system,
         writable_user_config: false,
     }))
+}
+
+/// The Lulo session's `NIRI_CONFIG` is a generated wrapper rebuilt at every
+/// login. Persist user input settings in the included, user-owned entrypoint.
+pub(super) fn persistent_rmac_config(path: &Path) -> PathBuf {
+    const GENERATED: &str = "include \"config.kdl\"\ninclude \"shortcuts-generated.kdl\"\n";
+    let is_session = path.file_name().is_some_and(|name| name == "session.kdl")
+        && path
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|name| name == "niri")
+        && path
+            .parent()
+            .and_then(Path::parent)
+            .and_then(Path::file_name)
+            .is_some_and(|name| name == "rmac");
+    if !is_session || std::fs::metadata(path).map_or(true, |metadata| metadata.len() > 256) {
+        return path.to_path_buf();
+    }
+    if std::fs::read_to_string(path).ok().as_deref() != Some(GENERATED) {
+        return path.to_path_buf();
+    }
+    let persistent = path.with_file_name("config.kdl");
+    if std::fs::symlink_metadata(&persistent)
+        .is_ok_and(|metadata| metadata.file_type().is_file() && !metadata.file_type().is_symlink())
+    {
+        persistent
+    } else {
+        path.to_path_buf()
+    }
 }
 
 pub(super) fn load_authority(location: &ConfigLocation) -> Result<Authority, Error> {

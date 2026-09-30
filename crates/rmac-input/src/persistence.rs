@@ -28,7 +28,11 @@ pub(super) fn validate_settings(settings: &InputSettings) -> Result<(), Error> {
         }
     }
     if settings.touch.map_to_output.as_ref().is_some_and(|output| {
-        output.is_empty() || output.len() > 128 || output.chars().any(char::is_control)
+        output.is_empty()
+            || output.len() > 128
+            || output
+                .chars()
+                .any(|ch| ch.is_control() || ch == '"' || ch == '\\')
     }) {
         return Err(Error::new(
             "validate touch settings",
@@ -222,14 +226,19 @@ pub(super) fn update_managed_source(
             .expect("trackpoint exists")
             .ensure_children();
         write_pointer(trackpoint, &settings.trackpoint);
-        if settings.trackpoint_scroll_with_middle_button {
-            replace_string_value(trackpoint, "scroll-method", "on-button-down");
-            replace_value(trackpoint, "scroll-button", 274_i128);
-        } else {
-            replace_string_value(trackpoint, "scroll-method", "no-scroll");
-            trackpoint
-                .nodes_mut()
-                .retain(|node| node.name().value() != "scroll-button");
+        if settings.trackpoint_scroll_with_middle_button
+            != authority
+                .effective
+                .settings
+                .trackpoint_scroll_with_middle_button
+        {
+            if settings.trackpoint_scroll_with_middle_button {
+                replace_string_value(trackpoint, "scroll-method", "on-button-down");
+                replace_value(trackpoint, "scroll-button", 274_i128);
+            } else {
+                replace_string_value(trackpoint, "scroll-method", "no-scroll");
+                remove_named(trackpoint, "scroll-button");
+            }
         }
     }
     if settings.touch != authority.effective.settings.touch || input.get("touch").is_some() {

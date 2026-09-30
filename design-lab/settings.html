@@ -325,7 +325,7 @@ const C={blue:'#1372f9',gray:'#8e8e93',green:'#34c759',red:'#ff3b30',pink:'#ff2d
 const SIDEBAR=[
   [['Wi-Fi','wifi',C.blue],['Bluetooth','bluetooth',C.blue],['Network','globe',C.blue],['VPN','key',C.blue],['Battery','battery-charging',C.green]],
   [['General','settings',C.gray],['Accessibility','accessibility',C.blue],['Appearance','palette',C.black],['Desktop & Dock','app-window',C.black],
-   ['Displays','monitor',C.blue],['Menu Bar','panel-top',C.gray],['Spotlight','search',C.blue],['Wallpaper','image',C.teal]],
+   ['Displays','monitor',C.blue],['Touchscreen','monitor',C.blue],['Menu Bar','panel-top',C.gray],['Spotlight','search',C.blue],['Wallpaper','image',C.teal]],
   [['Notifications','bell',C.red],['Sound','volume-2',C.pink],['Focus','moon',C.indigo]],
   [['Lock Screen','lock',C.black],['Privacy & Security','shield',C.blue]],
   [['Keyboard','keyboard',C.gray],['Mouse','mouse',C.gray],['Trackpad','touchpad',C.gray]],
@@ -480,6 +480,12 @@ Object.assign(PANES,{
     btns('Refresh')],
   'Mouse':['Mouse',
     g(srow('Tracking speed',5,2,'Slow','Fast'),sw('Natural scrolling',true,'Content tracks finger movement'),pop('Secondary click','Click Right Side'),sw('Pointer acceleration',true),sw('Middle-click emulation',false,'Click the left and right buttons together')),
+    h('Pointing Stick'),
+    g(srow('Pointing stick speed',5,2,'Slow','Fast'),sw('Pointing stick acceleration',true),sw('Scroll with middle button',false,'Hold the middle button while moving the pointing stick')),
+    btns('Refresh')],
+  'Touchscreen':['Touchscreen',
+    g(sw('Touchscreen',true,'Use touch input on the display')),
+    g(pop('Map touchscreen to display','Automatic')),
     btns('Refresh')],
   'Trackpad':['Trackpad',
     tabs(['Point & Click','Scroll & Zoom'],0),
@@ -548,7 +554,7 @@ Object.assign(PANES,{
 const PANE_SEL={'Menu Bar':'Menu Bar','Date & Time':'General','Language & Region':'General','Login Items':'General','Sharing':'General','About':'General','Software Update':'General','Storage':'General'};
 const selOf=(name)=>PANE_SEL[name]||name.split(' › ')[0];
 let out='';
-const order=['General','Appearance','Wallpaper','Desktop & Dock','Menu Bar','Displays','Sound','Wi-Fi','Bluetooth','Battery',
+const order=['General','Appearance','Wallpaper','Desktop & Dock','Menu Bar','Displays','Touchscreen','Sound','Wi-Fi','Bluetooth','Battery',
   'Network','Network › Wi-Fi','VPN','Notifications','Notifications › Files','Focus','Focus › Do Not Disturb','Lock Screen',
   'Privacy & Security','Privacy & Security › Camera','Keyboard','Keyboard Shortcuts','Mouse','Trackpad','Trackpad › Scroll & Zoom',
   'Date & Time','Language & Region','Login Items','Sharing','Accessibility','Accessibility › Display',

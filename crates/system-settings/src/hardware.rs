@@ -75,6 +75,7 @@ pub(crate) fn scan(sys: &Path, udev: &Path, fprintd_supported: bool) -> Capabili
     for path in entries(&sys.join("class/leds")) {
         let name = path.file_name().unwrap_or_default().to_string_lossy();
         result.has_keyboard_backlight |= name.contains("kbd_backlight");
+        result.has_accelerometer |= name.contains("hddprotect");
     }
     for path in entries(&sys.join("class/net")) {
         result.has_wifi |= path.join("wireless").exists() || path.join("phy80211").exists();
@@ -173,6 +174,10 @@ pub(crate) fn scan(sys: &Path, udev: &Path, fprintd_supported: bool) -> Capabili
 
 #[cfg(target_os = "linux")]
 pub(crate) fn current() -> Capabilities {
+    let mut result = scan(Path::new("/sys"), Path::new("/run/udev/data"), false);
+    if !result.has_fingerprint {
+        return result;
+    }
     let fprintd_supported = std::process::Command::new("busctl")
         .args([
             "--system",
@@ -194,11 +199,8 @@ pub(crate) fn current() -> Capabilities {
                 .and_then(|count| count.parse::<usize>().ok())
                 .is_some_and(|count| count > 0)
         });
-    scan(
-        Path::new("/sys"),
-        Path::new("/run/udev/data"),
-        fprintd_supported,
-    )
+    result.fprintd_supported = fprintd_supported;
+    result
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -248,6 +250,7 @@ pub(crate) async fn watch(sender: async_channel::Sender<()>) -> std::io::Result<
                 Err(_) => break,
             }
         }
+        events.close();
     });
     sender.closed().await;
     let mut child = child.lock().expect("monitor child lock");
@@ -315,6 +318,7 @@ mod tests {
             found.has_touchscreen && found.has_backlight && found.has_bluetooth && found.has_wifi
         );
         assert!(found.has_fingerprint && !found.fprintd_supported);
+        assert!(scan(&sys, &udev, true).fprintd_supported);
         assert!(!found.has_external_mouse && !found.rotation_capable);
         assert_eq!(found.displays.len(), 1);
         fs::remove_dir_all(root).unwrap();

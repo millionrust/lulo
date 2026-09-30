@@ -156,20 +156,6 @@ impl CalculatorView {
             ),
         };
         window.resize(size(px(width), px(height)));
-        // niri can answer this first resize with the old size before the new
-        // buffer has been attached. One delayed reassertion runs after that
-        // configure; there is no periodic retry or idle timer.
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(Duration::from_millis(150))
-                .await;
-            let _ = this.update_in(cx, |view, window, _| {
-                if view.mode == mode {
-                    window.resize(size(px(width), px(height)));
-                }
-            });
-        })
-        .detach();
         cx.notify();
     }
 

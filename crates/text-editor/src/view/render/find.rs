@@ -60,7 +60,7 @@ impl EditorView {
                     .ghost()
                     .with_size(Size::Small)
                     .tooltip("Done")
-                    .on_click(cx.listener(|this, _, _, cx| this.close_bar(cx))),
+                    .on_click(cx.listener(|this, _, window, cx| this.close_bar(window, cx))),
             );
 
         let mut col = div()

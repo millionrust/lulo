@@ -19,6 +19,7 @@ pub(crate) const REFRESH_AFTER: Duration = Duration::from_secs(10 * 60);
 /// bound instead of an exact size. Keeping this bounded makes opening Storage
 /// responsive on home folders with large application caches and Flatpak data.
 pub(crate) const FILE_LIMIT: usize = 64_000;
+const PROGRESS_STEP: usize = 4_096;
 
 /// One measured category of the home volume.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -101,12 +102,32 @@ pub(crate) fn measure_with_progress(
                 continue;
             }
             first.get_or_insert_with(|| folder.clone());
+            let completed_folders = bytes;
+            let reveal_folder = first.clone();
+            let previous_truncated = truncated;
             bytes = bytes.saturating_add(walk(
                 &folder,
                 device,
                 &mut budget,
                 &mut truncated,
                 cancelled,
+                |partial_bytes| {
+                    let current_bytes = completed_folders.saturating_add(partial_bytes);
+                    if current_bytes == 0 {
+                        return;
+                    }
+                    let mut partial_categories = categories.clone();
+                    partial_categories.push(Category {
+                        name,
+                        folder: reveal_folder.clone(),
+                        bytes: current_bytes,
+                    });
+                    progress(Categories {
+                        volume_path: volume_path.clone(),
+                        categories: partial_categories,
+                        truncated: previous_truncated,
+                    });
+                },
             )?);
         }
         if bytes > 0 {
@@ -135,8 +156,10 @@ fn walk(
     budget: &mut usize,
     truncated: &mut bool,
     cancelled: &AtomicBool,
+    mut progress: impl FnMut(u64),
 ) -> Option<u64> {
     let mut total = 0u64;
+    let mut visited = 0usize;
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         if cancelled.load(Ordering::Relaxed) {
@@ -154,6 +177,7 @@ fn walk(
                 return Some(total);
             }
             *budget -= 1;
+            visited += 1;
             let Ok(file_type) = entry.file_type() else {
                 continue;
             };
@@ -180,6 +204,9 @@ fn walk(
                 stack.push(entry.path());
             } else if file_type.is_file() && metadata.is_file() {
                 total = total.saturating_add(allocated(&metadata));
+            }
+            if visited % PROGRESS_STEP == 0 {
+                progress(total);
             }
         }
     }

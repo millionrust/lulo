@@ -29,7 +29,7 @@ To benchmark Settings › Storage without reading the owner's home, run the
 private nested runner against an installed or freshly built binary:
 
 ```sh
-python3 scripts/behavior/run_lulo.py --bin-dir target/iterate --benchmark-storage 200000
+python3 scripts/behavior/run_lulo.py --bin-dir ~/rmac-wt/target/iterate --benchmark-storage 200000
 ```
 
 It creates 200,000 empty files under a temporary `HOME/Documents`, keeps one

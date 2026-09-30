@@ -2225,10 +2225,9 @@ fn end_touch_contact(
                     touch_phase: TouchPhase::Ended,
                 }));
             if !cancelled {
-                start_momentum_for_touch(
+                start_momentum(
                     &mut client.borrow_mut(),
-                    contact.window.clone(),
-                    contact.position,
+                    Some((contact.window.clone(), contact.position)),
                 );
             }
         }
@@ -2846,7 +2845,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                         track_finger_velocity(&mut state, continuous);
                     }
                     if stopped {
-                        start_momentum(&mut state);
+                        start_momentum(&mut state, None);
                     }
                     if let Some(continuous) = continuous {
                         if let Some(window) = state.mouse_focused_window.clone() {
@@ -3367,7 +3366,12 @@ fn track_finger_velocity(state: &mut WaylandClientState, delta: Point<Pixels>) {
     state.last_finger_scroll = Some(now);
 }
 
-fn start_momentum(state: &mut WaylandClientState) {
+/// The optional fixed target is a lifted touchscreen contact. A touchpad
+/// glide instead follows the current pointer focus and location.
+fn start_momentum(
+    state: &mut WaylandClientState,
+    touch_target: Option<(WaylandWindowStatePtr, Point<Pixels>)>,
+) {
     let lifted_while_moving = state
         .last_finger_scroll
         .is_some_and(|last| last.elapsed() <= Duration::from_millis(60));
@@ -3376,7 +3380,7 @@ fn start_momentum(state: &mut WaylandClientState) {
     state.scroll_velocity = point(0.0, 0.0);
     if !lifted_while_moving
         || velocity.x.hypot(velocity.y) < MOMENTUM_MIN_VELOCITY
-        || state.mouse_focused_window.is_none()
+        || (touch_target.is_none() && state.mouse_focused_window.is_none())
     {
         return;
     }
@@ -3401,63 +3405,23 @@ fn start_momentum(state: &mut WaylandClientState) {
             if step.x.hypot(step.y) < MOMENTUM_STOP_PX {
                 return TimeoutAction::Drop;
             }
-            let (Some(window), Some(position)) =
-                (state.mouse_focused_window.clone(), state.mouse_location)
-            else {
-                return TimeoutAction::Drop;
-            };
-            let modifiers = state.modifiers;
-            drop(state);
-            window.handle_input(PlatformInput::ScrollWheel(ScrollWheelEvent {
-                position,
-                delta: ScrollDelta::Pixels(point(px(step.x), px(step.y))),
-                modifiers,
-                touch_phase: TouchPhase::Moved,
-            }));
-            TimeoutAction::ToDuration(MOMENTUM_TICK)
-        },
-    );
-}
-
-fn start_momentum_for_touch(
-    state: &mut WaylandClientState,
-    window: WaylandWindowStatePtr,
-    position: Point<Pixels>,
-) {
-    let lifted_while_moving = state
-        .last_finger_scroll
-        .is_some_and(|last| last.elapsed() <= Duration::from_millis(60));
-    let mut velocity = state.scroll_velocity;
-    state.last_finger_scroll = None;
-    state.scroll_velocity = point(0.0, 0.0);
-    if !lifted_while_moving || velocity.x.hypot(velocity.y) < MOMENTUM_MIN_VELOCITY {
-        return;
-    }
-    state.momentum_generation = state.momentum_generation.wrapping_add(1);
-    let generation = state.momentum_generation;
-    let mut last_tick = Instant::now();
-    let _ = state.loop_handle.insert_source(
-        Timer::from_duration(MOMENTUM_TICK),
-        move |_, _, this: &mut WaylandClientStatePtr| {
-            let client = this.get_client();
-            let state = client.borrow();
-            if state.momentum_generation != generation
-                || !state
+            let (window, position) = if let Some((window, position)) = &touch_target {
+                if !state
                     .windows
                     .values()
-                    .any(|candidate| candidate.ptr_eq(&window))
-            {
-                return TimeoutAction::Drop;
-            }
-            let now = Instant::now();
-            let dt = now.duration_since(last_tick).as_secs_f32() * 1000.0;
-            last_tick = now;
-            let decay = (-dt / MOMENTUM_DECAY_MS).exp();
-            velocity = point(velocity.x * decay, velocity.y * decay);
-            let step = point(velocity.x * dt, velocity.y * dt);
-            if step.x.hypot(step.y) < MOMENTUM_STOP_PX {
-                return TimeoutAction::Drop;
-            }
+                    .any(|candidate| candidate.ptr_eq(window))
+                {
+                    return TimeoutAction::Drop;
+                }
+                (window.clone(), *position)
+            } else {
+                let (Some(window), Some(position)) =
+                    (state.mouse_focused_window.clone(), state.mouse_location)
+                else {
+                    return TimeoutAction::Drop;
+                };
+                (window, position)
+            };
             let modifiers = state.modifiers;
             drop(state);
             window.handle_input(PlatformInput::ScrollWheel(ScrollWheelEvent {

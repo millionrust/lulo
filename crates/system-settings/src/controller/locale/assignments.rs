@@ -130,10 +130,11 @@ impl Settings {
         self.locale_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_locale_linux::set_locale(&next) })
-                .await;
+            // `set_locale` shells out to `localectl`; GPUI's background
+            // executor is not safe to spawn child processes from
+            // (LINUX-HW-07), so this runs on the dedicated blocking-task
+            // pool instead.
+            let result = blocking::unblock(move || rmac_locale_linux::set_locale(&next)).await;
             let rollback = result
                 .as_ref()
                 .ok()
@@ -164,10 +165,10 @@ impl Settings {
         self.locale_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_locale_linux::restore_locale(&rollback) })
-                .await;
+            // See `apply_locale_assignments`: `restore_locale` also shells
+            // out to `localectl`.
+            let result =
+                blocking::unblock(move || rmac_locale_linux::restore_locale(&rollback)).await;
             let succeeded = result.is_ok();
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 if succeeded {

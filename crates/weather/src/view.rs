@@ -192,8 +192,15 @@ impl WeatherView {
             return;
         }
         self.status.insert(key.clone(), Status::Loading);
+        // `fetch::get()` shells out to `curl`; GPUI's background executor is
+        // not safe to spawn child processes from (LINUX-HW-07), so the
+        // fetch itself runs on `blocking::unblock`'s dedicated pool.
         let task = cx.background_executor().spawn(async move {
-            let body = fetch::get(&forecast::forecast_url(place.latitude, place.longitude))?;
+            let body = blocking::unblock({
+                let url = forecast::forecast_url(place.latitude, place.longitude);
+                move || fetch::get(&url)
+            })
+            .await?;
             let forecast = Forecast::parse(&body).map_err(|_| FetchError::Service)?;
             let fetched_at = now_seconds();
             if let (Some(path), Ok(body)) = (store::cache_path(&place), String::from_utf8(body)) {
@@ -244,8 +251,13 @@ impl WeatherView {
             if !current {
                 return;
             }
+            // `fetch::get()` shells out to `curl`; GPUI's background
+            // executor is not safe to spawn child processes from
+            // (LINUX-HW-07), so the fetch itself runs on
+            // `blocking::unblock`'s dedicated pool.
             let task = cx.background_executor().spawn(async move {
-                fetch::get(&url)
+                blocking::unblock(move || fetch::get(&url))
+                    .await
                     .ok()
                     .and_then(|body| geocode::parse_results(&body))
             });

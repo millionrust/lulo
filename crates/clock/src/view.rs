@@ -309,16 +309,25 @@ impl ClockView {
         }
         let zone = self.zone.clone();
         let reschedule = change.as_ref().is_none_or(Change::affects_schedule);
+        // `schedule::apply()` shells out to `systemctl --user` to (re)arm the
+        // alarm/timer unit; GPUI's background executor is not safe to spawn
+        // child processes from (LINUX-HW-07), so this whole save-and-arm
+        // step runs on `blocking::unblock`'s dedicated pool instead.
         let task = cx.background_executor().spawn(async move {
-            let now = now_millis();
-            let state = match change {
-                Some(change) => store::update(|state| change.apply(state)).map(|(state, ())| state),
-                None => store::load(),
-            }?;
-            if reschedule {
-                schedule::apply(&state, now, &|utc| zone.offset_at(utc))?;
-            }
-            std::io::Result::Ok(())
+            blocking::unblock(move || {
+                let now = now_millis();
+                let state = match change {
+                    Some(change) => {
+                        store::update(|state| change.apply(state)).map(|(state, ())| state)
+                    }
+                    None => store::load(),
+                }?;
+                if reschedule {
+                    schedule::apply(&state, now, &|utc| zone.offset_at(utc))?;
+                }
+                std::io::Result::Ok(())
+            })
+            .await
         });
         cx.spawn(async move |this, cx| {
             let result = task.await;

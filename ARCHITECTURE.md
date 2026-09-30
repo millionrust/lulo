@@ -487,6 +487,67 @@ The current prototype does not yet meet this contract everywhere; see the Phase
 - Desktop-entry command expansion follows the freedesktop specification and
   never passes through a shell.
 - Logs exclude secrets and user document contents by default.
+- `std::process::Command` never runs directly inside
+  `cx.background_executor().spawn(...)` (LINUX-HW-07, `docs/parity.md`); see
+  "Never spawn a child process from `background_executor()`" below.
+
+### Never spawn a child process from `background_executor()`
+
+GPUI's Linux `background_executor()` is a small, fixed-size pool of worker
+threads (`shell/compat/gpui_linux/src/linux/dispatcher.rs`:
+`available_parallelism().max(2)`), each running one polled task to
+completion before picking up the next. Running `std::process::Command`
+directly inside `cx.background_executor().spawn(async { .. })` — either to
+spawn a child or to wait on one (`.output()`, `.status()`, `.wait()`) — has
+hung indefinitely on the reference laptop: the task's own first line never
+even ran, while the identical call returned in under 100 ms called directly,
+outside GPUI (the Mouse-pane fix, commit 7c38a3b7, has the timing evidence).
+The same pattern was found across most of the shell (Settings' Accessibility,
+Language & Region, Appearance, Displays, Sound, VPN, General/About, Lock
+Screen; Files' unmount and thumbnail generation; the app catalog behind
+Files, the Dock, the app switcher, Mission Control, and App Drawer; Weather's
+network fetch; Clock's alarm/timer scheduling) and fixed the same way; see
+LINUX-HW-07 in `docs/parity.md` for the row and commit history.
+
+The most likely mechanism, consistent with the observed "never even starts"
+symptom, is the classic hazard of calling `fork()` from a multi-threaded
+process: `std::process::Command::spawn()` falls back to `fork()`+`exec()`
+whenever it cannot use `posix_spawn` (for example, once a `pre_exec` hook is
+set, as `rmac-process::bind_to_parent` does for long-lived helpers). `fork()`
+only carries the calling thread into the child; any lock another thread held
+at that instant — the allocator's arena lock is the classic case — stays
+held forever in the child's copy, with no thread left to release it. If the
+child then needs to allocate before `exec()` (glibc's own `execve` path can),
+it deadlocks before ever running the target program, and the parent's wait
+call — or, if nothing ever gets to poll the parent's own future because the
+pool's other workers are equally stuck, the task that would issue it — never
+returns. A secondary, compounding effect is plain worker-pool exhaustion:
+enough of these calls piling up on a 2-to-N-thread pool can starve every
+other queued background task, including trivial ones, which matches reports
+of unrelated panes stalling at the same time.
+
+The fix is always the same: run the `Command`-spawning closure on
+`blocking::unblock` (the `blocking` crate's own dedicated, growable thread
+pool) instead of `cx.background_executor()`:
+
+```rust
+// Before — can hang forever:
+let result = cx.background_executor().spawn(async { rmac_gtk_settings::snapshot() }).await;
+
+// After:
+let result = blocking::unblock(rmac_gtk_settings::snapshot).await;
+```
+
+When only part of an existing `cx.background_executor()` future needs it
+(for example, an otherwise-async function that makes one synchronous,
+Command-spawning call in the middle), wrap just that call in a nested
+`blocking::unblock(...).await` rather than restructuring the whole function;
+`quick-settings-app`'s `screenshot`/`open_settings` and
+`system-settings`'s `apply_theme_change_authoritatively` do this.
+`scripts/check-background-executor-command.sh` is a lightweight, grep-based
+CI check that flags a bare `Command::new`/`std::process::Command` inside a
+`background_executor().spawn(...)` block that has no `blocking::unblock` in
+it.
 
 ## Migration rule
 

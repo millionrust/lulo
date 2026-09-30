@@ -20,24 +20,27 @@ impl FinderView {
             return;
         }
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let results = cx
-                .background_executor()
-                .spawn(async move {
-                    let mut generated = Vec::new();
-                    let mut first_error = None;
-                    let mut failure_count = 0;
-                    for path in targets {
-                        match rmac_thumbnails::generate(&path) {
-                            Ok(thumbnail) => generated.push((path, thumbnail)),
-                            Err(error) => {
-                                failure_count += 1;
-                                first_error.get_or_insert(error);
-                            }
+            // `rmac_thumbnails::generate()` shells out to converters such as
+            // `pdftocairo` and `ffmpeg` for PDF, video, and audio previews;
+            // GPUI's background executor is not safe to spawn child
+            // processes from (LINUX-HW-07), so this whole batch runs on the
+            // dedicated blocking-task pool instead.
+            let results = blocking::unblock(move || {
+                let mut generated = Vec::new();
+                let mut first_error = None;
+                let mut failure_count = 0;
+                for path in targets {
+                    match rmac_thumbnails::generate(&path) {
+                        Ok(thumbnail) => generated.push((path, thumbnail)),
+                        Err(error) => {
+                            failure_count += 1;
+                            first_error.get_or_insert(error);
                         }
                     }
-                    (generated, first_error, failure_count)
-                })
-                .await;
+                }
+                (generated, first_error, failure_count)
+            })
+            .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 for (p, t) in results.0 {
                     if this.entries.iter().any(|entry| entry.path == p)

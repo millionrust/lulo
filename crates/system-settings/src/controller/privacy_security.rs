@@ -98,10 +98,10 @@ impl Settings {
         self.security_coverage_loading = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let snapshot = cx
-                .background_executor()
-                .spawn(async { rmac_privacy_linux::security_coverage_snapshot() })
-                .await;
+            // `security_coverage_snapshot()` shells out (e.g. to probe the
+            // firewall); GPUI's background executor is not safe to spawn
+            // child processes from (LINUX-HW-07).
+            let snapshot = blocking::unblock(rmac_privacy_linux::security_coverage_snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.security_coverage = Some(snapshot);
                 this.security_coverage_loading = false;

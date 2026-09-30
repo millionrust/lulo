@@ -66,10 +66,10 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let capabilities = cx
-                .background_executor()
-                .spawn(async { rmac_network::vpn_import_capabilities() })
-                .await;
+            // `vpn_import_capabilities()` shells out to `nmcli` to probe
+            // available importers; GPUI's background executor is not safe
+            // to spawn child processes from (LINUX-HW-07).
+            let capabilities = blocking::unblock(rmac_network::vpn_import_capabilities).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.vpn_import_capabilities = capabilities;
                 this.vpn_import_loading = false;
@@ -79,10 +79,10 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_audio::snapshot() })
-                .await;
+            // `rmac_audio::snapshot()` shells out to `pw-dump`; GPUI's
+            // background executor is not safe to spawn child processes
+            // from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_audio::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_audio_update(result, cx);
                 this.audio_error = None;
@@ -105,10 +105,10 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_display::snapshot() })
-                .await;
+            // `rmac_display::snapshot()` shells out to `niri msg`; GPUI's
+            // background executor is not safe to spawn child processes
+            // from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_display::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_display_update(result);
                 this.display_error = None;
@@ -166,10 +166,10 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_gtk_settings::snapshot() })
-                .await;
+            // `rmac_gtk_settings::snapshot()` shells out to `gsettings`;
+            // GPUI's background executor is not safe to spawn child
+            // processes from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_gtk_settings::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_gtk_text_update(result);
                 this.gtk_text_error = None;
@@ -216,10 +216,10 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_screen_reader::snapshot() })
-                .await;
+            // `rmac_screen_reader::snapshot()` shells out to `gsettings`;
+            // GPUI's background executor is not safe to spawn child
+            // processes from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_screen_reader::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_screen_reader_toggle_update(result);
                 this.screen_reader_toggle_error = None;
@@ -280,10 +280,10 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let snapshot = cx
-                .background_executor()
-                .spawn(async { rmac_privacy_linux::security_coverage_snapshot() })
-                .await;
+            // `security_coverage_snapshot()` shells out (e.g. to probe the
+            // firewall); GPUI's background executor is not safe to spawn
+            // child processes from (LINUX-HW-07).
+            let snapshot = blocking::unblock(rmac_privacy_linux::security_coverage_snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.security_coverage = Some(snapshot);
                 this.security_coverage_loading = false;

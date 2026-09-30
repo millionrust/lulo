@@ -29,10 +29,10 @@ impl Settings {
         self.display_generation = self.display_generation.wrapping_add(1);
         let generation = self.display_generation;
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_display::snapshot() })
-                .await;
+            // `rmac_display::snapshot()` shells out to `niri msg`; GPUI's
+            // background executor is not safe to spawn child processes
+            // from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_display::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 if this.display_generation == generation
                     && !this.display_loading
@@ -67,10 +67,10 @@ impl Settings {
         self.display_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_display::snapshot() })
-                .await;
+            // `rmac_display::snapshot()` shells out to `niri msg`; GPUI's
+            // background executor is not safe to spawn child processes
+            // from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_display::snapshot).await;
             let succeeded = result.is_ok();
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_display_update(result);
@@ -100,10 +100,10 @@ impl Settings {
         self.display_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { change.apply() })
-                .await;
+            // `DisplayChange::apply()` shells out to `niri msg`; GPUI's
+            // background executor is not safe to spawn child processes
+            // from (LINUX-HW-07).
+            let result = blocking::unblock(move || change.apply()).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 match result {
                     Ok(applied) => {

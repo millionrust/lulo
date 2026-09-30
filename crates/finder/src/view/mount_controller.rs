@@ -178,10 +178,10 @@ impl FinderView {
     pub(super) fn eject_volume(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let unmount_path = path.clone();
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_mounts::unmount(&unmount_path) })
-                .await;
+            // `rmac_mounts::unmount()` shells out (e.g. to `udisksctl`);
+            // GPUI's background executor is not safe to spawn child
+            // processes from (LINUX-HW-07).
+            let result = blocking::unblock(move || rmac_mounts::unmount(&unmount_path)).await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 match result {
                     Ok(()) => {

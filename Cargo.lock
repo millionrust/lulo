@@ -5430,6 +5430,7 @@ dependencies = [
  "ashpd 0.12.3",
  "async-channel",
  "async-io",
+ "futures-lite",
  "futures-util",
  "rmac-appearance",
 ]
@@ -5531,6 +5532,7 @@ name = "rmac-clock"
 version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
+ "blocking",
  "futures-lite",
  "gpui",
  "gpui-component",
@@ -5714,6 +5716,7 @@ version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
  "async-io",
+ "blocking",
  "chrono",
  "gpui",
  "gpui-component",
@@ -6399,6 +6402,7 @@ dependencies = [
 name = "rmac-setup-assistant"
 version = "0.9.0-beta.1"
 dependencies = [
+ "blocking",
  "gpui",
  "libc",
  "rmac-appearance",
@@ -6867,6 +6871,7 @@ dependencies = [
 name = "rmac-weather"
 version = "0.9.0-beta.1"
 dependencies = [
+ "blocking",
  "gpui",
  "gpui-component",
  "gpui-component-assets",

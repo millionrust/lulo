@@ -30,10 +30,10 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| loop {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_apps::discover() })
-                .await;
+            // `rmac_apps::discover()` can shell out to `gsettings` to read
+            // the active icon theme; GPUI's background executor is not
+            // safe to spawn child processes from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_apps::discover).await;
             if let Ok(applications) = result {
                 if this
                     .update(cx, |this: &mut Settings, cx| {

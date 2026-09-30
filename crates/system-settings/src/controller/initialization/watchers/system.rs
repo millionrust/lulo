@@ -4,14 +4,14 @@ use super::*;
 
 impl Settings {
     pub(super) fn start_system_watchers(cx: &mut Context<Self>) {
-        // Hardware discovery launches multiple platform commands, including
-        // system_profiler. Keep it off the first-frame path and redraw once the
-        // complete read-only snapshot is available.
+        // `gather_system_snapshot()` shells out (e.g. `id -F` for the
+        // account name, `uname` as a hostname-service fallback). GPUI's
+        // background executor is not safe to spawn child processes from
+        // (LINUX-HW-07), so it runs on `blocking::unblock`'s dedicated pool.
+        // Keep it off the first-frame path and redraw once the complete
+        // read-only snapshot is available.
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let snapshot = cx
-                .background_executor()
-                .spawn(async { gather_system_snapshot() })
-                .await;
+            let snapshot = blocking::unblock(gather_system_snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.apply_system_snapshot(snapshot);
                 this.run_pending_system_info_refresh(cx);

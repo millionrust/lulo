@@ -21,6 +21,7 @@ default = ["app"]
 app = ["dep:gpui", "dep:gpui-component", "dep:gpui-component-assets", "dep:rmac-ui", "dep:rust-embed"]
 
 [dependencies]
+blocking.workspace = true
 gpui = { workspace = true, optional = true }
 gpui-component = { workspace = true, optional = true }
 gpui-component-assets = { workspace = true, optional = true }

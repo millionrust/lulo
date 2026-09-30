@@ -82,10 +82,10 @@ impl Settings {
         self.display_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_display::persist_layout(&layout) })
-                .await;
+            // `rmac_display::persist_layout()` shells out to `niri msg`;
+            // GPUI's background executor is not safe to spawn child
+            // processes from (LINUX-HW-07).
+            let result = blocking::unblock(move || rmac_display::persist_layout(&layout)).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 match result {
                     Ok(snapshot) => {
@@ -129,10 +129,10 @@ impl Settings {
         self.display_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_display::persist_layout(&layout) })
-                .await;
+            // `rmac_display::persist_layout()` shells out to `niri msg`;
+            // GPUI's background executor is not safe to spawn child
+            // processes from (LINUX-HW-07).
+            let result = blocking::unblock(move || rmac_display::persist_layout(&layout)).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_display_update(result);
                 this.flush_display_stream_refresh(cx);
@@ -153,12 +153,13 @@ impl Settings {
         self.display_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    rmac_display::restore_snapshot(&pending.baseline, &pending.applied)
-                })
-                .await;
+            // `rmac_display::restore_snapshot()` shells out to `niri
+            // msg`; GPUI's background executor is not safe to spawn child
+            // processes from (LINUX-HW-07).
+            let result = blocking::unblock(move || {
+                rmac_display::restore_snapshot(&pending.baseline, &pending.applied)
+            })
+            .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_display_update(result);
                 this.flush_display_stream_refresh(cx);

@@ -111,10 +111,10 @@ impl Settings {
         self.lock_request_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_shortcuts::lock::request() })
-                .await;
+            // `rmac_shortcuts::lock::request()` shells out (`systemctl`,
+            // `swaylock`); GPUI's background executor is not safe to spawn
+            // child processes from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_shortcuts::lock::request).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.lock_request_busy = false;
                 this.lock_request_error = result

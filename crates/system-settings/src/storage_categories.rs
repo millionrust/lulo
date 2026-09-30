@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use rmac_storage::{Backend as _, FileSystem};
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,7 @@ pub(crate) const REFRESH_AFTER: Duration = Duration::from_secs(10 * 60);
 /// responsive on home folders with large application caches and Flatpak data.
 pub(crate) const FILE_LIMIT: usize = 64_000;
 const PROGRESS_STEP: usize = 4_096;
+const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 
 /// One measured category of the home volume.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -160,6 +161,7 @@ fn walk(
 ) -> Option<u64> {
     let mut total = 0u64;
     let mut visited = 0usize;
+    let mut last_progress: Option<Instant> = None;
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         if cancelled.load(Ordering::Relaxed) {
@@ -205,8 +207,11 @@ fn walk(
             } else if file_type.is_file() && metadata.is_file() {
                 total = total.saturating_add(allocated(&metadata));
             }
-            if visited.is_multiple_of(PROGRESS_STEP) {
+            if visited.is_multiple_of(PROGRESS_STEP)
+                && last_progress.is_none_or(|last| last.elapsed() >= PROGRESS_INTERVAL)
+            {
                 progress(total);
+                last_progress = Some(Instant::now());
             }
         }
     }

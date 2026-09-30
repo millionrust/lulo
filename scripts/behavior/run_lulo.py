@@ -1337,10 +1337,22 @@ def benchmark_storage(nested: Nested, bins: list[Path], count: int) -> None:
             box = extents(refresh) if refresh is not None else None
             return box[1] if box else None
 
+        def storage_click_point() -> tuple[int, int]:
+            frame = run.active_frame()
+            if frame is None:
+                raise StepFailed("Settings has no active window")
+            storage = next((node for node in descendants(frame, limit=3000) if name(node) == "Storage"), None)
+            box = extents(storage) if storage is not None else None
+            if box is None:
+                raise StepFailed("Storage row is not accessible from General")
+            ox, oy = run.window_origin(frame)
+            return ox + box[0] + min(40, box[2] // 2), oy + box[1] + box[3] // 2
+
         def measure_open() -> dict[str, Any]:
+            x, y = storage_click_point()
             before_cpu = cpu_seconds()
             started = time.monotonic()
-            run.click_item("Storage", "left")
+            run.nested.input.click(x, y, OUTPUT_W, OUTPUT_H)
             first = complete = capacity = None
             deadline = started + 90
             while time.monotonic() < deadline:
@@ -1359,30 +1371,36 @@ def benchmark_storage(nested: Nested, bins: list[Path], count: int) -> None:
                     break
                 time.sleep(0.05)
             completed_cpu = cpu_seconds()
+            time.sleep(5.0)
+            idle_start_cpu = cpu_seconds()
             time.sleep(1.0)
             result = {
                 "capacity_seconds": capacity,
                 "first_category_seconds": first,
                 "complete_seconds": complete,
                 "cpu_seconds": round(completed_cpu - before_cpu, 3),
-                "idle_cpu_seconds_per_second": round(cpu_seconds() - completed_cpu, 3),
+                "idle_cpu_seconds_per_second": round(cpu_seconds() - idle_start_cpu, 3),
             }
             if first is None or complete is None:
                 raise StepFailed(f"Storage categories did not complete: {result}")
             return result
 
         cold = measure_open()
-        run.nested.input.key("cmd-[")
+        run.click_item("General", "left")
         time.sleep(0.2)
+        x, y = storage_click_point()
         before_cpu = cpu_seconds()
         started = time.monotonic()
-        run.click_item("Storage", "left")
+        run.nested.input.click(x, y, OUTPUT_W, OUTPUT_H)
         first_reopen = None
-        while time.monotonic() - started < 2:
-            y = refresh_y()
-            if first_reopen is None and y is not None and y >= (320 if count >= 64_000 else 300):
+        while time.monotonic() - started < 2 and first_reopen is None:
+            refresh_position = refresh_y()
+            if refresh_position is not None and refresh_position >= (320 if count >= 64_000 else 300):
                 first_reopen = time.monotonic() - started
             time.sleep(0.05)
+        remaining = 2 - (time.monotonic() - started)
+        if remaining > 0:
+            time.sleep(remaining)
         reopen = {
             "first_category_seconds": first_reopen,
             "cpu_seconds_in_two_seconds": round(cpu_seconds() - before_cpu, 3),

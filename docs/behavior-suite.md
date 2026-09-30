@@ -38,7 +38,7 @@ category, completion, and Settings process CPU time on first open, then
 time to the category row and CPU use over two seconds on reopen. The runner
 tracks the Refresh button's vertical position because the Storage card's
 text is not exported through AT-SPI. It also samples Settings CPU use for one
-idle second after the first result. It
+idle second after five seconds of settling. It
 removes the synthetic tree and temporary XDG directories when it exits.
 Mac input is gated by the same AX ownership check as `record_mac.py`. Notes,
 Dock/window management, status menus and Spotlight are marked Mac-unsafe in

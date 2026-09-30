@@ -122,7 +122,9 @@ class Driver:
         geom = self.capture_region(full)
         # Sway's wlroots screencopy captures the niri surface in one frame.
         # niri's own screencopy waits for its next software-rendered frame.
-        cmd = ["grim", "-o", "HEADLESS-1"]
+        # This session has exactly one Sway output. `-o` overrides `-g` in
+        # the installed grim, so omit it to preserve window-region shots.
+        cmd = ["grim"]
         if geom:
             cmd += ["-g", f"{geom[0]},{geom[1]} {geom[2]}x{geom[3]}"]
         if fast:
@@ -285,6 +287,9 @@ class Driver:
                 elif kind == "shot":
                     destination = target / f"{len(result['steps']):02d}-{step[kind]}.png"
                     self.capture(destination, full=step.get("scope") == "full")
+                    if self.current == "text-editor" and step[kind] == "saved" and not list(self.sandbox.glob("Parallel Journey Sandbox*")):
+                        issues.append({"index": index, "action": pending,
+                                       "error": "Save did not create the document in the journey sandbox"})
                     result["steps"].append({"name": step[kind], "image": destination.name,
                                             "region": self.capture_region(step.get("scope") == "full"),
                                             "action": pending, **(timing or {})})

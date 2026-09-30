@@ -164,6 +164,8 @@ def run_one(path: Path, output: Path) -> dict:
                     subprocess.run(["screencapture", "-x", "-R" + ",".join(map(str, last_bounds)),
                                     str(destination)], check=True, timeout=10, capture_output=True)
                     image_name = destination.name
+                if current.app == "text-editor" and step[action] == "saved" and not list(current.sandbox.glob("Parallel Journey Sandbox*")):
+                    raise record_mac.Stop("Save did not create the document in the sandbox")
                 result["steps"].append({"name": step[action], "image": image_name,
                                         "action": pending, "point_size": point_size,
                                         **(timing or {})})

@@ -90,7 +90,7 @@ conservative name fallback. rmac reads the display name but not the udev serial
 or kernel `uniq` field. Settings lists keyboards, mice, trackpads, pointing
 sticks, trackballs, tablets, touchscreens, and unclassified devices without
 claiming that every type shares the same writable settings. The Mouse pane's
-Touchscreen switch writes niri's `input { touch { off } }` setting through the
+Touchscreen switch writes niri's `input` / `touch` / `off` setting through the
 managed input include; it applies to every touchscreen and can be reversed
 with a mouse or keyboard.
 

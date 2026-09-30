@@ -184,11 +184,23 @@ pub struct TouchpadSettings {
     pub secondary_click: SecondaryClick,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct InputSettings {
     pub keyboard: KeyboardSettings,
     pub mouse: PointerSettings,
     pub touchpad: TouchpadSettings,
+    pub touchscreen_enabled: bool,
+}
+
+impl Default for InputSettings {
+    fn default() -> Self {
+        Self {
+            keyboard: KeyboardSettings::default(),
+            mouse: PointerSettings::default(),
+            touchpad: TouchpadSettings::default(),
+            touchscreen_enabled: true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

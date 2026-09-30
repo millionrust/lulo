@@ -8,6 +8,12 @@ Rules for agents: read only your surface's `##` section; when you fix a gap, set
 
 ## Shell
 
+### Touch input
+
+| ID | Sev | Size | Status | Gap | Where |
+|---|---|---|---|---|---|
+| TOUCH-01 | P0 | M | Fixed `0844ed09` | Mac: a touchscreen can tap, double-tap, hold for a context menu, drag a title bar or item, and scroll naturally. / Lulo's GPUI Wayland backend never bound `wl_touch`, so touches did nothing in apps or shell surfaces. The backend now classifies one contact, clears hover on lift, and uses the touchpad momentum decay for scrolling. Title-bar moves use the touch down serial. A quick Files swipe scrolls; a short hold before movement chooses an item drag. Multi-touch pinch is still ignored. System Settings offers a Touchscreen switch backed by niri's `touch` block and `off` flag. Nested pointer regression checks: 111/112 Mac behavior scenarios (only the known Files View Options mismatch) and 17/18 window checks (only the known Settings double-click Zoom mismatch). Nested Sway/niri has no virtual touch injector, so physical-device end-to-end testing remains open. | `shell/compat/gpui_linux/src/linux/wayland/{client,window}.rs`, `crates/rmac-input`, `crates/system-settings/src/controller/input/render.rs` |
+
 ### Dock
 
 Sizes/positions/colours: see FEEL_SPEC.md §4.7 and docs/macos-parity-spec.md

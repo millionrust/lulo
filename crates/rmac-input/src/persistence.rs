@@ -191,6 +191,24 @@ pub(super) fn update_managed_source(
             settings.touchpad.secondary_click.id(),
         );
     }
+    if settings.touchscreen_enabled != authority.effective.settings.touchscreen_enabled
+        || input.get("touch").is_some()
+    {
+        if input.get("touch").is_none() {
+            input.nodes_mut().push(
+                authority
+                    .effective
+                    .touch_node
+                    .clone()
+                    .unwrap_or_else(|| input_node("touch")),
+            );
+        }
+        let touch = input
+            .get_mut("touch")
+            .expect("touch node exists")
+            .ensure_children();
+        replace_flag(touch, "off", !settings.touchscreen_enabled);
+    }
     document.ensure_v1();
     Ok(format!("{MANAGED_HEADER}\n{document}"))
 }
@@ -232,7 +250,7 @@ pub(super) fn parse_managed_document(source: &str) -> Result<KdlDocument, Error>
         let mut sections = HashSet::new();
         for node in input.nodes() {
             let name = node.name().value();
-            if !matches!(name, "keyboard" | "mouse" | "touchpad")
+            if !matches!(name, "keyboard" | "mouse" | "touchpad" | "touch")
                 || !node.is_empty()
                 || !sections.insert(name)
             {

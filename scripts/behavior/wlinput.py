@@ -7,6 +7,11 @@ which wlroots compositors (the headless Sway the behaviour suite nests)
 offer. Nothing is compiled and nothing beyond the standard library and
 libxkbcommon (through ctypes, for the keymap text) is needed.
 
+Sway and niri expose virtual pointer and keyboard protocols here, but no
+virtual touch manager. A wl_touch object is a client-side input receiver, not
+an injector. Touch gestures therefore need a physical touchscreen or a kernel
+uinput device; this helper intentionally cannot synthesize them.
+
 It refuses to connect to the owner's live session: see ``assert_nested``.
 The behaviour runner imports it; ``python3 wlinput.py key cmd-shift-n`` and
 ``python3 wlinput.py type hello`` also work by hand inside a nested

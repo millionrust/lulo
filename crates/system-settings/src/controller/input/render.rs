@@ -248,6 +248,15 @@ impl Settings {
                 InputChange::MouseMiddleEmulation,
             ),
         ]));
+        cards.push(card(vec![input_switch(
+            &view,
+            "touchscreen-enabled",
+            "Touchscreen",
+            Some("Allow touches to control apps and the desktop"),
+            self.input.settings.touchscreen_enabled,
+            self.input.can_configure && !self.input_busy,
+            InputChange::TouchscreenEnabled,
+        )]));
         cards.push(self.input_refresh_button(cx));
         self.pane(cards)
     }

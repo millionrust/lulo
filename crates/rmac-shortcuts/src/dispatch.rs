@@ -25,6 +25,20 @@ pub(super) fn shortcut_socket_path_in(runtime: &Path, id: &ShortcutId) -> Result
     Ok(runtime.join(format!("rmac/shortcut-{}.sock", id.0)))
 }
 
+/// A shortcut's own surface re-arms its dispatch socket by exiting once its
+/// last window closes and letting systemd restart it (rather than staying
+/// resident with an idle window), so the socket is briefly absent or stale
+/// after every activation of a surface such as Quick Settings or
+/// Notification Center. A send that lands in that gap fails with
+/// `ConnectionRefused` (the old, now-orphaned socket path) or `NotFound`
+/// (removed but not yet recreated). Retrying for a short budget absorbs a
+/// restart that is already in flight instead of surfacing a one-shot
+/// failure the person has no way to notice or recover from short of
+/// clicking again (observed on the reference laptop as "the quick-settings
+/// shortcut dispatcher failed: exit status: 1").
+const DISPATCH_RETRY_BUDGET: std::time::Duration = std::time::Duration::from_millis(1_500);
+const DISPATCH_RETRY_STEP: std::time::Duration = std::time::Duration::from_millis(50);
+
 pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
     let specs = default_shortcuts();
     validate_specs(&specs)?;
@@ -42,10 +56,37 @@ pub fn dispatch(id: &ShortcutId) -> Result<(), Error> {
         .map_err(|error| Error::new(Operation::Dispatch, error.to_string()))?;
     let bytes = serde_json::to_vec(id)
         .map_err(|error| Error::new(Operation::Dispatch, error.to_string()))?;
-    socket
-        .send_to(&bytes, &path)
-        .map_err(|error| Error::new(Operation::Dispatch, error.to_string()))?;
-    Ok(())
+    send_with_retry(
+        &socket,
+        &bytes,
+        &path,
+        DISPATCH_RETRY_BUDGET,
+        DISPATCH_RETRY_STEP,
+    )
+}
+
+pub(super) fn send_with_retry(
+    socket: &std::os::unix::net::UnixDatagram,
+    bytes: &[u8],
+    path: &Path,
+    budget: std::time::Duration,
+    step: std::time::Duration,
+) -> Result<(), Error> {
+    let deadline = std::time::Instant::now() + budget;
+    loop {
+        match socket.send_to(bytes, path) {
+            Ok(_) => return Ok(()),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::NotFound
+                ) && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(step);
+            }
+            Err(error) => return Err(Error::new(Operation::Dispatch, error.to_string())),
+        }
+    }
 }
 
 /// Receive dispatcher events for one compiled shell action. Each independently

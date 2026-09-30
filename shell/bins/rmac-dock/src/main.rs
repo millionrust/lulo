@@ -767,6 +767,21 @@ mod linux_wayland {
             }
         }
 
+        /// The compositor's overview (Mission Control/App Exposé) opened or
+        /// closed. Unlike `fullscreen`, this never changes the Dock's
+        /// reserved work area, so `DockWindows::reconcile` pushes it here
+        /// instead of tearing down and recreating the layer surface: the
+        /// overview toggles far more often than the Dock's own geometry
+        /// does, and each recreate is a real Wayland layer-shell round trip
+        /// (destroy, create, wait for `ack_configure`) that was showing up
+        /// as visible lag and, rarely, a surface that never got remapped.
+        fn set_overview_visible(&mut self, overview_visible: bool, cx: &mut Context<Self>) {
+            if self.overview_visible != overview_visible {
+                self.overview_visible = overview_visible;
+                cx.notify();
+            }
+        }
+
         fn axis_of(&self, x: f32, y: f32) -> f32 {
             match self.placement {
                 rmac_shell_settings::DockPlacement::Bottom => x,
@@ -4807,6 +4822,18 @@ mod linux_wayland {
                 description: Some(surface.clone()),
             }
         }
+
+        /// Equal for the purpose of deciding whether `DockWindows::reconcile`
+        /// must tear down and recreate the layer surface. `overview_visible`
+        /// is excluded: it never affects the surface's exclusive zone or
+        /// geometry (only `Dock`'s own hide policy, `Dock::render`), so a
+        /// change to it alone is pushed into the live window instead
+        /// (`Dock::set_overview_visible`) rather than recreated.
+        fn needs_new_surface(&self, other: &Self) -> bool {
+            let mut adjusted = other.clone();
+            adjusted.overview_visible = self.overview_visible;
+            *self != adjusted
+        }
     }
 
     #[derive(Default)]
@@ -4869,11 +4896,32 @@ mod linux_wayland {
                     },
                     None => DockSurface::default(),
                 };
-                if self
+                // Only `overview_visible` may differ without a new layer
+                // surface (`DockSurface::needs_new_surface`); read that much
+                // out of the existing entry as owned values first so the
+                // borrow of `self.windows` ends before the update below
+                // needs a second, mutable one.
+                let kept = self
                     .windows
                     .get(&uuid)
-                    .is_some_and(|(current, _, _)| *current == surface)
-                {
+                    .and_then(|(current, foreground, _)| {
+                        (!current.needs_new_surface(&surface))
+                            .then_some((current.overview_visible, *foreground))
+                    });
+                if let Some((current_overview_visible, foreground)) = kept {
+                    if current_overview_visible != surface.overview_visible {
+                        let overview_visible = surface.overview_visible;
+                        let _ = foreground.update(cx, |view, _, cx| {
+                            if let Ok(dock) = view.downcast::<Dock>() {
+                                let _ = dock.update(cx, |dock, cx| {
+                                    dock.set_overview_visible(overview_visible, cx);
+                                });
+                            }
+                        });
+                        if let Some((current, _, _)) = self.windows.get_mut(&uuid) {
+                            current.overview_visible = overview_visible;
+                        }
+                    }
                     continue;
                 }
                 let backdrop = open_dock_backdrop(display.clone(), &surface, status.clone(), cx);

@@ -163,6 +163,67 @@ fn dispatcher_rejects_unknown_ids_before_touching_the_runtime_socket() {
 }
 
 #[test]
+fn dispatch_retries_past_a_stale_socket_until_the_surface_rebinds() {
+    let root = PathBuf::from("/tmp").join(format!(
+        "rmac-shortcut-dispatch-retry-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("shortcut-quick-settings.sock");
+    // Nothing is listening yet: the same `ConnectionRefused`/`NotFound` a
+    // surface mid-restart leaves behind.
+    let sender = std::os::unix::net::UnixDatagram::unbound().unwrap();
+    let bound_path = path.clone();
+    let listener = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(80));
+        std::os::unix::net::UnixDatagram::bind(&bound_path).unwrap()
+    });
+    let result = send_with_retry(
+        &sender,
+        b"payload",
+        &path,
+        std::time::Duration::from_millis(500),
+        std::time::Duration::from_millis(10),
+    );
+    let bound = listener.join().unwrap();
+    assert!(result.is_ok(), "{result:?}");
+    let mut buffer = [0u8; 16];
+    let (length, _) = bound.recv_from(&mut buffer).unwrap();
+    assert_eq!(&buffer[..length], b"payload");
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn dispatch_gives_up_after_its_retry_budget() {
+    let root = PathBuf::from("/tmp").join(format!(
+        "rmac-shortcut-dispatch-retry-budget-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .subsec_nanos()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let path = root.join("shortcut-quick-settings.sock");
+    let sender = std::os::unix::net::UnixDatagram::unbound().unwrap();
+    let started = std::time::Instant::now();
+    let result = send_with_retry(
+        &sender,
+        b"payload",
+        &path,
+        std::time::Duration::from_millis(80),
+        std::time::Duration::from_millis(10),
+    );
+    assert!(result.is_err());
+    assert!(started.elapsed() >= std::time::Duration::from_millis(80));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn dispatcher_endpoints_are_action_scoped() {
     let runtime = Path::new("/tmp/rmac-shortcuts-test");
     let launcher = shortcut_socket_path_in(runtime, &ShortcutId("launcher".into())).unwrap();

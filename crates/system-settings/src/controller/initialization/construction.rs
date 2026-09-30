@@ -165,6 +165,7 @@ impl Settings {
             dock_magnification_slider,
             network: rmac_network::NetworkSnapshot::default(),
             storage: Vec::new(),
+            storage_loading: true,
             storage_busy: false,
             storage_error: None,
             storage_stream_error: None,

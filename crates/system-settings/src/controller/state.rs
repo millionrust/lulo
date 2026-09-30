@@ -96,6 +96,7 @@ pub(super) struct Settings {
     pub(super) dock_magnification_slider: Entity<SliderState>,
     pub(super) network: rmac_network::NetworkSnapshot,
     pub(super) storage: Vec<rmac_mounts::Volume>,
+    pub(super) storage_loading: bool,
     pub(super) storage_busy: bool,
     pub(super) storage_error: Option<SharedString>,
     pub(super) storage_stream_error: Option<SharedString>,

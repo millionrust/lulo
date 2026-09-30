@@ -26,6 +26,7 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = blocking::unblock(rmac_mounts::volumes).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.storage_loading = false;
                 match result {
                     Ok(storage) => {
                         this.storage = storage;
@@ -38,6 +39,7 @@ impl Settings {
                             Some(format!("Could not read storage volumes: {error}").into());
                     }
                 }
+                this.run_pending_storage_refresh(cx);
                 cx.notify();
             });
         })

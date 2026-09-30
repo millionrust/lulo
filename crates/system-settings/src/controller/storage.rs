@@ -14,7 +14,7 @@ mod render;
 
 impl Settings {
     pub(super) fn queue_storage_stream_refresh(&mut self, cx: &mut Context<Self>) {
-        if self.system_data_loading || self.storage_busy || self.storage_stream_refreshing {
+        if self.storage_loading || self.storage_busy || self.storage_stream_refreshing {
             self.storage_refresh_pending = true;
             return;
         }
@@ -28,7 +28,7 @@ impl Settings {
                 if storage_stream_snapshot_is_current(
                     generation,
                     this.storage_generation,
-                    this.system_data_loading,
+                    this.storage_loading,
                     this.storage_busy,
                 ) {
                     match result {
@@ -55,7 +55,7 @@ impl Settings {
 
     pub(super) fn run_pending_storage_refresh(&mut self, cx: &mut Context<Self>) {
         if self.storage_refresh_pending
-            && !self.system_data_loading
+            && !self.storage_loading
             && !self.storage_busy
             && !self.storage_stream_refreshing
         {
@@ -64,7 +64,7 @@ impl Settings {
     }
 
     pub(super) fn refresh_storage(&mut self, cx: &mut Context<Self>) {
-        if self.system_data_loading || self.storage_busy {
+        if self.storage_loading || self.storage_busy {
             return;
         }
         self.storage_busy = true;

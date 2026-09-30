@@ -12,7 +12,7 @@ impl Settings {
             .busy(
                 self.storage_busy || self.storage_stream_refreshing || self.storage_categories_busy,
             )
-            .disabled(self.system_data_loading || self.storage_busy)
+            .disabled(self.storage_loading || self.storage_busy)
             .on_click(move |_, _, cx| {
                 refresh_view.update(cx, |settings, cx| settings.refresh_storage(cx));
             })
@@ -20,7 +20,7 @@ impl Settings {
 
         let mut body = div().v_flex();
         if self.storage.is_empty() {
-            if self.system_data_loading {
+            if self.storage_loading {
                 return body
                     .child(
                         Progress::indeterminate()

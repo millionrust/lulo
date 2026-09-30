@@ -167,17 +167,19 @@ fn walk(
                     *truncated = true;
                     continue;
                 }
-                if let Ok(metadata) = std::fs::symlink_metadata(entry.path()) {
-                    if metadata.is_dir() && device_of_metadata(&metadata) == device {
-                        stack.push(entry.path());
-                    }
-                }
-            } else if file_type.is_file() {
-                if let Ok(metadata) = std::fs::symlink_metadata(entry.path()) {
-                    if metadata.is_file() && device_of_metadata(&metadata) == device {
-                        total = total.saturating_add(allocated(&metadata));
-                    }
-                }
+            } else if !file_type.is_file() {
+                continue;
+            }
+            let Ok(metadata) = std::fs::symlink_metadata(entry.path()) else {
+                continue;
+            };
+            if device_of_metadata(&metadata) != device {
+                continue;
+            }
+            if file_type.is_dir() && metadata.is_dir() {
+                stack.push(entry.path());
+            } else if file_type.is_file() && metadata.is_file() {
+                total = total.saturating_add(allocated(&metadata));
             }
         }
     }

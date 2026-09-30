@@ -200,6 +200,17 @@ class Run:
         self.spawn([str(bins / "mission-control"), "--service"], "mission-control",
                    {"VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
         time.sleep(3)
+        if self.args.frame_only:
+            def settled_output():
+                logical = next(iter((self.niri("outputs") or {}).values()), {}).get("logical", {})
+                if logical.get("width") == self.parent_width and logical.get("height") == self.parent_height:
+                    return logical
+                return None
+
+            settled = self.wait_for(settled_output, 10)
+            self.check("nested niri reaches the 1920×1080 output size", bool(settled))
+            if settled:
+                self.width, self.height = settled["width"], settled["height"]
         self.pointer = wlinput.Wayland({**self.env, "WAYLAND_DISPLAY": self.sway_display})
 
     def capture(self, name: str) -> Image.Image:
@@ -212,6 +223,8 @@ class Run:
 
     @staticmethod
     def changed_pixels(before: Image.Image, after: Image.Image, box: tuple[int, int, int, int]) -> int:
+        if before.size != after.size:
+            raise RuntimeError(f"output changed size between captures: {before.size} -> {after.size}")
         difference = ImageChops.difference(before.crop(box), after.crop(box)).convert("L")
         return sum(difference.histogram()[21:])
 
@@ -262,9 +275,11 @@ class Run:
                 window = self.window("org.rmac.SystemSettings") or window
             shot = self.capture(f"{title.lower()}-{phase}")
             x, y, width, height = map(round, self.geometry(window))
-            sample_y = min(max(y + height // 2, 0), shot.height - 1)
+            # The selected General row can cross the midpoint after the
+            # screen-fit resize; sample the plain sidebar near the bottom.
+            sample_y = min(max(y + height - 24, 0), shot.height - 1)
             edge_x = min(max(x + 4, 0), shot.width - 1)
-            content_x = min(max(x + 30, 0), shot.width - 1)
+            content_x = min(max(x + 210, 0), shot.width - 1)
             edge = shot.getpixel((edge_x, sample_y))
             content = shot.getpixel((content_x, sample_y))
             distance = sum(abs(a - b) for a, b in zip(edge, content))

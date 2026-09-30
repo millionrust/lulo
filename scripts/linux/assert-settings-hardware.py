@@ -18,9 +18,11 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import atspi_assert_support as support  # noqa: E402
 
+BINARY_NAME = "rmac-system-settings"
+
 
 def app():
-    return support.find_app("rmac-system-settings") or support.find_app("System Settings")
+    return support.find_app(BINARY_NAME) or support.find_app("System Settings")
 
 
 def names():
@@ -43,9 +45,11 @@ def names():
 
 
 def main() -> int:
+    global BINARY_NAME
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, required=True)
     args = parser.parse_args()
+    BINARY_NAME = args.binary.name
     for key in ("WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"):
         if not os.environ.get(key):
             parser.error(f"{key} is required from the live graphical session")

@@ -184,6 +184,9 @@ impl Settings {
                             .into_any_element(),
                         );
                         body = body.child(card(rows));
+                        if self.storage_categories_busy {
+                            body = body.child(footnote("Calculating…"));
+                        }
                         if categories.truncated {
                             body = body.child(footnote(
                                 "Some folders hold more files than Storage measures; their sizes are at least what is shown.",

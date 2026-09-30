@@ -17,17 +17,6 @@ impl Settings {
                     Some(format!("Could not read system information: {error}").into());
             }
         }
-        match snapshot.storage {
-            Ok(storage) => {
-                self.storage = storage;
-                self.storage_error = None;
-                self.storage_stream_error = None;
-            }
-            Err(error) => {
-                self.storage_error =
-                    Some(format!("Could not read storage volumes: {error}").into());
-            }
-        }
         self.system_data_loading = false;
     }
 

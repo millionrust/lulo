@@ -21,6 +21,28 @@ impl Settings {
         })
         .detach();
 
+        // Capacity is one statvfs pass and must not wait for system-info
+        // commands before the Storage pane can paint its used/free bar.
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(rmac_mounts::volumes).await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                match result {
+                    Ok(storage) => {
+                        this.storage = storage;
+                        this.storage_error = None;
+                        this.storage_stream_error = None;
+                        this.measure_storage_categories(false, cx);
+                    }
+                    Err(error) => {
+                        this.storage_error =
+                            Some(format!("Could not read storage volumes: {error}").into());
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let capability = cx
                 .background_executor()

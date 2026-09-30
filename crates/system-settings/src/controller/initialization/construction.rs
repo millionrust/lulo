@@ -195,6 +195,8 @@ impl Settings {
             trackpad_tab: 0,
             storage_categories: None,
             storage_categories_busy: false,
+            storage_categories_generation: 0,
+            storage_scan_cancel: None,
             keyboard_shortcuts_open: false,
             keyboard_shortcuts_category: 0,
             focus: cx.focus_handle(),

@@ -1246,6 +1246,9 @@ def inner(args: argparse.Namespace) -> int:
     bins = [Path(p) for p in args.bin_dir] + [Path(p) for p in args.shell_bin_dir]
     results = []
     try:
+        if args.benchmark_storage:
+            benchmark_storage(nested, bins, args.benchmark_storage)
+            return 0
         if args.check_context_submenus:
             check_files_context_submenus(nested, bins, args.settle)
             return 0
@@ -1298,6 +1301,62 @@ def inner(args: argparse.Namespace) -> int:
     return 0 if passed == len(results) else 1
 
 
+def benchmark_storage(nested: Nested, bins: list[Path], count: int) -> None:
+    """Measure one Settings instance against a private synthetic home tree."""
+    scenario = {"app": "settings", "launch": {}, "steps": []}
+    run = LuloRun(nested, "private/storage-benchmark", scenario, bins, 0.1)
+    documents = Path(run.env["HOME"]) / "Documents"
+    for directory_number in range((count + 999) // 1000):
+        directory = documents / f"many-{directory_number:03d}"
+        directory.mkdir()
+        for number in range(min(1000, count - directory_number * 1000)):
+            (directory / f"file-{number:04d}").touch()
+    (documents / "measured.txt").write_bytes(b"x" * 4096)
+
+    ticks = os.sysconf("SC_CLK_TCK")
+
+    def cpu_seconds() -> float:
+        stat = Path(f"/proc/{run.process.pid}/stat").read_text()
+        fields = stat.rsplit(")", 1)[1].split()
+        return (int(fields[11]) + int(fields[12])) / ticks
+
+    try:
+        run.setup()
+        run.launch()
+        before_cpu = cpu_seconds()
+        started = time.monotonic()
+        run.click_item("Storage", "left")
+        first = complete = capacity = None
+        seen_calculating = False
+        deadline = started + 90
+        while time.monotonic() < deadline:
+            frame = run.active_frame()
+            labels = {name(node) for node in descendants(frame, limit=3000)} if frame else set()
+            elapsed = time.monotonic() - started
+            if capacity is None and any(" of " in label and " used" in label for label in labels):
+                capacity = elapsed
+            if first is None and "Documents" in labels and "System Data" in labels:
+                first = elapsed
+            calculating = any("Calculating" in label for label in labels)
+            seen_calculating |= calculating
+            if first is not None and seen_calculating and not calculating:
+                complete = elapsed
+                break
+            time.sleep(0.05)
+        print(json.dumps({
+            "files": count,
+            "capacity_seconds": capacity,
+            "first_category_seconds": first,
+            "complete_seconds": complete,
+            "cpu_seconds": round(cpu_seconds() - before_cpu, 3),
+            "binary": str(run.binary()),
+        }), flush=True)
+        if first is None or complete is None:
+            raise StepFailed("Storage categories did not complete during the benchmark")
+    finally:
+        run.stop()
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1312,6 +1371,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--explore-steps", type=int, default=0, help="with --explore: play this many steps first")
     parser.add_argument("--check-context-submenus", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--check-file-tag-swatches", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--benchmark-storage", type=int, metavar="FILES", help="measure Storage against a synthetic home")
     parser.add_argument("--inner", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if not sys.platform.startswith("linux"):
@@ -1344,6 +1404,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         rebuilt.append("--check-context-submenus")
     if args.check_file_tag_swatches:
         rebuilt.append("--check-file-tag-swatches")
+    if args.benchmark_storage:
+        rebuilt += ["--benchmark-storage", str(args.benchmark_storage)]
     return outer(args, rebuilt)
 
 

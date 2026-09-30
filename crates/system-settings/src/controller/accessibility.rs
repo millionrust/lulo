@@ -32,10 +32,10 @@ impl Settings {
         self.gtk_text_stream_refreshing = true;
         let generation = self.gtk_text_generation;
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_gtk_settings::snapshot() })
-                .await;
+            // GPUI's background executor is not safe to spawn child
+            // processes from (`gsettings` here); `blocking::unblock` runs it
+            // on the dedicated blocking-task pool instead (LINUX-HW-07).
+            let result = blocking::unblock(rmac_gtk_settings::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.gtk_text_stream_refreshing = false;
                 if gtk_text_stream_snapshot_is_current(
@@ -82,10 +82,10 @@ impl Settings {
         self.gtk_text_generation = self.gtk_text_generation.wrapping_add(1);
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_gtk_settings::snapshot() })
-                .await;
+            // GPUI's background executor is not safe to spawn child
+            // processes from (`gsettings` here); `blocking::unblock` runs it
+            // on the dedicated blocking-task pool instead (LINUX-HW-07).
+            let result = blocking::unblock(rmac_gtk_settings::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_gtk_text_update(result);
                 this.run_pending_gtk_text_refresh(cx);
@@ -110,10 +110,9 @@ impl Settings {
         self.gtk_text_generation = self.gtk_text_generation.wrapping_add(1);
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_gtk_settings::set_text_scale(factor) })
-                .await;
+            // See `queue_gtk_text_stream_refresh`: `set_text_scale` also
+            // shells out to `gsettings`.
+            let result = blocking::unblock(move || rmac_gtk_settings::set_text_scale(factor)).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_gtk_text_update(result);
                 this.run_pending_gtk_text_refresh(cx);
@@ -153,10 +152,9 @@ impl Settings {
         self.screen_reader_toggle_stream_refreshing = true;
         let generation = self.screen_reader_toggle_generation;
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_screen_reader::snapshot() })
-                .await;
+            // `rmac_screen_reader::snapshot()` shells out to `gsettings`;
+            // see `queue_gtk_text_stream_refresh` above.
+            let result = blocking::unblock(rmac_screen_reader::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.screen_reader_toggle_stream_refreshing = false;
                 if screen_reader_toggle_stream_snapshot_is_current(
@@ -206,10 +204,9 @@ impl Settings {
         self.screen_reader_toggle_generation = self.screen_reader_toggle_generation.wrapping_add(1);
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_screen_reader::snapshot() })
-                .await;
+            // `rmac_screen_reader::snapshot()` shells out to `gsettings`;
+            // see `queue_gtk_text_stream_refresh` above.
+            let result = blocking::unblock(rmac_screen_reader::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_screen_reader_toggle_update(result);
                 this.run_pending_screen_reader_toggle_refresh(cx);
@@ -236,10 +233,9 @@ impl Settings {
         self.screen_reader_toggle_generation = self.screen_reader_toggle_generation.wrapping_add(1);
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_screen_reader::set_enabled(enabled) })
-                .await;
+            // See `refresh_screen_reader_toggle`: `set_enabled` also shells
+            // out to `gsettings` (and starts/stops Orca).
+            let result = blocking::unblock(move || rmac_screen_reader::set_enabled(enabled)).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_screen_reader_toggle_update(result);
                 this.run_pending_screen_reader_toggle_refresh(cx);

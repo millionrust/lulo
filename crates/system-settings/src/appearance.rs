@@ -162,9 +162,19 @@ pub(super) async fn apply_theme_change_authoritatively(
     // Tell third-party GTK, libadwaita, Qt and browser windows now rather
     // than on the session supervisor's next poll. The rmac preference is
     // already saved, so a toolkit failure does not undo it.
+    //
+    // `sync_toolkit_appearance` shells out to `gsettings`. This whole
+    // function already runs on `cx.background_executor()` (see
+    // `controller/appearance.rs`), which is not safe to spawn child
+    // processes from (LINUX-HW-07); `blocking::unblock` moves just this
+    // call onto the dedicated blocking-task pool instead.
     #[cfg(target_os = "linux")]
     {
-        if let Err(error) = rmac_gtk_settings::sync_toolkit_appearance(&theme.preferences) {
+        let preferences = theme.preferences.clone();
+        if let Err(error) =
+            blocking::unblock(move || rmac_gtk_settings::sync_toolkit_appearance(&preferences))
+                .await
+        {
             eprintln!("rmac-system-settings: {error}");
         }
     }

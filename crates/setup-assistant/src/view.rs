@@ -145,10 +145,10 @@ impl SetupView {
     /// Read every page's current state off the UI thread.
     fn load(&mut self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let locale = cx
-                .background_executor()
-                .spawn(async { rmac_locale_linux::snapshot() })
-                .await;
+            // `rmac_locale_linux::snapshot()` shells out to `locale` and
+            // `localectl`; GPUI's background executor is not safe to spawn
+            // child processes from (LINUX-HW-07).
+            let locale = blocking::unblock(rmac_locale_linux::snapshot).await;
             let _ = this.update(cx, |view, cx| {
                 if let Ok(snapshot) = locale {
                     view.locale_choices = names::choices(&snapshot.installed_locales);
@@ -166,10 +166,10 @@ impl SetupView {
                 }
                 cx.notify();
             });
-            let keyboard = cx
-                .background_executor()
-                .spawn(async { rmac_keyboard::status() })
-                .await;
+            // `rmac_keyboard::status()` shells out on Linux (it reads the
+            // locale/keyboard state through `rmac_locale_linux`); see the
+            // locale snapshot above.
+            let keyboard = blocking::unblock(rmac_keyboard::status).await;
             let _ = this.update(cx, |view, cx| {
                 view.keyboard = keyboard.ok();
                 cx.notify();
@@ -244,7 +244,10 @@ impl SetupView {
         self.error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx.background_executor().spawn(async move { work() }).await;
+            // `work` may shell out (e.g. `apply_locale` via `localectl`);
+            // GPUI's background executor is not safe to spawn child
+            // processes from (LINUX-HW-07).
+            let result = blocking::unblock(work).await;
             let _ = this.update(cx, |view, cx| {
                 view.busy = false;
                 match result {
@@ -375,10 +378,10 @@ impl SetupView {
         self.error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_keyboard::apply(&target) })
-                .await;
+            // `rmac_keyboard::apply()` shells out on Linux; GPUI's
+            // background executor is not safe to spawn child processes
+            // from (LINUX-HW-07).
+            let result = blocking::unblock(move || rmac_keyboard::apply(&target)).await;
             let _ = this.update(cx, |view, cx| {
                 view.busy = false;
                 match result {
@@ -408,10 +411,10 @@ impl SetupView {
         self.mac_shortcuts_note = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_keyboard::apply(&target) })
-                .await;
+            // `rmac_keyboard::apply()` shells out on Linux; GPUI's
+            // background executor is not safe to spawn child processes
+            // from (LINUX-HW-07).
+            let result = blocking::unblock(move || rmac_keyboard::apply(&target)).await;
             let _ = this.update(cx, |view, cx| {
                 view.busy = false;
                 match result {

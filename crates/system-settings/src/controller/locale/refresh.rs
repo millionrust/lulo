@@ -31,10 +31,10 @@ impl Settings {
         self.locale_stream_refreshing = true;
         let generation = self.locale_generation;
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_locale_linux::snapshot() })
-                .await;
+            // `rmac_locale_linux::snapshot()` shells out to `locale` and
+            // `localectl`; GPUI's background executor is not safe to spawn
+            // child processes from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_locale_linux::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.locale_stream_refreshing = false;
                 if locale_stream_snapshot_is_current(
@@ -83,10 +83,10 @@ impl Settings {
         self.locale_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_locale_linux::snapshot() })
-                .await;
+            // `rmac_locale_linux::snapshot()` shells out to `locale` and
+            // `localectl`; GPUI's background executor is not safe to spawn
+            // child processes from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_locale_linux::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_locale_update(result);
                 this.run_pending_locale_refresh(cx);

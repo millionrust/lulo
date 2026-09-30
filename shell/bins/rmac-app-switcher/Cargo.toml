@@ -16,6 +16,7 @@ x11 = ["gpui_platform/x11"]
 
 [dependencies]
 async-channel.workspace = true
+blocking.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
 rmac-app-launch.workspace = true

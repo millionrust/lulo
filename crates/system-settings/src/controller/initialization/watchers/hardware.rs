@@ -157,10 +157,10 @@ impl Settings {
                         let Some(generation) = generation else {
                             continue;
                         };
-                        let result = cx
-                            .background_executor()
-                            .spawn(async { rmac_audio::snapshot() })
-                            .await;
+                        // `rmac_audio::snapshot()` shells out to `pw-dump`;
+                        // GPUI's background executor is not safe to spawn
+                        // child processes from (LINUX-HW-07).
+                        let result = blocking::unblock(rmac_audio::snapshot).await;
                         if this
                             .update(cx, |this: &mut Settings, cx| {
                                 if audio_stream_snapshot_is_current(

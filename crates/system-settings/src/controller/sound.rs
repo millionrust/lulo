@@ -238,10 +238,10 @@ impl Settings {
         self.audio_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_audio::snapshot() })
-                .await;
+            // `rmac_audio::snapshot()` shells out to `pw-dump`; GPUI's
+            // background executor is not safe to spawn child processes
+            // from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_audio::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_audio_update(result, cx);
                 cx.notify();
@@ -375,10 +375,10 @@ impl Settings {
         self.audio_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { change.apply() })
-                .await;
+            // `SoundChange::apply()` shells out to `wpctl`; GPUI's
+            // background executor is not safe to spawn child processes
+            // from (LINUX-HW-07).
+            let result = blocking::unblock(move || change.apply()).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_audio_update(result, cx);
                 cx.notify();

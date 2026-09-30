@@ -29,13 +29,15 @@ impl Settings {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = match rmac_portal::choose_vpn_configuration().await {
                 Ok(Some(path)) => {
-                    cx.background_executor()
-                        .spawn(async move {
-                            rmac_network::preview_vpn_import(&capability, &path)
-                                .map(Some)
-                                .map_err(|error| error.to_string())
-                        })
-                        .await
+                    // `preview_vpn_import()` shells out to `nmcli`; GPUI's
+                    // background executor is not safe to spawn child
+                    // processes from (LINUX-HW-07).
+                    blocking::unblock(move || {
+                        rmac_network::preview_vpn_import(&capability, &path)
+                            .map(Some)
+                            .map_err(|error| error.to_string())
+                    })
+                    .await
                 }
                 Ok(None) => Ok(None),
                 Err(error) => Err(error.to_string()),

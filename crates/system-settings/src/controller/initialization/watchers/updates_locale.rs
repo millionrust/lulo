@@ -75,10 +75,10 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_locale_linux::snapshot() })
-                .await;
+            // `rmac_locale_linux::snapshot()` shells out to `locale` and
+            // `localectl`; GPUI's background executor is not safe to spawn
+            // child processes from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_locale_linux::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_locale_update(result);
                 this.locale_error = None;

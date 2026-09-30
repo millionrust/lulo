@@ -1036,7 +1036,11 @@ mod linux_wayland {
             cx.background_executor()
                 .spawn(async move {
                     use rmac_dock_system::Backend as _;
-                    let Ok(catalog) = rmac_apps::discover() else {
+                    // `rmac_apps::discover()` can shell out to `gsettings`
+                    // to read the active icon theme; run it on
+                    // `blocking::unblock`'s dedicated pool rather than
+                    // directly on this background executor (LINUX-HW-07).
+                    let Ok(catalog) = blocking::unblock(rmac_apps::discover).await else {
                         eprintln!("could not read the installed applications");
                         return;
                     };
@@ -1298,19 +1302,25 @@ mod linux_wayland {
         /// `launcher-app`'s Settings surface bridge opens any other pane.
         fn open_dock_settings(&mut self, cx: &mut Context<Self>) {
             self.close_separator_menu(cx);
+            // GPUI's background executor is not safe to spawn child
+            // processes from (LINUX-HW-07); run it on `blocking::unblock`'s
+            // dedicated pool instead.
             cx.background_executor()
                 .spawn(async move {
-                    let executable = std::env::current_exe()
-                        .ok()
-                        .map(|path| path.with_file_name("rmac-system-settings"))
-                        .unwrap_or_else(|| PathBuf::from("/usr/bin/rmac-system-settings"));
-                    if let Err(error) = std::process::Command::new(executable)
-                        .arg("--pane")
-                        .arg("desktop-dock")
-                        .spawn()
-                    {
-                        eprintln!("could not open Desktop & Dock settings: {error}");
-                    }
+                    blocking::unblock(|| {
+                        let executable = std::env::current_exe()
+                            .ok()
+                            .map(|path| path.with_file_name("rmac-system-settings"))
+                            .unwrap_or_else(|| PathBuf::from("/usr/bin/rmac-system-settings"));
+                        if let Err(error) = std::process::Command::new(executable)
+                            .arg("--pane")
+                            .arg("desktop-dock")
+                            .spawn()
+                        {
+                            eprintln!("could not open Desktop & Dock settings: {error}");
+                        }
+                    })
+                    .await
                 })
                 .detach();
         }
@@ -1384,7 +1394,11 @@ mod linux_wayland {
             cx.background_executor()
                 .spawn(async move {
                     use rmac_dock_system::Backend as _;
-                    let Ok(catalog) = rmac_apps::discover() else {
+                    // `rmac_apps::discover()` can shell out to `gsettings`
+                    // to read the active icon theme; run it on
+                    // `blocking::unblock`'s dedicated pool rather than
+                    // directly on this background executor (LINUX-HW-07).
+                    let Ok(catalog) = blocking::unblock(rmac_apps::discover).await else {
                         eprintln!("could not read the installed applications");
                         return;
                     };

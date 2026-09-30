@@ -40,10 +40,10 @@ impl Settings {
         self.system_data_stream_refreshing = true;
         let generation = self.system_data_generation;
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_system_info::snapshot() })
-                .await;
+            // `rmac_system_info::snapshot()` can shell out to `uname` as
+            // a hostname-service fallback; GPUI's background executor is
+            // not safe to spawn child processes from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_system_info::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.system_data_stream_refreshing = false;
                 if system_info_stream_snapshot_is_current(
@@ -133,10 +133,12 @@ impl Settings {
         self.system_data_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_system_info::set_static_hostname(&hostname) })
-                .await;
+            // `set_static_hostname()` re-reads the snapshot afterward,
+            // which can shell out to `uname` as a fallback; GPUI's
+            // background executor is not safe to spawn child processes
+            // from (LINUX-HW-07).
+            let result =
+                blocking::unblock(move || rmac_system_info::set_static_hostname(&hostname)).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.system_data_busy = false;
                 match result {
@@ -167,10 +169,10 @@ impl Settings {
         self.system_data_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_system_info::snapshot() })
-                .await;
+            // `rmac_system_info::snapshot()` can shell out to `uname` as
+            // a hostname-service fallback; GPUI's background executor is
+            // not safe to spawn child processes from (LINUX-HW-07).
+            let result = blocking::unblock(rmac_system_info::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.system_data_busy = false;
                 match result {

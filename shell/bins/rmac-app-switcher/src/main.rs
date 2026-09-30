@@ -108,10 +108,10 @@ pub(crate) mod linux_wayland {
         /// installed application is named correctly on the next ⌘Tab.
         fn refresh_catalog(&mut self, cx: &mut Context<Self>) {
             cx.spawn(async move |this, cx: &mut AsyncApp| {
-                let catalog = cx
-                    .background_executor()
-                    .spawn(async { rmac_apps::discover() })
-                    .await;
+                // `rmac_apps::discover()` can shell out to `gsettings` to
+                // read the active icon theme; GPUI's background executor
+                // is not safe to spawn child processes from (LINUX-HW-07).
+                let catalog = blocking::unblock(rmac_apps::discover).await;
                 match catalog {
                     Ok(catalog) => {
                         let _ = this.update(cx, |service, _| service.catalog = Rc::new(catalog));

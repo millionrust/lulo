@@ -223,17 +223,18 @@ impl FinderView {
         cx.notify();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    let mut entries = suppress_replaced_applications(rmac_apps::discover()?)
-                        .into_iter()
-                        .map(entry_for_application)
-                        .collect::<Vec<_>>();
-                    sort_entries(&mut entries, key, asc);
-                    Ok::<_, std::io::Error>(entries)
-                })
-                .await;
+            // `rmac_apps::discover()` can shell out to `gsettings` to read
+            // the active icon theme; GPUI's background executor is not
+            // safe to spawn child processes from (LINUX-HW-07).
+            let result = blocking::unblock(move || {
+                let mut entries = suppress_replaced_applications(rmac_apps::discover()?)
+                    .into_iter()
+                    .map(entry_for_application)
+                    .collect::<Vec<_>>();
+                sort_entries(&mut entries, key, asc);
+                Ok::<_, std::io::Error>(entries)
+            })
+            .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 if !this.applications_view || this.directory_generation != generation {
                     return;

@@ -4779,6 +4779,7 @@ dependencies = [
  "ashpd 0.12.3",
  "async-channel",
  "async-io",
+ "futures-lite",
  "futures-util",
  "rmac-appearance",
 ]
@@ -5228,6 +5229,7 @@ name = "rmac-shell-app-switcher"
 version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
+ "blocking",
  "gpui",
  "gpui_platform",
  "rmac-app-launch",
@@ -5371,6 +5373,7 @@ name = "rmac-shell-mission-control"
 version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
+ "blocking",
  "gpui",
  "gpui_platform",
  "image",
@@ -5670,6 +5673,7 @@ dependencies = [
 name = "rmac-weather"
 version = "0.9.0-beta.1"
 dependencies = [
+ "blocking",
  "rmac-storage",
  "serde",
  "serde_json",

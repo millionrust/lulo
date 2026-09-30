@@ -162,17 +162,18 @@ impl Settings {
         }
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let (result, recovery) = cx
-                .background_executor()
-                .spawn(async move {
-                    let result = rmac_network::update_vpn_profile(&edit);
-                    let recovery = result
-                        .as_ref()
-                        .err()
-                        .and_then(|_| rmac_network::vpn_snapshot().ok());
-                    (result, recovery)
-                })
-                .await;
+            // `update_vpn_profile()` shells out to `nmcli`; GPUI's
+            // background executor is not safe to spawn child processes
+            // from (LINUX-HW-07).
+            let (result, recovery) = blocking::unblock(move || {
+                let result = rmac_network::update_vpn_profile(&edit);
+                let recovery = result
+                    .as_ref()
+                    .err()
+                    .and_then(|_| rmac_network::vpn_snapshot().ok());
+                (result, recovery)
+            })
+            .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.vpn_editor_busy = false;
                 if let Some(snapshot) = recovery {

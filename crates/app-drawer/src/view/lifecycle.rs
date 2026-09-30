@@ -177,8 +177,13 @@ impl AppDrawer {
 
 /// A full catalog scan (and, on macOS, icon extraction), packaged for
 /// `cx.background_executor().spawn` so it never runs on the UI thread.
+///
+/// `catalog::scan()` can shell out to `gsettings` to read the active icon
+/// theme (`rmac_apps::discover_for_browsing`), and GPUI's background
+/// executor is not safe to spawn child processes from (LINUX-HW-07), so the
+/// scan itself runs on `blocking::unblock`'s dedicated pool.
 async fn scan_catalog() -> (Vec<App>, Option<SharedString>) {
-    let (apps, error) = catalog::scan();
+    let (apps, error) = blocking::unblock(catalog::scan).await;
     #[cfg(target_os = "macos")]
     let apps = {
         let mut apps = apps;

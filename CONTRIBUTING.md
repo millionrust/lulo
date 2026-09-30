@@ -39,7 +39,15 @@ license additions require a written scope and removal/review condition in
 ## Code rules
 
 - Keep domain logic independent of GPUI, D-Bus, Wayland, and platform FFI.
-- Keep blocking filesystem and subprocess work off the UI thread.
+- Keep blocking filesystem and subprocess work off the UI thread. Never run
+  `std::process::Command` directly inside `cx.background_executor().spawn(...)`
+  — GPUI's background executor is a small fixed-size worker pool, and
+  spawning or waiting on a child process from one of its threads has hung
+  indefinitely on the reference laptop (LINUX-HW-07; see
+  `ARCHITECTURE.md` "Safety boundaries"). Use `blocking::unblock` instead,
+  the dedicated blocking-task pool the codebase already uses for this
+  (`sound.rs`, `spotlight.rs`, `wallpaper.rs`, `storage.rs`, ...).
+  `scripts/check-background-executor-command.sh` catches regressions.
 - Prefer events and subscriptions to polling or unconditional redraw timers.
 - Use typed errors; do not ignore failures from destructive operations.
 - Use `&Path` for borrowed filesystem paths and `PathBuf` for owned paths.

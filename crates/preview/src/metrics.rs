@@ -5,6 +5,13 @@
 /// A PDF window opens 1121 × 789; images open at their size plus the
 /// toolbar, fitted into the same box.
 pub const DEFAULT_WINDOW: (f32, f32) = (1121.0, 789.0);
+/// GPUI's Wayland viewport is 24 pt wider than the visible niri window
+/// rectangle in the reference nested session. Reserve that strip when
+/// placing right-hand controls and width-fitting PDF pages.
+#[cfg(target_os = "linux")]
+pub const WAYLAND_VISIBLE_WIDTH_RESERVE: f32 = 24.0;
+#[cfg(not(target_os = "linux"))]
+pub const WAYLAND_VISIBLE_WIDTH_RESERVE: f32 = 0.0;
 pub const TOOLBAR_HEIGHT: f32 = 52.0;
 /// Close button centre; the lights sit on a 23 pt pitch.
 pub const TRAFFIC_LIGHT_CENTER: (f32, f32) = (26.0, 26.0);

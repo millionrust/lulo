@@ -166,23 +166,30 @@ class Driver:
         desktop = pyatspi.Registry.getDesktop(0)
         stack = [desktop.getChildAtIndex(i) for i in range(desktop.childCount)]
         candidates = []
+        current = self.apps.get(self.current)
+        window = self.window()
         while stack:
             node = stack.pop()
             try:
                 if node is None:
                     continue
                 if node.name == label or (node.name or "").startswith(label + ","):
-                    box = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+                    belongs = current is not None and node.getApplication().get_process_id() == current.pid
+                    box = node.queryComponent().getExtents(
+                        pyatspi.WINDOW_COORDS if belongs else pyatspi.DESKTOP_COORDS)
                     if box.width > 2 and box.height > 2 and box.x >= 0 and box.y >= 0:
                         role = node.getRoleName()
                         rank = 0 if role in {"list item", "tree item", "table row", "table cell"} else 1
-                        candidates.append((rank, -box.width * box.height, box))
+                        rank += 0 if belongs else 2
+                        origin = self.session.geometry(window)[:2] if belongs and window else (0, 0)
+                        candidates.append((rank, -box.width * box.height,
+                                           box.x + origin[0], box.y + origin[1], box))
                 stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
             except Exception:
                 continue
         if candidates:
-            _rank, _area, box = min(candidates, key=lambda item: item[:2])
-            x, y = self.session.parent_point(box.x + box.width / 2, box.y + box.height / 2)
+            _rank, _area, bx, by, box = min(candidates, key=lambda item: item[:2])
+            x, y = self.session.parent_point(bx + box.width / 2, by + box.height / 2)
             self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
             return
         raise RuntimeError(f"no accessible control with usable bounds named {label!r}")

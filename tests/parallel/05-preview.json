@@ -1,0 +1,55 @@
+{
+  "title": "Preview: PDF and image",
+  "steps": [
+    {
+      "launch": "preview",
+      "file": "sample.pdf"
+    },
+    {
+      "shot": "pdf"
+    },
+    {
+      "key": "cmd-+"
+    },
+    {
+      "shot": "pdf-zoom-in"
+    },
+    {
+      "key": "cmd--"
+    },
+    {
+      "shot": "pdf-zoom-out"
+    },
+    {
+      "key": "cmd-w"
+    },
+    {
+      "shot": "pdf-closed"
+    },
+    {
+      "launch": "preview",
+      "file": "sample.png"
+    },
+    {
+      "shot": "image"
+    },
+    {
+      "key": "cmd-+"
+    },
+    {
+      "shot": "image-zoom-in"
+    },
+    {
+      "key": "cmd-w"
+    },
+    {
+      "shot": "image-closed"
+    }
+  ],
+  "setup": {
+    "fixtures": [
+      "sample.pdf",
+      "sample.png"
+    ]
+  }
+}

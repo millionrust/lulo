@@ -1,0 +1,283 @@
+#!/usr/bin/env python3
+"""Play parallel journeys in a private headless Sway + nested niri shell."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / "behavior"))
+import run_lulo  # noqa: E402
+import run_window_move  # noqa: E402
+import wlinput  # noqa: E402
+
+import fixtures  # noqa: E402
+import journey  # noqa: E402
+
+BINARIES = {
+    "files": "rmac-files", "text-editor": "rmac-text-editor",
+    "settings": "rmac-system-settings", "calculator": "rmac-calculator",
+    "preview": "rmac-preview", "notes": "rmac-notes", "terminal": "rmac-terminal",
+}
+FORBIDDEN = {"Shut Down", "Restart", "Log Out", "Sleep", "Empty Bin", "Empty Trash", "Wi-Fi On", "Wi-Fi Off"}
+
+
+def private_bus(work: Path, env: dict, bins: Path) -> Path:
+    services = work / "dbus-services"
+    services.mkdir()
+    for name in ("org.a11y.Bus.service", "org.freedesktop.portal.Desktop.service"):
+        source = Path("/usr/share/dbus-1/services") / name
+        if source.exists():
+            shutil.copy(source, services / name)
+    chooser = bins / "rmac-file-chooser"
+    if chooser.is_file():
+        (services / "org.freedesktop.impl.portal.desktop.rmac.filechooser.service").write_text(
+            "[D-BUS Service]\nName=org.freedesktop.impl.portal.desktop.rmac.filechooser\n"
+            f"Exec={chooser}\n")
+        portals = work / "portals"
+        portals.mkdir()
+        (portals / "rmac-file-chooser.portal").write_text(
+            "[portal]\nDBusName=org.freedesktop.impl.portal.desktop.rmac.filechooser\n"
+            "Interfaces=org.freedesktop.impl.portal.FileChooser;\nUseIn=rmac\n")
+        env["XDG_DESKTOP_PORTAL_DIR"] = str(portals)
+        config = Path(env["XDG_CONFIG_HOME"]) / "xdg-desktop-portal"
+        config.mkdir(parents=True)
+        (config / "rmac-portals.conf").write_text(
+            "[preferred]\ndefault=none\norg.freedesktop.impl.portal.FileChooser=rmac-file-chooser\n")
+    config = work / "session.conf"
+    config.write_text(
+        '<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN" '
+        '"http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">\n'
+        f'<busconfig><type>session</type><listen>unix:dir={work}</listen><auth>EXTERNAL</auth>'
+        f'<servicedir>{services}</servicedir><policy context="default">'
+        '<allow send_destination="*" eavesdrop="true"/><allow eavesdrop="true"/><allow own="*"/>'
+        '</policy></busconfig>\n')
+    return config
+
+
+class Driver:
+    def __init__(self, args, work: Path, data: dict, out: Path):
+        self.args, self.work, self.data, self.out = args, work, data, out
+        self.session = run_window_move.Run(args, work)
+        self.sandbox = work / "sandbox"
+        self.sandbox.mkdir()
+        fixtures.prepare(self.sandbox, data.get("setup", {}))
+        self.apps = {}
+        self.current = None
+        self.scratch = work / "capture"
+        self.scratch.mkdir()
+
+    def start(self):
+        # run_window_move supplies the proven Sway -> niri setup. Give it a
+        # private copy of shell.kdl with every command bound to --bin-dir.
+        original = run_window_move.REPO / "packaging/rmac-session/shell.kdl"
+        private_root = self.work / "session-source"
+        config = private_root / "packaging/rmac-session/shell.kdl"
+        config.parent.mkdir(parents=True)
+        shell = original.read_text()
+        for binary in Path(self.args.bin_dir).glob("rmac-*"):
+            shell = shell.replace(f"/usr/libexec/rmac/{binary.name}", str(binary))
+        config.write_text(shell)
+        run_window_move.REPO = private_root
+        self.session.start()
+        self.session.output = next(iter(self.session.niri("outputs") or {}), "winit")
+        bins = Path(self.args.bin_dir)
+        for binary in ("rmac-top-bar", "rmac-wallpaper"):
+            if (bins / binary).exists():
+                self.session.spawn([str(bins / binary)], binary)
+        time.sleep(1)
+
+    def window(self):
+        if not self.current:
+            return None
+        process = self.apps.get(self.current)
+        if process is None:
+            return None
+        return next((w for w in self.session.windows() if w.get("pid") == process.pid), None)
+
+    def capture(self, destination: Path, full=False):
+        geom = None
+        if not full and self.window():
+            x, y, w, h = self.session.geometry(self.window())
+            x, y = max(0, int(x)), max(0, int(y))
+            w, h = min(int(w), self.session.width - x), min(int(h), self.session.height - y)
+            if w > 50 and h > 50:
+                geom = f"{x},{y} {w}x{h}"
+        cmd = ["grim", "-o", str(self.session.output)]
+        if geom:
+            cmd += ["-g", geom]
+        cmd.append(str(destination))
+        result = subprocess.run(cmd, env=self.session.env, capture_output=True, text=True, timeout=10)
+        if result.returncode:
+            raise RuntimeError(f"grim failed: {result.stderr[-200:]}")
+
+    def launch(self, step: dict):
+        app = step["launch"]
+        self.current = app
+        if app in self.apps:
+            window = self.window()
+            if window:
+                subprocess.run([self.args.niri, "msg", "action", "focus-window", "--id", str(window["id"])],
+                               env=self.session.env, check=True, capture_output=True)
+            return
+        command = [str(Path(self.args.bin_dir) / BINARIES[app])]
+        if app == "files":
+            command += ["--path", str(self.sandbox / step.get("path", "."))]
+        elif app == "preview":
+            command += [str(self.sandbox / step["file"])]
+        if not Path(command[0]).is_file():
+            raise RuntimeError(f"missing binary {command[0]}")
+        process = self.session.spawn(command, app)
+        self.apps[app] = process
+        if not self.session.wait_for(lambda: self.window(), 30):
+            raise RuntimeError(f"{app} did not open a nested niri window; see {self.session.logs / (app + '.log')}")
+
+    def click(self, label: str):
+        if label in FORBIDDEN:
+            raise RuntimeError(f"refusing destructive or toggle control {label!r}")
+        import pyatspi
+
+        desktop = pyatspi.Registry.getDesktop(0)
+        stack = [desktop.getChildAtIndex(i) for i in range(desktop.childCount)]
+        while stack:
+            node = stack.pop()
+            try:
+                if node is None:
+                    continue
+                if node.name == label and node.getState().contains(pyatspi.STATE_SHOWING):
+                    box = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
+                    if box.width > 2 and box.height > 2:
+                        x, y = self.session.parent_point(box.x + box.width / 2, box.y + box.height / 2)
+                        self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
+                        return
+                stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
+            except Exception:
+                continue
+        raise RuntimeError(f"no visible accessible control named {label!r}")
+
+    def action(self, step: dict):
+        kind = next(iter(journey.ACTIONS.intersection(step)))
+        if kind == "launch":
+            self.launch(step)
+        elif kind == "click":
+            self.click(step[kind])
+        elif kind == "key":
+            if step[kind] in {"power", "ctrl-power", "cmd-alt-escape", "cmd-alt-s"}:
+                raise RuntimeError("refusing session or device-control shortcut")
+            self.session.pointer.key(step[kind])
+            if step[kind] == "cmd-space":
+                self.session.spawn([str(Path(self.args.bin_dir) / "rmac-launcher"), "--show"], "launcher")
+        elif kind == "type":
+            self.session.pointer.type_text(step[kind].replace("$SANDBOX", str(self.sandbox)))
+        elif kind == "drag_window":
+            window = self.window()
+            if not window:
+                raise RuntimeError("no current window to drag")
+            x, y, w, _h = self.session.geometry(window)
+            dx, dy = step[kind]
+            self.session.drag((x + w / 2, y + 18), (x + w / 2 + dx, y + 18 + dy))
+
+    def run(self, name: str) -> dict:
+        target = self.out / name
+        target.mkdir(parents=True, exist_ok=True)
+        result = {"journey": name, "platform": "lulo", "steps": [], "status": "passed"}
+        pending = None
+        timing = None
+        try:
+            self.start()
+            for index, step in enumerate(self.data["steps"]):
+                kind = next(iter(journey.ACTIONS.intersection(step)))
+                if kind == "wait":
+                    time.sleep(float(step[kind]))
+                elif kind == "shot":
+                    destination = target / f"{len(result['steps']):02d}-{step[kind]}.png"
+                    self.capture(destination, full=step.get("scope") == "full")
+                    result["steps"].append({"name": step[kind], "image": destination.name,
+                                            "action": pending, **(timing or {})})
+                else:
+                    full = kind == "launch" or step.get("scope") == "full"
+                    timing = journey.measure(lambda p: self.capture(p, full=full),
+                                             lambda: self.action(step), self.scratch)
+                    pending = {kind: step[kind], "index": index}
+        except (RuntimeError, OSError, subprocess.SubprocessError, wlinput.InjectorError) as error:
+            result.update(status="failed", error=str(error))
+        finally:
+            if hasattr(self.session, "pointer"):
+                self.session.finish()
+            else:
+                for process in reversed(self.session.children):
+                    if process.poll() is None:
+                        process.terminate()
+            (target / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+        return result
+
+
+def outer(args) -> int:
+    if journey.ROOT in args.output.resolve().parents:
+        raise SystemExit("screenshots must be outside the repository")
+    args.output.mkdir(parents=True, exist_ok=True)
+    lock = open("/tmp/lulo-journey.lock", "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    failures = 0
+    try:
+        for path in journey.paths(args.journeys):
+            work = Path(tempfile.mkdtemp(prefix="lulo-parallel-"))
+            try:
+                env = run_lulo.isolated_environment(work)
+                run_lulo.refuse_live_session(env)
+                bins = Path(args.bin_dir).expanduser().resolve()
+                # run_window_move expects legacy dock/mission-control names.
+                links = work / "bins"
+                links.mkdir()
+                for source in bins.iterdir():
+                    if source.is_file():
+                        (links / source.name).symlink_to(source)
+                for alias, source in (("dock", "rmac-dock"), ("mission-control", "rmac-mission-control")):
+                    (links / alias).symlink_to(bins / source)
+                config = private_bus(work, env, links)
+                command = ["dbus-run-session", f"--config-file={config}", "--", sys.executable,
+                           str(Path(__file__).resolve()), "--inner", str(work), "--bin-dir", str(links),
+                           "--niri", args.niri, "--output", str(args.output), path.stem]
+                status = subprocess.call(command, env=env, close_fds=True)
+                failures += status != 0
+            finally:
+                if run_lulo.reap(work / "runtime"):
+                    time.sleep(1)
+                    run_lulo.reap(work / "runtime")
+                if args.keep:
+                    print(f"kept {work}", flush=True)
+                else:
+                    run_lulo.remove_tree(work)
+    finally:
+        lock.close()
+    return int(bool(failures))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("journeys", nargs="*")
+    parser.add_argument("--bin-dir", default="~/rmac-release/inputs-20260929T1945")
+    parser.add_argument("--niri", default="/usr/bin/niri")
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    if args.inner:
+        data = journey.load(journey.JOURNEYS / f"{args.journeys[0]}.json")
+        result = Driver(args, args.inner, data, args.output).run(args.journeys[0])
+        print(f"{result['status']} {result['journey']}: {len(result['steps'])} shots", flush=True)
+        return 0 if result["status"] == "passed" else 1
+    return outer(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

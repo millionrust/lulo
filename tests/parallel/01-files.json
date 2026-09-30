@@ -1,0 +1,108 @@
+{
+  "title": "Files: first folder tasks",
+  "steps": [
+    {
+      "launch": "files",
+      "path": "."
+    },
+    {
+      "shot": "open-folder"
+    },
+    {
+      "key": "cmd-1"
+    },
+    {
+      "shot": "icons"
+    },
+    {
+      "key": "cmd-2"
+    },
+    {
+      "shot": "list"
+    },
+    {
+      "key": "cmd-3"
+    },
+    {
+      "shot": "columns"
+    },
+    {
+      "key": "cmd-4"
+    },
+    {
+      "shot": "gallery"
+    },
+    {
+      "click": "report.txt"
+    },
+    {
+      "shot": "selected"
+    },
+    {
+      "key": "space"
+    },
+    {
+      "shot": "quick-look"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "shot": "quick-look-closed"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "shot": "rename-field"
+    },
+    {
+      "type": "renamed"
+    },
+    {
+      "shot": "rename-typed"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "shot": "renamed"
+    },
+    {
+      "key": "cmd-shift-n"
+    },
+    {
+      "shot": "new-folder"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "shot": "folder-committed"
+    },
+    {
+      "click": "renamed.txt"
+    },
+    {
+      "shot": "select-to-bin"
+    },
+    {
+      "key": "cmd-backspace"
+    },
+    {
+      "shot": "in-bin"
+    },
+    {
+      "key": "cmd-z"
+    },
+    {
+      "shot": "undo-bin"
+    }
+  ],
+  "setup": {
+    "files": {
+      "report.txt": "A disposable file for the parallel journey.\n",
+      "second.txt": "Second item.\n"
+    }
+  }
+}

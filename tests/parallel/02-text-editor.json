@@ -1,0 +1,65 @@
+{
+  "title": "Text Editor: compose, find and save",
+  "steps": [
+    {
+      "launch": "text-editor"
+    },
+    {
+      "shot": "new-document"
+    },
+    {
+      "type": "The quick brown fox jumps over a quiet river."
+    },
+    {
+      "shot": "typed"
+    },
+    {
+      "key": "cmd-a"
+    },
+    {
+      "shot": "selected-all"
+    },
+    {
+      "key": "left"
+    },
+    {
+      "shot": "caret"
+    },
+    {
+      "key": "cmd-f"
+    },
+    {
+      "shot": "find-open"
+    },
+    {
+      "type": "quiet"
+    },
+    {
+      "shot": "find-query"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "shot": "find-closed"
+    },
+    {
+      "key": "cmd-s"
+    },
+    {
+      "shot": "save-sheet"
+    },
+    {
+      "type": "Parallel Journey"
+    },
+    {
+      "shot": "save-name"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "shot": "saved"
+    }
+  ]
+}

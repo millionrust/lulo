@@ -1,0 +1,62 @@
+{
+  "title": "Shell: Dock, switcher, minimise and move",
+  "steps": [
+    {
+      "launch": "files",
+      "path": "."
+    },
+    {
+      "shot": "files-open",
+      "scope": "full"
+    },
+    {
+      "launch": "calculator"
+    },
+    {
+      "shot": "calculator-open",
+      "scope": "full"
+    },
+    {
+      "key": "cmd-tab",
+      "scope": "full"
+    },
+    {
+      "shot": "switch-app",
+      "scope": "full"
+    },
+    {
+      "key": "cmd-m",
+      "scope": "full"
+    },
+    {
+      "shot": "minimised",
+      "scope": "full"
+    },
+    {
+      "click": "Files",
+      "scope": "full"
+    },
+    {
+      "shot": "dock-files",
+      "scope": "full"
+    },
+    {
+      "drag_window": [
+        140,
+        80
+      ],
+      "scope": "full"
+    },
+    {
+      "shot": "window-moved",
+      "scope": "full"
+    }
+  ],
+  "setup": {
+    "files": {
+      "shell.txt": "Disposable shell journey.\n"
+    }
+  },
+  "mac": "unsafe",
+  "mac_reason": "Dock and window switching could select or move an owner window on the personal Mac."
+}

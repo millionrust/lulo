@@ -1,5 +1,45 @@
 # Behaviour-parity suite
 
+## Parallel visual journeys
+
+`tests/parallel/` contains ten first-hour journeys that use the same JSON
+steps on macOS and Lulo. Each input step has a following `shot`. Actions are
+`launch`, `click` (exact accessible name), `key`, `type`, `wait`, and
+`drag_window`. `setup.files` and `setup.fixtures` create disposable content;
+`$SANDBOX` in typed text resolves to that run's disposable folder. A shot
+with `"scope": "full"` captures shell controls and menus. The Lulo runner
+always uses headless Sway with nested niri, Dock and top bar, including for
+ordinary app journeys.
+
+```sh
+python3 scripts/parallel/run_mac.py --output /tmp/rmac-parallel-mac
+# On the laptop, from a worktree with the same commit:
+python3 scripts/parallel/run_lulo_journey.py \
+  --bin-dir ~/rmac-release/inputs-20260929T1945 \
+  --output ~/rmac-coord/parallel-lulo
+# After copying the laptop output to this Mac:
+python3 scripts/parallel/compare.py --mac /tmp/rmac-parallel-mac \
+  --lulo /tmp/rmac-parallel-lulo --output /tmp/rmac-parallel-compare
+```
+
+The Lulo runner holds `/tmp/lulo-journey.lock`; the Mac runner holds the
+directory `/tmp/mac-gui.lock`. Both always release their lock in `finally`.
+Mac input is gated by the same AX ownership check as `record_mac.py`. Notes,
+Dock/window management, status menus and Spotlight are marked Mac-unsafe in
+their journey definitions; they run on Lulo only. Mac Terminal accepts only
+`cd` into the sandbox, `echo` and `ls`. If an owner's Settings, Calculator or
+Terminal is already running, the Mac runner stops that journey. The comparison
+includes failures and skips, so a missing image never silently becomes a
+parity pass.
+
+Response timing samples target-region images after each input and reports
+both first change and the last change followed by 300 ms of stability. The
+Mac uses Quartz images for polling at a requested 45 Hz and `screencapture`
+for final shots. Lulo polls `grim` in its private compositor. Each result
+records the achieved sample rate, which may be below the requested rate.
+Outputs and screenshots belong only under `/tmp` or `~/rmac-coord`, outside
+the repository.
+
 Finds places where Lulo *behaves* differently from the Mac, without anyone testing by hand. A
 scenario is data. The Mac recorder plays it on the owner's Mac and saves what macOS did. The Lulo
 runner plays the same scenario inside a private nested compositor and diffs the two.

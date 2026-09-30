@@ -14,6 +14,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -71,7 +72,7 @@ class Run:
         while time.monotonic() < deadline:
             try:
                 value = predicate()
-            except Exception:  # noqa: BLE001
+            except (OSError, RuntimeError, ValueError, KeyError):
                 value = None
             if value:
                 return value
@@ -83,15 +84,34 @@ class Run:
         print(f"{'PASS' if ok else 'FAIL'} {name}{(': ' + detail) if detail else ''}", flush=True)
 
     def niri(self, *args: str):
-        proc = subprocess.run([self.args.niri, "msg", "--json", *args], env=self.env,
-                              capture_output=True, text=True, timeout=10)
-        return json.loads(proc.stdout) if proc.stdout.strip() else None
+        request = {("windows",): "Windows", ("outputs",): "Outputs"}.get(args)
+        if request is None:
+            raise ValueError(f"unsupported niri query: {args}")
+        last_error = None
+        for _ in range(3):
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                    connection.settimeout(1.0)
+                    connection.connect(self.env["NIRI_SOCKET"])
+                    connection.sendall(json.dumps(request).encode() + b"\n")
+                    with connection.makefile("rb") as stream:
+                        reply = json.loads(stream.readline(1024 * 1024))
+                if "Err" in reply:
+                    raise RuntimeError(f"niri {request}: {reply['Err']}")
+                return reply["Ok"][request]
+            except (OSError, ValueError, KeyError, RuntimeError) as error:
+                last_error = error
+        raise RuntimeError(f"niri {request} failed after 3 short attempts") from last_error
 
     def windows(self):
         return self.niri("windows") or []
 
     def window(self, app_id: str):
         return next((w for w in self.windows() if w.get("app_id") == app_id), None)
+
+    def window_matching(self, app_id: str, predicate):
+        candidate = self.window(app_id)
+        return candidate if candidate and predicate(candidate) else None
 
     @staticmethod
     def geometry(window: dict) -> tuple[float, float, float, float]:
@@ -209,7 +229,12 @@ class Run:
             self.check("GTK content receives a virtual pointer click", bool(clicked))
         start, end = (x + width * .5, y + 18), (x + width * .5 + 150, y + 100)
         self.drag(start, end)
-        moved = self.wait_for(lambda: self.window(app_id), 3)
+        moved = self.wait_for(
+            lambda: self.window_matching(
+                app_id, lambda candidate: abs(self.geometry(candidate)[0] - x) > 30
+                or abs(self.geometry(candidate)[1] - y) > 30),
+            8,
+        )
         new_geometry = self.geometry(moved) if moved else (x, y, width, height)
         changed = abs(new_geometry[0] - x) > 30 or abs(new_geometry[1] - y) > 30
         self.check(f"{title} title-bar drag changes niri position", changed,
@@ -228,6 +253,18 @@ class Run:
         if not window:
             return
         x, y, width, height = self.geometry(window)
+        if app_id == "org.rmac.Calculator":
+            # macOS Calculator's Basic window is fixed at 230x408: an edge
+            # drag and a title-bar double-click both leave it unchanged.
+            # CALC-13 made Lulo's surface fixed too. Testing for growth here
+            # would report that intended behavior as an intermittent failure.
+            self.drag((x, y + height / 2), (x - 160, y + height / 2))
+            time.sleep(0.3)
+            after = self.geometry(self.window(app_id) or window)
+            fixed = abs(after[2] - width) < 2 and abs(after[3] - height) < 2
+            self.check("Calculator left-edge drag preserves fixed size", fixed,
+                       f"{(width, height)} -> {after[2:]}")
+            return
         initial_width = width
         edge_y = y + height / 2
         resized = False
@@ -243,8 +280,8 @@ class Run:
             edge_y = y + height / 2
             self.drag((x + offset, edge_y), (x + offset - 160, edge_y))
             candidate = self.wait_for(
-                lambda: (candidate := self.window(app_id))
-                if candidate and self.geometry(candidate)[2] > initial_width + 30 else None,
+                lambda: self.window_matching(
+                    app_id, lambda candidate: self.geometry(candidate)[2] > initial_width + 30),
                 3.0,
             )
             if candidate:
@@ -267,8 +304,14 @@ class Run:
             # Move the mapped window into the visible area before asking niri
             # to resize it. This makes the same move request establish a
             # usable resize edge for oversized initial client bounds.
-            self.drag((x + width * .5, y + 18), (x + width * .5 + 140, y + 90))
-            placed = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
+            self.drag((x + width - 60, y + 18), (x + width + 80, y + 90))
+            placed = self.wait_for(
+                lambda: self.window_matching(
+                    "org.rmac.SystemSettings",
+                    lambda candidate: abs(self.geometry(candidate)[0] - x) >= 30
+                    or abs(self.geometry(candidate)[1] - y) >= 30),
+                8,
+            )
             placed_geometry = self.geometry(placed) if placed else (x, y, width, height)
             intersects_output = (
                 placed_geometry[0] < self.width
@@ -278,10 +321,21 @@ class Run:
             )
             self.check("Settings title-bar drag brings it into the output", intersects_output,
                        f"{(x, y, width, height)} -> {placed_geometry}")
+            # The first move can also resize Settings from its oversized
+            # startup bounds. Let niri finish that configure and pointer
+            # release before starting another drag from the new title bar.
+            time.sleep(1)
+            placed_geometry = self.geometry(self.window("org.rmac.SystemSettings") or window)
             x, y, width, height = placed_geometry
             sx, sy, sw, sh = x, y, width, height
-            self.drag((sx + sw * .5, sy + 18), (sx + sw * .5 + 140, sy + 90))
-            moved = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
+            self.drag((sx + sw - 60, sy + 18), (sx + sw + 80, sy + 90))
+            moved = self.wait_for(
+                lambda: self.window_matching(
+                    "org.rmac.SystemSettings",
+                    lambda candidate: abs(self.geometry(candidate)[0] - sx) >= 30
+                    or abs(self.geometry(candidate)[1] - sy) >= 30),
+                8,
+            )
             mg = self.geometry(moved) if moved else (sx, sy, sw, sh)
             # Niri may clamp a 140 px grab to 30 px near an output edge.
             # That is still a real move, well beyond compositor jitter.
@@ -327,6 +381,33 @@ class Run:
         title_bar_point = (x + width * 0.5, y + 18)
         self.double_click(title_bar_point)
 
+        if app_id == "org.rmac.Calculator":
+            # The real Mac leaves its 230x408 Basic window unchanged after a
+            # title-bar double-click. Its fixed surface has no Zoom target.
+            time.sleep(0.5)
+            after = self.geometry(self.window(app_id) or window)
+            fixed = abs(after[2] - width) < 2 and abs(after[3] - height) < 2
+            self.check("Calculator title-bar double-click preserves fixed size", fixed,
+                       f"{(width, height)} -> {after[2:]}")
+            outputs = self.niri("outputs") or {}
+            logical = next(iter(outputs.values()), {}).get("logical", {})
+            output_width = logical.get("width", self.width)
+            output_height = logical.get("height", self.height)
+            on_screen = (after[0] >= -1 and after[1] >= -1
+                         and after[0] + after[2] <= output_width + 1
+                         and after[1] + after[3] <= output_height + 1)
+            self.check("Calculator stays on screen after double-click", on_screen, str(after))
+            self.check("Calculator stays above the Dock after double-click",
+                       after[1] + after[3] < output_height - 5,
+                       f"bottom={after[1] + after[3]}, output height={output_height}")
+            self.double_click((after[0] + after[2] * 0.5, after[1] + 18))
+            time.sleep(0.5)
+            again = self.geometry(self.window(app_id) or window)
+            still_fixed = abs(again[2] - width) < 2 and abs(again[3] - height) < 2
+            self.check("A second double-click keeps Calculator fixed", still_fixed,
+                       f"{(width, height)} -> {again[2:]}")
+            return
+
         def grew_substantially(candidate) -> bool:
             cw, ch = self.geometry(candidate)[2:]
             return cw > width + 80 or ch > height + 80
@@ -337,19 +418,11 @@ class Run:
         # signal well short of an actual Fill. Wait for a substantial size
         # change, the same threshold the check below uses, not any change.
         #
-        # `niri msg` is a fresh process per query; on this shared, loaded
-        # laptop it can occasionally stall past its own 10s subprocess
-        # timeout right after a resize request lands (niri busy with the
-        # configure/commit round trip, not this check's own logic — the
-        # same Fill reliably lands within a few hundred ms when queried
-        # in-process, e.g. from Mission Control's own retry). One stalled
-        # query burns the whole budget in a plain 8s wait_for and this
-        # check reports "unchanged" despite a real, completed Zoom. A
-        # generous ceiling gives `wait_for` room to retry past that.
+        # Direct socket queries have a short timeout, so one slow IPC reply
+        # cannot consume the whole wait budget after the resize request.
         zoomed = self.wait_for(
-            lambda: (candidate := self.window(app_id))
-            if candidate and grew_substantially(candidate) else None,
-            30.0,
+            lambda: self.window_matching(app_id, grew_substantially),
+            15.0,
         )
         if zoomed:
             time.sleep(2)
@@ -378,16 +451,22 @@ class Run:
                    f"bottom={zy + zh}, output height={output_height}")
 
         # A second double-click Zooms back to the user's previous size.
+        history_path = self.runtime / "rmac" / "tile-history.json"
+        history_before = history_path.read_text() if history_path.exists() else "missing"
         restore_point = (zx + zw * 0.5, zy + 18)
         self.double_click(restore_point)
         restored = self.wait_for(
-            lambda: (candidate := self.window(app_id))
-            if candidate and abs(self.geometry(candidate)[2] - width) < 30
-            and abs(self.geometry(candidate)[3] - height) < 30 else None,
-            30.0,
+            lambda: self.window_matching(
+                app_id, lambda candidate: abs(self.geometry(candidate)[2] - width) < 30
+                and abs(self.geometry(candidate)[3] - height) < 40),
+            15.0,
         )
-        restored_geometry = self.geometry(restored) if restored else zoomed_geometry
-        back = (abs(restored_geometry[2] - width) < 30 and abs(restored_geometry[3] - height) < 30)
+        restored_geometry = self.geometry(restored or self.window(app_id) or zoomed or window)
+        back = (abs(restored_geometry[2] - width) < 30 and abs(restored_geometry[3] - height) < 40)
+        if not back:
+            history_after = history_path.read_text() if history_path.exists() else "missing"
+            print(f"restore diagnostic {title}: history before={history_before}; after={history_after}; "
+                  f"window={self.window(app_id)}", flush=True)
         self.check(f"A second double-click restores {title}'s previous size", back,
                    f"{(width, height)} -> {restored_geometry[2:]}")
 
@@ -405,6 +484,9 @@ class Run:
                 window = self.wait_for(lambda: self.window(app_id), 40)
                 self.check(f"{title} Zoom window mapped", bool(window))
                 if window:
+                    # Files changes its initial client height by 30 px just
+                    # after mapping. Capture the pre-Zoom size once settled.
+                    time.sleep(1)
                     self.assert_double_click_zoom(app_id, title)
                 if process.poll() is None:
                     process.terminate()

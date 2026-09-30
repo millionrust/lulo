@@ -189,6 +189,21 @@ impl Calculator {
         Self::default()
     }
 
+    /// Carry the visible operand across a calculator mode switch.
+    pub fn current_value(&self) -> f64 {
+        self.current()
+    }
+
+    /// Start this mode at a value without losing its calculation history.
+    pub fn restore_value(&mut self, value: f64) {
+        let history = std::mem::take(&mut self.history);
+        *self = Self {
+            value,
+            history,
+            ..Self::default()
+        };
+    }
+
     /// Apply one key press.
     pub fn press(&mut self, key: Key) {
         match key {

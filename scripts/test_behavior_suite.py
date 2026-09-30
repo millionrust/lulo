@@ -43,6 +43,7 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(sc.mac_keystroke("escape"), (None, 53, []))
         self.assertEqual(sc.mac_keystroke("down"), (None, 125, []))
         self.assertEqual(sc.mac_keystroke("space"), (None, 49, []))
+        self.assertEqual(sc.mac_keystroke("+"), (None, 69, []))
 
 
 class ClickTests(unittest.TestCase):

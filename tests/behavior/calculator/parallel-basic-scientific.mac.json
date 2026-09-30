@@ -6,19 +6,19 @@
   "observations": {
     "sum": {
       "display": {
-        "value": "23"
+        "value": "5"
       },
       "window_size": null
     },
     "scientific": {
       "display": {
-        "value": "23"
+        "value": "5"
       },
       "window_size": null
     },
     "basic": {
       "display": {
-        "value": "23"
+        "value": "5"
       },
       "window_size": null
     }

@@ -261,6 +261,29 @@ impl ScientificCalculator {
         Self::default()
     }
 
+    /// Carry the visible operand across a calculator mode switch.
+    pub fn current_value(&self) -> f64 {
+        self.current()
+    }
+
+    /// Start this mode at a value while retaining its settings and history.
+    pub fn restore_value(&mut self, value: f64) {
+        let (memory, angle, second, history) = (
+            self.memory,
+            self.angle,
+            self.second,
+            std::mem::take(&mut self.history),
+        );
+        *self = Self {
+            value,
+            memory,
+            angle,
+            second,
+            history,
+            ..Self::default()
+        };
+    }
+
     pub fn press(&mut self, key: Key) {
         match key {
             Key::Digit(digit) => self.digit(digit),

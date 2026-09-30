@@ -27,26 +27,39 @@ cd "$repo_root"
 # avoid bleeding into the next, unrelated spawn.
 WINDOW=25
 
-status=0
-files="$(grep -rl 'background_executor()' --include='*.rs' crates shell/bins shell/crates shell/compat 2>/dev/null || true)"
+if (( $# )); then
+  files=("$@")
+else
+  files=()
+  while IFS= read -r file; do
+    files+=("$file")
+  done < <(find crates shell/bins shell/crates shell/compat -type f -name '*.rs' -print)
+fi
 
-for file in $files; do
+status=0
+for file in "${files[@]}"; do
   awk -v file="$file" -v window="$WINDOW" '
-    # Record every line so we can look back/ahead by number.
     { lines[NR] = $0 }
-    /\.spawn\(async/ { spawn_lines[NR] = 1 }
     END {
-      for (start in spawn_lines) {
+      for (start = 1; start <= NR; start++) {
+        if (lines[start] !~ /[.]spawn[(]async/) continue
+        background = 0
+        for (j = start - 3; j <= start; j++) {
+          if (j < 1) continue
+          previous = lines[j]
+          sub(/\/\/.*/, "", previous)
+          if (previous ~ /background_executor[(][)]/) background = 1
+        }
+        if (!background) continue
         saw_unblock = 0
         for (i = start; i < start + window && i <= NR; i++) {
           line = lines[i]
-          if (line ~ /blocking::unblock/) {
-            saw_unblock = 1
-          }
-          if (line ~ /background-executor-allow/) {
+          if (line ~ /background-executor-allow:/) {
             continue
           }
-          if (line ~ /Command::new\(/ || line ~ /std::process::Command/ || line ~ /process::Command::new/) {
+          sub(/\/\/.*/, "", line)
+          if (line ~ /blocking::unblock/) saw_unblock = 1
+          if (line ~ /Command::new[(]/ || line ~ /std::process::Command/ || line ~ /process::Command::new/) {
             if (!saw_unblock) {
               printf "%s:%d: Command spawned inside background_executor().spawn without blocking::unblock\n", file, i
               status = 1

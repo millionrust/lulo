@@ -89,7 +89,25 @@ type comes from udev `ID_INPUT_*` capability properties when available, with a
 conservative name fallback. rmac reads the display name but not the udev serial
 or kernel `uniq` field. Settings lists keyboards, mice, trackpads, pointing
 sticks, trackballs, tablets, touchscreens, and unclassified devices without
-claiming that every type shares the same writable settings.
+claiming that every type shares the same writable settings. The Mouse pane's
+Touchscreen switch writes niri's `input { touch { off } }` setting through the
+managed input include; it applies to every touchscreen and can be reversed
+with a mouse or keyboard.
+
+The GPUI Wayland backend translates one touch contact into taps, a 500 ms
+context click, scrolling, or a pointer drag. Movement beyond 8 logical pixels
+chooses the gesture: title-bar drag areas move their window, while a Files
+contact held for at least 160 ms before moving starts an item drag; a quick
+swipe scrolls. GPUI does not expose a hit test for per-element drag sources,
+so Files uses a window-level heuristic. Two-finger pinch and other multi-touch
+gestures are ignored. Scrolling reuses the touchpad momentum decay and only
+schedules ticks while a glide is active.
+
+The nested Sway/niri behaviour runner has virtual pointer and keyboard
+protocols but no virtual touch protocol. It cannot inject a touchscreen
+contact without creating a kernel uinput device, so touch classification is
+covered by pure unit tests; the nested pointer suite remains the regression
+check for title-bar moves and resizing.
 
 A bounded watcher treats `/dev/input` changes only as refresh hints and always
 resamples the full snapshot. Only successful niri `ConfigLoaded` events refresh

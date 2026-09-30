@@ -806,6 +806,10 @@ impl WaylandWindowStatePtr {
             .and_then(|callback| callback())
     }
 
+    pub fn is_files_window(&self) -> bool {
+        self.state.borrow().app_id.as_deref() == Some("org.rmac.Files")
+    }
+
     pub fn start_window_move(&self) {
         let state = self.state.borrow();
         let serial = state.client.get_serial(SerialKind::MousePress);

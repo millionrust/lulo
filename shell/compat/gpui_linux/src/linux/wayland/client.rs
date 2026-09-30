@@ -1,5 +1,6 @@
 use std::{
     cell::{RefCell, RefMut},
+    collections::HashSet,
     hash::Hash,
     os::fd::{AsRawFd, BorrowedFd},
     path::PathBuf,
@@ -9,7 +10,7 @@ use std::{
 
 use ashpd::WindowIdentifier;
 use calloop::{
-    EventLoop, LoopHandle,
+    EventLoop, LoopHandle, RegistrationToken,
     timer::{TimeoutAction, Timer},
 };
 use calloop_wayland_source::WaylandSource;
@@ -33,7 +34,7 @@ use wayland_client::{
     Connection, Dispatch, Proxy, QueueHandle, delegate_noop,
     protocol::{
         wl_buffer, wl_compositor, wl_keyboard, wl_pointer, wl_registry, wl_seat, wl_shm,
-        wl_shm_pool, wl_surface,
+        wl_shm_pool, wl_surface, wl_touch,
     },
 };
 use wayland_protocols::wp::pointer_gestures::zv1::client::{
@@ -234,6 +235,12 @@ pub(crate) struct WaylandClientState {
     pub compositor_gpu: Option<CompositorGpuHint>,
     wl_seat: wl_seat::WlSeat, // TODO: Multi seat support
     wl_pointer: Option<wl_pointer::WlPointer>,
+    wl_touch: Option<wl_touch::WlTouch>,
+    touch_ids: HashSet<i32>,
+    touch_suppressed: bool,
+    touch: Option<TouchContact>,
+    touch_generation: u64,
+    touch_hold_token: Option<RegistrationToken>,
     pinch_gesture: Option<zwp_pointer_gesture_pinch_v1::ZwpPointerGesturePinchV1>,
     pinch_scale: f32,
     wl_keyboard: Option<wl_keyboard::WlKeyboard>,
@@ -311,6 +318,83 @@ struct PendingWindowMove {
     serial: u32,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TouchGesture {
+    Pending,
+    Scroll,
+    PointerDrag,
+    ContextMenu,
+}
+
+struct TouchContact {
+    id: i32,
+    window: WaylandWindowStatePtr,
+    start: Point<Pixels>,
+    position: Point<Pixels>,
+    serial: u32,
+    started: Instant,
+    gesture: TouchGesture,
+    drag_region: bool,
+    files_window: bool,
+    click_count: usize,
+}
+
+const TOUCH_MOVE_THRESHOLD: Pixels = px(8.0);
+const TOUCH_HOLD: Duration = Duration::from_millis(500);
+const FILE_DRAG_HOLD: Duration = Duration::from_millis(160);
+
+/// A quick swipe scrolls. A title bar always drags; a Files item can be
+/// dragged after a short deliberate hold. GPUI does not expose per-element
+/// drag hit testing to the platform backend, so Files uses a window heuristic.
+fn classify_touch_motion(
+    start: Point<Pixels>,
+    position: Point<Pixels>,
+    elapsed: Duration,
+    drag_region: bool,
+    files_window: bool,
+) -> TouchGesture {
+    let delta = position - start;
+    if delta.x.abs() <= TOUCH_MOVE_THRESHOLD && delta.y.abs() <= TOUCH_MOVE_THRESHOLD {
+        TouchGesture::Pending
+    } else if drag_region || (files_window && elapsed >= FILE_DRAG_HOLD) {
+        TouchGesture::PointerDrag
+    } else {
+        TouchGesture::Scroll
+    }
+}
+
+#[cfg(test)]
+mod touch_tests {
+    use super::*;
+
+    #[test]
+    fn gesture_threshold_and_drag_regions() {
+        let start = point(px(10.0), px(20.0));
+        let near = point(px(18.0), px(20.0));
+        let moved = point(px(19.0), px(20.0));
+        assert_eq!(
+            classify_touch_motion(start, near, Duration::ZERO, false, false),
+            TouchGesture::Pending
+        );
+        assert_eq!(
+            classify_touch_motion(start, moved, Duration::ZERO, false, false),
+            TouchGesture::Scroll
+        );
+        assert_eq!(
+            classify_touch_motion(start, moved, Duration::ZERO, true, false),
+            TouchGesture::PointerDrag
+        );
+        assert_eq!(
+            classify_touch_motion(start, moved, Duration::from_millis(159), false, true),
+            TouchGesture::Scroll
+        );
+        assert_eq!(
+            classify_touch_motion(start, moved, FILE_DRAG_HOLD, false, true),
+            TouchGesture::PointerDrag
+        );
+    }
+}
+
 const WINDOW_MOVE_THRESHOLD: Pixels = px(4.0);
 
 fn moved_past_window_drag_threshold(start: Point<Pixels>, current: Point<Pixels>) -> bool {
@@ -353,6 +437,27 @@ pub(crate) enum PendingActivation {
 }
 
 impl WaylandClientState {
+    fn cancel_touch_hold(&mut self) {
+        if let Some(token) = self.touch_hold_token.take() {
+            self.loop_handle.remove(token);
+        }
+    }
+
+    fn count_click(&mut self, button: MouseButton, position: Point<Pixels>) -> usize {
+        if self.click.last_click.elapsed() < DOUBLE_CLICK_INTERVAL
+            && self.click.last_mouse_button == Some(button)
+            && is_within_click_distance(self.click.last_location, position)
+        {
+            self.click.current_count += 1;
+        } else {
+            self.click.current_count = 1;
+        }
+        self.click.last_click = Instant::now();
+        self.click.last_mouse_button = Some(button);
+        self.click.last_location = position;
+        self.click.current_count
+    }
+
     fn consume_startup_activation_token(&mut self, surface: &wl_surface::WlSurface) {
         let Some(startup_activation_token) = self.startup_activation_token.take() else {
             return;
@@ -765,6 +870,12 @@ impl WaylandClient {
             compositor_gpu,
             wl_seat: seat,
             wl_pointer: None,
+            wl_touch: None,
+            touch_ids: HashSet::new(),
+            touch_suppressed: false,
+            touch: None,
+            touch_generation: 0,
+            touch_hold_token: None,
             wl_keyboard: None,
             pinch_gesture: None,
             pinch_scale: 1.0,
@@ -1254,6 +1365,13 @@ impl Dispatch<wl_registry::WlRegistry, GlobalListContents> for WaylandClientStat
                     if let Some(wl_pointer) = state.wl_pointer.take() {
                         wl_pointer.release();
                     }
+                    if let Some(wl_touch) = state.wl_touch.take() {
+                        wl_touch.release();
+                    }
+                    state.touch = None;
+                    state.touch_ids.clear();
+                    state.cancel_touch_hold();
+                    state.touch_generation = state.touch_generation.wrapping_add(1);
                     if let Some(wl_keyboard) = state.wl_keyboard.take() {
                         wl_keyboard.release();
                     }
@@ -1607,6 +1725,23 @@ impl Dispatch<wl_seat::WlSeat, ()> for WaylandClientStatePtr {
                 }
 
                 state.wl_pointer = Some(pointer);
+            } else if let Some(pointer) = state.wl_pointer.take() {
+                pointer.release();
+            }
+            if capabilities.contains(wl_seat::Capability::Touch) {
+                if state.wl_touch.is_none() {
+                    state.wl_touch = Some(seat.get_touch(qh, ()));
+                }
+            } else if let Some(touch) = state.wl_touch.take() {
+                touch.release();
+                state.touch_ids.clear();
+                state.touch_suppressed = false;
+                state.cancel_touch_hold();
+                state.touch_generation = state.touch_generation.wrapping_add(1);
+                if let Some(contact) = state.touch.take() {
+                    drop(state);
+                    end_touch_contact(&client, contact, true);
+                }
             }
         }
     }
@@ -1923,6 +2058,315 @@ impl Dispatch<zwp_text_input_v3::ZwpTextInputV3, ()> for WaylandClientStatePtr {
     }
 }
 
+fn touch_click(
+    client: &Rc<RefCell<WaylandClientState>>,
+    window: &WaylandWindowStatePtr,
+    button: MouseButton,
+    position: Point<Pixels>,
+) {
+    let mut state = client.borrow_mut();
+    state.momentum_generation = state.momentum_generation.wrapping_add(1);
+    let click_count = state.count_click(button, position);
+    let modifiers = state.modifiers;
+    drop(state);
+    window.handle_input(PlatformInput::MouseDown(MouseDownEvent {
+        button,
+        position,
+        modifiers,
+        click_count,
+        first_mouse: false,
+    }));
+    window.handle_input(PlatformInput::MouseUp(MouseUpEvent {
+        button,
+        position,
+        modifiers,
+        click_count,
+    }));
+}
+
+fn end_touch_contact(
+    client: &Rc<RefCell<WaylandClientState>>,
+    contact: TouchContact,
+    cancelled: bool,
+) {
+    let mut state = client.borrow_mut();
+    let modifiers = state.modifiers;
+    match contact.gesture {
+        TouchGesture::Pending if !cancelled => {
+            drop(state);
+            touch_click(client, &contact.window, MouseButton::Left, contact.position);
+        }
+        TouchGesture::PointerDrag => {
+            drop(state);
+            contact
+                .window
+                .handle_input(PlatformInput::MouseUp(MouseUpEvent {
+                    button: MouseButton::Left,
+                    position: contact.position,
+                    modifiers,
+                    click_count: contact.click_count,
+                }));
+        }
+        TouchGesture::Scroll => {
+            drop(state);
+            contact
+                .window
+                .handle_input(PlatformInput::ScrollWheel(ScrollWheelEvent {
+                    position: contact.position,
+                    delta: ScrollDelta::Pixels(point(px(0.0), px(0.0))),
+                    modifiers,
+                    touch_phase: TouchPhase::Ended,
+                }));
+            if !cancelled {
+                start_momentum_for_touch(
+                    &mut client.borrow_mut(),
+                    contact.window.clone(),
+                    contact.position,
+                );
+            }
+        }
+        _ => drop(state),
+    }
+    let state = client.borrow();
+    let pointer = state
+        .mouse_focused_window
+        .as_ref()
+        .filter(|window| window.ptr_eq(&contact.window))
+        .and_then(|_| state.mouse_location);
+    let modifiers = state.modifiers;
+    let pressed_button = state.button_pressed;
+    drop(state);
+    if let Some(position) = pointer {
+        contact
+            .window
+            .handle_input(PlatformInput::MouseMove(MouseMoveEvent {
+                position,
+                pressed_button,
+                modifiers,
+            }));
+    } else {
+        contact
+            .window
+            .handle_input(PlatformInput::MouseExited(MouseExitEvent {
+                position: contact.position,
+                pressed_button: None,
+                modifiers,
+            }));
+        contact.window.set_hovered(false);
+    }
+}
+
+impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
+    fn event(
+        this: &mut Self,
+        _: &wl_touch::WlTouch,
+        event: wl_touch::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        let client = this.get_client();
+        match event {
+            wl_touch::Event::Down {
+                serial,
+                surface,
+                id,
+                x,
+                y,
+                ..
+            } => {
+                let position = point(px(x as f32), px(y as f32));
+                let mut state = client.borrow_mut();
+                state.touch_ids.insert(id);
+                if state.touch_ids.len() > 1 {
+                    state.touch_suppressed = true;
+                    state.cancel_touch_hold();
+                    state.touch_generation = state.touch_generation.wrapping_add(1);
+                    let old = state.touch.take();
+                    drop(state);
+                    if let Some(old) = old {
+                        end_touch_contact(&client, old, true);
+                    }
+                    // Multi-finger gestures, including pinch, are ignored.
+                    return;
+                }
+                if state.touch_suppressed {
+                    return;
+                }
+                let Some(window) = get_window(&mut state, &surface.id()) else {
+                    return;
+                };
+                state.serial_tracker.update(SerialKind::MousePress, serial);
+                state.momentum_generation = state.momentum_generation.wrapping_add(1);
+                state.touch_generation = state.touch_generation.wrapping_add(1);
+                let generation = state.touch_generation;
+                let modifiers = state.modifiers;
+                let loop_handle = state.loop_handle.clone();
+                drop(state);
+                window.set_hovered(true);
+                window.handle_input(PlatformInput::MouseMove(MouseMoveEvent {
+                    position,
+                    pressed_button: None,
+                    modifiers,
+                }));
+                let drag_region =
+                    window.hit_test_window_control() == Some(gpui::WindowControlArea::Drag);
+                let files_window = window.is_files_window();
+                client.borrow_mut().touch = Some(TouchContact {
+                    id,
+                    window,
+                    start: position,
+                    position,
+                    serial,
+                    started: Instant::now(),
+                    gesture: TouchGesture::Pending,
+                    drag_region,
+                    files_window,
+                    click_count: 1,
+                });
+                let token = loop_handle
+                    .insert_source(
+                        Timer::from_duration(TOUCH_HOLD),
+                        move |_, _, this: &mut WaylandClientStatePtr| {
+                            let client = this.get_client();
+                            let mut state = client.borrow_mut();
+                            if state.touch_generation != generation || state.touch_suppressed {
+                                return TimeoutAction::Drop;
+                            }
+                            let Some(contact) = state.touch.as_mut() else {
+                                return TimeoutAction::Drop;
+                            };
+                            if contact.gesture != TouchGesture::Pending {
+                                return TimeoutAction::Drop;
+                            }
+                            contact.gesture = TouchGesture::ContextMenu;
+                            let window = contact.window.clone();
+                            let position = contact.position;
+                            state.touch_hold_token = None;
+                            drop(state);
+                            touch_click(&client, &window, MouseButton::Right, position);
+                            TimeoutAction::Drop
+                        },
+                    )
+                    .expect("touch hold timer registration failed");
+                client.borrow_mut().touch_hold_token = Some(token);
+            }
+            wl_touch::Event::Motion { id, x, y, .. } => {
+                let position = point(px(x as f32), px(y as f32));
+                let mut state = client.borrow_mut();
+                if state.touch_suppressed {
+                    return;
+                }
+                let modifiers = state.modifiers;
+                let Some(contact) = state.touch.as_mut().filter(|contact| contact.id == id) else {
+                    return;
+                };
+                let previous = contact.position;
+                contact.position = position;
+                let mut phase = TouchPhase::Moved;
+                let mut begin_drag = None;
+                if contact.gesture == TouchGesture::Pending {
+                    let next = classify_touch_motion(
+                        contact.start,
+                        position,
+                        contact.started.elapsed(),
+                        contact.drag_region,
+                        contact.files_window,
+                    );
+                    if next != TouchGesture::Pending {
+                        contact.gesture = next;
+                        if next == TouchGesture::Scroll {
+                            phase = TouchPhase::Started;
+                        }
+                        if next == TouchGesture::PointerDrag {
+                            begin_drag = Some((contact.start, contact.serial, contact.drag_region));
+                        }
+                    }
+                }
+                let gesture = contact.gesture;
+                let window = contact.window.clone();
+                let delta = point(previous.x - position.x, previous.y - position.y);
+                if gesture == TouchGesture::Scroll {
+                    state.momentum_generation = state.momentum_generation.wrapping_add(1);
+                    track_finger_velocity(&mut state, delta);
+                }
+                if begin_drag.is_some() {
+                    let count = state.count_click(MouseButton::Left, previous);
+                    if let Some(contact) = state.touch.as_mut() {
+                        contact.click_count = count;
+                    }
+                }
+                if gesture != TouchGesture::Pending {
+                    state.cancel_touch_hold();
+                }
+                let click_count = state
+                    .touch
+                    .as_ref()
+                    .map_or(1, |contact| contact.click_count);
+                drop(state);
+                if let Some((start, serial, title_drag)) = begin_drag {
+                    window.handle_input(PlatformInput::MouseDown(MouseDownEvent {
+                        button: MouseButton::Left,
+                        position: start,
+                        modifiers,
+                        click_count,
+                        first_mouse: false,
+                    }));
+                    if title_drag {
+                        window.start_window_move_with_serial(serial);
+                    }
+                }
+                match gesture {
+                    TouchGesture::Scroll => {
+                        window.handle_input(PlatformInput::ScrollWheel(ScrollWheelEvent {
+                            position,
+                            delta: ScrollDelta::Pixels(delta),
+                            modifiers,
+                            touch_phase: phase,
+                        }))
+                    }
+                    TouchGesture::PointerDrag | TouchGesture::Pending => {
+                        window.handle_input(PlatformInput::MouseMove(MouseMoveEvent {
+                            position,
+                            pressed_button: (gesture == TouchGesture::PointerDrag)
+                                .then_some(MouseButton::Left),
+                            modifiers,
+                        }))
+                    }
+                    TouchGesture::ContextMenu => {}
+                }
+            }
+            wl_touch::Event::Up { id, .. } => {
+                let mut state = client.borrow_mut();
+                state.touch_ids.remove(&id);
+                state.cancel_touch_hold();
+                state.touch_generation = state.touch_generation.wrapping_add(1);
+                let contact = state.touch.take().filter(|contact| contact.id == id);
+                if state.touch_ids.is_empty() {
+                    state.touch_suppressed = false;
+                }
+                drop(state);
+                if let Some(contact) = contact {
+                    end_touch_contact(&client, contact, false);
+                }
+            }
+            wl_touch::Event::Cancel => {
+                let mut state = client.borrow_mut();
+                state.touch_ids.clear();
+                state.touch_suppressed = false;
+                state.cancel_touch_hold();
+                state.touch_generation = state.touch_generation.wrapping_add(1);
+                let contact = state.touch.take();
+                drop(state);
+                if let Some(contact) = contact {
+                    end_touch_contact(&client, contact, true);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 fn linux_button_to_gpui(button: u32) -> Option<MouseButton> {
     // These values are coming from <linux/input-event-codes.h>.
     const BTN_LEFT: u32 = 0x110;
@@ -2125,26 +2569,8 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                                 state = client.borrow_mut();
                             }
                         }
-                        let click_elapsed = state.click.last_click.elapsed();
-
-                        if click_elapsed < DOUBLE_CLICK_INTERVAL
-                            && state
-                                .click
-                                .last_mouse_button
-                                .is_some_and(|prev_button| prev_button == button)
-                            && is_within_click_distance(
-                                state.click.last_location,
-                                state.mouse_location.unwrap(),
-                            )
-                        {
-                            state.click.current_count += 1;
-                        } else {
-                            state.click.current_count = 1;
-                        }
-
-                        state.click.last_click = Instant::now();
-                        state.click.last_mouse_button = Some(button);
-                        state.click.last_location = state.mouse_location.unwrap();
+                        let position = state.mouse_location.unwrap();
+                        state.count_click(button, position);
 
                         state.button_pressed = Some(button);
                         state.pending_window_move = None;
@@ -2869,6 +3295,53 @@ fn start_momentum(state: &mut WaylandClientState) {
             else {
                 return TimeoutAction::Drop;
             };
+            let modifiers = state.modifiers;
+            drop(state);
+            window.handle_input(PlatformInput::ScrollWheel(ScrollWheelEvent {
+                position,
+                delta: ScrollDelta::Pixels(point(px(step.x), px(step.y))),
+                modifiers,
+                touch_phase: TouchPhase::Moved,
+            }));
+            TimeoutAction::ToDuration(MOMENTUM_TICK)
+        },
+    );
+}
+
+fn start_momentum_for_touch(
+    state: &mut WaylandClientState,
+    window: WaylandWindowStatePtr,
+    position: Point<Pixels>,
+) {
+    let lifted_while_moving = state
+        .last_finger_scroll
+        .is_some_and(|last| last.elapsed() <= Duration::from_millis(60));
+    let mut velocity = state.scroll_velocity;
+    state.last_finger_scroll = None;
+    state.scroll_velocity = point(0.0, 0.0);
+    if !lifted_while_moving || velocity.x.hypot(velocity.y) < MOMENTUM_MIN_VELOCITY {
+        return;
+    }
+    state.momentum_generation = state.momentum_generation.wrapping_add(1);
+    let generation = state.momentum_generation;
+    let mut last_tick = Instant::now();
+    let _ = state.loop_handle.insert_source(
+        Timer::from_duration(MOMENTUM_TICK),
+        move |_, _, this: &mut WaylandClientStatePtr| {
+            let client = this.get_client();
+            let state = client.borrow();
+            if state.momentum_generation != generation {
+                return TimeoutAction::Drop;
+            }
+            let now = Instant::now();
+            let dt = now.duration_since(last_tick).as_secs_f32() * 1000.0;
+            last_tick = now;
+            let decay = (-dt / MOMENTUM_DECAY_MS).exp();
+            velocity = point(velocity.x * decay, velocity.y * decay);
+            let step = point(velocity.x * dt, velocity.y * dt);
+            if step.x.hypot(step.y) < MOMENTUM_STOP_PX {
+                return TimeoutAction::Drop;
+            }
             let modifiers = state.modifiers;
             drop(state);
             window.handle_input(PlatformInput::ScrollWheel(ScrollWheelEvent {

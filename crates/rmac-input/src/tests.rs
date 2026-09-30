@@ -65,6 +65,35 @@ fn reads_known_values_and_explicit_false_flags() {
         settings.touchpad.secondary_click,
         SecondaryClick::CornerClick
     );
+    assert!(settings.touchscreen_enabled);
+}
+
+#[test]
+fn touch_off_round_trips_through_managed_config() {
+    let mut current = effective(CONFIG);
+    let authority = Authority {
+        main_path: PathBuf::from("/config.kdl"),
+        main_source: String::new(),
+        managed_path: PathBuf::from("/.rmac-input.kdl"),
+        managed_source: None,
+        has_managed_include: false,
+        safe_to_write: true,
+        detail: None,
+        effective: current.clone(),
+        files: Vec::new(),
+        missing_optional_files: Vec::new(),
+    };
+    current.settings.touchscreen_enabled = false;
+    let source = update_managed_source(&authority, &current.settings).unwrap();
+    assert!(source.contains("touch {"));
+    assert!(source.contains("off"));
+    let parsed = KdlDocument::parse_v1(source.strip_prefix(MANAGED_HEADER).unwrap()).unwrap();
+    current.settings.touchscreen_enabled = true;
+    apply_input(
+        parsed.get("input").unwrap().children().unwrap(),
+        &mut current,
+    );
+    assert!(!current.settings.touchscreen_enabled);
 }
 
 #[test]

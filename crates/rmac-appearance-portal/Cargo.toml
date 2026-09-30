@@ -12,4 +12,5 @@ rmac-appearance.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd.workspace = true
 async-io.workspace = true
+futures-lite.workspace = true
 futures-util.workspace = true

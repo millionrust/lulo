@@ -59,9 +59,9 @@ use std::rc::Rc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::appearance::{
-    accent_preference, apply_theme_change_authoritatively, load_theme_state, ThemeChange,
-    ThemeLoad, ThemeOption, ThemeStoreWatchEvent, ACCENTS, THEME_CONTRAST_OPTIONS,
-    THEME_MOTION_OPTIONS, THEME_TEXT_SCALE_OPTIONS,
+    accent_preference, apply_theme_change_authoritatively, load_theme_state,
+    text_highlight_preference, ThemeChange, ThemeLoad, ThemeOption, ThemeStoreWatchEvent, ACCENTS,
+    THEME_CONTRAST_OPTIONS, THEME_MOTION_OPTIONS, THEME_TEXT_SCALE_OPTIONS,
 };
 use crate::connectivity::{
     wifi_join_action, BluetoothForgetPrompt, BluetoothPairingDisplay, BluetoothPairingState,
@@ -140,8 +140,8 @@ use gpui_component::{menu::PopupMenuItem, Icon, IconName, StyledExt as _};
 use navigation_persistence::NavigationPersistence;
 use rmac_ui::{
     AccessibleTextInput as _, Button, Checkbox, EmptyState, InputEvent, InputState, ListRow,
-    PopUpButton, Progress, SearchField, Slider, SliderEvent, SliderState, Spinner, TextField,
-    Toast, ToastKind, Toggle,
+    PopUpButton, Progress, RadioGroup, SearchField, Slider, SliderEvent, SliderState, Spinner,
+    TextField, Toast, ToastKind, Toggle,
 };
 
 #[derive(rust_embed::RustEmbed)]

@@ -365,15 +365,31 @@ pub fn text_caret() -> Hsla {
     }
 }
 
-/// Selected-text highlight of a key text view: opaque #476288 over the
-/// #1E1E1E text background in TextEdit dark (measured). Light is AppKit's
-/// selectedTextBackgroundColor #B3D7FF (S).
+/// Selected-text highlight of a key text view. Appearance ▸ Text highlight
+/// colour "Automatic" is opaque #476288 over the #1E1E1E text background in
+/// TextEdit dark (measured); light is AppKit's selectedTextBackgroundColor
+/// #B3D7FF (S). A chosen swatch washes the text background with that colour
+/// instead, at the same strength the design tokens use for other subtle
+/// accent fills (`ColorTokens::accent_subtle`).
 pub fn text_selection() -> Hsla {
-    if dark_scheme() {
-        gpui::rgb(0x476288).into()
-    } else {
-        gpui::rgb(0xb3d7ff).into()
+    match crate::theme::current().text_highlight {
+        rmac_theme::TextHighlightPreference::Automatic => {
+            if dark_scheme() {
+                gpui::rgb(0x476288).into()
+            } else {
+                gpui::rgb(0xb3d7ff).into()
+            }
+        }
+        rmac_theme::TextHighlightPreference::Custom([red, green, blue]) => {
+            let hex = (channel_byte(red) << 16) | (channel_byte(green) << 8) | channel_byte(blue);
+            let alpha: u32 = if dark_scheme() { 0x30 } else { 0x22 };
+            gpui::rgba((hex << 8) | alpha).into()
+        }
     }
+}
+
+fn channel_byte(component: f64) -> u32 {
+    (component.clamp(0.0, 1.0) * 255.0).round() as u32
 }
 
 /// The overlay scroller's knob while scrolling: #9A9A9A over #1E1E1E, i.e.

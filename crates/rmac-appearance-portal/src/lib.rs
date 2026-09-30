@@ -20,12 +20,32 @@ impl AppearanceSource for PortalAppearanceSource {
     }
 }
 
+/// A missing portal (no `xdg-desktop-portal` daemon, no session bus, or a
+/// D-Bus autolaunch that never returns — the exact shape of a nested session
+/// without a portal/gsettings daemon) must not hang the caller forever: the
+/// System Settings Appearance pane renders from this result, and a stuck
+/// future there means "Loading appearance preferences…" never clears.
+#[cfg(target_os = "linux")]
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
 #[cfg(target_os = "linux")]
 pub async fn snapshot() -> Result<Snapshot, Error> {
-    let settings = ashpd::desktop::settings::Settings::new()
-        .await
-        .map_err(|error| portal_error("connect to the Settings portal", error))?;
-    read_snapshot(&settings).await
+    futures_lite::future::or(
+        async {
+            let settings = ashpd::desktop::settings::Settings::new()
+                .await
+                .map_err(|error| portal_error("connect to the Settings portal", error))?;
+            read_snapshot(&settings).await
+        },
+        async {
+            async_io::Timer::after(CONNECT_TIMEOUT).await;
+            Err(Error::new(
+                "connect to the Settings portal",
+                "the Settings portal did not respond before the bounded deadline",
+            ))
+        },
+    )
+    .await
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -80,9 +100,21 @@ async fn watch_connection(
     use futures_util::StreamExt as _;
 
     const APPEARANCE_NAMESPACE: &str = "org.freedesktop.appearance";
-    let settings = ashpd::desktop::settings::Settings::new()
-        .await
-        .map_err(|error| portal_error("connect to the Settings portal", error))?;
+    let settings = futures_lite::future::or(
+        async {
+            ashpd::desktop::settings::Settings::new()
+                .await
+                .map_err(|error| portal_error("connect to the Settings portal", error))
+        },
+        async {
+            async_io::Timer::after(CONNECT_TIMEOUT).await;
+            Err(Error::new(
+                "connect to the Settings portal",
+                "the Settings portal did not respond before the bounded deadline",
+            ))
+        },
+    )
+    .await?;
     // Subscribe before reading so a change between setup and the first snapshot
     // remains queued instead of being missed.
     let mut changes = settings

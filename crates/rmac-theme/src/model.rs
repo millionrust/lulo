@@ -58,6 +58,36 @@ pub enum TextScalePreference {
     ExtraLarge,
 }
 
+/// macOS 26 Appearance ▸ Text highlight colour: "Automatic" follows the
+/// chosen accent colour (AppKit's own default), or a fixed swatch.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "mode", content = "rgb", rename_all = "kebab-case")]
+pub enum TextHighlightPreference {
+    #[default]
+    Automatic,
+    Custom([f64; 3]),
+}
+
+/// macOS 26 Appearance ▸ Show scroll bars.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ScrollBarVisibility {
+    /// Follows the host's mouse/trackpad hint (GNOME's own auto-hide rule).
+    #[default]
+    Automatic,
+    WhenScrolling,
+    Always,
+}
+
+/// macOS 26 Appearance ▸ Click in the scroll bar to.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ScrollBarClickAction {
+    #[default]
+    JumpToNextPage,
+    JumpToSpot,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preferences {
@@ -67,6 +97,9 @@ pub struct Preferences {
     pub motion: MotionPreferenceSetting,
     pub text_scale: TextScalePreference,
     pub allow_wallpaper_tinting: bool,
+    pub text_highlight: TextHighlightPreference,
+    pub scroll_bar_visibility: ScrollBarVisibility,
+    pub scroll_bar_click: ScrollBarClickAction,
 }
 
 impl Default for Preferences {
@@ -78,6 +111,9 @@ impl Default for Preferences {
             motion: MotionPreferenceSetting::default(),
             text_scale: TextScalePreference::default(),
             allow_wallpaper_tinting: true,
+            text_highlight: TextHighlightPreference::default(),
+            scroll_bar_visibility: ScrollBarVisibility::default(),
+            scroll_bar_click: ScrollBarClickAction::default(),
         }
     }
 }

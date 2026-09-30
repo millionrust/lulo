@@ -1328,24 +1328,33 @@ def benchmark_storage(nested: Nested, bins: list[Path], count: int) -> None:
     try:
         run.setup()
         run.launch()
+
+        def refresh_y() -> Optional[int]:
+            frame = run.active_frame()
+            if frame is None:
+                return None
+            refresh = next((node for node in descendants(frame, limit=3000) if name(node) == "Refresh"), None)
+            box = extents(refresh) if refresh is not None else None
+            return box[1] if box else None
+
         def measure_open() -> dict[str, Any]:
             before_cpu = cpu_seconds()
             started = time.monotonic()
             run.click_item("Storage", "left")
             first = complete = capacity = None
-            seen_calculating = False
             deadline = started + 90
             while time.monotonic() < deadline:
-                frame = run.active_frame()
-                labels = {name(node) for node in descendants(frame, limit=3000)} if frame else set()
+                y = refresh_y()
                 elapsed = time.monotonic() - started
-                if capacity is None and any(" of " in label and " used" in label for label in labels):
+                # Text inside the Storage cards is not exported through
+                # AT-SPI. The Refresh button follows the bar, category rows,
+                # and footnote in this fixed-size nested Settings window.
+                if capacity is None and y is not None and y >= 260:
                     capacity = elapsed
-                if first is None and "Documents" in labels and "System Data" in labels:
+                if first is None and y is not None and y >= (320 if count >= 64_000 else 300):
                     first = elapsed
-                calculating = any("Calculating" in label for label in labels)
-                seen_calculating |= calculating
-                if first is not None and not calculating and (seen_calculating or elapsed >= 0.1):
+                finished = y is not None and (y >= 340 if count >= 64_000 else 300 <= y < 320)
+                if first is not None and finished:
                     complete = elapsed
                     break
                 time.sleep(0.05)
@@ -1365,7 +1374,19 @@ def benchmark_storage(nested: Nested, bins: list[Path], count: int) -> None:
         cold = measure_open()
         run.nested.input.key("cmd-[")
         time.sleep(0.2)
-        reopen = measure_open()
+        before_cpu = cpu_seconds()
+        started = time.monotonic()
+        run.click_item("Storage", "left")
+        first_reopen = None
+        while time.monotonic() - started < 2:
+            y = refresh_y()
+            if first_reopen is None and y is not None and y >= (320 if count >= 64_000 else 300):
+                first_reopen = time.monotonic() - started
+            time.sleep(0.05)
+        reopen = {
+            "first_category_seconds": first_reopen,
+            "cpu_seconds_in_two_seconds": round(cpu_seconds() - before_cpu, 3),
+        }
         print(json.dumps({
             "files": count,
             "cold": cold,

@@ -3,10 +3,7 @@
   "app": "settings",
   "launch": {},
   "steps": [
-    {"key": "cmd-f"},
-    {"type": "storage", "settle": 0.5},
-    {"key": "down"},
-    {"key": "return", "settle": 0.2},
+    {"select": "Storage", "settle": 0.2},
     {"observe": "opened", "facts": ["windows"]},
     {"wait": 2.0},
     {"select": "Refresh", "settle": 0.2},

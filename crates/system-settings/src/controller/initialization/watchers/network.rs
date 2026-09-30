@@ -114,18 +114,15 @@ impl Settings {
                     rmac_network::WifiWatchEvent::Unavailable => {
                         if this
                             .update(cx, |this: &mut Settings, cx| {
-                                this.wifi_stream_error = Some(
-                                    "Live Wi-Fi updates are temporarily unavailable while NetworkManager reconnects"
-                                        .into(),
+                                eprintln!(
+                                    "System Settings: network live-update watcher unavailable (NetworkManager reconnecting)"
                                 );
-                                this.network_stream_error = Some(
-                                    "Live Network updates are temporarily unavailable while NetworkManager reconnects"
-                                        .into(),
-                                );
-                                this.vpn_stream_error = Some(
-                                    "Live VPN updates are temporarily unavailable while NetworkManager reconnects"
-                                        .into(),
-                                );
+                                this.wifi_stream_error =
+                                    Some("Wi-Fi status isn\u{2019}t available right now".into());
+                                this.network_stream_error =
+                                    Some("Network status isn\u{2019}t available right now".into());
+                                this.vpn_stream_error =
+                                    Some("VPN status isn\u{2019}t available right now".into());
                                 cx.notify();
                             })
                             .is_err()

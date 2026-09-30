@@ -279,6 +279,16 @@ impl Settings {
                 "niri is not connected in this process. Saved per-output choices remain editable, but live output availability cannot be confirmed.",
             ));
         }
+        if let Some(detail) = &self.wallpaper_error {
+            notes.push(note_card(detail.clone()));
+        }
+        // A background shell-settings watcher hiccup degrades quietly here
+        // rather than as the window-wide Settings banner
+        // (`global_settings_error`), and clears itself the moment the
+        // watcher recovers.
+        if let Some(detail) = &self.shell_settings_stream_error {
+            notes.push(note_card(detail.clone()));
+        }
 
         // The gallery: the Lulo artwork, the user's own picture, then the
         // procedural gradients, each a titled run of tiles.

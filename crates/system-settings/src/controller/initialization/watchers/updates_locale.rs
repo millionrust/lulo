@@ -1,4 +1,12 @@
 //! Software Update, time, locale, and Login Items startup watchers.
+//!
+//! Each `finish_*_update` below is shared with a later, explicit user
+//! action (checking again, Refresh, editing a value) whose own failure
+//! must stay visible in the window-wide Settings banner
+//! (`global_settings_error`). This first, passive read failing instead
+//! means the backing service isn't there at all, which every pane already
+//! says quietly on its own, so this path clears the `*_error` it would
+//! otherwise leave behind.
 
 use super::*;
 
@@ -8,6 +16,7 @@ impl Settings {
             let result = rmac_updates_linux::snapshot(rmac_updates::Request::cached()).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_update_status(result);
+                this.updates_error = None;
                 this.run_pending_update_refresh(cx);
                 cx.notify();
             });
@@ -31,8 +40,11 @@ impl Settings {
                                     this.queue_update_stream_refresh(cx);
                                 }
                                 rmac_updates::WatchEvent::Unavailable => {
+                                    eprintln!(
+                                        "System Settings: software-update live-update watcher unavailable (PackageKit reconnecting)"
+                                    );
                                     this.updates_stream_error = Some(
-                                        "Live PackageKit updates are temporarily unavailable"
+                                        "Live software update status is temporarily unavailable"
                                             .into(),
                                     );
                                 }
@@ -55,6 +67,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_time_update(result);
+                this.time_error = None;
                 this.run_pending_time_refresh(cx);
                 cx.notify();
             });
@@ -68,6 +81,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_locale_update(result);
+                this.locale_error = None;
                 this.run_pending_locale_refresh(cx);
                 cx.notify();
             });
@@ -81,6 +95,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_login_items_update(result);
+                this.login_items_error = None;
                 this.run_pending_login_items_refresh(cx);
                 cx.notify();
             });
@@ -109,6 +124,9 @@ impl Settings {
                     rmac_locale::WatchEvent::Unavailable => {
                         if this
                             .update(cx, |this: &mut Settings, cx| {
+                                eprintln!(
+                                    "System Settings: language and region live-update watcher unavailable"
+                                );
                                 this.locale_stream_error = Some(
                                     "Live language and region updates are temporarily unavailable"
                                         .into(),

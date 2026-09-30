@@ -173,6 +173,13 @@ impl Settings {
                     "Text size applies to Lulo OS's own interface text; GTK application text changes GNOME applications. Neither changes display scaling.",
                 ));
         }
+        // A background GTK text-scale watcher hiccup never raises the
+        // window-wide Settings banner (see `global_settings_error`); it
+        // degrades quietly here instead, and clears itself the moment the
+        // watcher recovers.
+        if gtk_note.is_none() {
+            gtk_note = self.gtk_text_stream_error.as_ref().map(ToString::to_string);
+        }
         if let Some(note) = gtk_note {
             body = body.child(footnote(note));
         }

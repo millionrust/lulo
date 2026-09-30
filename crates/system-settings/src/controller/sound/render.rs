@@ -175,6 +175,14 @@ impl Settings {
             if let Some(detail) = &self.audio.configuration_error {
                 cards.push(note_card(detail.clone()));
             }
+            // A background audio watcher hiccup (PipeWire dropping off the
+            // bus) degrades quietly here rather than as the window-wide
+            // Settings banner (`global_settings_error`), and clears itself
+            // the moment the watcher recovers -- it never means the values
+            // below are stale or wrong.
+            if let Some(detail) = &self.audio_stream_error {
+                cards.push(note_card(detail.clone()));
+            }
             if self.audio.has_output {
                 let output_view = view.clone();
                 let output_mute = Toggle::new("audio-output-mute")

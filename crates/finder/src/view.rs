@@ -280,6 +280,7 @@ struct FinderView {
     mount_watch_health: MountWatchHealth,
     cwd_identity: Option<directory_state::Identity>,
     directory_generation: u64,
+    directory_load_pending: bool,
     thumbs: std::collections::HashMap<PathBuf, PathBuf>,
     entries: Vec<Entry>,
     /// Direct children of cwd; entries includes descendants only in list view.

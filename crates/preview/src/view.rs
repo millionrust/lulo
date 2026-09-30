@@ -2359,6 +2359,7 @@ fn render_page(
         .w(px(rect.width))
         .h(px(rect.height))
         .bg(rgb(0xFFFFFF))
+        .shadow_md()
         .when_some(image, |page, image| page.child(img(image).size_full()))
         .children(highlights.into_iter().map(move |(unit, color)| {
             div()
@@ -2385,7 +2386,13 @@ impl Render for PreviewView {
         }
         let palette = palette();
         let size = window.viewport_size();
-        let (width, height) = (f32::from(size.width), f32::from(size.height));
+        // niri's visible rectangle is narrower than GPUI's Wayland viewport;
+        // reserve that difference so pages and right-hand controls remain in
+        // the visible window at the default fit zoom.
+        let width = (f32::from(size.width).min(f32::from(window.bounds().size.width))
+            - metrics::WAYLAND_VISIBLE_WIDTH_RESERVE)
+            .max(1.0);
+        let height = f32::from(size.height);
         let left = metrics::document_left(self.sidebar);
         let right = if self.inspector && self.slot().is_some_and(|slot| slot.loaded().is_some()) {
             metrics::INSPECTOR_WIDTH

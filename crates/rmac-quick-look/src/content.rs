@@ -18,7 +18,7 @@ use rmac_preview::render;
 
 use crate::metrics;
 
-const MAX_TEXT_BYTES: usize = 64 * 1024;
+const MAX_TEXT_BYTES: usize = 256 * 1024;
 const MAX_FOLDER_WALK: usize = 20_000;
 const MAX_LINK_CHARACTERS: usize = 1_024;
 
@@ -336,15 +336,7 @@ fn load_regular_text(
 }
 
 fn text_preview(bytes: &[u8]) -> Option<String> {
-    let text = match std::str::from_utf8(bytes) {
-        Ok(text) => text.to_string(),
-        Err(error) if error.error_len().is_none() && error.valid_up_to() != 0 => {
-            std::str::from_utf8(&bytes[..error.valid_up_to()])
-                .ok()?
-                .to_string()
-        }
-        Err(_) => return None,
-    };
+    let text = String::from_utf8_lossy(bytes).into_owned();
     if text
         .chars()
         .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
@@ -454,7 +446,10 @@ mod tests {
             Some("Hello, 世界\n")
         );
         assert!(text_preview(b"hello\0world").is_none());
-        assert!(text_preview(&[0xff, 0xfe]).is_none());
+        assert_eq!(
+            text_preview(b"hello\xffworld").as_deref(),
+            Some("hello\u{fffd}world")
+        );
     }
 
     #[test]

@@ -1,0 +1,15 @@
+{
+  "title": "Save opens the Untitled Save sheet while Find still has focus",
+  "app": "text-editor",
+  "steps": [
+    {"type": "A document to save."},
+    {"key": "cmd-f"},
+    {"type": "document"},
+    {"key": "cmd-s", "settle": 1.5},
+    {"observe": "save", "facts": ["dialog", "focus"]},
+    {"key": "escape"},
+    {"observe": "cancelled", "facts": ["dialog", "windows"]}
+  ],
+  "tolerance": {"save.dialog.title": "ignore", "save.dialog.buttons": "subset", "save.focus.label": "ignore"},
+  "omit": ["save.dialog.texts"]
+}

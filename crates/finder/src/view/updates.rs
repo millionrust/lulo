@@ -206,6 +206,7 @@ impl FinderView {
         let expected_identity = self.cwd_identity;
         self.directory_generation = self.directory_generation.wrapping_add(1);
         let generation = self.directory_generation;
+        self.directory_load_pending = true;
         let stalled_path = path.clone();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             cx.background_executor()
@@ -214,9 +215,10 @@ impl FinderView {
             let _ = this.update(cx, |this: &mut FinderView, cx| {
                 if this.cwd == stalled_path
                     && this.directory_generation == generation
+                    && this.directory_load_pending
                     && this.operation_error.is_none()
                 {
-                    this.operation_error = Some(DIRECTORY_STALL_NOTICE.into());
+                    this.operation_notice = Some(DIRECTORY_STALL_NOTICE.into());
                     cx.notify();
                 }
             });
@@ -271,15 +273,16 @@ impl FinderView {
                 if this.cwd != read_path || this.directory_generation != generation {
                     return;
                 }
+                this.directory_load_pending = false;
+                if this
+                    .operation_notice
+                    .as_ref()
+                    .is_some_and(|message| message.as_ref() == DIRECTORY_STALL_NOTICE)
+                {
+                    this.operation_notice = None;
+                }
                 match result {
                     Ok((identity, entries, children, free)) => {
-                        if this
-                            .operation_error
-                            .as_ref()
-                            .is_some_and(|message| message.as_ref() == DIRECTORY_STALL_NOTICE)
-                        {
-                            this.operation_error = None;
-                        }
                         this.cwd_identity = Some(identity);
                         if let Some(tab) = this.tabs.get_mut(this.active) {
                             tab.identity = Some(identity);

@@ -65,7 +65,7 @@ fn replace_at_offsets(
 impl EditorView {
     pub(super) fn toggle_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.find_open && !self.replace_mode {
-            self.close_bar(cx);
+            self.close_bar(window, cx);
         } else {
             self.find_open = true;
             self.replace_mode = false;
@@ -79,7 +79,7 @@ impl EditorView {
 
     pub(super) fn toggle_replace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.find_open && self.replace_mode {
-            self.close_bar(cx);
+            self.close_bar(window, cx);
         } else {
             self.find_open = true;
             // The long-line view is read-only: Replace opens plain Find.
@@ -92,7 +92,7 @@ impl EditorView {
         }
     }
 
-    pub(super) fn close_bar(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn close_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Escape is bound to this action globally (`Some(CTX)`), so it wins
         // over the Save sheet's own `capture_key_down` — GPUI matches key
         // bindings before raw key-down listeners run. Cancel the sheet here
@@ -103,6 +103,10 @@ impl EditorView {
         }
         self.find_open = false;
         self.replace_mode = false;
+        // Once the field is removed from the tree, its focus handle is no
+        // longer under the editor's key context. Return focus to the document
+        // so File shortcuts (including Save) continue to dispatch.
+        self.input.update(cx, |state, cx| state.focus(window, cx));
         cx.notify();
     }
 

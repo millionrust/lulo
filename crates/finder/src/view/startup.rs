@@ -259,6 +259,7 @@ impl FinderView {
             mount_watch_health: MountWatchHealth::default(),
             cwd_identity: None,
             directory_generation: 0,
+            directory_load_pending: false,
             thumbs: std::collections::HashMap::new(),
             entries: Vec::new(),
             root_entries: Vec::new(),

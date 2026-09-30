@@ -33,6 +33,9 @@
       "scope": "full"
     },
     {
+      "wait": 2
+    },
+    {
       "shot": "calculator-open",
       "scope": "full",
       "expect_window": "org.rmac.Calculator"

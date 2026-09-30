@@ -43,10 +43,19 @@ fn transfer_drop_item(
     destination: &std::path::Path,
     copy: bool,
 ) -> std::io::Result<()> {
+    use std::os::unix::fs::MetadataExt as _;
+
     if fs::symlink_metadata(destination).is_ok() {
         return Err(std::io::ErrorKind::AlreadyExists.into());
     }
-    if copy {
+    let source_device = fs::symlink_metadata(source)?.dev();
+    let destination_device = fs::metadata(
+        destination
+            .parent()
+            .ok_or(std::io::ErrorKind::InvalidInput)?,
+    )?
+    .dev();
+    if copy || source_device != destination_device {
         return copy_drop_item(source, destination);
     }
     match fs::rename(source, destination) {

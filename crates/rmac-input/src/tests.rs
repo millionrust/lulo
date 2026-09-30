@@ -127,7 +127,7 @@ fn generated_session_uses_persistent_input_entrypoint() {
 #[test]
 fn mouse_classified_stick_uses_mouse_scroll_authority() {
     let parsed =
-        effective("input { mouse { scroll-method \"on-button-down\"; scroll-button 274; } }\n");
+        effective("input { mouse { scroll-method \"on-button-down\"; scroll-button 274; }; }\n");
     assert!(parsed.settings.mouse_scroll_with_middle_button);
     let authority = Authority {
         main_path: PathBuf::from("/config.kdl"),

@@ -2156,6 +2156,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn external_drop_copies_directories_without_clobbering() {
+        let root = std::env::temp_dir().join(format!(
+            "rmac-desktop-drop-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let source = root.join("source");
+        let destination = root.join("destination");
+        fs::create_dir_all(source.join("nested")).unwrap();
+        fs::write(source.join("nested/file.txt"), b"dragged").unwrap();
+        transfer_drop_item(&source, &destination, true).unwrap();
+        assert_eq!(
+            fs::read(destination.join("nested/file.txt")).unwrap(),
+            b"dragged"
+        );
+        assert!(source.join("nested/file.txt").exists());
+        assert_eq!(
+            transfer_drop_item(&source, &destination, false)
+                .unwrap_err()
+                .kind(),
+            std::io::ErrorKind::AlreadyExists
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn sizes_read_like_finder() {
         assert_eq!(format_size(512), "512 bytes");
         assert_eq!(format_size(12_300), "12 KB");

@@ -306,6 +306,7 @@ pub struct DragState {
     data_offer: Option<wl_data_offer::WlDataOffer>,
     window: Option<WaylandWindowStatePtr>,
     position: Point<Pixels>,
+    action: Option<DndAction>,
 }
 
 struct StagedFileDrag {
@@ -377,7 +378,17 @@ pub fn external_file_drag_active() -> bool {
     })
 }
 
-fn file_drag_payload(paths: &[PathBuf]) -> Option<(Vec<u8>, Vec<u8>)> {
+/// The compositor's selected action for the current external file drop.
+/// Unknown actions copy, which avoids removing files offered by older clients.
+pub fn file_drop_should_copy() -> bool {
+    FILE_DRAG_CLIENT.with(|slot| {
+        slot.borrow()
+            .upgrade()
+            .is_none_or(|client| client.borrow().drag.action != Some(DndAction::Move))
+    })
+}
+
+fn file_drag_payload(paths: &[PathBuf], copy: bool) -> Option<(Vec<u8>, Vec<u8>)> {
     let urls: Vec<_> = paths
         .iter()
         .filter_map(|path| Url::from_file_path(path).ok())
@@ -387,8 +398,41 @@ fn file_drag_payload(paths: &[PathBuf]) -> Option<(Vec<u8>, Vec<u8>)> {
         return None;
     }
     let uri_list = format!("{}\r\n", urls.join("\r\n")).into_bytes();
-    let gnome_files = format!("cut\n{}\n", urls.join("\n")).into_bytes();
+    let gnome_files = format!(
+        "{}\n{}\n",
+        if copy { "copy" } else { "cut" },
+        urls.join("\n")
+    )
+    .into_bytes();
     Some((uri_list, gnome_files))
+}
+
+#[cfg(test)]
+mod file_drag_tests {
+    use super::*;
+
+    #[test]
+    fn uri_list_encodes_names_and_gnome_move_hint() {
+        let (uris, gnome) = file_drag_payload(
+            &[
+                PathBuf::from("/tmp/one two.txt"),
+                PathBuf::from("/tmp/café.txt"),
+            ],
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            String::from_utf8(uris).unwrap(),
+            "file:///tmp/one%20two.txt\r\nfile:///tmp/caf%C3%A9.txt\r\n"
+        );
+        assert_eq!(
+            String::from_utf8(gnome).unwrap(),
+            "cut\nfile:///tmp/one%20two.txt\nfile:///tmp/caf%C3%A9.txt\n"
+        );
+        assert!(file_drag_payload(&[], false).is_none());
+        let (_, gnome_copy) = file_drag_payload(&[PathBuf::from("/tmp/one")], true).unwrap();
+        assert_eq!(gnome_copy, b"copy\nfile:///tmp/one\n");
+    }
 }
 
 impl WaylandClientState {
@@ -406,13 +450,18 @@ impl WaylandClientState {
         let Some(device) = self.data_device.as_ref() else {
             return;
         };
-        let Some((uri_list, gnome_files)) = file_drag_payload(&staged.paths) else {
+        let copy = self.modifiers.alt;
+        let Some((uri_list, gnome_files)) = file_drag_payload(&staged.paths, copy) else {
             return;
         };
         let source = manager.create_data_source(&self.globals.qh, ());
         source.offer(FILE_LIST_MIME_TYPE.to_owned());
         source.offer("x-special/gnome-copied-files".to_owned());
-        source.set_actions(DndAction::Copy | DndAction::Move | DndAction::Ask);
+        source.set_actions(if copy {
+            DndAction::Copy
+        } else {
+            DndAction::Copy | DndAction::Move | DndAction::Ask
+        });
         device.start_drag(Some(&source), &staged.window.surface(), None, staged.serial);
         self.file_drag_source = Some(FileDragSource {
             source,
@@ -1119,6 +1168,7 @@ impl WaylandClient {
                 data_offer: None,
                 window: None,
                 position: Point::default(),
+                action: None,
             },
             staged_file_drag: None,
             file_drag_source: None,
@@ -3192,6 +3242,7 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
                 id: data_offer,
             } => {
                 state.serial_tracker.update(SerialKind::DataDevice, serial);
+                state.drag.action = None;
                 if let Some(data_offer) = data_offer {
                     data_offer.accept(serial, Some(FILE_LIST_MIME_TYPE.to_owned()));
                     let Some(drag_window) = get_window(&mut state, &surface.id()) else {
@@ -3259,11 +3310,26 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
 
                             let client = this.get_client();
                             let mut state = client.borrow_mut();
+                            let source_window = state
+                                .file_drag_source
+                                .as_ref()
+                                .map(|source| (source.window.clone(), source.position));
                             state.drag.data_offer = Some(data_offer);
                             state.drag.window = Some(drag_window.clone());
                             state.drag.position = position;
 
                             drop(state);
+                            // GPUI keeps its old in-window drag value until a
+                            // release. Clear it before a second window in this
+                            // process receives ExternalPaths.
+                            if let Some((source_window, source_position)) = source_window {
+                                source_window.handle_input(PlatformInput::MouseUp(MouseUpEvent {
+                                    button: MouseButton::Left,
+                                    position: source_position,
+                                    modifiers: Modifiers::default(),
+                                    click_count: 1,
+                                }));
+                            }
                             drag_window.handle_input(input);
                         })
                         .detach();
@@ -3281,6 +3347,7 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
                 drag_window.handle_input(input);
             }
             wl_data_device::Event::Leave => {
+                state.drag.action = None;
                 let Some(drag_window) = state.drag.window.clone() else {
                     return;
                 };
@@ -3332,15 +3399,22 @@ impl Dispatch<wl_data_offer::WlDataOffer, ()> for WaylandClientStatePtr {
         let client = this.get_client();
         let mut state = client.borrow_mut();
 
-        if let wl_data_offer::Event::Offer { mime_type } = event {
-            // Clipboard
-            if let Some(offer) = state
-                .data_offers
-                .iter_mut()
-                .find(|wrapper| wrapper.inner.id() == data_offer.id())
-            {
-                offer.add_mime_type(mime_type);
+        match event {
+            wl_data_offer::Event::Offer { mime_type } => {
+                if let Some(offer) = state
+                    .data_offers
+                    .iter_mut()
+                    .find(|wrapper| wrapper.inner.id() == data_offer.id())
+                {
+                    offer.add_mime_type(mime_type);
+                }
             }
+            wl_data_offer::Event::Action {
+                dnd_action: WEnum::Value(action),
+            } => {
+                state.drag.action = Some(action);
+            }
+            _ => {}
         }
     }
 }

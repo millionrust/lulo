@@ -10,7 +10,7 @@ mod window;
 pub mod layer_shell;
 
 pub(crate) use client::*;
-pub use client::{external_file_drag_active, stage_external_file_drag};
+pub use client::{external_file_drag_active, file_drop_should_copy, stage_external_file_drag};
 
 use wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::Shape;
 

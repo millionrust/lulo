@@ -15,6 +15,54 @@ use rmac_desktop::{Item, ItemKind, RenameError};
 use rmac_shell_ui::text_field::{TextField, TextFieldEvent, TextFieldStyle};
 use std::sync::atomic::AtomicBool;
 
+fn copy_drop_item(source: &std::path::Path, destination: &std::path::Path) -> std::io::Result<()> {
+    let metadata = fs::symlink_metadata(source)?;
+    if metadata.file_type().is_symlink() {
+        std::os::unix::fs::symlink(fs::read_link(source)?, destination)?;
+    } else if metadata.is_dir() {
+        fs::create_dir(destination)?;
+        let result = (|| {
+            for entry in fs::read_dir(source)? {
+                let entry = entry?;
+                copy_drop_item(&entry.path(), &destination.join(entry.file_name()))?;
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_dir_all(destination);
+        }
+        result?;
+    } else {
+        rmac_storage::copy_no_clobber(source, destination)?;
+    }
+    Ok(())
+}
+
+fn transfer_drop_item(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+    copy: bool,
+) -> std::io::Result<()> {
+    if fs::symlink_metadata(destination).is_ok() {
+        return Err(std::io::ErrorKind::AlreadyExists.into());
+    }
+    if copy {
+        return copy_drop_item(source, destination);
+    }
+    match fs::rename(source, destination) {
+        Ok(()) => Ok(()),
+        Err(error) if error.raw_os_error() == Some(libc::EXDEV) => {
+            copy_drop_item(source, destination)?;
+            if fs::symlink_metadata(source)?.is_dir() {
+                fs::remove_dir_all(source)
+            } else {
+                fs::remove_file(source)
+            }
+        }
+        Err(error) => Err(error),
+    }
+}
+
 /// A press that moves further than this starts a drag.
 const DRAG_THRESHOLD: f32 = 3.0;
 /// Selected icon backdrop (S): 4 outside the icon box, radius 6.
@@ -319,6 +367,47 @@ fn panel_card(width: f32) -> gpui::Div {
 }
 
 impl Wallpaper {
+    pub(crate) fn drop_external_files(
+        &mut self,
+        paths: Vec<PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let position = window.mouse_position();
+        let layout = self.desk_layout(window, cx);
+        let directory = layout
+            .hit(f32::from(position.x), f32::from(position.y))
+            .and_then(|index| layout.item(&layout.placed[index]))
+            .filter(|item| item.kind == ItemKind::Directory)
+            .map(|item| item.path.clone())
+            .or_else(|| rmac_desktop::directory_from_environment().ok());
+        let Some(directory) = directory else { return };
+        let copy = gpui_linux::file_drop_should_copy();
+        cx.spawn(async move |this, cx| {
+            let result = blocking::unblock(move || {
+                for source in paths {
+                    let Some(name) = source.file_name() else {
+                        continue;
+                    };
+                    let destination = directory.join(name);
+                    if source == destination {
+                        continue;
+                    }
+                    transfer_drop_item(&source, &destination, copy)?;
+                }
+                std::io::Result::Ok(())
+            })
+            .await;
+            let _ = this.update(cx, |this, cx| {
+                if result.is_err() {
+                    this.action_error = Some("Some items could not be dropped here".into());
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     fn desk_layout(&self, window: &Window, cx: &App) -> DeskLayout {
         let size = window.viewport_size();
         let status = self.status.read(cx);

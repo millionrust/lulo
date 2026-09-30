@@ -43,8 +43,8 @@
     },
     {
       "drag_window": [
-        100,
-        55
+        80,
+        0
       ],
       "scope": "full",
       "anchor": [

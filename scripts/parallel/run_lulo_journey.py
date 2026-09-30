@@ -273,14 +273,21 @@ class Driver:
             x, y, w, _h = self.session.geometry(window)
             dx, dy = step[kind]
             ax, ay = step.get("anchor", [w / 2, 18])
-            self.session.drag((x + ax, y + ay), (x + ax + dx, y + ay + dy))
-            moved = self.session.wait_for(
-                lambda: (candidate := self.window())
-                if candidate and (abs(self.session.geometry(candidate)[0] - x) > 20 or
-                                  abs(self.session.geometry(candidate)[1] - y) > 20) else None, 4)
-            after = self.session.geometry(self.window()) if self.window() else None
-            if not moved and (after is None or
-                              (abs(after[0] - x) <= 20 and abs(after[1] - y) <= 20)):
+            after = None
+            for _ in range(3):
+                candidate = self.window()
+                if not candidate:
+                    break
+                cx, cy, _cw, _ch = self.session.geometry(candidate)
+                self.session.drag((cx + ax, cy + ay), (cx + ax + dx, cy + ay + dy))
+                self.session.wait_for(
+                    lambda: (candidate := self.window())
+                    if candidate and (abs(self.session.geometry(candidate)[0] - x) > 20 or
+                                      abs(self.session.geometry(candidate)[1] - y) > 20) else None, 1.5)
+                after = self.session.geometry(self.window()) if self.window() else None
+                if after and (abs(after[0] - x) > 20 or abs(after[1] - y) > 20):
+                    break
+            if after is None or (abs(after[0] - x) <= 20 and abs(after[1] - y) <= 20):
                 raise RuntimeError(f"nested niri reported no window movement after drag: {(x, y)} -> {after}")
 
     def run(self, name: str) -> dict:

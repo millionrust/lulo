@@ -7,7 +7,7 @@ use gpui::{
     accesskit, div, prelude::FluentBuilder as _, px, rgb, rgba, size, svg, A11ySubtreeBuilder,
     AnyElement, ClipboardItem, Context, FocusHandle, FontWeight, InteractiveElement as _,
     IntoElement, KeyDownEvent, ParentElement as _, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window,
+    StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
 };
 use rmac_calculator::engine::{fitted_font_size, Calculator, HistoryEntry, Key as BasicKey};
 use rmac_calculator::keypad::{
@@ -275,7 +275,12 @@ impl CalculatorView {
             .w_full()
             .h(px(mac::toolbar_height()))
             .child(
-                rmac_ui::title_bar_drag_region("calculator-drag")
+                // Basic and Scientific are fixed-size on the Mac. Keep the
+                // drag area, but do not attach the shared Zoom-on-double-
+                // click handler: niri can otherwise widen this fixed surface.
+                div()
+                    .id("calculator-drag")
+                    .window_control_area(WindowControlArea::Drag)
                     .absolute()
                     .size_full(),
             )

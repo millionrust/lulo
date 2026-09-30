@@ -106,6 +106,10 @@ class Driver:
                 self.session.spawn([str(bins / binary)], binary)
         if any(step.get("click") == "Control Centre" for step in self.data["steps"]):
             self.session.spawn([str(bins / "rmac-quick-settings")], "quick-settings")
+            self.session.wait_for(lambda: (self.session.runtime / "rmac/shortcut-quick-settings.sock").exists(), 10)
+        if any(step.get("key") == "cmd-space" for step in self.data["steps"]):
+            self.session.spawn([str(bins / "rmac-launcher")], "launcher")
+            self.session.wait_for(lambda: (self.session.runtime / "rmac/shortcut-launcher.sock").exists(), 10)
         time.sleep(1)
 
     def window(self):
@@ -226,12 +230,6 @@ class Driver:
         if label in status_x:
             x, y = self.session.parent_point(status_x[label], 15)
             self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
-            if label == "Control Centre":
-                command = [str(Path(self.args.bin_dir) / "rmac-shortcut-dispatch"), "quick-settings"]
-                outcome = subprocess.run(command, env=self.session.env, capture_output=True, text=True,
-                                         timeout=10)
-                if outcome.returncode:
-                    raise RuntimeError(f"Control Centre dispatch failed: {outcome.stderr[-120:]}")
             return
         if label == "File" and self.current == "text-editor":
             x, y = self.session.parent_point(156, 15)
@@ -254,7 +252,11 @@ class Driver:
                 raise RuntimeError("refusing session or device-control shortcut")
             self.session.pointer.key(step[kind])
             if step[kind] == "cmd-space":
-                self.session.spawn([str(Path(self.args.bin_dir) / "rmac-launcher"), "--show"], "launcher")
+                command = [str(Path(self.args.bin_dir) / "rmac-shortcut-dispatch"), "launcher"]
+                outcome = subprocess.run(command, env=self.session.env, capture_output=True,
+                                         text=True, timeout=10)
+                if outcome.returncode:
+                    raise RuntimeError(f"Spotlight dispatch failed: {outcome.stderr[-120:]}")
         elif kind == "type":
             self.session.pointer.type_text(step[kind].replace("$SANDBOX", str(self.sandbox)))
         elif kind == "drag_window":
@@ -263,13 +265,15 @@ class Driver:
                 raise RuntimeError("no current window to drag")
             x, y, w, _h = self.session.geometry(window)
             dx, dy = step[kind]
-            self.session.drag((x + w / 2, y + 18), (x + w / 2 + dx, y + 18 + dy))
+            ax, ay = step.get("anchor", [w / 2, 18])
+            self.session.drag((x + ax, y + ay), (x + ax + dx, y + ay + dy))
             moved = self.session.wait_for(
                 lambda: (candidate := self.window())
                 if candidate and (abs(self.session.geometry(candidate)[0] - x) > 20 or
                                   abs(self.session.geometry(candidate)[1] - y) > 20) else None, 4)
             if not moved:
-                raise RuntimeError("nested niri reported no window movement after drag")
+                after = self.session.geometry(self.window()) if self.window() else None
+                raise RuntimeError(f"nested niri reported no window movement after drag: {(x, y)} -> {after}")
 
     def run(self, name: str) -> dict:
         target = self.out / name
@@ -290,6 +294,11 @@ class Driver:
                     if self.current == "text-editor" and step[kind] == "saved" and not list(self.sandbox.glob("Parallel Journey Sandbox*")):
                         issues.append({"index": index, "action": pending,
                                        "error": "Save did not create the document in the journey sandbox"})
+                    if step.get("expect_window") and not any(
+                        w.get("app_id") == step["expect_window"] for w in self.session.windows()
+                    ):
+                        issues.append({"index": index, "action": pending,
+                                       "error": f"expected {step['expect_window']} window is absent"})
                     result["steps"].append({"name": step[kind], "image": destination.name,
                                             "region": self.capture_region(step.get("scope") == "full"),
                                             "action": pending, **(timing or {})})

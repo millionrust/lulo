@@ -31,7 +31,8 @@
     },
     {
       "shot": "calculator-open",
-      "scope": "full"
+      "scope": "full",
+      "expect_window": "org.rmac.Calculator"
     }
   ],
   "mac": "unsafe",

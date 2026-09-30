@@ -45,6 +45,8 @@ def load(path: Path) -> dict:
                                  len(step[action]) < 2 or
                                  not all(isinstance(label, str) and label for label in step[action])):
             raise ValueError(f"{path}:{number}: menu must be a path of accessible names")
+        if "expect_window" in step and (action != "shot" or not isinstance(step["expect_window"], str)):
+            raise ValueError(f"{path}:{number}: expect_window belongs on a shot")
     if awaiting_shot or not names:
         raise ValueError(f"{path}: every meaningful action needs a following shot")
     for name in data.get("setup", {}).get("files", {}):

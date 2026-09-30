@@ -53,7 +53,11 @@
         140,
         80
       ],
-      "scope": "full"
+      "scope": "full",
+      "anchor": [
+        100,
+        18
+      ]
     },
     {
       "shot": "window-moved",

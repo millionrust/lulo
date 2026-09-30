@@ -293,11 +293,12 @@ pub(super) const LIST_HEADER_DIVIDER_HEIGHT: f32 = 16.0;
 
 pub(super) const ICON_GRID_LEFT: f32 = 11.0;
 pub(super) const ICON_GRID_TOP: f32 = 24.0;
-/// Cell pitch for the 64 pt default; it scales with the icon size.
-pub(super) const ICON_CELL_EXTRA_WIDTH: f32 = 64.0;
+/// Cell pitch for the 64 pt default (112 pt column pitch measured on the
+/// Mac); it scales with the icon size.
+pub(super) const ICON_CELL_EXTRA_WIDTH: f32 = 48.0;
 pub(super) const ICON_CELL_EXTRA_HEIGHT: f32 = 52.0;
 pub(super) const ICON_LABEL_GAP: f32 = 6.0;
-pub(super) const ICON_LABEL_SIZE: f32 = 12.0;
+pub(super) const ICON_LABEL_SIZE: f32 = 13.0;
 pub(super) const ICON_LABEL_MAX_WIDTH: f32 = 112.0;
 pub(super) const ICON_PLATE_GROW: f32 = 4.0;
 pub(super) const ICON_PLATE_RADIUS: f32 = 8.0;

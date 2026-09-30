@@ -91,7 +91,7 @@ class Run:
         for _ in range(3):
             try:
                 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-                    connection.settimeout(0.6)
+                    connection.settimeout(1.0)
                     connection.connect(self.env["NIRI_SOCKET"])
                     connection.sendall(json.dumps(request).encode() + b"\n")
                     with connection.makefile("rb") as stream:
@@ -244,6 +244,17 @@ class Run:
         if not window:
             return
         x, y, width, height = self.geometry(window)
+        if app_id == "org.rmac.Calculator":
+            # macOS Calculator's Basic window is fixed at 230x408: an edge
+            # drag and a title-bar double-click both leave it unchanged.
+            # CALC-13 made Lulo's surface fixed too. Testing for growth here
+            # would report that intended behavior as an intermittent failure.
+            self.drag((x, y + height / 2), (x - 160, y + height / 2))
+            after = self.geometry(self.window(app_id) or window)
+            fixed = abs(after[2] - width) < 2 and abs(after[3] - height) < 2
+            self.check("Calculator left-edge drag preserves fixed size", fixed,
+                       f"{(width, height)} -> {after[2:]}")
+            return
         initial_width = width
         edge_y = y + height / 2
         resized = False
@@ -342,6 +353,31 @@ class Run:
         # the drag region (not a shadow margin or a toolbar control).
         title_bar_point = (x + width * 0.5, y + 18)
         self.double_click(title_bar_point)
+
+        if app_id == "org.rmac.Calculator":
+            # The real Mac leaves its 230x408 Basic window unchanged after a
+            # title-bar double-click. Its fixed surface has no Zoom target.
+            after = self.geometry(self.window(app_id) or window)
+            fixed = abs(after[2] - width) < 2 and abs(after[3] - height) < 2
+            self.check("Calculator title-bar double-click preserves fixed size", fixed,
+                       f"{(width, height)} -> {after[2:]}")
+            outputs = self.niri("outputs") or {}
+            logical = next(iter(outputs.values()), {}).get("logical", {})
+            output_width = logical.get("width", self.width)
+            output_height = logical.get("height", self.height)
+            on_screen = (after[0] >= -1 and after[1] >= -1
+                         and after[0] + after[2] <= output_width + 1
+                         and after[1] + after[3] <= output_height + 1)
+            self.check("Calculator stays on screen after double-click", on_screen, str(after))
+            self.check("Calculator stays above the Dock after double-click",
+                       after[1] + after[3] < output_height - 5,
+                       f"bottom={after[1] + after[3]}, output height={output_height}")
+            self.double_click((after[0] + after[2] * 0.5, after[1] + 18))
+            again = self.geometry(self.window(app_id) or window)
+            still_fixed = abs(again[2] - width) < 2 and abs(again[3] - height) < 2
+            self.check("A second double-click keeps Calculator fixed", still_fixed,
+                       f"{(width, height)} -> {again[2:]}")
+            return
 
         def grew_substantially(candidate) -> bool:
             cw, ch = self.geometry(candidate)[2:]

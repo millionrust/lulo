@@ -21,7 +21,7 @@ fn copy_drop_item(source: &std::path::Path, destination: &std::path::Path) -> st
         std::os::unix::fs::symlink(fs::read_link(source)?, destination)?;
     } else if metadata.is_dir() {
         fs::create_dir(destination)?;
-        let result = (|| {
+        let result: std::io::Result<()> = (|| {
             for entry in fs::read_dir(source)? {
                 let entry = entry?;
                 copy_drop_item(&entry.path(), &destination.join(entry.file_name()))?;

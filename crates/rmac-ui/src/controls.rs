@@ -1068,8 +1068,8 @@ impl RenderOnce for Toggle {
             ToggleState::Off => Toggled::False,
             ToggleState::Mixed => Toggled::Mixed,
         };
-        // The visible label doubles as the accessible name; the tooltip is
-        // the fallback for icon-only switches that have none.
+        // Keep a separate accessible name for settings rows whose visible
+        // label sits beside the switch rather than inside it.
         let accessible_name = self
             .accessible_label
             .or(self.label)
@@ -1084,9 +1084,6 @@ impl RenderOnce for Toggle {
             .role(Role::Switch)
             .aria_toggled(toggled)
             .when_some(accessible_name, |el, name| el.aria_label(name))
-            .when_some(self.accessible_description, |el, description| {
-                el.aria_description(description)
-            })
             .cursor_default()
             .when(!disabled, |el| {
                 el.track_focus(&focus_handle.clone().tab_stop(true).tab_index(0))
@@ -1094,6 +1091,9 @@ impl RenderOnce for Toggle {
             .when(disabled, |el| el.opacity(0.5))
             .when(is_focused, |el| el.shadow(mac::focus_ring_shadow()))
             .child(content);
+        if let Some(description) = self.accessible_description {
+            switch = crate::accessibility::with_description(switch, description);
+        }
         if let Some(tooltip) = self.tooltip {
             switch = switch.tooltip(move |window, cx| {
                 ComponentTooltip::new(tooltip.clone()).build(window, cx)

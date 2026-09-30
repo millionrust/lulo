@@ -172,6 +172,8 @@ class Driver:
     def click(self, label: str, target: str | None = None):
         if label in FORBIDDEN:
             raise RuntimeError(f"refusing destructive or toggle control {label!r}")
+        if target == "Dock" and label == "Files":
+            self.current = "files"
         if label == "Save" and self.current == "text-editor":
             self.session.pointer.key("return")
             return
@@ -251,6 +253,14 @@ class Driver:
             if step[kind] in {"power", "ctrl-power", "cmd-alt-escape", "cmd-alt-s"}:
                 raise RuntimeError("refusing session or device-control shortcut")
             self.session.pointer.key(step[kind])
+            if step[kind] == "cmd-space":
+                # The private nested bus has no GlobalShortcuts portal. Route
+                # the same shortcut to the resident launcher after injection.
+                command = [str(Path(self.args.bin_dir) / "rmac-shortcut-dispatch"), "launcher"]
+                outcome = subprocess.run(command, env=self.session.env, capture_output=True,
+                                         text=True, timeout=10)
+                if outcome.returncode:
+                    raise RuntimeError(f"Spotlight dispatch failed: {outcome.stderr[-120:]}")
         elif kind == "type":
             self.session.pointer.type_text(step[kind].replace("$SANDBOX", str(self.sandbox)))
         elif kind == "drag_window":

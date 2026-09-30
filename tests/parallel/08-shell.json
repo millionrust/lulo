@@ -42,25 +42,25 @@
       "scope": "full"
     },
     {
-      "launch": "calculator"
-    },
-    {
-      "shot": "calculator-focused",
-      "scope": "full"
-    },
-    {
       "drag_window": [
-        140,
-        80
+        100,
+        55
       ],
       "scope": "full",
       "anchor": [
-        100,
-        18
+        470,
+        24
       ]
     },
     {
       "shot": "window-moved",
+      "scope": "full"
+    },
+    {
+      "launch": "calculator"
+    },
+    {
+      "shot": "calculator-focused",
       "scope": "full"
     }
   ],

@@ -14,6 +14,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -83,9 +84,24 @@ class Run:
         print(f"{'PASS' if ok else 'FAIL'} {name}{(': ' + detail) if detail else ''}", flush=True)
 
     def niri(self, *args: str):
-        proc = subprocess.run([self.args.niri, "msg", "--json", *args], env=self.env,
-                              capture_output=True, text=True, timeout=10)
-        return json.loads(proc.stdout) if proc.stdout.strip() else None
+        request = {("windows",): "Windows", ("outputs",): "Outputs"}.get(args)
+        if request is None:
+            raise ValueError(f"unsupported niri query: {args}")
+        last_error = None
+        for _ in range(3):
+            try:
+                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+                    connection.settimeout(0.6)
+                    connection.connect(self.env["NIRI_SOCKET"])
+                    connection.sendall(json.dumps(request).encode() + b"\n")
+                    with connection.makefile("rb") as stream:
+                        reply = json.loads(stream.readline(1024 * 1024))
+                if "Err" in reply:
+                    raise RuntimeError(f"niri {request}: {reply['Err']}")
+                return reply["Ok"][request]
+            except (OSError, ValueError, KeyError, RuntimeError) as error:
+                last_error = error
+        raise RuntimeError(f"niri {request} failed after 3 short attempts") from last_error
 
     def windows(self):
         return self.niri("windows") or []
@@ -337,19 +353,12 @@ class Run:
         # signal well short of an actual Fill. Wait for a substantial size
         # change, the same threshold the check below uses, not any change.
         #
-        # `niri msg` is a fresh process per query; on this shared, loaded
-        # laptop it can occasionally stall past its own 10s subprocess
-        # timeout right after a resize request lands (niri busy with the
-        # configure/commit round trip, not this check's own logic — the
-        # same Fill reliably lands within a few hundred ms when queried
-        # in-process, e.g. from Mission Control's own retry). One stalled
-        # query burns the whole budget in a plain 8s wait_for and this
-        # check reports "unchanged" despite a real, completed Zoom. A
-        # generous ceiling gives `wait_for` room to retry past that.
+        # Direct socket queries have a short timeout, so one slow IPC reply
+        # cannot consume the whole wait budget after the resize request.
         zoomed = self.wait_for(
             lambda: (candidate := self.window(app_id))
             if candidate and grew_substantially(candidate) else None,
-            30.0,
+            8.0,
         )
         if zoomed:
             time.sleep(2)
@@ -384,7 +393,7 @@ class Run:
             lambda: (candidate := self.window(app_id))
             if candidate and abs(self.geometry(candidate)[2] - width) < 30
             and abs(self.geometry(candidate)[3] - height) < 30 else None,
-            30.0,
+            8.0,
         )
         restored_geometry = self.geometry(restored) if restored else zoomed_geometry
         back = (abs(restored_geometry[2] - width) < 30 and abs(restored_geometry[3] - height) < 30)

@@ -255,6 +255,11 @@ def validate(data: dict[str, Any], label: str = "scenario") -> None:
 def mac_keystroke(chord: str) -> tuple[Optional[str], Optional[int], list[str]]:
     """Map a scenario chord to System Events: (character, key code, modifiers)."""
 
+    if chord == "+":
+        # Shifted "=" via System Events can disappear in Calculator. Its
+        # keypad-plus key is unambiguous and produces the same operation.
+        return None, 69, []
+
     from wlinput import parse_chord  # the same parser Lulo uses
 
     mods, evdev = parse_chord(chord)

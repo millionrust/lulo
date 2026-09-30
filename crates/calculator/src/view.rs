@@ -147,6 +147,14 @@ impl CalculatorView {
             cx.notify();
             return;
         }
+        match mode {
+            Mode::Basic => self
+                .calculator
+                .restore_value(self.scientific.current_value()),
+            Mode::Scientific => self
+                .scientific
+                .restore_value(self.calculator.current_value()),
+        }
         self.mode = mode;
         let (width, height) = match mode {
             Mode::Basic => (keypad::WINDOW_WIDTH, keypad::WINDOW_HEIGHT),

@@ -111,6 +111,9 @@ jobs:
       - name: Check shared-control boundary
         run: bash scripts/check-shared-controls.sh
 
+      - name: Check background-executor command boundary
+        run: bash scripts/check-background-executor-command.sh
+
       - name: Check gpui_component migration boundary
         run: bash scripts/check-gpui-component-imports.sh
 

@@ -165,6 +165,7 @@ class Driver:
 
         desktop = pyatspi.Registry.getDesktop(0)
         stack = [desktop.getChildAtIndex(i) for i in range(desktop.childCount)]
+        candidates = []
         while stack:
             node = stack.pop()
             try:
@@ -173,12 +174,17 @@ class Driver:
                 if node.name == label or (node.name or "").startswith(label + ","):
                     box = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
                     if box.width > 2 and box.height > 2 and box.x >= 0 and box.y >= 0:
-                        x, y = self.session.parent_point(box.x + box.width / 2, box.y + box.height / 2)
-                        self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
-                        return
+                        role = node.getRoleName()
+                        rank = 0 if role in {"list item", "tree item", "table row", "table cell"} else 1
+                        candidates.append((rank, -box.width * box.height, box))
                 stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
             except Exception:
                 continue
+        if candidates:
+            _rank, _area, box = min(candidates, key=lambda item: item[:2])
+            x, y = self.session.parent_point(box.x + box.width / 2, box.y + box.height / 2)
+            self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
+            return
         raise RuntimeError(f"no accessible control with usable bounds named {label!r}")
 
     def action(self, step: dict):

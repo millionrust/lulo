@@ -33,6 +33,12 @@
       "shot": "gallery"
     },
     {
+      "key": "cmd-2"
+    },
+    {
+      "shot": "list-again"
+    },
+    {
       "click": "report.txt"
     },
     {

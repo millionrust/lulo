@@ -137,10 +137,14 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_input::snapshot() })
-                .await;
+            // `rmac_input::snapshot()` shells out to niri (`niri msg`,
+            // `niri validate`). GPUI's `background_executor()` is not safe
+            // to spawn child processes from -- doing so here left the
+            // Keyboard/Mouse/Trackpad panes stuck on "Loading input
+            // settings…" forever (LINUX-HW-03). `blocking::unblock` runs it
+            // on the dedicated blocking-task pool the rest of Settings
+            // already uses for `Command`-spawning work.
+            let result = blocking::unblock(rmac_input::snapshot).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_input_update(result, cx);
                 this.input_error = None;
@@ -151,10 +155,9 @@ impl Settings {
         .detach();
 
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_keyboard::status() })
-                .await;
+            // See the input snapshot load above: `rmac_keyboard::status()`
+            // also shells out, so it needs the same dedicated pool.
+            let result = blocking::unblock(rmac_keyboard::status).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_mac_keyboard_update(result);
                 cx.notify();

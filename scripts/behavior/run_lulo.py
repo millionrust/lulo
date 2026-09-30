@@ -1323,36 +1323,47 @@ def benchmark_storage(nested: Nested, bins: list[Path], count: int) -> None:
     try:
         run.setup()
         run.launch()
-        before_cpu = cpu_seconds()
-        started = time.monotonic()
-        run.click_item("Storage", "left")
-        first = complete = capacity = None
-        seen_calculating = False
-        deadline = started + 90
-        while time.monotonic() < deadline:
-            frame = run.active_frame()
-            labels = {name(node) for node in descendants(frame, limit=3000)} if frame else set()
-            elapsed = time.monotonic() - started
-            if capacity is None and any(" of " in label and " used" in label for label in labels):
-                capacity = elapsed
-            if first is None and "Documents" in labels and "System Data" in labels:
-                first = elapsed
-            calculating = any("Calculating" in label for label in labels)
-            seen_calculating |= calculating
-            if first is not None and seen_calculating and not calculating:
-                complete = elapsed
-                break
-            time.sleep(0.05)
+        def measure_open() -> dict[str, Any]:
+            before_cpu = cpu_seconds()
+            started = time.monotonic()
+            run.click_item("Storage", "left")
+            first = complete = capacity = None
+            seen_calculating = False
+            deadline = started + 90
+            while time.monotonic() < deadline:
+                frame = run.active_frame()
+                labels = {name(node) for node in descendants(frame, limit=3000)} if frame else set()
+                elapsed = time.monotonic() - started
+                if capacity is None and any(" of " in label and " used" in label for label in labels):
+                    capacity = elapsed
+                if first is None and "Documents" in labels and "System Data" in labels:
+                    first = elapsed
+                calculating = any("Calculating" in label for label in labels)
+                seen_calculating |= calculating
+                if first is not None and not calculating and (seen_calculating or elapsed >= 0.1):
+                    complete = elapsed
+                    break
+                time.sleep(0.05)
+            result = {
+                "capacity_seconds": capacity,
+                "first_category_seconds": first,
+                "complete_seconds": complete,
+                "cpu_seconds": round(cpu_seconds() - before_cpu, 3),
+            }
+            if first is None or complete is None:
+                raise StepFailed(f"Storage categories did not complete: {result}")
+            return result
+
+        cold = measure_open()
+        run.nested.input.key("cmd-[")
+        time.sleep(0.2)
+        reopen = measure_open()
         print(json.dumps({
             "files": count,
-            "capacity_seconds": capacity,
-            "first_category_seconds": first,
-            "complete_seconds": complete,
-            "cpu_seconds": round(cpu_seconds() - before_cpu, 3),
+            "cold": cold,
+            "reopen": reopen,
             "binary": str(run.binary()),
         }), flush=True)
-        if first is None or complete is None:
-            raise StepFailed("Storage categories did not complete during the benchmark")
     finally:
         run.stop()
 

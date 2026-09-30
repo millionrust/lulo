@@ -43,6 +43,12 @@ pub enum Command {
     TileBottom,
     /// 🌐⌃R: put the window back where Fill, Centre or a half left it from.
     RestoreSize,
+    /// A window's title bar double-clicked (SET-33): the same toggle as
+    /// 🌐⌃F/🌐⌃R on the one saved tile-history file, but run from here
+    /// rather than by the window's own process — self-targeted niri
+    /// floating-frame IPC from that process is silently dropped (the
+    /// window never actually resizes even though niri replies Handled).
+    Zoom,
     /// ⌘M: minimize the focused window of any application into the Dock,
     /// the same way the yellow traffic light does.
     Minimize,
@@ -65,6 +71,7 @@ impl Command {
             "tile-top" => Self::TileTop,
             "tile-bottom" => Self::TileBottom,
             "restore-size" => Self::RestoreSize,
+            "zoom" => Self::Zoom,
             "minimize" => Self::Minimize,
             _ => return None,
         })
@@ -86,6 +93,7 @@ impl Command {
             Self::TileTop => "tile-top",
             Self::TileBottom => "tile-bottom",
             Self::RestoreSize => "restore-size",
+            Self::Zoom => "zoom",
             Self::Minimize => "minimize",
         }
     }
@@ -892,6 +900,7 @@ mod tests {
             Command::TileTop,
             Command::TileBottom,
             Command::RestoreSize,
+            Command::Zoom,
             Command::Minimize,
         ] {
             assert_eq!(Command::parse(command.as_str()), Some(command));

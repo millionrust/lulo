@@ -32,8 +32,8 @@ mod linux_wayland {
     use gpui_platform::application;
     use rmac_compositor::reveal::{self, Revealed};
     use rmac_compositor::{
-        frame_to_percent, Action, Distance, OutputId, Snapshot, TileHistoryStore, TileRegion,
-        WindowId, WorkspaceId,
+        frame_to_percent, window_logical_rect, Action, Distance, OutputId, Snapshot,
+        TileHistoryStore, TileRegion, WindowId, WorkspaceId,
     };
     use rmac_shell_settings::{ClickWallpaperToReveal, HotCornerSettings};
     use rmac_shell_ui::tokens;
@@ -192,6 +192,28 @@ mod linux_wayland {
                 width: Distance(frame.width),
                 height: Distance(frame.height),
             })
+        }
+
+        /// A title bar double-clicked (SET-33): the same toggle 🌐⌃F/🌐⌃R
+        /// share on the one saved tile-history file — put `window` back if
+        /// Fill, Centre, a half or a previous Zoom already moved it,
+        /// otherwise fill the working area and remember the frame it filled
+        /// from.
+        fn zoom_window(&mut self, snapshot: &Snapshot, window: WindowId) -> Action {
+            if let Some(frame) = self.tile_history.take(window) {
+                if let Err(error) = self.tile_history.save_default() {
+                    eprintln!("Mission Control could not save the tile history: {error}");
+                }
+                return Action::SetWindowFrame {
+                    window,
+                    x: Distance(frame.x),
+                    y: Distance(frame.y),
+                    width: Distance(frame.width),
+                    height: Distance(frame.height),
+                };
+            }
+            self.record_tile_history(snapshot, window);
+            Action::FillWindow { window }
         }
 
         /// A wallpaper click: bring pushed-aside windows back, or push every
@@ -427,6 +449,55 @@ mod linux_wayland {
                         "Mission Control could not run {:?}: {error:?}",
                         action.kind()
                     );
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// [`run_actions`] for one WIN-01 floating-frame change (Fill, Centre, a
+    /// half, Return to Previous Size, or the double-click Zoom toggle,
+    /// SET-33), confirmed against `window`'s own frame rather than fired and
+    /// forgotten. niri intermittently acknowledges this action (replies
+    /// `Handled`, no error) without moving the window — observed from this
+    /// resident service exactly as it was from the window's own process
+    /// before SET-33 moved here, so it is niri's, not this process's. Retry
+    /// up to twice, a moment apart, before giving up; a window that did move
+    /// is left alone.
+    fn run_floating_frame_action(window: WindowId, action: Action, cx: &mut App) {
+        cx.spawn(async move |cx: &mut AsyncApp| {
+            let before = rmac_compositor_niri::snapshot()
+                .await
+                .ok()
+                .and_then(|snapshot| window_logical_rect(&snapshot, window));
+            for attempt in 0..3 {
+                if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+                    eprintln!(
+                        "Mission Control could not run {:?}: {error:?}",
+                        action.kind()
+                    );
+                    return;
+                }
+                cx.background_executor()
+                    .timer(Duration::from_millis(300))
+                    .await;
+                let after = rmac_compositor_niri::snapshot()
+                    .await
+                    .ok()
+                    .and_then(|snapshot| window_logical_rect(&snapshot, window));
+                let moved = match (before, after) {
+                    (Some(before), Some(after)) => {
+                        (before.x - after.x).abs() > 1.0
+                            || (before.y - after.y).abs() > 1.0
+                            || (before.width - after.width).abs() > 1.0
+                            || (before.height - after.height).abs() > 1.0
+                    }
+                    // Lost the window mid-flight (closed, or a snapshot
+                    // raced a reconnect): nothing left to retry against.
+                    _ => true,
+                };
+                if moved || attempt == 2 {
+                    return;
                 }
             }
         })
@@ -1471,7 +1542,8 @@ mod linux_wayland {
             | Command::TileRight
             | Command::TileTop
             | Command::TileBottom
-            | Command::RestoreSize => {
+            | Command::RestoreSize
+            | Command::Zoom => {
                 close_overlay(service, cx);
                 tile_focused_window(service, command, cx);
             }
@@ -1511,8 +1583,13 @@ mod linux_wayland {
         if command == Command::RestoreSize {
             let action = service.update(cx, |service, _| service.restore_window_size(window));
             if let Some(action) = action {
-                run_actions(vec![action], cx);
+                run_floating_frame_action(window, action, cx);
             }
+            return;
+        }
+        if command == Command::Zoom {
+            let action = service.update(cx, |service, _| service.zoom_window(&snapshot, window));
+            run_floating_frame_action(window, action, cx);
             return;
         }
         service.update(cx, |service, _| {
@@ -1539,7 +1616,7 @@ mod linux_wayland {
             },
             other => unreachable!("tile_focused_window called with {other:?}"),
         };
-        run_actions(vec![action], cx);
+        run_floating_frame_action(window, action, cx);
     }
 
     fn toggle(service: &Entity<Service>, mode: Mode, cx: &mut App) {

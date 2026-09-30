@@ -326,10 +326,30 @@ class Run:
         # the drag region (not a shadow margin or a toolbar control).
         title_bar_point = (x + width * 0.5, y + 18)
         self.double_click(title_bar_point)
+
+        def grew_substantially(candidate) -> bool:
+            cw, ch = self.geometry(candidate)[2:]
+            return cw > width + 80 or ch > height + 80
+
+        # Mission Control applies Zoom out of process (SET-33), so this
+        # window's own content can also settle by a few points right after
+        # the click completely independently of it — a false "it changed"
+        # signal well short of an actual Fill. Wait for a substantial size
+        # change, the same threshold the check below uses, not any change.
+        #
+        # `niri msg` is a fresh process per query; on this shared, loaded
+        # laptop it can occasionally stall past its own 10s subprocess
+        # timeout right after a resize request lands (niri busy with the
+        # configure/commit round trip, not this check's own logic — the
+        # same Fill reliably lands within a few hundred ms when queried
+        # in-process, e.g. from Mission Control's own retry). One stalled
+        # query burns the whole budget in a plain 8s wait_for and this
+        # check reports "unchanged" despite a real, completed Zoom. A
+        # generous ceiling gives `wait_for` room to retry past that.
         zoomed = self.wait_for(
             lambda: (candidate := self.window(app_id))
-            if candidate and self.geometry(candidate)[2:] != (width, height) else None,
-            8.0,
+            if candidate and grew_substantially(candidate) else None,
+            30.0,
         )
         if zoomed:
             time.sleep(2)
@@ -364,7 +384,7 @@ class Run:
             lambda: (candidate := self.window(app_id))
             if candidate and abs(self.geometry(candidate)[2] - width) < 30
             and abs(self.geometry(candidate)[3] - height) < 30 else None,
-            8.0,
+            30.0,
         )
         restored_geometry = self.geometry(restored) if restored else zoomed_geometry
         back = (abs(restored_geometry[2] - width) < 30 and abs(restored_geometry[3] - height) < 30)

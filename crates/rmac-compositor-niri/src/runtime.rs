@@ -117,10 +117,19 @@ pub async fn execute_at(path: &Path, action: &domain::Action) -> Result<(), doma
                 })
             }
         }
-        // A floating-frame change is three separate niri IPC actions. The
-        // reply acknowledges each request before the client has applied its
-        // configure; sending the next action immediately can discard the
-        // previous size change. Give niri one frame between requests.
+        // A floating-frame change is three separate niri IPC actions
+        // (width, height, position). "Handled" only means niri accepted the
+        // request and will send the target window a configure; it says
+        // nothing about whether that window has drawn and committed a
+        // matching buffer yet. Give it a moment before the next request.
+        // This alone is not enough on an otherwise-idle window: GPUI's
+        // Wayland backend only re-arms its per-configure resize throttle
+        // when a frame actually draws (`window.rs`'s `frame()`, ADR 0013's
+        // idle-frame parking), so callers driving a `WindowAction` with no
+        // ongoing pointer motion — a double-click, a menu item, a shortcut
+        // — must also keep that window's frame loop awake for the round
+        // trip (`rmac_ui::chrome`'s `keep_window_awake_for_compositor_round_trip`)
+        // or every configure after the first is acknowledged and dropped.
         if index + 1 < action_count {
             Timer::after(std::time::Duration::from_millis(50)).await;
         }

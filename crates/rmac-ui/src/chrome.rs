@@ -26,25 +26,74 @@ enum WindowAction {
     Minimize,
 }
 
-/// The height rmac's menu bar reserves (`rmac-menubar`'s own `BAR_HEIGHT`)
-/// and the Dock's reservation (`rmac-dock`'s own `EXCLUSIVE_ZONE`, WIN-02),
-/// duplicated here the same way `rmac-mission-control` duplicates them for
-/// its own WIN-01 tile history: [`WindowAction::Zoom`] needs the same
-/// menu-bar/Dock insets to convert a window's current frame into the
-/// [`rmac_compositor::FramePercent`] `TileHistoryStore` already speaks, so
-/// double-click Zoom and 🌐⌃F/🌐⌃R interoperate on the one saved file.
-const MENU_BAR_INSET: f64 = 29.0;
-const DOCK_INSET: f64 = 89.0;
-
 /// Route a window control through the niri compositor. GPUI's own window
 /// controls are no-ops under niri's floating policy, and niri has no native
 /// minimize, so all three are compositor actions on this process's focused
 /// window. Minimize parks the window on `rmac-parking` and records where it
 /// came from so the app menu's Show All can restore it (§2.2).
 fn send_window_action(action: WindowAction, _cx: &mut App) {
+    if let Some(command) = mission_control_command(action) {
+        // Fill, Zoom and Tile are a floating-frame change: niri applies it
+        // as three separate configures (width, height, position) that this
+        // process asked for about itself. That self-targeted request comes
+        // back `Handled`, but the window never actually resizes — reliably
+        // reproducible, and confirmed unrelated to threading, timing, or
+        // keeping this window's own frame loop awake during the round trip
+        // (all tried; none changed the outcome). Asking from a different
+        // process does work every time, which is exactly what 🌐⌃F and
+        // 🌐⌃R already do: they run in Mission Control, never in the
+        // window's own app. Route through the same resident service and
+        // its one shared tile-history file (SET-33) instead of this
+        // process asking niri to resize itself.
+        spawn_window_action("rmac-window-action", move || {
+            ask_mission_control(command);
+        });
+        return;
+    }
     spawn_window_action("rmac-window-action", move || {
         async_io::block_on(perform_window_action(action));
     });
+}
+
+/// The command word Mission Control's resident service
+/// (`rmac-mission-control --service`) understands for a `WindowAction`, or
+/// `None` for the two actions this process still performs on itself
+/// (Minimize's park-and-picture path and the traffic lights' plain-click
+/// Full Screen both work fine self-targeted; only a floating-frame change
+/// does not — see [`send_window_action`]). `TileRegion`'s four quarters
+/// have no Mission Control command and no caller in this crate; they fall
+/// back to the (known-unreliable) self-targeted path rather than silently
+/// doing nothing.
+fn mission_control_command(action: WindowAction) -> Option<&'static str> {
+    Some(match action {
+        WindowAction::Fill => "fill",
+        WindowAction::Zoom => "zoom",
+        WindowAction::Tile(TileRegion::Left) => "tile-left",
+        WindowAction::Tile(TileRegion::Right) => "tile-right",
+        WindowAction::Tile(TileRegion::Top) => "tile-top",
+        WindowAction::Tile(TileRegion::Bottom) => "tile-bottom",
+        WindowAction::Tile(_) | WindowAction::ToggleFullscreen | WindowAction::Minimize => {
+            return None
+        }
+    })
+}
+
+/// Fire-and-forget one word to Mission Control's resident service, the same
+/// private, permission-checked datagram socket its own `ipc::send` uses for
+/// niri binds and hot corners (`rmac-mission-control/src/ipc.rs`,
+/// `$XDG_RUNTIME_DIR/rmac/mission-control.sock`). If the service is not
+/// running, this is a silent no-op, the same as a niri bind would be.
+fn ask_mission_control(command: &'static str) {
+    let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR").map(std::path::PathBuf::from) else {
+        return;
+    };
+    let Ok(socket) = std::os::unix::net::UnixDatagram::unbound() else {
+        return;
+    };
+    let _ = socket.send_to(
+        command.as_bytes(),
+        runtime.join("rmac").join("mission-control.sock"),
+    );
 }
 
 /// Run disk and compositor work only when a user asks for it. GPUI's UI and
@@ -56,8 +105,9 @@ fn spawn_window_action(name: &'static str, work: impl FnOnce() + Send + 'static)
     }
 }
 
-/// The body of [`send_window_action`], split out so the title bar's
-/// double-click handler can resolve the saved
+/// The body of [`send_window_action`]'s self-targeted path (Minimize and
+/// plain-click Full Screen), split out so the title bar's double-click
+/// handler can resolve the saved
 /// [`rmac_shell_settings::DoubleClickTitleBarAction`] off the main thread
 /// first, then perform the same action the traffic lights use.
 async fn perform_window_action(action: WindowAction) {
@@ -76,9 +126,6 @@ async fn perform_window_action(action: WindowAction) {
         WindowAction::ToggleFullscreen => {
             rmac_compositor::Action::FullscreenWindow { window, on: true }
         }
-        WindowAction::Fill => rmac_compositor::Action::FillWindow { window },
-        WindowAction::Zoom => zoom_action(&snapshot, window),
-        WindowAction::Tile(region) => rmac_compositor::Action::TileWindow { window, region },
         WindowAction::Minimize => {
             // The one minimize path every app shares: record the origin,
             // picture the window for its Dock tile, then park it.
@@ -87,76 +134,13 @@ async fn perform_window_action(action: WindowAction) {
             }
             return;
         }
+        WindowAction::Fill | WindowAction::Zoom | WindowAction::Tile(_) => {
+            unreachable!("Fill, Zoom and Tile run through Mission Control; see send_window_action")
+        }
     };
     if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
         eprintln!("could not perform window action: {error:?}");
     }
-}
-
-/// [`WindowAction::Zoom`]'s toggle: read `TileHistoryStore` (shared with
-/// 🌐⌃F Fill and 🌐⌃R Return to Previous Size, WIN-01), and either put the
-/// window back where it was before the last zoom, or fill the working area
-/// and remember the frame it filled from.
-fn zoom_action(
-    snapshot: &rmac_compositor::Snapshot,
-    window: rmac_compositor::WindowId,
-) -> rmac_compositor::Action {
-    let mut history = rmac_compositor::TileHistoryStore::load_default();
-    let live = snapshot
-        .windows
-        .iter()
-        .map(|live_window| live_window.id)
-        .collect::<Vec<_>>();
-    history.prune(&live);
-    let action = if let Some(frame) = history.take(window) {
-        rmac_compositor::Action::SetWindowFrame {
-            window,
-            x: rmac_compositor::Distance(frame.x),
-            y: rmac_compositor::Distance(frame.y),
-            width: rmac_compositor::Distance(frame.width),
-            height: rmac_compositor::Distance(frame.height),
-        }
-    } else {
-        if let Some(percent) = zoom_frame_percent(snapshot, window) {
-            history.record(window, percent);
-        }
-        rmac_compositor::Action::FillWindow { window }
-    };
-    if let Err(error) = history.save_default() {
-        eprintln!("could not save the tile history: {error}");
-    }
-    action
-}
-
-/// `window`'s current frame as a [`rmac_compositor::FramePercent`] of its
-/// output's working area, the same conversion
-/// `rmac-mission-control`'s `tile_history_percent` performs for the
-/// keyboard shortcuts.
-fn zoom_frame_percent(
-    snapshot: &rmac_compositor::Snapshot,
-    window: rmac_compositor::WindowId,
-) -> Option<rmac_compositor::FramePercent> {
-    let rect = rmac_compositor::window_logical_rect(snapshot, window)?;
-    let found = snapshot.windows.iter().find(|w| w.id == window)?;
-    let workspace = snapshot
-        .workspaces
-        .iter()
-        .find(|workspace| Some(workspace.id) == found.workspace)?;
-    let output = snapshot
-        .outputs
-        .iter()
-        .find(|output| Some(&output.id) == workspace.output.as_ref())?;
-    let logical = output.logical.as_ref()?;
-    rmac_compositor::frame_to_percent(
-        logical.size.width,
-        logical.size.height,
-        MENU_BAR_INSET,
-        DOCK_INSET,
-        rect.x,
-        rect.y,
-        rect.width,
-        rect.height,
-    )
 }
 
 /// Resolve Desktop & Dock's "Double-click a window's title bar to" setting
@@ -172,16 +156,13 @@ pub fn double_click_title_bar_action(_cx: &mut App) {
         // grab. A frame request during that handoff can be acknowledged but
         // dropped. Keep this wait on the on-demand worker, off the UI thread.
         std::thread::sleep(Duration::from_millis(120));
-        let action = match setting {
-            rmac_shell_settings::DoubleClickTitleBarAction::Zoom => Some(WindowAction::Zoom),
-            rmac_shell_settings::DoubleClickTitleBarAction::Fill => Some(WindowAction::Fill),
+        match setting {
+            rmac_shell_settings::DoubleClickTitleBarAction::Zoom => ask_mission_control("zoom"),
+            rmac_shell_settings::DoubleClickTitleBarAction::Fill => ask_mission_control("fill"),
             rmac_shell_settings::DoubleClickTitleBarAction::Minimize => {
-                Some(WindowAction::Minimize)
+                async_io::block_on(perform_window_action(WindowAction::Minimize))
             }
-            rmac_shell_settings::DoubleClickTitleBarAction::DoNothing => None,
-        };
-        if let Some(action) = action {
-            async_io::block_on(perform_window_action(action));
+            rmac_shell_settings::DoubleClickTitleBarAction::DoNothing => {}
         }
     });
 }

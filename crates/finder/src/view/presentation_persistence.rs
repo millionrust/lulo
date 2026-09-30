@@ -591,8 +591,10 @@ mod tests {
         let mut state =
             FinderState::checked(PresentationState::default(), vec![PathBuf::from("/tmp")], 0)
                 .unwrap();
-        let mut options = super::super::view_options::FolderOptions::default();
-        options.icon_size = 80.0;
+        let mut options = super::super::view_options::FolderOptions {
+            icon_size: 80.0,
+            ..Default::default()
+        };
         options.columns[0] = false;
         state
             .folders

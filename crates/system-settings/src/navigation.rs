@@ -43,7 +43,7 @@ pub(super) enum SubPage {
 }
 
 pub(super) const GENERAL_DESTINATIONS: [&str; 3] = ["About", "Software Update", "Storage"];
-pub(super) const PANE_ROUTES: [(&str, &str); 25] = [
+pub(super) const PANE_ROUTES: [(&str, &str); 26] = [
     ("wifi", "Wi-Fi"),
     ("bluetooth", "Bluetooth"),
     ("network", "Network"),
@@ -58,6 +58,7 @@ pub(super) const PANE_ROUTES: [(&str, &str); 25] = [
     ("appearance", "Appearance"),
     ("desktop-dock", "Desktop & Dock"),
     ("displays", "Displays"),
+    ("touchscreen", "Touchscreen"),
     ("menu-bar", "Menu Bar"),
     ("spotlight", "Spotlight"),
     ("wallpaper", "Wallpaper"),
@@ -175,6 +176,12 @@ pub(super) fn categories() -> Vec<Vec<Category>> {
                 "icons/monitor.svg",
                 blue,
                 "Arrange displays and adjust resolution.",
+            ),
+            cat(
+                "Touchscreen",
+                "icons/monitor.svg",
+                blue,
+                "Turn touch input on or off and choose its display.",
             ),
             cat(
                 "Menu Bar",
@@ -326,6 +333,7 @@ pub(super) fn category_has_dedicated_renderer(name: &str) -> bool {
             | "Appearance"
             | "Desktop & Dock"
             | "Displays"
+            | "Touchscreen"
             | "Menu Bar"
             | "Spotlight"
             | "Wallpaper"

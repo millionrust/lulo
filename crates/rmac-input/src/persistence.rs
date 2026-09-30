@@ -18,6 +18,7 @@ pub(super) fn validate_settings(settings: &InputSettings) -> Result<(), Error> {
     for (device, pointer) in [
         ("mouse", &settings.mouse),
         ("touchpad", &settings.touchpad.pointer),
+        ("pointing stick", &settings.trackpoint),
     ] {
         if !pointer.accel_speed.is_finite() || !(-1.0..=1.0).contains(&pointer.accel_speed) {
             return Err(Error::new(
@@ -25,6 +26,14 @@ pub(super) fn validate_settings(settings: &InputSettings) -> Result<(), Error> {
                 format!("{device} tracking speed must be between -1 and 1"),
             ));
         }
+    }
+    if settings.touch.map_to_output.as_ref().is_some_and(|output| {
+        output.is_empty() || output.len() > 128 || output.chars().any(char::is_control)
+    }) {
+        return Err(Error::new(
+            "validate touch settings",
+            "invalid display connector",
+        ));
     }
     Ok(())
 }
@@ -191,6 +200,61 @@ pub(super) fn update_managed_source(
             settings.touchpad.secondary_click.id(),
         );
     }
+    if settings.trackpoint != authority.effective.settings.trackpoint
+        || settings.trackpoint_scroll_with_middle_button
+            != authority
+                .effective
+                .settings
+                .trackpoint_scroll_with_middle_button
+        || input.get("trackpoint").is_some()
+    {
+        if input.get("trackpoint").is_none() {
+            input.nodes_mut().push(
+                authority
+                    .effective
+                    .trackpoint_node
+                    .clone()
+                    .unwrap_or_else(|| input_node("trackpoint")),
+            );
+        }
+        let trackpoint = input
+            .get_mut("trackpoint")
+            .expect("trackpoint exists")
+            .ensure_children();
+        write_pointer(trackpoint, &settings.trackpoint);
+        if settings.trackpoint_scroll_with_middle_button {
+            replace_string_value(trackpoint, "scroll-method", "on-button-down");
+            replace_value(trackpoint, "scroll-button", 274_i128);
+        } else {
+            replace_string_value(trackpoint, "scroll-method", "no-scroll");
+            trackpoint
+                .nodes_mut()
+                .retain(|node| node.name().value() != "scroll-button");
+        }
+    }
+    if settings.touch != authority.effective.settings.touch || input.get("touch").is_some() {
+        if input.get("touch").is_none() {
+            input.nodes_mut().push(
+                authority
+                    .effective
+                    .touch_node
+                    .clone()
+                    .unwrap_or_else(|| input_node("touch")),
+            );
+        }
+        let touch = input
+            .get_mut("touch")
+            .expect("touch exists")
+            .ensure_children();
+        replace_flag(touch, "off", !settings.touch.enabled);
+        if let Some(output) = settings.touch.map_to_output.as_deref() {
+            replace_string_value(touch, "map-to-output", output);
+        } else {
+            touch
+                .nodes_mut()
+                .retain(|node| node.name().value() != "map-to-output");
+        }
+    }
     document.ensure_v1();
     Ok(format!("{MANAGED_HEADER}\n{document}"))
 }
@@ -232,8 +296,10 @@ pub(super) fn parse_managed_document(source: &str) -> Result<KdlDocument, Error>
         let mut sections = HashSet::new();
         for node in input.nodes() {
             let name = node.name().value();
-            if !matches!(name, "keyboard" | "mouse" | "touchpad")
-                || !node.is_empty()
+            if !matches!(
+                name,
+                "keyboard" | "mouse" | "touchpad" | "trackpoint" | "touch"
+            ) || !node.is_empty()
                 || !sections.insert(name)
             {
                 return Err(Error::new(

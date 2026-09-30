@@ -105,6 +105,14 @@ fn touchpad_acceleration(on: bool) -> InputChange {
     })
 }
 
+fn trackpoint_acceleration(on: bool) -> InputChange {
+    InputChange::TrackpointAccelProfile(if on {
+        rmac_input::AccelProfile::Adaptive
+    } else {
+        rmac_input::AccelProfile::Flat
+    })
+}
+
 impl Settings {
     pub(in crate::controller) fn render_keyboard(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
@@ -161,6 +169,15 @@ impl Settings {
             .into_any_element()]),
         ]));
 
+        if self.hardware.has_keyboard_backlight {
+            cards.push(card(vec![value_button_row(
+                "Keyboard backlight",
+                None,
+                Some("Available".into()),
+                None,
+            )]));
+        }
+
         cards.extend(self.mac_keyboard_cards(cx));
 
         // Text Input: the system layouts localed reports, edited on Language
@@ -204,54 +221,144 @@ impl Settings {
                 "Mouse settings are turned off in the niri configuration, so they do not affect any mouse.",
             ));
         }
-        cards.push(card(vec![
-            stepped_slider_row(
-                "mouse-tracking",
-                "Tracking speed",
-                MOUSE_SPEEDS.len(),
-                Some(speed_index(settings.accel_speed)),
-                "Slow",
-                "Fast",
-                writable,
-                input_pick(&view, &MOUSE_SPEEDS),
-            ),
-            input_switch(
-                &view,
-                "mouse-natural-scroll",
-                "Natural scrolling",
-                Some("Content tracks finger movement"),
-                settings.natural_scroll,
-                writable,
-                InputChange::MouseNaturalScroll,
-            ),
-            input_switch(
-                &view,
-                "mouse-acceleration",
-                "Pointer acceleration",
+        if self.hardware.has_external_mouse {
+            cards.push(card(vec![
+                stepped_slider_row(
+                    "mouse-tracking",
+                    "Tracking speed",
+                    MOUSE_SPEEDS.len(),
+                    Some(speed_index(settings.accel_speed)),
+                    "Slow",
+                    "Fast",
+                    writable,
+                    input_pick(&view, &MOUSE_SPEEDS),
+                ),
+                input_switch(
+                    &view,
+                    "mouse-natural-scroll",
+                    "Natural scrolling",
+                    Some("Content tracks finger movement"),
+                    settings.natural_scroll,
+                    writable,
+                    InputChange::MouseNaturalScroll,
+                ),
+                input_switch(
+                    &view,
+                    "mouse-acceleration",
+                    "Pointer acceleration",
+                    None,
+                    settings.accel_profile == rmac_input::AccelProfile::Adaptive,
+                    writable,
+                    mouse_acceleration,
+                ),
+                input_switch(
+                    &view,
+                    "mouse-left-handed",
+                    "Primary button on right",
+                    None,
+                    settings.left_handed,
+                    writable,
+                    InputChange::MouseLeftHanded,
+                ),
+                input_switch(
+                    &view,
+                    "mouse-middle-emulation",
+                    "Middle-click emulation",
+                    Some("Click the left and right buttons together"),
+                    settings.middle_emulation,
+                    writable,
+                    InputChange::MouseMiddleEmulation,
+                ),
+            ]));
+        }
+        if self.hardware.has_pointing_stick {
+            let stick = &self.input.settings.trackpoint;
+            let enabled = self.input.can_configure && stick.enabled && !self.input_busy;
+            cards.push(section_header("Pointing Stick"));
+            cards.push(card(vec![
+                stepped_slider_row(
+                    "pointing-stick-speed",
+                    "Pointing stick speed",
+                    TRACKPOINT_SPEEDS.len(),
+                    Some(speed_index(stick.accel_speed)),
+                    "Slow",
+                    "Fast",
+                    enabled,
+                    input_pick(&view, &TRACKPOINT_SPEEDS),
+                ),
+                input_switch(
+                    &view,
+                    "pointing-stick-acceleration",
+                    "Pointing stick acceleration",
+                    None,
+                    stick.accel_profile == rmac_input::AccelProfile::Adaptive,
+                    enabled,
+                    trackpoint_acceleration,
+                ),
+                input_switch(
+                    &view,
+                    "pointing-stick-middle-scroll",
+                    "Scroll with middle button",
+                    Some("Hold the middle button while moving the pointing stick"),
+                    self.input.settings.trackpoint_scroll_with_middle_button,
+                    enabled,
+                    InputChange::TrackpointScrollWithMiddleButton,
+                ),
+            ]));
+        }
+        cards.push(self.input_refresh_button(cx));
+        self.pane(cards)
+    }
+
+    pub(in crate::controller) fn render_touchscreen(&self, cx: &Context<Self>) -> Div {
+        let view = cx.entity();
+        let mut cards = Vec::new();
+        if let Some(note) = self.input_unavailable_card() {
+            cards.push(note);
+        }
+        let writable = self.input.can_configure && !self.input_busy;
+        cards.push(card(vec![input_switch(
+            &view,
+            "touchscreen-enabled",
+            "Touchscreen",
+            Some("Use touch input on the display"),
+            self.input.settings.touch.enabled,
+            writable,
+            InputChange::TouchEnabled,
+        )]));
+        let outputs: Vec<_> = self
+            .display
+            .outputs
+            .iter()
+            .filter(|output| output.logical.is_some())
+            .collect();
+        if outputs.len() > 1 {
+            let selected = self.input.settings.touch.map_to_output.as_deref();
+            let auto_view = view.clone();
+            let mut choices = vec![choice("Automatic", selected.is_none(), move |_, cx| {
+                auto_view.update(cx, |settings, cx| settings.map_touch_to_output(None, cx));
+            })];
+            for output in outputs {
+                let connector = output.connector.clone();
+                let is_selected = selected == Some(connector.as_str());
+                let output_view = view.clone();
+                let label = format!("{} ({})", output.name, connector);
+                choices.push(choice(label, is_selected, move |_, cx| {
+                    output_view.update(cx, |settings, cx| {
+                        settings.map_touch_to_output(Some(connector.clone()), cx)
+                    });
+                }));
+            }
+            let current = popup_value(&choices, "Automatic");
+            cards.push(card(vec![popup_row(
+                "touchscreen-display",
+                "Map touchscreen to display",
                 None,
-                settings.accel_profile == rmac_input::AccelProfile::Adaptive,
+                current,
+                choices,
                 writable,
-                mouse_acceleration,
-            ),
-            input_switch(
-                &view,
-                "mouse-left-handed",
-                "Primary button on right",
-                None,
-                settings.left_handed,
-                writable,
-                InputChange::MouseLeftHanded,
-            ),
-            input_switch(
-                &view,
-                "mouse-middle-emulation",
-                "Middle-click emulation",
-                Some("Click the left and right buttons together"),
-                settings.middle_emulation,
-                writable,
-                InputChange::MouseMiddleEmulation,
-            ),
-        ]));
+            )]));
+        }
         cards.push(self.input_refresh_button(cx));
         self.pane(cards)
     }

@@ -343,7 +343,10 @@ impl Settings {
                 section
                     .iter()
                     .enumerate()
-                    .filter(|(_, category)| category_parent(category.name.as_ref()).is_none())
+                    .filter(|(_, category)| {
+                        category_parent(category.name.as_ref()).is_none()
+                            && self.pane_available(category.name.as_ref())
+                    })
                     .collect()
             };
             if matching.is_empty() {

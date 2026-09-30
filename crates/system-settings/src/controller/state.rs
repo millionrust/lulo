@@ -82,6 +82,8 @@ pub(super) struct Settings {
     pub(super) file_sharing_confirmation: Option<bool>,
     pub(super) power: rmac_power::Snapshot,
     pub(super) display: rmac_display::Snapshot,
+    pub(super) hardware: Capabilities,
+    pub(super) hardware_ready: bool,
     /// The built-in panel's backlight, 0-100; `None` on a machine with no
     /// backlight device logind can drive (an external-only setup).
     pub(super) brightness: Option<u8>,

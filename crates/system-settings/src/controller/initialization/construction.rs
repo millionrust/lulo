@@ -155,6 +155,8 @@ impl Settings {
             file_sharing_confirmation: None,
             power: rmac_power::Snapshot::default(),
             display: rmac_display::Snapshot::default(),
+            hardware: Capabilities::default(),
+            hardware_ready: false,
             brightness: None,
             brightness_slider,
             brightness_generation: 0,

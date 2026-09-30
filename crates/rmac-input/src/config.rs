@@ -33,6 +33,8 @@ pub(super) struct EffectiveConfig {
     pub(super) settings: InputSettings,
     pub(super) mouse_node: Option<KdlNode>,
     pub(super) touchpad_node: Option<KdlNode>,
+    pub(super) trackpoint_node: Option<KdlNode>,
+    pub(super) touch_node: Option<KdlNode>,
     pub(super) xkb_from_include: bool,
 }
 
@@ -321,6 +323,26 @@ pub(super) fn apply_input(input: &KdlDocument, effective: &mut EffectiveConfig) 
                 .unwrap_or_default();
         }
         effective.touchpad_node = Some(touchpad_node.clone());
+    }
+    if let Some(trackpoint_node) = input.get("trackpoint") {
+        effective.settings.trackpoint = PointerSettings::default();
+        effective.settings.trackpoint_scroll_with_middle_button = false;
+        if let Some(trackpoint) = trackpoint_node.children() {
+            read_pointer(trackpoint, &mut effective.settings.trackpoint);
+            effective.settings.trackpoint_scroll_with_middle_button =
+                string(trackpoint, "scroll-method") == Some("on-button-down")
+                    && integer(trackpoint, "scroll-button") == Some(274);
+        }
+        effective.trackpoint_node = Some(trackpoint_node.clone());
+    }
+    if let Some(touch_node) = input.get("touch") {
+        effective.settings.touch = TouchSettings::default_enabled();
+        if let Some(touch) = touch_node.children() {
+            effective.settings.touch.enabled = !flag(touch, "off").unwrap_or(false);
+            effective.settings.touch.map_to_output =
+                string(touch, "map-to-output").map(str::to_owned);
+        }
+        effective.touch_node = Some(touch_node.clone());
     }
 }
 

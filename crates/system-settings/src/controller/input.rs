@@ -122,6 +122,29 @@ impl Settings {
         })
         .detach();
     }
+
+    pub(super) fn map_touch_to_output(&mut self, output: Option<String>, cx: &mut Context<Self>) {
+        if self.input_loading || self.input_busy || !self.input.can_configure {
+            return;
+        }
+        let mut settings = self.input.settings.clone();
+        settings.touch.map_to_output = output;
+        self.input_generation = self.input_generation.wrapping_add(1);
+        self.input_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { rmac_input::save(&settings) })
+                .await;
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                this.finish_input_update(result, cx);
+                this.flush_input_stream_refresh(cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
     /// The right-aligned Refresh under Keyboard, Mouse and Trackpad.
     pub(super) fn input_refresh_button(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();

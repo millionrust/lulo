@@ -76,11 +76,12 @@ use crate::focus::{
     current_action as focus_current_action, load as load_focus, FocusCurrentAction, FocusLoad,
     DAYS as FOCUS_DAYS,
 };
+use crate::hardware::Capabilities;
 use crate::input::{
     compositor_event_affects_input, compositor_input_config_failed, keyboard_delay_slider_index,
     keyboard_rate_slider_index, speed_index, InputChange, InputOption, KEYBOARD_DELAYS,
     KEYBOARD_RATES, KEYBOARD_RESPONSE_PRESETS, MOUSE_PRECISION_PRESETS, MOUSE_SPEEDS,
-    TOUCHPAD_SPEEDS,
+    TOUCHPAD_SPEEDS, TRACKPOINT_SPEEDS,
 };
 use crate::navigation::{
     categories, category_has_dedicated_renderer, category_name_for_pane_id, category_parent,

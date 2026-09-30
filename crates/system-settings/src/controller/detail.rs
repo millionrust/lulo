@@ -29,6 +29,7 @@ impl Settings {
                 "Trackpad" => self.render_trackpad(cx),
                 "Battery" => self.render_battery(cx),
                 "Displays" => self.render_displays(cx),
+                "Touchscreen" => self.render_touchscreen(cx),
                 "Menu Bar" => self.render_menu_bar(cx),
                 "Date & Time" => self.render_date_time(cx),
                 "Language & Region" => self.render_language_region(cx),

@@ -184,11 +184,42 @@ pub struct TouchpadSettings {
     pub secondary_click: SecondaryClick,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TouchSettings {
+    pub enabled: bool,
+    pub map_to_output: Option<String>,
+}
+
+impl TouchSettings {
+    pub fn default_enabled() -> Self {
+        Self {
+            enabled: true,
+            map_to_output: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct InputSettings {
     pub keyboard: KeyboardSettings,
     pub mouse: PointerSettings,
     pub touchpad: TouchpadSettings,
+    pub trackpoint: PointerSettings,
+    pub trackpoint_scroll_with_middle_button: bool,
+    pub touch: TouchSettings,
+}
+
+impl Default for InputSettings {
+    fn default() -> Self {
+        Self {
+            keyboard: KeyboardSettings::default(),
+            mouse: PointerSettings::default(),
+            touchpad: TouchpadSettings::default(),
+            trackpoint: PointerSettings::default(),
+            trackpoint_scroll_with_middle_button: false,
+            touch: TouchSettings::default_enabled(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

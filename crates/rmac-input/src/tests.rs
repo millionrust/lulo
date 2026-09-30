@@ -68,6 +68,44 @@ fn reads_known_values_and_explicit_false_flags() {
 }
 
 #[test]
+fn touch_and_pointing_stick_round_trip_through_managed_config() {
+    let source = "input { trackpoint { accel-speed 0.25; scroll-method \"on-button-down\"; scroll-button 274; }; touch { off; map-to-output \"eDP-1\"; }; }\n";
+    let parsed = effective(source);
+    assert_eq!(parsed.settings.trackpoint.accel_speed, 0.25);
+    assert!(parsed.settings.trackpoint_scroll_with_middle_button);
+    assert!(!parsed.settings.touch.enabled);
+    assert_eq!(
+        parsed.settings.touch.map_to_output.as_deref(),
+        Some("eDP-1")
+    );
+    let authority = Authority {
+        main_path: PathBuf::from("/config.kdl"),
+        main_source: source.into(),
+        managed_path: PathBuf::from("/.rmac-input.kdl"),
+        managed_source: None,
+        has_managed_include: false,
+        safe_to_write: true,
+        detail: None,
+        effective: parsed,
+        files: vec![],
+        missing_optional_files: vec![],
+    };
+    let mut changed = authority.effective.settings.clone();
+    changed.trackpoint.accel_speed = -0.5;
+    changed.trackpoint_scroll_with_middle_button = false;
+    changed.touch.enabled = true;
+    changed.touch.map_to_output = Some("HDMI-A-1".into());
+    let managed = update_managed_source(&authority, &changed).unwrap();
+    let document = parse_managed_document(&managed).unwrap();
+    let mut reread = authority.effective;
+    apply_input(
+        document.get("input").unwrap().children().unwrap(),
+        &mut reread,
+    );
+    assert_eq!(reread.settings, changed);
+}
+
+#[test]
 fn keyboard_merges_but_pointing_sections_replace() {
     let mut effective = effective(CONFIG);
     let later = KdlDocument::parse_v1(

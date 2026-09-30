@@ -36,6 +36,11 @@ pub(crate) fn terms_for_pane(name: &str) -> &'static [&'static str] {
             "forget a device",
             "discoverable",
         ],
+        "Touchscreen" => &[
+            "touch input",
+            "Map touchscreen to display",
+            "touchscreen on off",
+        ],
         "Network" => &[
             "network interfaces",
             "IP addresses",

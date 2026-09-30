@@ -7,7 +7,7 @@
 use super::menu::{Command, DesktopMenu, MenuTarget};
 use super::*;
 use gpui::{Focusable as _, Subscription};
-use rmac_desktop::grid::{Grid, Placement, ViewOptions, LABEL_GAP, LABEL_MAX_WIDTH};
+use rmac_desktop::grid::{Grid, LABEL_GAP, LABEL_MAX_WIDTH, Placement, ViewOptions};
 use rmac_desktop::rename::{self as naming, NameCheck};
 use rmac_desktop::stacks::{self, StackKind, Tile};
 use rmac_desktop::widgets::{self as desk_widgets, Widget};
@@ -118,6 +118,7 @@ pub(crate) enum Drag {
         start: Point<Pixels>,
         current: Point<Pixels>,
         moved: bool,
+        external_started: bool,
         pressed: PathBuf,
         additive: bool,
         /// A plain click on the label of the only selected icon: renaming
@@ -507,6 +508,7 @@ impl Wallpaper {
                     start: event.position,
                     current: event.position,
                     moved: false,
+                    external_started: false,
                     pressed: path,
                     additive,
                     rename_on_release,
@@ -599,6 +601,18 @@ impl Wallpaper {
         if let Some((control, track_left)) = slider {
             self.set_slider(control, f32::from(event.position.x) - track_left, cx);
         }
+        if let Some(Drag::Icons {
+            moved: true,
+            external_started,
+            ..
+        }) = &mut self.desk.drag
+        {
+            if !*external_started {
+                *external_started = gpui_linux::stage_external_file_drag(
+                    self.desk.selection.iter().cloned().collect(),
+                );
+            }
+        }
         cx.notify();
     }
 
@@ -615,12 +629,16 @@ impl Wallpaper {
             Drag::Icons {
                 start,
                 moved,
+                external_started,
                 pressed,
                 additive,
                 rename_on_release,
                 ..
             } => {
-                if !moved {
+                if external_started || gpui_linux::external_file_drag_active() {
+                    // Wayland's target owns the drop. The source receives a
+                    // synthetic release when the compositor ends the drag.
+                } else if !moved {
                     if rename_on_release {
                         self.schedule_rename(pressed.clone(), window, cx);
                     }

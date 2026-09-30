@@ -2,6 +2,7 @@ use std::{
     cell::{RefCell, RefMut},
     collections::HashSet,
     hash::Hash,
+    io::Write,
     os::fd::{AsRawFd, BorrowedFd},
     path::PathBuf,
     rc::{Rc, Weak},
@@ -261,6 +262,9 @@ pub(crate) struct WaylandClientState {
     keymap_state: Option<xkb::State>,
     compose_state: Option<xkb::compose::State>,
     drag: DragState,
+    staged_file_drag: Option<StagedFileDrag>,
+    file_drag_source: Option<FileDragSource>,
+    press_serial: Option<u32>,
     click: ClickState,
     repeat: KeyRepeat,
     pub modifiers: Modifiers,
@@ -302,6 +306,123 @@ pub struct DragState {
     data_offer: Option<wl_data_offer::WlDataOffer>,
     window: Option<WaylandWindowStatePtr>,
     position: Point<Pixels>,
+}
+
+struct StagedFileDrag {
+    window: WaylandWindowStatePtr,
+    serial: u32,
+    paths: Vec<PathBuf>,
+}
+
+struct FileDragSource {
+    source: wl_data_source::WlDataSource,
+    uri_list: Vec<u8>,
+    gnome_files: Vec<u8>,
+    window: WaylandWindowStatePtr,
+    position: Point<Pixels>,
+}
+
+thread_local! {
+    static FILE_DRAG_CLIENT: RefCell<Weak<RefCell<WaylandClientState>>> = RefCell::default();
+}
+
+/// Stage an item drag while its button or touch contact is held. The normal
+/// GPUI drag continues inside the window; crossing its edge starts Wayland DnD.
+pub fn stage_external_file_drag(paths: Vec<PathBuf>) -> bool {
+    FILE_DRAG_CLIENT.with(|slot| {
+        let Some(client) = slot.borrow().upgrade() else {
+            return false;
+        };
+        let mut state = client.borrow_mut();
+        if state.file_drag_source.is_some() {
+            return true;
+        }
+        let press = state
+            .touch
+            .as_ref()
+            .filter(|touch| touch.gesture == TouchGesture::PointerDrag)
+            .map(|touch| (touch.window.clone(), touch.serial, touch.position))
+            .or_else(|| {
+                (state.button_pressed == Some(MouseButton::Left))
+                    .then(|| {
+                        (
+                            state.mouse_focused_window.clone()?,
+                            state.press_serial?,
+                            state.mouse_location?,
+                        )
+                    })
+                    .flatten()
+            });
+        let Some((window, serial, position)) = press else {
+            return false;
+        };
+        if paths.is_empty() {
+            return false;
+        }
+        state.staged_file_drag = Some(StagedFileDrag {
+            window,
+            serial,
+            paths,
+        });
+        state.start_staged_file_drag_if_outside(position);
+        state.file_drag_source.is_some()
+    });
+}
+
+pub fn external_file_drag_active() -> bool {
+    FILE_DRAG_CLIENT.with(|slot| {
+        slot.borrow()
+            .upgrade()
+            .is_some_and(|client| client.borrow().file_drag_source.is_some())
+    })
+}
+
+fn file_drag_payload(paths: &[PathBuf]) -> Option<(Vec<u8>, Vec<u8>)> {
+    let urls: Vec<_> = paths
+        .iter()
+        .filter_map(|path| Url::from_file_path(path).ok())
+        .map(|url| url.to_string())
+        .collect();
+    if urls.is_empty() {
+        return None;
+    }
+    let uri_list = format!("{}\r\n", urls.join("\r\n")).into_bytes();
+    let gnome_files = format!("cut\n{}\n", urls.join("\n")).into_bytes();
+    Some((uri_list, gnome_files))
+}
+
+impl WaylandClientState {
+    fn start_staged_file_drag_if_outside(&mut self, position: Point<Pixels>) {
+        let Some(staged) = self.staged_file_drag.as_ref() else {
+            return;
+        };
+        let bounds = staged.window.window_geometry();
+        if bounds.contains(&position) {
+            return;
+        }
+        let Some(manager) = self.globals.data_device_manager.as_ref() else {
+            return;
+        };
+        let Some(device) = self.data_device.as_ref() else {
+            return;
+        };
+        let Some((uri_list, gnome_files)) = file_drag_payload(&staged.paths) else {
+            return;
+        };
+        let source = manager.create_data_source(&self.globals.qh, ());
+        source.offer(FILE_LIST_MIME_TYPE.to_owned());
+        source.offer("x-special/gnome-copied-files".to_owned());
+        source.set_actions(DndAction::Copy | DndAction::Move | DndAction::Ask);
+        device.start_drag(Some(&source), &staged.window.surface(), None, staged.serial);
+        self.file_drag_source = Some(FileDragSource {
+            source,
+            uri_list,
+            gnome_files,
+            window: staged.window.clone(),
+            position,
+        });
+        self.staged_file_drag = None;
+    }
 }
 
 pub struct ClickState {
@@ -999,6 +1120,9 @@ impl WaylandClient {
                 window: None,
                 position: Point::default(),
             },
+            staged_file_drag: None,
+            file_drag_source: None,
+            press_serial: None,
             click: ClickState {
                 last_click: Instant::now(),
                 last_mouse_button: None,
@@ -1047,6 +1171,7 @@ impl WaylandClient {
             event_loop: Some(event_loop),
             ime_enabled: None,
         }));
+        FILE_DRAG_CLIENT.with(|slot| *slot.borrow_mut() = Rc::downgrade(&state));
 
         WaylandSource::new(conn, event_queue)
             .insert(handle)
@@ -2441,13 +2566,19 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                             pressed_button: (gesture == TouchGesture::PointerDrag)
                                 .then_some(MouseButton::Left),
                             modifiers,
-                        }))
+                        }));
+                        if gesture == TouchGesture::PointerDrag {
+                            client
+                                .borrow_mut()
+                                .start_staged_file_drag_if_outside(position);
+                        }
                     }
                     TouchGesture::ContextMenu => {}
                 }
             }
             wl_touch::Event::Up { id, .. } => {
                 let mut state = client.borrow_mut();
+                state.staged_file_drag = None;
                 state.touch_ids.remove(&id);
                 state.cancel_touch_hold();
                 state.touch_generation = state.touch_generation.wrapping_add(1);
@@ -2462,6 +2593,7 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
             }
             wl_touch::Event::Cancel => {
                 let mut state = client.borrow_mut();
+                state.staged_file_drag = None;
                 state.touch_ids.clear();
                 state.touch_suppressed = false;
                 state.cancel_touch_hold();
@@ -2557,6 +2689,9 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
             }
             wl_pointer::Event::Leave { .. } => {
                 state.momentum_generation = state.momentum_generation.wrapping_add(1);
+                if state.button_pressed == Some(MouseButton::Left) {
+                    state.start_staged_file_drag_if_outside(point(px(-1.0), px(-1.0)));
+                }
                 if let Some(focused_window) = state.mouse_focused_window.clone() {
                     let input = PlatformInput::MouseExited(MouseExitEvent {
                         position: state.mouse_location.unwrap(),
@@ -2641,6 +2776,10 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                         window.start_window_move_with_serial(serial);
                     }
                     window.handle_input(input);
+                    client.borrow_mut().start_staged_file_drag_if_outside(point(
+                        px(surface_x as f32),
+                        px(surface_y as f32),
+                    ));
                 }
             }
             wl_pointer::Event::Button {
@@ -2654,6 +2793,9 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                 if button_state == wl_pointer::ButtonState::Pressed {
                     state.momentum_generation = state.momentum_generation.wrapping_add(1);
                     state.serial_tracker.update(SerialKind::MousePress, serial);
+                    if button == 0x110 {
+                        state.press_serial = Some(serial);
+                    }
                 }
                 let button = linux_button_to_gpui(button);
                 let Some(button) = button else { return };
@@ -2710,6 +2852,8 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                     }
                     wl_pointer::ButtonState::Released => {
                         state.button_pressed = None;
+                        state.staged_file_drag = None;
+                        state.press_serial = None;
                         state.pending_window_move = None;
 
                         if let Some(window) = state.mouse_focused_window.clone() {
@@ -3049,12 +3193,19 @@ impl Dispatch<wl_data_device::WlDataDevice, ()> for WaylandClientStatePtr {
             } => {
                 state.serial_tracker.update(SerialKind::DataDevice, serial);
                 if let Some(data_offer) = data_offer {
+                    data_offer.accept(serial, Some(FILE_LIST_MIME_TYPE.to_owned()));
                     let Some(drag_window) = get_window(&mut state, &surface.id()) else {
                         return;
                     };
 
-                    const ACTIONS: DndAction = DndAction::Copy;
-                    data_offer.set_actions(ACTIONS, ACTIONS);
+                    data_offer.set_actions(
+                        DndAction::Copy | DndAction::Move | DndAction::Ask,
+                        if state.modifiers.alt {
+                            DndAction::Copy
+                        } else {
+                            DndAction::Move
+                        },
+                    );
 
                     let pipe = Pipe::new().unwrap();
                     data_offer.receive(FILE_LIST_MIME_TYPE.to_string(), unsafe {
@@ -3182,13 +3333,6 @@ impl Dispatch<wl_data_offer::WlDataOffer, ()> for WaylandClientStatePtr {
         let mut state = client.borrow_mut();
 
         if let wl_data_offer::Event::Offer { mime_type } = event {
-            // Drag and drop
-            if mime_type == FILE_LIST_MIME_TYPE {
-                let serial = state.serial_tracker.get(SerialKind::DataDevice);
-                let mime_type = mime_type.clone();
-                data_offer.accept(serial, Some(mime_type));
-            }
-
             // Clipboard
             if let Some(offer) = state
                 .data_offers
@@ -3211,7 +3355,48 @@ impl Dispatch<wl_data_source::WlDataSource, ()> for WaylandClientStatePtr {
         _: &QueueHandle<Self>,
     ) {
         let client = this.get_client();
-        let state = client.borrow_mut();
+        let mut state = client.borrow_mut();
+
+        if state
+            .file_drag_source
+            .as_ref()
+            .is_some_and(|drag| drag.source.id() == data_source.id())
+        {
+            match event {
+                wl_data_source::Event::Send { mime_type, fd } => {
+                    let drag = state.file_drag_source.as_ref().unwrap();
+                    let payload = match mime_type.as_str() {
+                        FILE_LIST_MIME_TYPE => drag.uri_list.clone(),
+                        "x-special/gnome-copied-files" => drag.gnome_files.clone(),
+                        _ => Vec::new(),
+                    };
+                    std::thread::spawn(move || {
+                        let mut file = std::fs::File::from(fd);
+                        if let Err(error) = file.write_all(&payload) {
+                            log::warn!("Wayland file drag send failed: {error}");
+                        }
+                    });
+                }
+                wl_data_source::Event::Cancelled | wl_data_source::Event::DndFinished => {
+                    let drag = state.file_drag_source.as_ref().unwrap();
+                    let window = drag.window.clone();
+                    let position = drag.position;
+                    let modifiers = state.modifiers;
+                    let click_count = state.click.current_count;
+                    data_source.destroy();
+                    drop(state);
+                    window.handle_input(PlatformInput::MouseUp(MouseUpEvent {
+                        button: MouseButton::Left,
+                        position,
+                        modifiers,
+                        click_count,
+                    }));
+                    client.borrow_mut().file_drag_source = None;
+                }
+                _ => {}
+            }
+            return;
+        }
 
         match event {
             wl_data_source::Event::Send { mime_type, fd } => {

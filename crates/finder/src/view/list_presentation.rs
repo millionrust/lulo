@@ -518,7 +518,9 @@ impl FinderView {
                         window.focus(&this.focus, cx);
                     }))
                     .when(!self.trash_view && !self.applications_view, |element| {
-                        element.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
+                        element.on_drag(DraggedPaths(drag_paths.clone()), move |_, _, _, cx| {
+                            #[cfg(target_os = "linux")]
+                            gpui_linux::stage_external_file_drag(drag_paths.clone());
                             cx.new(|_| DragPreview { count: drag_count })
                         })
                     })
@@ -876,11 +878,7 @@ impl FinderView {
                         current
                             .map(|position| {
                                 let below = position + vertical_step;
-                                if below <= last {
-                                    below
-                                } else {
-                                    position
-                                }
+                                if below <= last { below } else { position }
                             })
                             .unwrap_or(0),
                     ),
@@ -1374,7 +1372,9 @@ impl FinderView {
         .when(
             !self.trash_view && !self.applications_view,
             |el: Stateful<Div>| {
-                el.on_drag(DraggedPaths(drag_paths), move |_, _, _, cx| {
+                el.on_drag(DraggedPaths(drag_paths.clone()), move |_, _, _, cx| {
+                    #[cfg(target_os = "linux")]
+                    gpui_linux::stage_external_file_drag(drag_paths.clone());
                     cx.new(|_| DragPreview { count: drag_count })
                 })
             },

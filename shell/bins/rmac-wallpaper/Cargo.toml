@@ -21,6 +21,7 @@ blocking.workspace = true
 chrono.workspace = true
 futures-util.workspace = true
 gpui.workspace = true
+gpui_linux.workspace = true
 gpui_platform.workspace = true
 image.workspace = true
 libc.workspace = true

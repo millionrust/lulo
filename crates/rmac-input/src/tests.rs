@@ -85,14 +85,12 @@ fn touch_off_round_trips_through_managed_config() {
     };
     current.settings.touchscreen_enabled = false;
     let source = update_managed_source(&authority, &current.settings).unwrap();
-    assert!(source.contains("touch {"));
-    assert!(source.contains("off"));
     let parsed = KdlDocument::parse_v1(source.strip_prefix(MANAGED_HEADER).unwrap()).unwrap();
+    let input = parsed.get("input").unwrap().children().unwrap();
+    let touch = input.get("touch").unwrap().children().unwrap();
+    assert_eq!(flag(touch, "off"), Some(true));
     current.settings.touchscreen_enabled = true;
-    apply_input(
-        parsed.get("input").unwrap().children().unwrap(),
-        &mut current,
-    );
+    apply_input(input, &mut current);
     assert!(!current.settings.touchscreen_enabled);
 }
 

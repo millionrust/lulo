@@ -22,6 +22,7 @@ import wlinput  # noqa: E402
 
 import fixtures  # noqa: E402
 import journey  # noqa: E402
+import screencopy  # noqa: E402
 
 BINARIES = {
     "files": "rmac-files", "text-editor": "rmac-text-editor",
@@ -93,10 +94,13 @@ class Driver:
                         "org.a11y.Status", "IsEnabled", "b", "true"],
                        env=self.session.env, capture_output=True, timeout=10, check=False)
         self.session.output = next(iter(self.session.niri("outputs") or {}), "winit")
+        self.sampler = screencopy.Screencopy(self.session.pointer)
         bins = Path(self.args.bin_dir)
         for binary in ("rmac-top-bar", "rmac-wallpaper"):
             if (bins / binary).exists():
                 self.session.spawn([str(bins / binary)], binary)
+        if any(step.get("click") == "Control Centre" for step in self.data["steps"]):
+            self.session.spawn([str(bins / "rmac-quick-settings")], "quick-settings")
         time.sleep(1)
 
     def window(self):
@@ -108,19 +112,12 @@ class Driver:
         return next((w for w in self.session.windows() if w.get("pid") == process.pid), None)
 
     def capture(self, destination: Path, full=False, fast=False):
-        geom = None
-        if not full and self.window():
-            x, y, w, h = self.session.geometry(self.window())
-            x, y = max(0, int(x)), max(0, int(y))
-            w, h = min(int(w), self.session.width - x), min(int(h), self.session.height - y)
-            if w > 50 and h > 50:
-                geom = f"{x + self.session.niri_rect[0]},{y + self.session.niri_rect[1]} {w}x{h}"
+        geom = self.capture_region(full)
         # Sway's wlroots screencopy captures the niri surface in one frame.
-        # niri's own screencopy waits for its next software-rendered frame and
-        # measured only ~1 Hz in this headless nested setup.
+        # niri's own screencopy waits for its next software-rendered frame.
         cmd = ["grim", "-o", "HEADLESS-1"]
         if geom:
-            cmd += ["-g", geom]
+            cmd += ["-g", f"{geom[0]},{geom[1]} {geom[2]}x{geom[3]}"]
         if fast:
             cmd += ["-t", "ppm"]
         cmd.append(str(destination))
@@ -128,6 +125,15 @@ class Driver:
         result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=10)
         if result.returncode:
             raise RuntimeError(f"grim failed: {result.stderr[-200:]}")
+
+    def capture_region(self, full=False):
+        if not full and self.window():
+            x, y, w, h = self.session.geometry(self.window())
+            x, y = max(0, int(x)), max(0, int(y))
+            w, h = min(int(w), self.session.width - x), min(int(h), self.session.height - y)
+            if w > 50 and h > 50:
+                return (x + self.session.niri_rect[0], y + self.session.niri_rect[1], w, h)
+        return (self.session.niri_rect[0], self.session.niri_rect[1], self.session.width, self.session.height)
 
     def launch(self, step: dict):
         app = step["launch"]
@@ -153,6 +159,9 @@ class Driver:
     def click(self, label: str):
         if label in FORBIDDEN:
             raise RuntimeError(f"refusing destructive or toggle control {label!r}")
+        if label == "Save" and self.current == "text-editor":
+            self.session.pointer.key("return")
+            return
         if self.current == "calculator" and label == "2nd":
             window = self.window()
             if not window:
@@ -190,6 +199,13 @@ class Driver:
         if candidates:
             _rank, _area, bx, by, box = min(candidates, key=lambda item: item[:2])
             x, y = self.session.parent_point(bx + box.width / 2, by + box.height / 2)
+            self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
+            return
+        status_x = {"Lulo": 26, "Battery": self.session.width - 296,
+                    "Wi-Fi": self.session.width - 251,
+                    "Control Centre": self.session.width - 182}
+        if label in status_x:
+            x, y = self.session.parent_point(status_x[label], 15)
             self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
             return
         raise RuntimeError(f"no accessible control with usable bounds named {label!r}")
@@ -240,7 +256,8 @@ class Driver:
                 else:
                     full = kind == "launch" or step.get("scope") == "full"
                     timing = journey.measure(lambda p: self.capture(p, full=full, fast=True),
-                                             lambda: self.action(step), self.scratch)
+                                             lambda: self.action(step), self.scratch,
+                                             probe=lambda: self.sampler.fingerprint(self.capture_region(full)))
                     pending = {kind: step[kind], "index": index}
         except (RuntimeError, OSError, subprocess.SubprocessError, wlinput.InjectorError) as error:
             result.update(status="failed", error=str(error))

@@ -58,6 +58,14 @@
       "scope": "full"
     },
     {
+      "click": "Control Centre",
+      "scope": "full"
+    },
+    {
+      "shot": "control-centre",
+      "scope": "full"
+    },
+    {
       "click": "Sound",
       "scope": "full"
     },

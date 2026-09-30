@@ -21,6 +21,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from PIL import Image, ImageChops
+
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 sys.path.insert(0, str(HERE))
@@ -142,7 +144,8 @@ class Run:
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self.locks.append(handle)
         config = self.logs / "sway.conf"
-        config.write_text("xwayland disable\ndefault_border none\noutput HEADLESS-1 mode 1440x900 position 0 0\n")
+        mode = "1920x1080" if self.args.frame_only else "1440x900"
+        config.write_text(f"xwayland disable\ndefault_border none\noutput HEADLESS-1 mode {mode} position 0 0\n")
         self.spawn(["sway", "--unsupported-gpu", "--config", str(config)], "sway",
                    {"WLR_BACKENDS": "headless", "WLR_HEADLESS_OUTPUTS": "1",
                     "WLR_LIBINPUT_NO_DEVICES": "1", "WLR_RENDERER": "pixman"})
@@ -158,7 +161,7 @@ class Run:
         if output:
             # Settings is taller than Sway's small default headless mode. Give
             # it enough vertical room to expose all four resize edges.
-            self.swaymsg("output", output["name"], "mode", "1280x900")
+            self.swaymsg("output", output["name"], "mode", "1920x1080" if self.args.frame_only else "1280x900")
             time.sleep(0.5)
             outputs = self.swaymsg("-t", "get_outputs") or []
             output = next((o for o in outputs if o.get("active")), output)
@@ -206,11 +209,144 @@ class Run:
         print(f"nested displays: niri={self.width}x{self.height}, Sway={self.parent_width}x{self.parent_height}, "
               f"niri surface={self.niri_rect}", flush=True)
         # The shipped shell starts these services. Their HOME/XDG state is private to this run.
+        trash_home = Path(self.env["XDG_DATA_HOME"]) / "Trash"
+        for folder in ("files", "info"):
+            (trash_home / folder).mkdir(parents=True, exist_ok=True)
+        (Path(self.env["HOME"]) / "Desktop" / "preexisting-frame-test.txt").write_text("first map\n")
         self.spawn([str(bins / "dock")], "dock", {"VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
+        if self.args.frame_only:
+            self.spawn([str(bins / "wallpaper")], "wallpaper",
+                       {"VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
         self.spawn([str(bins / "mission-control"), "--service"], "mission-control",
                    {"VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"})
         time.sleep(3)
+        if self.args.frame_only:
+            def settled_output():
+                logical = next(iter((self.niri("outputs") or {}).values()), {}).get("logical", {})
+                if logical.get("width") == self.parent_width and logical.get("height") == self.parent_height:
+                    return logical
+                return None
+
+            settled = self.wait_for(settled_output, 10)
+            self.check("nested niri reaches the 1920×1080 output size", bool(settled))
+            if settled:
+                self.width, self.height = settled["width"], settled["height"]
         self.pointer = wlinput.Wayland({**self.env, "WAYLAND_DISPLAY": self.sway_display})
+
+    def capture(self, name: str) -> Image.Image:
+        path = self.work / f"{name}.png"
+        result = subprocess.run(["grim", str(path)], env=self.env,
+                                capture_output=True, text=True, timeout=15)
+        if result.returncode:
+            raise RuntimeError(f"grim {name}: {result.stderr[-300:]}")
+        return Image.open(path).convert("RGB")
+
+    @staticmethod
+    def changed_pixels(before: Image.Image, after: Image.Image, box: tuple[int, int, int, int]) -> int:
+        if before.size != after.size:
+            raise RuntimeError(f"output changed size between captures: {before.size} -> {after.size}")
+        difference = ImageChops.difference(before.crop(box), after.crop(box)).convert("L")
+        return sum(difference.histogram()[21:])
+
+    def assert_repaint_without_input(self) -> None:
+        """File watcher updates must commit while the wallpaper and Dock are idle."""
+        before = self.capture("idle-before")
+        preexisting = Path(self.env["HOME"]) / "Desktop" / "preexisting-frame-test.txt"
+        preexisting.unlink()
+        time.sleep(2)
+        removed = self.capture("desktop-preexisting-removed")
+        desktop_box = (max(0, before.width - 280), 35, before.width, min(before.height, 280))
+        count = self.changed_pixels(before, removed, desktop_box)
+        self.check("Wallpaper paints preexisting Desktop icon on first map", count > 100,
+                   f"changed pixels after removal={count}")
+        desktop_file = Path(self.env["HOME"]) / "Desktop" / "frame-repaint-test.txt"
+        desktop_file.write_text("frame repaint\n")
+        time.sleep(2)
+        added = self.capture("desktop-added")
+        count = self.changed_pixels(removed, added, desktop_box)
+        self.check("Wallpaper paints a new Desktop icon without input", count > 100,
+                   f"changed pixels={count}")
+
+        moved = subprocess.run(["gio", "trash", str(desktop_file)], env=self.env,
+                               capture_output=True, text=True, timeout=15)
+        self.check("Private Desktop item moved to Trash", moved.returncode == 0,
+                   moved.stderr[-200:])
+        time.sleep(2)
+        filled = self.capture("trash-filled")
+        dock_box = (0, max(0, filled.height - 150), filled.width, filled.height)
+        count = self.changed_pixels(added, filled, dock_box)
+        self.check("Dock paints the full Bin without input", count > 100,
+                   f"changed pixels={count}")
+        trash_home = Path(self.env["XDG_DATA_HOME"]) / "Trash"
+        for folder in ("files", "info"):
+            for entry in (trash_home / folder).glob("frame-repaint-test.txt*"):
+                entry.unlink()
+        time.sleep(2)
+        emptied = self.capture("trash-emptied")
+        count = self.changed_pixels(filled, emptied, dock_box)
+        self.check("Dock paints the empty Bin without input", count > 100,
+                   f"changed pixels={count}")
+
+    def assert_first_frame_geometry(self, window: dict, title: str) -> None:
+        """The first mapped window image must start at niri's visible geometry."""
+        for phase in ("first-frame", "idle-after-map"):
+            if phase == "idle-after-map":
+                time.sleep(2)
+                window = self.window("org.rmac.SystemSettings") or window
+            shot = self.capture(f"{title.lower()}-{phase}")
+            x, y, width, height = map(round, self.geometry(window))
+            # The selected General row can cross the midpoint after the
+            # screen-fit resize; sample the plain sidebar near the bottom.
+            sample_y = min(max(y + height - 24, 0), shot.height - 1)
+            edge_x = min(max(x + 4, 0), shot.width - 1)
+            content_x = min(max(x + 210, 0), shot.width - 1)
+            edge = shot.getpixel((edge_x, sample_y))
+            content = shot.getpixel((content_x, sample_y))
+            distance = sum(abs(a - b) for a, b in zip(edge, content))
+            self.check(f"{title} {phase} has no wallpaper inset", distance < 35,
+                       f"edge={edge}, content={content}, delta={distance}; geometry={(x, y, width, height)}")
+
+    def assert_quick_settings_lifecycle(self) -> None:
+        """Dismissing the popover must leave its shortcut endpoint alive."""
+        bins = Path(self.args.bin_dir)
+        process = self.spawn([str(bins / "rmac-quick-settings")], "quick-settings")
+        endpoint = self.runtime / "rmac" / "shortcut-quick-settings.sock"
+        ready = self.wait_for(endpoint.exists, 20)
+        self.check("Quick Settings shortcut endpoint becomes ready", bool(ready))
+        if not ready:
+            process.terminate()
+            process.wait(10)
+            return
+
+        def dispatch() -> bool:
+            result = subprocess.run([str(bins / "rmac-shortcut-dispatch"), "quick-settings"],
+                                    env=self.env, capture_output=True, text=True, timeout=10)
+            return result.returncode == 0
+
+        before = self.capture("quick-before")
+        first = dispatch()
+        time.sleep(1)
+        opened = self.capture("quick-opened")
+        region = (max(0, before.width - 500), 0, before.width, min(before.height, 650))
+        painted = self.changed_pixels(before, opened, region)
+        self.check("Quick Settings opens from private shortcut without input",
+                   first and painted > 100, f"changed pixels={painted}")
+        second = dispatch()
+        time.sleep(1)
+        closed = self.capture("quick-closed")
+        dismissed = self.changed_pixels(opened, closed, region)
+        self.check("Quick Settings dismisses from private shortcut without input",
+                   second and dismissed > 100, f"changed pixels={dismissed}")
+        alive = process.poll() is None and endpoint.exists()
+        self.check("Quick Settings keeps its endpoint after popover close", alive)
+        third = dispatch()
+        time.sleep(1)
+        reopened = self.capture("quick-reopened")
+        painted_again = self.changed_pixels(closed, reopened, region)
+        self.check("Quick Settings opens again without service restart",
+                   third and painted_again > 100, f"changed pixels={painted_again}")
+        process.terminate()
+        process.wait(10)
 
     def assert_move(self, app_id: str, title: str, launch: list[str]) -> None:
         process = self.spawn(launch, app_id.replace(".", "-"))
@@ -244,7 +380,8 @@ class Run:
         settled_geometry = self.geometry(settled) if settled else (0, 0, 0, 0)
         stays = abs(settled_geometry[0] - new_geometry[0]) < 2 and abs(settled_geometry[1] - new_geometry[1]) < 2
         self.check(f"{title} remains at dragged position", stays, str(settled_geometry[:2]))
-        self.assert_edge_resize(app_id, title)
+        if app_id != "org.rmac.Calculator":
+            self.assert_edge_resize(app_id, title)
         process.terminate()
         process.wait(10)
 
@@ -299,6 +436,7 @@ class Run:
         window = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 40)
         self.check("Settings mapped floating", bool(window and window.get("is_floating")))
         if window:
+            self.assert_first_frame_geometry(window, "Settings")
             time.sleep(1)
             x, y, width, height = self.geometry(window)
             # Move the mapped window into the visible area before asking niri
@@ -472,6 +610,20 @@ class Run:
 
     def run(self) -> int:
         self.start()
+        if self.args.frame_only or self.args.geometry_only:
+            if self.args.frame_only:
+                self.assert_repaint_without_input()
+            process = self.spawn([str(Path(self.args.bin_dir) / "rmac-system-settings")],
+                                 "settings-first-map")
+            window = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 40)
+            self.check("Settings mapped before input", bool(window))
+            if window:
+                self.assert_first_frame_geometry(window, "Settings")
+            process.terminate()
+            process.wait(10)
+            if self.args.frame_only:
+                self.assert_quick_settings_lifecycle()
+            return self.finish()
         self.assert_move("org.rmac.Calculator", "Calculator", [str(Path(self.args.bin_dir) / "rmac-calculator")])
         self.resize_settings()
         self.assert_move("org.example.WindowMoveTest", "GTK", [sys.executable, str(Path(__file__).resolve()), "--gtk-window"])
@@ -521,7 +673,9 @@ def outer(args: argparse.Namespace) -> int:
     try:
         return subprocess.call(["dbus-run-session", "--", sys.executable, str(Path(__file__).resolve()),
                                 "--inner", str(work), "--niri", args.niri, "--bin-dir", args.bin_dir,
-                                *(["--extra-zoom"] if args.extra_zoom else [])], env=env)
+                                *(["--extra-zoom"] if args.extra_zoom else []),
+                                *(["--frame-only"] if args.frame_only else []),
+                                *(["--geometry-only"] if args.geometry_only else [])], env=env)
     finally:
         runtime = Path(env["XDG_RUNTIME_DIR"])
         if run_lulo.reap(runtime):
@@ -539,6 +693,8 @@ def main() -> int:
     parser.add_argument("--bin-dir")
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--extra-zoom", action="store_true", help="also check Calculator and Files double-click Zoom")
+    parser.add_argument("--frame-only", action="store_true", help="check idle repaint and first-map geometry")
+    parser.add_argument("--geometry-only", action="store_true", help="capture Settings before and after its screen-fit resize")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--gtk-window", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()

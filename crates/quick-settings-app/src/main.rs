@@ -254,6 +254,7 @@ fn notify_ready() -> std::result::Result<(), String> {
 
 fn main() {
     rmac_ui::application()
+        .with_quit_mode(gpui::QuitMode::Explicit)
         .with_assets(CombinedAssets)
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);

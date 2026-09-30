@@ -256,7 +256,14 @@ python3 scripts/behavior/run_niri_minimize.py --niri ~/rmac-niri-build/target/re
 Title-bar movement runs in nested niri as well, because Sway does not exercise GPUI's
 `xdg_toplevel.move` requests. The runner uses the shipped `shell.kdl`, drags Calculator and
 Settings plus a GTK window with the virtual pointer, and checks niri's reported positions. It
-also has an `assert_double_click_zoom` check for the default Zoom action (SET-33): the first
+also captures Settings before any input and after two idle seconds, checks that its first-map
+geometry contains no wallpaper band, and checks that the wallpaper and Dock repaint a preexisting
+Desktop icon, file changes, and full/empty Bin states without input. It then opens, dismisses,
+and reopens Quick Settings through its private shortcut socket, checking that the endpoint remains
+owned after the popover closes. `--frame-only` runs those
+capture checks at 1920×1080 without injecting any input; PNGs stay outside the repository with
+`--keep`. `--geometry-only` captures Settings before and after its automatic screen-fit resize
+at 1280×900, also without input. The runner also has an `assert_double_click_zoom` check for the default Zoom action (SET-33): the first
 double-click should fill the working area without going under the Dock's exclusive zone, and a
 second should restore the window's previous size. On the merged branch, three
 clean nested runs each passed 15/18 checks: dragging and left-edge resizing
@@ -270,4 +277,8 @@ Floating edge resizing for other windows remains open in WIN-10:
 ```sh
 python3 scripts/behavior/run_window_move.py --niri ~/rmac-niri-build/target/release/niri \
   --bin-dir $CARGO_TARGET_DIR/iterate
+python3 scripts/behavior/run_window_move.py --bin-dir $CARGO_TARGET_DIR/iterate \
+  --frame-only --keep
+python3 scripts/behavior/run_window_move.py --bin-dir $CARGO_TARGET_DIR/iterate \
+  --geometry-only --keep
 ```

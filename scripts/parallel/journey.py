@@ -11,7 +11,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
 JOURNEYS = ROOT / "tests" / "parallel"
-ACTIONS = {"launch", "click", "key", "type", "wait", "drag_window", "shot"}
+ACTIONS = {"launch", "click", "menu", "key", "type", "wait", "drag_window", "shot"}
 APPS = {"files", "text-editor", "settings", "calculator", "preview", "notes", "terminal"}
 
 

@@ -89,6 +89,47 @@ def click_named(run: record_mac.MacRun, label: str) -> None:
                    check=True, timeout=10)
 
 
+def verify_save_destination(run: record_mac.MacRun) -> None:
+    """Require the Save sheet's Where control to name our sandbox."""
+    run.check_target()
+    script = f'''function run() {{
+      var p=Application("System Events").processes.byName("TextEdit");
+      var w=p.attributes.byName("AXFocusedWindow").value();
+      function A(e,n) {{ try {{ return e.attributes.byName(n).value(); }} catch(_) {{ return null; }} }}
+      var found=false;
+      function walk(e,d) {{
+        if(d<0) return;
+        var role=A(e,"AXRole");
+        if((role==="AXPopUpButton"||role==="AXButton"||role==="AXStaticText") &&
+           [A(e,"AXTitle"),A(e,"AXValue"),A(e,"AXDescription")].some(
+             function(v) {{ return v==="sandbox" || v==={json.dumps(str(run.sandbox))}; }})) found=true;
+        var children=A(e,"AXChildren")||[];
+        for(var i=0;i<children.length;i++) walk(children[i],d-1);
+      }}
+      walk(w,12);
+      return found ? "safe" : "unknown";
+    }}'''
+    if record_mac.osascript(script, js=True) != "safe":
+        raise record_mac.Stop("Save destination is not verified as this run's sandbox")
+
+
+def click_menu(run: record_mac.MacRun, path: list[str]) -> None:
+    if run.app != "text-editor":
+        raise record_mac.Stop("Open Recent is allowed only for TextEdit")
+    if path[:2] != ["File", "Open Recent"] or len(path) != 3:
+        raise record_mac.Stop("unapproved Mac menu path")
+    if not any(p.stem == path[2] for p in run.sandbox.iterdir() if p.is_file()):
+        raise record_mac.Stop("recent document is not in the sandbox")
+    raw = record_mac.observe_raw(run.process, [], run.baseline)
+    if raw.get("frontmost") != run.process or not raw.get("running"):
+        raise record_mac.Stop("TextEdit is not frontmost for Open Recent")
+    menu = f'menu bar item {record_mac.as_string(path[0])} of menu bar 1'
+    submenu = f'menu item {record_mac.as_string(path[1])} of menu 1 of {menu}'
+    record_mac.osascript(
+        f'tell application "System Events" to tell process {record_mac.as_string(run.process)} to '
+        f'click menu item {record_mac.as_string(path[2])} of menu 1 of {submenu}')
+
+
 def run_one(path: Path, output: Path) -> dict:
     data = journey.load(path)
     name = path.stem
@@ -148,6 +189,10 @@ def run_one(path: Path, output: Path) -> dict:
                 if current is None:
                     raise record_mac.Stop("input before launch")
                 if action == "key":
+                    if current.app == "text-editor" and step[action] in {"return", "enter"}:
+                        dialog = record_mac.observe_raw(current.process, ["dialog"], current.baseline).get("dialog") or {}
+                        if dialog.get("present") and (not pending or pending.get("type") != "$SANDBOX"):
+                            raise record_mac.Stop("refusing Return in a Save sheet outside a verified sandbox")
                     if current.app == "files" and step[action] == "cmd-z":
                         if not pending or pending.get("key") != "cmd-backspace" or (current.sandbox / "renamed.txt").exists():
                             raise record_mac.Stop("Finder undo is not proven to target this sandbox move")
@@ -158,7 +203,11 @@ def run_one(path: Path, output: Path) -> dict:
                         raise record_mac.Stop("Terminal command is outside the read-only allowlist")
                     operation = lambda: current.type_text(value)
                 elif action == "click":
+                    if current.app == "text-editor" and step[action] == "Save":
+                        verify_save_destination(current)
                     operation = (lambda: current.click_key(1, 0)) if current.app == "calculator" and step[action] == "2nd" else (lambda: click_named(current, step[action]))
+                elif action == "menu":
+                    operation = lambda: click_menu(current, step[action])
                 elif action == "drag_window":
                     raise record_mac.Stop("Mac window drag is intentionally Lulo-only")
                 else:

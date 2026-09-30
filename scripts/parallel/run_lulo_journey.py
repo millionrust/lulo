@@ -144,6 +144,14 @@ class Driver:
     def click(self, label: str):
         if label in FORBIDDEN:
             raise RuntimeError(f"refusing destructive or toggle control {label!r}")
+        if self.current == "calculator" and label == "2nd":
+            window = self.window()
+            if not window:
+                raise RuntimeError("Calculator has no window for 2nd")
+            x, y, _w, _h = self.session.geometry(window)
+            px, py = self.session.parent_point(x + 40, y + 210)
+            self.session.pointer.click(px, py, self.session.parent_width, self.session.parent_height)
+            return
         import pyatspi
 
         desktop = pyatspi.Registry.getDesktop(0)
@@ -170,6 +178,10 @@ class Driver:
             self.launch(step)
         elif kind == "click":
             self.click(step[kind])
+        elif kind == "menu":
+            for label in step[kind]:
+                self.click(label)
+                time.sleep(0.15)
         elif kind == "key":
             if step[kind] in {"power", "ctrl-power", "cmd-alt-escape", "cmd-alt-s"}:
                 raise RuntimeError("refusing session or device-control shortcut")

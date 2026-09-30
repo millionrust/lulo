@@ -50,16 +50,50 @@
       "shot": "save-sheet"
     },
     {
-      "type": "Parallel Journey"
+      "key": "cmd-shift-g"
     },
     {
-      "shot": "save-name"
+      "shot": "choose-folder"
+    },
+    {
+      "type": "$SANDBOX"
+    },
+    {
+      "shot": "sandbox-path"
     },
     {
       "key": "return"
     },
     {
+      "shot": "sandbox-location"
+    },
+    {
+      "type": "Parallel Journey Sandbox"
+    },
+    {
+      "shot": "save-name"
+    },
+    {
+      "click": "Save"
+    },
+    {
       "shot": "saved"
+    },
+    {
+      "key": "cmd-w"
+    },
+    {
+      "shot": "document-closed"
+    },
+    {
+      "menu": [
+        "File",
+        "Open Recent",
+        "Parallel Journey Sandbox"
+      ]
+    },
+    {
+      "shot": "opened-recent"
     }
   ]
 }

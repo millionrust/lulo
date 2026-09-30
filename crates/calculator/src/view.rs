@@ -4,14 +4,14 @@
 use std::time::Duration;
 
 use gpui::{
-    A11ySubtreeBuilder, AnyElement, ClipboardItem, Context, FocusHandle, FontWeight,
-    InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement as _, Render, Role,
-    SharedString, StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
-    accesskit, div, prelude::FluentBuilder as _, px, rgb, rgba, size, svg,
+    accesskit, div, prelude::FluentBuilder as _, px, rgb, rgba, size, svg, A11ySubtreeBuilder,
+    AnyElement, ClipboardItem, Context, FocusHandle, FontWeight, InteractiveElement as _,
+    IntoElement, KeyDownEvent, ParentElement as _, Render, Role, SharedString,
+    StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
 };
-use rmac_calculator::engine::{Calculator, HistoryEntry, Key as BasicKey, fitted_font_size};
+use rmac_calculator::engine::{fitted_font_size, Calculator, HistoryEntry, Key as BasicKey};
 use rmac_calculator::keypad::{
-    self, KeyFace, KeyStyle, Palette, key_face, key_for_input, key_origin, key_style,
+    self, key_face, key_for_input, key_origin, key_style, KeyFace, KeyStyle, Palette,
 };
 use rmac_calculator::scientific::{self, ScientificCalculator};
 use rmac_calculator::scientific_keypad;
@@ -155,10 +155,7 @@ impl CalculatorView {
                 scientific_keypad::WINDOW_HEIGHT,
             ),
         };
-        // Resize the buffer including the client frame. The Wayland backend
-        // advertises only the inset content as xdg window geometry.
-        let (outer_width, outer_height) = rmac_ui::outer_window_size(width, height);
-        window.resize(size(px(outer_width), px(outer_height)));
+        window.resize(size(px(width), px(height)));
         cx.notify();
     }
 

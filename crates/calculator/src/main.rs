@@ -6,7 +6,7 @@ use std::borrow::Cow;
 
 use gpui::{
     point, px, size, App, AppContext as _, AssetSource, Bounds, KeyBinding, Result, SharedString,
-    WindowBounds,
+    Styled as _, WindowBackgroundAppearance, WindowBounds,
 };
 use gpui_component::Root;
 use rmac_calculator::keypad::{WINDOW_HEIGHT, WINDOW_WIDTH};
@@ -81,27 +81,21 @@ fn main() {
             // Calculator is fixed-size like on macOS: keep a restored position
             // but never a restored size.
             let fixed = size(px(WINDOW_WIDTH), px(WINDOW_HEIGHT));
-            // Root reserves a 12 pt client frame around app content on Linux.
-            // Keep the requested Calculator size as the visible content size
-            // and include that frame in the initial compositor bounds, just
-            // like rmac-ui's standard app-window opener does.
-            let (outer_width, outer_height) =
-                rmac_ui::outer_window_size(WINDOW_WIDTH, WINDOW_HEIGHT);
+            // A fixed-size calculator has no resize edge. Its own rounded
+            // surface fills the exact compositor bounds, without the 12 pt
+            // client shadow frame used by resizable app windows.
             let mut options =
-                rmac_ui::window_options_for_app(CALCULATOR, outer_width, outer_height, cx);
+                rmac_ui::window_options_for_app(CALCULATOR, WINDOW_WIDTH, WINDOW_HEIGHT, cx);
             let origin = options
                 .window_bounds
                 .map(|bounds| bounds.get_bounds().origin)
                 .unwrap_or_else(|| point(px(0.0), px(0.0)));
-            options.window_bounds = Some(WindowBounds::Windowed(Bounds::new(
-                origin,
-                size(px(outer_width), px(outer_height)),
-            )));
+            options.window_bounds = Some(WindowBounds::Windowed(Bounds::new(origin, fixed)));
             options.window_min_size = Some(fixed);
             options.is_resizable = false;
+            options.window_background = WindowBackgroundAppearance::Transparent;
 
             cx.open_window(options, |window, cx| {
-                rmac_ui::reserve_client_frame(window);
                 rmac_ui::prepare_surface_window(window, cx);
                 let view = cx.new(|cx| {
                     rmac_ui::observe_window_state(CALCULATOR, window, cx);
@@ -109,7 +103,11 @@ fn main() {
                 });
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus, cx);
-                cx.new(|cx| Root::new(view, window, cx))
+                cx.new(|cx| {
+                    Root::new(view, window, cx)
+                        .bordered(false)
+                        .bg(gpui::transparent_black())
+                })
             })
             .expect("failed to open the Calculator window");
             cx.activate(true);

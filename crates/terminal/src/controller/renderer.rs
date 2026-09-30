@@ -66,6 +66,16 @@ impl Render for TerminalView {
             .relative()
             .v_flex()
             .bg(hsla(active().bg))
+            // The red traffic light dispatches `RequestClose` from
+            // whichever element currently holds focus (the grid, the Find
+            // field, …), and GPUI bubbles it up the render tree from
+            // there. Handling it here on the true root — not on
+            // `#terminal-grid`, which is only a sibling of the title bar,
+            // Find panel and pickers — keeps the close button working no
+            // matter what has focus, mirroring Text Editor/Notes/Finder.
+            .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
+                this.request_close_window(window, cx)
+            }))
             .child(rmac_ui::title_bar_content(
                 self.render_title(active_title, layout.title_max_width),
             ))

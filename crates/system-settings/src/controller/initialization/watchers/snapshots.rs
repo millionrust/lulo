@@ -15,22 +15,43 @@ use super::*;
 impl Settings {
     pub(super) fn start_snapshot_loads(cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async {
-                    // Kick NetworkManager into an immediate scan so a
-                    // freshly opened Wi-Fi pane does not read "No other
-                    // networks found" while NM's own background scan
-                    // interval catches up (SET-14). A scan failure (radio
-                    // off, no adapter yet) is not fatal here: the snapshot
-                    // read below is still the authoritative result and
-                    // surfaces its own error if Wi-Fi is genuinely
-                    // unavailable.
-                    let _ = rmac_network::request_scan();
-                    std::thread::sleep(Duration::from_millis(750));
-                    rmac_network::snapshot()
-                })
-                .await;
+            // `rmac_network::snapshot()`/`request_scan()` use
+            // `zbus::blocking` (a synchronous D-Bus call that also opens
+            // its own connection); GPUI's background executor is not safe
+            // to block on that (LINUX-HW-07 — the same class of bug fixed
+            // for input/keyboard/gtk/screen-reader/privacy below).
+            // `blocking::unblock` runs it on the dedicated blocking-task
+            // pool instead of stalling the small, fixed-size executor.
+            //
+            // Read whatever NetworkManager already knows first, with no
+            // scan trigger and no settle delay, so the pane shows the
+            // current Wi-Fi state (radio on/off, connected network, the
+            // access points NM already has cached) on the very first
+            // frame instead of sitting on "Loading" — a fresh scan below
+            // only refines the *nearby-network* list in the background,
+            // same as the Mac (SET-14).
+            let immediate = blocking::unblock(rmac_network::snapshot).await;
+            let showed_immediate = immediate.is_ok();
+            let _ = this.update(cx, |this: &mut Settings, cx| {
+                if showed_immediate {
+                    this.finish_wifi_update(immediate);
+                    this.wifi_error = None;
+                }
+                cx.notify();
+            });
+
+            let result = blocking::unblock(|| {
+                // Kick NetworkManager into a scan so the network list
+                // picks up anything not already cached (SET-14). A scan
+                // failure (radio off, no adapter yet) is not fatal here:
+                // the snapshot read below is still the authoritative
+                // result and surfaces its own error if Wi-Fi is genuinely
+                // unavailable.
+                let _ = rmac_network::request_scan();
+                std::thread::sleep(Duration::from_millis(750));
+                rmac_network::snapshot()
+            })
+            .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wifi_update(result);
                 this.wifi_error = None;

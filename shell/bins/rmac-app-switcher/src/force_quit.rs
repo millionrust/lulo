@@ -11,8 +11,11 @@ use rmac_compositor::Snapshot;
 use crate::model::is_switchable;
 
 /// The Force Quit window's own app id. It is a system dialogue, so the
-/// switcher and the Dock leave it out of their application lists.
-pub const APP_ID: &str = "org.rmac.ForceQuit";
+/// switcher and the Dock leave it out of their application lists. Shared
+/// with `rmac_apps::identity::FORCE_QUIT` (single source of truth) so the
+/// menu bar's `is_transient_panel` check also recognises this window and
+/// doesn't adopt it as the frontmost app.
+pub const APP_ID: &str = rmac_apps::identity::FORCE_QUIT;
 pub const TITLE: &str = "Force Quit Applications";
 pub const INSTRUCTION: &str =
     "If an app doesn\u{2019}t respond for a while, select its name and click Force Quit.";

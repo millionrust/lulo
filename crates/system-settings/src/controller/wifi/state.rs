@@ -160,13 +160,14 @@ impl Settings {
         self.begin_wifi_mutation();
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    rmac_network::set_enabled(enabled)?;
-                    rmac_network::snapshot()
-                })
-                .await;
+            // `rmac_network::set_enabled()`/`snapshot()` use
+            // `zbus::blocking`; GPUI's background executor is not safe to
+            // block on synchronous D-Bus I/O from (LINUX-HW-07).
+            let result = blocking::unblock(move || {
+                rmac_network::set_enabled(enabled)?;
+                rmac_network::snapshot()
+            })
+            .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wifi_update(result);
                 cx.notify();

@@ -19,6 +19,14 @@ pub const FILE_CHOOSER: &str = "org.rmac.FileChooser";
 /// The Save panel; a separate app id so niri can clip it at the sheet radius
 /// (docs/decisions/0012-file-chooser-portal.md).
 pub const FILE_CHOOSER_SAVE: &str = "org.rmac.FileChooser.Save";
+/// The Force Quit Applications window (⌥⌘⎋, the logo menu's Force Quit…,
+/// `rmac-app-switcher`'s `force_quit` module). A system dialogue, not a
+/// launchable app — never added to `ALL` — but it still needs a stable
+/// identity here for [`is_transient_panel`]: without it, focusing Force
+/// Quit made the menu bar adopt it as the frontmost app and show its
+/// humanized id, "ForceQuit", instead of the app it was launched over (or
+/// the Restart/Shut Down/Log Out confirmation shown from the same menu).
+pub const FORCE_QUIT: &str = "org.rmac.ForceQuit";
 
 pub const ALL: [&str; 12] = [
     FILES,
@@ -53,6 +61,7 @@ pub fn window_title(app_id: &str) -> Option<&'static str> {
         CLOCK => Some("Clock"),
         WEATHER => Some("Weather"),
         PLAYER => Some("Media Player"),
+        FORCE_QUIT => Some("Force Quit Applications"),
         _ => None,
     }
 }
@@ -70,7 +79,7 @@ pub fn is_document_application(app_id: &str) -> bool {
 /// must not make the menu bar switch away from (and clear) the app that
 /// opened it (OTHER-04, docs/parity.md).
 pub fn is_transient_panel(app_id: &str) -> bool {
-    matches!(app_id, FILE_CHOOSER | FILE_CHOOSER_SAVE)
+    matches!(app_id, FILE_CHOOSER | FILE_CHOOSER_SAVE | FORCE_QUIT)
 }
 
 #[cfg(test)]
@@ -121,5 +130,16 @@ mod tests {
         assert!(!is_transient_panel(FILES));
         assert!(!ALL.contains(&FILE_CHOOSER));
         assert!(!ALL.contains(&FILE_CHOOSER_SAVE));
+    }
+
+    /// Force Quit Applications is a system dialogue (like the Open/Save
+    /// panel above): focusing it must not make the menu bar adopt it as
+    /// the frontmost app and show its humanized id, "ForceQuit", in place
+    /// of the app it was launched over.
+    #[test]
+    fn the_force_quit_window_is_transient_but_not_a_launchable_app() {
+        assert!(is_transient_panel(FORCE_QUIT));
+        assert!(!ALL.contains(&FORCE_QUIT));
+        assert_eq!(window_title(FORCE_QUIT), Some("Force Quit Applications"));
     }
 }

@@ -211,54 +211,70 @@ pub(crate) fn current() -> Capabilities {
 }
 
 /// Wait for kernel uevents. The child is killed when Settings drops the
-/// receiver, and no timer or periodic filesystem scan runs while idle.
+/// receiver or exits, and no timer or periodic filesystem scan runs while idle.
 #[cfg(target_os = "linux")]
 pub(crate) async fn watch(sender: async_channel::Sender<()>) -> std::io::Result<()> {
     use std::io::{BufRead as _, BufReader};
     use std::process::{Command, Stdio};
-    use std::sync::{Arc, Mutex};
+    use std::sync::mpsc;
 
-    let mut child = Command::new("udevadm")
-        .args([
-            "monitor",
-            "--udev",
-            "--subsystem-match=input",
-            "--subsystem-match=drm",
-            "--subsystem-match=power_supply",
-            "--subsystem-match=backlight",
-            "--subsystem-match=leds",
-            "--subsystem-match=bluetooth",
-            "--subsystem-match=net",
-            "--subsystem-match=sound",
-            "--subsystem-match=usb",
-            "--subsystem-match=iio",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
-    let stdout = child.stdout.take().expect("piped monitor stdout");
-    let child = Arc::new(Mutex::new(child));
+    let (ready_tx, ready_rx) = async_channel::bounded(1);
+    let (stop_tx, stop_rx) = mpsc::channel::<()>();
     let events = sender.clone();
-    let reader = std::thread::spawn(move || {
-        for line in BufReader::new(stdout).lines() {
-            match line {
-                Ok(line) if line.starts_with("UDEV  [") => {
-                    if events.is_closed() {
-                        break;
-                    }
-                    let _ = events.try_send(());
-                }
-                Ok(_) => {}
-                Err(_) => break,
+    // PR_SET_PDEATHSIG is tied to the spawning thread, so keep that thread
+    // alive for the entire monitor lifetime instead of using an executor worker.
+    let monitor = std::thread::spawn(move || {
+        let mut command = Command::new("udevadm");
+        command
+            .args([
+                "monitor",
+                "--udev",
+                "--subsystem-match=input",
+                "--subsystem-match=drm",
+                "--subsystem-match=power_supply",
+                "--subsystem-match=backlight",
+                "--subsystem-match=leds",
+                "--subsystem-match=bluetooth",
+                "--subsystem-match=net",
+                "--subsystem-match=sound",
+                "--subsystem-match=usb",
+                "--subsystem-match=iio",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let mut child = match rmac_process::spawn_bound(&mut command) {
+            Ok(child) => child,
+            Err(error) => {
+                let _ = ready_tx.send_blocking(Err(error));
+                return;
             }
-        }
-        events.close();
+        };
+        let stdout = child.stdout.take().expect("piped monitor stdout");
+        let reader = std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                match line {
+                    Ok(line) if line.starts_with("UDEV  [") => {
+                        if events.is_closed() {
+                            break;
+                        }
+                        let _ = events.try_send(());
+                    }
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+            }
+            events.close();
+        });
+        let _ = ready_tx.send_blocking(Ok(()));
+        let _ = stop_rx.recv();
+        let _ = child.kill();
+        let _ = child.wait();
+        let _ = reader.join();
     });
+    ready_rx.recv().await.map_err(std::io::Error::other)??;
     sender.closed().await;
-    let mut child = child.lock().expect("monitor child lock");
-    let _ = child.kill();
-    let _ = child.wait();
-    let _ = reader.join();
+    drop(stop_tx);
+    let _ = monitor.join();
     Ok(())
 }
 

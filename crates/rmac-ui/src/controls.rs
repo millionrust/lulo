@@ -920,6 +920,8 @@ pub struct Toggle {
     size: SwitchSize,
     pending: bool,
     label: Option<SharedString>,
+    accessible_label: Option<SharedString>,
+    accessible_description: Option<SharedString>,
     disabled: bool,
     tooltip: Option<SharedString>,
     on_change: Option<ToggleHandler>,
@@ -933,6 +935,8 @@ impl Toggle {
             size: SwitchSize::Regular,
             pending: false,
             label: None,
+            accessible_label: None,
+            accessible_description: None,
             disabled: false,
             tooltip: None,
             on_change: None,
@@ -967,6 +971,17 @@ impl Toggle {
 
     pub fn label(mut self, label: impl Into<SharedString>) -> Self {
         self.label = Some(label.into());
+        self
+    }
+
+    /// Name the switch without adding a second visible label beside it.
+    pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
+        self.accessible_label = Some(label.into());
+        self
+    }
+
+    pub fn aria_description(mut self, description: impl Into<SharedString>) -> Self {
+        self.accessible_description = Some(description.into());
         self
     }
 
@@ -1055,7 +1070,10 @@ impl RenderOnce for Toggle {
         };
         // The visible label doubles as the accessible name; the tooltip is
         // the fallback for icon-only switches that have none.
-        let accessible_name = self.label.or(self.tooltip.clone());
+        let accessible_name = self
+            .accessible_label
+            .or(self.label)
+            .or(self.tooltip.clone());
         let focus_handle = window
             .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
             .read(cx)
@@ -1066,6 +1084,9 @@ impl RenderOnce for Toggle {
             .role(Role::Switch)
             .aria_toggled(toggled)
             .when_some(accessible_name, |el, name| el.aria_label(name))
+            .when_some(self.accessible_description, |el, description| {
+                el.aria_description(description)
+            })
             .cursor_default()
             .when(!disabled, |el| {
                 el.track_focus(&focus_handle.clone().tab_stop(true).tab_index(0))

@@ -8,6 +8,7 @@ input injection are used; only the accessibility tree is read.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import os
 from pathlib import Path
 import subprocess
@@ -26,7 +27,19 @@ def names():
     found = app()
     if found is None:
         return set()
-    return {support.name(node) for node in support.descendants(found) if support.name(node)}
+    labels = set()
+    for node in support.descendants(found):
+        for value in (support.name(node), support.description(node)):
+            if value:
+                labels.add(value)
+        if support.has_text(node):
+            try:
+                value, _caret, _selections = support.text_of(node)
+            except (LookupError, RuntimeError):
+                continue
+            if value:
+                labels.add(value)
+    return labels
 
 
 def main() -> int:
@@ -60,10 +73,21 @@ def main() -> int:
             )
             try:
                 support.wait_for(app, f"Settings {pane} window")
-                observed = support.wait_for(
-                    lambda: (seen if required <= (seen := names()) else None),
-                    f"{pane} hardware rows",
-                )
+                try:
+                    observed = support.wait_for(
+                        lambda: (seen if required <= (seen := names()) else None),
+                        f"{pane} hardware rows",
+                    )
+                except AssertionError:
+                    seen = names()
+                    print(f"{pane} process status: {process.poll()}", file=sys.stderr)
+                    print(f"{pane} missing: {sorted(required - seen)}", file=sys.stderr)
+                    print(f"{pane} accessible names: {sorted(seen)[:120]}", file=sys.stderr)
+                    print(
+                        f"{pane} roles: {Counter(support.role(node) for node in support.descendants(app()))}",
+                        file=sys.stderr,
+                    )
+                    raise
                 print(f"{pane}: {len(required)} required labels present; {len(observed)} accessible names read")
             finally:
                 process.terminate()

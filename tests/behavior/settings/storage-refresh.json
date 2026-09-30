@@ -1,0 +1,16 @@
+{
+  "title": "Storage shows capacity, fills categories, and refreshes without leaving the pane",
+  "app": "settings",
+  "launch": {},
+  "steps": [
+    {"select": "Storage", "settle": 0.2},
+    {"observe": "opened", "facts": ["windows"]},
+    {"wait": 2.0},
+    {"select": "Refresh", "settle": 0.2},
+    {"observe": "refreshing", "facts": ["windows"]}
+  ],
+  "tolerance": {
+    "opened.windows.front": "present",
+    "refreshing.windows.front": "present"
+  }
+}

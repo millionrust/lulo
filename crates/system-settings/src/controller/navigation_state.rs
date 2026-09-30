@@ -49,6 +49,7 @@ impl Settings {
                 self.pane_forward.clear();
             }
         }
+        self.cancel_storage_scan_if_hidden();
         cx.notify();
     }
 
@@ -225,6 +226,7 @@ impl Settings {
             self.pane_forward.push(current);
         }
         self.sync_wifi_pane_scan_on_navigation(cx);
+        self.cancel_storage_scan_if_hidden();
         cx.notify();
     }
 
@@ -239,6 +241,7 @@ impl Settings {
             self.pane_history.push(current);
         }
         self.sync_wifi_pane_scan_on_navigation(cx);
+        self.cancel_storage_scan_if_hidden();
         cx.notify();
     }
 
@@ -252,13 +255,14 @@ impl Settings {
         self.nav.push(sub);
         self.forward.clear();
         if measure_storage {
-            self.measure_storage_categories(cx);
+            self.measure_storage_categories(false, cx);
         }
         if check_updates {
             self.refresh_update_status(cx);
         }
         self.sidebar_focused = false;
         self.sync_wifi_pane_scan_on_navigation(cx);
+        self.cancel_storage_scan_if_hidden();
         cx.notify();
     }
 
@@ -286,6 +290,7 @@ impl Settings {
             }
         }
         self.sync_wifi_pane_scan_on_navigation(cx);
+        self.cancel_storage_scan_if_hidden();
         cx.notify();
     }
 
@@ -385,6 +390,7 @@ impl Settings {
         self.compact_sidebar_open = false;
         self.navigation_persistence.schedule(pane_id);
         self.sync_wifi_pane_scan_on_navigation(cx);
+        self.cancel_storage_scan_if_hidden();
         cx.notify();
         true
     }

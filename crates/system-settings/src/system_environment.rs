@@ -4,7 +4,6 @@ use std::process::Command;
 pub(super) struct SystemSnapshot {
     pub(super) account: String,
     pub(super) sysinfo: std::result::Result<rmac_system_info::Snapshot, rmac_system_info::Error>,
-    pub(super) storage: std::result::Result<Vec<rmac_mounts::Volume>, rmac_mounts::Error>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -39,7 +38,6 @@ pub(super) fn gather_system_snapshot() -> SystemSnapshot {
     SystemSnapshot {
         account: account_name(),
         sysinfo: rmac_system_info::snapshot(),
-        storage: rmac_mounts::volumes(),
     }
 }
 

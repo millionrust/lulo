@@ -96,6 +96,7 @@ pub(super) struct Settings {
     pub(super) dock_magnification_slider: Entity<SliderState>,
     pub(super) network: rmac_network::NetworkSnapshot,
     pub(super) storage: Vec<rmac_mounts::Volume>,
+    pub(super) storage_loading: bool,
     pub(super) storage_busy: bool,
     pub(super) storage_error: Option<SharedString>,
     pub(super) storage_stream_error: Option<SharedString>,
@@ -149,6 +150,8 @@ pub(super) struct Settings {
     /// Storage categories measured on the home volume.
     pub(super) storage_categories: Option<crate::storage_categories::Categories>,
     pub(super) storage_categories_busy: bool,
+    pub(super) storage_categories_generation: u64,
+    pub(super) storage_scan_cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     /// The Keyboard Shortcuts sheet and its selected category.
     pub(super) keyboard_shortcuts_open: bool,
     pub(super) keyboard_shortcuts_category: usize,

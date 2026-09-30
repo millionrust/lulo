@@ -1,12 +1,20 @@
 //! Mounted-volume refresh, identity revalidation, and Files opening lifecycle.
 
 use super::*;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+enum ScanEvent {
+    Cached(crate::storage_categories::Categories),
+    Partial(crate::storage_categories::Categories),
+    Complete,
+}
 
 mod render;
 
 impl Settings {
     pub(super) fn queue_storage_stream_refresh(&mut self, cx: &mut Context<Self>) {
-        if self.system_data_loading || self.storage_busy || self.storage_stream_refreshing {
+        if self.storage_loading || self.storage_busy || self.storage_stream_refreshing {
             self.storage_refresh_pending = true;
             return;
         }
@@ -14,16 +22,13 @@ impl Settings {
         self.storage_stream_refreshing = true;
         let generation = self.storage_generation;
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_mounts::volumes() })
-                .await;
+            let result = blocking::unblock(rmac_mounts::volumes).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.storage_stream_refreshing = false;
                 if storage_stream_snapshot_is_current(
                     generation,
                     this.storage_generation,
-                    this.system_data_loading,
+                    this.storage_loading,
                     this.storage_busy,
                 ) {
                     match result {
@@ -31,7 +36,7 @@ impl Settings {
                             this.storage = storage;
                             this.storage_error = None;
                             this.storage_stream_error = None;
-                            this.measure_storage_categories(cx);
+                            this.measure_storage_categories(false, cx);
                         }
                         Err(_) => {
                             this.storage_stream_error =
@@ -50,7 +55,7 @@ impl Settings {
 
     pub(super) fn run_pending_storage_refresh(&mut self, cx: &mut Context<Self>) {
         if self.storage_refresh_pending
-            && !self.system_data_loading
+            && !self.storage_loading
             && !self.storage_busy
             && !self.storage_stream_refreshing
         {
@@ -59,7 +64,7 @@ impl Settings {
     }
 
     pub(super) fn refresh_storage(&mut self, cx: &mut Context<Self>) {
-        if self.system_data_loading || self.storage_busy {
+        if self.storage_loading || self.storage_busy {
             return;
         }
         self.storage_busy = true;
@@ -67,10 +72,7 @@ impl Settings {
         self.storage_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async { rmac_mounts::volumes() })
-                .await;
+            let result = blocking::unblock(rmac_mounts::volumes).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.storage_busy = false;
                 match result {
@@ -78,7 +80,7 @@ impl Settings {
                         this.storage = volumes;
                         this.storage_error = None;
                         this.storage_stream_error = None;
-                        this.measure_storage_categories(cx);
+                        this.measure_storage_categories(true, cx);
                     }
                     Err(error) => {
                         this.storage_error =
@@ -102,28 +104,104 @@ impl Settings {
             .max_by_key(|volume| volume.mount.path.components().count())
     }
 
-    /// Measure the home volume's Storage categories on the background
-    /// executor. Called when volumes refresh and when Storage opens.
-    pub(super) fn measure_storage_categories(&mut self, cx: &mut Context<Self>) {
-        if self.storage_categories_busy {
+    pub(super) fn storage_pane_visible(&self) -> bool {
+        matches!(self.nav.last(), Some(SubPage::Storage))
+    }
+
+    pub(super) fn cancel_storage_scan_if_hidden(&mut self) {
+        if self.storage_pane_visible() {
             return;
         }
+        if let Some(cancel) = self.storage_scan_cancel.take() {
+            cancel.store(true, Ordering::Relaxed);
+            self.storage_categories_generation = self.storage_categories_generation.wrapping_add(1);
+            self.storage_categories_busy = false;
+        }
+    }
+
+    /// Load cached categories and stream each completed category from a low
+    /// priority blocking worker. The volume capacity is already available.
+    pub(super) fn measure_storage_categories(&mut self, force: bool, cx: &mut Context<Self>) {
+        if !self.storage_pane_visible() {
+            return;
+        }
+        if self.storage_categories_busy {
+            if !force {
+                return;
+            }
+            if let Some(cancel) = self.storage_scan_cancel.take() {
+                cancel.store(true, Ordering::Relaxed);
+            }
+        }
         let Some(volume_path) = self.home_volume().map(|volume| volume.mount.path.clone()) else {
-            self.storage_categories = None;
             return;
         };
+        let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+            return;
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.storage_scan_cancel = Some(Arc::clone(&cancel));
+        self.storage_categories_generation = self.storage_categories_generation.wrapping_add(1);
+        let generation = self.storage_categories_generation;
         self.storage_categories_busy = true;
         cx.notify();
+        let (send, receive) = async_channel::unbounded();
+        cx.spawn(async move |_, _cx: &mut gpui::AsyncApp| {
+            blocking::unblock(move || {
+                // nice/ioprio are per Linux thread and cannot reliably be
+                // reset without privilege. Keep them off the shared pool.
+                let _ = std::thread::spawn(move || {
+                    crate::storage_categories::lower_scan_priority();
+                    let cached = crate::storage_categories::load_cache(&home, &volume_path);
+                    if let Some((categories, _)) = &cached {
+                        let _ = send.try_send(ScanEvent::Cached(categories.clone()));
+                    }
+                    if !force && cached.as_ref().is_some_and(|(_, fresh)| *fresh) {
+                        let _ = send.try_send(ScanEvent::Complete);
+                        return;
+                    }
+                    let result = crate::storage_categories::measure_with_progress(
+                        &home,
+                        volume_path,
+                        &cancel,
+                        |categories| {
+                            let _ = send.try_send(ScanEvent::Partial(categories));
+                        },
+                    );
+                    if let Some(categories) = result.filter(|_| !cancel.load(Ordering::Relaxed)) {
+                        let _ = crate::storage_categories::save_cache(&home, &categories);
+                        let _ = send.try_send(ScanEvent::Partial(categories));
+                    }
+                    let _ = send.try_send(ScanEvent::Complete);
+                })
+                .join();
+            })
+            .await;
+        })
+        .detach();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let measured = cx
-                .background_executor()
-                .spawn(async move { crate::storage_categories::measure_home(volume_path) })
-                .await;
-            let _ = this.update(cx, |this: &mut Settings, cx| {
-                this.storage_categories_busy = false;
-                this.storage_categories = measured;
-                cx.notify();
-            });
+            while let Ok(event) = receive.recv().await {
+                if this
+                    .update(cx, |this: &mut Settings, cx| {
+                        if generation != this.storage_categories_generation {
+                            return;
+                        }
+                        match event {
+                            ScanEvent::Cached(categories) | ScanEvent::Partial(categories) => {
+                                this.storage_categories = Some(categories);
+                            }
+                            ScanEvent::Complete => {
+                                this.storage_categories_busy = false;
+                                this.storage_scan_cancel = None;
+                            }
+                        }
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
         })
         .detach();
     }

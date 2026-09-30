@@ -138,11 +138,11 @@ class Run:
 
     def close_button(self):
         return next(iter(atspi.nodes_with(
-            atspi.pyatspi.Registry.getDesktop(0), "push button", "Close window")), None)
+            atspi.pyatspi.Registry.getDesktop(0), "button", "Close window")), None)
 
     def dialog_button(self, label: str):
         return next(iter(atspi.nodes_with(
-            atspi.pyatspi.Registry.getDesktop(0), "push button", label)), None)
+            atspi.pyatspi.Registry.getDesktop(0), "button", label)), None)
 
     def launch_terminal(self) -> subprocess.Popen:
         bins = Path(self.args.bin_dir)

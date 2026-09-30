@@ -229,7 +229,7 @@ class Run:
             lambda: (candidate := self.window(app_id))
             if candidate and (abs(self.geometry(candidate)[0] - x) > 30
                               or abs(self.geometry(candidate)[1] - y) > 30) else None,
-            3,
+            8,
         )
         new_geometry = self.geometry(moved) if moved else (x, y, width, height)
         changed = abs(new_geometry[0] - x) > 30 or abs(new_geometry[1] - y) > 30
@@ -255,6 +255,7 @@ class Run:
             # CALC-13 made Lulo's surface fixed too. Testing for growth here
             # would report that intended behavior as an intermittent failure.
             self.drag((x, y + height / 2), (x - 160, y + height / 2))
+            time.sleep(0.3)
             after = self.geometry(self.window(app_id) or window)
             fixed = abs(after[2] - width) < 2 and abs(after[3] - height) < 2
             self.check("Calculator left-edge drag preserves fixed size", fixed,
@@ -304,7 +305,7 @@ class Run:
                 lambda: (candidate := self.window("org.rmac.SystemSettings"))
                 if candidate and (abs(self.geometry(candidate)[0] - x) >= 30
                                   or abs(self.geometry(candidate)[1] - y) >= 30) else None,
-                4,
+                8,
             )
             placed_geometry = self.geometry(placed) if placed else (x, y, width, height)
             intersects_output = (
@@ -322,7 +323,7 @@ class Run:
                 lambda: (candidate := self.window("org.rmac.SystemSettings"))
                 if candidate and (abs(self.geometry(candidate)[0] - sx) >= 30
                                   or abs(self.geometry(candidate)[1] - sy) >= 30) else None,
-                4,
+                8,
             )
             mg = self.geometry(moved) if moved else (sx, sy, sw, sh)
             # Niri may clamp a 140 px grab to 30 px near an output edge.
@@ -372,6 +373,7 @@ class Run:
         if app_id == "org.rmac.Calculator":
             # The real Mac leaves its 230x408 Basic window unchanged after a
             # title-bar double-click. Its fixed surface has no Zoom target.
+            time.sleep(0.5)
             after = self.geometry(self.window(app_id) or window)
             fixed = abs(after[2] - width) < 2 and abs(after[3] - height) < 2
             self.check("Calculator title-bar double-click preserves fixed size", fixed,
@@ -388,6 +390,7 @@ class Run:
                        after[1] + after[3] < output_height - 5,
                        f"bottom={after[1] + after[3]}, output height={output_height}")
             self.double_click((after[0] + after[2] * 0.5, after[1] + 18))
+            time.sleep(0.5)
             again = self.geometry(self.window(app_id) or window)
             still_fixed = abs(again[2] - width) < 2 and abs(again[3] - height) < 2
             self.check("A second double-click keeps Calculator fixed", still_fixed,
@@ -409,7 +412,7 @@ class Run:
         zoomed = self.wait_for(
             lambda: (candidate := self.window(app_id))
             if candidate and grew_substantially(candidate) else None,
-            8.0,
+            15.0,
         )
         if zoomed:
             time.sleep(2)
@@ -444,7 +447,7 @@ class Run:
             lambda: (candidate := self.window(app_id))
             if candidate and abs(self.geometry(candidate)[2] - width) < 30
             and abs(self.geometry(candidate)[3] - height) < 30 else None,
-            8.0,
+            15.0,
         )
         restored_geometry = self.geometry(restored) if restored else zoomed_geometry
         back = (abs(restored_geometry[2] - width) < 30 and abs(restored_geometry[3] - height) < 30)

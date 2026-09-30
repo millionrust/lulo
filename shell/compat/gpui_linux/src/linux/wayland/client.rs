@@ -673,6 +673,15 @@ impl WaylandClientStatePtr {
         let client = self.get_client();
         let mut state = client.borrow_mut();
         let closed_window = state.windows.remove(surface_id).unwrap();
+        if state
+            .touch
+            .as_ref()
+            .is_some_and(|contact| contact.window.ptr_eq(&closed_window))
+        {
+            state.touch = None;
+            state.cancel_touch_hold();
+            state.touch_generation = state.touch_generation.wrapping_add(1);
+        }
         if let Some(window) = state.mouse_focused_window.take()
             && !window.ptr_eq(&closed_window)
         {
@@ -3432,7 +3441,12 @@ fn start_momentum_for_touch(
         move |_, _, this: &mut WaylandClientStatePtr| {
             let client = this.get_client();
             let state = client.borrow();
-            if state.momentum_generation != generation {
+            if state.momentum_generation != generation
+                || !state
+                    .windows
+                    .values()
+                    .any(|candidate| candidate.ptr_eq(&window))
+            {
                 return TimeoutAction::Drop;
             }
             let now = Instant::now();

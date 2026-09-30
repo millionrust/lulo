@@ -7,8 +7,7 @@ use std::time::Duration;
 use notify::RecommendedWatcher;
 
 pub(crate) const DIRECTORY_STALL_NOTICE_DELAY: Duration = Duration::from_secs(8);
-pub(crate) const DIRECTORY_STALL_NOTICE: &str =
-    "This location is responding slowly; you can navigate elsewhere while Files keeps checking";
+pub(crate) const DIRECTORY_STALL_NOTICE: &str = "Still checking this folder…";
 pub(crate) const FILESYSTEM_WATCH_INTERRUPTED_MESSAGE: &str =
     "Live folder updates were interrupted; Files is rechecking";
 pub(crate) const FILESYSTEM_WATCH_UNAVAILABLE_MESSAGE: &str =

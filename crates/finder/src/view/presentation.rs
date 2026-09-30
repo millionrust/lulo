@@ -265,6 +265,7 @@ impl Render for FinderView {
                     .v_flex()
                     .child(self.render_toolbar(layout, cx))
                     .when_some(operation_notice, |el, message| {
+                        let checking = message.as_ref() == DIRECTORY_STALL_NOTICE;
                         el.child(
                             div()
                                 .id("operation-notice")
@@ -279,18 +280,20 @@ impl Render for FinderView {
                                 .border_color(rmac_ui::mac::accent_border())
                                 .text_size(rmac_ui::text_px(12.0))
                                 .text_color(label())
-                                .child(
-                                    div()
-                                        .w(px(16.0))
-                                        .h(px(16.0))
-                                        .flex()
-                                        .items_center()
-                                        .justify_center()
-                                        .rounded_full()
-                                        .bg(rmac_ui::mac::accent())
-                                        .text_color(rmac_ui::mac::on_accent())
-                                        .child("✓"),
-                                )
+                                .when(!checking, |el| {
+                                    el.child(
+                                        div()
+                                            .w(px(16.0))
+                                            .h(px(16.0))
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .rounded_full()
+                                            .bg(rmac_ui::mac::accent())
+                                            .text_color(rmac_ui::mac::on_accent())
+                                            .child("✓"),
+                                    )
+                                })
                                 .child(div().min_w_0().flex_1().truncate().child(message))
                                 .child(
                                     Button::new("dismiss-operation-notice", "Dismiss")

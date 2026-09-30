@@ -31,9 +31,16 @@ impl Settings {
     }
 
     pub(super) fn apply_hardware(&mut self, hardware: Capabilities, cx: &mut Context<Self>) {
+        // Only the first scan (startup, or the initial `--pane` launch
+        // argument) can redirect away from an unavailable pane. A later
+        // udev-triggered rescan only updates the rows/gating *within* the
+        // pane the person is already looking at; it must never evict them
+        // to General just because one rescan raced a device that was still
+        // settling (macOS never does this to an open pane either).
+        let was_ready = self.hardware_ready;
         self.hardware = hardware;
         self.hardware_ready = true;
-        if !self.pane_available(self.current().name.as_ref()) {
+        if !was_ready && !self.pane_available(self.current().name.as_ref()) {
             if let Some(position) = category_position(&self.sections, "General") {
                 self.selected = position;
                 self.nav.clear();

@@ -167,16 +167,16 @@ class Driver:
             try:
                 if node is None:
                     continue
-                if node.name == label and node.getState().contains(pyatspi.STATE_SHOWING):
+                if node.name == label or (node.name or "").startswith(label + ","):
                     box = node.queryComponent().getExtents(pyatspi.DESKTOP_COORDS)
-                    if box.width > 2 and box.height > 2:
+                    if box.width > 2 and box.height > 2 and box.x >= 0 and box.y >= 0:
                         x, y = self.session.parent_point(box.x + box.width / 2, box.y + box.height / 2)
                         self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
                         return
                 stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
             except Exception:
                 continue
-        raise RuntimeError(f"no visible accessible control named {label!r}")
+        raise RuntimeError(f"no accessible control with usable bounds named {label!r}")
 
     def action(self, step: dict):
         kind = next(iter(journey.ACTIONS.intersection(step)))

@@ -76,6 +76,7 @@ def measure(capture, act, scratch: Path, timeout: float = 5.0, probe=None) -> di
         previous = fingerprint(baseline)
     start = time.monotonic()
     act()
+    sample_start = time.monotonic()
     first = None
     last_change = None
     samples = 0
@@ -101,6 +102,6 @@ def measure(capture, act, scratch: Path, timeout: float = 5.0, probe=None) -> di
         "first_change_ms": round((first - start) * 1000) if first else None,
         "settled_ms": round((last_change + 0.3 - start) * 1000) if last_change and finished < end else None,
         "samples": samples,
-        "actual_hz": round(samples / max(finished - start, 0.001), 1),
+        "actual_hz": round(samples / max(finished - sample_start, 0.001), 1),
         "timed_out": finished >= end,
     }

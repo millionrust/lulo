@@ -22,6 +22,9 @@
       "scope": "full"
     },
     {
+      "wait": 1.5
+    },
+    {
       "shot": "query",
       "scope": "full"
     },

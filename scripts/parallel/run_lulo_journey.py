@@ -367,6 +367,18 @@ def outer(args) -> int:
                             target.symlink_to(source)
                 for alias, source in (("dock", "rmac-dock"), ("mission-control", "rmac-mission-control")):
                     (links / alias).symlink_to(bins / source)
+                # The launcher discovers desktop entries through XDG. Populate
+                # only this run's private data home, pointing Exec/TryExec at
+                # the selected binaries so search can launch a real app.
+                applications = Path(env["XDG_DATA_HOME"]) / "applications"
+                applications.mkdir(parents=True, exist_ok=True)
+                for source in (journey.ROOT / "packaging/rmac-apps/applications").glob("*.desktop"):
+                    content = source.read_text()
+                    binary = next((line.removeprefix("Exec=").split()[0]
+                                   for line in content.splitlines() if line.startswith("Exec=")), None)
+                    if binary and (links / Path(binary).name).exists():
+                        content = content.replace(binary, str(links / Path(binary).name))
+                        (applications / source.name).write_text(content)
                 config = private_bus(work, env, links)
                 command = ["dbus-run-session", f"--config-file={config}", "--", sys.executable,
                            str(Path(__file__).resolve()), "--inner", str(work), "--bin-dir", str(links),

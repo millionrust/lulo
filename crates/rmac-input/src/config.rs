@@ -33,6 +33,7 @@ pub(super) struct EffectiveConfig {
     pub(super) settings: InputSettings,
     pub(super) mouse_node: Option<KdlNode>,
     pub(super) touchpad_node: Option<KdlNode>,
+    pub(super) touch_node: Option<KdlNode>,
     pub(super) xkb_from_include: bool,
 }
 
@@ -321,6 +322,13 @@ pub(super) fn apply_input(input: &KdlDocument, effective: &mut EffectiveConfig) 
                 .unwrap_or_default();
         }
         effective.touchpad_node = Some(touchpad_node.clone());
+    }
+    if let Some(touch_node) = input.get("touch") {
+        effective.settings.touchscreen_enabled = touch_node
+            .children()
+            .and_then(|children| flag(children, "off"))
+            != Some(true);
+        effective.touch_node = Some(touch_node.clone());
     }
 }
 

@@ -10,6 +10,7 @@
     {"click_key": "square", "row": 1, "col": 1},
     {"observe": "squared_pending", "facts": ["display"]},
     {"type": "="},
-    {"observe": "squared_result", "facts": ["display"]}
+    {"observe": "squared_result", "facts": ["display"]},
+    {"capture": "squared-result"}
   ]
 }

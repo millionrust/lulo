@@ -1,0 +1,47 @@
+{
+  "title": "Settings: wallpaper search and panes",
+  "steps": [
+    {
+      "launch": "settings"
+    },
+    {
+      "shot": "open"
+    },
+    {
+      "type": "wallpaper"
+    },
+    {
+      "shot": "search-wallpaper"
+    },
+    {
+      "click": "Wallpaper"
+    },
+    {
+      "shot": "wallpaper-pane"
+    },
+    {
+      "key": "cmd-["
+    },
+    {
+      "shot": "back"
+    },
+    {
+      "key": "escape"
+    },
+    {
+      "shot": "search-cleared"
+    },
+    {
+      "click": "Appearance"
+    },
+    {
+      "shot": "appearance"
+    },
+    {
+      "click": "Desktop & Dock"
+    },
+    {
+      "shot": "desktop-dock"
+    }
+  ]
+}

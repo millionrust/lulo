@@ -76,6 +76,19 @@ impl Settings {
                 "The Lulo OS shell-settings service is unavailable. Search preferences remain unchanged.",
             ));
         }
+        if let Some(error) = &self.spotlight_error {
+            cards.push(note_card(error.clone()));
+        }
+        if let Some(error) = &self.shell_settings_error {
+            cards.push(note_card(error.clone()));
+        }
+        // A background shell-settings watcher hiccup degrades quietly here
+        // rather than as the window-wide Settings banner
+        // (`global_settings_error`), and clears itself the moment the
+        // watcher recovers.
+        if let Some(error) = &self.shell_settings_stream_error {
+            cards.push(note_card(error.clone()));
+        }
 
         if let Some(error) = self.shortcut_status_error.clone() {
             cards.push(footnote(rmac_ui::user_error_message(

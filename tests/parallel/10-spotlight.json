@@ -1,0 +1,46 @@
+{
+  "title": "Spotlight: find Calculator",
+  "steps": [
+    {
+      "launch": "files",
+      "path": "."
+    },
+    {
+      "shot": "desktop",
+      "scope": "full"
+    },
+    {
+      "key": "cmd-space",
+      "scope": "full"
+    },
+    {
+      "shot": "spotlight-open",
+      "scope": "full"
+    },
+    {
+      "type": "calc",
+      "scope": "full"
+    },
+    {
+      "wait": 1.5
+    },
+    {
+      "shot": "query",
+      "scope": "full"
+    },
+    {
+      "key": "return",
+      "scope": "full"
+    },
+    {
+      "wait": 2
+    },
+    {
+      "shot": "calculator-open",
+      "scope": "full",
+      "expect_window": "org.rmac.Calculator"
+    }
+  ],
+  "mac": "unsafe",
+  "mac_reason": "Spotlight can reveal owner search results and may switch into an owner app window."
+}

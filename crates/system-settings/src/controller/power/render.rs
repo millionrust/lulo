@@ -21,6 +21,13 @@ impl Settings {
             cards.push(note_card("Loading battery state from the system…"));
             return self.pane(cards);
         }
+        // A background battery watcher hiccup (UPower dropping off the
+        // bus) degrades quietly here rather than as the window-wide
+        // Settings banner (`global_settings_error`), and clears itself the
+        // moment the watcher recovers.
+        if let Some(detail) = &self.power_stream_error {
+            cards.push(note_card(detail.clone()));
+        }
 
         // Energy mode (the Mac's "Low Power Mode" pop-up) from
         // power-profiles-daemon.

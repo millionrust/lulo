@@ -51,6 +51,12 @@ impl Settings {
         if let Some(error) = &self.screen_reader_toggle_error {
             body = body.child(footnote(error.clone()));
         }
+        // A background screen-reader watcher hiccup degrades quietly here,
+        // not as the window-wide Settings banner (`global_settings_error`),
+        // and clears itself once the watcher recovers.
+        if let Some(error) = &self.screen_reader_toggle_stream_error {
+            body = body.child(footnote(error.clone()));
+        }
 
         body = body.child(card(vec![fact_row("Shortcut", "⌘F5")]));
         body = body.child(footnote(

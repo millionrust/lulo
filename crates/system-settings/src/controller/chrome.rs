@@ -195,12 +195,19 @@ impl Settings {
         let active_search_result = self
             .search_selection
             .min(search_matches.len().saturating_sub(1));
-        let highlight = if self.sidebar_focused && window.is_window_active() {
+        // The Mac's own System Settings sidebar shows the selected category
+        // in solid accent blue whenever the window is key/active, no matter
+        // which control actually holds keyboard focus (the search field has
+        // focus on first open, yet the row is still blue). `sidebar_focused`
+        // -- whether the sidebar list itself owns arrow-key browsing -- is
+        // not part of that decision; gating the accent color on it made a
+        // freshly opened, focused window show the neutral (inactive) grey.
+        let highlight = if window.is_window_active() {
             style::sidebar_selection_focused()
         } else {
             style::sidebar_selection()
         };
-        let highlight_text = if self.sidebar_focused && window.is_window_active() {
+        let highlight_text = if window.is_window_active() {
             white()
         } else {
             style::sidebar_text()

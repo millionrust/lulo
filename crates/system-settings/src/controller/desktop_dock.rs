@@ -37,6 +37,16 @@ impl Settings {
         let outputs_live =
             self.dock_compositor.connection == rmac_compositor::ConnectionState::Connected;
 
+        if let Some(detail) = &self.shell_settings_error {
+            cards.push(note_card(detail.clone()));
+        }
+        // A background shell-settings watcher hiccup degrades quietly here
+        // rather than as the window-wide Settings banner
+        // (`global_settings_error`), and clears itself the moment the
+        // watcher recovers.
+        if let Some(detail) = &self.shell_settings_stream_error {
+            cards.push(note_card(detail.clone()));
+        }
         cards.push(first_section_header("Dock"));
         cards.push(card(vec![
             dock_segment_row(

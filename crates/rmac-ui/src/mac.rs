@@ -143,6 +143,10 @@ pub fn radius_window() -> f32 {
     crate::theme::current().radii.window
 }
 
+pub fn radius_window_toolbar() -> f32 {
+    crate::theme::current().radii.window_toolbar
+}
+
 pub fn radius_control() -> f32 {
     crate::theme::current().radii.control
 }

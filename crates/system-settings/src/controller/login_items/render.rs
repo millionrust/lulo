@@ -66,6 +66,13 @@ impl Settings {
                 "Some login items are not shown because the list is too long.",
             ));
         }
+        // A background Login Items watcher hiccup degrades quietly here
+        // rather than as the window-wide Settings banner
+        // (`global_settings_error`), and clears itself the moment the
+        // watcher recovers.
+        if let Some(detail) = &self.login_items_stream_error {
+            cards.push(note_card(detail.clone()));
+        }
         cards.push(footer_buttons(vec![refresh]));
         self.pane(cards)
     }

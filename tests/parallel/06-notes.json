@@ -1,0 +1,25 @@
+{
+  "title": "Notes: create a disposable note",
+  "steps": [
+    {
+      "launch": "notes"
+    },
+    {
+      "shot": "notes-open"
+    },
+    {
+      "key": "cmd-n"
+    },
+    {
+      "shot": "new-note"
+    },
+    {
+      "type": "Parallel journey note"
+    },
+    {
+      "shot": "note-typed"
+    }
+  ],
+  "mac": "unsafe",
+  "mac_reason": "Notes can sync new content into the owner’s iCloud account."
+}

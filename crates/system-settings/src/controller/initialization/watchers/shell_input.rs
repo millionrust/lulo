@@ -109,11 +109,12 @@ impl Settings {
                                     this.request_input_stream_refresh(cx);
                                 }
                                 rmac_input::WatchEvent::WatchError(error) => {
+                                    eprintln!(
+                                        "System Settings: input-device live-update watcher unavailable: {error}"
+                                    );
                                     this.input_stream_error = Some(
-                                        format!(
-                                            "Live input-device updates are unavailable: {error}"
-                                        )
-                                        .into(),
+                                        "Live input-device updates are temporarily unavailable"
+                                            .into(),
                                     );
                                 }
                             }

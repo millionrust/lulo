@@ -1,0 +1,15 @@
+{
+  "title": "Basic sum remains visible before switching to Scientific and back",
+  "app": "calculator",
+  "steps": [
+    {"key": "2"},
+    {"key": "+"},
+    {"key": "3"},
+    {"key": "return"},
+    {"observe": "sum", "facts": ["display", "window_size"]},
+    {"key": "cmd-2"},
+    {"observe": "scientific", "facts": ["display", "window_size"]},
+    {"key": "cmd-1"},
+    {"observe": "basic", "facts": ["display", "window_size"]}
+  ]
+}

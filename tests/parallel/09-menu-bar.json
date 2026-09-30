@@ -1,0 +1,87 @@
+{
+  "title": "Menu bar: read-only status menus",
+  "steps": [
+    {
+      "launch": "files",
+      "path": "."
+    },
+    {
+      "shot": "desktop",
+      "scope": "full"
+    },
+    {
+      "click": "Lulo",
+      "scope": "full"
+    },
+    {
+      "shot": "system-menu",
+      "scope": "full"
+    },
+    {
+      "key": "escape",
+      "scope": "full"
+    },
+    {
+      "shot": "menu-closed",
+      "scope": "full"
+    },
+    {
+      "click": "Wi-Fi",
+      "scope": "full"
+    },
+    {
+      "shot": "wifi-menu",
+      "scope": "full"
+    },
+    {
+      "key": "escape",
+      "scope": "full"
+    },
+    {
+      "shot": "wifi-closed",
+      "scope": "full"
+    },
+    {
+      "click": "Battery",
+      "scope": "full"
+    },
+    {
+      "shot": "battery-menu",
+      "scope": "full"
+    },
+    {
+      "key": "escape",
+      "scope": "full"
+    },
+    {
+      "shot": "battery-closed",
+      "scope": "full"
+    },
+    {
+      "click": "Control Centre",
+      "scope": "full"
+    },
+    {
+      "shot": "control-centre",
+      "scope": "full"
+    },
+    {
+      "click": "Sound",
+      "scope": "full"
+    },
+    {
+      "shot": "sound-menu",
+      "scope": "full"
+    },
+    {
+      "key": "escape",
+      "scope": "full"
+    },
+    {
+      "shot": "sound-closed",
+      "scope": "full"
+    }
+  ],
+  "mac": "unsafe",
+  "mac_reason": "Clicking real Mac status controls risks toggling the owner’s Wi-Fi or sound."
+}

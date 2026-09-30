@@ -18,6 +18,13 @@ impl Settings {
         )];
         self.append_portal_permissions(view.clone(), &mut cards);
         self.append_security_coverage(view.clone(), &mut cards);
+        // A background privacy-portal watcher hiccup degrades quietly here
+        // rather than as the window-wide Settings banner
+        // (`global_settings_error`), and clears itself the moment the
+        // watcher recovers.
+        if let Some(detail) = &self.privacy_stream_error {
+            cards.push(note_card(detail.clone()));
+        }
         let refresh_view = view;
         cards.push(footer_buttons(vec![push_button(
             "privacy-refresh",

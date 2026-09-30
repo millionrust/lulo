@@ -257,6 +257,12 @@ impl Settings {
                 "A running SSH service does not prove that other computers can reach it. Network and router firewalls remain separate authorities.".into()
             })));
         }
+        // A background Sharing watcher hiccup degrades quietly here rather
+        // than as the window-wide Settings banner (`global_settings_error`),
+        // and clears itself the moment the watcher recovers.
+        if let Some(detail) = &self.sharing_stream_error {
+            cards.push(note_card(detail.clone()));
+        }
         cards.push(refresh);
         self.pane(cards)
     }

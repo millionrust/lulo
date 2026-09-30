@@ -59,7 +59,7 @@ pub(super) fn type_select_match<'a>(
 }
 
 impl FinderView {
-    /// Icon-view cell size: 128 × 116 at the 64 pt default, scaling with the
+    /// Icon-view cell size: 112 × 116 at the 64 pt default, scaling with the
     /// icon-size slider.
     pub(super) fn icon_cell(&self) -> (f32, f32) {
         (

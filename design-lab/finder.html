@@ -46,11 +46,13 @@
                 5 in) · Kind rest, text 6 in; secondary text rgb(159,159,165)
   Selection     focused rgb(37,88,201) (Blue accent), white text; window not
                 key: rgb(70,70,70); radius 6, same inset as the stripes
-  Icon view     grid x 11, cell 128 × 116, icon 64 at the cell centre, first
-                row y 24; label 12 regular, 6 below the icon, ≤ 2 lines,
-                ≤ 112 wide; selected: icon plate rgba(255,255,255,.10) radius
-                8 grown 4 around the icon, label pill 17 tall radius 5 in the
-                selection colour
+  Icon view     grid x 11, cell 112 × 116 (112 pt column pitch, re-measured
+                2026-09-30 from Retina pixels ÷ 2 on a 920 × 470 window; the
+                128 figure above was wrong), icon 64 at the cell centre,
+                first row y 24; label 13 regular, 6 below the icon, ≤ 2
+                lines, ≤ 96 wide; selected: icon plate rgba(255,255,255,.10)
+                radius 8 grown 4 around the icon, label pill 17 tall radius 5
+                in the selection colour
   Column view   columns 245 incl. a 1 pt black divider; rows y 5, pitch 22;
                 selection inset 10 / radius 6; icon 16 at 17, text at 36,
                 chevron ends 11 from the divider
@@ -143,10 +145,10 @@
   .lr > *{position:absolute}
   .lr .n{left:36px;color:var(--text)} .lr .d{left:378px;color:var(--sec)} .lr .s{left:553px;width:92px;text-align:right;color:var(--sec)} .lr .k{left:656px;color:var(--sec)}
   /* icon grid */
-  .cell{position:absolute;width:128px;height:116px;display:flex;flex-direction:column;align-items:center}
+  .cell{position:absolute;width:112px;height:116px;display:flex;flex-direction:column;align-items:center}
   .cell .plate{position:relative;width:64px;height:64px;margin-top:0}
   .cell.sel .plate::before{content:"";position:absolute;inset:-4px;border-radius:8px;background:rgba(255,255,255,.10)}
-  .cell .lab{margin-top:6px;max-width:112px;text-align:center;font-size:12px;line-height:15px;padding:1px 5px;border-radius:5px;color:var(--text)}
+  .cell .lab{margin-top:6px;max-width:96px;text-align:center;font-size:13px;line-height:15px;padding:1px 5px;border-radius:5px;color:var(--text)}
   .cell.sel .lab{background:var(--sel);color:#fff}
   /* columns */
   .col{position:absolute;top:0;bottom:0;width:245px;box-shadow:inset -1px 0 0 #000}
@@ -217,7 +219,7 @@ function list(selIx, focused){
 function icons(selIx){
   let h = '';
   folders.forEach((f, i) => {
-    const x = 11 + (i % 6) * 128, y = 24 + Math.floor(i / 6) * 116;
+    const x = 11 + (i % 6) * 112, y = 24 + Math.floor(i / 6) * 116;
     h += `<div class="cell${i === selIx ? ' sel' : ''}" style="left:${x}px;top:${y}px"><div class="plate"><i class="ico folder" style="width:64px;height:64px"></i></div><div class="lab">${f}</div></div>`;
   });
   return h;

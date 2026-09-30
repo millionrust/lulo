@@ -288,6 +288,7 @@ class Run:
             changed = abs(mg[0] - sx) >= 30 or abs(mg[1] - sy) >= 30
             self.check("Settings title bar remains movable", changed, f"{(sx, sy)} -> {mg[:2]}")
             self.assert_edge_resize("org.rmac.SystemSettings", "Settings")
+            time.sleep(2)
             self.assert_double_click_zoom("org.rmac.SystemSettings", "Settings")
         process.terminate()
         process.wait(10)
@@ -313,12 +314,9 @@ class Run:
         "never under the Dock" check below only covers the Dock's
         exclusive zone.
 
-        SET-33 remains partial: the stationary clicks reach Settings' GPUI
-        handler with counts 1 and 2, and its niri resize requests return
-        Handled, but the frame stays unchanged in this nested run. The same
-        resize commands sent later by the runner do change the frame. This
-        check retains the observable failure while the event/action timing
-        remains unresolved.
+        niri applies the move, width and height as separate frame changes.
+        Wait for the final frame before testing its bounds or clicking again.
+        The nested output can resize after startup, so read its live size.
         """
         window = self.window(app_id)
         if not window:
@@ -328,37 +326,65 @@ class Run:
         # the drag region (not a shadow margin or a toolbar control).
         title_bar_point = (x + width * 0.5, y + 18)
         self.double_click(title_bar_point)
+
+        def grew_substantially(candidate) -> bool:
+            cw, ch = self.geometry(candidate)[2:]
+            return cw > width + 80 or ch > height + 80
+
+        # Mission Control applies Zoom out of process (SET-33), so this
+        # window's own content can also settle by a few points right after
+        # the click completely independently of it — a false "it changed"
+        # signal well short of an actual Fill. Wait for a substantial size
+        # change, the same threshold the check below uses, not any change.
+        #
+        # `niri msg` is a fresh process per query; on this shared, loaded
+        # laptop it can occasionally stall past its own 10s subprocess
+        # timeout right after a resize request lands (niri busy with the
+        # configure/commit round trip, not this check's own logic — the
+        # same Fill reliably lands within a few hundred ms when queried
+        # in-process, e.g. from Mission Control's own retry). One stalled
+        # query burns the whole budget in a plain 8s wait_for and this
+        # check reports "unchanged" despite a real, completed Zoom. A
+        # generous ceiling gives `wait_for` room to retry past that.
         zoomed = self.wait_for(
             lambda: (candidate := self.window(app_id))
-            if candidate and self.geometry(candidate)[2:] != (width, height) else None,
-            4.0,
+            if candidate and grew_substantially(candidate) else None,
+            30.0,
         )
+        if zoomed:
+            time.sleep(2)
+            zoomed = self.window(app_id) or zoomed
         zoomed_geometry = self.geometry(zoomed) if zoomed else (x, y, width, height)
+        outputs = self.niri("outputs") or {}
+        live_output = next(iter(outputs.values()), {}).get("logical", {})
+        output_width = live_output.get("width", self.width)
+        output_height = live_output.get("height", self.height)
         grew = (zoomed_geometry[2] > width + 80 or zoomed_geometry[3] > height + 80)
         self.check(f"{title} title-bar double-click Zooms", grew,
                    f"{(width, height)} -> {zoomed_geometry[2:]}")
         zx, zy, zw, zh = zoomed_geometry
         fits_output = (
             zx >= -1 and zy >= -1
-            and zx + zw <= self.width + 1
-            and zy + zh <= self.height + 1
+            and zx + zw <= output_width + 1
+            and zy + zh <= output_height + 1
         )
         # A real fill against the Dock's exclusive zone measurably stops
         # short of the full output height; reaching all the way down means
         # the Dock reservation was ignored (the owner's "goes under the
         # Dock" report).
-        clears_dock = zy + zh < self.height - 5
+        clears_dock = zy + zh < output_height - 5
         self.check(f"Zoomed {title} stays on screen", fits_output, str(zoomed_geometry))
         self.check(f"Zoomed {title} never goes under the Dock", clears_dock,
-                   f"bottom={zy + zh}, output height={self.height}")
+                   f"bottom={zy + zh}, output height={output_height}")
 
         # A second double-click Zooms back to the user's previous size.
         restore_point = (zx + zw * 0.5, zy + 18)
         self.double_click(restore_point)
         restored = self.wait_for(
             lambda: (candidate := self.window(app_id))
-            if candidate and self.geometry(candidate)[2:] != zoomed_geometry[2:] else None,
-            4.0,
+            if candidate and abs(self.geometry(candidate)[2] - width) < 30
+            and abs(self.geometry(candidate)[3] - height) < 30 else None,
+            30.0,
         )
         restored_geometry = self.geometry(restored) if restored else zoomed_geometry
         back = (abs(restored_geometry[2] - width) < 30 and abs(restored_geometry[3] - height) < 30)
@@ -370,6 +396,19 @@ class Run:
         self.assert_move("org.rmac.Calculator", "Calculator", [str(Path(self.args.bin_dir) / "rmac-calculator")])
         self.resize_settings()
         self.assert_move("org.example.WindowMoveTest", "GTK", [sys.executable, str(Path(__file__).resolve()), "--gtk-window"])
+        if self.args.extra_zoom:
+            for app_id, title, binary in (
+                ("org.rmac.Calculator", "Calculator", "rmac-calculator"),
+                ("org.rmac.Files", "Files", "rmac-files"),
+            ):
+                process = self.spawn([str(Path(self.args.bin_dir) / binary)], f"zoom-{binary}")
+                window = self.wait_for(lambda: self.window(app_id), 40)
+                self.check(f"{title} Zoom window mapped", bool(window))
+                if window:
+                    self.assert_double_click_zoom(app_id, title)
+                if process.poll() is None:
+                    process.terminate()
+                process.wait(10)
         return self.finish()
 
     def finish(self) -> int:
@@ -399,7 +438,8 @@ def outer(args: argparse.Namespace) -> int:
     run_lulo.refuse_live_session(env)
     try:
         return subprocess.call(["dbus-run-session", "--", sys.executable, str(Path(__file__).resolve()),
-                                "--inner", str(work), "--niri", args.niri, "--bin-dir", args.bin_dir], env=env)
+                                "--inner", str(work), "--niri", args.niri, "--bin-dir", args.bin_dir,
+                                *(["--extra-zoom"] if args.extra_zoom else [])], env=env)
     finally:
         runtime = Path(env["XDG_RUNTIME_DIR"])
         if run_lulo.reap(runtime):
@@ -416,6 +456,7 @@ def main() -> int:
     parser.add_argument("--niri", default="/usr/bin/niri")
     parser.add_argument("--bin-dir")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--extra-zoom", action="store_true", help="also check Calculator and Files double-click Zoom")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--gtk-window", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()

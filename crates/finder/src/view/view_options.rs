@@ -317,7 +317,65 @@ impl FinderView {
         self.change_options(|o| o.icon_size = size, cx);
     }
     pub(super) fn toggle_view_options(&mut self, cx: &mut Context<Self>) {
-        self.view_options_open = !self.view_options_open;
+        if self.view_options_open {
+            self.close_view_options(cx);
+            return;
+        }
+        self.view_options_open = true;
+        let height = if self.view == ViewMode::List {
+            646.0
+        } else {
+            632.0
+        };
+        let title = format!("{} View Options", self.title());
+        let owner = cx.entity().downgrade();
+        // Opening a window renders it immediately. Defer until this Finder
+        // update ends, since its utility view reads the owner's controls.
+        cx.spawn(async move |_, cx: &mut gpui::AsyncApp| {
+            cx.update(|cx| {
+                let (width, height) = rmac_ui::outer_window_size(236.0, height);
+                let mut options = rmac_ui::window_options_for_app_with_title(
+                    rmac_ui::app_id::FILES,
+                    title,
+                    width,
+                    height,
+                    cx,
+                );
+                options.window_bounds = Some(gpui::WindowBounds::centered(
+                    gpui::size(px(width), px(height)),
+                    cx,
+                ));
+                options.focus = false;
+                options.kind = gpui::WindowKind::Floating;
+                let view_owner = owner.clone();
+                let opened = cx.open_window(options, move |window, cx| {
+                    rmac_ui::prepare_surface_window(window, cx);
+                    let view = cx.new(|cx| ViewOptionsWindow {
+                        owner: view_owner,
+                        focus: cx.focus_handle(),
+                    });
+                    cx.new(|cx| rmac_ui::shell_surface_root(view, window, cx))
+                });
+                let _ = owner.update(cx, |this, cx| {
+                    match opened {
+                        Ok(handle) => this.view_options_window = Some(handle),
+                        Err(_) => {
+                            this.view_options_open = false;
+                            this.operation_error = Some("Files could not open View Options".into());
+                        }
+                    }
+                    cx.notify();
+                });
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+    pub(super) fn close_view_options(&mut self, cx: &mut Context<Self>) {
+        if let Some(handle) = self.view_options_window.take() {
+            let _ = cx.update_window(*handle, |_, window, _| window.remove_window());
+        }
+        self.view_options_open = false;
         cx.notify();
     }
     pub(super) fn restore_folder_options(&mut self, cx: &mut Context<Self>) {
@@ -435,12 +493,9 @@ impl FinderView {
         let name = self.title();
         let mut panel = div()
             .id("finder-view-options")
-            .role(Role::Dialog)
+            .role(Role::Group)
             .key_context("Finder")
             .aria_label(format!("{name} View Options"))
-            .absolute()
-            .top(px(34.0))
-            .right(px(16.0))
             .w(px(236.0))
             .h(px(if mode == ViewMode::List { 646.0 } else { 632.0 }))
             .rounded(px(rmac_ui::mac::radius_large_surface()))
@@ -465,8 +520,10 @@ impl FinderView {
                         Button::new("vo-close", "×")
                             .ghost()
                             .xsmall()
-                            .on_click(cx.listener(|this, _, _, cx| {
+                            .on_click(cx.listener(|this, _, window, cx| {
                                 this.view_options_open = false;
+                                this.view_options_window = None;
+                                window.remove_window();
                                 cx.notify();
                             })),
                     ),
@@ -801,6 +858,52 @@ impl FinderView {
                     })),
             ),
         )
+    }
+}
+
+/// Non-modal utility window. Its controls still update the owning Finder
+/// view, so selecting files and changing folders remain available behind it.
+struct ViewOptionsWindow {
+    owner: gpui::WeakEntity<FinderView>,
+    focus: FocusHandle,
+}
+
+impl ViewOptionsWindow {
+    fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let _ = self.owner.update(cx, |owner, cx| {
+            owner.view_options_open = false;
+            owner.view_options_window = None;
+            cx.notify();
+        });
+        window.remove_window();
+    }
+}
+
+impl gpui::Focusable for ViewOptionsWindow {
+    fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
+        self.focus.clone()
+    }
+}
+
+impl Render for ViewOptionsWindow {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let panel = self
+            .owner
+            .update(cx, |owner, cx| owner.render_view_options(cx))
+            .ok();
+        div()
+            .size_full()
+            .key_context("Finder")
+            .on_action(cx.listener(|this, _: &ShowViewOptions, window, cx| this.close(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| this.close(window, cx)),
+            )
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                if event.keystroke.key.as_str() == "escape" {
+                    this.close(window, cx);
+                }
+            }))
+            .when_some(panel, |container, panel| container.child(panel))
     }
 }
 

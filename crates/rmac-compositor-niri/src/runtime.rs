@@ -95,7 +95,9 @@ pub async fn execute(request: domain::ActionRequest) -> domain::ActionResult {
 
 /// Sends one action on its own socket so targets cannot race between requests.
 pub async fn execute_at(path: &Path, action: &domain::Action) -> Result<(), domain::ActionError> {
-    for wire_action in convert_action_sequence(action)? {
+    let actions = convert_action_sequence(action)?;
+    let action_count = actions.len();
+    for (index, wire_action) in actions.into_iter().enumerate() {
         let request = Request::Action(wire_action);
         let reply = request_reply_once(path, &request)
             .await
@@ -114,6 +116,22 @@ pub async fn execute_at(path: &Path, action: &domain::Action) -> Result<(), doma
                     message,
                 })
             }
+        }
+        // A floating-frame change is three separate niri IPC actions
+        // (width, height, position). "Handled" only means niri accepted the
+        // request and will send the target window a configure; it says
+        // nothing about whether that window has drawn and committed a
+        // matching buffer yet. Give it a moment before the next request.
+        // This alone is not enough on an otherwise-idle window: GPUI's
+        // Wayland backend only re-arms its per-configure resize throttle
+        // when a frame actually draws (`window.rs`'s `frame()`, ADR 0013's
+        // idle-frame parking), so callers driving a `WindowAction` with no
+        // ongoing pointer motion — a double-click, a menu item, a shortcut
+        // — must also keep that window's frame loop awake for the round
+        // trip (`rmac_ui::chrome`'s `keep_window_awake_for_compositor_round_trip`)
+        // or every configure after the first is acknowledged and dropped.
+        if index + 1 < action_count {
+            Timer::after(std::time::Duration::from_millis(50)).await;
         }
     }
     Ok(())

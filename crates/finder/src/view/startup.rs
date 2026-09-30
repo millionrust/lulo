@@ -289,6 +289,7 @@ impl FinderView {
             options_path: None,
             browse_view: None,
             view_options_open: false,
+            view_options_window: None,
             col_stack: vec![cwd],
             column_selection: None,
             sort_key: SortKey::Name,

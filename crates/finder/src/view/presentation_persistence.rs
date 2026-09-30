@@ -331,6 +331,9 @@ impl FinderView {
         for info_window in self.info_windows.drain(..) {
             let _ = cx.update_window(*info_window, |_, window, _| window.remove_window());
         }
+        if let Some(options_window) = self.view_options_window.take() {
+            let _ = cx.update_window(*options_window, |_, window, _| window.remove_window());
+        }
         window.remove_window();
     }
 }
@@ -588,8 +591,10 @@ mod tests {
         let mut state =
             FinderState::checked(PresentationState::default(), vec![PathBuf::from("/tmp")], 0)
                 .unwrap();
-        let mut options = super::super::view_options::FolderOptions::default();
-        options.icon_size = 80.0;
+        let mut options = super::super::view_options::FolderOptions {
+            icon_size: 80.0,
+            ..Default::default()
+        };
         options.columns[0] = false;
         state
             .folders

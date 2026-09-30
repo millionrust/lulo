@@ -915,9 +915,10 @@ class LuloRun:
         if self.process.poll() is not None:
             raise StepFailed(f"the app exited ({self.process.returncode}) during the scenario")
 
-    def window_origin(self) -> tuple[int, int]:
+    def window_origin(self, frame=None) -> tuple[int, int]:
         windows = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
-        focused = [w for w in windows if w.get("focused")] or windows
+        matching = [w for w in windows if w.get("name") == name(frame)] if frame is not None else []
+        focused = matching or [w for w in windows if w.get("focused")] or windows
         if not focused:
             return 0, 0
         rect = focused[0]["rect"]
@@ -927,16 +928,24 @@ class LuloRun:
     def click_item(self, label: str, button: str, count: int = 1, modifiers: Optional[list[str]] = None) -> None:
         frame = self.active_frame()
         target = None
-        for node in descendants(frame, limit=4000) if frame is not None else []:
-            if name(node) == label and role(node) in {"list item", "table row", "tree item", "table cell", "label", "static", "push button", "button", "combo box", "menu item"}:
-                target = node
+        # A non-modal utility window can be active while its owning document
+        # remains clickable (Finder View Options). Search that document too.
+        frames = ([frame] if frame is not None else []) + [
+            other for other in self.frames() if other is not frame
+        ]
+        for candidate in frames:
+            for node in descendants(candidate, limit=4000):
+                if name(node) == label and role(node) in {"list item", "table row", "tree item", "table cell", "label", "static", "push button", "button", "combo box", "menu item"}:
+                    frame, target = candidate, node
+                    break
+            if target is not None:
                 break
         if target is None:
             raise StepFailed(f"no accessible item named {label!r} to click")
         box = extents(target)
         if not box:
             raise StepFailed(f"{label!r} has no on-screen extents")
-        ox, oy = self.window_origin()
+        ox, oy = self.window_origin(frame)
         x, y = ox + box[0] + min(40, box[2] // 2), oy + box[1] + box[3] // 2
         self.nested.input.click(x, y, OUTPUT_W, OUTPUT_H, button=button, count=count, modifiers=modifiers)
 

@@ -7,7 +7,7 @@ use gpui::{
     accesskit, div, prelude::FluentBuilder as _, px, rgb, rgba, size, svg, A11ySubtreeBuilder,
     AnyElement, ClipboardItem, Context, FocusHandle, FontWeight, InteractiveElement as _,
     IntoElement, KeyDownEvent, ParentElement as _, Render, Role, SharedString,
-    StatefulInteractiveElement as _, Styled as _, Window, WindowControlArea,
+    StatefulInteractiveElement as _, Styled as _, Window,
 };
 use rmac_calculator::engine::{fitted_font_size, Calculator, HistoryEntry, Key as BasicKey};
 use rmac_calculator::keypad::{
@@ -267,11 +267,9 @@ impl CalculatorView {
             .w_full()
             .h(px(mac::toolbar_height()))
             .child(
-                div()
-                    .id("calculator-drag")
+                rmac_ui::title_bar_drag_region("calculator-drag")
                     .absolute()
-                    .size_full()
-                    .window_control_area(WindowControlArea::Drag),
+                    .size_full(),
             )
             .child(
                 div()

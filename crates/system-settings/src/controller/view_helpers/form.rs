@@ -542,6 +542,7 @@ pub(in crate::controller) fn stepped_slider_row(
     let title = title.into();
     row_base()
         .items_start()
+        .id(SharedString::from(format!("{id}-row")))
         .role(Role::Group)
         .aria_label(title.clone())
         .child(text_block(title, None))

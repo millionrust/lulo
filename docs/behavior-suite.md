@@ -35,8 +35,8 @@ python3 scripts/behavior/run_lulo.py --bin-dir ~/rmac-wt/target/iterate --benchm
 It creates 200,000 empty files under a temporary `HOME/Documents`, keeps one
 Settings instance open, and reports time to the capacity label, first
 category, completion, and Settings process CPU time on first open and reopen.
-It removes the synthetic
-tree and temporary XDG directories when it exits.
+It also samples Settings CPU use for one idle second after each result. It
+removes the synthetic tree and temporary XDG directories when it exits.
 Mac input is gated by the same AX ownership check as `record_mac.py`. Notes,
 Dock/window management, status menus and Spotlight are marked Mac-unsafe in
 their journey definitions; they run on Lulo only. Mac Terminal accepts only

@@ -1349,11 +1349,14 @@ def benchmark_storage(nested: Nested, bins: list[Path], count: int) -> None:
                     complete = elapsed
                     break
                 time.sleep(0.05)
+            completed_cpu = cpu_seconds()
+            time.sleep(1.0)
             result = {
                 "capacity_seconds": capacity,
                 "first_category_seconds": first,
                 "complete_seconds": complete,
-                "cpu_seconds": round(cpu_seconds() - before_cpu, 3),
+                "cpu_seconds": round(completed_cpu - before_cpu, 3),
+                "idle_cpu_seconds_per_second": round(cpu_seconds() - completed_cpu, 3),
             }
             if first is None or complete is None:
                 raise StepFailed(f"Storage categories did not complete: {result}")

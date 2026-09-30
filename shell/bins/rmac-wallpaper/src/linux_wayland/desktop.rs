@@ -58,7 +58,7 @@ fn transfer_drop_item(
     if copy || source_device != destination_device {
         return copy_drop_item(source, destination);
     }
-    match fs::rename(source, destination) {
+    match rmac_desktop::move_item_no_replace(source, destination) {
         Ok(()) => Ok(()),
         Err(error) if error.raw_os_error() == Some(libc::EXDEV) => {
             copy_drop_item(source, destination)?;

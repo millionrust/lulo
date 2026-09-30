@@ -14,6 +14,20 @@ import run_window_move  # noqa: E402
 
 
 class WindowMoveIpcTests(unittest.TestCase):
+    def test_window_predicate_observes_the_candidate(self):
+        runner = object.__new__(run_window_move.Run)
+        runner.window = lambda app_id: {"app_id": app_id, "width": 900}
+        self.assertEqual(
+            runner.window_matching("test", lambda candidate: candidate["width"] > 800),
+            {"app_id": "test", "width": 900},
+        )
+        self.assertIsNone(runner.window_matching("test", lambda candidate: candidate["width"] < 800))
+
+    def test_wait_does_not_hide_programming_errors(self):
+        runner = object.__new__(run_window_move.Run)
+        with self.assertRaises(UnboundLocalError):
+            runner.wait_for(lambda: (candidate := 1) if candidate else None, timeout=0.01)
+
     def test_windows_query_retries_a_failed_reply(self):
         with tempfile.TemporaryDirectory() as directory:
             path = str(Path(directory) / "niri.sock")

@@ -72,7 +72,7 @@ class Run:
         while time.monotonic() < deadline:
             try:
                 value = predicate()
-            except Exception:  # noqa: BLE001
+            except (OSError, RuntimeError, ValueError, KeyError):
                 value = None
             if value:
                 return value
@@ -108,6 +108,10 @@ class Run:
 
     def window(self, app_id: str):
         return next((w for w in self.windows() if w.get("app_id") == app_id), None)
+
+    def window_matching(self, app_id: str, predicate):
+        candidate = self.window(app_id)
+        return candidate if candidate and predicate(candidate) else None
 
     @staticmethod
     def geometry(window: dict) -> tuple[float, float, float, float]:
@@ -226,9 +230,9 @@ class Run:
         start, end = (x + width * .5, y + 18), (x + width * .5 + 150, y + 100)
         self.drag(start, end)
         moved = self.wait_for(
-            lambda: (candidate := self.window(app_id))
-            if candidate and (abs(self.geometry(candidate)[0] - x) > 30
-                              or abs(self.geometry(candidate)[1] - y) > 30) else None,
+            lambda: self.window_matching(
+                app_id, lambda candidate: abs(self.geometry(candidate)[0] - x) > 30
+                or abs(self.geometry(candidate)[1] - y) > 30),
             8,
         )
         new_geometry = self.geometry(moved) if moved else (x, y, width, height)
@@ -276,8 +280,8 @@ class Run:
             edge_y = y + height / 2
             self.drag((x + offset, edge_y), (x + offset - 160, edge_y))
             candidate = self.wait_for(
-                lambda: (candidate := self.window(app_id))
-                if candidate and self.geometry(candidate)[2] > initial_width + 30 else None,
+                lambda: self.window_matching(
+                    app_id, lambda candidate: self.geometry(candidate)[2] > initial_width + 30),
                 3.0,
             )
             if candidate:
@@ -302,9 +306,10 @@ class Run:
             # usable resize edge for oversized initial client bounds.
             self.drag((x + width * .5, y + 18), (x + width * .5 + 140, y + 90))
             placed = self.wait_for(
-                lambda: (candidate := self.window("org.rmac.SystemSettings"))
-                if candidate and (abs(self.geometry(candidate)[0] - x) >= 30
-                                  or abs(self.geometry(candidate)[1] - y) >= 30) else None,
+                lambda: self.window_matching(
+                    "org.rmac.SystemSettings",
+                    lambda candidate: abs(self.geometry(candidate)[0] - x) >= 30
+                    or abs(self.geometry(candidate)[1] - y) >= 30),
                 8,
             )
             placed_geometry = self.geometry(placed) if placed else (x, y, width, height)
@@ -320,9 +325,10 @@ class Run:
             sx, sy, sw, sh = x, y, width, height
             self.drag((sx + sw * .5, sy + 18), (sx + sw * .5 + 140, sy + 90))
             moved = self.wait_for(
-                lambda: (candidate := self.window("org.rmac.SystemSettings"))
-                if candidate and (abs(self.geometry(candidate)[0] - sx) >= 30
-                                  or abs(self.geometry(candidate)[1] - sy) >= 30) else None,
+                lambda: self.window_matching(
+                    "org.rmac.SystemSettings",
+                    lambda candidate: abs(self.geometry(candidate)[0] - sx) >= 30
+                    or abs(self.geometry(candidate)[1] - sy) >= 30),
                 8,
             )
             mg = self.geometry(moved) if moved else (sx, sy, sw, sh)
@@ -410,8 +416,7 @@ class Run:
         # Direct socket queries have a short timeout, so one slow IPC reply
         # cannot consume the whole wait budget after the resize request.
         zoomed = self.wait_for(
-            lambda: (candidate := self.window(app_id))
-            if candidate and grew_substantially(candidate) else None,
+            lambda: self.window_matching(app_id, grew_substantially),
             15.0,
         )
         if zoomed:
@@ -444,9 +449,9 @@ class Run:
         restore_point = (zx + zw * 0.5, zy + 18)
         self.double_click(restore_point)
         restored = self.wait_for(
-            lambda: (candidate := self.window(app_id))
-            if candidate and abs(self.geometry(candidate)[2] - width) < 30
-            and abs(self.geometry(candidate)[3] - height) < 30 else None,
+            lambda: self.window_matching(
+                app_id, lambda candidate: abs(self.geometry(candidate)[2] - width) < 30
+                and abs(self.geometry(candidate)[3] - height) < 30),
             15.0,
         )
         restored_geometry = self.geometry(restored) if restored else zoomed_geometry

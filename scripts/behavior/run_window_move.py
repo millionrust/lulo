@@ -225,7 +225,12 @@ class Run:
             self.check("GTK content receives a virtual pointer click", bool(clicked))
         start, end = (x + width * .5, y + 18), (x + width * .5 + 150, y + 100)
         self.drag(start, end)
-        moved = self.wait_for(lambda: self.window(app_id), 3)
+        moved = self.wait_for(
+            lambda: (candidate := self.window(app_id))
+            if candidate and (abs(self.geometry(candidate)[0] - x) > 30
+                              or abs(self.geometry(candidate)[1] - y) > 30) else None,
+            3,
+        )
         new_geometry = self.geometry(moved) if moved else (x, y, width, height)
         changed = abs(new_geometry[0] - x) > 30 or abs(new_geometry[1] - y) > 30
         self.check(f"{title} title-bar drag changes niri position", changed,
@@ -295,7 +300,12 @@ class Run:
             # to resize it. This makes the same move request establish a
             # usable resize edge for oversized initial client bounds.
             self.drag((x + width * .5, y + 18), (x + width * .5 + 140, y + 90))
-            placed = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
+            placed = self.wait_for(
+                lambda: (candidate := self.window("org.rmac.SystemSettings"))
+                if candidate and (abs(self.geometry(candidate)[0] - x) >= 30
+                                  or abs(self.geometry(candidate)[1] - y) >= 30) else None,
+                4,
+            )
             placed_geometry = self.geometry(placed) if placed else (x, y, width, height)
             intersects_output = (
                 placed_geometry[0] < self.width
@@ -308,7 +318,12 @@ class Run:
             x, y, width, height = placed_geometry
             sx, sy, sw, sh = x, y, width, height
             self.drag((sx + sw * .5, sy + 18), (sx + sw * .5 + 140, sy + 90))
-            moved = self.wait_for(lambda: self.window("org.rmac.SystemSettings"), 4)
+            moved = self.wait_for(
+                lambda: (candidate := self.window("org.rmac.SystemSettings"))
+                if candidate and (abs(self.geometry(candidate)[0] - sx) >= 30
+                                  or abs(self.geometry(candidate)[1] - sy) >= 30) else None,
+                4,
+            )
             mg = self.geometry(moved) if moved else (sx, sy, sw, sh)
             # Niri may clamp a 140 px grab to 30 px near an output edge.
             # That is still a real move, well beyond compositor jitter.

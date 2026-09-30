@@ -363,6 +363,32 @@ fn classify_touch_motion(
     }
 }
 
+fn classify_touch_hold(gesture: TouchGesture, elapsed: Duration) -> TouchGesture {
+    if gesture == TouchGesture::Pending && elapsed >= TOUCH_HOLD {
+        TouchGesture::ContextMenu
+    } else {
+        gesture
+    }
+}
+
+fn next_click_count(
+    previous_button: Option<MouseButton>,
+    previous_position: Point<Pixels>,
+    previous_count: usize,
+    elapsed: Duration,
+    button: MouseButton,
+    position: Point<Pixels>,
+) -> usize {
+    if elapsed < DOUBLE_CLICK_INTERVAL
+        && previous_button == Some(button)
+        && is_within_click_distance(previous_position, position)
+    {
+        previous_count + 1
+    } else {
+        1
+    }
+}
+
 #[cfg(test)]
 mod touch_tests {
     use super::*;
@@ -391,6 +417,71 @@ mod touch_tests {
         assert_eq!(
             classify_touch_motion(start, moved, FILE_DRAG_HOLD, false, true),
             TouchGesture::PointerDrag
+        );
+    }
+
+    #[test]
+    fn hold_only_opens_context_menu_without_movement() {
+        assert_eq!(
+            classify_touch_hold(TouchGesture::Pending, TOUCH_HOLD - Duration::from_millis(1)),
+            TouchGesture::Pending
+        );
+        assert_eq!(
+            classify_touch_hold(TouchGesture::Pending, TOUCH_HOLD),
+            TouchGesture::ContextMenu
+        );
+        assert_eq!(
+            classify_touch_hold(TouchGesture::Scroll, TOUCH_HOLD),
+            TouchGesture::Scroll
+        );
+    }
+
+    #[test]
+    fn double_tap_uses_click_interval_and_distance() {
+        let position = point(px(40.0), px(50.0));
+        assert_eq!(
+            next_click_count(
+                Some(MouseButton::Left),
+                position,
+                1,
+                DOUBLE_CLICK_INTERVAL - Duration::from_millis(1),
+                MouseButton::Left,
+                position
+            ),
+            2
+        );
+        assert_eq!(
+            next_click_count(
+                Some(MouseButton::Left),
+                position,
+                1,
+                DOUBLE_CLICK_INTERVAL,
+                MouseButton::Left,
+                position
+            ),
+            1
+        );
+        assert_eq!(
+            next_click_count(
+                Some(MouseButton::Right),
+                position,
+                1,
+                Duration::ZERO,
+                MouseButton::Left,
+                position
+            ),
+            1
+        );
+        assert_eq!(
+            next_click_count(
+                Some(MouseButton::Left),
+                position,
+                1,
+                Duration::ZERO,
+                MouseButton::Left,
+                point(px(200.0), px(50.0))
+            ),
+            1
         );
     }
 }
@@ -444,14 +535,14 @@ impl WaylandClientState {
     }
 
     fn count_click(&mut self, button: MouseButton, position: Point<Pixels>) -> usize {
-        if self.click.last_click.elapsed() < DOUBLE_CLICK_INTERVAL
-            && self.click.last_mouse_button == Some(button)
-            && is_within_click_distance(self.click.last_location, position)
-        {
-            self.click.current_count += 1;
-        } else {
-            self.click.current_count = 1;
-        }
+        self.click.current_count = next_click_count(
+            self.click.last_mouse_button,
+            self.click.last_location,
+            self.click.current_count,
+            self.click.last_click.elapsed(),
+            button,
+            position,
+        );
         self.click.last_click = Instant::now();
         self.click.last_mouse_button = Some(button);
         self.click.last_location = position;
@@ -2089,12 +2180,19 @@ fn end_touch_contact(
     contact: TouchContact,
     cancelled: bool,
 ) {
-    let mut state = client.borrow_mut();
+    let state = client.borrow();
     let modifiers = state.modifiers;
     match contact.gesture {
         TouchGesture::Pending if !cancelled => {
             drop(state);
-            touch_click(client, &contact.window, MouseButton::Left, contact.position);
+            let button = if classify_touch_hold(contact.gesture, contact.started.elapsed())
+                == TouchGesture::ContextMenu
+            {
+                MouseButton::Right
+            } else {
+                MouseButton::Left
+            };
+            touch_click(client, &contact.window, button, contact.position);
         }
         TouchGesture::PointerDrag => {
             drop(state);
@@ -2198,6 +2296,8 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                 };
                 state.serial_tracker.update(SerialKind::MousePress, serial);
                 state.momentum_generation = state.momentum_generation.wrapping_add(1);
+                state.last_finger_scroll = None;
+                state.scroll_velocity = point(0.0, 0.0);
                 state.touch_generation = state.touch_generation.wrapping_add(1);
                 let generation = state.touch_generation;
                 let modifiers = state.modifiers;
@@ -2236,10 +2336,12 @@ impl Dispatch<wl_touch::WlTouch, ()> for WaylandClientStatePtr {
                             let Some(contact) = state.touch.as_mut() else {
                                 return TimeoutAction::Drop;
                             };
-                            if contact.gesture != TouchGesture::Pending {
+                            let gesture =
+                                classify_touch_hold(contact.gesture, contact.started.elapsed());
+                            if gesture != TouchGesture::ContextMenu {
                                 return TimeoutAction::Drop;
                             }
-                            contact.gesture = TouchGesture::ContextMenu;
+                            contact.gesture = gesture;
                             let window = contact.window.clone();
                             let position = contact.position;
                             state.touch_hold_token = None;

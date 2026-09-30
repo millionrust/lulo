@@ -187,9 +187,13 @@ def remove_tree(path: Path) -> None:
 
 
 def outer(args: argparse.Namespace, argv: list[str]) -> int:
+    import fcntl
+
     for tool in ("sway", "swaymsg", "dbus-run-session"):
         if shutil.which(tool) is None:
             raise SystemExit(f"{tool} is required")
+    journey_lock = open("/tmp/lulo-journey.lock", "w")
+    fcntl.flock(journey_lock, fcntl.LOCK_EX)
     work = Path(tempfile.mkdtemp(prefix="lulo-behavior-"))
     try:
         binary_directories = [Path(p) for p in args.bin_dir + args.shell_bin_dir]
@@ -251,6 +255,7 @@ def outer(args: argparse.Namespace, argv: list[str]) -> int:
             remove_tree(work)
         else:
             print(f"kept {work}", file=sys.stderr)
+        journey_lock.close()
 
 
 # --------------------------------------------------------------------------

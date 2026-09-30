@@ -115,6 +115,48 @@ class EvaluateProcessTests(unittest.TestCase):
         result = analyze_soak.evaluate_process("clock", records, rss_budget_mib=128, growth_budget_mib_8h=16)
         self.assertFalse(result["rss"]["sustained_growth"])
 
+    def test_steep_falling_rss_is_not_flagged_as_a_leak(self):
+        # This is the real 2026-09-29 soak shape: RSS falling hard (e.g. the
+        # kernel reclaiming idle pages while the machine compiles all night),
+        # not growing. A leak is sustained GROWTH only -- a negative slope,
+        # however steep, must never trip sustained_growth or over_growth_budget.
+        records = [make_record("clock", t * 300, 150.0 - t * 1.5, 140.0 - t * 1.5) for t in range(97)]
+        result = analyze_soak.evaluate_process("clock", records, rss_budget_mib=128, growth_budget_mib_8h=16)
+        self.assertLess(result["rss"]["growth_mib_scaled_to_8h"], 0)
+        self.assertFalse(result["rss"]["sustained_growth"])
+        self.assertFalse(result["rss"]["over_growth_budget"])
+        self.assertFalse(result["pss"]["over_growth_budget"])
+
+    def test_swap_aware_private_footprint_flags_a_leak_rss_alone_would_miss(self):
+        # RSS/PSS look flat (as they would if the kernel keeps swapping the
+        # newly-grown anonymous pages back out under pressure), but the
+        # process's real private footprint (Pss_Anon + SwapPss) is growing
+        # steadily: this must be flagged even though rss/pss are not.
+        records = [
+            make_record(
+                "leaky",
+                t * 300,
+                50.0,
+                45.0,
+                pss_anon_kib=(30.0 + t * 2.0) * 1024,
+                swap_pss_kib=0.0,
+            )
+            for t in range(96)
+        ]
+        result = analyze_soak.evaluate_process("leaky", records, rss_budget_mib=1000, growth_budget_mib_8h=16)
+        self.assertFalse(result["rss"]["leak_suspected"])
+        self.assertFalse(result["pss"]["leak_suspected"])
+        self.assertTrue(result["private_footprint"]["sustained_growth"])
+        self.assertTrue(result["leak_suspected"])
+
+    def test_private_footprint_reports_no_data_when_samples_lack_it(self):
+        # Older samples (captured before VmSwap/Pss_Anon/SwapPss were
+        # recorded) must not be silently treated as zero growth.
+        records = [make_record("clock", t * 300, 50.0, 45.0) for t in range(5)]
+        result = analyze_soak.evaluate_process("clock", records, rss_budget_mib=128, growth_budget_mib_8h=16)
+        self.assertEqual(result["private_footprint"]["sample_count"], 0)
+        self.assertNotIn("leak_suspected", result["private_footprint"])
+
 
 class CombineShellTests(unittest.TestCase):
     def test_sums_pieces_at_shared_timestamps(self):
@@ -166,6 +208,41 @@ class BuildReportTests(unittest.TestCase):
             self.assertFalse(report["within_budget"])
             # The report itself must be JSON-serialisable (as the CLI writes it).
             json.dumps(report)
+
+    def test_falling_rss_under_memory_pressure_is_not_flagged(self):
+        with TemporaryDirectory() as directory:
+            samples_path = Path(directory) / "samples.jsonl"
+            lines = [
+                json.dumps(make_record("clock", t * 300, 150.0 - t * 1.5, 140.0 - t * 1.5))
+                for t in range(97)
+            ]
+            samples_path.write_text("\n".join(lines) + "\n")
+
+            records = analyze_soak.load_samples(samples_path)
+            grouped = analyze_soak.group_by_app(records)
+            budgets = {
+                "memory": {
+                    "application_rss_mib": 1000,
+                    "application_rss_growth_mib_8h": 16,
+                    "combined_shell_rss_mib": 256,
+                    "combined_shell_rss_growth_mib_8h": 24,
+                }
+            }
+            report = analyze_soak.build_report(samples_path, grouped, budgets)
+            self.assertNotIn("clock", report["leaks_detected"])
+            self.assertTrue(report["within_budget"])
+
+    def test_note_is_carried_into_the_report(self):
+        with TemporaryDirectory() as directory:
+            samples_path = Path(directory) / "samples.jsonl"
+            samples_path.write_text(json.dumps(make_record("clock", 0, 50.0, 45.0)) + "\n")
+            records = analyze_soak.load_samples(samples_path)
+            grouped = analyze_soak.group_by_app(records)
+            budgets = {"memory": {}}
+            report = analyze_soak.build_report(samples_path, grouped, budgets, note="inconclusive: test")
+            self.assertEqual(report["note"], "inconclusive: test")
+            markdown = analyze_soak.render_markdown_report(report)
+            self.assertIn("inconclusive: test", markdown)
 
 
 if __name__ == "__main__":

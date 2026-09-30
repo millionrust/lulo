@@ -20,14 +20,22 @@ exactly run_lulo.py's and run_niri_minimize.py's isolation, reused here
 unchanged (`isolated_environment`, `refuse_live_session`, `reap`,
 `remove_tree`). Every --sample-interval-seconds (default 300s = 5 min) it
 appends one JSON line per tracked process to <output-dir>/samples.jsonl:
-RSS (`/proc/<pid>/status` VmRSS), PSS (`/proc/<pid>/smaps_rollup` Pss),
-cumulative CPU time, thread count and fd count, each summed over the
-process's whole descendant tree (a shell/child a Terminal or Files spawns is
-still this app's memory). Every --activity-interval-seconds (default 1800s
-= 30 min) it drives one gentle round of activity through the nested virtual
-input (wlinput.py, which refuses to inject into the live session): a Files
-new-window/close, and a short typed line in Text Editor, into a file under
-the run's own temporary HOME -- never the owner's real files.
+RSS and VmSwap (`/proc/<pid>/status` VmRSS, VmSwap), PSS and its
+anonymous/file/swap breakdown (`/proc/<pid>/smaps_rollup` Pss, Pss_Anon,
+Pss_File, SwapPss), cumulative CPU time, thread count and fd count, each
+summed over the process's whole descendant tree (a shell/child a Terminal
+or Files spawns is still this app's memory). RSS and plain PSS fall when the
+kernel reclaims a process's idle clean/file-backed pages under memory
+pressure, even though the process has freed nothing; Pss_Anon + SwapPss is
+the process's real private footprint (its anonymous resident pages plus the
+anonymous pages the kernel has swapped out) and does not fall just because
+the machine is busy -- see scripts/linux/analyze-soak.py, which evaluates
+leak growth on that sum wherever a sample has it. Every
+--activity-interval-seconds (default 1800s = 30 min) it drives one gentle
+round of activity through the nested virtual input (wlinput.py, which
+refuses to inject into the live session): a Files new-window/close, and a
+short typed line in Text Editor, into a file under the run's own temporary
+HOME -- never the owner's real files.
 
 Analyse the resulting samples.jsonl with scripts/linux/analyze-soak.py.
 
@@ -100,7 +108,10 @@ def parse_proc_stat_ppid_and_ticks(text: str) -> tuple[int, int, int]:
 
 
 def parse_status_fields(text: str) -> dict[str, int]:
-    """Return {"vm_rss_kib": ..., "threads": ...} from `/proc/<pid>/status`."""
+    """Return {"vm_rss_kib": ..., "threads": ..., "vm_swap_kib": ...} from
+    `/proc/<pid>/status`. VmSwap defaults to 0 when the kernel omits it
+    (e.g. a build without swap accounting) rather than raising, since it is
+    supplementary to the required VmRSS/Threads fields."""
 
     fields: dict[str, int] = {}
     for line in text.splitlines():
@@ -108,8 +119,11 @@ def parse_status_fields(text: str) -> dict[str, int]:
             fields["vm_rss_kib"] = int(line.split()[1])
         elif line.startswith("Threads:"):
             fields["threads"] = int(line.split()[1])
+        elif line.startswith("VmSwap:"):
+            fields["vm_swap_kib"] = int(line.split()[1])
     if "vm_rss_kib" not in fields or "threads" not in fields:
         raise ValueError("missing VmRSS or Threads in /proc/<pid>/status")
+    fields.setdefault("vm_swap_kib", 0)
     return fields
 
 
@@ -118,6 +132,34 @@ def parse_smaps_rollup_pss_kib(text: str) -> int:
         if line.startswith("Pss:"):
             return int(line.split()[1])
     raise ValueError("no Pss line found in smaps_rollup")
+
+
+def parse_smaps_rollup_fields(text: str) -> dict[str, int]:
+    """Return {"pss_kib", "pss_anon_kib", "pss_file_kib", "swap_pss_kib"}
+    from `/proc/<pid>/smaps_rollup`. Pss_Anon + SwapPss is a process's real
+    private footprint -- its anonymous resident pages plus the anonymous
+    pages the kernel has swapped out -- which does not shrink just because
+    the machine is under memory pressure and reclaims clean/file-backed
+    pages, unlike plain Pss or VmRSS. The three breakdown fields default to
+    0 when absent (an older kernel without the Pss_Anon/Pss_File/SwapPss
+    rollup lines) rather than raising, since Pss alone is still usable."""
+
+    fields: dict[str, int] = {}
+    for line in text.splitlines():
+        if line.startswith("Pss:"):
+            fields["pss_kib"] = int(line.split()[1])
+        elif line.startswith("Pss_Anon:"):
+            fields["pss_anon_kib"] = int(line.split()[1])
+        elif line.startswith("Pss_File:"):
+            fields["pss_file_kib"] = int(line.split()[1])
+        elif line.startswith("SwapPss:"):
+            fields["swap_pss_kib"] = int(line.split()[1])
+    if "pss_kib" not in fields:
+        raise ValueError("no Pss line found in smaps_rollup")
+    fields.setdefault("pss_anon_kib", 0)
+    fields.setdefault("pss_file_kib", 0)
+    fields.setdefault("swap_pss_kib", 0)
+    return fields
 
 
 def cpu_seconds_from_ticks(ticks: int, hertz: int) -> float:
@@ -180,6 +222,7 @@ def sample_tree(root_pid: int, hertz: int) -> Optional[dict[str, Any]]:
     if not pids:
         return None
     rss_kib = pss_kib = threads = fds = 0
+    vm_swap_kib = pss_anon_kib = pss_file_kib = swap_pss_kib = 0
     cpu_ticks = 0
     for pid in pids:
         proc = Path(f"/proc/{pid}")
@@ -197,11 +240,16 @@ def sample_tree(root_pid: int, hertz: int) -> Optional[dict[str, Any]]:
                 fields = parse_status_fields(status_text)
                 rss_kib += fields["vm_rss_kib"]
                 threads += fields["threads"]
+                vm_swap_kib += fields["vm_swap_kib"]
             except ValueError:
                 pass
         if rollup_text is not None:
             try:
-                pss_kib += parse_smaps_rollup_pss_kib(rollup_text)
+                rollup_fields = parse_smaps_rollup_fields(rollup_text)
+                pss_kib += rollup_fields["pss_kib"]
+                pss_anon_kib += rollup_fields["pss_anon_kib"]
+                pss_file_kib += rollup_fields["pss_file_kib"]
+                swap_pss_kib += rollup_fields["swap_pss_kib"]
             except ValueError:
                 pass
         try:
@@ -212,6 +260,10 @@ def sample_tree(root_pid: int, hertz: int) -> Optional[dict[str, Any]]:
         "process_count": len(pids),
         "rss_kib": rss_kib,
         "pss_kib": pss_kib,
+        "vm_swap_kib": vm_swap_kib,
+        "pss_anon_kib": pss_anon_kib,
+        "pss_file_kib": pss_file_kib,
+        "swap_pss_kib": swap_pss_kib,
         "cpu_seconds": cpu_seconds_from_ticks(cpu_ticks, hertz),
         "threads": threads,
         "fds": fds,

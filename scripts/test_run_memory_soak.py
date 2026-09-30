@@ -49,6 +49,18 @@ class ProcStatusParsingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_memory_soak.parse_status_fields("Name:\trmac-files\n")
 
+    def test_parses_vm_swap(self):
+        text = "Name:\trmac-files\nVmRSS:\t   40960 kB\nVmSwap:\t    2048 kB\nThreads:\t7\n"
+        fields = run_memory_soak.parse_status_fields(text)
+        self.assertEqual(fields["vm_swap_kib"], 2048)
+
+    def test_missing_vm_swap_defaults_to_zero(self):
+        # Required fields present, VmSwap absent (e.g. no swap configured):
+        # this must not raise, only RSS/threads are mandatory.
+        text = "Name:\trmac-files\nVmRSS:\t   40960 kB\nThreads:\t7\n"
+        fields = run_memory_soak.parse_status_fields(text)
+        self.assertEqual(fields["vm_swap_kib"], 0)
+
 
 class SmapsRollupParsingTests(unittest.TestCase):
     def test_parses_pss(self):
@@ -58,6 +70,34 @@ class SmapsRollupParsingTests(unittest.TestCase):
     def test_missing_pss_raises(self):
         with self.assertRaises(ValueError):
             run_memory_soak.parse_smaps_rollup_pss_kib("Rss: 100 kB\n")
+
+    def test_parses_anon_file_and_swap_pss(self):
+        text = (
+            "Rss:            51200 kB\n"
+            "Pss:            38912 kB\n"
+            "Pss_Anon:       30000 kB\n"
+            "Pss_File:        8912 kB\n"
+            "Pss_Shmem:          0 kB\n"
+            "SwapPss:         4096 kB\n"
+        )
+        fields = run_memory_soak.parse_smaps_rollup_fields(text)
+        self.assertEqual(fields["pss_kib"], 38912)
+        self.assertEqual(fields["pss_anon_kib"], 30000)
+        self.assertEqual(fields["pss_file_kib"], 8912)
+        self.assertEqual(fields["swap_pss_kib"], 4096)
+
+    def test_fields_missing_pss_raises(self):
+        with self.assertRaises(ValueError):
+            run_memory_soak.parse_smaps_rollup_fields("Rss: 100 kB\n")
+
+    def test_fields_missing_breakdown_defaults_to_zero(self):
+        # An older kernel with just the required Pss line and none of the
+        # Pss_Anon/Pss_File/SwapPss breakdown lines must not raise.
+        fields = run_memory_soak.parse_smaps_rollup_fields("Rss: 100 kB\nPss: 80 kB\n")
+        self.assertEqual(fields["pss_kib"], 80)
+        self.assertEqual(fields["pss_anon_kib"], 0)
+        self.assertEqual(fields["pss_file_kib"], 0)
+        self.assertEqual(fields["swap_pss_kib"], 0)
 
 
 class CpuSecondsTests(unittest.TestCase):

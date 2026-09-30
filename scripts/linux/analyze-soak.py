@@ -8,13 +8,26 @@ ordinary-least-squares growth slope in MiB/hour (RSS and PSS both use every
 sample, not just the endpoints, so a couple of noisy points cannot swing the
 result), and flags it as a suspected leak when either:
 
-  * the RSS slope is more than ~5%/hour of the starting RSS, sustained (the
+  * the slope is more than ~5%/hour of the starting value, sustained (the
     fit's R^2 is at least 0.5, so a flat trace with one noisy sample is not
-    flagged); or
-  * the peak RSS exceeds scripts/performance-budgets.json's
-    memory.application_rss_mib (128 MiB), or the end-minus-start RSS growth,
-    scaled to what it would be over a full 8-hour window, exceeds
-    memory.application_rss_growth_mib_8h (16 MiB).
+    flagged) -- growth only: a falling trace (e.g. the kernel reclaiming
+    idle pages under memory pressure) is never a leak, however steep; or
+  * the peak exceeds scripts/performance-budgets.json's
+    memory.application_rss_mib (128 MiB), or the end-minus-start growth (not
+    shrinkage), scaled to what it would be over a full 8-hour window,
+    exceeds memory.application_rss_growth_mib_8h (16 MiB).
+
+RSS and PSS alone are meaningless under memory pressure: the kernel can
+reclaim an idle process's clean/file-backed pages at any time, which shows
+up as RSS/PSS falling even though the process has not freed anything. So
+this script also evaluates a third, swap-aware metric wherever the samples
+have it (scripts/behavior/run_memory_soak.py's smaps_rollup Pss_Anon +
+SwapPss): the process's anonymous resident pages plus the anonymous pages
+the kernel has swapped out. That sum is a process's real private footprint
+-- it does not shrink just because the machine reclaimed cache -- and is
+what "leak_suspected" should really be judged on when it is available.
+Samples captured before that field existed simply report "no live samples
+with this metric" for it and fall back to RSS/PSS.
 
 The three shell pieces (wallpaper, top-bar, dock) are also reported combined
 against memory.combined_shell_rss_mib / combined_shell_rss_growth_mib_8h.
@@ -149,11 +162,14 @@ def evaluate_process_series(
     growth_mib_scaled_to_8h = (growth_mib / duration_hours * 8.0) if duration_hours > 0 else 0.0
     slope_percent_per_hour = percent_per_hour(slope_mib_per_hour / 3600.0, start_mib)
 
+    # A leak is sustained GROWTH only. A falling slope or negative
+    # end-minus-start delta (e.g. the kernel reclaiming idle pages under
+    # memory pressure) must never be flagged, however large the magnitude.
     sustained_growth = (
         slope_percent_per_hour > LEAK_SLOPE_PERCENT_PER_HOUR and r_squared >= LEAK_MIN_R_SQUARED
     )
     over_peak_budget = peak_mib > rss_budget_mib
-    over_growth_budget = abs(growth_mib_scaled_to_8h) > growth_budget_mib_8h
+    over_growth_budget = growth_mib_scaled_to_8h > growth_budget_mib_8h
     leak_suspected = sustained_growth or over_peak_budget or over_growth_budget
 
     return {
@@ -177,6 +193,25 @@ def evaluate_process_series(
     }
 
 
+def with_private_footprint(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Add a derived `private_footprint_kib` = Pss_Anon + SwapPss to each
+    record that has both fields (older samples, captured before
+    run_memory_soak.py recorded them, are passed through unchanged and so
+    are simply excluded by evaluate_process_series's `metric_key in record`
+    filter -- reported as "no live samples with this metric", not as zero
+    growth)."""
+
+    augmented: list[dict[str, Any]] = []
+    for record in records:
+        if "pss_anon_kib" in record and "swap_pss_kib" in record:
+            merged = dict(record)
+            merged["private_footprint_kib"] = record["pss_anon_kib"] + record["swap_pss_kib"]
+            augmented.append(merged)
+        else:
+            augmented.append(record)
+    return augmented
+
+
 def evaluate_process(
     name: str,
     records: list[dict[str, Any]],
@@ -185,6 +220,14 @@ def evaluate_process(
 ) -> dict[str, Any]:
     rss = evaluate_process_series(name, records, rss_budget_mib, growth_budget_mib_8h, "rss_kib", "rss")
     pss = evaluate_process_series(name, records, rss_budget_mib, growth_budget_mib_8h, "pss_kib", "pss")
+    private_footprint = evaluate_process_series(
+        name,
+        with_private_footprint(records),
+        rss_budget_mib,
+        growth_budget_mib_8h,
+        "private_footprint_kib",
+        "private_footprint",
+    )
 
     death = next((record for record in records if not record.get("alive")), None)
     cpu_records = [record for record in records if record.get("alive") and "cpu_seconds" in record]
@@ -199,6 +242,7 @@ def evaluate_process(
         "died_exit_code": death.get("exit_code") if death is not None else None,
         "rss": rss,
         "pss": pss,
+        "private_footprint": private_footprint,
         "cpu_seconds_start": cpu_records[0]["cpu_seconds"] if cpu_records else None,
         "cpu_seconds_end": cpu_records[-1]["cpu_seconds"] if cpu_records else None,
         "threads_start": thread_records[0]["threads"] if thread_records else None,
@@ -207,7 +251,11 @@ def evaluate_process(
         "fds_start": fd_records[0]["fds"] if fd_records else None,
         "fds_end": fd_records[-1]["fds"] if fd_records else None,
         "peak_fds": max((record["fds"] for record in fd_records), default=None),
-        "leak_suspected": rss.get("leak_suspected", False) or pss.get("leak_suspected", False),
+        "leak_suspected": (
+            rss.get("leak_suspected", False)
+            or pss.get("leak_suspected", False)
+            or private_footprint.get("leak_suspected", False)
+        ),
     }
 
 
@@ -231,20 +279,37 @@ def combine_shell(
             elapsed = record.get("elapsed_seconds")
             if elapsed is None or "rss_kib" not in record or "pss_kib" not in record:
                 continue
-            bucket = by_elapsed.setdefault(elapsed, {"rss_kib": 0.0, "pss_kib": 0.0, "pieces": 0})
+            bucket = by_elapsed.setdefault(
+                elapsed,
+                {"rss_kib": 0.0, "pss_kib": 0.0, "pss_anon_kib": 0.0, "swap_pss_kib": 0.0, "pieces": 0, "footprint_pieces": 0},
+            )
             bucket["rss_kib"] += record["rss_kib"]
             bucket["pss_kib"] += record["pss_kib"]
             bucket["pieces"] += 1
+            if "pss_anon_kib" in record and "swap_pss_kib" in record:
+                bucket["pss_anon_kib"] += record["pss_anon_kib"]
+                bucket["swap_pss_kib"] += record["swap_pss_kib"]
+                bucket["footprint_pieces"] += 1
     # Only count a moment where every tracked shell piece was alive and
     # sampled, so a dead piece cannot understate the combined total.
     complete = {elapsed: bucket for elapsed, bucket in by_elapsed.items() if bucket["pieces"] == len(shell_series)}
     if not complete:
         return None
     ordered = sorted(complete.items())
-    pseudo_records = [
-        {"alive": True, "elapsed_seconds": elapsed, "rss_kib": bucket["rss_kib"], "pss_kib": bucket["pss_kib"]}
-        for elapsed, bucket in ordered
-    ]
+    pseudo_records = []
+    for elapsed, bucket in ordered:
+        record: dict[str, Any] = {
+            "alive": True,
+            "elapsed_seconds": elapsed,
+            "rss_kib": bucket["rss_kib"],
+            "pss_kib": bucket["pss_kib"],
+        }
+        # Only carry the swap-aware fields when every piece reported them,
+        # for the same reason a partial RSS/PSS sample point is excluded.
+        if bucket["footprint_pieces"] == len(shell_series):
+            record["pss_anon_kib"] = bucket["pss_anon_kib"]
+            record["swap_pss_kib"] = bucket["swap_pss_kib"]
+        pseudo_records.append(record)
     result = evaluate_process("shell_combined", pseudo_records, combined_rss_budget_mib, combined_growth_budget_mib_8h)
     result["pieces"] = sorted(shell_series)
     result["complete_sample_points"] = len(ordered)
@@ -255,6 +320,7 @@ def build_report(
     samples_path: Path,
     grouped: dict[str, list[dict[str, Any]]],
     budgets: dict[str, Any],
+    note: Optional[str] = None,
 ) -> dict[str, Any]:
     memory_budgets = budgets.get("memory", {})
     app_rss_budget = float(memory_budgets.get("application_rss_mib", 128))
@@ -281,10 +347,11 @@ def build_report(
         leaks_detected.append("shell_combined")
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "memory-soak",
         "captured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "source_samples": str(samples_path),
+        "note": note,
         "budgets": {
             "application_rss_mib": app_rss_budget,
             "application_rss_growth_mib_8h": app_growth_budget,
@@ -313,6 +380,10 @@ def render_markdown_report(report: dict[str, Any]) -> str:
     lines: list[str] = []
     lines.append(f"# Reference laptop memory soak -- {report.get('captured_at', 'unknown')}")
     lines.append("")
+    note = report.get("note")
+    if note:
+        lines.append(f"> **{note}**")
+        lines.append("")
     lines.append(
         f"Source samples: `{report.get('source_samples', 'unknown')}`. Per-app budget: "
         f"{_fmt_mib(report['budgets']['application_rss_mib'])} idle RSS, "
@@ -320,10 +391,13 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         f"Combined shell budget: {_fmt_mib(report['budgets']['combined_shell_rss_mib'])} RSS, "
         f"{_fmt_mib(report['budgets']['combined_shell_rss_growth_mib_8h'])} growth over 8h. "
         f"A sustained slope over {report['budgets']['leak_slope_percent_per_hour']}%/hour "
-        "(R^2 >= 0.5) is also flagged as a suspected leak."
+        "(R^2 >= 0.5) is also flagged as a suspected leak -- growth only, never a falling trace. "
+        "Where the samples have it, growth is also evaluated on the swap-aware private-footprint "
+        "metric (Pss_Anon + SwapPss), the process's real private memory, which does not fall just "
+        "because the kernel reclaimed idle pages under memory pressure."
     )
     lines.append("")
-    lines.append("## Applications")
+    lines.append("## Applications (RSS)")
     lines.append("")
     lines.append("| App | Samples | Start RSS | End RSS | Peak RSS | Growth/8h | Slope %/h | Leak? |")
     lines.append("|---|---:|---:|---:|---:|---:|---:|---|")
@@ -337,6 +411,34 @@ def render_markdown_report(report: dict[str, Any]) -> str:
             f"{'YES' if app.get('leak_suspected') else 'no'} |"
         )
     lines.append("")
+    footprint_rows = [
+        (name, app)
+        for name, app in sorted(report.get("apps", {}).items())
+        if app.get("private_footprint", {}).get("sample_count", 0) > 0
+    ]
+    if footprint_rows:
+        lines.append("## Applications (private footprint: Pss_Anon + SwapPss)")
+        lines.append("")
+        lines.append("| App | Samples | Start | End | Peak | Growth/8h | Slope %/h | Leak? |")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---|")
+        for name, app in footprint_rows:
+            footprint = app.get("private_footprint", {})
+            lines.append(
+                f"| {name} | {footprint.get('sample_count', 0)} | {_fmt_mib(footprint.get('start_mib'))} | "
+                f"{_fmt_mib(footprint.get('end_mib'))} | {_fmt_mib(footprint.get('peak_mib'))} | "
+                f"{_fmt_mib(footprint.get('growth_mib_scaled_to_8h'))} | "
+                f"{footprint.get('slope_percent_per_hour', 'n/a')} | "
+                f"{'YES' if footprint.get('leak_suspected') else 'no'} |"
+            )
+        lines.append("")
+    else:
+        lines.append(
+            "## Applications (private footprint: Pss_Anon + SwapPss)\n\n"
+            "No sample in this run recorded Pss_Anon/SwapPss (captured before "
+            "run_memory_soak.py recorded them); growth is reported on RSS/PSS "
+            "only above, which is not reliable evidence of no leak under memory "
+            "pressure.\n"
+        )
     combined = report.get("shell_combined")
     if combined is not None:
         rss = combined.get("rss", {})
@@ -372,6 +474,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--budgets", type=Path, default=DEFAULT_BUDGETS)
     parser.add_argument("--json-output", type=Path, required=True)
     parser.add_argument("--markdown-output", type=Path, default=None)
+    parser.add_argument(
+        "--note",
+        type=str,
+        default=None,
+        help="free-form caveat embedded in the report, e.g. a confound that makes the run "
+        "inconclusive for leak detection (concurrent build load, a busy shared machine, ...)",
+    )
     return parser.parse_args()
 
 
@@ -385,7 +494,7 @@ def main() -> int:
     if not records:
         raise SoakAnalysisError(f"{args.samples} contained no samples")
     grouped = group_by_app(records)
-    report = build_report(args.samples, grouped, budgets)
+    report = build_report(args.samples, grouped, budgets, note=args.note)
 
     args.json_output.parent.mkdir(parents=True, exist_ok=True)
     args.json_output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")

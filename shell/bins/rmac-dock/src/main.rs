@@ -994,12 +994,17 @@ mod linux_wayland {
             cx.background_executor()
                 .spawn(async move {
                     // gio interprets the trusted entry's field codes without a
-                    // shell, exactly as Files' Open With does.
-                    let status = std::process::Command::new("gio")
-                        .arg("launch")
-                        .arg(&desktop_entry)
-                        .args(&paths)
-                        .status();
+                    // shell, exactly as Files' Open With does. The child runs on
+                    // `blocking::unblock`'s pool: spawning it from a background
+                    // executor worker can hang (ARCHITECTURE.md).
+                    let status = blocking::unblock(move || {
+                        std::process::Command::new("gio")
+                            .arg("launch")
+                            .arg(&desktop_entry)
+                            .args(&paths)
+                            .status()
+                    })
+                    .await;
                     if !status.is_ok_and(|status| status.success()) {
                         eprintln!("could not open the dropped files");
                     }

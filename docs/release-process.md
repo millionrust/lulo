@@ -632,7 +632,10 @@ emergency fix:
   offline and release the new public keyring before it lapses.
 - **Unsigned sidecar.** `rmac-snapshot.json` is not signed; it can only
   choose where verified bytes are fetched from and when a phase began.
-- **`cargo-cyclonedx` is pinned to a specific version** for reproducible
-  SBOMs; bump `RMAC_CARGO_CYCLONEDX_VERSION` deliberately, not implicitly.
-- **Runner and supply-chain pinning** (SR-18): rustup is installed by
-  `curl | sh`, the `ubuntu:26.04` container is pinned by tag.
+- **`cargo-cyclonedx` is pinned to a specific version and crate SHA-256** for
+  SBOMs; bump both values deliberately after reviewing the new archive.
+- **Runner and supply-chain pinning** (SR-18): release containers use a pinned
+  Ubuntu 26.04 image digest. The rustup installer and `cargo-cyclonedx` source
+  archive are checked against pinned SHA-256 values before use. Rust 1.95.0
+  toolchain artifacts are still selected by version; a native release run is
+  required to validate these workflow changes.

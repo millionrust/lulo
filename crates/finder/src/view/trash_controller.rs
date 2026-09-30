@@ -89,36 +89,38 @@ impl FinderView {
                     let mut completed = 0usize;
                     let mut processed = 0usize;
                     let mut cancelled = false;
-                    for path in paths {
-                        if cancel.load(Ordering::Acquire) {
-                            cancelled = true;
-                            break;
-                        }
-                        match store.trash(&path, &cancel) {
-                            Ok(()) => completed += 1,
-                            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                    undo_journal::with_undo_batch(|| {
+                        for path in paths {
+                            if cancel.load(Ordering::Acquire) {
                                 cancelled = true;
                                 break;
                             }
-                            Err(error) => {
-                                let blocked = error.kind() == std::io::ErrorKind::WouldBlock;
-                                failures.push(file_ops::Failure::message(
-                                    file_ops::Operation::Trash,
-                                    &path,
-                                    None,
-                                    error.to_string(),
-                                ));
-                                if blocked {
-                                    processed += 1;
-                                    let _ =
-                                        events.try_send(TrashEvent::Progress { processed, total });
+                            match store.trash(&path, &cancel) {
+                                Ok(()) => completed += 1,
+                                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {
+                                    cancelled = true;
                                     break;
                                 }
+                                Err(error) => {
+                                    let blocked = error.kind() == std::io::ErrorKind::WouldBlock;
+                                    failures.push(file_ops::Failure::message(
+                                        file_ops::Operation::Trash,
+                                        &path,
+                                        None,
+                                        error.to_string(),
+                                    ));
+                                    if blocked {
+                                        processed += 1;
+                                        let _ = events
+                                            .try_send(TrashEvent::Progress { processed, total });
+                                        break;
+                                    }
+                                }
                             }
+                            processed += 1;
+                            let _ = events.try_send(TrashEvent::Progress { processed, total });
                         }
-                        processed += 1;
-                        let _ = events.try_send(TrashEvent::Progress { processed, total });
-                    }
+                    });
                     if completed > 0 && !cfg!(test) {
                         let _ = rmac_sound::play(rmac_sound::Cue::Trash);
                     }

@@ -18,9 +18,11 @@ usage: scripts/linux/rmac-maintain.sh status|check|install|repair
   install  Safely install or upgrade to the current package candidate.
   repair   Re-verify and reinstall the current package candidate.
 
-The exact current-commit candidate is preferred. If only installer code changed,
-the sole verified-looking candidate for the current package version is reused.
-No directory, authorization-marker command, or package filename is required.
+The candidate must be in the folder for the current Git commit. Rebuild after
+changing commits, even when the Debian package version is unchanged. Uncommitted
+edits are not represented by the folder name; make sure its candidate was built
+after those edits. No directory, authorization-marker command, or package
+filename is required.
 Run install, repair, and check from the stock Ubuntu GNOME Wayland session.
 EOF
 }
@@ -58,28 +60,8 @@ PY
 
 resolve_candidate() {
   local exact=$1
-  local version=$2
-  local path
-  local matches=()
   if [[ -d "$exact" && ! -L "$exact" ]]; then
     printf '%s\n' "$exact"
-    return
-  fi
-  shopt -s nullglob
-  for path in "$repo_root"/target/native-"$architecture"-*; do
-    if [[ -d "$path" && ! -L "$path" \
-      && -f "$path/rmac-apps_${version}_${architecture}.deb" \
-      && -f "$path/rmac-session_${version}_${architecture}.deb" \
-      && -f "$path/native-packages.json" \
-      && -f "$path/SHA256SUMS" ]]; then
-      matches+=("$path")
-    fi
-  done
-  shopt -u nullglob
-  if [[ ${#matches[@]} -eq 1 ]]; then
-    printf '%s\n' "${matches[0]}"
-  elif [[ ${#matches[@]} -gt 1 ]]; then
-    fail "multiple candidates match package version $version"
   fi
 }
 
@@ -115,9 +97,9 @@ revision="$(git -C "$repo_root" rev-parse --short HEAD 2>/dev/null)" \
 candidate="$repo_root/target/native-$architecture-$revision"
 package_version="$(current_package_version)" \
   || fail "the current package version is unavailable"
-[[ "$package_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]] \
+[[ "$package_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(~[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?-[1-9][0-9]*$ ]] \
   || fail "the current package version is invalid"
-candidate="$(resolve_candidate "$candidate" "$package_version")"
+candidate="$(resolve_candidate "$candidate")"
 
 if [[ "$action" == status ]]; then
   free_kib="$(df -Pk / | awk 'NR == 2 { print $4 }')"
@@ -136,9 +118,9 @@ if [[ "$action" == status ]]; then
     printf '  Ubuntu recovery session: FAILED\n'
   fi
   if [[ -n "$candidate" ]]; then
-    printf '  Candidate: %s\n' "$candidate"
+    printf '  Candidate directory (not yet verified): %s\n' "$candidate"
   else
-    printf '  Candidate: not-built\n'
+    printf '  Candidate: not-built-for-current-commit\n'
   fi
   exit 0
 fi

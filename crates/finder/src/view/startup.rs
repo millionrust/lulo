@@ -141,8 +141,19 @@ impl FinderView {
         cx.observe(&query, |_, _, cx| cx.notify()).detach();
         // Pressing Return runs a recursive Spotlight search of the whole folder tree.
         cx.subscribe(&query, |this, _input, ev: &InputEvent, cx| {
-            if let InputEvent::PressEnter { .. } = ev {
-                this.recursive_search(cx);
+            match ev {
+                InputEvent::PressEnter { .. } => this.recursive_search(cx),
+                InputEvent::Change if this.query.read(cx).value().is_empty() => {
+                    this.search_open = false;
+                    // Clearing a recursive-search query leaves the search
+                    // result set, so reload the current folder as Finder does.
+                    if this.showing_recursive_search() {
+                        this.reload(cx);
+                    } else {
+                        cx.notify();
+                    }
+                }
+                _ => {}
             }
         })
         .detach();
@@ -150,15 +161,30 @@ impl FinderView {
         let icon_size = 64.0;
         let icon_size_slider = cx.new(|_| {
             SliderState::new()
-                .min(48.0)
-                .max(88.0)
+                .min(32.0)
+                .max(128.0)
                 .step(4.0)
                 .default_value(icon_size)
         });
         cx.subscribe(&icon_size_slider, |this, _, event: &SliderEvent, cx| {
             if let SliderEvent::Change(value) = event {
                 this.icon_size = value.start().clamp(48.0, 88.0);
-                cx.notify();
+                let size = this.icon_size;
+                this.change_icon_size(size, cx);
+            }
+        })
+        .detach();
+
+        let grid_spacing_slider = cx.new(|_| {
+            SliderState::new()
+                .min(0.0)
+                .max(100.0)
+                .step(2.0)
+                .default_value(54.0)
+        });
+        cx.subscribe(&grid_spacing_slider, |this, _, event: &SliderEvent, cx| {
+            if let SliderEvent::Change(value) = event {
+                this.change_options(|o| o.grid_spacing = value.start().clamp(0.0, 100.0), cx);
             }
         })
         .detach();
@@ -180,6 +206,7 @@ impl FinderView {
             // Another app may have copied files while this window was in
             // the background.
             if window.is_window_active() {
+                this.publish_app_menu_state(cx);
                 this.refresh_pasteboard_state(cx);
             }
             if !window.is_window_active()
@@ -191,6 +218,11 @@ impl FinderView {
         .detach();
         let restored = FinderPersistence::restore();
         let presentation = restored.presentation;
+        let mut default_options = restored.defaults.clone();
+        if restored.folders.is_empty() {
+            // Preserve the pre-options window preference when migrating its state.
+            default_options.view = presentation.view;
+        }
         let (restored_paths, active) = if restore_tabs {
             restored.restorable_session(&home)
         } else {
@@ -244,12 +276,18 @@ impl FinderView {
             clip_cut: false,
             pasteboard_has_files: false,
             renaming: None,
+            rename_click_generation: 0,
             show_hidden: false,
             view: presentation.view,
             sidebar_visible: presentation.sidebar_visible,
             sidebar_width: presentation.sidebar_width,
             resizing_sidebar: false,
             finder_persistence,
+            folder_options: restored.folders,
+            default_options,
+            options_path: None,
+            browse_view: None,
+            view_options_open: false,
             col_stack: vec![cwd],
             column_selection: None,
             sort_key: SortKey::Name,
@@ -257,6 +295,9 @@ impl FinderView {
             query,
             icon_size,
             icon_size_slider,
+            grid_spacing_slider,
+            directory_sizes: Default::default(),
+            size_scan_cancel: None,
             back: Vec::new(),
             fwd: Vec::new(),
             file_words,
@@ -265,6 +306,7 @@ impl FinderView {
             info_windows: Vec::new(),
             go_to: None,
             pending_select: None,
+            pending_select_many: Vec::new(),
             open_with: None,
             open_generation: 0,
             quick_look: None,
@@ -276,6 +318,7 @@ impl FinderView {
             search_relevance_order: false,
             operation_notice: None,
             operation_error: mount_error,
+            rename_conflict: None,
             operation_journal: None,
             journal_loading: true,
             undo_available: None,
@@ -285,6 +328,7 @@ impl FinderView {
             recovery_open: false,
             recovery_busy: false,
             transfer: None,
+            new_folder_busy: false,
             conflict_preflight: false,
             conflict_batch: None,
             conflict_busy: false,
@@ -311,7 +355,7 @@ impl FinderView {
             #[cfg(any(target_os = "linux", test))]
             delete_confirmation: None,
             free_bytes: None,
-            dragging: false,
+            dragging: None,
             focus,
             native_window_title: "Files".into(),
             watcher,

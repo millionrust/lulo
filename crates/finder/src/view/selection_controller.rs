@@ -1,6 +1,14 @@
 use super::*;
 
 impl FinderView {
+    /// The moving end of a keyboard range; `anchor` remains its fixed end.
+    pub(super) fn selection_lead(&self) -> Option<usize> {
+        let anchor = self.anchor?;
+        let first = self.selected.first().copied().unwrap_or(anchor);
+        let last = self.selected.last().copied().unwrap_or(anchor);
+        Some(if first < anchor { first } else { last })
+    }
+
     pub(super) fn select_single(&mut self, index: usize) {
         self.column_selection = None;
         self.selected.clear();
@@ -254,10 +262,10 @@ impl FinderView {
                 self.clip_cut = false;
             }
         }
-        // Items that vanished since they were copied are skipped; a
-        // symbolic link counts as itself, whether or not its target exists.
-        self.clipboard
-            .retain(|path| path.is_absolute() && path.symlink_metadata().is_ok());
+        // File existence is checked by the background conflict preflight and
+        // transfer worker. Avoid one metadata syscall per copied item on the
+        // UI thread, especially for slow mounts.
+        self.clipboard.retain(|path| path.is_absolute());
         if self.clipboard.is_empty() {
             self.clip_cut = false;
             self.operation_notice = Some("There are no files on the clipboard to paste".into());
@@ -365,6 +373,11 @@ impl FinderView {
             for rows in self.child_entries.values_mut() {
                 sort_entries(rows, self.sort_key, self.sort_asc);
             }
+            let group = self.current_options().group_by;
+            view_options::group_entries(&mut self.root_entries, group);
+            for rows in self.child_entries.values_mut() {
+                view_options::group_entries(rows, group);
+            }
             self.rebuild_list_entries();
         } else {
             sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
@@ -374,7 +387,14 @@ impl FinderView {
                     sort_entries(rows, self.sort_key, self.sort_asc);
                 }
             }
+            let group = self.current_options().group_by;
+            view_options::group_entries(&mut self.entries, group);
+            view_options::group_entries(&mut self.root_entries, group);
+            for rows in self.child_entries.values_mut() {
+                view_options::group_entries(rows, group);
+            }
         }
+        self.change_options(|options| options.sort_by = key, cx);
         self.search_relevance_order = false;
         self.selected.clear();
         cx.notify();

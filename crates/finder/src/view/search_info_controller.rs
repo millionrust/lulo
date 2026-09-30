@@ -27,6 +27,12 @@ fn get_info_entries(
 }
 
 impl FinderView {
+    pub(super) fn showing_recursive_search(&self) -> bool {
+        self.result_title
+            .as_ref()
+            .is_some_and(|title| title.as_ref().starts_with("Search: "))
+    }
+
     pub(super) fn get_info(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.trash_view {
             self.operation_error =
@@ -150,9 +156,14 @@ impl FinderView {
         self.trash_view = false;
         self.applications_view = false;
         let title: SharedString = format!("Tag: {name}").into();
+        self.result_title = Some(title.clone());
         let key = self.sort_key;
         let asc = self.sort_asc;
         let (generation, cancel) = self.begin_search();
+        self.entries.clear();
+        self.selected.clear();
+        self.anchor = None;
+        cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
@@ -190,7 +201,12 @@ impl FinderView {
     pub(super) fn recents_click(&mut self, cx: &mut Context<Self>) {
         self.trash_view = false;
         self.applications_view = false;
+        self.result_title = Some("Recents".into());
         let (generation, cancel) = self.begin_search();
+        self.entries.clear();
+        self.selected.clear();
+        self.anchor = None;
+        cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let result = cx
                 .background_executor()
@@ -235,9 +251,92 @@ impl FinderView {
     }
 }
 
+const MAX_FOLDER_INFO_ENTRIES: usize = 100_000;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct FolderSize {
+    bytes: u64,
+    items: usize,
+    incomplete: bool,
+}
+
+fn info_details(entry: &Entry) -> Vec<(&'static str, String)> {
+    let mut details = file_info(entry);
+    if entry.is_dir {
+        details.insert(1, ("Size", "Calculating…".to_owned()));
+    }
+    details
+}
+
+/// Count one folder without following links or leaving its filesystem.
+/// Cancellation also stops a scan when its Info window closes or renames.
+fn scan_folder_size(root: &Path, cancel: &AtomicBool, max_entries: usize) -> Option<FolderSize> {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let device = std::fs::symlink_metadata(root).ok()?.dev();
+    let mut stack = vec![root.to_path_buf()];
+    let mut size = FolderSize::default();
+    while let Some(folder) = stack.pop() {
+        if cancel.load(Ordering::Acquire) {
+            return None;
+        }
+        let entries = match std::fs::read_dir(&folder) {
+            Ok(entries) => entries,
+            Err(_) => {
+                size.incomplete = true;
+                continue;
+            }
+        };
+        for entry in entries {
+            if cancel.load(Ordering::Acquire) {
+                return None;
+            }
+            if size.items >= max_entries {
+                size.incomplete = true;
+                return Some(size);
+            }
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => {
+                    size.incomplete = true;
+                    continue;
+                }
+            };
+            size.items += 1;
+            let metadata = match std::fs::symlink_metadata(entry.path()) {
+                Ok(metadata) => metadata,
+                Err(_) => {
+                    size.incomplete = true;
+                    continue;
+                }
+            };
+            if metadata.dev() != device {
+                size.incomplete = true;
+            } else if metadata.is_dir() {
+                stack.push(entry.path());
+            } else {
+                size.bytes = size.bytes.saturating_add(metadata.len());
+            }
+        }
+    }
+    Some(size)
+}
+
+fn format_folder_size(size: FolderSize) -> String {
+    let prefix = if size.incomplete { "At least " } else { "" };
+    let suffix = if size.items == 1 { "item" } else { "items" };
+    format!(
+        "{prefix}{} ({} bytes) for {} {suffix}",
+        human_size(size.bytes),
+        size.bytes,
+        size.items
+    )
+}
+
 struct InfoWindow {
     entry: Entry,
     details: Vec<(&'static str, String)>,
+    folder_scan_cancel: Option<Arc<AtomicBool>>,
     thumbnail: Option<PathBuf>,
     name_input: Option<gpui::Entity<InputState>>,
     owner: gpui::WeakEntity<FinderView>,
@@ -270,14 +369,53 @@ impl InfoWindow {
             input
         });
         let focus = cx.focus_handle();
-        Self {
-            details: file_info(&entry),
+        let mut info = Self {
+            details: info_details(&entry),
             entry,
+            folder_scan_cancel: None,
             thumbnail,
             name_input,
             owner,
             focus,
+        };
+        info.start_folder_scan(cx);
+        info
+    }
+
+    fn start_folder_scan(&mut self, cx: &mut Context<Self>) {
+        if let Some(cancel) = self.folder_scan_cancel.take() {
+            cancel.store(true, Ordering::Release);
         }
+        if !self.entry.is_dir {
+            return;
+        }
+        let path = self.entry.path.clone();
+        let scanned_path = path.clone();
+        let cancel = Arc::new(AtomicBool::new(false));
+        let pending = cancel.clone();
+        self.folder_scan_cancel = Some(cancel.clone());
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let scanned =
+                cx.background_executor()
+                    .spawn(async move {
+                        scan_folder_size(&scanned_path, &cancel, MAX_FOLDER_INFO_ENTRIES)
+                    })
+                    .await;
+            let _ = this.update(cx, |this, cx| {
+                if this.entry.path != path || pending.load(Ordering::Acquire) {
+                    return;
+                }
+                let Some((_, value)) = this.details.iter_mut().find(|(key, _)| *key == "Size")
+                else {
+                    return;
+                };
+                *value = scanned
+                    .map(format_folder_size)
+                    .unwrap_or_else(|| "Unavailable".to_owned());
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     fn commit_name(
@@ -288,24 +426,31 @@ impl InfoWindow {
     ) {
         let path = self.entry.path.clone();
         let new_name = input.read(cx).value().to_string();
-        let renamed = self.owner.update(cx, |owner, cx| {
-            let destination = owner.rename_path_to(&path, &new_name, cx);
-            if destination.is_some() {
-                owner.reload(cx);
-            }
-            destination
-        });
+        let renamed = self
+            .owner
+            .update(cx, |owner, cx| owner.rename_path_to(&path, &new_name, cx));
         match renamed {
-            Ok(Some(destination)) => {
-                if let Some(entry) = entry_for(&destination) {
-                    self.entry = entry;
-                    self.details = file_info(&self.entry);
-                    let name = self.entry.name.clone();
-                    let title = format!("{} Info", name);
-                    window.set_window_title(&title);
-                    input.update(cx, |state, cx| state.set_value(name, window, cx));
-                    cx.notify();
-                }
+            Ok(Some((destination, completion))) => {
+                let window_handle = window.window_handle();
+                cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+                    if completion.recv().await != Ok(true) {
+                        return;
+                    }
+                    let _ = cx.update_window(window_handle, |_, window, cx| {
+                        let _ = this.update(cx, |this: &mut InfoWindow, cx| {
+                            if let Some(entry) = entry_for(&destination) {
+                                this.entry = entry;
+                                this.details = file_info(&this.entry);
+                                this.start_folder_scan(cx);
+                                let name = this.entry.name.clone();
+                                window.set_window_title(&format!("{name} Info"));
+                                input.update(cx, |state, cx| state.set_value(name, window, cx));
+                                cx.notify();
+                            }
+                        });
+                    });
+                })
+                .detach();
             }
             Err(_) => window.remove_window(),
             Ok(None) => {}
@@ -532,6 +677,14 @@ impl InfoWindow {
     }
 }
 
+impl Drop for InfoWindow {
+    fn drop(&mut self) {
+        if let Some(cancel) = &self.folder_scan_cancel {
+            cancel.store(true, Ordering::Release);
+        }
+    }
+}
+
 impl gpui::Focusable for InfoWindow {
     fn focus_handle(&self, _: &gpui::App) -> FocusHandle {
         self.focus.clone()
@@ -599,5 +752,54 @@ mod tests {
         assert_eq!(entry.path.as_path(), root);
         assert_eq!(entry.name.as_ref(), root.display().to_string());
         assert!(entry.is_dir);
+    }
+
+    #[test]
+    fn folder_info_counts_nested_files_without_following_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!("rmac-info-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("nested")).unwrap();
+        std::fs::write(root.join("nested/data"), b"hello").unwrap();
+        symlink(root.join("nested"), root.join("link")).unwrap();
+        let cancel = AtomicBool::new(false);
+
+        let entry = entry_for(&root).unwrap();
+        assert_eq!(
+            info_details(&entry)
+                .iter()
+                .find(|(key, _)| *key == "Size")
+                .map(|(_, value)| value.as_str()),
+            Some("Calculating…")
+        );
+
+        let size = scan_folder_size(&root, &cancel, 10).unwrap();
+
+        assert_eq!(size.items, 3);
+        assert_eq!(
+            size.bytes,
+            5 + std::fs::symlink_metadata(root.join("link")).unwrap().len()
+        );
+        assert!(!size.incomplete);
+        assert!(format_folder_size(size).contains("for 3 items"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn folder_info_reports_bounded_and_cancelled_scans() {
+        let root = std::env::temp_dir().join(format!("rmac-info-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("one"), b"1").unwrap();
+        std::fs::write(root.join("two"), b"22").unwrap();
+        let cancel = AtomicBool::new(false);
+
+        let bounded = scan_folder_size(&root, &cancel, 1).unwrap();
+        assert_eq!(bounded.items, 1);
+        assert!(bounded.incomplete);
+        assert!(format_folder_size(bounded).starts_with("At least "));
+
+        cancel.store(true, Ordering::Release);
+        assert_eq!(scan_folder_size(&root, &cancel, 10), None);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

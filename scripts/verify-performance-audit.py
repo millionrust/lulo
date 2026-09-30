@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 import re
 import stat
+import subprocess
 import sys
 
 
@@ -27,6 +28,10 @@ APPLICATIONS = (
     ("rmac-system-settings", 500, 0.3, 12),
     ("rmac-terminal", 900, 0.3, 12),
     ("rmac-text-editor", 500, 0.3, 12),
+    ("rmac-calculator", 500, 0.3, 12),
+    ("rmac-player", 500, 0.3, 12),
+    ("rmac-preview", 500, 0.3, 12),
+    ("rmac-weather", 500, 0.3, 12),
 )
 PROTOCOL = {
     "idle_seconds": 60,
@@ -39,6 +44,28 @@ PROTOCOL = {
 
 class PerformanceError(RuntimeError):
     """A bounded performance-audit verification failure."""
+
+
+def _verify_checkout(revision: str) -> None:
+    """Bind station measurements to the exact, committed candidate source."""
+    try:
+        head = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify", "HEAD"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, check=False, timeout=5,
+        )
+        status = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "status", "--porcelain", "--untracked-files=all"],
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, check=False, timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise PerformanceError("performance checkout cannot be verified") from error
+    current = head.stdout.decode("ascii", "replace").strip()
+    if head.returncode != 0 or current != revision:
+        raise PerformanceError("performance evidence revision differs from the checkout")
+    if status.returncode != 0 or status.stdout:
+        raise PerformanceError("performance evidence requires a clean checkout")
 
 
 def _read_regular(path: Path) -> bytes:
@@ -74,13 +101,12 @@ def _journey_names() -> tuple[str, ...]:
     document = _load_json(JOURNEY_PATH)
     if not isinstance(document, dict) or not isinstance(document.get("journeys"), list):
         raise PerformanceError("journey source manifest is invalid")
-    names = tuple(
-        journey.get("name") for journey in document["journeys"]
-        if isinstance(journey, dict)
-    )
+    entries = document["journeys"]
+    if len(entries) != 10 or any(not isinstance(journey, dict) for journey in entries):
+        raise PerformanceError("journey source inventory is invalid")
+    names = tuple(journey.get("name") for journey in entries)
     if (
-        len(names) != 10
-        or any(not isinstance(name, str) for name in names)
+        any(not isinstance(name, str) or not name.strip() for name in names)
         or len(set(names)) != len(names)
     ):
         raise PerformanceError("journey source inventory is invalid")
@@ -95,16 +121,24 @@ def _hardware() -> tuple[dict[str, list[str]], set[str]]:
         or not isinstance(document.get("stations"), list)
     ):
         raise PerformanceError("hardware source manifest is invalid")
-    station_ids = {
-        station.get("id")
-        for station in document["stations"]
-        if isinstance(station, dict) and isinstance(station.get("id"), str)
-    }
+    stations = document["stations"]
+    if len(stations) != 5 or any(not isinstance(station, dict) for station in stations):
+        raise PerformanceError("hardware source inventory is invalid")
+    ids = [station.get("id") for station in stations]
+    if any(not isinstance(station, str) or not station.strip() for station in ids):
+        raise PerformanceError("hardware source inventory is invalid")
+    station_ids = set(ids)
     tiers = document["release_tiers"]
     if (
-        set(tiers) != {"alpha", "beta", "one-dot-zero"}
-        or any(not isinstance(ids, list) for ids in tiers.values())
-        or any(set(ids) - station_ids for ids in tiers.values())
+        len(station_ids) != len(stations)
+        or set(tiers) != {"alpha", "beta", "one-dot-zero"}
+        or any(not isinstance(members, list) for members in tiers.values())
+        or any(
+            any(not isinstance(member, str) for member in members)
+            or len(set(members)) != len(members)
+            or set(members) - station_ids
+            for members in tiers.values()
+        )
     ):
         raise PerformanceError("hardware release tiers are invalid")
     return tiers, station_ids
@@ -338,6 +372,7 @@ def verify_evidence_directory(
     tier: str,
     revision: str,
 ) -> None:
+    _verify_checkout(revision)
     if not directory.is_absolute() or directory.is_symlink() or not directory.is_dir():
         raise PerformanceError("evidence path must be an absolute ordinary directory")
     tiers, _ = _hardware()
@@ -388,7 +423,14 @@ def main() -> int:
             return 0
     except PerformanceError as error:
         parser.exit(4, f"verify-performance-audit: {error}\n")
-    print(f"rmac performance audit verified ({len(result_specs(budgets))} budgets)")
+    evidence_status = (
+        "candidate evidence verified"
+        if arguments.evidence_dir is not None else "candidate evidence not supplied"
+    )
+    print(
+        "rmac performance audit inventory verified "
+        f"({len(result_specs(budgets))} budgets; {evidence_status})"
+    )
     return 0
 
 

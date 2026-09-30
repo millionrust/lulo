@@ -108,7 +108,7 @@ def evaluate_host(
         failures.append("an integrated or discrete Vulkan GPU was not proven")
 
     if not snapshot.worktree_clean:
-        failures.append("tracked worktree changes make the evidence non-reproducible")
+        failures.append("worktree changes make the evidence non-reproducible")
     if not snapshot.portal_service_active:
         failures.append("xdg-desktop-portal.service is not active")
     if not snapshot.portal_bus_owned:
@@ -148,6 +148,20 @@ def command_output(command: Sequence[str], repo_root: Path) -> tuple[bool, str]:
 def command_succeeded(command: Sequence[str], repo_root: Path) -> bool:
     succeeded, _ = command_output(command, repo_root)
     return succeeded
+
+
+def worktree_is_clean(repo_root: Path) -> bool:
+    succeeded, status = command_output(
+        [
+            "git",
+            "status",
+            "--porcelain",
+            "--untracked-files=normal",
+            "--ignore-submodules=all",
+        ],
+        repo_root,
+    )
+    return succeeded and not status.strip()
 
 
 def vulkan_summary(repo_root: Path) -> tuple[bool, str]:
@@ -208,12 +222,7 @@ def capture_host(
 ) -> HostSnapshot:
     commands = {command: shutil.which(command) is not None for command in required_commands}
     vulkan_succeeded, summary = vulkan_summary(repo_root)
-    clean = command_succeeded(
-        ["git", "diff", "--quiet", "--ignore-submodules", "--"], repo_root
-    ) and command_succeeded(
-        ["git", "diff", "--cached", "--quiet", "--ignore-submodules", "--"],
-        repo_root,
-    )
+    clean = worktree_is_clean(repo_root)
     portal_service_active = command_succeeded(
         [
             "systemctl",
@@ -309,7 +318,7 @@ def main() -> int:
     print("wayland_session=pass")
     print("hardware_vulkan=pass")
     print(f"free_gib={snapshot.free_bytes // GIB}")
-    print("tracked_worktree=clean")
+    print("worktree=clean")
     print("required_commands=pass")
     return 0
 

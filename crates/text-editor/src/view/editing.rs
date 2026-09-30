@@ -123,6 +123,11 @@ impl EditorView {
         self.matches = matches;
     }
 
+    /// Moves the *document's* own caret/focus to the current match — used
+    /// only by Replace (`replace_current`), which is about to edit the
+    /// document and should leave the user looking at where. Find itself
+    /// (`find_next`/`find_prev`/`submit_find`) keeps focus in the Find
+    /// field instead; see [`Self::reveal_current_match`].
     fn scroll_to_current(&self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(document) = &self.long_lines {
             if let Some(&offset) = self.matches.get(self.current) {
@@ -138,24 +143,68 @@ impl EditorView {
         }
     }
 
-    pub(super) fn find_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// Highlights the current match in the document without moving
+    /// keyboard focus there — TextEdit's own Find keeps focus (and the
+    /// whole query re-selected, [`Self::reselect_find_query`]) in the Find
+    /// field itself across Return/⌘G/⌘⇧G, only ever *showing* the match in
+    /// the document.
+    fn reveal_current_match(&self, cx: &mut Context<Self>) {
+        if let Some(document) = &self.long_lines {
+            if let Some(&offset) = self.matches.get(self.current) {
+                document.reveal_offset(offset);
+            }
+            return;
+        }
+        let Some(&offset) = self.matches.get(self.current) else {
+            return;
+        };
+        let needle_len = self.find_input.read(cx).text().len();
+        self.input.update(cx, |state, cx| {
+            state.set_selected_range(offset..offset + needle_len, cx)
+        });
+    }
+
+    /// Re-selects the Find field's whole query, the way TextEdit leaves it
+    /// after Return/⌘G/⌘⇧G so retyping immediately replaces it.
+    fn reselect_find_query(&self, cx: &mut Context<Self>) {
+        let len = self.find_input.read(cx).text().len();
+        self.find_input
+            .update(cx, |state, cx| state.set_selected_range(0..len, cx));
+    }
+
+    /// Return in the Find field: reveals the current match (already the
+    /// first one — `recompute_matches` resets `current` to 0 as the query
+    /// changes) without moving focus off the field.
+    pub(super) fn submit_find(&mut self, cx: &mut Context<Self>) {
+        self.recompute_matches(cx);
+        if self.matches.is_empty() {
+            return;
+        }
+        self.reveal_current_match(cx);
+        self.reselect_find_query(cx);
+        cx.notify();
+    }
+
+    pub(super) fn find_next(&mut self, cx: &mut Context<Self>) {
         self.recompute_matches(cx);
         if self.matches.is_empty() {
             return;
         }
         self.current = (self.current + 1) % self.matches.len();
-        self.scroll_to_current(window, cx);
+        self.reveal_current_match(cx);
+        self.reselect_find_query(cx);
         cx.notify();
     }
 
-    pub(super) fn find_prev(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn find_prev(&mut self, cx: &mut Context<Self>) {
         self.recompute_matches(cx);
         if self.matches.is_empty() {
             return;
         }
         let count = self.matches.len();
         self.current = (self.current + count - 1) % count;
-        self.scroll_to_current(window, cx);
+        self.reveal_current_match(cx);
+        self.reselect_find_query(cx);
         cx.notify();
     }
 

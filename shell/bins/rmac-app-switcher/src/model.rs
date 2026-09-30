@@ -187,16 +187,27 @@ impl Session {
         self.apps.get(self.selected)
     }
 
-    /// Drop a quit application and keep the selection on its neighbour.
-    /// Returns false when nothing is left to show.
-    pub fn remove(&mut self, app_id: &str) -> bool {
-        if let Some(index) = self.apps.iter().position(|app| app.app_id == app_id) {
-            self.apps.remove(index);
-            if self.selected > index || self.selected >= self.apps.len() {
-                self.selected = self.selected.saturating_sub(1);
-            }
+    /// Replace the visible applications with an authoritative compositor
+    /// readback, keeping the current selection when that application remains.
+    /// If it disappeared, keep the selection on its left neighbour.
+    pub fn replace_apps(&mut self, apps: Vec<RunningApp>) -> bool {
+        let selected_id = self.selected_app().map(|app| app.app_id.clone());
+        let left_id = self
+            .selected
+            .checked_sub(1)
+            .and_then(|index| self.apps.get(index))
+            .map(|app| app.app_id.clone());
+        let old_selected = self.selected;
+        self.apps = apps;
+        if self.apps.is_empty() {
+            self.selected = 0;
+            return false;
         }
-        !self.apps.is_empty()
+        self.selected = selected_id
+            .and_then(|id| self.apps.iter().position(|app| app.app_id == id))
+            .or_else(|| left_id.and_then(|id| self.apps.iter().position(|app| app.app_id == id)))
+            .unwrap_or_else(|| old_selected.saturating_sub(1).min(self.apps.len() - 1));
+        true
     }
 
     pub fn mark_hidden(&mut self, app_id: &str) {
@@ -452,14 +463,50 @@ mod tests {
         );
         assert_eq!(Session::open(vec![app("a")], false).unwrap().selected, 0);
         assert!(Session::open(vec![], false).is_none());
+    }
 
-        session.select(2);
-        assert!(session.remove("c"));
-        assert_eq!(session.selected_app().unwrap().app_id, "b");
-        session.select(0);
-        assert!(session.remove("b"));
-        assert_eq!(session.selected_app().unwrap().app_id, "a");
-        assert!(!session.remove("a"));
+    #[test]
+    fn compositor_readback_keeps_a_refused_app_selected() {
+        let app = |id: &str, windows: &[u64]| RunningApp {
+            app_id: id.into(),
+            windows: windows.iter().copied().map(WindowId).collect(),
+            hidden: false,
+        };
+        let mut session = Session::open(
+            vec![
+                app("front", &[1]),
+                app("edited-document", &[2, 3]),
+                app("other", &[4]),
+            ],
+            false,
+        )
+        .unwrap();
+        assert_eq!(session.selected_app().unwrap().app_id, "edited-document");
+
+        assert!(session.replace_apps(vec![
+            app("front", &[1]),
+            app("edited-document", &[3]),
+            app("other", &[4]),
+        ]));
+        assert_eq!(session.selected_app().unwrap().app_id, "edited-document");
+        assert_eq!(session.selected_app().unwrap().windows, vec![WindowId(3)]);
+    }
+
+    #[test]
+    fn compositor_readback_moves_selection_left_when_app_is_gone() {
+        let app = |id: &str| RunningApp {
+            app_id: id.into(),
+            windows: vec![],
+            hidden: false,
+        };
+        let mut session =
+            Session::open(vec![app("front"), app("quit"), app("other")], false).unwrap();
+        assert_eq!(session.selected_app().unwrap().app_id, "quit");
+
+        assert!(session.replace_apps(vec![app("other"), app("front")]));
+        assert_eq!(session.selected_app().unwrap().app_id, "front");
+        assert!(!session.replace_apps(Vec::new()));
+        assert!(session.selected_app().is_none());
     }
 
     #[test]

@@ -57,13 +57,13 @@ impl NotesView {
                             .items_center()
                             .gap_0p5()
                             .child(
-                                Button::new("folder-actions", "")
-                                    .icon(IconName::Ellipsis)
-                                    .ghost()
-                                    .with_size(Size::XSmall)
+                                PopUpButton::new("folder-actions", "Folder Actions")
+                                    .menu_button(glyphs::MORE, 16.0)
+                                    .w(px(24.0))
+                                    .h(px(24.0))
+                                    .rounded(px(mac::radius_control()))
                                     .text_color(sidebar_section_text())
                                     .disabled(!self.is_interactive_ready() || !has_selected_folder)
-                                    .tooltip("Folder Actions")
                                     .dropdown_menu(|menu, _, _| {
                                         menu.menu("Rename Folder…", Box::new(RenameSelectedFolder))
                                             .menu("Delete Folder…", Box::new(DeleteSelectedFolder))

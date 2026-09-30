@@ -9,24 +9,35 @@ from pathlib import Path
 import re
 import stat
 import sys
-import tomllib
 from typing import NamedTuple
 from urllib.parse import parse_qs, urlparse
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.9 on the Mac validation host
+    import tomli as tomllib
 
 
 class VerificationError(RuntimeError):
     pass
 
 
-APP_IDS = {
-    "org.rmac.TextEditor",
-    "org.rmac.Notes",
-    "org.rmac.Files",
-    "org.rmac.Terminal",
-    "org.rmac.SystemMonitor",
-    "org.rmac.AppDrawer",
-    "org.rmac.SystemSettings",
+APP_BINARIES = {
+    "org.rmac.TextEditor": "rmac-text-editor",
+    "org.rmac.Notes": "rmac-notes",
+    "org.rmac.Files": "rmac-files",
+    "org.rmac.Terminal": "rmac-terminal",
+    "org.rmac.SystemMonitor": "rmac-system-monitor",
+    "org.rmac.AppDrawer": "rmac-app-drawer",
+    "org.rmac.SystemSettings": "rmac-system-settings",
+    "org.rmac.Calculator": "rmac-calculator",
+    "org.rmac.Clock": "rmac-clock",
+    "org.rmac.Weather": "rmac-weather",
+    "org.rmac.Preview": "rmac-preview",
+    "org.rmac.Player": "rmac-player",
+    "org.rmac.ArchiveUtility": "rmac-archive-utility",
 }
+APP_IDS = set(APP_BINARIES)
 TEXT_EDITOR_ID = "org.rmac.TextEditor"
 TEXT_EDITOR_PERMISSIONS = {"--socket=wayland", "--device=dri"}
 FORBIDDEN_PERMISSION_PREFIXES = (
@@ -69,16 +80,24 @@ def verify_decisions(document: dict) -> None:
     if [entry.get("id") for entry in eligible] != [TEXT_EDITOR_ID]:
         raise VerificationError("only the reviewed Text Editor may currently be sandboxed")
     text_editor = by_id[TEXT_EDITOR_ID]
+    if text_editor.get("distribution") != "flatpak-and-native":
+        raise VerificationError("Text Editor Flatpak distribution decision changed")
     if text_editor.get("manifest") != "org.rmac.TextEditor.json":
         raise VerificationError("Text Editor must bind its exact manifest")
     if set(text_editor.get("permissions", [])) != TEXT_EDITOR_PERMISSIONS:
         raise VerificationError("Text Editor decision permissions changed")
 
     for entry in applications:
+        if entry.get("binary") != APP_BINARIES[entry["id"]]:
+            raise VerificationError(f"{entry['id']} binary differs from its packaged application")
+        if entry.get("distribution") not in {"native", "native-pending-flatpak", "flatpak-and-native"}:
+            raise VerificationError(f"{entry['id']} distribution is invalid")
         authority = entry.get("authority")
         if not isinstance(authority, str) or not authority.strip():
             raise VerificationError(f"{entry.get('id')} has no authority rationale")
         if entry.get("sandbox_eligible") is not True:
+            if entry.get("distribution") == "flatpak-and-native":
+                raise VerificationError(f"{entry['id']} cannot claim a Flatpak distribution")
             if entry.get("manifest") is not None or entry.get("permissions") != []:
                 raise VerificationError(
                     f"{entry.get('id')} cannot carry a sandbox manifest or permissions"
@@ -157,6 +176,11 @@ def verify_manifest(document: dict) -> None:
 VENDOR = "cargo/vendor"
 GIT_CACHE = "flatpak-cargo/git"
 GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+COMPONENT_PATHS = {
+    "gpui-component": ("vendor/gpui-component/crates/ui", "0.5.2"),
+    "gpui-component-assets": ("vendor/gpui-component/crates/assets", "0.5.1"),
+    "gpui-component-macros": ("vendor/gpui-component/crates/macros", "0.5.1"),
+}
 GIT_COPY = re.compile(
     r'^cp -r --reflink=auto "(flatpak-cargo/git/[^"/]+)/([^"]+)" "cargo/vendor/([^"/]+)"$'
 )
@@ -232,6 +256,40 @@ def git_packages(lock_path: Path) -> dict[str, GitPackage]:
 def git_checkout(package: GitPackage) -> str:
     repository = package.repository.rsplit("/", 1)[1]
     return f"{GIT_CACHE}/{repository}-{package.commit[:7]}"
+
+
+def verify_component_paths(root: Path) -> None:
+    """The repository source includes the three patched, locked path crates."""
+    packages = _read_lock(root / "Cargo.lock").get("package", [])
+    for name, (path, version) in COMPONENT_PATHS.items():
+        matches = [package for package in packages if package.get("name") == name]
+        if len(matches) != 1 or matches[0].get("version") != version or "source" in matches[0]:
+            raise VerificationError(f"vendored path crate {name} differs from Cargo.lock")
+        manifest = tomllib.loads((root / path / "Cargo.toml").read_text(encoding="utf-8"))
+        declared = manifest.get("package", {})
+        if (declared.get("name"), declared.get("version")) != (name, version):
+            raise VerificationError(f"vendored path crate {name} has the wrong manifest")
+
+    root_manifest = tomllib.loads((root / "Cargo.toml").read_text(encoding="utf-8"))
+    patches = root_manifest.get("patch", {}).get(
+        "https://github.com/longbridge/gpui-component.git", {}
+    )
+    root_dependencies = root_manifest.get("workspace", {}).get("dependencies", {})
+    for name in ("gpui-component", "gpui-component-assets"):
+        path, version = COMPONENT_PATHS[name]
+        local_dependency = {"version": f"={version}", "path": path}
+        if patches.get(name) != local_dependency or root_dependencies.get(name) != local_dependency:
+            raise VerificationError(f"vendored path crate {name} is not patched into Cargo")
+
+    workspace = tomllib.loads(
+        (root / "vendor/gpui-component/Cargo.toml").read_text(encoding="utf-8")
+    )
+    dependencies = workspace.get("workspace", {}).get("dependencies", {})
+    for name in ("gpui-component-assets", "gpui-component-macros"):
+        path, version = COMPONENT_PATHS[name]
+        relative_path = path.removeprefix("vendor/gpui-component/")
+        if dependencies.get(name) != {"path": relative_path, "version": version}:
+            raise VerificationError(f"vendored workspace does not resolve {name}")
 
 
 def verify_cargo_sources(
@@ -449,13 +507,45 @@ def verify_offline_driver(path: Path) -> None:
     verify_offline_driver_text(text)
 
 
+def verify_packaged_inventory(root: Path) -> None:
+    directory = root / "packaging/rmac-apps/applications"
+    expected = {f"{app_id}.desktop" for app_id in APP_IDS}
+    try:
+        actual = {path.name for path in directory.glob("*.desktop")}
+    except OSError as error:
+        raise VerificationError("packaged application inventory is unavailable") from error
+    if actual != expected:
+        raise VerificationError("sandbox decisions do not cover the packaged application inventory")
+    for app_id, binary in APP_BINARIES.items():
+        path = directory / f"{app_id}.desktop"
+        try:
+            metadata = path.lstat()
+            if path.is_symlink() or not stat.S_ISREG(metadata.st_mode) or metadata.st_size > MAX_DRIVER_BYTES:
+                raise VerificationError(f"packaged desktop entry is invalid: {app_id}")
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError) as error:
+            raise VerificationError(f"packaged desktop entry is unavailable: {app_id}") from error
+        in_entry = False
+        commands = []
+        for line in lines:
+            if line.startswith("["):
+                in_entry = line == "[Desktop Entry]"
+            elif in_entry and line.startswith("Exec="):
+                words = line.removeprefix("Exec=").split()
+                commands.append(words[0] if words else "")
+        if commands != [f"/usr/bin/{binary}"]:
+            raise VerificationError(f"packaged desktop command differs: {app_id}")
+
+
 def verify_repository(root: Path) -> None:
     package = root / "packaging/flatpak"
     decisions = read_json(package / "decisions.json")
     manifest = read_json(package / "org.rmac.TextEditor.json")
     sources = read_json(package / "cargo-sources.json")
     verify_decisions(decisions)
+    verify_packaged_inventory(root)
     verify_manifest(manifest)
+    verify_component_paths(root)
     verify_cargo_sources(
         sources,
         registry_packages(root / "Cargo.lock"),

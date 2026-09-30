@@ -19,6 +19,7 @@ impl FinderView {
         #[cfg(not(any(target_os = "linux", test)))]
         let trash_busy = false;
         if self.transfer.is_none()
+            && !self.new_folder_busy
             && self.undo_operation.is_none()
             && !trash_busy
             && !self.conflict_preflight
@@ -31,32 +32,19 @@ impl FinderView {
         true
     }
 
-    pub(super) fn start_transfer(
-        &mut self,
-        label: &'static str,
-        tasks: Vec<file_ops::TransferTask>,
-        keep_unfinished_in_clipboard: bool,
-        cx: &mut Context<Self>,
-    ) {
-        self.start_transfer_with_retained(
-            label,
-            tasks,
-            keep_unfinished_in_clipboard,
-            Vec::new(),
-            false,
-            cx,
-        );
-    }
-
     pub(super) fn start_transfer_with_retained(
         &mut self,
         label: &'static str,
         tasks: Vec<file_ops::TransferTask>,
-        keep_unfinished_in_clipboard: bool,
-        retained_clipboard: Vec<PathBuf>,
-        play_drop_sound: bool,
+        options: TransferStartOptions,
         cx: &mut Context<Self>,
     ) {
+        let TransferStartOptions {
+            keep_unfinished_in_clipboard,
+            retained_clipboard,
+            play_drop_sound,
+            completion,
+        } = options;
         if tasks.is_empty() {
             return;
         }
@@ -116,15 +104,17 @@ impl FinderView {
         cx.background_executor()
             .spawn(async move {
                 let progress_events = events.clone();
-                let report = file_ops::execute_transfers(
-                    &file_ops::RealFileSystem,
-                    Some(journal.as_ref()),
-                    &tasks,
-                    &cancel,
-                    move |progress| {
-                        let _ = progress_events.try_send(TransferEvent::Progress(progress));
-                    },
-                );
+                let report = undo_journal::with_undo_batch(|| {
+                    file_ops::execute_transfers(
+                        &file_ops::RealFileSystem,
+                        Some(journal.as_ref()),
+                        &tasks,
+                        &cancel,
+                        move |progress| {
+                            let _ = progress_events.try_send(TransferEvent::Progress(progress));
+                        },
+                    )
+                });
                 let recovery_reviews = journal
                     .recover_unambiguous()
                     .and_then(|_| journal.review_pending());
@@ -133,6 +123,7 @@ impl FinderView {
                     report,
                     recovery_reviews,
                     undo_availability,
+                    completion,
                 });
             })
             .detach();
@@ -156,7 +147,11 @@ impl FinderView {
                             report,
                             recovery_reviews,
                             undo_availability,
+                            completion,
                         } => {
+                            let completed = report.processed == 1
+                                && report.failures.is_empty()
+                                && !report.cancelled;
                             let play_drop_sound = this.transfer.as_ref().is_some_and(|transfer| {
                                 transfer.play_drop_sound
                                     && report.processed != 0
@@ -232,6 +227,9 @@ impl FinderView {
                                 );
                             }
                             this.reload(cx);
+                            if let Some(completion) = completion {
+                                let _ = completion.try_send(completed);
+                            }
                         }
                     })
                     .is_err()

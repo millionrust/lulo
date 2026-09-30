@@ -307,6 +307,7 @@ download_release_packages() {
         for name in $selected_names; do
             gh attestation verify "$work_dir/$name" --repo "$RMAC_GITHUB_REPOSITORY" \
                 --signer-workflow "$RMAC_GITHUB_REPOSITORY/.github/workflows/release.yml" \
+                --source-ref "refs/tags/$tag" \
                 || fail "build provenance attestation did not verify for $name (is 'gh auth login' done?)"
         done
     elif [ "${allow_unattested:-false}" = true ]; then

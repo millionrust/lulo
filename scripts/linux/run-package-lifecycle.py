@@ -448,6 +448,16 @@ def _require_payload_removed() -> None:
         raise LifecycleError("package-owned immutable payload remained after removal")
 
 
+def _verify_application_host() -> None:
+    application = _load_script(
+        "rmac_lifecycle_application", "verify-application-package.py"
+    )
+    try:
+        application.verify_installed_host(Path("/"))
+    except Exception as error:
+        raise LifecycleError("installed application payload check failed") from error
+
+
 def _verify_installed(
     directory: Path,
     package_set: tuple[str, str, dict[str, object]],
@@ -476,6 +486,7 @@ def _verify_installed(
                 or _sha256(path, metadata.st_size) != binary["sha256"]
             ):
                 raise LifecycleError("installed native binary differs from its package")
+    _verify_application_host()
     try:
         session.verify_installed_host(Path("/"))
     except Exception as error:

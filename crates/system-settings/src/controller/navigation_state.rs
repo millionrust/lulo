@@ -34,18 +34,35 @@ impl Settings {
         rmac_apps::find_desktop_entry(&self.app_catalog, app_id)
     }
 
+    /// Search results, ranked the way the Mac ranks them: a hit on a pane's
+    /// own name (e.g. "Wallpaper" for "wallpaper") outranks one that only
+    /// hit its description or hidden search vocabulary (e.g. "Desktop &
+    /// Dock", whose search terms happen to mention "wallpaper" in
+    /// passing), within the same section; sections stay in their declared
+    /// order and categories keep their declared order within a rank tie.
     pub(super) fn search_matches(&self, cx: &Context<Self>) -> Vec<(usize, usize)> {
         let query = self.search.read(cx).value();
-        self.sections
+        let mut ranked: Vec<(u8, usize, usize)> = self
+            .sections
             .iter()
             .enumerate()
             .flat_map(|(section_index, section)| {
+                let query = &query;
                 section
                     .iter()
                     .enumerate()
-                    .filter(|(_, category)| crate::settings_search::matches(category, &query))
-                    .map(move |(category_index, _)| (section_index, category_index))
+                    .filter_map(move |(category_index, category)| {
+                        crate::settings_search::match_rank(category, query)
+                            .map(|rank| (rank, section_index, category_index))
+                    })
             })
+            .collect();
+        ranked.sort_by_key(|&(rank, section_index, category_index)| {
+            (section_index, rank, category_index)
+        });
+        ranked
+            .into_iter()
+            .map(|(_, section_index, category_index)| (section_index, category_index))
             .collect()
     }
 
@@ -53,6 +70,14 @@ impl Settings {
         let count = self.search_matches(cx).len();
         if count == 0 {
             return false;
+        }
+        if !self.search_result_focused {
+            // Nothing is highlighted yet (the Mac's own search results
+            // start this way too): the first Down/Up lands on the current
+            // value (0, the top-ranked result) instead of skipping past it.
+            self.search_result_focused = true;
+            self.search_selection = self.search_selection.min(count - 1);
+            return true;
         }
         self.search_selection = self
             .search_selection
@@ -114,6 +139,7 @@ impl Settings {
         self.search
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.search_selection = 0;
+        self.search_result_focused = false;
     }
 
     pub(super) fn toggle_compact_sidebar(&mut self, cx: &mut Context<Self>) {
@@ -138,31 +164,48 @@ impl Settings {
         true
     }
 
-    /// Back pops a subpage, or leaves a pane that macOS files under General
-    /// (Date & Time, Sharing, …) for General itself.
+    /// Back pops a subpage, leaves a pane that macOS files under General
+    /// (Date & Time, Sharing, …) for General itself, or (SET-02) returns to
+    /// the top-level category left behind by the last committed navigation
+    /// — a sidebar click, a search result, or an in-pane link — the Mac's
+    /// own "Wi-Fi → Sound → Back returns to Wi-Fi".
     pub(super) fn can_go_back(&self) -> bool {
-        !self.nav.is_empty() || category_parent(self.current().name.as_ref()).is_some()
+        !self.nav.is_empty()
+            || category_parent(self.current().name.as_ref()).is_some()
+            || !self.pane_history.is_empty()
     }
 
     pub(super) fn can_go_forward(&self) -> bool {
-        !self.forward.is_empty()
+        !self.forward.is_empty() || !self.pane_forward.is_empty()
     }
 
     pub(super) fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(page) = self.nav.pop() {
             self.forward.push(page);
         } else if let Some(parent) = category_parent(self.current().name.as_ref()) {
-            self.select_category(parent, window, cx);
+            // Going up to General is itself an undo, not a new committed
+            // navigation, so it does not disturb `pane_history`.
+            if let Some(target) = self.position_for_category(parent) {
+                self.navigate_to_position(target, window, cx);
+            }
+        } else if let Some(previous) = self.pane_history.pop() {
+            let current = self.selected;
+            self.navigate_to_position(previous, window, cx);
+            self.pane_forward.push(current);
         }
         self.sync_wifi_pane_scan_on_navigation(cx);
         cx.notify();
     }
 
-    pub(super) fn go_forward(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn go_forward(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(page) = self.forward.pop() {
             if self.nav.len() < rmac_system_settings::accessibility::MAX_NAVIGATION_DEPTH {
                 self.nav.push(page);
             }
+        } else if let Some(next) = self.pane_forward.pop() {
+            let current = self.selected;
+            self.navigate_to_position(next, window, cx);
+            self.pane_history.push(current);
         }
         self.sync_wifi_pane_scan_on_navigation(cx);
         cx.notify();
@@ -221,8 +264,14 @@ impl Settings {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let target = self
-            .sections
+        if let Some(target) = self.position_for_category(name) {
+            self.select_position(target, window, cx);
+        }
+    }
+
+    /// The `(section, item)` position of the category named `name`, if any.
+    pub(super) fn position_for_category(&self, name: &str) -> Option<(usize, usize)> {
+        self.sections
             .iter()
             .enumerate()
             .find_map(|(section, items)| {
@@ -230,20 +279,41 @@ impl Settings {
                     .iter()
                     .position(|category| category.name.as_ref() == name)
                     .map(|item| (section, item))
-            });
-        if let Some(target) = target {
-            self.select_position(target, window, cx);
-        }
+            })
     }
 
     /// Choose a category, the way clicking or Return-activating a sidebar
     /// row, a search result, or an in-pane "jump to Keyboard…"-style link
     /// does: moves focus into the new pane's content
-    /// (`content_focus`/`enter_content_focus`), same as macOS's own sidebar.
-    /// Up/Down browsing the sidebar's own highlight uses
+    /// (`content_focus`/`enter_content_focus`), same as macOS's own sidebar,
+    /// and — unlike [`Self::navigate_to_position`] — records `target.0`'s
+    /// predecessor in `pane_history` so Back (SET-02) can return to it. Up/
+    /// Down browsing the sidebar's own highlight uses
     /// [`Self::select_position_keeping_focus`] instead, so it doesn't kick
-    /// focus out of the list mid-arrow-press.
+    /// focus out of the list mid-arrow-press, and doesn't record history.
     pub(super) fn select_position(
+        &mut self,
+        target: (usize, usize),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let previous = self.selected;
+        if !self.select_position_keeping_focus(target, cx) {
+            return;
+        }
+        if target != previous {
+            self.pane_history.push(previous);
+            self.pane_forward.clear();
+        }
+        self.sidebar_focused = false;
+        enter_content_focus(&self.content_focus, window, cx);
+    }
+
+    /// The state change and focus move behind Back/Forward crossing panes
+    /// (`go_back`/`go_forward`): like [`Self::select_position`], but an
+    /// undo/redo of `pane_history`/`pane_forward` itself, so it doesn't
+    /// record a fresh history entry (the caller does, if it should).
+    fn navigate_to_position(
         &mut self,
         target: (usize, usize),
         window: &mut Window,

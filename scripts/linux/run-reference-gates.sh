@@ -178,7 +178,7 @@ run_gate() {
 }
 
 cd "$repo_root"
-run_gate format "$minimum_kib" cargo fmt --all -- --check
+run_gate format "$minimum_kib" python3 scripts/check-rustfmt.py
 run_gate desktop-metadata "$minimum_kib" \
   bash scripts/linux/check-desktop-metadata.sh
 run_gate release-contracts "$minimum_kib" \

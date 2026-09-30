@@ -809,6 +809,12 @@ impl WaylandWindowStatePtr {
     pub fn start_window_move(&self) {
         let state = self.state.borrow();
         let serial = state.client.get_serial(SerialKind::MousePress);
+        drop(state);
+        self.start_window_move_with_serial(serial);
+    }
+
+    pub fn start_window_move_with_serial(&self, serial: u32) {
+        let state = self.state.borrow();
         if let Some(toplevel) = state.surface_state.toplevel() {
             toplevel._move(&state.globals.seat, serial);
         }

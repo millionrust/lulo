@@ -1,0 +1,12 @@
+{
+  "title": "Get Info for a folder exposes calculated size and item count",
+  "app": "files",
+  "setup": {"files": {"Project/nested.txt": "hello\n"}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "cmd-2"},
+    {"select": "Project"},
+    {"key": "cmd-i", "settle": 2.0},
+    {"observe": "folder", "facts": ["windows", "info"]}
+  ]
+}

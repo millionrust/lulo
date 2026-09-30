@@ -85,6 +85,36 @@ class RowNameMatchesPidTests(unittest.TestCase):
         # 424 must not match a row actually naming PID 4242.
         self.assertFalse(journey.row_name_matches_pid("sleep (PID 4242), 0.1% CPU, 1.2 MB", 424))
 
+    def test_named_process_cells_requires_named_table_cell_children(self):
+        class Node:
+            def __init__(self, role, name=""):
+                self.role = role
+                self.name = name
+
+            def getRoleName(self):
+                return self.role
+
+        class Row(Node):
+            def __init__(self, children):
+                super().__init__("table row")
+                self.children = children
+
+            def getChildCount(self):
+                return len(self.children)
+
+            def getChildAtIndex(self, index):
+                return self.children[index]
+
+        row = Row(
+            [
+                Node("table cell", "sleep (PID 4242)"),
+                Node("table cell", "0.0"),
+                Node("text", "decorative text"),
+                Node("table cell"),
+            ]
+        )
+        self.assertEqual(journey.named_process_cells(row), ["sleep (PID 4242)", "0.0"])
+
 
 class NiriJsonParsingTests(unittest.TestCase):
     def test_parse_windows_accepts_an_array(self):

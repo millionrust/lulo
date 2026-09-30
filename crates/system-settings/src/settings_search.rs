@@ -2,17 +2,19 @@
 
 use crate::navigation::Category;
 
-pub(crate) fn matches(category: &Category, query: &str) -> bool {
-    rmac_system_settings::accessibility::category_matches(
+pub(crate) fn match_hint(category: &Category, query: &str) -> Option<&'static str> {
+    rmac_system_settings::accessibility::category_match_hint(query, category.search_terms)
+}
+
+/// How well `category` ranks for `query` (lower is better); `None` when it
+/// doesn't match at all. See `category_match_rank`.
+pub(crate) fn match_rank(category: &Category, query: &str) -> Option<u8> {
+    rmac_system_settings::accessibility::category_match_rank(
         query,
         category.name.as_ref(),
         category.desc.as_ref(),
         category.search_terms,
     )
-}
-
-pub(crate) fn match_hint(category: &Category, query: &str) -> Option<&'static str> {
-    rmac_system_settings::accessibility::category_match_hint(query, category.search_terms)
 }
 
 pub(crate) fn terms_for_pane(name: &str) -> &'static [&'static str] {
@@ -287,7 +289,7 @@ mod tests {
         ] {
             let panes = categories
                 .iter()
-                .filter(|category| matches(category, query))
+                .filter(|category| match_rank(category, query).is_some())
                 .map(|category| category.name.as_ref())
                 .collect::<Vec<_>>();
             assert_eq!(panes, [expected], "unexpected route for {query}");
@@ -298,10 +300,36 @@ mod tests {
 
         let lock_panes = categories
             .iter()
-            .filter(|category| matches(category, "lock"))
+            .filter(|category| match_rank(category, "lock").is_some())
             .map(|category| category.name.as_ref())
             .collect::<Vec<_>>();
         assert!(lock_panes.contains(&"Lock Screen"));
         assert!(!lock_panes.contains(&"Date & Time"));
+    }
+
+    /// "wallpaper" matches both "Wallpaper" (its own name) and "Desktop &
+    /// Dock" (only via a hidden search term, "click wallpaper to show
+    /// desktop"): the Mac opens "Wallpaper" for this query, so it must rank
+    /// first even though "Desktop & Dock" is declared earlier.
+    #[test]
+    fn a_name_match_ranks_above_a_hidden_search_term_match() {
+        let categories = crate::navigation::categories()
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        let wallpaper = categories
+            .iter()
+            .find(|category| category.name.as_ref() == "Wallpaper")
+            .unwrap();
+        let desktop_and_dock = categories
+            .iter()
+            .find(|category| category.name.as_ref() == "Desktop & Dock")
+            .unwrap();
+        let wallpaper_rank = match_rank(wallpaper, "wallpaper").unwrap();
+        let desktop_and_dock_rank = match_rank(desktop_and_dock, "wallpaper").unwrap();
+        assert!(
+            wallpaper_rank < desktop_and_dock_rank,
+            "Wallpaper ({wallpaper_rank}) should outrank Desktop & Dock ({desktop_and_dock_rank})"
+        );
     }
 }

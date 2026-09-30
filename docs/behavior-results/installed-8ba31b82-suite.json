@@ -1,0 +1,73 @@
+{
+  "format": 1,
+  "created_unix": 1790573897,
+  "source_revision": "8ba31b8281c71fb1ed3d54d9cf2dc7d68efe89f9",
+  "binary_count": 20,
+  "binary_manifest": "binaries.json",
+  "results": [
+    {
+      "name": "behavior-27",
+      "exit_code": 1,
+      "elapsed_seconds": 169.29,
+      "stdout_log": "logs/behavior-27.stdout.txt",
+      "stderr_log": "logs/behavior-27.stderr.txt",
+      "scenario_count": 27,
+      "scenario_statuses": {
+        "fail": 2,
+        "pass": 25
+      }
+    },
+    {
+      "name": "startup-smoke",
+      "exit_code": 0,
+      "elapsed_seconds": 14.05,
+      "stdout_log": "logs/startup-smoke.stdout.txt",
+      "stderr_log": "logs/startup-smoke.stderr.txt"
+    },
+    {
+      "name": "terminal-roundtrip",
+      "exit_code": 0,
+      "elapsed_seconds": 9.94,
+      "stdout_log": "logs/terminal-roundtrip.stdout.txt",
+      "stderr_log": "logs/terminal-roundtrip.stderr.txt"
+    },
+    {
+      "name": "power-dialogs",
+      "exit_code": 0,
+      "elapsed_seconds": 45.03,
+      "stdout_log": "logs/power-dialogs.stdout.txt",
+      "stderr_log": "logs/power-dialogs.stderr.txt"
+    },
+    {
+      "name": "shutdown-completion",
+      "exit_code": 0,
+      "elapsed_seconds": 49.01,
+      "stdout_log": "logs/shutdown-completion.stdout.txt",
+      "stderr_log": "logs/shutdown-completion.stderr.txt"
+    }
+  ],
+  "coverage": {
+    "recorded_mac_behavior_scenarios": 27,
+    "behavior_statuses": {
+      "fail": 2,
+      "pass": 25
+    },
+    "startup_only_first_party_apps": 9,
+    "nested_confirmation_and_shutdown_suites_completed": 2,
+    "private_terminal_typed_roundtrip_completed": 1,
+    "behavior_screenshot_count": 3,
+    "session_dialog_screenshot_count": 8,
+    "automatic_pixel_comparison": false,
+    "real_hardware_or_live_session_tests": false,
+    "real_power_commands": false
+  },
+  "summary": {
+    "passed": 4,
+    "failed": 1,
+    "not_run": 0
+  },
+  "limits": [
+    "Interaction scenarios compare named behavior and state against recorded Mac expectations; captures are for review, not an automatic pixel score.",
+    "The existing full journey scripts that drive the owner's live session are intentionally excluded."
+  ]
+}

@@ -68,6 +68,14 @@ pub(crate) struct DeskState {
     /// A folder New Folder just created: renamed in place as soon as the
     /// desktop listing shows it, as Finder does.
     pub rename_when_listed: Option<PathBuf>,
+    /// The folder ⌘Z would undo: the one New Folder created most recently,
+    /// still sitting under the name New Folder gave it. Cleared the moment
+    /// anything else happens to it (a real rename, another New Folder, a
+    /// Move to Trash, …) so ⌘Z never removes a folder the user has since
+    /// used. Confirmed on the Mac (macOS 26.2, 2026-09-29,
+    /// `tests/behavior/desktop/new-folder-undo.json`): ⌘Z right after
+    /// New Folder removes it.
+    pub undo_new_folder: Option<PathBuf>,
     /// Counts presses and keys, so a pending click-to-rename can tell it
     /// was followed by something else (a double-click opens instead).
     pub rename_click: u64,
@@ -236,7 +244,7 @@ fn format_size(bytes: u64) -> String {
         unit += 1;
     }
     if value < 10.0 {
-        format!("{value:.1} {}", units[unit])
+        format!("{:.1} {}", (value * 10.0 + 0.5).floor() / 10.0, units[unit])
     } else {
         format!("{value:.0} {}", units[unit])
     }
@@ -831,6 +839,7 @@ impl Wallpaper {
                     .unwrap_or_default();
             }
             "backspace" if command => self.run_command(Command::MoveToTrash, None, window, cx),
+            "z" if command && !modifiers.shift => self.undo(window, cx),
             "o" | "down" if command => self.run_command(Command::Open, None, window, cx),
             "i" if command => self.run_command(Command::GetInfo, None, window, cx),
             "d" if command => self.run_command(Command::Duplicate, None, window, cx),
@@ -841,6 +850,28 @@ impl Wallpaper {
         }
         cx.notify();
         true
+    }
+
+    /// ⌘Z: removes the folder New Folder created most recently, if nothing
+    /// has renamed it, trashed it or created another one since. Confirmed
+    /// on the Mac (`tests/behavior/desktop/new-folder-undo.json`).
+    fn undo(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(path) = self.desk.undo_new_folder.take() else {
+            return;
+        };
+        self.desk.selection.remove(&path);
+        // Cancels any in-progress rename of the very folder being undone
+        // (e.g. Return still pending) so it does not race the removal.
+        if self.desk.rename.as_ref().is_some_and(|r| r.path == path) {
+            self.end_rename(window, cx);
+        }
+        cx.spawn(async move |this, cx| {
+            // Only ever removes the empty folder New Folder just made —
+            // `remove_dir` fails on anything with contents.
+            let _ = blocking::unblock(move || std::fs::remove_dir(&path)).await;
+            let _ = this.update(cx, |_, cx| cx.notify());
+        })
+        .detach();
     }
 
     pub(crate) fn run_command(
@@ -874,7 +905,8 @@ impl Wallpaper {
                         match result {
                             Ok(path) => {
                                 this.desk.selection = BTreeSet::from([path.clone()]);
-                                this.desk.rename_when_listed = Some(path);
+                                this.desk.rename_when_listed = Some(path.clone());
+                                this.desk.undo_new_folder = Some(path);
                             }
                             Err(_) => {
                                 this.action_error =
@@ -1574,6 +1606,11 @@ impl Wallpaper {
                 // A click elsewhere may have changed the selection since.
                 if self.desk.selection.remove(&old_path) {
                     self.desk.selection.insert(path);
+                }
+                // A deliberate rename is a real use of the folder: ⌘Z no
+                // longer undoes its creation.
+                if self.desk.undo_new_folder.as_deref() == Some(old_path.as_path()) {
+                    self.desk.undo_new_folder = None;
                 }
                 self.end_rename(window, cx);
             }

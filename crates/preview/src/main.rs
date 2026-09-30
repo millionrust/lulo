@@ -5,7 +5,7 @@ mod view;
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-use gpui::{App, AppContext as _, AssetSource, KeyBinding, Result, SharedString};
+use gpui::{App, AppContext as _, AssetSource, KeyBinding, QuitMode, Result, SharedString};
 use gpui_component::Root;
 use rmac_preview::document::{self, Kind};
 use rmac_preview::metrics;
@@ -250,6 +250,13 @@ fn main() {
     }
     rmac_ui::application()
         .with_assets(CombinedAssets)
+        // GPUI's own default on Linux (`QuitMode::Default`) quits the whole
+        // process the instant the last window closes — the actual cause of
+        // ⌘W exiting Preview instead of leaving it running with no windows
+        // open, like Finder (behavior:preview/close-window). Several
+        // shell binaries (rmac-dock, rmac-menubar, …) already opt out of
+        // this for the same reason.
+        .with_quit_mode(QuitMode::Explicit)
         .run(move |cx: &mut App| {
             rmac_ui::init_application(cx);
             bind_keys(cx);
@@ -281,12 +288,13 @@ fn main() {
                 },
                 cx,
             );
-            cx.on_window_closed(|cx, _| {
-                if cx.windows().is_empty() {
-                    cx.quit();
-                }
-            })
-            .detach();
+            // Preview stays running with no windows open, like Finder
+            // (behavior:preview/close-window, behavior:files/close-window-cmd-w):
+            // ⌘W on the last document window used to quit the whole
+            // process instead of just closing it, and quitting would also
+            // undercut the hand-off above, which needs the process alive
+            // to open a later document in a new window rather than
+            // relaunching.
             if paths.is_empty() {
                 choose_and_open(true, cx);
             } else {

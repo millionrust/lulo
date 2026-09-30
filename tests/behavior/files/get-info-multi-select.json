@@ -1,5 +1,5 @@
 {
-  "title": "Get Info (⌘I) on several selected files opens one combined Info window",
+  "title": "Get Info (⌘I) on several selected files opens an Info window for each item",
   "app": "files",
   "setup": {
     "files": {

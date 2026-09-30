@@ -91,10 +91,14 @@ impl Settings {
                     .bg(style::capsule_divider()),
             )
             .child(
-                segment("nav-forward", "icons/chevron-right.svg", can_forward)
-                    .when(can_forward, |forward| {
-                        forward.on_click(cx.listener(|this, _, _, cx| this.go_forward(cx)))
-                    }),
+                segment("nav-forward", "icons/chevron-right.svg", can_forward).when(
+                    can_forward,
+                    |forward| {
+                        forward.on_click(
+                            cx.listener(|this, _, window, cx| this.go_forward(window, cx)),
+                        )
+                    },
+                ),
             );
         let title = self.toolbar_title();
         let subtitle = self.toolbar_subtitle();
@@ -258,6 +262,14 @@ impl Settings {
 
         let mut list = div()
             .id(rmac_system_settings::accessibility::SIDEBAR_ID)
+            .role(Role::List)
+            // A boundary, not an ordinary Tab stop (`content_focus` uses
+            // the same pattern): Tab already reaches the sidebar through
+            // its rows' own focus handles, so this only exists for Down in
+            // the search field to focus explicitly, giving assistive
+            // technology a `Role::List` node to report instead of the
+            // search field's own text-input state.
+            .track_focus(&self.results_focus.clone().tab_stop(false))
             .flex_1()
             .min_h(px(0.0))
             .v_flex()
@@ -315,17 +327,25 @@ impl Settings {
             .unwrap_or(current);
         let mut search_result_index = 0;
         for (si, section) in self.sections.iter().enumerate() {
-            let matching: Vec<(usize, &Category)> = section
-                .iter()
-                .enumerate()
-                .filter(|(_, category)| {
-                    if searching {
-                        crate::settings_search::matches(category, &query)
-                    } else {
-                        category_parent(category.name.as_ref()).is_none()
-                    }
-                })
-                .collect();
+            // Ranked results (`search_matches`, already computed above) are
+            // the single source of truth for search order, so the
+            // highlighted row here always lines up with what Down/Return
+            // pick by the same index: a hit on a pane's own name outranks
+            // one that only hit its description or hidden search
+            // vocabulary, within this section.
+            let matching: Vec<(usize, &Category)> = if searching {
+                search_matches
+                    .iter()
+                    .filter(|&&(section_index, _)| section_index == si)
+                    .map(|&(_, category_index)| (category_index, &section[category_index]))
+                    .collect()
+            } else {
+                section
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, category)| category_parent(category.name.as_ref()).is_none())
+                    .collect()
+            };
             if matching.is_empty() {
                 continue;
             }

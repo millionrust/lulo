@@ -428,8 +428,14 @@ impl Render for Wallpaper {
             .cloned();
         let mut root = div()
             .id(format!("wallpaper-{}", self.display_id))
-            .role(Role::Image)
-            .aria_label("Desktop wallpaper")
+            // The whole desktop's default focus target (background plus
+            // every icon) is a group, not an image — confirmed on the Mac
+            // (macOS 26.2, 2026-09-29,
+            // `tests/behavior/desktop/new-folder-named.json`): once a new
+            // folder's name is committed and focus returns to the desktop,
+            // AX reports role `AXGroup` named "desktop", not an image.
+            .role(Role::Group)
+            .aria_label("desktop")
             .relative()
             .size_full()
             .track_focus(&self.focus)

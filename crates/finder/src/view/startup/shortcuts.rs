@@ -8,6 +8,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
     }
     // Keyboard shortcuts → actions (handled on the focused list).
     cx.bind_keys([
+        KeyBinding::new("tab", RenameNextItem, Some("FinderRename > Input")),
         KeyBinding::new(
             rmac_ui::shortcuts::SELECT_ALL.keystroke,
             SelectAll,
@@ -59,6 +60,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("cmd-2", ViewAsList, Some("Finder")),
         KeyBinding::new("cmd-3", ViewAsColumns, Some("Finder")),
         KeyBinding::new("cmd-4", ViewAsGallery, Some("Finder")),
+        KeyBinding::new("cmd-j", ShowViewOptions, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::OPEN_SELECTION.keystroke,
             OpenItems,
@@ -79,6 +81,11 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             QuickLook,
             Some("Finder"),
         ),
+        KeyBinding::new(
+            rmac_ui::shortcuts::QUICK_LOOK.keystroke,
+            QuickLook,
+            Some("Finder"),
+        ),
         KeyBinding::new(rmac_ui::shortcuts::INFO.keystroke, GetInfo, Some("Finder")),
         KeyBinding::new(
             rmac_ui::shortcuts::NEW_TAB.keystroke,
@@ -92,6 +99,8 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         ),
         KeyBinding::new("ctrl-shift-tab", PreviousTab, Some("Finder")),
         KeyBinding::new("ctrl-tab", NextTab, Some("Finder")),
+        KeyBinding::new("cmd-shift-[", PreviousTab, Some("Finder")),
+        KeyBinding::new("cmd-shift-]", NextTab, Some("Finder")),
         // View ▸ Hide Sidebar, View ▸ Show Path Bar and Go ▸ Computer.
         KeyBinding::new("ctrl-cmd-s", ToggleSidebar, Some("Finder")),
         KeyBinding::new("alt-cmd-p", TogglePathBar, Some("Finder")),

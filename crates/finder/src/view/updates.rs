@@ -2,6 +2,7 @@ use super::*;
 
 impl FinderView {
     pub(super) fn reload(&mut self, cx: &mut Context<Self>) {
+        self.restore_folder_options(cx);
         if self.trash_view {
             self.reload_trash(cx);
             return;
@@ -233,6 +234,7 @@ impl FinderView {
         let show_hidden = self.show_hidden;
         let key = self.sort_key;
         let asc = self.sort_asc;
+        let group = self.current_options().group_by;
         let expanded = self
             .expanded
             .iter()
@@ -246,10 +248,12 @@ impl FinderView {
                     match read_entries_checked(&path, show_hidden, expected_identity) {
                         Ok((identity, mut entries)) => {
                             sort_entries(&mut entries, key, asc);
+                            view_options::group_entries(&mut entries, group);
                             let free = refresh_free_space.then(|| free_space(&path));
                             let children = expanded.into_iter().filter_map(|folder| {
                                 read_entries_checked(&folder, show_hidden, None).ok().map(|(_, mut rows)| {
                                     sort_entries(&mut rows, key, asc);
+                                    view_options::group_entries(&mut rows, group);
                                     (folder, rows)
                                 })
                             }).collect::<HashMap<_, _>>();
@@ -283,6 +287,7 @@ impl FinderView {
                         this.root_entries = entries;
                         this.child_entries = children;
                         this.rebuild_list_entries();
+                        this.start_size_scan(cx);
                         let entry_paths = this
                             .entries
                             .iter()

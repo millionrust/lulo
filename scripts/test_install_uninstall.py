@@ -355,6 +355,7 @@ class InstallReleaseAttestationTests(unittest.TestCase):
         self.assertIn("downloaded", result.stdout)
         self.assertEqual(calls.count("attestation verify"), 2)
         self.assertIn("--signer-workflow millionrust/lulo/.github/workflows/release.yml", calls)
+        self.assertIn("--source-ref refs/tags/v0.9.0-beta.1", calls)
 
     def _skip_if_gh_on_system_path(self):
         if any(Path(d, "gh").exists() for d in ("/usr/bin", "/bin", "/usr/sbin", "/sbin")):

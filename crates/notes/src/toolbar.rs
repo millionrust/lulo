@@ -77,18 +77,32 @@ impl NotesView {
         element
             .on_mouse_down(
                 gpui::MouseButton::Left,
-                cx.listener(|this, _, _, _| this.dragging = true),
+                cx.listener(|this, event: &gpui::MouseDownEvent, _, _| {
+                    this.dragging = Some(event.position)
+                }),
             )
             .on_mouse_up(
                 gpui::MouseButton::Left,
-                cx.listener(|this, _, _, _| this.dragging = false),
+                cx.listener(|this, _, _, _| this.dragging = None),
             )
-            .on_mouse_move(cx.listener(|this, _, window, _| {
-                if this.dragging {
-                    this.dragging = false;
-                    window.start_window_move();
+            .on_mouse_move(
+                cx.listener(|this, event: &gpui::MouseMoveEvent, window, _| {
+                    if event.pressed_button == Some(gpui::MouseButton::Left)
+                        && this.dragging.is_some_and(|press| {
+                            let delta = event.position - press;
+                            delta.x.abs() > px(4.0) || delta.y.abs() > px(4.0)
+                        })
+                    {
+                        this.dragging = None;
+                        window.start_window_move();
+                    }
+                }),
+            )
+            .on_click(|event, _, cx| {
+                if event.click_count() == 2 {
+                    rmac_ui::double_click_title_bar_action(cx);
                 }
-            }))
+            })
     }
 
     /// The editor column's toolbar.
@@ -184,7 +198,12 @@ impl NotesView {
                 |this, _, cx| this.begin_move_note(cx),
             ))
             .child(
-                glyph_button("note-more", glyphs::MORE, CAPSULE_BUTTON_WIDTH, "More")
+                PopUpButton::new("note-more", "More")
+                    .menu_button(glyphs::MORE, TOOLBAR_GLYPH)
+                    .w(px(CAPSULE_BUTTON_WIDTH))
+                    .h(px(CAPSULE_HEIGHT - 2.0))
+                    .rounded(px(CAPSULE_HEIGHT / 2.0))
+                    .text_color(toolbar_glyph())
                     .disabled(!ready || !has_note)
                     .dropdown_menu(move |menu, _, _| {
                         let menu = if deleted {
@@ -327,8 +346,12 @@ impl NotesView {
                     .right(px(LIST_MORE_RIGHT))
                     .top(px(CAPSULE_TOP))
                     .child(
-                        glyph_button("view-options", glyphs::MORE, CAPSULE_HEIGHT, "View Options")
+                        PopUpButton::new("view-options", "View Options")
+                            .menu_button(glyphs::MORE, TOOLBAR_GLYPH)
+                            .w(px(CAPSULE_HEIGHT))
                             .h(px(CAPSULE_HEIGHT))
+                            .rounded(px(CAPSULE_HEIGHT / 2.0))
+                            .text_color(toolbar_glyph())
                             .bg(capsule_fill())
                             .border_1()
                             .border_color(capsule_edge())

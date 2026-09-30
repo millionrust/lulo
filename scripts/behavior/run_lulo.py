@@ -25,6 +25,7 @@ import argparse
 import errno
 import json
 import os
+import re
 import shutil
 import signal
 import struct
@@ -746,6 +747,25 @@ class LuloRun:
             titles.insert(0, front)
         return {"count": len(plain), "front": front, "titles": titles}
 
+    def fact_info(self) -> dict[str, Any]:
+        """Check the accessible Size row in the frontmost Get Info window."""
+        frame = self.active_frame()
+        if frame is None or not name(frame).endswith(" Info"):
+            return {"size_bytes_present": False, "item_count_present": False}
+        values = []
+        for node in descendants(frame, limit=3000):
+            label = name(node)
+            if label:
+                values.append(label)
+            value, _, _ = text_of(node)
+            if value:
+                values.append(value)
+        joined = " ".join(values)
+        return {
+            "size_bytes_present": bool(re.search(r"\b\d[\d,]*\s+bytes?\b", joined, re.I)),
+            "item_count_present": bool(re.search(r"\b\d[\d,]*\s+items?\b", joined, re.I)),
+        }
+
     def fact_window_size(self) -> dict[str, Any]:
         """Visible compositor bounds for runtime-sized calculator windows."""
         windows = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
@@ -781,6 +801,7 @@ class LuloRun:
         if node is None:
             return {"present": False}
         texts, buttons, default = [], [], None
+        focused_button = None
         for child in descendants(node, limit=2000):
             r = role(child)
             if r in {"label", "static", "heading", "paragraph"} and name(child):
@@ -790,7 +811,13 @@ class LuloRun:
                 buttons.append((round(box[1] / 6), box[0], name(child)))
                 if has_state(child, pyatspi.STATE_IS_DEFAULT):
                     default = name(child)
+                if has_state(child, pyatspi.STATE_FOCUSED):
+                    focused_button = name(child)
         buttons.sort()
+        # AccessKit's AT-SPI adapter does not publish IS_DEFAULT. For a
+        # one-button alert, its focused button is also its Return action.
+        if default is None and role(node) == "alert" and len(buttons) == 1:
+            default = focused_button
         sentence = next((t for t in texts if len(t.split()) >= 3), None)
         result = {"present": True, "title": name(node) or sentence, "texts": texts,
                   "buttons": [b[2] for b in buttons]}

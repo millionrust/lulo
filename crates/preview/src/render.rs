@@ -12,11 +12,15 @@ use crate::document::{self, Kind};
 use crate::layout::Rotation;
 use crate::poppler::{self, PdfInfo, TextPage};
 use gpui::RenderImage;
-use image::{ImageDecoder as _, ImageReader, RgbaImage};
+use image::{ImageDecoder as _, ImageEncoder as _, ImageReader, RgbaImage};
 
 /// Longest image side kept in memory; larger images are downsampled once so
 /// a single texture stays within what low-end GPUs accept.
 const MAX_IMAGE_SIDE: u32 = 8192;
+/// Bound Preview's raster print intermediate even when the opened image is
+/// at the maximum decode size. The source is still kept at full display
+/// resolution; only the PDF sent to the print portal is reduced.
+const MAX_PRINT_IMAGE_SIDE: u32 = 4096;
 /// Sidebar thumbnails are drawn at 120 pt; 2× covers HiDPI screens.
 const THUMB_PIXELS: u32 = 240;
 
@@ -288,6 +292,45 @@ pub fn encode_png(pixels: &RgbaImage) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
+/// Encode the currently displayed image as a JPEG suitable for embedding in
+/// a one-page PDF. Resize before rotating so the temporary print raster stays
+/// bounded, then flatten transparency onto white as a printed page does.
+pub fn encode_print_jpeg(
+    pixels: &RgbaImage,
+    rotation: Rotation,
+) -> Result<(Vec<u8>, u32, u32), String> {
+    if pixels.width() == 0 || pixels.height() == 0 {
+        return Err("the image has no pixels".into());
+    }
+    let scale = (f64::from(MAX_PRINT_IMAGE_SIDE) / f64::from(pixels.width()))
+        .min(f64::from(MAX_PRINT_IMAGE_SIDE) / f64::from(pixels.height()))
+        .min(1.0);
+    let width = (f64::from(pixels.width()) * scale).round().max(1.0) as u32;
+    let height = (f64::from(pixels.height()) * scale).round().max(1.0) as u32;
+    let bounded = if scale < 1.0 {
+        image::imageops::resize(pixels, width, height, image::imageops::FilterType::Triangle)
+    } else {
+        pixels.clone()
+    };
+    let rotated = rotate(&bounded, rotation);
+    let (width, height) = rotated.dimensions();
+    let mut rgb = image::RgbImage::new(width, height);
+    for (x, y, pixel) in rotated.enumerate_pixels() {
+        // Preview's render pixels are BGRA; PDF JPEGs are RGB. Composite
+        // translucent image pixels on white paper.
+        let [blue, green, red, alpha] = pixel.0;
+        let blend = |channel: u8| {
+            ((u16::from(channel) * u16::from(alpha) + 255 * (255 - u16::from(alpha))) / 255) as u8
+        };
+        rgb.put_pixel(x, y, image::Rgb([blend(red), blend(green), blend(blue)]));
+    }
+    let mut bytes = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 90)
+        .write_image(rgb.as_raw(), width, height, image::ExtendedColorType::Rgb8)
+        .map_err(|error| error.to_string())?;
+    Ok((bytes, width, height))
+}
+
 /// Image files beside `path`, in Finder order.
 pub fn folder_images(path: &Path) -> Vec<PathBuf> {
     let Some(directory) = path.parent() else {
@@ -305,4 +348,34 @@ pub fn folder_images(path: &Path) -> Vec<PathBuf> {
         .into_iter()
         .map(|name| directory.join(name))
         .collect()
+}
+
+#[cfg(test)]
+mod print_tests {
+    use super::*;
+    use image::GenericImageView as _;
+
+    #[test]
+    fn print_jpeg_preserves_rotation_and_bounds_dimensions() {
+        let pixels = RgbaImage::from_pixel(5000, 1, image::Rgba([0, 0, 255, 255]));
+        let (jpeg, width, height) = encode_print_jpeg(&pixels, Rotation::from_degrees(90)).unwrap();
+        assert_eq!((width, height), (1, MAX_PRINT_IMAGE_SIDE));
+
+        let decoded = image::load_from_memory(&jpeg).unwrap();
+        assert_eq!(decoded.dimensions(), (width, height));
+        let pixel = decoded.to_rgb8().get_pixel(0, height / 2).0;
+        assert!(pixel[0] > 240 && pixel[1] < 20 && pixel[2] < 20);
+    }
+
+    #[test]
+    fn print_jpeg_flattens_transparency_onto_white() {
+        let pixels = RgbaImage::from_pixel(1, 1, image::Rgba([0, 0, 255, 0]));
+        let (jpeg, _, _) = encode_print_jpeg(&pixels, Rotation::default()).unwrap();
+        let decoded = image::load_from_memory(&jpeg).unwrap().to_rgb8();
+        assert!(decoded
+            .get_pixel(0, 0)
+            .0
+            .iter()
+            .all(|channel| *channel > 240));
+    }
 }

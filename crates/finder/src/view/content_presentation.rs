@@ -136,7 +136,6 @@ impl FinderView {
                 let is_dir = e.is_dir;
                 let selected_entry = e.clone();
                 let context_entry = e.clone();
-                let rename_entry = e.clone();
                 let accessible_entry = e.clone();
                 let name_cell: gpui::AnyElement = match &self.renaming {
                     Some((rename_path, input)) if rename_path == &e.path => div()
@@ -156,21 +155,6 @@ impl FinderView {
                         .truncate()
                         .text_color(row_text)
                         .child(e.name.clone())
-                        .on_mouse_down(
-                            MouseButton::Left,
-                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                                if is_sel && !event.modifiers.platform && !event.modifiers.shift {
-                                    cx.stop_propagation();
-                                    this.column_selection = Some(rename_entry.clone());
-                                    this.rename_start(window, cx);
-                                }
-                            }),
-                        )
-                        .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
-                            if is_sel {
-                                cx.stop_propagation();
-                            }
-                        }))
                         .into_any_element(),
                 };
                 col = col.child(
@@ -178,7 +162,7 @@ impl FinderView {
                         div().id(SharedString::from(format!("colrow-{ci}-{}", e.name))),
                         Role::TreeItem,
                         &e,
-                        is_sel,
+                        is_focus_sel,
                         position,
                         column_count,
                         &entity,

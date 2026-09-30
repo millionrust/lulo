@@ -31,7 +31,7 @@ impl FinderView {
         self.trash_view = false;
         self.applications_view = false;
         self.tabs.push(Tab {
-            cwd: self.home.clone(),
+            cwd: self.cwd.clone(),
             identity: None,
             back: Vec::new(),
             fwd: Vec::new(),
@@ -135,6 +135,7 @@ impl FinderView {
         }
         self.trash_view = false;
         self.applications_view = false;
+        self.browse_view = self.current_options().browse_in_view.then_some(self.view);
         self.back.push(self.cwd.clone());
         self.fwd.clear();
         self.cwd = path;
@@ -185,6 +186,7 @@ impl FinderView {
             return;
         }
         if let Some(parent) = self.cwd.parent().map(Path::to_path_buf) {
+            self.pending_select = Some(self.cwd.clone());
             self.navigate(parent, cx);
         }
     }

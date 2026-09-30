@@ -14,8 +14,12 @@ the fixed release.
 from __future__ import annotations
 
 from pathlib import Path
-import tomllib
 import unittest
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.9 on the Mac validation host
+    import tomli as tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -30,11 +30,15 @@ detail), `docs/journey-suite.md` (the package-scoped fixture runner).
 To run what `linux`/`macos` run, from the repo root:
 
 ```sh
-cargo fmt --all -- --check
+python3 scripts/check-rustfmt.py
 cargo clippy --locked --keep-going --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --workspace --all-features
 python3 -m unittest discover -s scripts -p 'test_*.py'
 ```
+
+`check-rustfmt.py` passes every root workspace package to `cargo fmt --package`.
+Using `cargo fmt --all` would also format the vendored gpui-component path
+dependencies, whose upstream formatting is outside the root workspace gate.
 
 `python3` must be 3.11+ (the CI jobs pin 3.12 via `actions/setup-python`):
 two of the `scripts/test_*.py` files use `tomllib` (3.11+) and

@@ -61,6 +61,7 @@ import statistics
 import subprocess
 import sys
 import time
+import wave
 from pathlib import Path
 from typing import Any, Optional
 
@@ -101,6 +102,7 @@ APPS: tuple[tuple[str, str, str], ...] = (
     ("Apps", "rmac-app-drawer", "org.rmac.AppDrawer"),
     ("Files", "rmac-files", "org.rmac.Files"),
     ("Notes", "rmac-notes", "org.rmac.Notes"),
+    ("Player", "rmac-player", "org.rmac.Player"),
     ("System Settings", "rmac-system-settings", "org.rmac.SystemSettings"),
     ("Terminal", "rmac-terminal", "org.rmac.Terminal"),
     ("Text Editor", "rmac-text-editor", "org.rmac.TextEditor"),
@@ -353,9 +355,9 @@ def render_markdown_report(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append(
         "| App | Warm p95 | Budget | Interactive marker | Idle CPU % | Budget | "
-        "Wake-ups/s | PSS | Frame timing |"
+        "Wake-ups/s | Idle redraw? | PSS | Frame timing |"
     )
-    lines.append("|---|---:|---|---|---:|---|---:|---:|---|")
+    lines.append("|---|---:|---|---|---:|---|---:|---|---:|---|")
     apps: dict[str, Any] = report.get("apps", {})
     for package in sorted(apps):
         app = apps[package]
@@ -370,13 +372,15 @@ def render_markdown_report(report: dict[str, Any]) -> str:
                 f"{'✓' if p95['within_budget'] else '✗'} | {warm['interactive_marker']}"
             )
         if idle is None:
-            idle_cell = "n/a | n/a | n/a | n/a"
+            idle_cell = "n/a | n/a | n/a | n/a | n/a"
         else:
             cpu = idle["idle_cpu_percent"]
             idle_cell = (
                 f"{_fmt_percent(cpu['value'])} | <={cpu['budget']}% "
                 f"{'✓' if cpu['within_budget'] else '✗'} | "
-                f"{idle['wakeups_per_second']:.3f} | {_fmt_mib(idle['pss_mib'])}"
+                f"{idle['wakeups_per_second']:.3f} | "
+                f"{'yes' if idle.get('suspected_idle_redraw') else 'no'} | "
+                f"{_fmt_mib(idle['pss_mib'])}"
             )
         lines.append(
             f"| {app['display_name']} | {warm_cell} | {idle_cell} | "
@@ -399,6 +403,8 @@ def render_markdown_report(report: dict[str, Any]) -> str:
         idle = app.get("idle")
         if idle is not None and not idle["idle_cpu_percent"]["within_budget"]:
             over_budget.append(f"{app['display_name']}: idle CPU over budget")
+        if idle is not None and idle.get("suspected_idle_redraw"):
+            over_budget.append(f"{app['display_name']}: suspected idle redraw")
 
     lines.append("## Over budget")
     lines.append("")
@@ -515,6 +521,18 @@ def sample_process_tree(root_pid: int, hertz: int) -> Optional[dict[str, int]]:
     process is not alive."""
 
     pids = build_descendant_set(root_pid)
+    return sample_process_set(pids, hertz)
+
+
+def sample_process_forest(root_pids: set[int], hertz: int) -> Optional[dict[str, int]]:
+    """Sum each PID once even when two service process trees overlap."""
+    pids: set[int] = set()
+    for root_pid in root_pids:
+        pids.update(build_descendant_set(root_pid))
+    return sample_process_set(pids, hertz)
+
+
+def sample_process_set(pids: set[int], hertz: int) -> Optional[dict[str, int]]:
     if not pids:
         return None
 
@@ -568,6 +586,13 @@ def measure_idle(
     after = sample_process_tree(root_pid, hertz)
     if after is None:
         return None
+    return idle_sample_delta(before, after, elapsed, hertz)
+
+
+def idle_sample_delta(
+    before: dict[str, int], after: dict[str, int], elapsed: float, hertz: int
+) -> dict[str, Any]:
+    """Convert two process-tree snapshots from the same idle window."""
     delta_ticks = after["cpu_ticks"] - before["cpu_ticks"]
     delta_ctxt = (
         after["voluntary_ctxt_switches"] + after["nonvoluntary_ctxt_switches"]
@@ -580,31 +605,78 @@ def measure_idle(
     }
 
 
-def measure_shell_surface(
-    unit_name: str,
-    settle_seconds: float,
-    idle_seconds: float,
-    hertz: int,
-    wakeup_threshold_per_second: float,
-) -> dict[str, Any]:
-    pid = get_unit_main_pid(f"{unit_name}.service")
-    if pid is None:
-        return {"running": False}
+def measure_shell_surfaces(
+    names: list[str], settle_seconds: float, idle_seconds: float,
+    hertz: int, wakeup_threshold_per_second: float,
+) -> tuple[dict[str, Any], Optional[dict[str, Any]]]:
+    """Sample every shell unit in one shared idle window, including popovers.
 
-    sample = measure_idle(pid, settle_seconds, idle_seconds, hertz)
-    if sample is None:
-        return {"running": False, "note": "unit exited during measurement"}
-
-    idle_budget = evaluate_budget(sample["cpu_percent"], IDLE_CPU_SHELL_COMBINED_BUDGET_PERCENT)
-    return {
-        "running": True,
-        "idle_cpu_percent": idle_budget,
-        "wakeups_per_second": round(sample["wakeups_per_second"], 3),
-        "suspected_idle_redraw": suspected_idle_redraw(
-            sample["wakeups_per_second"], wakeup_threshold_per_second
-        ),
-        "pss_mib": round(sample["pss_kib"] / 1024, 1),
+    Individual surfaces are evaluated against the per-app idle budget; the
+    sum across all of them is evaluated separately against the tighter
+    shell-combined budget."""
+    pids = {name: get_unit_main_pid(f"{name}.service") for name in names}
+    time.sleep(settle_seconds)
+    before = {
+        name: sample_process_tree(pid, hertz) if pid is not None else None
+        for name, pid in pids.items()
     }
+    roots = {pid for pid in pids.values() if pid is not None}
+    combined_before = sample_process_forest(roots, hertz) if roots else None
+    combined_started = time.monotonic()
+    started = time.monotonic()
+    time.sleep(idle_seconds)
+    elapsed = time.monotonic() - started
+    after = {
+        name: sample_process_tree(pid, hertz) if pid is not None else None
+        for name, pid in pids.items()
+    }
+    combined_after = sample_process_forest(roots, hertz) if roots else None
+    combined_elapsed = time.monotonic() - combined_started
+    results: dict[str, Any] = {}
+    restarted = False
+    for name in names:
+        pid = pids[name]
+        first, last = before[name], after[name]
+        if pid is None:
+            if get_unit_main_pid(f"{name}.service") is not None:
+                results[name] = {
+                    "running": False,
+                    "note": "unit started during measurement",
+                }
+                restarted = True
+            else:
+                results[name] = {"running": False}
+            continue
+        if first is None or last is None or get_unit_main_pid(f"{name}.service") != pid:
+            results[name] = {
+                "running": False,
+                "note": "unit exited or restarted during measurement",
+            }
+            restarted = True
+            continue
+        sample = idle_sample_delta(first, last, elapsed, hertz)
+        results[name] = {
+            "running": True,
+            "idle_cpu_percent": evaluate_budget(
+                sample["cpu_percent"], IDLE_CPU_PER_APP_BUDGET_PERCENT
+            ),
+            "wakeups_per_second": round(sample["wakeups_per_second"], 3),
+            "suspected_idle_redraw": suspected_idle_redraw(
+                sample["wakeups_per_second"], wakeup_threshold_per_second
+            ),
+            "pss_mib": round(sample["pss_kib"] / 1024, 1),
+        }
+    combined = None
+    if combined_before is not None and combined_after is not None and not restarted:
+        combined = evaluate_budget(
+            cpu_percent_from_ticks(
+                combined_after["cpu_ticks"] - combined_before["cpu_ticks"],
+                hertz,
+                combined_elapsed,
+            ),
+            IDLE_CPU_SHELL_COMBINED_BUDGET_PERCENT,
+        )
+    return results, combined
 
 
 def niri_windows() -> list[dict[str, Any]]:
@@ -660,11 +732,28 @@ def app_environment(environ: dict[str, str], app_temp: Path, ready_file: Path) -
     return environment
 
 
+def launch_command(binary: Path, app_temp: Path) -> list[str]:
+    if binary.name != "rmac-player":
+        return [str(binary)]
+    # Player opens its file chooser with no arguments. Give it a tiny, silent
+    # fixture so startup measures the media window and the idle sample begins
+    # after playback has already finished.
+    fixture = app_temp / "silent-player-fixture.wav"
+    if not fixture.exists():
+        with wave.open(str(fixture), "wb") as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(44100)
+            output.writeframes(b"\0\0" * 4410)
+    return [str(binary), str(fixture)]
+
+
 def start_app(binary: Path, ready_file: Path, app_temp: Path) -> subprocess.Popen[bytes]:
     ready_file.unlink(missing_ok=True)
     environment = app_environment(dict(os.environ), app_temp, ready_file)
+    command = launch_command(binary, app_temp)
     return subprocess.Popen(
-        [str(binary)],
+        command,
         env=environment,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -939,24 +1028,13 @@ def main() -> int:
 
     if not args.skip_surfaces:
         surfaces = args.surfaces if args.surfaces else list(SHELL_SURFACES)
-        for name in surfaces:
-            print(f"Measuring shell surface {name}...", flush=True)
-            report["shell_surfaces"][name] = measure_shell_surface(
-                name,
-                args.settle_seconds,
-                args.idle_seconds,
-                hertz,
-                args.wakeup_threshold_per_second,
-            )
-        running_cpu = [
-            surface["idle_cpu_percent"]["value"]
-            for surface in report["shell_surfaces"].values()
-            if surface.get("running")
-        ]
-        if running_cpu:
-            report["shell_combined"] = evaluate_budget(
-                sum(running_cpu), IDLE_CPU_SHELL_COMBINED_BUDGET_PERCENT
-            )
+        print(f"Measuring {len(surfaces)} shell surfaces in one idle window...", flush=True)
+        report["shell_surfaces"], combined = measure_shell_surfaces(
+            surfaces, args.settle_seconds, args.idle_seconds, hertz,
+            args.wakeup_threshold_per_second,
+        )
+        if combined is not None:
+            report["shell_combined"] = combined
 
     if not args.skip_apps:
         selected_packages = set(args.apps) if args.apps else None

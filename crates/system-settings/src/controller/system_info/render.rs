@@ -176,6 +176,13 @@ impl Settings {
             .unwrap_or_else(|| si.display_hostname().to_owned());
         let mut body = div()
             .v_flex()
+            .when(self.system_data_loading, |body| {
+                body.child(
+                    Progress::indeterminate()
+                        .label("Loading system information…")
+                        .mb_3(),
+                )
+            })
             .child(
                 div()
                     .v_flex()

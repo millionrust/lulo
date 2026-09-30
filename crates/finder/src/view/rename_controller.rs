@@ -74,8 +74,48 @@ impl FinderView {
         // the list, as Finder does — reload's own path-based selection
         // would otherwise look for the item under its old (now nonexistent)
         // path and find nothing.
-        self.pending_select = self.rename_path_to(&path, &new_name, cx).or(Some(path));
+        let scheduled = self.rename_path_to(&path, &new_name, cx);
+        self.pending_select = scheduled
+            .as_ref()
+            .map(|(path, _)| path.clone())
+            .or(Some(path));
         window.focus(&self.focus, cx);
+        if scheduled.is_none() {
+            self.reload(cx);
+        } else {
+            cx.notify();
+        }
+    }
+
+    /// Tab accepts the edit and advances to the item that followed it before
+    /// the list is sorted again under the new name. Finder leaves list focus.
+    pub(super) fn rename_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((path, input)) = self.renaming.take() else {
+            return;
+        };
+        let next_path = (|| {
+            let index = self.entries.iter().position(|entry| entry.path == path)?;
+            self.entries
+                .get((index + 1) % self.entries.len())
+                .map(|entry| entry.path.clone())
+        })();
+        let name = input.read(cx).value().to_string();
+        let unchanged = path
+            .file_name()
+            .is_some_and(|old| old.to_string_lossy() == name.trim());
+        let scheduled = self.rename_path_to(&path, &name, cx);
+        window.focus(&self.focus, cx);
+        if self.rename_conflict.is_some() || (scheduled.is_none() && !unchanged) {
+            self.pending_select = Some(path);
+            self.reload(cx);
+            return;
+        }
+        if let Some((destination, _)) = scheduled {
+            self.pending_select = next_path.or(Some(destination));
+            cx.notify();
+            return;
+        }
+        self.pending_select = next_path.or(Some(path));
         self.reload(cx);
     }
 
@@ -90,22 +130,23 @@ impl FinderView {
     }
 
     /// Rename `path` to `new_name` in its own folder, reporting a failure or
-    /// a name clash visibly. Returns the new path when the item was renamed.
+    /// a name clash visibly. Returns the destination when work was scheduled.
     ///
-    /// Goes through the same journaled transfer the file list uses for a
-    /// same-folder drag (a rename is just that: a `Move` whose source and
-    /// destination share a parent), so Command-Z can undo it exactly as it
-    /// undoes any other move — a plain `file_ops::rename` records nothing
-    /// an Undo could act on.
+    /// Schedule the same background journaled transfer as a same-folder drag,
+    /// so Command-Z can reverse the rename exactly. The receiver reports when
+    /// the transfer and its UI reload have completed.
     pub(super) fn rename_path_to(
         &mut self,
         path: &Path,
         new_name: &str,
         cx: &mut Context<Self>,
-    ) -> Option<PathBuf> {
+    ) -> Option<(PathBuf, async_channel::Receiver<bool>)> {
         let entry = entry_for(path)?;
         let new_name = new_name.trim();
         if new_name.is_empty() || new_name == entry.name.as_ref() {
+            return None;
+        }
+        if self.block_mutation_during_transfer(cx) {
             return None;
         }
         let destination = entry
@@ -113,7 +154,39 @@ impl FinderView {
             .parent()
             .unwrap_or(self.cwd.as_path())
             .join(new_name);
-        if destination.exists() {
+        let occupied = match std::fs::symlink_metadata(&destination) {
+            Ok(_) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => {
+                self.record_operation_failures(
+                    vec![file_ops::Failure::message(
+                        file_ops::Operation::Rename,
+                        &entry.path,
+                        Some(&destination),
+                        error.to_string(),
+                    )],
+                    cx,
+                );
+                return None;
+            }
+        };
+        if occupied {
+            let stem = destination
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy();
+            let extension = destination
+                .extension()
+                .map(|ext| format!(".{}", ext.to_string_lossy()))
+                .unwrap_or_default();
+            self.rename_conflict = Some(
+                if extension.is_empty() {
+                    format!("The name “{stem}” is already taken. Please choose a different name.")
+                } else {
+                    format!("The name “{stem}” with extension “{extension}” is already taken. Please choose a different name.")
+                }
+                .into(),
+            );
             self.record_operation_failures(
                 vec![file_ops::Failure::message(
                     file_ops::Operation::Rename,
@@ -125,44 +198,30 @@ impl FinderView {
             );
             return None;
         }
-        let Some(journal) = self.operation_journal.clone() else {
-            // Recovery data failed to initialize: rename directly rather
-            // than block renaming entirely, but this one won't be undoable.
-            return match file_ops::rename(&file_ops::RealFileSystem, &entry.path, &destination) {
-                Ok(()) => Some(destination),
-                Err(failure) => {
-                    self.record_operation_failures(vec![failure], cx);
-                    None
-                }
-            };
-        };
+        if self.operation_journal.is_none() {
+            self.operation_error =
+                Some("File-operation recovery is unavailable; Rename is disabled".into());
+            cx.notify();
+            return None;
+        }
         let task = file_ops::TransferTask {
             kind: file_ops::TransferKind::Move,
             source: entry.path.clone(),
             destination: destination.clone(),
         };
-        let report = file_ops::execute_transfers(
-            &file_ops::RealFileSystem,
-            Some(journal.as_ref()),
-            std::slice::from_ref(&task),
-            &AtomicBool::new(false),
-            |_| {},
+        let (sender, receiver) = async_channel::bounded(1);
+        self.start_transfer_with_retained(
+            "Renaming",
+            vec![task],
+            TransferStartOptions {
+                keep_unfinished_in_clipboard: false,
+                retained_clipboard: Vec::new(),
+                play_drop_sound: false,
+                completion: Some(sender),
+            },
+            cx,
         );
-        if !report.failures.is_empty() {
-            self.record_operation_failures(report.failures, cx);
-            return None;
-        }
-        if report.processed == 0 {
-            return None;
-        }
-        match journal.undo_store().latest() {
-            Ok(availability) => self.undo_available = availability,
-            Err(_) => {
-                self.undo_available = None;
-                self.operation_journal = None;
-            }
-        }
-        Some(destination)
+        self.transfer.is_some().then_some((destination, receiver))
     }
 }
 

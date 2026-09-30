@@ -15,18 +15,18 @@ use std::fs::{self, OpenOptions};
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::FutureExt as _;
 use gpui::{
+    div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*, px, rgba, svg,
     AnyElement, AnyWindowHandle, App, AssetSource, Bounds, Context, DisplayId, Entity,
     ExternalPaths, FocusHandle, FontWeight, KeyDownEvent, MouseButton, MouseDownEvent,
     MouseMoveEvent, MouseUpEvent, Pixels, PlatformDisplay, Point, QuitMode, RenderImage, Role,
     SharedString, Size, Task, Window, WindowBackgroundAppearance, WindowBounds, WindowKind,
-    WindowOptions, div, img, layer_shell::*, linear_color_stop, linear_gradient, point, prelude::*,
-    px, rgba, svg,
+    WindowOptions,
 };
 use gpui_platform::application;
 use rmac_desktop::settings::{Arrangement, DesktopSettings, GalleryTarget};
@@ -236,12 +236,10 @@ impl WallpaperStatus {
         if self.clock_ticker.is_some() {
             return;
         }
-        self.clock_ticker = Some(cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor().timer(Duration::from_secs(1)).await;
-                if this.update(cx, |_, cx| cx.notify()).is_err() {
-                    break;
-                }
+        self.clock_ticker = Some(cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(Duration::from_secs(1)).await;
+            if this.update(cx, |_, cx| cx.notify()).is_err() {
+                break;
             }
         }));
     }
@@ -533,16 +531,14 @@ impl Render for Wallpaper {
 fn render_surface(surface: PreparedSurface) -> Vec<AnyElement> {
     let destination = surface.layout.destination;
     if !surface.layout.tiled {
-        return vec![
-            img(surface.image)
-                .absolute()
-                .left(px(destination.x as f32))
-                .top(px(destination.y as f32))
-                .w(px(destination.width as f32))
-                .h(px(destination.height as f32))
-                .object_fit(gpui::ObjectFit::Fill)
-                .into_any_element(),
-        ];
+        return vec![img(surface.image)
+            .absolute()
+            .left(px(destination.x as f32))
+            .top(px(destination.y as f32))
+            .w(px(destination.width as f32))
+            .h(px(destination.height as f32))
+            .object_fit(gpui::ObjectFit::Fill)
+            .into_any_element()];
     }
 
     let width = destination.width as f32;
@@ -563,14 +559,12 @@ fn render_surface(surface: PreparedSurface) -> Vec<AnyElement> {
     let columns = ((viewport_width - x) / width).ceil().max(1.0) as usize;
     let rows = ((viewport_height - y) / height).ceil().max(1.0) as usize;
     if columns.saturating_mul(rows) > 4_096 {
-        return vec![
-            img(surface.image)
-                .absolute()
-                .inset_0()
-                .size_full()
-                .object_fit(gpui::ObjectFit::Fill)
-                .into_any_element(),
-        ];
+        return vec![img(surface.image)
+            .absolute()
+            .inset_0()
+            .size_full()
+            .object_fit(gpui::ObjectFit::Fill)
+            .into_any_element()];
     }
     let mut tiles = Vec::with_capacity(columns.saturating_mul(rows));
     for row in 0..rows {

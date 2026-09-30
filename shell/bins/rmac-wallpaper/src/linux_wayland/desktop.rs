@@ -7,7 +7,7 @@
 use super::menu::{Command, DesktopMenu, MenuTarget};
 use super::*;
 use gpui::{Focusable as _, Subscription};
-use rmac_desktop::grid::{Grid, LABEL_GAP, LABEL_MAX_WIDTH, Placement, ViewOptions};
+use rmac_desktop::grid::{Grid, Placement, ViewOptions, LABEL_GAP, LABEL_MAX_WIDTH};
 use rmac_desktop::rename::{self as naming, NameCheck};
 use rmac_desktop::stacks::{self, StackKind, Tile};
 use rmac_desktop::widgets::{self as desk_widgets, Widget};

@@ -2158,8 +2158,8 @@ fn surface_geometry(state: &WaylandWindowState) -> Bounds<i32> {
 
 fn geometry_inside_frame(size: Size<Pixels>, inset: Pixels, tiling: Tiling) -> Bounds<i32> {
     inset_by_tiling(Bounds::new(Point::default(), size), inset, tiling)
-    .map(|v| f32::from(v) as i32)
-    .map_size(|v| if v <= 0 { 1 } else { v })
+        .map(|v| f32::from(v) as i32)
+        .map_size(|v| if v <= 0 { 1 } else { v })
 }
 
 #[cfg(test)]
@@ -2169,7 +2169,8 @@ mod rmac_frame_loop_tests {
 
     #[test]
     fn mapped_and_resized_window_geometry_excludes_client_frame() {
-        let geometry = geometry_inside_frame(size(px(824.0), px(624.0)), px(12.0), Tiling::default());
+        let geometry =
+            geometry_inside_frame(size(px(824.0), px(624.0)), px(12.0), Tiling::default());
         assert_eq!(geometry.origin.x, 12);
         assert_eq!(geometry.origin.y, 12);
         assert_eq!(geometry.size.width, 800);

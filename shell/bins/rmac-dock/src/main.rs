@@ -16,11 +16,11 @@ mod linux_wayland {
 
     use futures_util::FutureExt as _;
     use gpui::{
-        AccessibleAction, AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, ExternalPaths,
-        FocusHandle, FontWeight, KeyDownEvent, MouseButton, PathBuilder, PlatformDisplay, QuitMode,
-        Role, SharedString, Size, WeakEntity, Window, WindowBackgroundAppearance, WindowBounds,
-        WindowHandle, WindowKind, WindowOptions, canvas, div, img, layer_shell::*, point,
-        prelude::*, px, rgba,
+        canvas, div, img, layer_shell::*, point, prelude::*, px, rgba, AccessibleAction,
+        AnyWindowHandle, App, Bounds, Context, DisplayId, Entity, ExternalPaths, FocusHandle,
+        FontWeight, KeyDownEvent, MouseButton, PathBuilder, PlatformDisplay, QuitMode, Role,
+        SharedString, Size, WeakEntity, Window, WindowBackgroundAppearance, WindowBounds,
+        WindowHandle, WindowKind, WindowOptions,
     };
     use gpui_platform::application;
     use rmac_shell_ui::tokens;
@@ -1638,7 +1638,11 @@ mod linux_wayland {
                 return resting;
             }
             let t = rmac_dock::reorder::ease_out(elapsed, rmac_dock::motion::AUTOHIDE_SLIDE_MS);
-            if hiding { t } else { 1.0 - t }
+            if hiding {
+                t
+            } else {
+                1.0 - t
+            }
         }
 
         fn model_snapshot(&self, cx: &Context<Self>) -> Option<rmac_dock::Model> {
@@ -4631,7 +4635,11 @@ mod linux_wayland {
             .take(2)
             .flat_map(char::to_uppercase)
             .collect::<String>();
-        if mark.is_empty() { "•".into() } else { mark }
+        if mark.is_empty() {
+            "•".into()
+        } else {
+            mark
+        }
     }
 
     fn item_icon_path(icon: &rmac_dock::presentation::Icon, app_id: &str) -> Option<PathBuf> {
@@ -5268,18 +5276,16 @@ mod linux_wayland {
         let (command_tx, command_rx) = async_channel::bounded(8);
         let spawned = std::thread::Builder::new()
             .name("rmac-dock-drag".into())
-            .spawn(move || {
-                loop {
-                    match listener.receive() {
-                        Ok(command) => {
-                            if command_tx.send_blocking(command).is_err() {
-                                return;
-                            }
-                        }
-                        Err(error) => {
-                            eprintln!("Dock drag-from-Apps endpoint stopped: {error}");
+            .spawn(move || loop {
+                match listener.receive() {
+                    Ok(command) => {
+                        if command_tx.send_blocking(command).is_err() {
                             return;
                         }
+                    }
+                    Err(error) => {
+                        eprintln!("Dock drag-from-Apps endpoint stopped: {error}");
+                        return;
                     }
                 }
             });
@@ -5303,18 +5309,16 @@ mod linux_wayland {
         let (command_tx, command_rx) = async_channel::bounded(8);
         let spawned = std::thread::Builder::new()
             .name("rmac-dock-ipc".into())
-            .spawn(move || {
-                loop {
-                    match listener.receive() {
-                        Ok(command) => {
-                            if command_tx.send_blocking(command).is_err() {
-                                return;
-                            }
-                        }
-                        Err(error) => {
-                            eprintln!("Dock command endpoint stopped: {error}");
+            .spawn(move || loop {
+                match listener.receive() {
+                    Ok(command) => {
+                        if command_tx.send_blocking(command).is_err() {
                             return;
                         }
+                    }
+                    Err(error) => {
+                        eprintln!("Dock command endpoint stopped: {error}");
+                        return;
                     }
                 }
             });

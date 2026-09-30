@@ -247,7 +247,7 @@ fn percent_decode(text: &str) -> Option<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{StartupDestination, item_path};
+    use super::{item_path, StartupDestination};
     use std::path::{Path, PathBuf};
 
     #[test]
@@ -374,13 +374,11 @@ mod tests {
             StartupDestination::parse(windows[1].window_arguments().into_iter()),
             Ok(StartupDestination::Reveal(file))
         );
-        assert!(
-            StartupDestination::parse_launch(
-                vec![scratch.0.join("missing").display().to_string()],
-                None
-            )
-            .is_err()
-        );
+        assert!(StartupDestination::parse_launch(
+            vec![scratch.0.join("missing").display().to_string()],
+            None
+        )
+        .is_err());
         assert_eq!(
             StartupDestination::parse_launch(vec!["--trash".to_owned()], None),
             Ok((vec![StartupDestination::Trash], Vec::new()))

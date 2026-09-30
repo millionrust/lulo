@@ -878,7 +878,11 @@ impl FinderView {
                         current
                             .map(|position| {
                                 let below = position + vertical_step;
-                                if below <= last { below } else { position }
+                                if below <= last {
+                                    below
+                                } else {
+                                    position
+                                }
                             })
                             .unwrap_or(0),
                     ),

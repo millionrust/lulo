@@ -6619,6 +6619,7 @@ dependencies = [
  "rmac-power",
  "rmac-privacy",
  "rmac-privacy-linux",
+ "rmac-process",
  "rmac-recent-documents",
  "rmac-screen-reader",
  "rmac-sharing",

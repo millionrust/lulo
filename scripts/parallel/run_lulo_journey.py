@@ -89,6 +89,9 @@ class Driver:
         config.write_text(shell)
         run_window_move.REPO = private_root
         self.session.start()
+        subprocess.run(["busctl", "--user", "set-property", "org.a11y.Bus", "/org/a11y/bus",
+                        "org.a11y.Status", "IsEnabled", "b", "true"],
+                       env=self.session.env, capture_output=True, timeout=10, check=False)
         self.session.output = next(iter(self.session.niri("outputs") or {}), "winit")
         bins = Path(self.args.bin_dir)
         for binary in ("rmac-top-bar", "rmac-wallpaper"):

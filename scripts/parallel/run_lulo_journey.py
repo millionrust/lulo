@@ -169,7 +169,7 @@ class Driver:
         if not self.session.wait_for(lambda: self.window(), 30):
             raise RuntimeError(f"{app} did not open a nested niri window; see {self.session.logs / (app + '.log')}")
 
-    def click(self, label: str, target: str | None = None):
+    def click(self, label: str, target: str | None = None, attempt: int = 0):
         if label in FORBIDDEN:
             raise RuntimeError(f"refusing destructive or toggle control {label!r}")
         if target == "Dock" and label == "Files":
@@ -237,6 +237,9 @@ class Driver:
             x, y = self.session.parent_point(156, 15)
             self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
             return
+        if attempt < 12:
+            time.sleep(0.15)
+            return self.click(label, target, attempt + 1)
         raise RuntimeError(f"no accessible control with usable bounds named {label!r}")
 
     def action(self, step: dict):

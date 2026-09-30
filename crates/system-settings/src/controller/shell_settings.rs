@@ -45,8 +45,11 @@ impl Settings {
                 wallpaper_changed
             }
             ShellSettingsStreamUpdate::Unavailable(error) => {
+                eprintln!(
+                    "System Settings: shell-settings live-update watcher unavailable: {error}"
+                );
                 self.shell_settings_stream_error =
-                    Some(format!("Live shell settings updates are unavailable: {error}").into());
+                    Some("Live Dock and wallpaper updates are temporarily unavailable".into());
                 false
             }
         }

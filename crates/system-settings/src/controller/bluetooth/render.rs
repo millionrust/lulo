@@ -69,6 +69,13 @@ impl Settings {
             ));
             return self.pane(cards);
         }
+        // A background Bluetooth watcher hiccup (BlueZ dropping off the
+        // bus) degrades quietly here rather than as the window-wide
+        // Settings banner (`global_settings_error`), and clears itself the
+        // moment the watcher recovers.
+        if let Some(detail) = &self.bluetooth_stream_error {
+            cards.push(note_card(detail.clone()));
+        }
 
         if self.bluetooth_on {
             let row = |device: &rmac_bluetooth::Device| {

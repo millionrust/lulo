@@ -108,6 +108,13 @@ impl Settings {
             ));
             return self.pane(cards);
         }
+        // A background Wi-Fi watcher hiccup (NetworkManager dropping off
+        // the bus) degrades quietly here rather than as the window-wide
+        // Settings banner (`global_settings_error`), and clears itself the
+        // moment the watcher recovers.
+        if let Some(detail) = &self.wifi_stream_error {
+            cards.push(note_card(detail.clone()));
+        }
 
         if !self.wifi_saved_networks.is_empty() {
             cards.push(section_header("Known Networks"));

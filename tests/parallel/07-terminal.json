@@ -1,0 +1,47 @@
+{
+  "title": "Terminal: echo and list sandbox",
+  "steps": [
+    {
+      "launch": "terminal"
+    },
+    {
+      "shot": "terminal-open"
+    },
+    {
+      "type": "cd $SANDBOX"
+    },
+    {
+      "shot": "sandbox-command"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "shot": "sandbox-cwd"
+    },
+    {
+      "type": "echo parallel-journey"
+    },
+    {
+      "shot": "echo-command"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "shot": "echo-output"
+    },
+    {
+      "type": "ls"
+    },
+    {
+      "shot": "ls-command"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "shot": "ls-output"
+    }
+  ]
+}

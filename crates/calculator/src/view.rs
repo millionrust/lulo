@@ -155,37 +155,7 @@ impl CalculatorView {
                 scientific_keypad::WINDOW_HEIGHT,
             ),
         };
-        // GPUI's platform bounds include the 12 pt Linux client frame. The
-        // keypad uses visible content coordinates, so resize the outer
-        // surface to the content size plus that frame (as at window creation).
-        let (outer_width, outer_height) = rmac_ui::outer_window_size(width, height);
-        window.resize(size(px(outer_width), px(outer_height)));
-        // niri can reconfigure a floating window after a client-driven
-        // resize (the same behaviour `rmac_ui::window`'s own post-map
-        // fit-to-display retry works around), so a single `resize` call can
-        // settle at a size a few points off from what was requested here.
-        // Reassert it briefly until it sticks, rather than leave the keypad
-        // laid out for a canvas the window didn't actually end up with.
-        cx.spawn(async move |this, cx| {
-            for _ in 0..10 {
-                cx.background_executor()
-                    .timer(Duration::from_millis(100))
-                    .await;
-                let settled = this.update_in(cx, |_, window, _| {
-                    let current = window.bounds().size;
-                    let matches = (f32::from(current.width) - outer_width).abs() < 0.5
-                        && (f32::from(current.height) - outer_height).abs() < 0.5;
-                    if !matches {
-                        window.resize(size(px(outer_width), px(outer_height)));
-                    }
-                    matches
-                });
-                if settled.unwrap_or(true) {
-                    break;
-                }
-            }
-        })
-        .detach();
+        window.resize(size(px(width), px(height)));
         cx.notify();
     }
 
@@ -597,6 +567,7 @@ impl CalculatorView {
         let (fill, label) = match key_style(key) {
             KeyStyle::Function => (palette.function_key, palette.function_label),
             KeyStyle::Digit => (palette.digit_key, palette.digit_label),
+            KeyStyle::Scientific => (palette.scientific_key, palette.scientific_label),
             KeyStyle::Operator if selected => (
                 palette.operator_selected_key,
                 palette.operator_selected_label,
@@ -666,6 +637,7 @@ impl CalculatorView {
         let (fill, label) = match scientific_keypad::key_style(key) {
             KeyStyle::Function => (palette.function_key, palette.function_label),
             KeyStyle::Digit => (palette.digit_key, palette.digit_label),
+            KeyStyle::Scientific => (palette.scientific_key, palette.scientific_label),
             KeyStyle::Operator if selected => (
                 palette.operator_selected_key,
                 palette.operator_selected_label,
@@ -709,12 +681,7 @@ impl CalculatorView {
             scientific_keypad::LABEL_SIZE
         };
         let face = match face {
-            scientific_keypad::KeyFace::Text(text) => div()
-                .text_size(px(label_size))
-                .line_height(px(label_size))
-                .text_color(rgb(label))
-                .child(text)
-                .into_any_element(),
+            scientific_keypad::KeyFace::Text(text) => scientific_label(text, label_size, label),
             scientific_keypad::KeyFace::Glyph(path) => svg()
                 .path(path)
                 .size(px(scientific_keypad::GLYPH_SIZE))
@@ -780,6 +747,50 @@ fn flatten_superscript_digits(text: &str) -> String {
             other => other,
         })
         .collect()
+}
+
+/// Set exponents and indices with separate GPUI text sizes and baselines.
+/// The visual glyphs remain independent of the accessible key name.
+fn scientific_label(text: &'static str, size: f32, color: u32) -> AnyElement {
+    let part = |value: &'static str, font_size: f32, rise: f32, italic: bool| {
+        div()
+            .relative()
+            .bottom(px(rise))
+            .text_size(px(font_size))
+            .line_height(px(font_size))
+            .text_color(rgb(color))
+            .when(italic, |el| el.italic())
+            .child(value)
+            .into_any_element()
+    };
+    let segments: Vec<AnyElement> = match text {
+        "2nd" => vec![part("2", size, 0.0, false), part("nd", 10.0, 5.0, false)],
+        "x²" => vec![part("x", size, 0.0, false), part("2", 11.0, 6.0, false)],
+        "x³" => vec![part("x", size, 0.0, false), part("3", 11.0, 6.0, false)],
+        "xʸ" => vec![part("x", size, 0.0, false), part("y", 11.0, 6.0, false)],
+        "eˣ" => vec![part("e", size, 0.0, true), part("x", 11.0, 6.0, false)],
+        "yˣ" => vec![part("y", size, 0.0, false), part("x", 11.0, 6.0, false)],
+        "10ˣ" => vec![part("10", size, 0.0, false), part("x", 11.0, 6.0, false)],
+        "2ˣ" => vec![part("2", size, 0.0, false), part("x", 11.0, 6.0, false)],
+        "²√x" => vec![part("2", 11.0, 7.0, false), part("√x", 22.0, 0.0, false)],
+        "³√x" => vec![part("3", 11.0, 7.0, false), part("√x", 22.0, 0.0, false)],
+        "ʸ√x" => vec![part("y", 11.0, 7.0, false), part("√x", 22.0, 0.0, false)],
+        "1/x" => vec![
+            part("1", 12.0, 6.0, false),
+            part("⁄", 21.0, 0.0, false),
+            part("x", 12.0, -5.0, false),
+        ],
+        "log₁₀" => vec![part("log", size, 0.0, false), part("10", 11.0, -5.0, false)],
+        "log₂" => vec![part("log", size, 0.0, false), part("2", 11.0, -5.0, false)],
+        "logᵧ" => vec![part("log", size, 0.0, false), part("y", 11.0, -5.0, false)],
+        "e" => vec![part("e", size, 0.0, true)],
+        _ => vec![part(text, size, 0.0, false)],
+    };
+    div()
+        .flex()
+        .items_center()
+        .children(segments)
+        .into_any_element()
 }
 
 /// Composite a 0xRRGGBBAA overlay onto an opaque 0xRRGGBB colour.
@@ -857,7 +868,7 @@ impl Render for CalculatorView {
             .relative()
             .w(px(window_width))
             .h(px(window_height))
-            .rounded(px(mac::radius_window()))
+            .rounded(px(mac::radius_window_toolbar()))
             .overflow_hidden()
             .bg(rgb(palette.window))
             .font_features(mac::tabular_font_features())

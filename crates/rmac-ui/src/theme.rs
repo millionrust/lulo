@@ -202,6 +202,7 @@ pub struct SpacingTokens {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RadiusTokens {
     pub window: f32,
+    pub window_toolbar: f32,
     pub control: f32,
     pub card: f32,
     pub popover: f32,
@@ -409,6 +410,7 @@ impl ThemeTokens {
 
         let radii = RadiusTokens {
             window: design.radii.window,
+            window_toolbar: design.radii.window_toolbar,
             control: design.radii.control,
             card: design.radii.card,
             popover: design.radii.popover,

@@ -72,6 +72,13 @@ impl Settings {
             cards.push(refresh_footer);
             return self.pane(cards);
         }
+        // A background VPN watcher hiccup (NetworkManager dropping off the
+        // bus) degrades quietly here rather than as the window-wide
+        // Settings banner (`global_settings_error`), and clears itself the
+        // moment the watcher recovers.
+        if let Some(detail) = &self.vpn_stream_error {
+            cards.push(note_card(detail.clone()));
+        }
         if self.vpn_editor_loading.is_some() {
             cards.push(note_card("Opening current VPN profile details…"));
         }

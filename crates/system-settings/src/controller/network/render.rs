@@ -89,6 +89,13 @@ impl Settings {
             cards.push(self.network_refresh_footer(cx));
             return self.pane(cards);
         }
+        // A background network watcher hiccup (NetworkManager dropping off
+        // the bus) degrades quietly here rather than as the window-wide
+        // Settings banner (`global_settings_error`), and clears itself the
+        // moment the watcher recovers.
+        if let Some(detail) = &self.network_stream_error {
+            cards.push(note_card(detail.clone()));
+        }
         let devices = &self.network.devices;
         let row = |index: usize, device: &rmac_network::NetworkDevice| {
             let interface = device.interface.clone();

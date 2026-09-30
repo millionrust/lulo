@@ -162,9 +162,10 @@ pub fn key_origin(row: usize, column: usize) -> (f32, f32) {
 
 pub fn key_style(key: Key) -> KeyStyle {
     match key {
+        Key::Backspace | Key::Clear | Key::Percent => KeyStyle::Function,
         Key::Digit(_) | Key::Decimal | Key::ToggleSign => KeyStyle::Digit,
         Key::Operator(_) | Key::Equals => KeyStyle::Operator,
-        _ => KeyStyle::Function,
+        _ => KeyStyle::Scientific,
     }
 }
 
@@ -462,15 +463,18 @@ mod tests {
     }
 
     #[test]
-    fn key_style_matches_the_three_tiers() {
+    fn key_style_matches_the_four_tiers() {
         assert_eq!(key_style(Key::Digit(4)), KeyStyle::Digit);
         assert_eq!(key_style(Key::ToggleSign), KeyStyle::Digit);
         assert_eq!(key_style(Key::Operator(BinaryOp::Add)), KeyStyle::Operator);
         assert_eq!(key_style(Key::Equals), KeyStyle::Operator);
-        assert_eq!(key_style(Key::Second), KeyStyle::Function);
-        assert_eq!(key_style(Key::OpenParen), KeyStyle::Function);
-        assert_eq!(key_style(Key::MemoryClear), KeyStyle::Function);
-        assert_eq!(key_style(Key::Square), KeyStyle::Function);
+        assert_eq!(key_style(Key::Backspace), KeyStyle::Function);
+        assert_eq!(key_style(Key::Clear), KeyStyle::Function);
+        assert_eq!(key_style(Key::Percent), KeyStyle::Function);
+        assert_eq!(key_style(Key::Second), KeyStyle::Scientific);
+        assert_eq!(key_style(Key::OpenParen), KeyStyle::Scientific);
+        assert_eq!(key_style(Key::MemoryClear), KeyStyle::Scientific);
+        assert_eq!(key_style(Key::Square), KeyStyle::Scientific);
     }
 
     #[test]

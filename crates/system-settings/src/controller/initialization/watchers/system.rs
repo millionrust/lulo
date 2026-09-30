@@ -51,6 +51,9 @@ impl Settings {
                                     this.queue_system_info_stream_refresh(cx);
                                 }
                                 rmac_system_info::WatchEvent::Unavailable => {
+                                    eprintln!(
+                                        "System Settings: hostname live-update watcher unavailable"
+                                    );
                                     this.system_data_stream_error = Some(
                                         "Live hostname updates are temporarily unavailable".into(),
                                     );
@@ -84,6 +87,9 @@ impl Settings {
                                     this.queue_storage_stream_refresh(cx);
                                 }
                                 rmac_mounts::WatchEvent::Unavailable => {
+                                    eprintln!(
+                                        "System Settings: mounted-volume live-update watcher unavailable"
+                                    );
                                     this.storage_stream_error = Some(
                                         "Live mounted-volume updates are temporarily unavailable"
                                             .into(),
@@ -108,6 +114,13 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_sharing_update(result);
+                // This first, passive read shares `finish_sharing_update`
+                // with a later explicit action (toggling a service,
+                // Refresh), whose own failure must stay visible; Samba/SSH
+                // not being installed is not that, and the pane already
+                // says so quietly, so this path's error never reaches the
+                // window-wide Settings banner.
+                this.sharing_error = None;
                 cx.notify();
             });
         })
@@ -128,6 +141,9 @@ impl Settings {
                                 this.queue_privacy_stream_refresh(cx);
                             }
                             rmac_privacy::WatchEvent::Unavailable => {
+                                eprintln!(
+                                    "System Settings: privacy-portal live-update watcher unavailable"
+                                );
                                 this.privacy_stream_error = Some(
                                     "Live portal permission updates are temporarily unavailable"
                                         .into(),
@@ -166,6 +182,9 @@ impl Settings {
                     rmac_login_items::WatchEvent::Unavailable => {
                         if this
                             .update(cx, |this: &mut Settings, cx| {
+                                eprintln!(
+                                    "System Settings: Login Items live-update watcher unavailable"
+                                );
                                 this.login_items_stream_error = Some(
                                     "Live Login Items updates are temporarily unavailable".into(),
                                 );
@@ -204,6 +223,9 @@ impl Settings {
                     rmac_time::WatchEvent::Unavailable => {
                         if this
                             .update(cx, |this: &mut Settings, cx| {
+                                eprintln!(
+                                    "System Settings: date/time live-update watcher unavailable"
+                                );
                                 this.time_stream_error = Some(
                                     "Live date and time updates are temporarily unavailable".into(),
                                 );
@@ -237,6 +259,10 @@ impl Settings {
                             .update(cx, |this: &mut Settings, cx| {
                                 if !this.sharing_busy {
                                     this.finish_sharing_update(result);
+                                    // A background refresh, not a user
+                                    // action -- see the initial-load comment
+                                    // above.
+                                    this.sharing_error = None;
                                     this.sharing_stream_error = None;
                                     cx.notify();
                                 }
@@ -249,6 +275,9 @@ impl Settings {
                     rmac_sharing::WatchEvent::Unavailable => {
                         if this
                             .update(cx, |this: &mut Settings, cx| {
+                                eprintln!(
+                                    "System Settings: Sharing live-update watcher unavailable"
+                                );
                                 this.sharing_stream_error =
                                     Some("Live Sharing updates are temporarily unavailable".into());
                                 cx.notify();

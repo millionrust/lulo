@@ -1,0 +1,59 @@
+{
+  "title": "Calculator: basic and scientific",
+  "steps": [
+    {
+      "launch": "calculator"
+    },
+    {
+      "shot": "open"
+    },
+    {
+      "key": "2"
+    },
+    {
+      "shot": "two"
+    },
+    {
+      "key": "+"
+    },
+    {
+      "shot": "plus"
+    },
+    {
+      "key": "3"
+    },
+    {
+      "shot": "three"
+    },
+    {
+      "key": "return"
+    },
+    {
+      "shot": "sum"
+    },
+    {
+      "key": "cmd-2"
+    },
+    {
+      "shot": "scientific"
+    },
+    {
+      "click": "2nd"
+    },
+    {
+      "shot": "second-functions"
+    },
+    {
+      "click": "2nd"
+    },
+    {
+      "shot": "first-functions"
+    },
+    {
+      "key": "cmd-1"
+    },
+    {
+      "shot": "basic-again"
+    }
+  ]
+}

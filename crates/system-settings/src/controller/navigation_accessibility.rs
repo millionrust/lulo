@@ -90,54 +90,41 @@ impl Settings {
     }
 
     pub(super) fn global_settings_error(&self) -> Option<&SharedString> {
-        // `system_data_stream_error` (the hostname live-update stream) is
-        // deliberately excluded here: it degrades quietly, in place, on the
-        // About pane's Name row -- see `about_body` -- rather than as a
-        // window-wide banner over whatever pane happens to be open. A
-        // background hostname watcher hiccup is not "unrelated panes are
-        // broken", so it must not read that way.
+        // Only a *genuine user-action* failure -- the user just changed a
+        // setting on the pane they are looking at and applying it failed --
+        // surfaces here. Every `*_stream_error` field instead reports a
+        // background watcher hiccup (hostname, storage, updates, Wi-Fi,
+        // Bluetooth, audio/PipeWire, battery/UPower, and so on): those never
+        // contribute to this window-wide banner, no matter which pane
+        // happens to be open when the watcher drops out, because a
+        // background subsystem reconnecting is not "this pane you're on is
+        // broken". Each one instead degrades quietly and in place -- e.g.
+        // `about_body`'s Name row, or a `note_card` in the owning pane --
+        // and clears itself the moment the watcher recovers. See docs/parity.md
+        // (SET banner audit) for the full list.
         self.system_data_error
             .as_ref()
             .or(self.updates_error.as_ref())
-            .or(self.updates_stream_error.as_ref())
             .or(self.storage_error.as_ref())
-            .or(self.storage_stream_error.as_ref())
             .or(self.time_error.as_ref())
-            .or(self.time_stream_error.as_ref())
             .or(self.locale_error.as_ref())
-            .or(self.locale_stream_error.as_ref())
             .or(self.login_items_error.as_ref())
-            .or(self.login_items_stream_error.as_ref())
             .or(self.sharing_error.as_ref())
-            .or(self.sharing_stream_error.as_ref())
             .or(self.wifi_error.as_ref())
-            .or(self.wifi_stream_error.as_ref())
             .or(self.bluetooth_error.as_ref())
-            .or(self.bluetooth_stream_error.as_ref())
             .or(self.network_error.as_ref())
-            .or(self.network_stream_error.as_ref())
             .or(self.vpn_error.as_ref())
-            .or(self.vpn_stream_error.as_ref())
             .or(self.audio_error.as_ref())
-            .or(self.audio_stream_error.as_ref())
             .or(self.power_error.as_ref())
-            .or(self.power_stream_error.as_ref())
             .or(self.display_error.as_ref())
             .or(self.brightness_error.as_ref())
             .or(self.input_error.as_ref())
-            .or(self.input_stream_error.as_ref())
             .or(self.theme_error.as_ref())
-            .or(self.theme_store_stream_error.as_ref())
-            .or(self.theme_portal_stream_error.as_ref())
             .or(self.shell_settings_error.as_ref())
-            .or(self.shell_settings_stream_error.as_ref())
             .or(self.wallpaper_error.as_ref())
             .or(self.spotlight_error.as_ref())
             .or(self.gtk_text_error.as_ref())
-            .or(self.gtk_text_stream_error.as_ref())
             .or(self.screen_reader_toggle_error.as_ref())
-            .or(self.screen_reader_toggle_stream_error.as_ref())
             .or(self.privacy_error.as_ref())
-            .or(self.privacy_stream_error.as_ref())
     }
 }

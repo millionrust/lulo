@@ -171,4 +171,23 @@ impl Settings {
         }
         None
     }
+
+    /// Keyboard, Mouse and Trackpad all share the same input backend, so
+    /// they share its status notes too. A background input-device watcher
+    /// hiccup degrades quietly here rather than as the window-wide Settings
+    /// banner (`global_settings_error`), and clears itself the moment the
+    /// watcher recovers.
+    pub(super) fn input_status_notes(&self) -> Vec<Div> {
+        if let Some(note) = self.input_unavailable_card() {
+            return vec![note];
+        }
+        let mut notes = Vec::new();
+        if let Some(detail) = &self.input_error {
+            notes.push(note_card(detail.clone()));
+        }
+        if let Some(detail) = &self.input_stream_error {
+            notes.push(note_card(detail.clone()));
+        }
+        notes
+    }
 }

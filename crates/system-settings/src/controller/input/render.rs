@@ -117,9 +117,7 @@ impl Settings {
     pub(in crate::controller) fn render_keyboard(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let mut cards = Vec::new();
-        if let Some(note) = self.input_unavailable_card() {
-            cards.push(note);
-        }
+        cards.extend(self.input_status_notes());
         let settings = &self.input.settings.keyboard;
         let writable = self.input.can_configure && !self.input_busy;
         cards.push(
@@ -211,9 +209,7 @@ impl Settings {
     pub(in crate::controller) fn render_mouse(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let mut cards = Vec::new();
-        if let Some(note) = self.input_unavailable_card() {
-            cards.push(note);
-        }
+        cards.extend(self.input_status_notes());
         let settings = &self.input.settings.mouse;
         let writable = self.input.can_configure && settings.enabled && !self.input_busy;
         if !settings.enabled
@@ -407,9 +403,7 @@ impl Settings {
                 });
             }),
         )];
-        if let Some(note) = self.input_unavailable_card() {
-            cards.push(note);
-        }
+        cards.extend(self.input_status_notes());
         let settings = &self.input.settings.touchpad;
         let writable = self.input.can_configure && settings.pointer.enabled && !self.input_busy;
         if !settings.pointer.enabled {

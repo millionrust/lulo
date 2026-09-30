@@ -1,0 +1,26 @@
+{
+  "format": 1,
+  "scenario": "calculator/parallel-basic-scientific",
+  "platform": "macOS 26.2",
+  "recorded": "2026-09-30",
+  "observations": {
+    "sum": {
+      "display": {
+        "value": "23"
+      },
+      "window_size": null
+    },
+    "scientific": {
+      "display": {
+        "value": "23"
+      },
+      "window_size": null
+    },
+    "basic": {
+      "display": {
+        "value": "23"
+      },
+      "window_size": null
+    }
+  }
+}

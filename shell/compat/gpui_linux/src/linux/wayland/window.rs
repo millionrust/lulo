@@ -1029,13 +1029,7 @@ impl WaylandWindowStatePtr {
             let mut state = self.state.borrow_mut();
             state.surface_state.ack_configure(serial);
 
-            let window_geometry = inset_by_tiling(
-                state.bounds.map_origin(|_| px(0.0)),
-                state.inset(),
-                state.tiling,
-            )
-            .map(|v| f32::from(v) as i32)
-            .map_size(|v| if v <= 0 { 1 } else { v });
+            let window_geometry = surface_geometry(&state);
 
             state.surface_state.set_geometry(
                 window_geometry.origin.x,
@@ -1592,20 +1586,15 @@ impl PlatformWindow for WaylandWindow {
         // Resize the buffer before advertising the new geometry. Setting
         // geometry against the old attached buffer lets the compositor clip
         // the larger request to the old size and then configure us back down.
-        // The caller's size already includes any client frame; keep that same
-        // convention for the geometry as the original runtime resize path.
+        // The caller's size includes the client frame. Advertise only the
+        // visible content, as on configure and first map.
         state
             .globals
             .executor
             .spawn(async move {
                 state_ptr.resize(size);
                 let state = state_ptr.state.borrow();
-                let window_geometry = Bounds {
-                    origin: Point::default(),
-                    size,
-                }
-                .map(|v| f32::from(v) as i32)
-                .map_size(|v| if v <= 0 { 1 } else { v });
+                let window_geometry = surface_geometry(&state);
                 state.surface_state.set_geometry(
                     window_geometry.origin.x,
                     window_geometry.origin.y,
@@ -2161,6 +2150,16 @@ fn inset_by_tiling(mut bounds: Bounds<Pixels>, inset: Pixels, tiling: Tiling) ->
     }
 
     bounds
+}
+
+fn surface_geometry(state: &WaylandWindowState) -> Bounds<i32> {
+    inset_by_tiling(
+        state.bounds.map_origin(|_| px(0.0)),
+        state.inset(),
+        state.tiling,
+    )
+    .map(|v| f32::from(v) as i32)
+    .map_size(|v| if v <= 0 { 1 } else { v })
 }
 
 #[cfg(test)]

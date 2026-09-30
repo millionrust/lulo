@@ -205,7 +205,7 @@ fn walk(
             } else if file_type.is_file() && metadata.is_file() {
                 total = total.saturating_add(allocated(&metadata));
             }
-            if visited % PROGRESS_STEP == 0 {
+            if visited.is_multiple_of(PROGRESS_STEP) {
                 progress(total);
             }
         }
@@ -319,7 +319,7 @@ fn save_cache_at(path: &Path, home: &Path, categories: &Categories) -> std::io::
         return Err(std::io::Error::from(std::io::ErrorKind::InvalidData));
     }
     rmac_storage::create_dir_all_private(path.parent().unwrap())?;
-    rmac_storage::atomic_write_private(&path, &bytes)
+    rmac_storage::atomic_write_private(path, &bytes)
 }
 
 fn now_secs() -> u64 {

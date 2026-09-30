@@ -58,7 +58,7 @@ class Screencopy:
                 state["failed"] = True
 
         wire.handlers[frame] = on_frame
-        wire._send(self.manager, 0, struct.pack("<III", 0, self.output, frame))
+        wire._send(self.manager, 0, struct.pack("<III", frame, 0, self.output))
         deadline = time.monotonic() + 2.0
         try:
             while not (state["ready"] or state["failed"]):

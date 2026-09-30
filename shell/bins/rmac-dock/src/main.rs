@@ -4913,7 +4913,7 @@ mod linux_wayland {
                         let overview_visible = surface.overview_visible;
                         let _ = foreground.update(cx, |view, _, cx| {
                             if let Ok(dock) = view.downcast::<Dock>() {
-                                let _ = dock.update(cx, |dock, cx| {
+                                dock.update(cx, |dock, cx| {
                                     dock.set_overview_visible(overview_visible, cx);
                                 });
                             }

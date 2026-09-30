@@ -27,7 +27,7 @@ class Screencopy:
         self.manager = wire._bind("zwlr_screencopy_manager_v1", 1)
         wire.roundtrip()
 
-    def image(self, region=None) -> Image.Image:
+    def image(self) -> Image.Image:
         wire = self.wire
         frame = wire._new_id()
         state = {"ready": False, "failed": False, "map": None, "buffer": None,
@@ -58,12 +58,7 @@ class Screencopy:
                 state["failed"] = True
 
         wire.handlers[frame] = on_frame
-        if region:
-            x, y, width, height = region
-            wire._send(self.manager, 1, struct.pack("<IIIiiii", frame, 0, self.output,
-                                                    x, y, width, height))
-        else:
-            wire._send(self.manager, 0, struct.pack("<III", frame, 0, self.output))
+        wire._send(self.manager, 0, struct.pack("<III", frame, 0, self.output))
         deadline = time.monotonic() + 2.0
         try:
             while not (state["ready"] or state["failed"]):
@@ -93,6 +88,11 @@ class Screencopy:
                 state["map"].close()
 
     def fingerprint(self, region=None) -> str:
-        image = self.image(region)
+        # Full-output capture is faster than the protocol's region request
+        # on the tested headless Sway; crop in memory to the target window.
+        image = self.image()
+        if region:
+            x, y, width, height = region
+            image = image.crop((x, y, x + width, y + height))
         gray = image.convert("L").resize((128, 96), Image.Resampling.BILINEAR)
         return hashlib.blake2s(gray.tobytes(), digest_size=12).hexdigest()

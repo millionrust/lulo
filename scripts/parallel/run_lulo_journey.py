@@ -29,6 +29,11 @@ BINARIES = {
     "settings": "rmac-system-settings", "calculator": "rmac-calculator",
     "preview": "rmac-preview", "notes": "rmac-notes", "terminal": "rmac-terminal",
 }
+APP_IDS = {
+    "files": "org.rmac.Files", "text-editor": "org.rmac.TextEditor",
+    "settings": "org.rmac.SystemSettings", "calculator": "org.rmac.Calculator",
+    "preview": "org.rmac.Preview", "notes": "org.rmac.Notes", "terminal": "org.rmac.Terminal",
+}
 FORBIDDEN = {"Shut Down", "Restart", "Log Out", "Sleep", "Empty Bin", "Empty Trash", "Wi-Fi On", "Wi-Fi Off"}
 
 
@@ -109,7 +114,9 @@ class Driver:
         process = self.apps.get(self.current)
         if process is None:
             return None
-        return next((w for w in self.session.windows() if w.get("pid") == process.pid), None)
+        windows = self.session.windows()
+        return (next((w for w in windows if w.get("pid") == process.pid), None)
+                or next((w for w in windows if w.get("app_id") == APP_IDS[self.current]), None))
 
     def capture(self, destination: Path, full=False, fast=False):
         geom = self.capture_region(full)
@@ -156,7 +163,7 @@ class Driver:
         if not self.session.wait_for(lambda: self.window(), 30):
             raise RuntimeError(f"{app} did not open a nested niri window; see {self.session.logs / (app + '.log')}")
 
-    def click(self, label: str):
+    def click(self, label: str, target: str | None = None):
         if label in FORBIDDEN:
             raise RuntimeError(f"refusing destructive or toggle control {label!r}")
         if label == "Save" and self.current == "text-editor":
@@ -177,13 +184,19 @@ class Driver:
         candidates = []
         current = self.apps.get(self.current)
         window = self.window()
+        dock = next((p for p in self.session.children
+                     if isinstance(p.args, list) and Path(p.args[0]).name == "dock"), None)
         while stack:
             node = stack.pop()
             try:
                 if node is None:
                     continue
                 if node.name == label or (node.name or "").startswith(label + ","):
-                    belongs = current is not None and node.getApplication().get_process_id() == current.pid
+                    pid = node.getApplication().get_process_id()
+                    if target == "Dock" and (dock is None or pid != dock.pid):
+                        stack.extend(node.getChildAtIndex(i) for i in range(node.childCount))
+                        continue
+                    belongs = current is not None and pid == current.pid
                     box = node.queryComponent().getExtents(
                         pyatspi.WINDOW_COORDS if belongs else pyatspi.DESKTOP_COORDS)
                     if box.width > 2 and box.height > 2 and box.x >= 0 and box.y >= 0:
@@ -201,11 +214,25 @@ class Driver:
             x, y = self.session.parent_point(bx + box.width / 2, by + box.height / 2)
             self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
             return
+        if target == "Dock" and label == "Files":
+            x, y = self.session.parent_point(self.session.width / 2 - 303, self.session.height - 48)
+            self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
+            return
         status_x = {"Lulo": 26, "Battery": self.session.width - 296,
                     "Wi-Fi": self.session.width - 251,
                     "Control Centre": self.session.width - 182}
         if label in status_x:
             x, y = self.session.parent_point(status_x[label], 15)
+            self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
+            if label == "Control Centre":
+                command = [str(Path(self.args.bin_dir) / "rmac-shortcut-dispatch"), "quick-settings"]
+                outcome = subprocess.run(command, env=self.session.env, capture_output=True, text=True,
+                                         timeout=10)
+                if outcome.returncode:
+                    raise RuntimeError(f"Control Centre dispatch failed: {outcome.stderr[-120:]}")
+            return
+        if label == "File" and self.current == "text-editor":
+            x, y = self.session.parent_point(156, 15)
             self.session.pointer.click(x, y, self.session.parent_width, self.session.parent_height)
             return
         raise RuntimeError(f"no accessible control with usable bounds named {label!r}")
@@ -215,7 +242,7 @@ class Driver:
         if kind == "launch":
             self.launch(step)
         elif kind == "click":
-            self.click(step[kind])
+            self.click(step[kind], step.get("target"))
         elif kind == "menu":
             for label in step[kind]:
                 self.click(label)
@@ -235,6 +262,12 @@ class Driver:
             x, y, w, _h = self.session.geometry(window)
             dx, dy = step[kind]
             self.session.drag((x + w / 2, y + 18), (x + w / 2 + dx, y + 18 + dy))
+            moved = self.session.wait_for(
+                lambda: (candidate := self.window())
+                if candidate and (abs(self.session.geometry(candidate)[0] - x) > 20 or
+                                  abs(self.session.geometry(candidate)[1] - y) > 20) else None, 4)
+            if not moved:
+                raise RuntimeError("nested niri reported no window movement after drag")
 
     def run(self, name: str) -> dict:
         target = self.out / name
@@ -242,6 +275,7 @@ class Driver:
         result = {"journey": name, "platform": "lulo", "steps": [], "status": "passed"}
         pending = None
         timing = None
+        issues = []
         try:
             self.start()
             for index, step in enumerate(self.data["steps"]):
@@ -252,13 +286,24 @@ class Driver:
                     destination = target / f"{len(result['steps']):02d}-{step[kind]}.png"
                     self.capture(destination, full=step.get("scope") == "full")
                     result["steps"].append({"name": step[kind], "image": destination.name,
+                                            "region": self.capture_region(step.get("scope") == "full"),
                                             "action": pending, **(timing or {})})
                 else:
                     full = kind == "launch" or step.get("scope") == "full"
-                    timing = journey.measure(lambda p: self.capture(p, full=full, fast=True),
-                                             lambda: self.action(step), self.scratch,
-                                             probe=lambda: self.sampler.fingerprint(self.capture_region(full)))
                     pending = {kind: step[kind], "index": index}
+                    try:
+                        timing = journey.measure(lambda p: self.capture(p, full=full, fast=True),
+                                                 lambda: self.action(step), self.scratch,
+                                                 probe=lambda: self.sampler.fingerprint(self.capture_region(full)))
+                    except RuntimeError as error:
+                        if kind not in {"click", "menu"}:
+                            raise
+                        issues.append({"index": index, "action": pending, "error": str(error)})
+                        timing = {"first_change_ms": None, "settled_ms": None,
+                                  "samples": 0, "actual_hz": None, "timed_out": False,
+                                  "error": str(error)}
+            if issues:
+                result.update(status="partial", issues=issues)
         except (RuntimeError, OSError, subprocess.SubprocessError, wlinput.InjectorError) as error:
             result.update(status="failed", error=str(error))
         finally:
@@ -292,6 +337,14 @@ def outer(args) -> int:
                 for source in bins.iterdir():
                     if source.is_file():
                         (links / source.name).symlink_to(source)
+                if args.override_bin_dir:
+                    overrides = Path(args.override_bin_dir).expanduser().resolve()
+                    for source in overrides.glob("rmac-*"):
+                        if source.is_file() and os.access(source, os.X_OK):
+                            target = links / source.name
+                            if target.exists() or target.is_symlink():
+                                target.unlink()
+                            target.symlink_to(source)
                 for alias, source in (("dock", "rmac-dock"), ("mission-control", "rmac-mission-control")):
                     (links / alias).symlink_to(bins / source)
                 config = private_bus(work, env, links)
@@ -317,6 +370,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("journeys", nargs="*")
     parser.add_argument("--bin-dir", default="~/rmac-release/inputs-20260929T1945")
+    parser.add_argument("--override-bin-dir", help="prefer current app binaries here; shell falls back to --bin-dir")
     parser.add_argument("--niri", default="/usr/bin/niri")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--keep", action="store_true")

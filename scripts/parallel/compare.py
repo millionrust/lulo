@@ -31,6 +31,9 @@ def scaled(path: Path, points=None) -> Image.Image:
 def paired(mac: Path | None, lulo: Path | None, points, destination: Path) -> None:
     left = scaled(mac, points) if mac and mac.exists() else None
     right = scaled(lulo) if lulo and lulo.exists() else None
+    if left and right and right.height != left.height:
+        width = max(1, round(right.width * left.height / right.height))
+        right = right.resize((width, left.height), Image.Resampling.LANCZOS)
     height = max(left.height if left else 0, right.height if right else 0, 180)
     lw = left.width if left else 460
     rw = right.width if right else 460
@@ -72,6 +75,8 @@ def main() -> int:
             parts.append(f"<p>Mac skip: {escape(mac['reason'])}</p>")
         if mac.get("error") or lulo.get("error"):
             parts.append(f"<p>Errors: Mac {escape(mac.get('error', 'none'))}; Lulo {escape(lulo.get('error', 'none'))}</p>")
+        for issue in lulo.get("issues", []):
+            parts.append(f"<p>Lulo step {issue['index']}: {escape(issue['error'])}</p>")
         for step in definition["steps"]:
             if "shot" not in step:
                 continue
@@ -85,6 +90,10 @@ def main() -> int:
                 parts.append(f"<h3>{escape(shot)}</h3><img loading='lazy' src='{escape(image)}'>")
             else:
                 image = None
+            if m and m.get("error"):
+                parts.append(f"<p>Mac: {escape(m['error'])}</p>")
+            if l and l.get("error"):
+                parts.append(f"<p>Lulo: {escape(l['error'])}</p>")
             parts.append("<table><tr><th></th><th>Mac</th><th>Lulo</th></tr>"
                          f"<tr><th>First change</th><td>{m.get('first_change_ms') if m else '—'} ms</td>"
                          f"<td>{l.get('first_change_ms') if l else '—'} ms</td></tr>"

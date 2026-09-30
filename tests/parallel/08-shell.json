@@ -34,10 +34,18 @@
     },
     {
       "click": "Files",
-      "scope": "full"
+      "scope": "full",
+      "target": "Dock"
     },
     {
       "shot": "dock-files",
+      "scope": "full"
+    },
+    {
+      "launch": "calculator"
+    },
+    {
+      "shot": "calculator-focused",
       "scope": "full"
     },
     {

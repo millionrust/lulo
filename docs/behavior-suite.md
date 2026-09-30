@@ -30,12 +30,15 @@ their journey definitions; they run on Lulo only. Mac Terminal accepts only
 `cd` into the sandbox, `echo` and `ls`. If an owner's Settings, Calculator or
 Terminal is already running, the Mac runner stops that journey. The comparison
 includes failures and skips, so a missing image never silently becomes a
-parity pass.
+parity pass. Text Editor Save is confirmed only after the sheet's Where
+control names the disposable sandbox; Return in the sheet is otherwise
+blocked.
 
 Response timing samples target-region images after each input and reports
 both first change and the last change followed by 300 ms of stability. The
 Mac uses Quartz images for polling at a requested 45 Hz and `screencapture`
-for final shots. Lulo polls `grim` in its private compositor. Each result
+for final shots. Lulo uses a persistent wlroots screencopy connection for
+timing and `grim` for final PNGs, both in its private compositor. Each result
 records the achieved sample rate, which may be below the requested rate.
 Outputs and screenshots belong only under `/tmp` or `~/rmac-coord`, outside
 the repository.

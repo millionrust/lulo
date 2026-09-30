@@ -36,7 +36,7 @@ def test_rejects_sandbox_escape(tmp_path: Path):
 def test_paired_image_keeps_both_sides_at_one_logical_height(tmp_path: Path):
     mac, lulo, out = (tmp_path / name for name in ("mac.png", "lulo.png", "pair.png"))
     Image.new("RGB", (400, 300), "red").save(mac)
-    Image.new("RGB", (200, 150), "blue").save(lulo)
+    Image.new("RGB", (100, 75), "blue").save(lulo)
     compare.paired(mac, lulo, [200, 150], out)
     with Image.open(out) as image:
         assert image.size == (412, 212)

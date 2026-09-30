@@ -41,6 +41,10 @@ def load(path: Path) -> dict:
             awaiting_shot = True
         if action == "launch" and step[action] not in APPS:
             raise ValueError(f"{path}:{number}: unknown app")
+        if action == "menu" and (not isinstance(step[action], list) or
+                                 len(step[action]) < 2 or
+                                 not all(isinstance(label, str) and label for label in step[action])):
+            raise ValueError(f"{path}:{number}: menu must be a path of accessible names")
     if awaiting_shot or not names:
         raise ValueError(f"{path}: every meaningful action needs a following shot")
     for name in data.get("setup", {}).get("files", {}):

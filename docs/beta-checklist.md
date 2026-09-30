@@ -209,7 +209,7 @@ JSON/parsing logic, not a live run.
 | Idle wake-ups | none while nothing changes | **Static app timers fixed; proxy improved:** Text Editor 9.050 → 0.000 context switches/s, Weather 8.450 → 0.000, Files 0.633 → 0.050, Clock 5.267 → 0.267, System Monitor 3.800 → 1.367; shell combined 2.150 → 1.300. Clock advances at minute boundaries and System Monitor samples visible metrics every five seconds. Context switches are a wake-up proxy, not exact frame counts. See [before/after report](perf/idle-cpu-2026-09-29.md). |
 | Input to visible response | p95 ≤ 50 ms | **Not yet run** — no frame-timing harness exists yet |
 | 60/120 Hz animation frame budget | ≥ 99% / ≥ 95% within budget | **Not yet run** — `docs/performance-baseline.md` notes no per-frame trace is available yet |
-| Memory (8-hour soak) | per-app budget, no leak | **Not yet run** — stays a Beta 1 gate; run overnight on the reference PC in a nested session |
+| Memory (8-hour soak) | per-app budget, no leak | **Fail / not yet passed.** Ran 8 h, 13/13 processes alive, no growth observed, but inconclusive under build-induced memory pressure; rerun with swap-aware sampling on an idle machine. See [2026-09-29 soak report](perf/reference-laptop-2026-09-29-memory-soak.md). |
 | Repeat on an NVIDIA system | required before Beta | **Not yet run** — no NVIDIA station in the matrix yet; proposed Beta 2 gate |
 
 Earlier evidence: [system audit](perf/reference-laptop-2026-09-24.md),

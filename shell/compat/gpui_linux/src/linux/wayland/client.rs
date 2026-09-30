@@ -344,15 +344,12 @@ pub fn stage_external_file_drag(paths: Vec<PathBuf>) -> bool {
             .filter(|touch| touch.gesture == TouchGesture::PointerDrag)
             .map(|touch| (touch.window.clone(), touch.serial, touch.position))
             .or_else(|| {
-                (state.button_pressed == Some(MouseButton::Left))
-                    .then(|| {
-                        (
-                            state.mouse_focused_window.clone()?,
-                            state.press_serial?,
-                            state.mouse_location?,
-                        )
-                    })
-                    .flatten()
+                (state.button_pressed == Some(MouseButton::Left)).then_some(())?;
+                Some((
+                    state.mouse_focused_window.clone()?,
+                    state.press_serial?,
+                    state.mouse_location?,
+                ))
             });
         let Some((window, serial, position)) = press else {
             return false;
@@ -367,7 +364,7 @@ pub fn stage_external_file_drag(paths: Vec<PathBuf>) -> bool {
         });
         state.start_staged_file_drag_if_outside(position);
         state.file_drag_source.is_some()
-    });
+    })
 }
 
 pub fn external_file_drag_active() -> bool {
@@ -3429,7 +3426,7 @@ impl Dispatch<wl_data_source::WlDataSource, ()> for WaylandClientStatePtr {
         _: &QueueHandle<Self>,
     ) {
         let client = this.get_client();
-        let mut state = client.borrow_mut();
+        let state = client.borrow();
 
         if state
             .file_drag_source

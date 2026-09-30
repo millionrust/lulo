@@ -62,10 +62,11 @@ impl Settings {
                     rmac_bluetooth::WatchEvent::Unavailable => {
                         if this
                             .update(cx, |this: &mut Settings, cx| {
-                                this.bluetooth_stream_error = Some(
-                                    "Live Bluetooth updates are temporarily unavailable while BlueZ reconnects"
-                                        .into(),
+                                eprintln!(
+                                    "System Settings: Bluetooth live-update watcher unavailable (BlueZ reconnecting)"
                                 );
+                                this.bluetooth_stream_error =
+                                    Some("Bluetooth updates aren\u{2019}t available right now".into());
                                 cx.notify();
                             })
                             .is_err()
@@ -134,10 +135,11 @@ impl Settings {
                     rmac_audio::WatchEvent::Unavailable => {
                         if this
                             .update(cx, |this: &mut Settings, cx| {
-                                this.audio_stream_error = Some(
-                                    "Live audio updates are temporarily unavailable while PipeWire reconnects"
-                                        .into(),
+                                eprintln!(
+                                    "System Settings: audio live-update watcher unavailable (PipeWire reconnecting)"
                                 );
+                                this.audio_stream_error =
+                                    Some("Sound output isn\u{2019}t available right now".into());
                                 cx.notify();
                             })
                             .is_err()
@@ -206,10 +208,11 @@ impl Settings {
                     rmac_power::WatchEvent::Unavailable => {
                         if this
                             .update(cx, |this: &mut Settings, cx| {
-                                this.power_stream_error = Some(
-                                    "Live battery updates are temporarily unavailable while UPower reconnects"
-                                        .into(),
+                                eprintln!(
+                                    "System Settings: battery live-update watcher unavailable (UPower reconnecting)"
                                 );
+                                this.power_stream_error =
+                                    Some("Battery status isn\u{2019}t available right now".into());
                                 cx.notify();
                             })
                             .is_err()

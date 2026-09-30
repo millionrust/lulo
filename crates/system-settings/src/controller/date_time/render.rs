@@ -203,6 +203,13 @@ impl Settings {
             card(vec![clock_row, twenty_four_hour_row]),
             card(vec![timezone_row]),
         ];
+        // A background date/time watcher hiccup degrades quietly here
+        // rather than as the window-wide Settings banner
+        // (`global_settings_error`), and clears itself the moment the
+        // watcher recovers.
+        if let Some(detail) = &self.time_stream_error {
+            cards.push(note_card(detail.clone()));
+        }
         if snapshot.timezones_truncated {
             cards.push(footnote(
                 "The installed time-zone list was too long to check completely.",

@@ -175,6 +175,9 @@ impl Settings {
                                 this.queue_gtk_text_stream_refresh(cx);
                             }
                             rmac_gtk_settings::WatchEvent::Unavailable => {
+                                eprintln!(
+                                    "System Settings: GTK text-scale live-update watcher unavailable"
+                                );
                                 this.gtk_text_stream_error = Some(
                                     "Live GTK text-scale updates are temporarily unavailable"
                                         .into(),
@@ -222,6 +225,9 @@ impl Settings {
                                 this.queue_screen_reader_toggle_stream_refresh(cx);
                             }
                             rmac_screen_reader::WatchEvent::Unavailable => {
+                                eprintln!(
+                                    "System Settings: screen reader live-update watcher unavailable"
+                                );
                                 this.screen_reader_toggle_stream_error = Some(
                                     "Live screen reader updates are temporarily unavailable".into(),
                                 );

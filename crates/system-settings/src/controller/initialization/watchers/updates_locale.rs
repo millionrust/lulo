@@ -31,8 +31,11 @@ impl Settings {
                                     this.queue_update_stream_refresh(cx);
                                 }
                                 rmac_updates::WatchEvent::Unavailable => {
+                                    eprintln!(
+                                        "System Settings: software-update live-update watcher unavailable (PackageKit reconnecting)"
+                                    );
                                     this.updates_stream_error = Some(
-                                        "Live PackageKit updates are temporarily unavailable"
+                                        "Live software update status is temporarily unavailable"
                                             .into(),
                                     );
                                 }
@@ -109,6 +112,9 @@ impl Settings {
                     rmac_locale::WatchEvent::Unavailable => {
                         if this
                             .update(cx, |this: &mut Settings, cx| {
+                                eprintln!(
+                                    "System Settings: language and region live-update watcher unavailable"
+                                );
                                 this.locale_stream_error = Some(
                                     "Live language and region updates are temporarily unavailable"
                                         .into(),

@@ -199,6 +199,13 @@ impl Settings {
                 "The installed language list was too long to check completely.",
             ));
         }
+        // A background language/region watcher hiccup degrades quietly
+        // here rather than as the window-wide Settings banner
+        // (`global_settings_error`), and clears itself the moment the
+        // watcher recovers.
+        if let Some(detail) = &self.locale_stream_error {
+            cards.push(note_card(detail.clone()));
+        }
         let mut buttons = Vec::new();
         if self.locale_revert.is_some() {
             let revert_view = view.clone();

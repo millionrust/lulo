@@ -98,7 +98,7 @@ fn main() {
                 rmac_ui::prepare_surface_window(window, cx);
                 let view = cx.new(|cx| {
                     rmac_ui::observe_window_state(CALCULATOR, window, cx);
-                    CalculatorView::new(window, cx)
+                    CalculatorView::new(cx)
                 });
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus, cx);

@@ -48,27 +48,10 @@ pub(crate) struct CalculatorView {
     flash_generation: u64,
     mode_menu_open: bool,
     history_open: bool,
-    resize_retries: u8,
 }
 
 impl CalculatorView {
-    pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        // niri can answer a programmatic resize with one stale configure for
-        // the previous size. Reassert the desired size only when a bounds
-        // event reports that mismatch; no timer runs while the app is idle.
-        cx.observe_window_bounds(window, |this, window, _| {
-            let expected = size(px(this.window_width()), px(this.window_height()));
-            let actual = window.bounds().size;
-            if (f32::from(actual.width) - f32::from(expected.width)).abs() > 0.5
-                || (f32::from(actual.height) - f32::from(expected.height)).abs() > 0.5
-            {
-                if this.resize_retries < 4 {
-                    this.resize_retries += 1;
-                    window.resize(expected);
-                }
-            }
-        })
-        .detach();
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         Self {
             focus: cx.focus_handle(),
             mode: Mode::Basic,
@@ -78,7 +61,6 @@ impl CalculatorView {
             flash_generation: 0,
             mode_menu_open: false,
             history_open: false,
-            resize_retries: 0,
         }
     }
 
@@ -166,7 +148,6 @@ impl CalculatorView {
             return;
         }
         self.mode = mode;
-        self.resize_retries = 0;
         let (width, height) = match mode {
             Mode::Basic => (keypad::WINDOW_WIDTH, keypad::WINDOW_HEIGHT),
             Mode::Scientific => (
@@ -175,6 +156,20 @@ impl CalculatorView {
             ),
         };
         window.resize(size(px(width), px(height)));
+        // niri can answer this first resize with the old size before the new
+        // buffer has been attached. One delayed reassertion runs after that
+        // configure; there is no periodic retry or idle timer.
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(150))
+                .await;
+            let _ = this.update_in(cx, |view, window, _| {
+                if view.mode == mode {
+                    window.resize(size(px(width), px(height)));
+                }
+            });
+        })
+        .detach();
         cx.notify();
     }
 

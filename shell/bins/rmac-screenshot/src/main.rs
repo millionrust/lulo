@@ -15,6 +15,7 @@ mod model;
 #[cfg(all(target_os = "linux", feature = "wayland"))]
 mod linux_wayland {
     use std::borrow::Cow;
+    use std::io;
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
 
@@ -36,6 +37,17 @@ mod linux_wayland {
     const NAMESPACE: &str = "rmac-screenshot";
     const THUMBNAIL_NAMESPACE: &str = "rmac-screenshot-thumbnail";
     const FRAME: Duration = Duration::from_millis(16);
+    /// A freshly (re)started service, or a shortcut pressed right after
+    /// login, can race niri's IPC socket or `grim`'s wlr-screencopy
+    /// readiness — observed as the shortcut silently doing nothing on the
+    /// first press and working on the second. Both the compositor
+    /// snapshot read (`handle_command`) and the `grim` capture
+    /// (`Service::start_capture`) retry a couple of times, a short beat
+    /// apart, before giving up — the same race-tolerant pattern
+    /// `rmac-mission-control`'s `run_floating_frame_action` uses for its
+    /// own one-shot niri calls.
+    const CAPTURE_RETRY_ATTEMPTS: u32 = 3;
+    const CAPTURE_RETRY_DELAY: Duration = Duration::from_millis(150);
     // App-menu material (design-lab/menus.html), drawn without the blur.
     const MENU_TINT: u32 = 0x1F1F_26F7;
     const MENU_EDGE: u32 = 0xFFFF_FF4D;
@@ -224,11 +236,31 @@ mod linux_wayland {
                 let region = request.region.clone();
                 let result = match staged {
                     Ok(path) => {
-                        cx.background_executor()
-                            .spawn(async move {
-                                capture::grab(&region, show_pointer, &path).map(|()| path)
-                            })
-                            .await
+                        // `grim` shells out to a subprocess and blocks
+                        // waiting on it; GPUI's background executor is
+                        // not safe to block a worker thread on
+                        // child-process I/O from (ARCHITECTURE.md).
+                        // `blocking::unblock` runs it, and the retry
+                        // below, on the dedicated blocking-task pool
+                        // instead (CAPTURE_RETRY_ATTEMPTS/_DELAY).
+                        blocking::unblock(move || {
+                            let mut last_error = None;
+                            for attempt in 0..CAPTURE_RETRY_ATTEMPTS {
+                                match capture::grab(&region, show_pointer, &path) {
+                                    Ok(()) => return Ok(path),
+                                    Err(error) => {
+                                        last_error = Some(error);
+                                        if attempt + 1 < CAPTURE_RETRY_ATTEMPTS {
+                                            std::thread::sleep(CAPTURE_RETRY_DELAY);
+                                        }
+                                    }
+                                }
+                            }
+                            Err(last_error.unwrap_or_else(|| {
+                                io::Error::other("grim failed with no error reported")
+                            }))
+                        })
+                        .await
                     }
                     Err(error) => Err(error),
                 };
@@ -1428,12 +1460,30 @@ mod linux_wayland {
         }
         let service = service.clone();
         cx.spawn(async move |cx: &mut AsyncApp| {
-            let snapshot = match rmac_compositor_niri::snapshot().await {
-                Ok(snapshot) => snapshot,
-                Err(error) => {
-                    eprintln!("screenshot could not read the compositor: {error}");
-                    return;
+            let mut snapshot = None;
+            let mut last_error = None;
+            for attempt in 0..CAPTURE_RETRY_ATTEMPTS {
+                match rmac_compositor_niri::snapshot().await {
+                    Ok(result) => {
+                        snapshot = Some(result);
+                        break;
+                    }
+                    Err(error) => {
+                        last_error = Some(error);
+                        if attempt + 1 < CAPTURE_RETRY_ATTEMPTS {
+                            cx.background_executor().timer(CAPTURE_RETRY_DELAY).await;
+                        }
+                    }
                 }
+            }
+            let Some(snapshot) = snapshot else {
+                eprintln!(
+                    "screenshot could not read the compositor: {}",
+                    last_error
+                        .map(|error| error.to_string())
+                        .unwrap_or_default()
+                );
+                return;
             };
             let Some((output, windows)) = scene(&snapshot) else {
                 eprintln!("screenshot found no output");

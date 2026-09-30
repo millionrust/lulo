@@ -132,9 +132,6 @@ impl TerminalView {
                     cx.notify();
                 }
             }))
-            .on_action(cx.listener(|this, _: &rmac_ui::RequestClose, window, cx| {
-                this.request_close_window(window, cx)
-            }))
             .on_action(cx.listener(|this, _: &ShowProfiles, _, cx| {
                 // Right-click → Profiles… — a guaranteed mouse path to the
                 // picker (the picker rows are clickable body overlays).

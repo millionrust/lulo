@@ -26,10 +26,10 @@ impl Settings {
         self.wifi_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async move { rmac_network::connect(&network) })
-                .await;
+            // `rmac_network::connect()` uses `zbus::blocking`; GPUI's
+            // background executor is not safe to block on synchronous
+            // D-Bus I/O from (LINUX-HW-07).
+            let result = blocking::unblock(move || rmac_network::connect(&network)).await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wifi_update(result);
                 cx.notify();
@@ -93,17 +93,18 @@ impl Settings {
         self.wifi_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let (result, recovery_snapshot) = cx
-                .background_executor()
-                .spawn(async move {
-                    let result = rmac_network::forget(&network);
-                    let recovery_snapshot = result
-                        .as_ref()
-                        .err()
-                        .and_then(|_| rmac_network::snapshot().ok());
-                    (result, recovery_snapshot)
-                })
-                .await;
+            // `rmac_network::forget()`/`snapshot()` use `zbus::blocking`;
+            // GPUI's background executor is not safe to block on
+            // synchronous D-Bus I/O from (LINUX-HW-07).
+            let (result, recovery_snapshot) = blocking::unblock(move || {
+                let result = rmac_network::forget(&network);
+                let recovery_snapshot = result
+                    .as_ref()
+                    .err()
+                    .and_then(|_| rmac_network::snapshot().ok());
+                (result, recovery_snapshot)
+            })
+            .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wifi_forget_update(result, recovery_snapshot);
                 cx.notify();

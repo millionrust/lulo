@@ -5455,6 +5455,7 @@ name = "rmac-shell-screenshot"
 version = "0.9.0-beta.1"
 dependencies = [
  "async-channel",
+ "blocking",
  "chrono",
  "gpui",
  "gpui_platform",

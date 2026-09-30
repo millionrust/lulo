@@ -44,16 +44,18 @@ impl Settings {
                         {
                             continue;
                         }
-                        let results = cx
-                            .background_executor()
-                            .spawn(async move {
-                                (
-                                    generations.0.map(|_| rmac_network::snapshot()),
-                                    generations.1.map(|_| rmac_network::network_snapshot()),
-                                    generations.2.map(|_| rmac_network::vpn_snapshot()),
-                                )
-                            })
-                            .await;
+                        // `rmac_network::{snapshot,network_snapshot,vpn_snapshot}()`
+                        // use `zbus::blocking`; GPUI's background executor
+                        // is not safe to block on synchronous D-Bus I/O
+                        // from (LINUX-HW-07).
+                        let results = blocking::unblock(move || {
+                            (
+                                generations.0.map(|_| rmac_network::snapshot()),
+                                generations.1.map(|_| rmac_network::network_snapshot()),
+                                generations.2.map(|_| rmac_network::vpn_snapshot()),
+                            )
+                        })
+                        .await;
                         if this
                             .update(cx, |this: &mut Settings, cx| {
                                 if let (Some(generation), Some(result)) =

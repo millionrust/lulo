@@ -95,7 +95,9 @@ pub async fn execute(request: domain::ActionRequest) -> domain::ActionResult {
 
 /// Sends one action on its own socket so targets cannot race between requests.
 pub async fn execute_at(path: &Path, action: &domain::Action) -> Result<(), domain::ActionError> {
-    for wire_action in convert_action_sequence(action)? {
+    let actions = convert_action_sequence(action)?;
+    let action_count = actions.len();
+    for (index, wire_action) in actions.into_iter().enumerate() {
         let request = Request::Action(wire_action);
         let reply = request_reply_once(path, &request)
             .await
@@ -114,6 +116,13 @@ pub async fn execute_at(path: &Path, action: &domain::Action) -> Result<(), doma
                     message,
                 })
             }
+        }
+        // A floating-frame change is three separate niri IPC actions. The
+        // reply acknowledges each request before the client has applied its
+        // configure; sending the next action immediately can discard the
+        // previous size change. Give niri one frame between requests.
+        if index + 1 < action_count {
+            Timer::after(std::time::Duration::from_millis(50)).await;
         }
     }
     Ok(())

@@ -331,6 +331,9 @@ impl FinderView {
         for info_window in self.info_windows.drain(..) {
             let _ = cx.update_window(*info_window, |_, window, _| window.remove_window());
         }
+        if let Some(options_window) = self.view_options_window.take() {
+            let _ = cx.update_window(*options_window, |_, window, _| window.remove_window());
+        }
         window.remove_window();
     }
 }

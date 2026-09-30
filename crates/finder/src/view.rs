@@ -313,6 +313,7 @@ struct FinderView {
     options_path: Option<PathBuf>,
     browse_view: Option<ViewMode>,
     view_options_open: bool,
+    view_options_window: Option<gpui::WindowHandle<Root>>,
     col_stack: Vec<PathBuf>,
     /// Column view can select an item several directories below `cwd`, so an
     /// index into `entries` is not sufficient. Keep the selected entry itself

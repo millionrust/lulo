@@ -2,11 +2,11 @@ use std::time::Duration;
 
 use gpui::{
     canvas, deferred, div, point, prelude::FluentBuilder as _, px, App, Bounds, Context, Entity,
-    FocusHandle, Hsla, InteractiveElement as _, IntoElement, ParentElement as _, PathBuilder,
-    Pixels, RenderOnce, Role, SharedString, StatefulInteractiveElement as _, Styled as _, Window,
-    WindowControlArea,
+    FocusHandle, Hsla, InteractiveElement as _, IntoElement, MouseButton, ParentElement as _,
+    PathBuilder, Pixels, RenderOnce, Role, SharedString, Stateful, StatefulInteractiveElement as _,
+    Styled as _, Window, WindowControlArea,
 };
-use gpui_component::{ActiveTheme as _, InteractiveElementExt as _, StyledExt as _};
+use gpui_component::{ActiveTheme as _, StyledExt as _};
 use rmac_compositor::TileRegion;
 
 use crate::{components, mac, text_px};
@@ -14,7 +14,7 @@ use crate::{components, mac, text_px};
 /// A window-management request from the traffic lights, the green button's
 /// Move & Resize menu, or a title-bar double-click, carried out by the
 /// compositor.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum WindowAction {
     ToggleFullscreen,
     Fill,
@@ -41,18 +41,26 @@ const DOCK_INSET: f64 = 89.0;
 /// minimize, so all three are compositor actions on this process's focused
 /// window. Minimize parks the window on `rmac-parking` and records where it
 /// came from so the app menu's Show All can restore it (§2.2).
-fn send_window_action(action: WindowAction, cx: &mut App) {
-    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
-        perform_window_action(action, cx).await;
-    })
-    .detach();
+fn send_window_action(action: WindowAction, _cx: &mut App) {
+    spawn_window_action("rmac-window-action", move || {
+        async_io::block_on(perform_window_action(action));
+    });
+}
+
+/// Run disk and compositor work only when a user asks for it. GPUI's UI and
+/// background executors can be occupied by app services, so neither should
+/// hold a title-bar action until another input event wakes them.
+fn spawn_window_action(name: &'static str, work: impl FnOnce() + Send + 'static) {
+    if let Err(error) = std::thread::Builder::new().name(name.into()).spawn(work) {
+        eprintln!("could not start {name}: {error}");
+    }
 }
 
 /// The body of [`send_window_action`], split out so the title bar's
 /// double-click handler can resolve the saved
 /// [`rmac_shell_settings::DoubleClickTitleBarAction`] off the main thread
 /// first, then perform the same action the traffic lights use.
-async fn perform_window_action(action: WindowAction, cx: &mut gpui::AsyncApp) {
+async fn perform_window_action(action: WindowAction) {
     let pid = std::process::id() as i32;
     let Ok(snapshot) = rmac_compositor_niri::snapshot().await else {
         return;
@@ -69,14 +77,7 @@ async fn perform_window_action(action: WindowAction, cx: &mut gpui::AsyncApp) {
             rmac_compositor::Action::FullscreenWindow { window, on: true }
         }
         WindowAction::Fill => rmac_compositor::Action::FillWindow { window },
-        WindowAction::Zoom => {
-            // The tile-history file is small but this is still disk I/O, so
-            // it runs on the background executor rather than the task this
-            // future was spawned on (no UI-thread work).
-            cx.background_executor()
-                .spawn(async move { zoom_action(&snapshot, window) })
-                .await
-        }
+        WindowAction::Zoom => zoom_action(&snapshot, window),
         WindowAction::Tile(region) => rmac_compositor::Action::TileWindow { window, region },
         WindowAction::Minimize => {
             // The one minimize path every app shares: record the origin,
@@ -87,7 +88,9 @@ async fn perform_window_action(action: WindowAction, cx: &mut gpui::AsyncApp) {
             return;
         }
     };
-    let _ = rmac_compositor_niri::execute_action(&action).await;
+    if let Err(error) = rmac_compositor_niri::execute_action(&action).await {
+        eprintln!("could not perform window action: {error:?}");
+    }
 }
 
 /// [`WindowAction::Zoom`]'s toggle: read `TileHistoryStore` (shared with
@@ -162,26 +165,25 @@ fn zoom_frame_percent(
 /// double-click rather than polling or caching it. Public so an app with its
 /// own drag region (System Settings' toolbar, Weather's and Clock's title
 /// areas) can bind the same double-click behaviour `client_bar` uses.
-pub fn double_click_title_bar_action(cx: &mut App) {
-    cx.spawn(async move |cx: &mut gpui::AsyncApp| {
-        let setting = cx
-            .background_executor()
-            .spawn(async { load_double_click_title_bar_action() })
-            .await;
-        match setting {
-            rmac_shell_settings::DoubleClickTitleBarAction::Zoom => {
-                perform_window_action(WindowAction::Zoom, cx).await
-            }
-            rmac_shell_settings::DoubleClickTitleBarAction::Fill => {
-                perform_window_action(WindowAction::Fill, cx).await
-            }
+pub fn double_click_title_bar_action(_cx: &mut App) {
+    spawn_window_action("rmac-title-bar-action", move || {
+        let setting = load_double_click_title_bar_action();
+        // niri forwards the release to the client before ending its pointer
+        // grab. A frame request during that handoff can be acknowledged but
+        // dropped. Keep this wait on the on-demand worker, off the UI thread.
+        std::thread::sleep(Duration::from_millis(120));
+        let action = match setting {
+            rmac_shell_settings::DoubleClickTitleBarAction::Zoom => Some(WindowAction::Zoom),
+            rmac_shell_settings::DoubleClickTitleBarAction::Fill => Some(WindowAction::Fill),
             rmac_shell_settings::DoubleClickTitleBarAction::Minimize => {
-                perform_window_action(WindowAction::Minimize, cx).await
+                Some(WindowAction::Minimize)
             }
-            rmac_shell_settings::DoubleClickTitleBarAction::DoNothing => {}
+            rmac_shell_settings::DoubleClickTitleBarAction::DoNothing => None,
+        };
+        if let Some(action) = action {
+            async_io::block_on(perform_window_action(action));
         }
-    })
-    .detach();
+    });
 }
 
 /// The saved double-click action, or the Mac's own default (Zoom) when the
@@ -788,12 +790,28 @@ pub fn traffic_lights_fixed_size(active: bool) -> TrafficLights {
     }
 }
 
+/// The shared drag and double-click region used by app title bars and custom
+/// toolbars. Dispatch on the second release: on Wayland, a double-click
+/// callback runs on the second press while the compositor still owns the
+/// pointer grab, so its frame request can be acknowledged without applying.
+pub fn title_bar_drag_region(id: &'static str) -> Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .window_control_area(WindowControlArea::Drag)
+        // Child toolbar controls can stop bubbling. Observe the release in
+        // capture so a double-click on title text still reaches the bar.
+        .capture_any_mouse_up(|event, _, cx| {
+            if event.button == MouseButton::Left && event.click_count == 2 {
+                double_click_title_bar_action(cx);
+            }
+        })
+}
+
 /// A draggable client title bar that deliberately has no platform control
 /// cluster. gpui-component's `TitleBar` adds Linux minimize/maximize/close
 /// buttons on the right, which duplicated rmac's traffic lights.
 fn client_bar(height: f32, base: Hsla, children: impl IntoElement) -> impl IntoElement {
-    div()
-        .id("rmac-title-bar")
+    title_bar_drag_region("rmac-title-bar")
         .h(px(height))
         .w_full()
         .flex_shrink_0()
@@ -803,12 +821,6 @@ fn client_bar(height: f32, base: Hsla, children: impl IntoElement) -> impl IntoE
         .bg(mac::chrome())
         .border_b_1()
         .border_color(base)
-        .window_control_area(WindowControlArea::Drag)
-        // SET-33: GPUI's own `zoom_window()` is a no-op under niri's floating
-        // policy, so this routes through the same compositor path as the
-        // traffic lights, honouring Desktop & Dock's saved double-click
-        // action instead of always zooming.
-        .on_double_click(|_, _, cx| double_click_title_bar_action(cx))
         .child(div().h_full().flex_1().child(children))
 }
 

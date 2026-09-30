@@ -111,12 +111,16 @@ class Driver:
             x, y = max(0, int(x)), max(0, int(y))
             w, h = min(int(w), self.session.width - x), min(int(h), self.session.height - y)
             if w > 50 and h > 50:
-                geom = f"{x},{y} {w}x{h}"
-        cmd = ["grim", "-o", str(self.session.output)]
+                geom = f"{x + self.session.niri_rect[0]},{y + self.session.niri_rect[1]} {w}x{h}"
+        # Sway's wlroots screencopy captures the niri surface in one frame.
+        # niri's own screencopy waits for its next software-rendered frame and
+        # measured only ~1 Hz in this headless nested setup.
+        cmd = ["grim", "-o", "HEADLESS-1"]
         if geom:
             cmd += ["-g", geom]
         cmd.append(str(destination))
-        result = subprocess.run(cmd, env=self.session.env, capture_output=True, text=True, timeout=10)
+        env = {**self.session.env, "WAYLAND_DISPLAY": self.session.sway_display}
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=10)
         if result.returncode:
             raise RuntimeError(f"grim failed: {result.stderr[-200:]}")
 

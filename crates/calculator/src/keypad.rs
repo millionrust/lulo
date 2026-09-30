@@ -209,24 +209,24 @@ pub struct Palette {
     pub menu_hover: u32,
 }
 
-/// Measured from the dark-mode capture. The capture is in Display P3, where
-/// the operator orange is (255, 146, 0); that lies outside sRGB, so the keys
-/// use its nearest sRGB colour. The greys are inside both gamuts.
+/// Measured from the dark-mode Display P3 capture and converted to sRGB.
+/// The operator orange (255, 146, 0) is outside sRGB and clips to its nearest
+/// in-gamut colour.
 pub const DARK: Palette = Palette {
-    window: 0x22252D,
+    window: 0x1E222D,
     expression: 0x9B9DA0,
     result: 0xDDDEDF,
-    function_key: 0x727479,
+    function_key: 0x71727A,
     function_label: 0xF6F6F6,
-    digit_key: 0x46494E,
+    digit_key: 0x46484F,
     digit_label: 0xF6F6F6,
-    scientific_key: 0x303239,
+    scientific_key: 0x30323A,
     scientific_label: 0xF6F6F6,
     operator_key: 0xFF8B00,
     operator_label: 0xFFFAF2,
     operator_selected_key: 0xFFFAF2,
     operator_selected_label: 0xFF8B00,
-    toolbar_button: 0x1C1E23,
+    toolbar_button: 0x1B1D24,
     toolbar_glyph: 0xE8E8E8,
     rim: 0xFFFFFF1A,
     pressed_overlay: 0xFFFFFF40,
@@ -289,16 +289,12 @@ mod tests {
             .filter(|key| matches!(key, Key::Digit(_)))
             .count();
         assert_eq!(digits, 10);
-        assert!(
-            LAYOUT
-                .iter()
-                .all(|row| key_style(row[3]) == KeyStyle::Operator)
-        );
-        assert!(
-            LAYOUT[0][..3]
-                .iter()
-                .all(|key| key_style(*key) == KeyStyle::Function)
-        );
+        assert!(LAYOUT
+            .iter()
+            .all(|row| key_style(row[3]) == KeyStyle::Operator));
+        assert!(LAYOUT[0][..3]
+            .iter()
+            .all(|key| key_style(*key) == KeyStyle::Function));
     }
 
     #[test]
@@ -357,8 +353,10 @@ mod tests {
     #[test]
     fn dark_palette_uses_the_measured_colours() {
         assert_eq!(DARK.operator_key, 0xFF8B00);
-        assert_eq!(DARK.digit_key, 0x46494E);
-        assert_eq!(DARK.function_key, 0x727479);
+        assert_eq!(DARK.window, 0x1E222D);
+        assert_eq!(DARK.digit_key, 0x46484F);
+        assert_eq!(DARK.scientific_key, 0x30323A);
+        assert_eq!(DARK.function_key, 0x71727A);
         assert_eq!(LIGHT.operator_key, DARK.operator_key);
     }
 }

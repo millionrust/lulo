@@ -6,9 +6,8 @@ use std::borrow::Cow;
 
 use gpui::{
     point, px, size, App, AppContext as _, AssetSource, Bounds, KeyBinding, Result, SharedString,
-    Styled as _, WindowBackgroundAppearance, WindowBounds,
+    WindowBackgroundAppearance, WindowBounds,
 };
-use gpui_component::Root;
 use rmac_calculator::keypad::{WINDOW_HEIGHT, WINDOW_WIDTH};
 use rmac_ui::app_id::CALCULATOR;
 
@@ -99,15 +98,11 @@ fn main() {
                 rmac_ui::prepare_surface_window(window, cx);
                 let view = cx.new(|cx| {
                     rmac_ui::observe_window_state(CALCULATOR, window, cx);
-                    CalculatorView::new(cx)
+                    CalculatorView::new(window, cx)
                 });
                 let focus = view.read(cx).focus.clone();
                 window.focus(&focus, cx);
-                cx.new(|cx| {
-                    Root::new(view, window, cx)
-                        .bordered(false)
-                        .bg(gpui::transparent_black())
-                })
+                cx.new(|cx| rmac_ui::fixed_surface_root(view, window, cx))
             })
             .expect("failed to open the Calculator window");
             cx.activate(true);

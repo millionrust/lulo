@@ -128,6 +128,8 @@ impl Render for AboutPanel {
             }))
             .size_full()
             .v_flex()
+            .rounded(px(mac::radius_window()))
+            .overflow_hidden()
             .bg(mac::window())
             .text_color(mac::text())
             .child(crate::title_bar_content(div()))

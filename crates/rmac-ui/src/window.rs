@@ -3,8 +3,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use gpui::{
-    point, px, size, App, AppContext as _, Bounds, Context, Decorations, Edges, Pixels, Render,
-    SharedString, Size, TitlebarOptions, Window, WindowBounds, WindowDecorations, WindowOptions,
+    point, px, size, AnyView, App, AppContext as _, Bounds, Context, Decorations, Edges, Pixels,
+    Render, SharedString, Size, Styled as _, TitlebarOptions, Window, WindowBackgroundAppearance,
+    WindowBounds, WindowDecorations, WindowOptions,
 };
 // Re-exported (not just imported) so a window opened outside a `boot*` entry
 // point — an app's own auxiliary window — can wrap its view without another
@@ -104,6 +105,18 @@ pub fn reserve_client_frame(window: &mut Window) {
     if CLIENT_FRAME_INSET > 0.0 {
         window.set_client_inset(px(CLIENT_FRAME_INSET));
     }
+}
+
+/// Wrap a fixed-size surface that paints its own rounded outline. It needs
+/// neither the Linux resize hit band nor Root's 12 pt shadow frame.
+pub fn fixed_surface_root(
+    view: impl Into<AnyView>,
+    window: &mut Window,
+    cx: &mut Context<Root>,
+) -> Root {
+    Root::new(view, window, cx)
+        .bordered(false)
+        .bg(gpui::transparent_black())
 }
 
 /// How far the visible window sits inside GPUI's window bounds on each side:
@@ -681,24 +694,23 @@ where
     V: Render + 'static,
     F: FnOnce(&mut Window, &mut Context<V>) -> V + 'static,
 {
-    let (outer_width, outer_height) = outer_window_size(width, height);
     let options = WindowOptions {
         app_id: Some(app_id.to_owned()),
         is_resizable: false,
         is_minimizable: false,
+        window_background: WindowBackgroundAppearance::Transparent,
         window_min_size: Some(size(px(width), px(height))),
         ..window_options_with_bounds(
-            outer_width,
-            outer_height,
-            centered_window_bounds(outer_width, outer_height, cx),
+            width,
+            height,
+            centered_window_bounds(width, height, cx),
             Some(SharedString::from(title)),
         )
     };
     let handle = cx.open_window(options, move |window, cx| {
-        reserve_client_frame(window);
         prepare_surface_window(window, cx);
         let view = cx.new(|cx| build(window, cx));
-        cx.new(|cx| Root::new(view, window, cx))
+        cx.new(|cx| fixed_surface_root(view, window, cx))
     })?;
     Ok(handle.into())
 }

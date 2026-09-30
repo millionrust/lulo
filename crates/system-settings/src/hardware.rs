@@ -1,6 +1,8 @@
 //! Small, bounded Linux hardware inventory. All calls run on a background executor.
 
+#[cfg(any(target_os = "linux", test))]
 use std::fs;
+#[cfg(any(target_os = "linux", test))]
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -45,12 +47,14 @@ impl Capabilities {
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn entries(path: &Path) -> Vec<PathBuf> {
     fs::read_dir(path)
         .map(|items| items.flatten().take(256).map(|item| item.path()).collect())
         .unwrap_or_default()
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn read(path: &Path) -> String {
     fs::read(path)
         .ok()
@@ -61,10 +65,12 @@ fn read(path: &Path) -> String {
         .to_owned()
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn any_entry(path: &Path) -> bool {
     !entries(path).is_empty()
 }
 
+#[cfg(any(target_os = "linux", test))]
 pub(crate) fn scan(sys: &Path, udev: &Path, fprintd_supported: bool) -> Capabilities {
     let mut result = Capabilities::default();
     let mut integrated_ps2_mouse = false;

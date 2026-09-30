@@ -774,7 +774,8 @@ fn compositor_shortcuts_preserve_standard_command_keys() {
     ));
     assert!(fallback.contains("Mod+Space repeat=false"));
     assert!(fallback.contains("Mod+Ctrl+Q repeat=false allow-when-locked=true"));
-    assert_eq!(fallback.matches("{ spawn ").count(), 2);
+    assert!(fallback.contains("Mod+Ctrl+N repeat=false"));
+    assert_eq!(fallback.matches("{ spawn ").count(), 3);
 }
 
 #[test]

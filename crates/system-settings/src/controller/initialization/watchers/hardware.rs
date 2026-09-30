@@ -11,6 +11,13 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_bluetooth_update(result);
+                // This first, passive read shares `finish_bluetooth_update`
+                // with a later explicit Refresh/pairing action, whose own
+                // failure must stay visible; a machine with no Bluetooth
+                // adapter is not that, and the pane already says so quietly
+                // (`!self.bluetooth_available`), so this path's error never
+                // reaches the window-wide Settings banner.
+                this.bluetooth_error = None;
                 cx.notify();
             });
         })

@@ -178,7 +178,7 @@ impl Settings {
         // degrades quietly here instead, and clears itself the moment the
         // watcher recovers.
         if gtk_note.is_none() {
-            gtk_note = self.gtk_text_stream_error.clone();
+            gtk_note = self.gtk_text_stream_error.as_ref().map(ToString::to_string);
         }
         if let Some(note) = gtk_note {
             body = body.child(footnote(note));

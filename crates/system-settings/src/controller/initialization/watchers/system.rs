@@ -114,6 +114,13 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_sharing_update(result);
+                // This first, passive read shares `finish_sharing_update`
+                // with a later explicit action (toggling a service,
+                // Refresh), whose own failure must stay visible; Samba/SSH
+                // not being installed is not that, and the pane already
+                // says so quietly, so this path's error never reaches the
+                // window-wide Settings banner.
+                this.sharing_error = None;
                 cx.notify();
             });
         })
@@ -252,6 +259,10 @@ impl Settings {
                             .update(cx, |this: &mut Settings, cx| {
                                 if !this.sharing_busy {
                                     this.finish_sharing_update(result);
+                                    // A background refresh, not a user
+                                    // action -- see the initial-load comment
+                                    // above.
+                                    this.sharing_error = None;
                                     this.sharing_stream_error = None;
                                     cx.notify();
                                 }

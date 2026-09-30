@@ -1,4 +1,14 @@
 //! Initial connectivity, hardware, accessibility, and privacy snapshots.
+//!
+//! Every `finish_*_update` called from here is shared with a later,
+//! explicit user action (Refresh, applying a change) that reuses the same
+//! function and the same `*_error` field so that action's own failure stays
+//! visible. A failure on this first, passive read is a different thing --
+//! "this subsystem has no backing service on this machine", not "something
+//! you just did failed" -- and every pane already says so quietly on its
+//! own (its `Some(snapshot)`-or-placeholder branch), so the `*_error` this
+//! path would otherwise leave behind is cleared right after the call to
+//! keep it out of the window-wide Settings banner (`global_settings_error`).
 
 use super::*;
 
@@ -23,6 +33,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wifi_update(result);
+                this.wifi_error = None;
                 cx.notify();
             });
         })
@@ -35,6 +46,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_network_update(result);
+                this.network_error = None;
                 cx.notify();
             });
         })
@@ -47,6 +59,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_vpn_update(result);
+                this.vpn_error = None;
                 cx.notify();
             });
         })
@@ -72,6 +85,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_audio_update(result, cx);
+                this.audio_error = None;
                 cx.notify();
             });
         })
@@ -84,6 +98,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_power_update(result, cx);
+                this.power_error = None;
                 cx.notify();
             });
         })
@@ -96,6 +111,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_display_update(result);
+                this.display_error = None;
                 this.flush_display_stream_refresh(cx);
                 cx.notify();
             });
@@ -127,6 +143,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_input_update(result, cx);
+                this.input_error = None;
                 this.flush_input_stream_refresh(cx);
                 cx.notify();
             });
@@ -152,6 +169,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_gtk_text_update(result);
+                this.gtk_text_error = None;
                 this.run_pending_gtk_text_refresh(cx);
                 cx.notify();
             });
@@ -201,6 +219,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_screen_reader_toggle_update(result);
+                this.screen_reader_toggle_error = None;
                 this.run_pending_screen_reader_toggle_refresh(cx);
                 cx.notify();
             });
@@ -250,6 +269,7 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_privacy_update(result);
+                this.privacy_error = None;
                 this.run_pending_privacy_refresh(cx);
                 cx.notify();
             });

@@ -11,6 +11,13 @@ impl Settings {
                 .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_theme_update(result);
+                // This first, passive read shares `finish_theme_update` with
+                // a later explicit Try Again/apply action, whose own
+                // failure must stay visible; the theme service being
+                // unreadable at launch is not that, and the pane already
+                // says so quietly (`self.theme.is_none()`), so this path's
+                // error never reaches the window-wide Settings banner.
+                this.theme_error = None;
                 this.run_pending_theme_refresh(cx);
                 cx.notify();
             });

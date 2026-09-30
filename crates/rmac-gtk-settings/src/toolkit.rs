@@ -12,7 +12,10 @@
 //!   portal colour scheme and reads `gtk-application-prefer-dark-theme` only
 //!   from there, and as the fallback for sandboxed apps without the portal;
 //! - managed stubs in `~/.config/gtk-{3,4}.0/gtk.css` that carry the accent and
-//!   load the libadwaita stylesheet (libadwaita ignores `gtk-theme`).
+//!   load the libadwaita stylesheet (libadwaita ignores `gtk-theme`);
+//! - `gtk-overlay-scrolling` and `gtk-primary-button-warps-slider` in the
+//!   settings files, which follow Appearance ▸ Show scroll bars and ▸ Click
+//!   in the scroll bar to as closely as GTK's own two-way toggles allow.
 //!
 //! Files the user replaced, or linked from elsewhere, are left alone.
 
@@ -20,7 +23,9 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use rmac_theme::{AccentPreference, Preferences, SchemePreference};
+use rmac_theme::{
+    AccentPreference, Preferences, SchemePreference, ScrollBarClickAction, ScrollBarVisibility,
+};
 
 use crate::api::{command_error, Error, RealRunner, Runner, SCHEMA};
 
@@ -114,6 +119,20 @@ pub(crate) fn sync_with(
     stylesheet_installed: bool,
 ) -> Result<ToolkitAppearance, Error> {
     let accent = accent_rgb(preferences.accent_color);
+    // GTK has one overlay-scrolling toggle, not the Mac's three-way
+    // Automatic/When scrolling/Always: both of the Mac's auto-hiding modes
+    // map to the overlay (fade-out) behaviour, and only Always disables it.
+    let overlay_scrolling = !matches!(
+        preferences.scroll_bar_visibility,
+        ScrollBarVisibility::Always
+    );
+    // TRUE warps the slider straight to the clicked spot ("Jump to the spot
+    // that's clicked"); FALSE pages ("Jump to the next page"), the Mac's
+    // default.
+    let warps_slider = matches!(
+        preferences.scroll_bar_click,
+        ScrollBarClickAction::JumpToSpot
+    );
     let (dark, scheme) = match preferences.color_scheme {
         SchemePreference::Dark => (true, Some("'prefer-dark'")),
         SchemePreference::Light => (false, Some("'prefer-light'")),
@@ -131,11 +150,11 @@ pub(crate) fn sync_with(
     };
     keep(write_settings_ini(
         &config_home.join("gtk-3.0/settings.ini"),
-        &gtk3_settings(dark),
+        &gtk3_settings(dark, warps_slider),
     ));
     keep(write_settings_ini(
         &config_home.join("gtk-4.0/settings.ini"),
-        &gtk4_settings(),
+        &gtk4_settings(warps_slider, overlay_scrolling),
     ));
     if stylesheet_installed {
         keep(write_managed(
@@ -224,8 +243,8 @@ fn set_if_changed(runner: &impl Runner, key: &str, value: &str) -> Result<(), Er
     Ok(())
 }
 
-pub(crate) fn gtk3_settings(dark: bool) -> Vec<(&'static str, String)> {
-    let mut values = common_settings();
+pub(crate) fn gtk3_settings(dark: bool, warps_slider: bool) -> Vec<(&'static str, String)> {
+    let mut values = common_settings(warps_slider);
     values.insert(
         1,
         (
@@ -236,23 +255,26 @@ pub(crate) fn gtk3_settings(dark: bool) -> Vec<(&'static str, String)> {
     values
 }
 
-pub(crate) fn gtk4_settings() -> Vec<(&'static str, String)> {
+pub(crate) fn gtk4_settings(
+    warps_slider: bool,
+    overlay_scrolling: bool,
+) -> Vec<(&'static str, String)> {
     // No prefer-dark here: GTK 4 follows the portal colour scheme, and
     // libadwaita warns when the legacy key is set.
-    let mut values = common_settings();
-    values.push(("gtk-overlay-scrolling", "true".to_string()));
+    let mut values = common_settings(warps_slider);
+    values.push(("gtk-overlay-scrolling", overlay_scrolling.to_string()));
     values
 }
 
-fn common_settings() -> Vec<(&'static str, String)> {
+fn common_settings(warps_slider: bool) -> Vec<(&'static str, String)> {
     vec![
         ("gtk-theme-name", GTK_THEME.to_string()),
         ("gtk-font-name", FONT_NAME.to_string()),
         ("gtk-cursor-theme-name", CURSOR_THEME.to_string()),
         ("gtk-cursor-theme-size", CURSOR_SIZE.to_string()),
         ("gtk-decoration-layout", DECORATION_LAYOUT.to_string()),
-        // A click in a scroll track pages, as on the Mac.
-        ("gtk-primary-button-warps-slider", "false".to_string()),
+        // Appearance ▸ Click in the scroll bar to.
+        ("gtk-primary-button-warps-slider", warps_slider.to_string()),
     ]
 }
 

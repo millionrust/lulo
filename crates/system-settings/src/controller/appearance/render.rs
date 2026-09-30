@@ -20,29 +20,33 @@ impl Settings {
     pub(in crate::controller) fn render_appearance(&self, cx: &Context<Self>) -> Div {
         let view = cx.entity();
         let refresh_view = view.clone();
-        // The theme store streams its changes, so the pane stays current on
-        // its own; only an unavailable service offers a retry.
-        let refresh = footer_buttons(vec![push_button("theme-refresh", "Try Again")
-            .disabled(self.theme_loading || self.theme_busy || self.theme_stream_refreshing)
-            .busy(self.theme_busy || self.theme_stream_refreshing)
-            .on_click(move |_, _, cx| {
-                refresh_view.update(cx, |settings, cx| settings.refresh_theme(cx));
-            })
-            .into_any_element()]);
         let mut cards = Vec::new();
+
+        // Render from the last-known (or, on first launch, default) values
+        // immediately and update in place when the backend answers. A slow
+        // or missing portal/theme-store authority (no portal/gsettings
+        // daemon, as in a nested session) must never block the whole pane
+        // behind a spinner: it previously got stuck on "Loading appearance
+        // preferences…" forever. `load_theme_state` now bounds the portal
+        // connect with a timeout, but the pane stays non-blocking either way.
+        let default_preferences = rmac_theme::Preferences::default();
+        let preferences = self
+            .theme
+            .as_ref()
+            .map(|theme| theme.preferences.clone())
+            .unwrap_or(default_preferences);
+        let preferences = &preferences;
+        let theme_unavailable = !self.theme_loading && self.theme.is_none();
         if self.theme_loading {
-            cards.push(note_card("Loading appearance preferences…"));
-            return self.pane(cards);
-        }
-        let Some(theme) = &self.theme else {
             cards.push(note_card(
-                "The Lulo OS theme preference service is unavailable.",
+                "Loading appearance preferences… showing the last-known values.",
             ));
-            cards.push(refresh);
-            return self.pane(cards);
-        };
-        let enabled = !self.theme_busy && !self.theme_stream_refreshing;
-        let preferences = &theme.preferences;
+        } else if theme_unavailable {
+            cards.push(note_card(
+                "The Lulo OS theme preference service is unavailable. Showing default appearance values.",
+            ));
+        }
+        let enabled = self.theme.is_some() && !self.theme_busy && !self.theme_stream_refreshing;
 
         let thumbnail = |id: &'static str,
                          name: &'static str,
@@ -171,42 +175,53 @@ impl Settings {
         }
         let tint_view = view.clone();
         cards.push(section_header("Theme"));
-        cards.push(card(vec![row_base()
-            .items_start()
-            .child(text_block("Colour".into(), None))
-            .child(
-                div()
-                    .v_flex()
-                    .items_end()
-                    .gap(px(3.0))
-                    .child(swatches)
-                    .child(
-                        div()
-                            .text_size(rmac_ui::text_px(11.0))
-                            .line_height(px(14.0))
-                            .text_color(secondary())
-                            .child(selected_name),
-                    ),
-            )
-            .into_any_element()]));
-        // macOS 26 files the tint switch under Windows, a plain 37 pt row.
+        cards.push(card(vec![
+            row_base()
+                .items_start()
+                .child(text_block("Colour".into(), None))
+                .child(
+                    div()
+                        .v_flex()
+                        .items_end()
+                        .gap(px(3.0))
+                        .child(swatches)
+                        .child(
+                            div()
+                                .text_size(rmac_ui::text_px(11.0))
+                                .line_height(px(14.0))
+                                .text_color(secondary())
+                                .child(selected_name),
+                        ),
+                )
+                .into_any_element(),
+            text_highlight_row(view.clone(), preferences.text_highlight, enabled),
+        ]));
+        // macOS 26 files the tint switch and scroll bar radios under
+        // Windows, below Sidebar icon size (rmac-ui has no configurable
+        // sidebar icon size yet, so that row is omitted; see docs/parity.md
+        // SET-23).
         cards.push(section_header("Windows"));
-        cards.push(card(vec![row_base()
-            .child(text_block(
-                "Tint window background with wallpaper colour".into(),
-                None,
-            ))
-            .child(
-                Toggle::new("theme-wallpaper-tinting")
-                    .checked(preferences.allow_wallpaper_tinting)
-                    .disabled(!enabled)
-                    .on_click(move |value, _, cx| {
-                        tint_view.update(cx, |settings, cx| {
-                            settings.apply_theme_change(ThemeChange::WallpaperTinting(*value), cx)
-                        });
-                    }),
-            )
-            .into_any_element()]));
+        cards.push(card(vec![
+            row_base()
+                .child(text_block(
+                    "Tint window background with wallpaper colour".into(),
+                    None,
+                ))
+                .child(
+                    Toggle::new("theme-wallpaper-tinting")
+                        .checked(preferences.allow_wallpaper_tinting)
+                        .disabled(!enabled)
+                        .on_click(move |value, _, cx| {
+                            tint_view.update(cx, |settings, cx| {
+                                settings
+                                    .apply_theme_change(ThemeChange::WallpaperTinting(*value), cx)
+                            });
+                        }),
+                )
+                .into_any_element(),
+            scroll_bar_visibility_row(view.clone(), preferences.scroll_bar_visibility, enabled),
+            scroll_bar_click_row(view.clone(), preferences.scroll_bar_click, enabled),
+        ]));
         cards.push(section_header("Accessibility"));
         cards.push(card(vec![
             theme_segment_row(
@@ -235,7 +250,7 @@ impl Settings {
             ),
         ]));
 
-        if let Some(detail) = theme.detail.clone() {
+        if let Some(detail) = self.theme.as_ref().and_then(|theme| theme.detail.clone()) {
             cards.push(note_card(detail));
         }
         if !self.host_appearance.available {
@@ -243,11 +258,24 @@ impl Settings {
                 "The Linux Settings portal is unavailable here. Automatic values use safe Lulo OS defaults; explicit choices remain writable.",
             ));
         }
-        if self.theme_error.is_some()
+        // The theme store streams its changes, so the pane stays current on
+        // its own; only an unavailable service or a failed change offers a
+        // retry.
+        if theme_unavailable
+            || self.theme_error.is_some()
             || self.theme_store_stream_error.is_some()
             || self.theme_portal_stream_error.is_some()
         {
-            cards.push(refresh);
+            cards.push(footer_buttons(vec![push_button(
+                "theme-refresh",
+                "Try Again",
+            )
+            .disabled(self.theme_loading || self.theme_busy || self.theme_stream_refreshing)
+            .busy(self.theme_busy || self.theme_stream_refreshing)
+            .on_click(move |_, _, cx| {
+                refresh_view.update(cx, |settings, cx| settings.refresh_theme(cx));
+            })
+            .into_any_element()]));
         }
         self.pane(cards)
     }

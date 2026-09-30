@@ -49,6 +49,7 @@ fn explicit_preferences_override_host_values() {
         motion: MotionPreferenceSetting::Full,
         text_scale: TextScalePreference::ExtraLarge,
         allow_wallpaper_tinting: false,
+        ..Preferences::default()
     };
     let resolved = preferences.resolve(&host()).unwrap();
     assert_eq!(resolved.color_scheme, ResolvedColorScheme::Light);
@@ -68,6 +69,7 @@ fn save_round_trips_versioned_preferences() {
         motion: MotionPreferenceSetting::Reduced,
         text_scale: TextScalePreference::Large,
         allow_wallpaper_tinting: false,
+        ..Preferences::default()
     };
     store.save(&preferences, &host()).unwrap();
     let loaded = store.load(&host()).unwrap();
@@ -82,6 +84,24 @@ fn version_one_documents_without_text_scale_keep_standard_size() {
         serde_json::from_str(r#"{"version":1,"preferences":{"color_scheme":"dark"}}"#).unwrap();
     assert_eq!(stored.preferences.text_scale, TextScalePreference::Standard);
     assert!(stored.preferences.allow_wallpaper_tinting);
+}
+
+#[test]
+fn documents_without_scroll_bar_or_highlight_keys_keep_mac_defaults() {
+    let stored: StoredPreferences =
+        serde_json::from_str(r#"{"version":1,"preferences":{"color_scheme":"dark"}}"#).unwrap();
+    assert_eq!(
+        stored.preferences.text_highlight,
+        TextHighlightPreference::Automatic
+    );
+    assert_eq!(
+        stored.preferences.scroll_bar_visibility,
+        ScrollBarVisibility::Automatic
+    );
+    assert_eq!(
+        stored.preferences.scroll_bar_click,
+        ScrollBarClickAction::JumpToNextPage
+    );
 }
 
 #[test]

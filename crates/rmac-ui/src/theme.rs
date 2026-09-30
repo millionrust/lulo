@@ -307,6 +307,13 @@ pub struct ThemeTokens {
     pub elevation: ElevationTokens,
     pub motion: MotionTokens,
     pub text_scale: TextScale,
+    /// macOS 26 Appearance ▸ Text highlight colour: a direct preference
+    /// pass-through (no host resolution needed, unlike
+    /// `color_scheme`/`contrast`/`motion` above), so
+    /// [`Self::from_appearance_with_wallpaper`] leaves it at the Mac
+    /// default; `rmac_ui::runtime` overwrites it with the live preference
+    /// once it has read the theme store.
+    pub text_highlight: rmac_theme::TextHighlightPreference,
 }
 
 impl ThemeTokens {
@@ -491,6 +498,7 @@ impl ThemeTokens {
                 spatial_motion: !design.motion.reduced_motion,
             },
             text_scale: appearance.text_scale,
+            text_highlight: rmac_theme::TextHighlightPreference::default(),
         }
     }
 

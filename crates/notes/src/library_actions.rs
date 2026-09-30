@@ -47,7 +47,12 @@ impl NotesView {
         self.send_action(
             LibraryAction::CreateNote(NewNote {
                 created_unix_ms: now_unix_ms(),
-                title: "New Note".into(),
+                // Empty, not the literal "New Note": the Mac creates a blank
+                // note with the caret ready, and "New Note" is a placeholder
+                // rendering only (the list row and `display_title` already
+                // fall back to it for an empty title) until the first
+                // keystroke supplies real text.
+                title: String::new(),
                 body: String::new(),
                 tags: Vec::new(),
                 folder_id,

@@ -146,7 +146,7 @@ mod toolkit {
     #[test]
     fn merging_replaces_only_rmac_keys_and_keeps_the_rest() {
         let existing = "# mine\n[Settings]\ngtk-icon-theme-name=Papirus\ngtk-theme-name=Yaru\ngtk-theme-name=Old\n\n[Other]\nkey=value\n";
-        let merged = merge_settings_ini(existing, &gtk3_settings(true));
+        let merged = merge_settings_ini(existing, &gtk3_settings(true, false));
         assert!(merged
             .starts_with("# mine\n[Settings]\ngtk-icon-theme-name=Papirus\ngtk-theme-name=rmac\n"));
         assert_eq!(merged.matches("gtk-theme-name=").count(), 1);
@@ -155,12 +155,15 @@ mod toolkit {
         assert!(merged.contains("gtk-font-name=Inter 9.75\n"));
         assert!(merged.ends_with("[Other]\nkey=value\n"));
         // Merging again changes nothing.
-        assert_eq!(merge_settings_ini(&merged, &gtk3_settings(true)), merged);
+        assert_eq!(
+            merge_settings_ini(&merged, &gtk3_settings(true, false)),
+            merged
+        );
     }
 
     #[test]
     fn merging_adds_a_settings_group_when_missing() {
-        let merged = merge_settings_ini("", &gtk3_settings(false));
+        let merged = merge_settings_ini("", &gtk3_settings(false, false));
         assert!(merged.starts_with("[Settings]\ngtk-theme-name=rmac\n"));
         assert!(merged.contains("gtk-application-prefer-dark-theme=false\n"));
     }
@@ -253,6 +256,55 @@ mod toolkit {
             std::fs::read_to_string(home.join("gtk-4.0/gtk.css")).unwrap(),
             "window { color: red; }\n"
         );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn default_scroll_bar_preferences_page_and_auto_hide() {
+        let home = scratch("scrollbars-default");
+        let runner = FakeRunner::new(vec![success("'prefer-dark'\n"), success("'blue'\n")]);
+        let preferences = Preferences {
+            color_scheme: SchemePreference::Automatic,
+            ..Preferences::default()
+        };
+        sync_with(&runner, &preferences, &home, false).unwrap();
+        let gtk4 = std::fs::read_to_string(home.join("gtk-4.0/settings.ini")).unwrap();
+        assert!(gtk4.contains("gtk-primary-button-warps-slider=false\n"));
+        assert!(gtk4.contains("gtk-overlay-scrolling=true\n"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn always_visible_and_jump_to_spot_flip_both_gtk_keys() {
+        let home = scratch("scrollbars-always");
+        let runner = FakeRunner::new(vec![success("'prefer-dark'\n"), success("'blue'\n")]);
+        let preferences = Preferences {
+            color_scheme: SchemePreference::Automatic,
+            scroll_bar_visibility: rmac_theme::ScrollBarVisibility::Always,
+            scroll_bar_click: rmac_theme::ScrollBarClickAction::JumpToSpot,
+            ..Preferences::default()
+        };
+        sync_with(&runner, &preferences, &home, false).unwrap();
+        let gtk3 = std::fs::read_to_string(home.join("gtk-3.0/settings.ini")).unwrap();
+        assert!(gtk3.contains("gtk-primary-button-warps-slider=true\n"));
+        let gtk4 = std::fs::read_to_string(home.join("gtk-4.0/settings.ini")).unwrap();
+        assert!(gtk4.contains("gtk-primary-button-warps-slider=true\n"));
+        assert!(gtk4.contains("gtk-overlay-scrolling=false\n"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn when_scrolling_still_uses_the_gtk_overlay_scrollbar() {
+        let home = scratch("scrollbars-when-scrolling");
+        let runner = FakeRunner::new(vec![success("'prefer-dark'\n"), success("'blue'\n")]);
+        let preferences = Preferences {
+            color_scheme: SchemePreference::Automatic,
+            scroll_bar_visibility: rmac_theme::ScrollBarVisibility::WhenScrolling,
+            ..Preferences::default()
+        };
+        sync_with(&runner, &preferences, &home, false).unwrap();
+        let gtk4 = std::fs::read_to_string(home.join("gtk-4.0/settings.ini")).unwrap();
+        assert!(gtk4.contains("gtk-overlay-scrolling=true\n"));
         let _ = std::fs::remove_dir_all(&home);
     }
 }

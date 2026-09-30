@@ -6,6 +6,9 @@ pub(super) enum ThemeChange {
     Motion(rmac_theme::MotionPreferenceSetting),
     TextScale(rmac_theme::TextScalePreference),
     WallpaperTinting(bool),
+    TextHighlight(rmac_theme::TextHighlightPreference),
+    ScrollBarVisibility(rmac_theme::ScrollBarVisibility),
+    ScrollBarClick(rmac_theme::ScrollBarClickAction),
 }
 
 #[derive(Clone, Copy)]
@@ -79,11 +82,21 @@ pub(super) const THEME_TEXT_SCALE_OPTIONS: [ThemeOption; 3] = [
 ];
 
 pub(super) fn accent_preference(hex: u32) -> rmac_theme::AccentPreference {
-    rmac_theme::AccentPreference::Custom([
+    rmac_theme::AccentPreference::Custom(hex_components(hex))
+}
+
+/// Appearance ▸ Text highlight colour reuses the same 8-swatch palette as
+/// Theme ▸ Colour.
+pub(super) fn text_highlight_preference(hex: u32) -> rmac_theme::TextHighlightPreference {
+    rmac_theme::TextHighlightPreference::Custom(hex_components(hex))
+}
+
+fn hex_components(hex: u32) -> [f64; 3] {
+    [
         f64::from((hex >> 16) & 0xff) / 255.0,
         f64::from((hex >> 8) & 0xff) / 255.0,
         f64::from(hex & 0xff) / 255.0,
-    ])
+    ]
 }
 
 pub(super) async fn load_theme_state() -> std::result::Result<ThemeLoad, String> {
@@ -112,6 +125,9 @@ fn apply_theme_change_to_preferences(
         ThemeChange::Motion(value) => preferences.motion = value,
         ThemeChange::TextScale(value) => preferences.text_scale = value,
         ThemeChange::WallpaperTinting(value) => preferences.allow_wallpaper_tinting = value,
+        ThemeChange::TextHighlight(value) => preferences.text_highlight = value,
+        ThemeChange::ScrollBarVisibility(value) => preferences.scroll_bar_visibility = value,
+        ThemeChange::ScrollBarClick(value) => preferences.scroll_bar_click = value,
     }
 }
 
@@ -171,6 +187,7 @@ mod tests {
             motion: rmac_theme::MotionPreferenceSetting::Full,
             text_scale: rmac_theme::TextScalePreference::Large,
             allow_wallpaper_tinting: true,
+            ..rmac_theme::Preferences::default()
         };
         let mut changed = original.clone();
         apply_theme_change_to_preferences(

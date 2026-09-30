@@ -410,10 +410,13 @@ fn load_tokens_with_host(host: rmac_appearance::Snapshot) -> Result<theme::Theme
     } else {
         None
     };
-    Ok(theme::ThemeTokens::from_appearance_with_wallpaper(
-        resolved.effective,
-        wallpaper_tint,
-    ))
+    let mut tokens =
+        theme::ThemeTokens::from_appearance_with_wallpaper(resolved.effective, wallpaper_tint);
+    // Text highlight is a direct preference pass-through, not a host-resolved
+    // value, so it is applied here rather than threaded through
+    // `ResolvedAppearance`.
+    tokens.text_highlight = resolved.preferences.text_highlight;
+    Ok(tokens)
 }
 
 fn apply_resolved_tokens(tokens: theme::ThemeTokens, cx: &mut gpui::AsyncApp) {

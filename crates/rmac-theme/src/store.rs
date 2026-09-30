@@ -6,7 +6,8 @@ use rmac_storage::{Backend, Failure, FileSystem};
 
 use crate::model::{StoredPreferences, CURRENT_VERSION, DEFAULT_ACCENT};
 use crate::{
-    AccentPreference, Error, Operation, Preferences, Snapshot, StoreEvent, ThemeStore, ThemeWatcher,
+    AccentPreference, Error, Operation, Preferences, Snapshot, StoreEvent, TextHighlightPreference,
+    ThemeStore, ThemeWatcher,
 };
 
 impl ThemeStore<FileSystem> {
@@ -247,6 +248,11 @@ impl<B: Backend> ThemeStore<B> {
 
 pub(crate) fn validate_preferences(preferences: &Preferences, path: &Path) -> Result<(), Error> {
     if let AccentPreference::Custom([red, green, blue]) = preferences.accent_color {
+        if AccentColor::new(red, green, blue).is_none() {
+            return Err(invalid_accent(path));
+        }
+    }
+    if let TextHighlightPreference::Custom([red, green, blue]) = preferences.text_highlight {
         if AccentColor::new(red, green, blue).is_none() {
             return Err(invalid_accent(path));
         }

@@ -47,7 +47,7 @@ pub(crate) struct Callbacks {
     input: Option<Box<dyn FnMut(gpui::PlatformInput) -> gpui::DispatchEventResult>>,
     active_status_change: Option<Box<dyn FnMut(bool)>>,
     hover_status_change: Option<Box<dyn FnMut(bool)>>,
-    resize: Option<Box<dyn FnMut(Size<Pixels>, f32)>>,
+    resize: Option<ResizeCallback>,
     moved: Option<Box<dyn FnMut()>>,
     should_close: Option<Box<dyn FnMut() -> bool>>,
     close: Option<Box<dyn FnOnce()>>,
@@ -55,6 +55,8 @@ pub(crate) struct Callbacks {
     appearance_changed: Option<Box<dyn FnMut()>>,
     button_layout_changed: Option<Box<dyn FnMut()>>,
 }
+
+type ResizeCallback = Box<dyn FnMut(Size<Pixels>, f32)>;
 
 #[derive(Debug, Clone, Copy)]
 struct RawWindow {
@@ -162,7 +164,7 @@ impl WaylandSurfaceState {
             };
 
             let layer_surface = layer_shell.get_layer_surface(
-                &surface,
+                surface,
                 target_output.as_ref(),
                 super::layer_shell::wayland_layer(options.layer),
                 options.namespace.clone(),
@@ -216,7 +218,7 @@ impl WaylandSurfaceState {
 
             let xdg_surface = globals
                 .wm_base
-                .get_xdg_surface(&surface, &globals.qh, surface.id());
+                .get_xdg_surface(surface, &globals.qh, surface.id());
 
             // A layer-shell parent takes a null xdg parent and is attached via the layer
             // surface. Every other surface kind has an xdg_surface to parent to directly.
@@ -253,7 +255,7 @@ impl WaylandSurfaceState {
         // All other WindowKinds result in a regular xdg surface
         let xdg_surface = globals
             .wm_base
-            .get_xdg_surface(&surface, &globals.qh, surface.id());
+            .get_xdg_surface(surface, &globals.qh, surface.id());
 
         let toplevel = xdg_surface.get_toplevel(&globals.qh, surface.id());
         let xdg_parent = parent.as_ref().and_then(|w| w.toplevel());
@@ -523,6 +525,7 @@ impl WeakWaylandWindowStatePtr {
 }
 
 impl WaylandWindowState {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         handle: AnyWindowHandle,
         surface: wl_surface::WlSurface,
@@ -658,6 +661,7 @@ impl WaylandWindowState {
 }
 
 pub(crate) struct WaylandWindow(pub WaylandWindowStatePtr);
+#[allow(clippy::enum_variant_names)]
 pub enum ImeInput {
     InsertText(String),
     SetMarkedText(String),
@@ -723,6 +727,7 @@ impl WaylandWindow {
         self.0.state.borrow_mut()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         handle: AnyWindowHandle,
         globals: Globals,
@@ -1301,13 +1306,13 @@ impl WaylandWindowStatePtr {
                     self.rescale(scale as f32);
                 }
             }
-            wl_surface::Event::PreferredBufferScale { factor } => {
-                // We use `WpFractionalScale` instead to set the scale if it's available
-                if state.globals.fractional_scale_manager.is_none() {
-                    state.surface.set_buffer_scale(factor);
-                    drop(state);
-                    self.rescale(factor as f32);
-                }
+            wl_surface::Event::PreferredBufferScale { factor }
+                if state.globals.fractional_scale_manager.is_none() =>
+            {
+                // We use `WpFractionalScale` instead to set the scale if it's available.
+                state.surface.set_buffer_scale(factor);
+                drop(state);
+                self.rescale(factor as f32);
             }
             _ => {}
         }

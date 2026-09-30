@@ -820,7 +820,7 @@ impl WaylandClientStatePtr {
             }
             changed
         } else {
-            let changed = &UNKNOWN_KEYBOARD_LAYOUT_NAME != state.keyboard_layout.name();
+            let changed = UNKNOWN_KEYBOARD_LAYOUT_NAME != state.keyboard_layout.name();
             if changed {
                 state.keyboard_layout = LinuxKeyboardLayout::new(UNKNOWN_KEYBOARD_LAYOUT_NAME);
             }
@@ -1588,10 +1588,10 @@ impl Dispatch<zwp_linux_dmabuf_feedback_v1::ZwpLinuxDmabufFeedbackV1, ()> for Dm
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let zwp_linux_dmabuf_feedback_v1::Event::MainDevice { device } = event {
-            if let Ok(bytes) = <[u8; 8]>::try_from(device.as_slice()) {
-                state.device = Some(u64::from_ne_bytes(bytes));
-            }
+        if let zwp_linux_dmabuf_feedback_v1::Event::MainDevice { device } = event
+            && let Ok(bytes) = <[u8; 8]>::try_from(device.as_slice())
+        {
+            state.device = Some(u64::from_ne_bytes(bytes));
         }
     }
 }
@@ -2150,8 +2150,7 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for WaylandClientStatePtr {
                                     keystroke.key_char = None;
                                     state.pre_edit_text =
                                         compose.utf8().or(keystroke_underlying_dead_key(keysym));
-                                    let pre_edit =
-                                        state.pre_edit_text.clone().unwrap_or(String::default());
+                                    let pre_edit = state.pre_edit_text.clone().unwrap_or_default();
                                     drop(state);
                                     focused_window.handle_ime(ImeInput::SetMarkedText(pre_edit));
                                     state = client.borrow_mut();
@@ -2924,13 +2923,11 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
             } => {
                 state.axis_source = axis_source;
             }
-            wl_pointer::Event::AxisStop { .. } => {
+            wl_pointer::Event::AxisStop { .. } if state.axis_source == AxisSource::Finger => {
                 // The fingers left the touchpad; the frame decides whether the
                 // scroll glides on (rmac, docs/decisions/0013).
-                if state.axis_source == AxisSource::Finger {
-                    state.axis_stop_pending = true;
-                    state.scroll_event_received = true;
-                }
+                state.axis_stop_pending = true;
+                state.scroll_event_received = true;
             }
             wl_pointer::Event::Axis {
                 axis: WEnum::Value(axis),
@@ -3020,47 +3017,45 @@ impl Dispatch<wl_pointer::WlPointer, ()> for WaylandClientStatePtr {
                     _ => unreachable!(),
                 }
             }
-            wl_pointer::Event::Frame => {
-                if state.scroll_event_received {
-                    state.scroll_event_received = false;
-                    let continuous = state.continuous_scroll_delta.take();
-                    let discrete = state.discrete_scroll_delta.take();
-                    let stopped = std::mem::take(&mut state.axis_stop_pending);
-                    if continuous.is_some() || discrete.is_some() {
-                        // New scrolling cancels a glide in progress.
-                        state.momentum_generation = state.momentum_generation.wrapping_add(1);
-                    }
-                    if let Some(continuous) = continuous
-                        && state.axis_source == AxisSource::Finger
-                    {
-                        track_finger_velocity(&mut state, continuous);
-                    }
-                    if stopped {
-                        start_momentum(&mut state, None);
-                    }
-                    if let Some(continuous) = continuous {
-                        if let Some(window) = state.mouse_focused_window.clone() {
-                            let input = PlatformInput::ScrollWheel(ScrollWheelEvent {
-                                position: state.mouse_location.unwrap(),
-                                delta: ScrollDelta::Pixels(continuous),
-                                modifiers: state.modifiers,
-                                touch_phase: TouchPhase::Moved,
-                            });
-                            drop(state);
-                            window.handle_input(input);
-                        }
-                    } else if let Some(discrete) = discrete
-                        && let Some(window) = state.mouse_focused_window.clone()
-                    {
+            wl_pointer::Event::Frame if state.scroll_event_received => {
+                state.scroll_event_received = false;
+                let continuous = state.continuous_scroll_delta.take();
+                let discrete = state.discrete_scroll_delta.take();
+                let stopped = std::mem::take(&mut state.axis_stop_pending);
+                if continuous.is_some() || discrete.is_some() {
+                    // New scrolling cancels a glide in progress.
+                    state.momentum_generation = state.momentum_generation.wrapping_add(1);
+                }
+                if let Some(continuous) = continuous
+                    && state.axis_source == AxisSource::Finger
+                {
+                    track_finger_velocity(&mut state, continuous);
+                }
+                if stopped {
+                    start_momentum(&mut state, None);
+                }
+                if let Some(continuous) = continuous {
+                    if let Some(window) = state.mouse_focused_window.clone() {
                         let input = PlatformInput::ScrollWheel(ScrollWheelEvent {
                             position: state.mouse_location.unwrap(),
-                            delta: ScrollDelta::Lines(discrete),
+                            delta: ScrollDelta::Pixels(continuous),
                             modifiers: state.modifiers,
                             touch_phase: TouchPhase::Moved,
                         });
                         drop(state);
                         window.handle_input(input);
                     }
+                } else if let Some(discrete) = discrete
+                    && let Some(window) = state.mouse_focused_window.clone()
+                {
+                    let input = PlatformInput::ScrollWheel(ScrollWheelEvent {
+                        position: state.mouse_location.unwrap(),
+                        delta: ScrollDelta::Lines(discrete),
+                        modifiers: state.modifiers,
+                        touch_phase: TouchPhase::Moved,
+                    });
+                    drop(state);
+                    window.handle_input(input);
                 }
             }
             _ => {}

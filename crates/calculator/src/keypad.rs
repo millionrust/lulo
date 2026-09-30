@@ -82,6 +82,8 @@ pub enum KeyStyle {
     Function,
     /// Dark grey: digits, ±, decimal point.
     Digit,
+    /// Darker grey: Scientific functions and memory keys.
+    Scientific,
     /// Orange: ÷ × − + =.
     Operator,
 }
@@ -187,6 +189,8 @@ pub struct Palette {
     pub function_label: u32,
     pub digit_key: u32,
     pub digit_label: u32,
+    pub scientific_key: u32,
+    pub scientific_label: u32,
     pub operator_key: u32,
     pub operator_label: u32,
     /// The pending operator inverts: a white key with an orange glyph.
@@ -216,6 +220,8 @@ pub const DARK: Palette = Palette {
     function_label: 0xF6F6F6,
     digit_key: 0x46494E,
     digit_label: 0xF6F6F6,
+    scientific_key: 0x303239,
+    scientific_label: 0xF6F6F6,
     operator_key: 0xFF8B00,
     operator_label: 0xFFFAF2,
     operator_selected_key: 0xFFFAF2,
@@ -240,6 +246,8 @@ pub const LIGHT: Palette = Palette {
     function_label: 0x1D1D1F,
     digit_key: 0xFFFFFF,
     digit_label: 0x1D1D1F,
+    scientific_key: 0xE2E2E6,
+    scientific_label: 0x1D1D1F,
     operator_key: 0xFF8B00,
     operator_label: 0xFFFFFF,
     operator_selected_key: 0xFFFFFF,
@@ -281,12 +289,16 @@ mod tests {
             .filter(|key| matches!(key, Key::Digit(_)))
             .count();
         assert_eq!(digits, 10);
-        assert!(LAYOUT
-            .iter()
-            .all(|row| key_style(row[3]) == KeyStyle::Operator));
-        assert!(LAYOUT[0][..3]
-            .iter()
-            .all(|key| key_style(*key) == KeyStyle::Function));
+        assert!(
+            LAYOUT
+                .iter()
+                .all(|row| key_style(row[3]) == KeyStyle::Operator)
+        );
+        assert!(
+            LAYOUT[0][..3]
+                .iter()
+                .all(|key| key_style(*key) == KeyStyle::Function)
+        );
     }
 
     #[test]

@@ -60,6 +60,7 @@
     --window: #22252d; --expression: #9b9da0; --result: #ddedef;
     --function-key: #727479; --function-label: #f6f6f6;
     --digit-key: #46494e; --digit-label: #f6f6f6;
+    --scientific-key: #303239;
     --operator-key: #ff8b00; --operator-label: #fffaf2;
     --toolbar-button: #1c1e23; --toolbar-glyph: #e8e8e8;
     --rim: rgba(255,255,255,.10); --accent: #5ac8fa;
@@ -85,6 +86,10 @@
   .key.pill { border-radius: 24px; }
   .key.fn { background: var(--function-key); color: var(--function-label); }
   .key.digit { background: var(--digit-key); color: var(--digit-label); }
+  .key.scientific { background: var(--scientific-key); color: var(--digit-label); }
+  .key sup { font-size: 11px; line-height: 1; align-self: center; transform: translateY(-6px); }
+  .key sub { font-size: 11px; line-height: 1; align-self: center; transform: translateY(5px); }
+  .key .radical { font-size: 22px; }
   .key.op { background: var(--operator-key); color: var(--operator-label); }
   .key .glyph { width: 24px; height: 24px; }
   .angle-indicator { position: absolute; font-size: 12px; color: var(--expression); }
@@ -238,21 +243,35 @@ const SCI_W = 60, SCI_H = 48, SCI_PITCH_X = 66, SCI_PITCH_Y = 54, SCI_LEFT = 10,
 function sciLayout(second, rad) {
   const radLabel = rad ? "Deg" : "Rad";
   return [
-    [["fn", null, "("], ["fn", null, ")"], ["fn", null, "mc"], ["fn", null, "m+"], ["fn", null, "m-"],
-     ["fn", null, "mr"], ["fn", "backspace.svg"], ["fn", null, "AC"], ["fn", null, "%"], ["op", "divide.svg"]],
-    [["fn", null, "2nd"], ["fn", null, "x²"], ["fn", null, "x³"], ["fn", null, "xʸ"],
-     ["fn", null, second ? "yˣ" : "eˣ"], ["fn", null, second ? "2ˣ" : "10ˣ"],
+    [["scientific", null, "("], ["scientific", null, ")"], ["scientific", null, "mc"], ["scientific", null, "m+"], ["scientific", null, "m-"],
+     ["scientific", null, "mr"], ["fn", "backspace.svg"], ["fn", null, "AC"], ["fn", null, "%"], ["op", "divide.svg"]],
+    [["scientific", null, "2nd"], ["scientific", null, "x²"], ["scientific", null, "x³"], ["scientific", null, "xʸ"],
+     ["scientific", null, second ? "yˣ" : "eˣ"], ["scientific", null, second ? "2ˣ" : "10ˣ"],
      ["digit", null, "7"], ["digit", null, "8"], ["digit", null, "9"], ["op", "multiply.svg"]],
-    [["fn", null, "1/x"], ["fn", null, "²√x"], ["fn", null, "³√x"], ["fn", null, "ʸ√x"],
-     ["fn", null, second ? "logᵧ" : "ln"], ["fn", null, second ? "log₂" : "log₁₀"],
+    [["scientific", null, "1/x"], ["scientific", null, "²√x"], ["scientific", null, "³√x"], ["scientific", null, "ʸ√x"],
+     ["scientific", null, second ? "logᵧ" : "ln"], ["scientific", null, second ? "log₂" : "log₁₀"],
      ["digit", null, "4"], ["digit", null, "5"], ["digit", null, "6"], ["op", "minus.svg"]],
-    [["fn", null, "x!"], ["fn", null, second ? "sin⁻¹" : "sin"], ["fn", null, second ? "cos⁻¹" : "cos"],
-     ["fn", null, second ? "tan⁻¹" : "tan"], ["fn", null, "e"], ["fn", null, "EE"],
+    [["scientific", null, "x!"], ["scientific", null, second ? "sin⁻¹" : "sin"], ["scientific", null, second ? "cos⁻¹" : "cos"],
+     ["scientific", null, second ? "tan⁻¹" : "tan"], ["scientific", null, "e"], ["scientific", null, "EE"],
      ["digit", null, "1"], ["digit", null, "2"], ["digit", null, "3"], ["op", "plus.svg"]],
-    [["fn", null, "Rand"], ["fn", null, second ? "sinh⁻¹" : "sinh"], ["fn", null, second ? "cosh⁻¹" : "cosh"],
-     ["fn", null, second ? "tanh⁻¹" : "tanh"], ["fn", null, "π"], ["fn", null, radLabel],
+    [["scientific", null, "Rand"], ["scientific", null, second ? "sinh⁻¹" : "sinh"], ["scientific", null, second ? "cosh⁻¹" : "cosh"],
+     ["scientific", null, second ? "tanh⁻¹" : "tanh"], ["scientific", null, "π"], ["scientific", null, radLabel],
      ["digit", "plus-minus.svg"], ["digit", null, "0"], ["digit", null, "."], ["op", "equals.svg"]],
   ];
+}
+
+function scientificLabel(text) {
+  const powers = {"2nd": ["2", "nd"], "x²": ["x", "2"], "x³": ["x", "3"],
+    "xʸ": ["x", "y"], "eˣ": ["<i>e</i>", "x"], "yˣ": ["y", "x"],
+    "10ˣ": ["10", "x"], "2ˣ": ["2", "x"]};
+  if (powers[text]) return `${powers[text][0]}<sup>${powers[text][1]}</sup>`;
+  if (["²√x", "³√x", "ʸ√x"].includes(text))
+    return `<sup>${{"²": "2", "³": "3", "ʸ": "y"}[text[0]]}</sup><span class="radical">√x</span>`;
+  if (text === "1/x") return "<sup>1</sup>⁄<sub>x</sub>";
+  if (text.startsWith("log") && text !== "log")
+    return `log<sub>${{"log₁₀": "10", "log₂": "2", "logᵧ": "y"}[text]}</sub>`;
+  if (text === "e") return "<i>e</i>";
+  return text;
 }
 
 async function buildScientific(second, rad) {
@@ -297,7 +316,7 @@ async function buildScientific(second, rad) {
       const x = SCI_LEFT + col * SCI_PITCH_X, y = SCI_TOP + row * SCI_PITCH_Y;
       const fontSize = tier === "digit" || tier === "op" ? 22 : 17;
       key.style.cssText = `left:${x}px;top:${y}px;width:${SCI_W}px;height:${SCI_H}px;font-size:${fontSize}px`;
-      key.innerHTML = iconPath ? await glyph("icons/calculator/" + iconPath, 24) : text;
+      key.innerHTML = iconPath ? await glyph("icons/calculator/" + iconPath, 24) : scientificLabel(text);
       win.appendChild(key);
     }
   }

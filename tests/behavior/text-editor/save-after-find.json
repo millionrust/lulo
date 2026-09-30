@@ -1,0 +1,16 @@
+{
+  "title": "Save after closing Find opens the Untitled document's Save sheet",
+  "app": "text-editor",
+  "steps": [
+    {"type": "The quick brown fox jumps over a quiet river."},
+    {"key": "cmd-f"},
+    {"type": "quiet"},
+    {"key": "escape"},
+    {"key": "cmd-s", "settle": 1.5},
+    {"observe": "save", "facts": ["dialog", "focus"]},
+    {"key": "escape"},
+    {"observe": "cancelled", "facts": ["dialog", "windows"]}
+  ],
+  "tolerance": {"save.dialog.title": "ignore", "save.dialog.buttons": "subset", "save.focus.label": "ignore"},
+  "omit": ["save.dialog.texts"]
+}

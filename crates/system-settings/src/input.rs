@@ -12,6 +12,7 @@ pub(super) enum InputChange {
     MouseMiddleEmulation(bool),
     MouseAccelSpeed(f64),
     MouseAccelProfile(rmac_input::AccelProfile),
+    MouseScrollWithMiddleButton(bool),
     MousePrecisionPreset {
         speed: f64,
         profile: rmac_input::AccelProfile,
@@ -46,6 +47,9 @@ impl InputChange {
             Self::MouseMiddleEmulation(value) => settings.mouse.middle_emulation = value,
             Self::MouseAccelSpeed(value) => settings.mouse.accel_speed = value,
             Self::MouseAccelProfile(value) => settings.mouse.accel_profile = value,
+            Self::MouseScrollWithMiddleButton(value) => {
+                settings.mouse_scroll_with_middle_button = value
+            }
             Self::MousePrecisionPreset { speed, profile } => {
                 settings.mouse.accel_speed = speed;
                 settings.mouse.accel_profile = profile;

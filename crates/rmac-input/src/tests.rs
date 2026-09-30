@@ -125,6 +125,37 @@ fn generated_session_uses_persistent_input_entrypoint() {
 }
 
 #[test]
+fn mouse_classified_stick_uses_mouse_scroll_authority() {
+    let parsed =
+        effective("input { mouse { scroll-method \"on-button-down\"; scroll-button 274; } }\n");
+    assert!(parsed.settings.mouse_scroll_with_middle_button);
+    let authority = Authority {
+        main_path: PathBuf::from("/config.kdl"),
+        main_source: String::new(),
+        managed_path: PathBuf::from("/.rmac-input.kdl"),
+        managed_source: None,
+        has_managed_include: false,
+        safe_to_write: true,
+        detail: None,
+        effective: parsed,
+        files: vec![],
+        missing_optional_files: vec![],
+    };
+    let mut changed = authority.effective.settings.clone();
+    changed.mouse_scroll_with_middle_button = false;
+    let managed = update_managed_source(&authority, &changed).unwrap();
+    assert!(managed.contains("scroll-method \"no-scroll\""));
+    assert!(!managed.contains("scroll-button"));
+    let document = parse_managed_document(&managed).unwrap();
+    let mut reread = authority.effective;
+    apply_input(
+        document.get("input").unwrap().children().unwrap(),
+        &mut reread,
+    );
+    assert_eq!(reread.settings, changed);
+}
+
+#[test]
 fn keyboard_merges_but_pointing_sections_replace() {
     let mut effective = effective(CONFIG);
     let later = KdlDocument::parse_v1(

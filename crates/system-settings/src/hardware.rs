@@ -14,6 +14,7 @@ pub(crate) struct Capabilities {
     pub has_battery: bool,
     pub has_touchpad: bool,
     pub has_pointing_stick: bool,
+    pub pointing_stick_uses_mouse: bool,
     pub has_external_mouse: bool,
     pub has_touchscreen: bool,
     pub has_pen: bool,
@@ -145,6 +146,7 @@ pub(crate) fn scan(sys: &Path, udev: &Path, fprintd_supported: bool) -> Capabili
     // with no ID_INPUT_POINTINGSTICK udev property (EliteBook 840 G2).
     if integrated_ps2_mouse && result.has_touchpad {
         result.has_pointing_stick = true;
+        result.pointing_stick_uses_mouse = true;
     } else if integrated_ps2_mouse {
         result.has_external_mouse = true;
     }
@@ -314,6 +316,7 @@ mod tests {
         put(&sys, "bus/iio/devices/iio:device0/in_accel_z_raw", "1\n");
         let found = scan(&sys, &udev, false);
         assert!(found.has_battery && found.has_touchpad && found.has_pointing_stick);
+        assert!(found.pointing_stick_uses_mouse);
         assert!(
             found.has_touchscreen && found.has_backlight && found.has_bluetooth && found.has_wifi
         );
@@ -338,13 +341,41 @@ mod tests {
         put(&sys, "class/input/event9/dev", "13:9\n");
         put(&udev, "c13:9", "E:ID_INPUT_MOUSE=1\nE:ID_BUS=usb\n");
         put(&sys, "class/drm/card0-HDMI-A-1/status", "connected\n");
+        put(&sys, "class/drm/card0-eDP-1/status", "connected\n");
+        put(&sys, "class/leds/platform::kbd_backlight/brightness", "2\n");
+        put(&sys, "class/sound/pcmC0D3p/dev", "116:3\n");
+        put(&sys, "class/input/event10/device/name", "Lid Switch\n");
+        put(&sys, "class/input/event10/dev", "13:10\n");
+        put(&udev, "c13:10", "E:ID_INPUT_SWITCH=1\n");
+        put(&sys, "class/input/event11/device/name", "Active Stylus\n");
+        put(&sys, "class/input/event11/dev", "13:11\n");
+        put(&udev, "c13:11", "E:ID_INPUT_TABLET=1\n");
+        put(&sys, "bus/iio/devices/iio:device0/name", "bma400-accel\n");
+        for axis in ["x", "y", "z"] {
+            put(
+                &sys,
+                &format!("bus/iio/devices/iio:device0/in_accel_{axis}_raw"),
+                "1\n",
+            );
+        }
         let found = scan(&sys, &udev, false);
         assert!(found.has_external_mouse && found.allows_pane("Mouse"));
+        assert!(!found.pointing_stick_uses_mouse);
         for name in ["Battery", "Trackpad", "Bluetooth", "Wi-Fi", "Touchscreen"] {
             assert!(!found.allows_pane(name), "{name}");
         }
-        assert_eq!(found.displays.len(), 1);
-        assert!(!found.displays[0].internal);
+        assert_eq!(found.displays.len(), 2);
+        assert_eq!(
+            found
+                .displays
+                .iter()
+                .filter(|display| display.internal)
+                .count(),
+            1
+        );
+        assert!(found.has_keyboard_backlight && found.has_lid && found.has_pen);
+        assert!(found.has_accelerometer && found.rotation_capable);
+        assert_eq!(found.audio_outputs, vec!["pcmC0D3p".to_owned()]);
         fs::remove_dir_all(root).unwrap();
     }
 }

@@ -216,7 +216,9 @@ impl Settings {
         }
         let settings = &self.input.settings.mouse;
         let writable = self.input.can_configure && settings.enabled && !self.input_busy;
-        if !settings.enabled {
+        if !settings.enabled
+            && (self.hardware.has_external_mouse || self.hardware.pointing_stick_uses_mouse)
+        {
             cards.push(note_card(
                 "Mouse settings are turned off in the niri configuration, so they do not affect any mouse.",
             ));
@@ -272,19 +274,44 @@ impl Settings {
             ]));
         }
         if self.hardware.has_pointing_stick {
-            let stick = &self.input.settings.trackpoint;
+            let uses_mouse = self.hardware.pointing_stick_uses_mouse;
+            let stick = if uses_mouse {
+                &self.input.settings.mouse
+            } else {
+                &self.input.settings.trackpoint
+            };
+            let speeds: &'static [InputOption] = if uses_mouse {
+                &MOUSE_SPEEDS
+            } else {
+                &TRACKPOINT_SPEEDS
+            };
+            let acceleration: fn(bool) -> InputChange = if uses_mouse {
+                mouse_acceleration
+            } else {
+                trackpoint_acceleration
+            };
+            let scroll_change: fn(bool) -> InputChange = if uses_mouse {
+                InputChange::MouseScrollWithMiddleButton
+            } else {
+                InputChange::TrackpointScrollWithMiddleButton
+            };
+            let scroll_checked = if uses_mouse {
+                self.input.settings.mouse_scroll_with_middle_button
+            } else {
+                self.input.settings.trackpoint_scroll_with_middle_button
+            };
             let enabled = self.input.can_configure && stick.enabled && !self.input_busy;
             cards.push(section_header("Pointing Stick"));
             cards.push(card(vec![
                 stepped_slider_row(
                     "pointing-stick-speed",
                     "Pointing stick speed",
-                    TRACKPOINT_SPEEDS.len(),
+                    speeds.len(),
                     Some(speed_index(stick.accel_speed)),
                     "Slow",
                     "Fast",
                     enabled,
-                    input_pick(&view, &TRACKPOINT_SPEEDS),
+                    input_pick(&view, speeds),
                 ),
                 input_switch(
                     &view,
@@ -293,18 +320,21 @@ impl Settings {
                     None,
                     stick.accel_profile == rmac_input::AccelProfile::Adaptive,
                     enabled,
-                    trackpoint_acceleration,
+                    acceleration,
                 ),
                 input_switch(
                     &view,
                     "pointing-stick-middle-scroll",
                     "Scroll with middle button",
                     Some("Hold the middle button while moving the pointing stick"),
-                    self.input.settings.trackpoint_scroll_with_middle_button,
+                    scroll_checked,
                     enabled,
-                    InputChange::TrackpointScrollWithMiddleButton,
+                    scroll_change,
                 ),
             ]));
+            if uses_mouse && self.hardware.has_external_mouse {
+                cards.push(footnote("This pointing stick is reported as a mouse, so these values also apply to connected mice."));
+            }
         }
         cards.push(self.input_refresh_button(cx));
         self.pane(cards)

@@ -162,7 +162,11 @@ pub(super) fn update_managed_source(
         replace_explicit_flag(keyboard, "numlock", settings.keyboard.numlock)?;
     }
 
-    if settings.mouse != authority.effective.settings.mouse || input.get("mouse").is_some() {
+    if settings.mouse != authority.effective.settings.mouse
+        || settings.mouse_scroll_with_middle_button
+            != authority.effective.settings.mouse_scroll_with_middle_button
+        || input.get("mouse").is_some()
+    {
         if input.get("mouse").is_none() {
             input.nodes_mut().push(
                 authority
@@ -177,6 +181,17 @@ pub(super) fn update_managed_source(
             .expect("mouse node exists")
             .ensure_children();
         write_pointer(mouse, &settings.mouse);
+        if settings.mouse_scroll_with_middle_button
+            != authority.effective.settings.mouse_scroll_with_middle_button
+        {
+            if settings.mouse_scroll_with_middle_button {
+                replace_string_value(mouse, "scroll-method", "on-button-down");
+                replace_value(mouse, "scroll-button", 274_i128);
+            } else {
+                replace_string_value(mouse, "scroll-method", "no-scroll");
+                remove_named(mouse, "scroll-button");
+            }
+        }
     }
 
     if settings.touchpad != authority.effective.settings.touchpad || input.get("touchpad").is_some()

@@ -203,6 +203,7 @@ impl TouchSettings {
 pub struct InputSettings {
     pub keyboard: KeyboardSettings,
     pub mouse: PointerSettings,
+    pub mouse_scroll_with_middle_button: bool,
     pub touchpad: TouchpadSettings,
     pub trackpoint: PointerSettings,
     pub trackpoint_scroll_with_middle_button: bool,
@@ -214,6 +215,7 @@ impl Default for InputSettings {
         Self {
             keyboard: KeyboardSettings::default(),
             mouse: PointerSettings::default(),
+            mouse_scroll_with_middle_button: false,
             touchpad: TouchpadSettings::default(),
             trackpoint: PointerSettings::default(),
             trackpoint_scroll_with_middle_button: false,

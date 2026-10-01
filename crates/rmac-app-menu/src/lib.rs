@@ -494,6 +494,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 separator
             ),
             item!("Checklist", "notes::InsertChecklist", "⇧⌘L"),
+            item!("Mark as Done", "notes::ToggleChecklistDone", "⇧⌘U"),
             submenu!(
                 "Lists",
                 "notes::ListsMenu",

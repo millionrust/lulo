@@ -1,16 +1,21 @@
 //! Read-only Markdown preview projection for Notes.
 
+use std::ops::Range;
+
 use gpui::{
-    div, font, prelude::FluentBuilder as _, px, AnyElement, InteractiveElement as _, IntoElement,
-    ParentElement, StatefulInteractiveElement as _, StrikethroughStyle, Styled, StyledText,
-    TextRun,
+    div, font, prelude::FluentBuilder as _, px, AnyElement, Context, InteractiveElement as _,
+    IntoElement, ParentElement, Role, StatefulInteractiveElement as _, StrikethroughStyle, Styled,
+    StyledText, TextRun, Toggled,
 };
 use rmac_notes_storage::{MarkdownPreviewBlock, MarkdownPreviewBlockKind, MarkdownPreviewDocument};
 use rmac_ui::{mac, StyledExt as _};
 
-use super::centered_state;
+use super::{centered_state, NotesView};
 
-pub(super) fn render_markdown_document(document: &MarkdownPreviewDocument) -> AnyElement {
+pub(super) fn render_markdown_document(
+    document: &MarkdownPreviewDocument,
+    cx: &mut Context<NotesView>,
+) -> AnyElement {
     if document.blocks().is_empty() {
         return centered_state(
             "Empty Note",
@@ -40,11 +45,16 @@ pub(super) fn render_markdown_document(document: &MarkdownPreviewDocument) -> An
                     ),
             )
         })
-        .children(document.blocks().iter().map(render_markdown_block))
+        .children(
+            document
+                .blocks()
+                .iter()
+                .map(|block| render_markdown_block(block, cx)),
+        )
         .into_any_element()
 }
 
-fn render_markdown_block(block: &MarkdownPreviewBlock) -> AnyElement {
+fn render_markdown_block(block: &MarkdownPreviewBlock, cx: &mut Context<NotesView>) -> AnyElement {
     if matches!(block.kind(), MarkdownPreviewBlockKind::ThematicBreak) {
         return div()
             .h(px(1.0))
@@ -120,29 +130,47 @@ fn render_markdown_block(block: &MarkdownPreviewBlock) -> AnyElement {
             ordered_index,
             checked,
         } => {
+            let source_range = block.source_range();
             let marker = match checked {
                 // Notes draws checklist items as 18 pt circles, filled in
-                // the Notes yellow with a check when done (S).
-                Some(done) => div()
-                    .mt(px(3.0))
-                    .size(px(18.0))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .when(done, |circle| {
-                        circle
-                            .bg(mac::notes_accent())
-                            .text_size(rmac_ui::text_px(12.0))
-                            .font_weight(mac::BOLD)
-                            .text_color(mac::black())
-                            .child("✓")
-                    })
-                    .when(!done, |circle| {
-                        circle.border_2().border_color(mac::text_tertiary())
-                    })
-                    .into_any_element(),
+                // the Notes yellow with a check when done (S). Clicking the
+                // circle flips the stored `- [ ] `/`- [x] ` marker back in
+                // the note's Markdown body (NOTES-02); it is only
+                // interactive when the parser could place its source range.
+                Some(done) => {
+                    let toggled = if done { Toggled::True } else { Toggled::False };
+                    let element_key = source_range.as_ref().map_or(0, |range| range.start);
+                    let mut circle = div()
+                        .id(("notes-checklist-item", element_key))
+                        .mt(px(3.0))
+                        .size(px(18.0))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded_full()
+                        .role(Role::CheckBox)
+                        .aria_toggled(toggled)
+                        .aria_label(if done { "Done" } else { "Not done" })
+                        .when(done, |circle| {
+                            circle
+                                .bg(mac::notes_accent())
+                                .text_size(rmac_ui::text_px(12.0))
+                                .font_weight(mac::BOLD)
+                                .text_color(mac::black())
+                                .child("✓")
+                        })
+                        .when(!done, |circle| {
+                            circle.border_2().border_color(mac::text_tertiary())
+                        });
+                    if let Some(range) = source_range {
+                        circle = circle.cursor_pointer();
+                        circle = circle.on_click(cx.listener(move |view, _event, window, cx| {
+                            view.toggle_checklist_range(range.clone(), window, cx);
+                        }));
+                    }
+                    circle.into_any_element()
+                }
                 None => div()
                     .w(px(24.0))
                     .text_color(mac::text_secondary())

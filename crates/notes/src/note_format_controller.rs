@@ -55,6 +55,18 @@ fn strip_leading_marker(line: &str) -> &str {
     line
 }
 
+/// The byte range of a `- [ ] `/`- [x] `/`- [X] ` checkbox marker within
+/// `text`, searched only in a short prefix so a checklist item's own body
+/// text can never be mistaken for a marker further in.
+fn find_checkbox_marker(text: &str) -> Option<std::ops::Range<usize>> {
+    const MARKERS: [&str; 3] = ["[ ]", "[x]", "[X]"];
+    let window_end = text.len().min(16);
+    let prefix = text.get(..window_end)?;
+    MARKERS
+        .into_iter()
+        .find_map(|marker| prefix.find(marker).map(|index| index..index + marker.len()))
+}
+
 /// The byte range of the line in `value` that contains `cursor`.
 fn current_line_range(value: &str, cursor: usize) -> std::ops::Range<usize> {
     let cursor = cursor.min(value.len());
@@ -192,6 +204,70 @@ impl NotesView {
     pub(super) fn toggle_italic(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.apply_inline_markdown("_", "_", window, cx);
     }
+
+    /// ⇧⌘U: mark the checklist item on the current line done/not done, like
+    /// the Mac. A line that is not yet a checklist item becomes one, not
+    /// done, matching Format ▸ Checklist's own insertion text.
+    pub(super) fn toggle_checklist_line(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_to_current_line(window, cx, |line| match find_checkbox_marker(line) {
+            Some(marker_range) => {
+                let replacement = if &line[marker_range.clone()] == "[ ]" {
+                    "[x]"
+                } else {
+                    "[ ]"
+                };
+                let mut next = line.to_string();
+                next.replace_range(marker_range, replacement);
+                next
+            }
+            None => format!("- [ ] {}", strip_leading_marker(line)),
+        });
+    }
+
+    /// Clicking a checkbox in Markdown Preview (NOTES-02): flip the
+    /// `- [ ] `/`- [x] ` marker at `range` (the whole list item's byte range
+    /// in the saved body, from `MarkdownPreviewBlock::source_range`) without
+    /// disturbing any other byte offset — `[ ]`/`[x]`/`[X]` are always 3
+    /// bytes, so no other range in the document moves. Goes through
+    /// `InputState::replace`, so it is undoable like any other edit.
+    pub(super) fn toggle_checklist_range(
+        &mut self,
+        range: std::ops::Range<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let editable = self.is_interactive_ready()
+            && self
+                .session
+                .selected_note()
+                .is_some_and(|note| !note.deleted);
+        if !editable {
+            return;
+        }
+        let mut toggled = false;
+        self.body.update(cx, |state, cx| {
+            let value = state.value().to_string();
+            let Some(item_text) = value.get(range.clone()) else {
+                return;
+            };
+            let Some(marker_range) = find_checkbox_marker(item_text) else {
+                return;
+            };
+            let absolute = range.start + marker_range.start..range.start + marker_range.end;
+            let replacement = match value.get(absolute.clone()) {
+                Some("[ ]") => "[x]",
+                Some("[x]") | Some("[X]") => "[ ]",
+                _ => return,
+            };
+            state.set_selected_range(absolute, cx);
+            state.replace(replacement, window, cx);
+            toggled = true;
+        });
+        if toggled {
+            self.schedule_current_edit(cx);
+            cx.notify();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -217,5 +293,19 @@ mod tests {
         assert_eq!(current_line_range(value, 3), 0..5);
         assert_eq!(current_line_range(value, 6), 6..12);
         assert_eq!(current_line_range(value, value.len()), 13..18);
+    }
+
+    #[test]
+    fn checkbox_marker_is_found_only_near_the_start_of_the_item() {
+        assert_eq!(find_checkbox_marker("- [ ] Buy milk"), Some(2..5));
+        assert_eq!(find_checkbox_marker("- [x] Done"), Some(2..5));
+        assert_eq!(find_checkbox_marker("- [X] Done"), Some(2..5));
+        assert_eq!(find_checkbox_marker("- Not a checklist"), None);
+        // A literal "[ ]" deep in an item's own text is never mistaken for
+        // the marker: the search window is bounded.
+        assert_eq!(
+            find_checkbox_marker("- A very long line of text before any [ ] appears"),
+            None
+        );
     }
 }

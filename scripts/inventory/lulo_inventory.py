@@ -3,18 +3,30 @@
 
 Primary source of truth: the static menu tables in
 `crates/rmac-app-menu/src/lib.rs` (`FILES_MENUS`, `TEXT_EDITOR_MENUS`, ...),
-which is exactly what each app publishes on the session bus as its menu
-bar (see `rmac_app_menu::definition`). We parse those tables with
-`rust_menu_parser` and apply the same two small transforms the app side
-applies at runtime (`definition_for_vocabulary` in that file):
+which is what each app publishes on the session bus as its own menus (see
+`rmac_app_menu::definition`). We parse those tables with `rust_menu_parser`
+and apply the same transform the app side applies at runtime
+(`definition_for_vocabulary` in that file): certain Finder actions get a
+localized label ("Move to Bin" instead of the table's literal "Move to
+Trash") from `rmac_locale::FileVocabulary`; we hardcode the Linux/English
+result since that is what ships.
 
-  1. Certain Finder actions get a localized label ("Move to Bin" instead of
-     the table's literal "Move to Trash") from `rmac_locale::FileVocabulary`.
-     We hardcode the Linux/English result since that is what ships.
-  2. Every app that registers `rmac_app_menu::ABOUT_ACTION` gets an "About
-     <App>" row inserted at the top of its "Application" menu (or a new
-     one-item "Application" menu, if it declares none). All ten target
-     apps are rmac-ui apps and register it.
+That published menu is not what actually shows in the menu bar, though:
+the menu bar (`shell/bins/rmac-menubar/src/main.rs`'s `bar_menus`) pulls
+the app's own "Application"/"Window"/"Help" rows out of what it exported
+and folds them into three standard menus synthesized for *every* app,
+first-party or not (`app_menu`/`window_menu`/`help_menu` in that file and
+in `menu_model.rs`): About <App>, Services, Hide/Hide Others/Show
+All/Quit <App> (Files/Finder is never quit); Minimise, Minimise All,
+Zoom, Fill, Centre, Move & Resize, the app's own Window items, Bring All
+to Front; and a Help menu with "<App> Help" plus the app's own Help
+items. `_synthesize_app_menu`/`_synthesize_window_menu`/
+`_synthesize_help_menu` below mirror that assembly exactly, because a
+Lulo-only static reading of the per-app table alone makes every one of
+these rows look missing even though they are on screen (menu items with
+a keyboard shortcut are the diff's highest-impact tier, so this used to
+be the single biggest source of noise in docs/inventory-gaps.md: 76 false
+gaps each for Calculator, Clock and Weather).
 
 Secondary sources, read best-effort and marked `"extraction": "heuristic"`
 where the structure is inferred from string literals rather than a typed

@@ -37,9 +37,9 @@ use std::thread;
 
 use gpui::{
     accesskit, actions, div, img, prelude::FluentBuilder as _, px, AccessibleAction, AnyElement,
-    AppContext as _, Context, Div, Entity, FocusHandle, InteractiveElement as _, IntoElement,
-    KeyBinding, ObjectFit, ParentElement, Render, RenderImage, Role, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled, StyledImage as _, Window,
+    AppContext as _, Context, Div, Entity, FocusHandle, Focusable as _, InteractiveElement as _,
+    IntoElement, KeyBinding, ObjectFit, ParentElement, Render, RenderImage, Role, SharedString,
+    Stateful, StatefulInteractiveElement as _, Styled, StyledImage as _, Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_editor::InputState;
@@ -70,7 +70,7 @@ use input_support::{
     display_title, now_unix_ms, parse_tags, safe_export_stem, take_counter, unique_folder_name,
 };
 use markdown_presentation::render_markdown_document;
-use note_format_controller::{ListMarker, ParagraphStyle};
+use note_format_controller::{ChecklistBulkAction, ListMarker, ParagraphStyle, TextTransform};
 use notes_style::*;
 use presentation::{
     attachment_match_row, centered_state, date_label, date_section, folder_row,
@@ -90,6 +90,8 @@ actions!(
         CreateFolder,
         TrashOrRestore,
         DeleteSelectedNote,
+        CloseAll,
+        FocusMainWindow,
         TogglePin,
         DuplicateNote,
         SortByEdited,
@@ -97,15 +99,30 @@ actions!(
         SortByTitle,
         FocusSearch,
         FindInNote,
+        FindAndReplace,
         FindInNoteNext,
         FindInNotePrevious,
+        UseSelectionForFind,
+        JumpToSelection,
+        PastePlainText,
+        MakeUppercase,
+        MakeLowercase,
+        Capitalise,
         ExportNotes,
         RenameSelectedFolder,
         DeleteSelectedFolder,
         InsertChecklist,
         ToggleChecklistDone,
+        TickAll,
+        UntickAll,
+        MoveTickedToBottom,
+        DeleteTicked,
+        MoveItemUp,
+        MoveItemDown,
+        InsertTable,
         ToggleBold,
         ToggleItalic,
+        ToggleStrikethrough,
         SetStyleTitle,
         SetStyleHeading,
         SetStyleSubheading,
@@ -113,15 +130,27 @@ actions!(
         SetStyleMonospaced,
         InsertBulletedList,
         InsertNumberedList,
+        InsertDashedList,
+        InsertBlockQuote,
+        InsertLink,
+        IncreaseIndent,
+        DecreaseIndent,
         MoveSelectedNote,
         DeleteNotePermanently,
         EmptyRecentlyDeleted,
         ToggleMarkdownPreview,
+        ToggleFolders,
+        ToggleNoteCount,
+        ZoomIn,
+        ZoomOut,
+        ZoomReset,
         ImportNote,
+        ImportMarkdown,
         ImportNotesBundle,
         AddPhoto,
         PrintNote,
-        ExportNotePdf
+        ExportNotePdf,
+        ExportNoteMarkdown
     ]
 );
 
@@ -135,6 +164,9 @@ struct NotesView {
     preview: NotesPreviewSession,
     markdown_preview: NotesMarkdownPreviewSession,
     markdown_preview_visible: bool,
+    folders_visible: bool,
+    show_note_count: bool,
+    note_zoom: i8,
     preview_image: Option<Arc<RenderImage>>,
     selected_attachment: Option<AttachmentId>,
     search_query: Entity<InputState>,
@@ -185,7 +217,9 @@ struct NotesView {
     dragging: Option<gpui::Point<gpui::Pixels>>,
     /// In-note Find (⌘F), separate from the note list's search (⌥⌘F).
     note_find_open: bool,
+    note_replace_open: bool,
     note_find_input: Entity<InputState>,
+    note_replace_input: Entity<InputState>,
     /// Byte offsets of every case-insensitive match of the query in the
     /// selected note's body.
     note_find_matches: Vec<usize>,
@@ -208,6 +242,9 @@ impl NotesView {
             preview: NotesPreviewSession::new(),
             markdown_preview: NotesMarkdownPreviewSession::new(),
             markdown_preview_visible: false,
+            folders_visible: true,
+            show_note_count: true,
+            note_zoom: 0,
             preview_image: None,
             selected_attachment: None,
             search_query: inputs.search_query,
@@ -252,7 +289,9 @@ impl NotesView {
             print_generation: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             dragging: None,
             note_find_open: false,
+            note_replace_open: false,
             note_find_input: inputs.note_find,
+            note_replace_input: inputs.note_replace,
             note_find_matches: Vec::new(),
             note_find_current: 0,
             pending_undo_trash: None,

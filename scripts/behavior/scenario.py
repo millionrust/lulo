@@ -1,11 +1,11 @@
 """Behaviour-parity scenarios: loading, portable facts and comparison.
 
 A scenario (tests/behavior/<area>/<name>.json) says what to set up, which
-keys to press and which facts to observe. record_mac.py plays it on macOS
-and writes <name>.mac.json; run_lulo.py plays it on Lulo inside a nested
-compositor and compares against that file. Both sides describe what they
-saw in the same portable vocabulary defined here, so the comparison never
-has to know which toolkit produced a fact.
+keys to press and which facts to observe. record_mac.py plays ordinary
+scenarios on macOS and writes <name>.mac.json; run_lulo.py plays them on
+Lulo inside a nested compositor and compares against that file. Scenarios
+marked lulo_only compare against <name>.lulo.json instead. Observations use
+the same portable vocabulary regardless of toolkit.
 
 Only words and numbers are ever recorded: no captures, no absolute paths.
 """
@@ -21,7 +21,7 @@ FORMAT = 1
 REPO = Path(__file__).resolve().parents[2]
 SCENARIO_ROOT = REPO / "tests" / "behavior"
 
-APPS = {"files", "text-editor", "settings", "calculator", "desktop", "preview", "system-monitor", "terminal"}
+APPS = {"files", "text-editor", "settings", "calculator", "desktop", "preview", "notes", "system-monitor", "terminal"}
 STEP_KINDS = {
     "key",
     "type",
@@ -35,7 +35,7 @@ STEP_KINDS = {
     "focus_desktop",
     "relaunch",
 }
-FACTS = {"focus", "windows", "window_size", "dialog", "menu", "selection", "files", "tabs", "display", "saved_documents"}
+FACTS = {"focus", "windows", "window_size", "dialog", "menu", "selection", "files", "tabs", "display", "saved_documents", "note_body"}
 
 # Mac AX roles and AT-SPI role names, both mapped to one small vocabulary.
 AX_ROLES = {
@@ -363,6 +363,9 @@ def compare(scenario: dict[str, Any], expected: dict[str, Any], actual: dict[str
 
     tolerance = scenario.get("tolerance", {})
     mismatches = []
+    if "error" in actual:
+        mismatches.append({"observation": "*", "fact": "*", "field": "error",
+                           "expected": "no runner error", "actual": actual["error"], "rule": "exact"})
     exp_obs = expected.get("observations", {})
     act_obs = actual.get("observations", {})
     for name, facts in exp_obs.items():

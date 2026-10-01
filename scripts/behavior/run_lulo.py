@@ -3,8 +3,8 @@
 
     python3 scripts/behavior/run_lulo.py --bin-dir DIR [--shell-bin-dir DIR] [SCENARIO…]
 
-Every scenario with a recorded <name>.mac.json or Lulo-only
-<name>.lulo.json expectation runs against the Lulo apps in
+Every scenario with a recorded <name>.mac.json or an explicitly Lulo-only
+<name>.lulo.json runs against the Lulo apps in
 --bin-dir (rmac-files, rmac-text-editor, rmac-system-settings,
 rmac-calculator; the desktop is the shell's `wallpaper` binary). Results go
 to --output (JSON) and a readable report goes to stdout; see compare.py.
@@ -52,6 +52,7 @@ APP_BINARIES = {
     "calculator": ["rmac-calculator"],
     "desktop": ["rmac-wallpaper", "wallpaper"],
     "preview": ["rmac-preview"],
+    "notes": ["rmac-notes"],
     "system-monitor": ["rmac-system-monitor"],
     "terminal": ["rmac-terminal"],
 }
@@ -588,8 +589,8 @@ class LuloRun:
         if self.app == "desktop":
             self.before = {p.name + ("/" if p.is_dir() else "") for p in self.files_root.iterdir()}
 
-    def launch(self, launch_override: Optional[dict[str, Any]] = None) -> None:
-        launch = self.scenario.get("launch", {}) if launch_override is None else launch_override
+    def launch(self) -> None:
+        launch = self.scenario.get("launch", {})
         command = [str(self.binary())]
         if self.app == "files":
             if "reveal" in launch:
@@ -597,14 +598,8 @@ class LuloRun:
             else:
                 command += ["--path", str(self.sandbox / launch.get("folder", "."))]
         elif self.app == "preview":
-            if "files" in launch:
-                command += [str(self.sandbox / file) for file in launch["files"]]
-            elif "file" in launch:
-                command += [str(self.sandbox / launch["file"])]
-        self.log = open(
-            self.nested.logs / f"{self.sid.replace('/', '-')}.log",
-            "a" if launch_override is not None else "w",
-        )
+            command += [str(self.sandbox / launch["file"])]
+        self.log = open(self.nested.logs / f"{self.sid.replace('/', '-')}.log", "w")
         self.process = subprocess.Popen(
             command, env=self.env, stdout=self.log, stderr=subprocess.STDOUT, close_fds=True,
             cwd=str(self.sandbox),
@@ -749,6 +744,14 @@ class LuloRun:
         value, start, end = text_of(node) if normalized in TEXT_ROLES else (None, None, None)
         return {"role": normalized, "value": value, **sc.selection_facts(value, start, end), "label": name(node) or None}
 
+    def fact_note_body(self) -> dict[str, Any]:
+        frame = self.active_frame()
+        for node in descendants(frame, limit=4000) if frame is not None else []:
+            if name(node) == "Body" and sc.normalize_atspi_role(role(node)) in TEXT_ROLES:
+                value, _, _ = text_of(node)
+                return {"value": value}
+        return {"value": None}
+
     def fact_windows(self) -> dict[str, Any]:
         pyatspi = atspi()
         plain = [f for f in self.frames() if role(f) not in DIALOG_ROLES
@@ -759,15 +762,7 @@ class LuloRun:
         if front in titles:
             titles.remove(front)
             titles.insert(0, front)
-        compositor = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
-        focused = next((w for w in compositor if w.get("focused")), None)
-        current = focused or (compositor[0] if compositor else {})
-        return {
-            "count": len(plain),
-            "front": front,
-            "titles": titles,
-            "fullscreen": bool(current.get("fullscreen_mode", 0)),
-        }
+        return {"count": len(plain), "front": front, "titles": titles}
 
     def fact_info(self) -> dict[str, Any]:
         """Check the accessible Size row in the frontmost Get Info window."""
@@ -919,11 +914,7 @@ class LuloRun:
             if top in self.before:
                 continue
             entries.append(rel.as_posix() + ("/" if path.is_dir() else ""))
-        # Lulo-only scenarios can also assert that a removed file reached
-        # this run's private Bin rather than being deleted outright.
-        directory = Path(self.env["XDG_DATA_HOME"]) / "Trash/files"
-        trash_entries = sorted(path.name for path in directory.iterdir()) if directory.exists() else []
-        return {"entries": entries, "trash_entries": trash_entries}
+        return {"entries": entries}
 
     def fact_saved_documents(self) -> dict[str, Any]:
         """Read the isolated Documents folder after a Text Editor Save sheet."""
@@ -1001,17 +992,6 @@ class LuloRun:
         for index, step in enumerate(self.scenario["steps"]):
             if limit is not None and index >= limit:
                 break
-            if "relaunch" in step:
-                if self.process is None:
-                    raise StepFailed("no app to relaunch")
-                try:
-                    self.process.wait(timeout=8)
-                except subprocess.TimeoutExpired as error:
-                    raise StepFailed("app did not quit before relaunch") from error
-                if self.log:
-                    self.log.close()
-                self.launch(launch_override={})
-                continue
             self.ensure_alive()
             if "key" in step:
                 self.nested.input.key(step["key"])
@@ -1440,11 +1420,9 @@ def inner(args: argparse.Namespace) -> int:
         for path in sc.scenario_paths(only=args.scenarios):
             sid = sc.scenario_id(path)
             scenario = sc.load(path)
-            expected_path = sc.expectation_path(path)
-            local_contract = False
-            if not expected_path.exists():
-                # Lulo-only checks cover new behavior that has no Mac
-                # recording yet. A later Mac capture takes precedence.
+            local_contract = bool(scenario.get("lulo_only"))
+            expected_path = sc.expectation_path(path, "lulo" if local_contract else "mac")
+            if not expected_path.exists() and not local_contract:
                 expected_path = sc.expectation_path(path, "lulo")
                 local_contract = expected_path.exists()
             if not expected_path.exists() and not args.explore:
@@ -1635,7 +1613,7 @@ def benchmark_storage(nested: Nested, bins: list[Path], count: int) -> None:
 def main(argv: Optional[list[str]] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("scenarios", nargs="*", help="area/name ids (default: every scenario with a .mac.json or .lulo.json)")
+    parser.add_argument("scenarios", nargs="*", help="area/name ids (default: every scenario with a .mac.json)")
     parser.add_argument("--bin-dir", action="append", default=[], help="directory with rmac-files etc. (repeatable)")
     parser.add_argument("--shell-bin-dir", action="append", default=[], help="directory with the shell's wallpaper binary")
     parser.add_argument("--output", help="write results JSON here (compare.py reads it)")

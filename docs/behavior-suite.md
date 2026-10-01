@@ -33,6 +33,11 @@ The cross-platform JSON scenario harness has no Spotlight app target, and
 its Mac recorder marks Spotlight input unsafe for the owner's live session;
 this private runner covers the interaction and timing on Lulo.
 
+Notes scenarios marked `"lulo_only": true` use a neighbouring `.lulo.json`
+expectation because recording a new note on the owner's Mac could sync to
+iCloud. `run_lulo.py` plays them only inside its private compositor and
+temporary home, alongside the recorded Mac comparisons for other apps.
+
 ## Cross-app file drag
 
 `scripts/behavior/run_file_drag.py` starts the shipped Dock and wallpaper in
@@ -118,6 +123,7 @@ Monitor Find Next journey uses a local contract and runs in the full suite.
 |---|---|---|
 | Scenarios | `tests/behavior/<area>/<name>.json` | — |
 | Mac expectations | `tests/behavior/<area>/<name>.mac.json` (words and numbers only) | written by the recorder |
+| Lulo-only expectations | `tests/behavior/<area>/<name>.lulo.json` (for scenarios marked `lulo_only`) | recorded in the private nested compositor |
 | Recorder | `scripts/behavior/record_mac.py` (+ `mac_observe.js`, `mac_click.py`) | the owner's Mac |
 | Runner | `scripts/behavior/run_lulo.py` (+ `wlinput.py`) | the laptop, or CI's `behavior-parity` job |
 | Comparator | `scripts/behavior/compare.py`, rules in `scripts/behavior/scenario.py` | anywhere |
@@ -147,7 +153,7 @@ attempt stopped before opening a scenario window because System Events returned
 scenario is not part of CI yet.
 
 1. Write `tests/behavior/<area>/<name>.json`. `area` is `files`, `text-editor`, `settings`,
-   `calculator`, `preview` or `desktop`.
+   `calculator`, `preview`, `notes` or `desktop`.
 
    ```json
    {

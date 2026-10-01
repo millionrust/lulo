@@ -379,7 +379,31 @@ def diff_toolbar(app: str, mac_toolbar: dict, lulo_toolbar: dict) -> list[Gap]:
                 note="the Mac has a toolbar for this app; Lulo has none implemented yet",
             )
         ]
-    return []
+    if app != "Notes" or not mac_present:
+        return []
+    # Notes' Mac capture names each real button. The Lulo extractor reads
+    # .aria_label, accessible_icon_button and PopUpButton::new labels.
+    # Groups, the search field and its anonymous clear button are layout,
+    # not separate commands.
+    mac_items = {
+        norm.normalize_label(item.get("label")): item.get("label")
+        for item in mac_toolbar.get("items", [])
+        if item.get("role") in {"AXButton", "AXMenuButton"}
+        and item.get("label") not in {None, "button"}
+    }
+    lulo_labels = {norm.normalize_label(label) for label in lulo_toolbar.get("groups", [])}
+    return [
+        Gap(
+            app=app,
+            category="toolbar",
+            tier=TIER_TOOLBAR,
+            label=label,
+            path="toolbar",
+            note="named Mac toolbar command absent from Lulo's toolbar source",
+        )
+        for normalized, label in sorted(mac_items.items())
+        if normalized not in lulo_labels
+    ]
 
 
 # ---------------------------------------------------------------------------

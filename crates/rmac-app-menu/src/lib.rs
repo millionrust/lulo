@@ -441,16 +441,19 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("New Note", "notes::ComposeNote", "⌘N"),
             item!("New Folder", "notes::CreateFolder", "⇧⌘N"),
             item!("Close", "rmac_ui::RequestClose", "⌘W", separator),
+            item!("Close All", "notes::CloseAll", "⌥⌘W"),
             item!("Import to Notes…", "notes::ImportNote", "", separator),
-            item!("Import Notes Bundle…", "notes::ImportNotesBundle", ""),
+            item!("Import Markdown...", "notes::ImportMarkdown", ""),
             submenu!(
                 "Export as",
                 "notes::ExportAsMenu",
-                [item!("PDF…", "notes::ExportNotePdf", "")],
+                [
+                    item!("PDF", "notes::ExportNotePdf", ""),
+                    item!("Markdown", "notes::ExportNoteMarkdown", ""),
+                ],
                 separator
             ),
-            item!("Export Notes…", "notes::ExportNotes", "⇧⌘E"),
-            item!("Pin Note", "notes::TogglePin", "", separator),
+            item!("Unpin Note", "notes::TogglePin", "", separator),
             item!("Duplicate Note", "notes::DuplicateNote", "⌘D"),
             item!("Print…", "notes::PrintNote", "⌘P", separator),
         ],
@@ -463,44 +466,90 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("Cut", "input::Cut", "⌘X", separator),
             item!("Copy", "input::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
+            item!("Paste and Match Style", "notes::PastePlainText", "⌥⇧⌘V"),
+            item!("Delete Note", "notes::DeleteSelectedNote", "⌫", separator),
+            item!("Rename", "notes::RenameSelectedFolder", ""),
             item!("Select All", "input::SelectAll", "⌘A"),
-            item!("Add Photo…", "notes::AddPhoto", "", separator),
+            item!("Add Link…", "notes::InsertLink", "⌘K"),
             submenu!(
                 "Find",
                 "notes::FindMenu",
                 [
                     item!("Find…", "notes::FindInNote", "⌘F"),
                     item!("Note List Search…", "notes::FocusSearch", "⌥⌘F"),
+                    item!("Find and Replace…", "notes::FindAndReplace", "⇧⌘F"),
+                    item!("Find Next", "notes::FindInNoteNext", "⌘G"),
+                    item!("Find Previous", "notes::FindInNotePrevious", "⇧⌘G"),
+                    item!("Use Selection for Find", "notes::UseSelectionForFind", "⌘E"),
+                    item!("Jump to Selection", "notes::JumpToSelection", "⌘J"),
                 ],
                 separator
+            ),
+            submenu!(
+                "Transformations",
+                "notes::TransformationsMenu",
+                [
+                    item!("Make Uppercase", "notes::MakeUppercase", ""),
+                    item!("Make Lowercase", "notes::MakeLowercase", ""),
+                    item!("Capitalise", "notes::Capitalise", ""),
+                ]
             ),
         ],
     },
     MenuSpec {
         label: "Format",
         items: &[
-            item!("Bold", "notes::ToggleBold", "⌘B"),
-            item!("Italic", "notes::ToggleItalic", "⌘I", separator),
+            item!("Title", "notes::SetStyleTitle", "⇧⌘T"),
+            item!("Heading", "notes::SetStyleHeading", "⇧⌘H"),
+            item!("Subheading", "notes::SetStyleSubheading", "⇧⌘J"),
+            item!("Body", "notes::SetStyleBody", "⇧⌘B"),
+            item!("Monostyled", "notes::SetStyleMonospaced", "⇧⌘M"),
+            item!(
+                "Bulleted List",
+                "notes::InsertBulletedList",
+                "⇧⌘7",
+                separator
+            ),
+            item!("Dashed List", "notes::InsertDashedList", "⇧⌘8"),
+            item!("Numbered List", "notes::InsertNumberedList", "⇧⌘9"),
+            item!("Block Quote", "notes::InsertBlockQuote", "⌘'"),
+            item!("Checklist", "notes::InsertChecklist", "⇧⌘L"),
+            item!("Mark as Ticked", "notes::ToggleChecklistDone", "⇧⌘U"),
             submenu!(
-                "Paragraph Style",
-                "notes::ParagraphStyleMenu",
+                "More",
+                "notes::ChecklistMoreMenu",
                 [
-                    item!("Title", "notes::SetStyleTitle", ""),
-                    item!("Heading", "notes::SetStyleHeading", ""),
-                    item!("Subheading", "notes::SetStyleSubheading", ""),
-                    item!("Body", "notes::SetStyleBody", ""),
-                    item!("Monospaced", "notes::SetStyleMonospaced", ""),
+                    item!("Tick All", "notes::TickAll", ""),
+                    item!("Untick All", "notes::UntickAll", ""),
+                    item!("Move Ticked to Bottom", "notes::MoveTickedToBottom", ""),
+                    item!("Delete Ticked", "notes::DeleteTicked", ""),
+                ]
+            ),
+            submenu!(
+                "Move Item",
+                "notes::MoveItemMenu",
+                [
+                    item!("Up", "notes::MoveItemUp", "⌃⌘"),
+                    item!("Down", "notes::MoveItemDown", "⌃⌘"),
+                ]
+            ),
+            item!("Table", "notes::InsertTable", "⌥⌘T"),
+            submenu!(
+                "Font",
+                "notes::FontMenu",
+                [
+                    item!("Bold", "notes::ToggleBold", "⌘B"),
+                    item!("Italic", "notes::ToggleItalic", "⌘I"),
+                    item!("Strikethrough", "notes::ToggleStrikethrough", ""),
                 ],
                 separator
             ),
-            item!("Checklist", "notes::InsertChecklist", "⇧⌘L"),
-            item!("Mark as Done", "notes::ToggleChecklistDone", "⇧⌘U"),
             submenu!(
-                "Lists",
-                "notes::ListsMenu",
+                "Indentation",
+                "notes::IndentationMenu",
                 [
-                    item!("Bulleted List", "notes::InsertBulletedList", ""),
-                    item!("Numbered List", "notes::InsertNumberedList", ""),
+                    item!("Increase", "notes::IncreaseIndent", "⌘]"),
+                    item!("Decrease", "notes::DecreaseIndent", "⌘["),
                 ]
             ),
         ],
@@ -508,22 +557,16 @@ const NOTES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "View",
         items: &[
-            submenu!(
-                "Sort By",
-                "notes::SortByMenu",
-                [
-                    item!("Date Edited", "notes::SortByEdited", ""),
-                    item!("Date Created", "notes::SortByCreated", ""),
-                    item!("Title", "notes::SortByTitle", ""),
-                ]
-            ),
-            item!(
-                "Markdown Preview",
-                "notes::ToggleMarkdownPreview",
-                "",
-                separator
-            ),
+            item!("Hide Folders", "notes::ToggleFolders", "⌃⌘S"),
+            item!("Hide Note Count", "notes::ToggleNoteCount", ""),
+            item!("Zoom In", "notes::ZoomIn", "⇧⌘."),
+            item!("Zoom Out", "notes::ZoomOut", "⇧⌘,"),
+            item!("Actual Size", "notes::ZoomReset", "⇧⌘0"),
         ],
+    },
+    MenuSpec {
+        label: WINDOW_MENU,
+        items: &[item!("Notes", "notes::FocusMainWindow", "⌘0")],
     },
 ];
 
@@ -1937,18 +1980,18 @@ mod tests {
         let menus = definition(
             rmac_apps::identity::NOTES,
             &[
-                "notes::SortByEdited",
-                "notes::SortByTitle",
+                "notes::ToggleBold",
+                "notes::ToggleItalic",
                 "notes::TogglePin",
             ],
         )
         .unwrap();
         let live = apply_state(&menus, |item| match item.action.as_str() {
-            "notes::SortByTitle" => Some(ItemState {
+            "notes::ToggleItalic" => Some(ItemState {
                 checked: Some(CheckState::On),
                 ..ItemState::default()
             }),
-            "notes::SortByEdited" => Some(ItemState {
+            "notes::ToggleBold" => Some(ItemState {
                 enabled: Some(false),
                 ..ItemState::default()
             }),
@@ -1958,31 +2001,46 @@ mod tests {
             }),
             _ => None,
         });
-        let sort = &live[1].items[0];
-        assert!(sort.enabled, "one sort order is still available");
-        assert!(!sort.children[0].enabled);
-        assert_eq!(sort.children[1].checked, CheckState::On);
+        let font = &live
+            .iter()
+            .find(|menu| menu.label == "Format")
+            .unwrap()
+            .items[0];
+        assert!(font.enabled, "one font action is still available");
+        assert!(!font.children[0].enabled);
+        assert_eq!(font.children[1].checked, CheckState::On);
         assert_eq!(live[0].items[0].label, "Unpin Note");
 
         let none_left = apply_state(&menus, |item| {
-            item.action.starts_with("notes::SortBy").then(|| ItemState {
+            matches!(
+                item.action.as_str(),
+                "notes::ToggleBold" | "notes::ToggleItalic"
+            )
+            .then(|| ItemState {
                 enabled: Some(false),
                 ..ItemState::default()
             })
         });
-        assert!(!none_left[1].items[0].enabled);
+        assert!(
+            !none_left
+                .iter()
+                .find(|menu| menu.label == "Format")
+                .unwrap()
+                .items[0]
+                .enabled
+        );
     }
 
     #[test]
     fn a_new_menu_tree_gets_a_new_revision_and_submenus_are_not_commands() {
         let menus = definition(
             rmac_apps::identity::NOTES,
-            &["notes::SortByEdited", "notes::SortByTitle"],
+            &["notes::ToggleBold", "notes::ToggleItalic"],
         )
         .unwrap();
         let mut published = Published::new(menus.clone());
-        assert!(published.activatable.contains("notes::SortByTitle"));
-        assert!(!published.activatable.contains("notes::SortByMenu"));
+        assert!(published.activatable.contains("notes::ToggleItalic"));
+        assert!(!published.activatable.contains("notes::FontMenu"));
         assert_eq!(published.replace(menus.clone()), None);
         let checked = apply_state(&menus, |_| {
             Some(ItemState {
@@ -2141,6 +2199,34 @@ mod tests {
         )
         .unwrap();
         assert_eq!(hints(&monitor)["activity_monitor::QuitProcess"], "⌥⌘Q");
+    }
+
+    #[test]
+    fn notes_menu_shortcuts_reach_their_format_and_find_commands() {
+        let menus = definition(rmac_apps::identity::NOTES, &spec_actions(NOTES_MENUS)).unwrap();
+        let shortcuts = hints(&menus);
+        for (action, shortcut) in [
+            ("notes::FindAndReplace", "⇧⌘F"),
+            ("notes::FindInNoteNext", "⌘G"),
+            ("notes::UseSelectionForFind", "⌘E"),
+            ("notes::SetStyleTitle", "⇧⌘T"),
+            ("notes::InsertBulletedList", "⇧⌘7"),
+            ("notes::InsertBlockQuote", "⌘'"),
+            ("notes::ToggleFolders", "⌃⌘S"),
+            ("notes::ZoomReset", "⇧⌘0"),
+            ("notes::CloseAll", "⌥⌘W"),
+            ("notes::FocusMainWindow", "⌘0"),
+        ] {
+            assert_eq!(shortcuts[action], shortcut, "{action}");
+        }
+        let format = menus.iter().find(|menu| menu.label == "Format").unwrap();
+        assert!(format.items.iter().any(|item| item.label == "Title"));
+        let font = format
+            .items
+            .iter()
+            .find(|item| item.label == "Font")
+            .unwrap();
+        assert!(font.children.iter().any(|item| item.label == "Bold"));
     }
 
     #[test]

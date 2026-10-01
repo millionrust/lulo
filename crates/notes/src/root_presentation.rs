@@ -8,7 +8,7 @@ impl NotesView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if window.is_window_active() {
-            self.publish_menu_state(cx);
+            self.publish_menu_state(window, cx);
         }
         let content = match self.session.phase() {
             SessionPhase::Starting if self.message.is_none() => centered_state(
@@ -55,7 +55,9 @@ impl NotesView {
                     .size_full()
                     .flex()
                     .bg(window_frame())
-                    .child(self.render_sidebar(cx))
+                    .when(self.folders_visible, |element| {
+                        element.child(self.render_sidebar(cx))
+                    })
                     .child(self.render_note_list(list_focused, window, cx))
                     .child(div().w(px(1.0)).h_full().flex_none().bg(column_rule()))
                     .child(
@@ -91,6 +93,10 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &DeleteSelectedNote, _, cx| {
                 this.delete_selected_note_with_undo(cx)
             }))
+            .on_action(cx.listener(|this, _: &CloseAll, window, cx| this.request_close(window, cx)))
+            .on_action(cx.listener(|_, _: &FocusMainWindow, window, _| {
+                window.activate_window();
+            }))
             .on_action(cx.listener(|this, _: &TogglePin, _, cx| this.toggle_pin(cx)))
             .on_action(cx.listener(|this, _: &DuplicateNote, _, cx| this.duplicate_note(cx)))
             .on_action(
@@ -108,16 +114,42 @@ impl NotesView {
             .on_action(
                 cx.listener(|this, _: &FindInNote, window, cx| this.toggle_note_find(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &FindAndReplace, window, cx| {
+                this.open_note_replace(window, cx)
+            }))
             .on_action(
                 cx.listener(|this, _: &FindInNoteNext, window, cx| this.note_find_next(window, cx)),
             )
             .on_action(cx.listener(|this, _: &FindInNotePrevious, window, cx| {
                 this.note_find_previous(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &UseSelectionForFind, window, cx| {
+                this.use_selection_for_find(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &JumpToSelection, window, cx| {
+                this.jump_to_selection(window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &PastePlainText, window, cx| {
+                    this.paste_plain_text(window, cx)
+                }),
+            )
+            .on_action(cx.listener(|this, _: &MakeUppercase, window, cx| {
+                this.transform_selection(TextTransform::Uppercase, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &MakeLowercase, window, cx| {
+                this.transform_selection(TextTransform::Lowercase, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &Capitalise, window, cx| {
+                this.transform_selection(TextTransform::Capitalise, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &ExportNotes, _, cx| this.begin_export(cx)))
             .on_action(cx.listener(|this, _: &PrintNote, window, cx| this.print_note(window, cx)))
             .on_action(
                 cx.listener(|this, _: &ExportNotePdf, window, cx| this.export_note_pdf(window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &ExportNoteMarkdown, _, cx| this.export_note_markdown(cx)),
             )
             .on_action(cx.listener(|this, _: &InsertChecklist, window, cx| {
                 this.insert_checklist(window, cx)
@@ -125,10 +157,34 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &ToggleChecklistDone, window, cx| {
                 this.toggle_checklist_line(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &TickAll, window, cx| {
+                this.apply_checklist_bulk(ChecklistBulkAction::TickAll, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &UntickAll, window, cx| {
+                this.apply_checklist_bulk(ChecklistBulkAction::UntickAll, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &MoveTickedToBottom, window, cx| {
+                this.apply_checklist_bulk(ChecklistBulkAction::MoveTickedToBottom, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &DeleteTicked, window, cx| {
+                this.apply_checklist_bulk(ChecklistBulkAction::DeleteTicked, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &MoveItemUp, window, cx| {
+                this.move_current_list_item(true, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &MoveItemDown, window, cx| {
+                this.move_current_list_item(false, window, cx)
+            }))
+            .on_action(
+                cx.listener(|this, _: &InsertTable, window, cx| this.insert_table(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &ToggleBold, window, cx| this.toggle_bold(window, cx)))
             .on_action(
                 cx.listener(|this, _: &ToggleItalic, window, cx| this.toggle_italic(window, cx)),
             )
+            .on_action(cx.listener(|this, _: &ToggleStrikethrough, window, cx| {
+                this.toggle_strikethrough(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &SetStyleTitle, window, cx| {
                 this.set_paragraph_style(ParagraphStyle::Title, window, cx)
             }))
@@ -150,6 +206,19 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &InsertNumberedList, window, cx| {
                 this.insert_list_marker(ListMarker::Numbered, window, cx)
             }))
+            .on_action(cx.listener(|this, _: &InsertDashedList, window, cx| {
+                this.insert_list_marker(ListMarker::Dashed, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &InsertBlockQuote, window, cx| {
+                this.insert_block_quote(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &InsertLink, window, cx| this.insert_link(window, cx)))
+            .on_action(cx.listener(|this, _: &IncreaseIndent, window, cx| {
+                this.change_indent(true, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &DecreaseIndent, window, cx| {
+                this.change_indent(false, window, cx)
+            }))
             .on_action(cx.listener(|this, _: &RenameSelectedFolder, window, cx| {
                 this.begin_folder_rename(window, cx)
             }))
@@ -166,7 +235,30 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &ToggleMarkdownPreview, _, cx| {
                 this.toggle_markdown_preview(cx)
             }))
+            .on_action(cx.listener(|this, _: &ToggleFolders, _, cx| {
+                this.folders_visible = !this.folders_visible;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ToggleNoteCount, _, cx| {
+                this.show_note_count = !this.show_note_count;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| {
+                this.note_zoom = (this.note_zoom + 1).min(12);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| {
+                this.note_zoom = (this.note_zoom - 1).max(-5);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ZoomReset, _, cx| {
+                this.note_zoom = 0;
+                cx.notify();
+            }))
             .on_action(cx.listener(|this, _: &ImportNote, _, cx| this.choose_text_note_import(cx)))
+            .on_action(
+                cx.listener(|this, _: &ImportMarkdown, _, cx| this.choose_text_note_import(cx)),
+            )
             .on_action(
                 cx.listener(|this, _: &ImportNotesBundle, _, cx| this.choose_bundle_import(cx)),
             )

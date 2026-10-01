@@ -22,7 +22,103 @@ pub(super) enum ParagraphStyle {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ListMarker {
     Bulleted,
+    Dashed,
     Numbered,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum ChecklistBulkAction {
+    TickAll,
+    UntickAll,
+    MoveTickedToBottom,
+    DeleteTicked,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum TextTransform {
+    Uppercase,
+    Lowercase,
+    Capitalise,
+}
+
+fn transformed_text(text: &str, transform: TextTransform) -> String {
+    match transform {
+        TextTransform::Uppercase => text.to_uppercase(),
+        TextTransform::Lowercase => text.to_lowercase(),
+        TextTransform::Capitalise => {
+            let mut word_start = true;
+            let mut result = String::new();
+            for character in text.chars() {
+                if character.is_alphanumeric() {
+                    if word_start {
+                        result.extend(character.to_uppercase());
+                    } else {
+                        result.extend(character.to_lowercase());
+                    }
+                    word_start = false;
+                } else {
+                    result.push(character);
+                    word_start = true;
+                }
+            }
+            result
+        }
+    }
+}
+
+fn checklist_line(line: &str) -> bool {
+    let line = line.trim_start();
+    line.starts_with("- [ ] ") || line.starts_with("- [x] ") || line.starts_with("- [X] ")
+}
+
+fn ticked_line(line: &str) -> bool {
+    let line = line.trim_start();
+    line.starts_with("- [x] ") || line.starts_with("- [X] ")
+}
+
+fn checklist_bulk_text(text: &str, action: ChecklistBulkAction) -> String {
+    let trailing_newline = text.ends_with('\n');
+    let mut lines = text.lines().map(str::to_owned).collect::<Vec<_>>();
+    match action {
+        ChecklistBulkAction::TickAll | ChecklistBulkAction::UntickAll => {
+            for line in &mut lines {
+                if !checklist_line(line) {
+                    continue;
+                }
+                if let Some(range) = find_checkbox_marker(line) {
+                    line.replace_range(
+                        range,
+                        if matches!(action, ChecklistBulkAction::TickAll) {
+                            "[x]"
+                        } else {
+                            "[ ]"
+                        },
+                    );
+                }
+            }
+        }
+        ChecklistBulkAction::DeleteTicked => lines.retain(|line| !ticked_line(line)),
+        ChecklistBulkAction::MoveTickedToBottom => {
+            let mut start = 0;
+            while start < lines.len() {
+                if !checklist_line(&lines[start]) {
+                    start += 1;
+                    continue;
+                }
+                let mut end = start + 1;
+                while end < lines.len() && checklist_line(&lines[end]) {
+                    end += 1;
+                }
+                lines[start..end].sort_by_key(|line| ticked_line(line));
+                start = end;
+            }
+        }
+    }
+    let mut result = lines.join("\n");
+    if trailing_newline {
+        result.push('\n');
+    }
+    result
 }
 
 /// The current line's text with one leading Markdown marker (heading,
@@ -60,8 +156,10 @@ fn strip_leading_marker(line: &str) -> &str {
 /// text can never be mistaken for a marker further in.
 fn find_checkbox_marker(text: &str) -> Option<std::ops::Range<usize>> {
     const MARKERS: [&str; 3] = ["[ ]", "[x]", "[X]"];
-    let window_end = text.len().min(16);
-    let prefix = text.get(..window_end)?;
+    let window_end = (0..=text.len().min(16))
+        .rev()
+        .find(|&index| text.is_char_boundary(index))?;
+    let prefix = &text[..window_end];
     MARKERS
         .into_iter()
         .find_map(|marker| prefix.find(marker).map(|index| index..index + marker.len()))
@@ -81,7 +179,156 @@ fn current_line_range(value: &str, cursor: usize) -> std::ops::Range<usize> {
     start..end
 }
 
+fn is_list_item(line: &str) -> bool {
+    let line = line.trim_start();
+    if line.starts_with("- ") || line.starts_with("* ") {
+        return true;
+    }
+    let digits = line.bytes().take_while(u8::is_ascii_digit).count();
+    digits > 0 && line[digits..].starts_with(". ")
+}
+
+/// Swap one Markdown list line with the adjacent item in its contiguous
+/// list. Return the source and new caret, keeping the caret within the item
+/// that moved rather than leaving it on its old row.
+fn moved_list_item(value: &str, cursor: usize, up: bool) -> Option<(String, usize)> {
+    let current = current_line_range(value, cursor);
+    let line = value.get(current.clone())?;
+    if !is_list_item(line) {
+        return None;
+    }
+    let offset = cursor.saturating_sub(current.start).min(line.len());
+    let adjacent = if up {
+        let previous_end = current.start.checked_sub(1)?;
+        current_line_range(value, previous_end)
+    } else {
+        let next_start = current.end.checked_add(1)?;
+        if next_start > value.len() {
+            return None;
+        }
+        current_line_range(value, next_start)
+    };
+    let other = value.get(adjacent.clone())?;
+    if !is_list_item(other) {
+        return None;
+    }
+    let (start, end, replacement, caret) = if up {
+        (
+            adjacent.start,
+            current.end,
+            format!("{line}\n{other}"),
+            adjacent.start + offset,
+        )
+    } else {
+        (
+            current.start,
+            adjacent.end,
+            format!("{other}\n{line}"),
+            current.start + other.len() + 1 + offset,
+        )
+    };
+    let mut updated = value.to_string();
+    updated.replace_range(start..end, &replacement);
+    Some((updated, caret))
+}
+
 impl NotesView {
+    pub(super) fn insert_table(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.body_format_editable() {
+            return;
+        }
+        self.body.update(cx, |state, cx| {
+            let cursor = state.selected_range().start;
+            let value = state.value().to_string();
+            let needs_newline = cursor > 0 && !value[..cursor].ends_with('\n');
+            let template = format!(
+                "{}| Column 1 | Column 2 |\n| --- | --- |\n|  |  |\n|  |  |\n",
+                if needs_newline { "\n" } else { "" }
+            );
+            let first_heading = cursor + usize::from(needs_newline) + 2;
+            state.replace(template, window, cx);
+            state.set_selected_range(first_heading..first_heading + "Column 1".len(), cx);
+            state.focus(window, cx);
+        });
+        self.schedule_current_edit(cx);
+    }
+
+    pub(super) fn transform_selection(
+        &mut self,
+        transform: TextTransform,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.body_format_editable() {
+            return;
+        }
+        let mut changed = false;
+        self.body.update(cx, |state, cx| {
+            let selected = state.selected_range();
+            let value = state.value();
+            let Some(text) = value.get(selected) else {
+                return;
+            };
+            if text.is_empty() {
+                return;
+            }
+            let next = transformed_text(text, transform);
+            if next == text {
+                return;
+            }
+            state.replace(next, window, cx);
+            state.focus(window, cx);
+            changed = true;
+        });
+        if changed {
+            self.schedule_current_edit(cx);
+        }
+    }
+
+    pub(super) fn move_current_list_item(
+        &mut self,
+        up: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.body_format_editable() {
+            return;
+        }
+        let value = self.body.read(cx).value().to_string();
+        let cursor = self.body.read(cx).cursor();
+        let Some((updated, caret)) = moved_list_item(&value, cursor, up) else {
+            return;
+        };
+        self.body.update(cx, |state, cx| {
+            state.set_selected_range(0..value.len(), cx);
+            state.replace(updated, window, cx);
+            state.set_selected_range(caret..caret, cx);
+            state.focus(window, cx);
+        });
+        self.schedule_current_edit(cx);
+    }
+
+    pub(super) fn apply_checklist_bulk(
+        &mut self,
+        action: ChecklistBulkAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.body_format_editable() {
+            return;
+        }
+        let current = self.body.read(cx).value().to_string();
+        let updated = checklist_bulk_text(&current, action);
+        if updated == current {
+            return;
+        }
+        self.body.update(cx, |state, cx| {
+            state.set_selected_range(0..current.len(), cx);
+            state.replace(updated, window, cx);
+            state.focus(window, cx);
+        });
+        self.schedule_current_edit(cx);
+    }
     /// Whether the body accepts an edit right now — mirrors
     /// `edit_recovery_controller::assistive_fields_editable` and
     /// `insert_checklist`'s own guard.
@@ -153,10 +400,71 @@ impl NotesView {
         self.apply_to_current_line(window, cx, |line| {
             let body = strip_leading_marker(line);
             match marker {
-                ListMarker::Bulleted => format!("- {body}"),
+                ListMarker::Bulleted => format!("* {body}"),
+                ListMarker::Dashed => format!("- {body}"),
                 ListMarker::Numbered => format!("1. {body}"),
             }
         });
+    }
+
+    pub(super) fn insert_block_quote(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_to_current_line(window, cx, |line| {
+            if let Some(unquoted) = line.strip_prefix("> ") {
+                unquoted.to_string()
+            } else {
+                format!("> {line}")
+            }
+        });
+    }
+
+    pub(super) fn change_indent(
+        &mut self,
+        increase: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.apply_to_current_line(window, cx, |line| {
+            if increase {
+                format!("  {line}")
+            } else if let Some(rest) = line.strip_prefix("  ") {
+                rest.to_string()
+            } else if let Some(rest) = line.strip_prefix(' ') {
+                rest.to_string()
+            } else {
+                line.to_string()
+            }
+        });
+    }
+
+    pub(super) fn insert_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.body_format_editable() {
+            return;
+        }
+        self.body.update(cx, |state, cx| {
+            let selection = state.selected_range();
+            let text = state.value().get(selection).unwrap_or_default().to_string();
+            let label = if text.is_empty() { "Link" } else { &text };
+            let markdown = format!("[{label}](https://)");
+            state.replace(markdown, window, cx);
+            let end = state.cursor();
+            state.set_selected_range(end - "https://".len() - 1..end - 1, cx);
+            state.focus(window, cx);
+        });
+        self.schedule_current_edit(cx);
+    }
+
+    pub(super) fn paste_plain_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.body_format_editable() {
+            return;
+        }
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            return;
+        };
+        self.body.update(cx, |state, cx| {
+            state.replace(text, window, cx);
+            state.focus(window, cx);
+        });
+        self.schedule_current_edit(cx);
     }
 
     /// Wrap (or unwrap) the current selection in `prefix`/`suffix`, the
@@ -203,6 +511,10 @@ impl NotesView {
     /// visually with a Bulleted List's `- ` or a lone `*`.
     pub(super) fn toggle_italic(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.apply_inline_markdown("_", "_", window, cx);
+    }
+
+    pub(super) fn toggle_strikethrough(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_inline_markdown("~~", "~~", window, cx);
     }
 
     /// ⇧⌘U: mark the checklist item on the current line done/not done, like
@@ -306,6 +618,54 @@ mod tests {
         assert_eq!(
             find_checkbox_marker("- A very long line of text before any [ ] appears"),
             None
+        );
+    }
+
+    #[test]
+    fn checklist_bulk_actions_preserve_other_lines_and_list_boundaries() {
+        let body = "First\n- [x] one\n- [ ] two\n- [x] three\n\n- [x] four\n- [ ] five\n";
+        assert_eq!(
+            checklist_bulk_text(body, ChecklistBulkAction::MoveTickedToBottom),
+            "First\n- [ ] two\n- [x] one\n- [x] three\n\n- [ ] five\n- [x] four\n"
+        );
+        assert_eq!(
+            checklist_bulk_text(body, ChecklistBulkAction::DeleteTicked),
+            "First\n- [ ] two\n\n- [ ] five\n"
+        );
+        assert!(checklist_bulk_text(body, ChecklistBulkAction::TickAll)
+            .lines()
+            .filter(|line| checklist_line(line))
+            .all(ticked_line));
+        assert!(checklist_bulk_text(body, ChecklistBulkAction::UntickAll)
+            .lines()
+            .filter(|line| checklist_line(line))
+            .all(|line| !ticked_line(line)));
+    }
+
+    #[test]
+    fn moving_one_list_item_preserves_its_caret_and_other_paragraphs() {
+        let body = "Intro\n- [ ] one\n- [x] two\nOutro";
+        let cursor = body.find("two").unwrap() + 1;
+        let (moved, caret) = moved_list_item(body, cursor, true).unwrap();
+        assert_eq!(moved, "Intro\n- [x] two\n- [ ] one\nOutro");
+        assert_eq!(&moved[caret - 1..caret + 2], "two");
+        assert!(moved_list_item(body, cursor, false).is_none());
+        assert!(moved_list_item(body, 1, true).is_none());
+    }
+
+    #[test]
+    fn text_transformations_handle_unicode_and_word_boundaries() {
+        assert_eq!(
+            transformed_text("élan and café", TextTransform::Uppercase),
+            "ÉLAN AND CAFÉ"
+        );
+        assert_eq!(
+            transformed_text("ÉLAN AND CAFÉ", TextTransform::Lowercase),
+            "élan and café"
+        );
+        assert_eq!(
+            transformed_text("hELLO-world again", TextTransform::Capitalise),
+            "Hello-World Again"
         );
     }
 }

@@ -7,6 +7,7 @@ pub(super) struct NotesInputs {
     pub(super) tags: Entity<InputState>,
     pub(super) body: Entity<InputState>,
     pub(super) note_find: Entity<InputState>,
+    pub(super) note_replace: Entity<InputState>,
     pub(super) focus: FocusHandle,
 }
 
@@ -21,12 +22,17 @@ impl NotesView {
             // this only fires when the list holds the keyboard.
             KeyBinding::new("backspace", DeleteSelectedNote, Some("Notes")),
             KeyBinding::new("cmd-d", DuplicateNote, Some("Notes")),
+            KeyBinding::new("alt-cmd-w", CloseAll, Some("Notes")),
+            KeyBinding::new("cmd-0", FocusMainWindow, Some("Notes")),
             // ⌘F is in-note Find; ⌥⌘F is the Mac's Note List Search.
             KeyBinding::new("cmd-f", FindInNote, Some("Notes")),
+            KeyBinding::new("shift-cmd-f", FindAndReplace, Some("Notes")),
             KeyBinding::new("cmd-alt-f", FocusSearch, Some("Notes")),
             KeyBinding::new("cmd-g", FindInNoteNext, Some("Notes")),
             KeyBinding::new("shift-cmd-g", FindInNotePrevious, Some("Notes")),
-            KeyBinding::new("cmd-shift-e", ExportNotes, Some("Notes")),
+            KeyBinding::new("cmd-e", UseSelectionForFind, Some("Notes")),
+            KeyBinding::new("cmd-j", JumpToSelection, Some("Notes")),
+            KeyBinding::new("alt-shift-cmd-v", PastePlainText, Some("Notes")),
             KeyBinding::new(
                 rmac_ui::shortcuts::PRINT.keystroke,
                 PrintNote,
@@ -36,6 +42,25 @@ impl NotesView {
             KeyBinding::new("cmd-shift-u", ToggleChecklistDone, Some("Notes")),
             KeyBinding::new("cmd-b", ToggleBold, Some("Notes")),
             KeyBinding::new("cmd-i", ToggleItalic, Some("Notes")),
+            KeyBinding::new("shift-cmd-t", SetStyleTitle, Some("Notes")),
+            KeyBinding::new("shift-cmd-h", SetStyleHeading, Some("Notes")),
+            KeyBinding::new("shift-cmd-j", SetStyleSubheading, Some("Notes")),
+            KeyBinding::new("shift-cmd-b", SetStyleBody, Some("Notes")),
+            KeyBinding::new("shift-cmd-m", SetStyleMonospaced, Some("Notes")),
+            KeyBinding::new("shift-cmd-7", InsertBulletedList, Some("Notes")),
+            KeyBinding::new("shift-cmd-8", InsertDashedList, Some("Notes")),
+            KeyBinding::new("shift-cmd-9", InsertNumberedList, Some("Notes")),
+            KeyBinding::new("cmd-'", InsertBlockQuote, Some("Notes")),
+            KeyBinding::new("cmd-k", InsertLink, Some("Notes")),
+            KeyBinding::new("cmd-]", IncreaseIndent, Some("Notes")),
+            KeyBinding::new("cmd-[", DecreaseIndent, Some("Notes")),
+            KeyBinding::new("ctrl-cmd-up", MoveItemUp, Some("Notes")),
+            KeyBinding::new("ctrl-cmd-down", MoveItemDown, Some("Notes")),
+            KeyBinding::new("alt-cmd-t", InsertTable, Some("Notes")),
+            KeyBinding::new("ctrl-cmd-s", ToggleFolders, Some("Notes")),
+            KeyBinding::new("shift-cmd-.", ZoomIn, Some("Notes")),
+            KeyBinding::new("shift-cmd-,", ZoomOut, Some("Notes")),
+            KeyBinding::new("shift-cmd-0", ZoomReset, Some("Notes")),
             // ⌘W closes the window through the same review as the red
             // button (pending changes, open choosers, running imports).
             KeyBinding::new(
@@ -51,6 +76,7 @@ impl NotesView {
         let tags = cx.new(|cx| InputState::new(window, cx).placeholder("Add Tags"));
         let body = rmac_editor::multiline("Note", window, cx);
         let note_find = cx.new(|cx| InputState::new(window, cx).placeholder("Find in Note"));
+        let note_replace = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
         cx.subscribe(&title, |this, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 this.schedule_current_edit(cx);
@@ -99,6 +125,7 @@ impl NotesView {
             tags,
             body,
             note_find,
+            note_replace,
             focus,
         }
     }

@@ -1,0 +1,21 @@
+{
+  "format": 1,
+  "scenario": "notes/find-replace",
+  "observations": {
+    "new_note_title": {
+      "focus": {"role": "text-field", "label": "Title", "value": "Parity note"}
+    },
+    "note_body": {
+      "focus": {"role": "text-field", "label": "Body", "value": "alpha beta alpha"}
+    },
+    "find_query": {
+      "focus": {"role": "text-field"}
+    },
+    "replacement": {
+      "focus": {"role": "text-field"}
+    },
+    "replaced_body": {
+      "note_body": {"value": "gamma beta alpha"}
+    }
+  }
+}

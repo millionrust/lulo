@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare Lulo's observed behaviour against the recorded Mac behaviour.
+"""Compare Lulo's observed behaviour against recorded expectations.
 
     python3 scripts/behavior/compare.py RESULTS.json
     python3 scripts/behavior/compare.py RESULTS.json --emit-parity-rows
@@ -43,10 +43,12 @@ def evaluate(results: dict[str, Any], root: Path = sc.SCENARIO_ROOT) -> list[dic
                                         "rule": "exact"}], "spec": {"title": sid}})
             continue
         scenario = sc.load(path)
-        expected_path = sc.expectation_path(path)
+        expected_path = sc.expectation_path(path, "lulo" if scenario.get("lulo_only") else "mac")
+        if not expected_path.exists() and not scenario.get("lulo_only"):
+            expected_path = sc.expectation_path(path, "lulo")
         if not expected_path.exists():
             out.append({"scenario": sid, "title": scenario["title"], "status": "fail",
-                        "mismatches": [{"observation": "*", "fact": "*", "field": "Mac expectation",
+                        "mismatches": [{"observation": "*", "fact": "*", "field": "recorded expectation",
                                         "expected": "recorded expectation", "actual": "missing",
                                         "rule": "exact"}], "spec": scenario})
             continue
@@ -77,7 +79,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             first = ""
             if item["mismatches"]:
                 m = item["mismatches"][0]
-                first = (f"{m['observation']}.{m['fact']}.{m['field']}: Mac {sc.describe(m['expected'])}, "
+                first = (f"{m['observation']}.{m['fact']}.{m['field']}: Expected {sc.describe(m['expected'])}, "
                          f"Lulo {sc.describe(m['actual'])}").replace("|", "/")
             elif item["status"] == "unsupported":
                 first = item["reason"]
@@ -89,9 +91,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             else:
                 print("\n".join(sc.report_lines(item["scenario"], item["spec"], item["mismatches"])))
     passed = sum(item["status"] == "pass" for item in evaluated)
-    print(f"\n{passed}/{len(evaluated)} scenarios match the Mac")
+    print(f"\n{passed}/{len(evaluated)} scenarios match their recorded expectations")
     if args.emit_parity_rows:
-        failures = [(i["scenario"], i["spec"], i["mismatches"]) for i in evaluated if i["status"] == "fail"]
+        failures = [(i["scenario"], i["spec"], i["mismatches"]) for i in evaluated
+                    if i["status"] == "fail" and not i["spec"].get("lulo_only")]
         rows = sc.parity_rows(PARITY.read_text() if PARITY.exists() else "", failures)
         for section, lines in rows.items():
             print(f"\n{section}\n")

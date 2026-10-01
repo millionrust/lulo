@@ -453,7 +453,7 @@ impl NotesView {
     /// The menu bar's live state: View ▸ Sort By ticks the current order,
     /// File ▸ Pin Note says Unpin for a pinned note, and commands that need
     /// a note, the library or no pending change are greyed out without.
-    pub(super) fn publish_menu_state(&self, cx: &mut Context<Self>) {
+    pub(super) fn publish_menu_state(&self, window: &Window, cx: &mut Context<Self>) {
         let ready = self.is_interactive_ready();
         let pending = self.latest_local_generation.is_some();
         let sort_order = self.session.snapshot().map(|snapshot| snapshot.sort_order);
@@ -482,22 +482,82 @@ impl NotesView {
                 .session
                 .selected_note()
                 .is_some_and(|note| !note.deleted);
+        let body_focused = self.body.read(cx).focus_handle(cx).is_focused(window);
+        let body_has_selection = {
+            let body = self.body.read(cx);
+            !body.selected_range().is_empty()
+        };
         for action in [
             "notes::ToggleBold",
             "notes::ToggleItalic",
+            "notes::ToggleStrikethrough",
             "notes::SetStyleTitle",
             "notes::SetStyleHeading",
             "notes::SetStyleSubheading",
             "notes::SetStyleBody",
             "notes::SetStyleMonospaced",
             "notes::InsertBulletedList",
+            "notes::InsertDashedList",
             "notes::InsertNumberedList",
+            "notes::InsertBlockQuote",
+            "notes::ToggleChecklistDone",
+            "notes::InsertLink",
+            "notes::IncreaseIndent",
+            "notes::DecreaseIndent",
+            "notes::PastePlainText",
+            "notes::TickAll",
+            "notes::UntickAll",
+            "notes::MoveTickedToBottom",
+            "notes::DeleteTicked",
+            "notes::MoveItemUp",
+            "notes::MoveItemDown",
+            "notes::InsertTable",
         ] {
-            rmac_ui::set_menu_enabled(action, body_editable, cx);
+            rmac_ui::set_menu_enabled(action, body_editable && body_focused, cx);
         }
+        rmac_ui::set_menu_enabled("notes::DeleteSelectedNote", ready && has_note, cx);
+        rmac_ui::set_menu_enabled(
+            "notes::RenameSelectedFolder",
+            ready
+                && matches!(
+                    self.session.folder_selection(),
+                    rmac_notes_runtime::FolderSelection::Folder(_)
+                ),
+            cx,
+        );
+        rmac_ui::set_menu_enabled("notes::FindInNoteNext", ready && has_note, cx);
+        rmac_ui::set_menu_enabled("notes::FindInNotePrevious", ready && has_note, cx);
+        rmac_ui::set_menu_enabled("notes::UseSelectionForFind", body_editable, cx);
+        rmac_ui::set_menu_enabled(
+            "notes::JumpToSelection",
+            body_editable && body_has_selection,
+            cx,
+        );
         rmac_ui::set_menu_enabled("notes::FindInNote", ready && has_note, cx);
+        for action in [
+            "notes::MakeUppercase",
+            "notes::MakeLowercase",
+            "notes::Capitalise",
+        ] {
+            rmac_ui::set_menu_enabled(
+                action,
+                body_editable && body_focused && body_has_selection,
+                cx,
+            );
+        }
+        rmac_ui::set_menu_enabled("notes::FindAndReplace", body_editable, cx);
         rmac_ui::set_menu_enabled("notes::PrintNote", has_note, cx);
         rmac_ui::set_menu_enabled("notes::ExportNotePdf", has_note, cx);
+        rmac_ui::set_menu_enabled(
+            "notes::ExportNoteMarkdown",
+            ready
+                && !pending
+                && self
+                    .session
+                    .selected_note()
+                    .is_some_and(|note| !note.deleted && note.attachments.is_empty()),
+            cx,
+        );
         rmac_ui::set_menu_enabled(
             "notes::ExportNotes",
             self.session.snapshot().is_some() && !pending,
@@ -509,6 +569,27 @@ impl NotesView {
             self.markdown_preview_visible,
             cx,
         );
+        rmac_ui::set_menu_label(
+            "notes::ToggleFolders",
+            if self.folders_visible {
+                "Hide Folders"
+            } else {
+                "Show Folders"
+            },
+            cx,
+        );
+        rmac_ui::set_menu_label(
+            "notes::ToggleNoteCount",
+            if self.show_note_count {
+                "Hide Note Count"
+            } else {
+                "Show Note Count"
+            },
+            cx,
+        );
+        rmac_ui::set_menu_enabled("notes::ZoomIn", self.note_zoom < 12, cx);
+        rmac_ui::set_menu_enabled("notes::ZoomOut", self.note_zoom > -5, cx);
+        rmac_ui::set_menu_enabled("notes::ZoomReset", self.note_zoom != 0, cx);
     }
 
     pub(super) fn set_sort(&mut self, sort_order: SortOrder, cx: &mut Context<Self>) {

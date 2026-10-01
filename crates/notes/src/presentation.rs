@@ -61,7 +61,7 @@ pub(super) fn folder_row(
     id: impl Into<gpui::ElementId>,
     label: impl Into<SharedString>,
     glyph_path: &'static str,
-    count: usize,
+    count: Option<usize>,
     selected: bool,
     on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut gpui::App) + 'static,
 ) -> Stateful<Div> {
@@ -70,9 +70,14 @@ pub(super) fn folder_row(
     // `docs/accessibility-audit.md`'s Toast fix for the same constraint), so
     // the item count is folded into the accessible name, matching the visible
     // row's own text.
-    let accessible_label = format!(
-        "{label}, {count} {}",
-        if count == 1 { "note" } else { "notes" }
+    let accessible_label = count.map_or_else(
+        || label.to_string(),
+        |count| {
+            format!(
+                "{label}, {count} {}",
+                if count == 1 { "note" } else { "notes" }
+            )
+        },
     );
     div()
         .id(id)
@@ -113,22 +118,24 @@ pub(super) fn folder_row(
                 })
                 .child(div().truncate().child(label.clone())),
         )
-        .child(
-            div()
-                .absolute()
-                .right(px(SIDEBAR_COUNT_RIGHT))
-                .top_0()
-                .bottom_0()
-                .flex()
-                .items_center()
-                .text_size(rmac_ui::text_px(13.0))
-                .text_color(if selected {
-                    sidebar_selected_count()
-                } else {
-                    sidebar_count()
-                })
-                .child(count.to_string()),
-        )
+        .when_some(count, |element, count| {
+            element.child(
+                div()
+                    .absolute()
+                    .right(px(SIDEBAR_COUNT_RIGHT))
+                    .top_0()
+                    .bottom_0()
+                    .flex()
+                    .items_center()
+                    .text_size(rmac_ui::text_px(13.0))
+                    .text_color(if selected {
+                        sidebar_selected_count()
+                    } else {
+                        sidebar_count()
+                    })
+                    .child(count.to_string()),
+            )
+        })
         .on_click(on_click)
 }
 

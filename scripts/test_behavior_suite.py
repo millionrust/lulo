@@ -226,8 +226,8 @@ class ScenarioFileTests(unittest.TestCase):
         for path in paths:
             with self.subTest(path=path.name):
                 scenario = sc.load(path)
-                expected = sc.expectation_path(path)
-                if not expected.exists():
+                expected = sc.expectation_path(path, "lulo" if scenario.get("lulo_only") else "mac")
+                if not expected.exists() and not scenario.get("lulo_only"):
                     expected = sc.expectation_path(path, "lulo")
                 self.assertTrue(expected.exists(), f"{path.name} has no .mac.json or .lulo.json")
                 data = json.loads(expected.read_text())
@@ -271,6 +271,10 @@ class ScenarioFileTests(unittest.TestCase):
 
 
 class CompareTests(unittest.TestCase):
+    def test_runner_error_fails_even_with_empty_expectation(self):
+        mismatches = sc.compare({}, {"observations": {}}, {"observations": {}, "error": "step failed"})
+        self.assertEqual(mismatches[0]["field"], "error")
+
     scenario = {"title": "New Folder", "app": "files", "steps": [], "tolerance": {"a.windows.titles": "ignore"}}
 
     def test_window_size_tolerance_allows_only_compositor_rounding(self):
@@ -342,6 +346,42 @@ class CompareTests(unittest.TestCase):
         evaluated = compare.evaluate(json.loads(Path(handle.name).read_text()))
         Path(handle.name).unlink()
         self.assertEqual([e["status"] for e in evaluated], ["pass"])
+
+    def test_compare_uses_lulo_expectation_for_private_notes_scenario(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            notes = root / "notes"
+            notes.mkdir()
+            (notes / "find.json").write_text(json.dumps({
+                "title": "Private Notes journey", "app": "notes", "lulo_only": True,
+                "steps": [{"observe": "body", "facts": ["focus"]}],
+            }))
+            expected = {"observations": {"body": {"focus": {"value": "changed"}}}}
+            (notes / "find.lulo.json").write_text(json.dumps(expected))
+            evaluated = compare.evaluate({"results": [
+                {"scenario": "notes/find", "lulo": expected},
+            ]}, root)
+        self.assertEqual([entry["status"] for entry in evaluated], ["pass"])
+
+    def test_compare_falls_back_to_lulo_expectation_without_mac_recording(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            monitor = root / "system-monitor"
+            monitor.mkdir()
+            (monitor / "find.json").write_text(json.dumps({
+                "title": "Find process", "app": "system-monitor",
+                "steps": [{"observe": "match", "facts": ["selection"]}],
+            }))
+            expected = {"observations": {"match": {"selection": {"items": ["matching process"]}}}}
+            (monitor / "find.lulo.json").write_text(json.dumps(expected))
+            evaluated = compare.evaluate({"results": [
+                {"scenario": "system-monitor/find", "lulo": expected},
+            ]}, root)
+        self.assertEqual([entry["status"] for entry in evaluated], ["pass"])
 
     def test_compare_does_not_drop_results_without_scenarios_or_expectations(self):
         import tempfile

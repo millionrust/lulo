@@ -1,0 +1,71 @@
+{
+  "_comment": "Reviewed list of Mac-only menu/control labels that are never a Lulo gap: OS chrome, iCloud-only features, and services Lulo has deliberately not promised. `app` is \"*\" for every app or a Lulo app display name. `match` is \"exact\" (default) or \"prefix\". Add rows here only after a human confirms the item is genuinely out of scope, with a reason a reviewer can check.",
+  "entries": [
+    {
+      "app": "*",
+      "label": "Apple",
+      "match": "exact",
+      "reason": "The system Apple menu is OS chrome (About This Mac, System Settings…, Sleep/Restart/Shut Down, Recent Items, App Store updates), not part of any app's own menu bar. Lulo's shell has no per-app equivalent slot for it."
+    },
+    {
+      "app": "*",
+      "label": "Services",
+      "match": "exact",
+      "reason": "Services is populated system-wide from every installed app's Info.plist; Lulo has no Services architecture and nothing to port."
+    },
+    {
+      "app": "*",
+      "label": "Recent Items",
+      "match": "exact",
+      "reason": "AppKit's own Recent Items submenu under the Apple menu (the app's own File > Open Recent is tracked separately and is NOT allowlisted)."
+    },
+    {
+      "app": "*",
+      "label": "Start Dictation…",
+      "match": "exact",
+      "reason": "Apple dictation (on-device/cloud speech-to-text) is an Apple Intelligence/Siri feature with no Linux equivalent shipped yet."
+    },
+    {
+      "app": "*",
+      "label": "Emoji & Symbols",
+      "match": "exact",
+      "reason": "The macOS character viewer is a system input-method feature, not an app menu command; Lulo has its own emoji picker reachable another way (tracked separately in docs/parity.md, not here)."
+    },
+    {
+      "app": "*",
+      "label": "Share…",
+      "match": "prefix",
+      "reason": "macOS Share sheets hand off to iCloud/AirDrop/Mail/Messages/social extensions. Lulo has no share-sheet architecture; this is a standing, intentionally-deferred gap tracked as a whole in docs/parity.md rather than per occurrence here."
+    },
+    {
+      "app": "*",
+      "label": "Add to Dock",
+      "match": "exact",
+      "reason": "macOS-specific Dock integration for files, distinct from Lulo's own Dock (which already pins apps); porting \"add a file alias to the Dock\" is not planned."
+    },
+    {
+      "app": "*",
+      "label": "Make Alias",
+      "match": "exact",
+      "reason": "Classic Mac OS aliases (resolved by Finder/the OS at open time) have no Linux filesystem equivalent; Lulo would need symlinks instead, tracked as a design question in docs/parity.md, not a straight menu-item port."
+    },
+    {
+      "app": "*",
+      "label": "Compress using Keka",
+      "match": "exact",
+      "reason": "Injected by the Keka Finder Sync extension installed on the reference Mac, not by stock Finder. Any third-party Finder extension's rows are machine-specific and never a Lulo gap; re-check this list if the reference Mac's installed extensions change."
+    },
+    {
+      "app": "*",
+      "label": "Extract using Keka",
+      "match": "exact",
+      "reason": "See \"Compress using Keka\": the Keka Finder Sync extension, not stock Finder."
+    },
+    {
+      "app": "*",
+      "label": "Send to Keka",
+      "match": "exact",
+      "reason": "See \"Compress using Keka\": the Keka Finder Sync extension, not stock Finder."
+    }
+  ]
+}

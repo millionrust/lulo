@@ -1,0 +1,330 @@
+{
+  "app": "Notes",
+  "source": "rust-static-analysis",
+  "menu_bar": [
+    {
+      "label": "Application",
+      "items": [
+        {
+          "label": "About",
+          "action": "rmac::ShowAboutPanel",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "New Note",
+          "action": "notes::ComposeNote",
+          "shortcut": "⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "New Folder",
+          "action": "notes::CreateFolder",
+          "shortcut": "⇧⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Close",
+          "action": "rmac_ui::RequestClose",
+          "shortcut": "⌘W",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Import to Notes…",
+          "action": "notes::ImportNote",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Import Notes Bundle…",
+          "action": "notes::ImportNotesBundle",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Export as",
+          "action": "notes::ExportAsMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "PDF…",
+              "action": "notes::ExportNotePdf",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Export Notes…",
+          "action": "notes::ExportNotes",
+          "shortcut": "⇧⌘E",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Pin Note",
+          "action": "notes::TogglePin",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Duplicate Note",
+          "action": "notes::DuplicateNote",
+          "shortcut": "⌘D",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Print…",
+          "action": "notes::PrintNote",
+          "shortcut": "⌘P",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "action": "input::Undo",
+          "shortcut": "⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "action": "input::Redo",
+          "shortcut": "⇧⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "action": "input::Cut",
+          "shortcut": "⌘X",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "action": "input::Copy",
+          "shortcut": "⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "action": "input::Paste",
+          "shortcut": "⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "action": "input::SelectAll",
+          "shortcut": "⌘A",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Add Photo…",
+          "action": "notes::AddPhoto",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Find",
+          "action": "notes::FindMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Find…",
+              "action": "notes::FindInNote",
+              "shortcut": "⌘F",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Note List Search…",
+              "action": "notes::FocusSearch",
+              "shortcut": "⌥⌘F",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "Format",
+      "items": [
+        {
+          "label": "Bold",
+          "action": "notes::ToggleBold",
+          "shortcut": "⌘B",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Italic",
+          "action": "notes::ToggleItalic",
+          "shortcut": "⌘I",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Paragraph Style",
+          "action": "notes::ParagraphStyleMenu",
+          "shortcut": "",
+          "separator_before": true,
+          "children": [
+            {
+              "label": "Title",
+              "action": "notes::SetStyleTitle",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Heading",
+              "action": "notes::SetStyleHeading",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Subheading",
+              "action": "notes::SetStyleSubheading",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Body",
+              "action": "notes::SetStyleBody",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Monospaced",
+              "action": "notes::SetStyleMonospaced",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Checklist",
+          "action": "notes::InsertChecklist",
+          "shortcut": "⇧⌘L",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Mark as Done",
+          "action": "notes::ToggleChecklistDone",
+          "shortcut": "⇧⌘U",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Lists",
+          "action": "notes::ListsMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Bulleted List",
+              "action": "notes::InsertBulletedList",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Numbered List",
+              "action": "notes::InsertNumberedList",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "Sort By",
+          "action": "notes::SortByMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Date Edited",
+              "action": "notes::SortByEdited",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Date Created",
+              "action": "notes::SortByCreated",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Title",
+              "action": "notes::SortByTitle",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Markdown Preview",
+          "action": "notes::ToggleMarkdownPreview",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "present": false,
+    "extraction": "none",
+    "controls": []
+  },
+  "toolbar": {
+    "present": true,
+    "extraction": "heuristic",
+    "groups": [
+      "Search",
+      "Toolbar"
+    ]
+  },
+  "context_menus": {}
+}

@@ -1,0 +1,846 @@
+{
+  "app": "Finder",
+  "source": "rust-static-analysis",
+  "menu_bar": [
+    {
+      "label": "Application",
+      "items": [
+        {
+          "label": "About",
+          "action": "rmac::ShowAboutPanel",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Settings…",
+          "action": "finder::ShowSettings",
+          "shortcut": "⌘,",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Empty Bin…",
+          "action": "finder::EmptyTrash",
+          "shortcut": "⇧⌘⌫",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "New Finder Window",
+          "action": "finder::NewWindow",
+          "shortcut": "⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "New Folder",
+          "action": "finder::NewFolder",
+          "shortcut": "⇧⌘N",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "New Tab",
+          "action": "finder::NewTab",
+          "shortcut": "⌘T",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Open",
+          "action": "finder::OpenItems",
+          "shortcut": "⌘O",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Close Tab",
+          "action": "finder::CloseTab",
+          "shortcut": "⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Get Info",
+          "action": "finder::GetInfo",
+          "shortcut": "⌘I",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Rename",
+          "action": "finder::RenameItem",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Compress",
+          "action": "finder::Compress",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Duplicate",
+          "action": "finder::Duplicate",
+          "shortcut": "⌘D",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Move to Bin",
+          "action": "finder::MoveToTrash",
+          "shortcut": "⌘⌫",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Delete Immediately…",
+          "action": "finder::DeletePermanently",
+          "shortcut": "⌥⌘⌫",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Find",
+          "action": "finder::Find",
+          "shortcut": "⌘F",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "action": "finder::UndoOperation",
+          "shortcut": "⌘Z",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "action": "finder::CutItems",
+          "shortcut": "⌘X",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "action": "finder::CopyItems",
+          "shortcut": "⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Copy as Pathname",
+          "action": "finder::CopyAsPathname",
+          "shortcut": "⌥⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "action": "finder::PasteItems",
+          "shortcut": "⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Move Item Here",
+          "action": "finder::MoveItemHere",
+          "shortcut": "⌥⌘V",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "action": "finder::SelectAll",
+          "shortcut": "⌘A",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "as Icons",
+          "action": "finder::ViewAsIcons",
+          "shortcut": "⌘1",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "as List",
+          "action": "finder::ViewAsList",
+          "shortcut": "⌘2",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "as Columns",
+          "action": "finder::ViewAsColumns",
+          "shortcut": "⌘3",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "as Gallery",
+          "action": "finder::ViewAsGallery",
+          "shortcut": "⌘4",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Sort by Name",
+          "action": "finder::SortByName",
+          "shortcut": "",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Sort by Date Modified",
+          "action": "finder::SortByDate",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Sort by Size",
+          "action": "finder::SortBySize",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Sort by Kind",
+          "action": "finder::SortByKind",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Hidden Files",
+          "action": "finder::ToggleHidden",
+          "shortcut": "⇧⌘.",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Quick Look",
+          "action": "finder::QuickLook",
+          "shortcut": "Space",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show View Options",
+          "action": "finder::ShowViewOptions",
+          "shortcut": "⌘J",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Hide Sidebar",
+          "action": "finder::ToggleSidebar",
+          "shortcut": "⌃⌘S",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Show Path Bar",
+          "action": "finder::TogglePathBar",
+          "shortcut": "⌥⌘P",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Go",
+      "items": [
+        {
+          "label": "Back",
+          "action": "finder::GoBack",
+          "shortcut": "⌘[",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Forward",
+          "action": "finder::GoForward",
+          "shortcut": "⌘]",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Enclosing Folder",
+          "action": "finder::GoUp",
+          "shortcut": "⌘↑",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Recents",
+          "action": "finder::GoRecents",
+          "shortcut": "⇧⌘F",
+          "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Documents",
+          "action": "finder::GoDocuments",
+          "shortcut": "⇧⌘O",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Desktop",
+          "action": "finder::GoDesktop",
+          "shortcut": "⇧⌘D",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Downloads",
+          "action": "finder::GoDownloads",
+          "shortcut": "⌥⌘L",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Home",
+          "action": "finder::GoHome",
+          "shortcut": "⇧⌘H",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Computer",
+          "action": "finder::GoComputer",
+          "shortcut": "⇧⌘C",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Applications",
+          "action": "finder::GoApplications",
+          "shortcut": "⇧⌘A",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Bin",
+          "action": "finder::GoTrash",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Go to Folder…",
+          "action": "finder::GoToFolder",
+          "shortcut": "⇧⌘G",
+          "separator_before": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Show Previous Tab",
+          "action": "finder::PreviousTab",
+          "shortcut": "⌃⇧⇥",
+          "separator_before": false,
+          "children": []
+        },
+        {
+          "label": "Show Next Tab",
+          "action": "finder::NextTab",
+          "shortcut": "⌃⇥",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Files Help",
+          "action": "finder::ShowHelp",
+          "shortcut": "",
+          "separator_before": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "settings": {
+    "present": true,
+    "extraction": "heuristic",
+    "controls": [
+      {
+        "kind": "tab",
+        "label": "General"
+      },
+      {
+        "kind": "tab",
+        "label": "Tags"
+      },
+      {
+        "kind": "tab",
+        "label": "Sidebar"
+      },
+      {
+        "kind": "tab",
+        "label": "Advanced"
+      },
+      {
+        "kind": "section",
+        "label": "Show these items on the desktop:"
+      },
+      {
+        "kind": "section",
+        "label": "New Finder windows show:"
+      },
+      {
+        "kind": "section",
+        "label": "Tags"
+      },
+      {
+        "kind": "section",
+        "label": "Show these items in the sidebar:"
+      },
+      {
+        "kind": "section",
+        "label": "Keep folders on top:"
+      },
+      {
+        "kind": "section",
+        "label": "When performing a search:"
+      },
+      {
+        "kind": "control",
+        "label": "Hard disks"
+      },
+      {
+        "kind": "control",
+        "label": "External disks"
+      },
+      {
+        "kind": "control",
+        "label": "CDs, DVDs, and iPods"
+      },
+      {
+        "kind": "control",
+        "label": "Connected servers"
+      },
+      {
+        "kind": "control",
+        "label": "Open folders in tabs instead of new windows"
+      },
+      {
+        "kind": "control",
+        "label": "Recents"
+      },
+      {
+        "kind": "control",
+        "label": "Applications"
+      },
+      {
+        "kind": "control",
+        "label": "Desktop"
+      },
+      {
+        "kind": "control",
+        "label": "Documents"
+      },
+      {
+        "kind": "control",
+        "label": "Downloads"
+      },
+      {
+        "kind": "control",
+        "label": "Home"
+      },
+      {
+        "kind": "control",
+        "label": "Bin"
+      },
+      {
+        "kind": "control",
+        "label": "Tags…"
+      },
+      {
+        "kind": "control",
+        "label": "Show all filename extensions"
+      },
+      {
+        "kind": "control",
+        "label": "Show warning before changing an extension"
+      },
+      {
+        "kind": "control",
+        "label": "Show warning before emptying the Bin"
+      },
+      {
+        "kind": "control",
+        "label": "Remove items from the Bin after 30 days"
+      },
+      {
+        "kind": "control",
+        "label": "in windows, when sorting by name"
+      },
+      {
+        "kind": "control",
+        "label": "on Desktop"
+      },
+      {
+        "kind": "control",
+        "label": "Show in sidebar"
+      },
+      {
+        "kind": "tab",
+        "label": "Home"
+      },
+      {
+        "kind": "tab",
+        "label": "Desktop"
+      },
+      {
+        "kind": "tab",
+        "label": "Documents"
+      },
+      {
+        "kind": "tab",
+        "label": "Downloads"
+      },
+      {
+        "kind": "tab",
+        "label": "Computer"
+      },
+      {
+        "kind": "tab",
+        "label": "Search This Mac"
+      },
+      {
+        "kind": "tab",
+        "label": "Search the Current Folder"
+      },
+      {
+        "kind": "tab",
+        "label": "Use the Previous Search Scope"
+      }
+    ]
+  },
+  "toolbar": {
+    "present": true,
+    "extraction": "heuristic",
+    "groups": [
+      "Back/Forward",
+      "View",
+      "Sort By",
+      "Actions",
+      "Search",
+      "Toolbar"
+    ]
+  },
+  "context_menus": {
+    "file": [
+      {
+        "type": "command_item",
+        "label": "Open"
+      },
+      {
+        "type": "item",
+        "label": "Open With"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "command_item",
+        "label": "Move to Bin"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "command_item",
+        "label": "Get Info"
+      },
+      {
+        "type": "command_item",
+        "label": "Rename"
+      },
+      {
+        "type": "item",
+        "label": "<label>"
+      },
+      {
+        "type": "command_item",
+        "label": "Duplicate"
+      },
+      {
+        "type": "item",
+        "label": "Make Alias"
+      },
+      {
+        "type": "command_item",
+        "label": "Quick Look"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "command_item",
+        "label": "Copy"
+      },
+      {
+        "type": "item",
+        "label": "Share…"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "submenu",
+        "label": "label"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Red"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Orange"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Yellow"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Green"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Blue"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Purple"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Gray"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "item",
+        "label": "Quick Actions"
+      }
+    ],
+    "folder": [
+      {
+        "type": "command_item",
+        "label": "Open"
+      },
+      {
+        "type": "item",
+        "label": "Open With"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "command_item",
+        "label": "Move to Bin"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "command_item",
+        "label": "Get Info"
+      },
+      {
+        "type": "command_item",
+        "label": "Rename"
+      },
+      {
+        "type": "item",
+        "label": "<label>"
+      },
+      {
+        "type": "command_item",
+        "label": "Duplicate"
+      },
+      {
+        "type": "item",
+        "label": "Make Alias"
+      },
+      {
+        "type": "command_item",
+        "label": "Quick Look"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "command_item",
+        "label": "Copy"
+      },
+      {
+        "type": "item",
+        "label": "Share…"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "submenu",
+        "label": "label"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Red"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Orange"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Yellow"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Green"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Blue"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Purple"
+      },
+      {
+        "type": "checked_item_with_swatch",
+        "label": "Gray"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "item",
+        "label": "Quick Actions"
+      }
+    ],
+    "background": [
+      {
+        "type": "command_item",
+        "label": "New Folder"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "command_item",
+        "label": "Get Info"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "submenu",
+        "label": "View"
+      },
+      {
+        "type": "item",
+        "label": "Use Groups"
+      },
+      {
+        "type": "submenu",
+        "label": "Sort By"
+      },
+      {
+        "type": "item",
+        "label": "Show View Options"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "item",
+        "label": "Import from iPhone"
+      }
+    ],
+    "applications_background": [
+      {
+        "type": "command_item",
+        "label": "Open"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "command_item",
+        "label": "Get Info"
+      }
+    ],
+    "_sort_by_submenu": [
+      {
+        "type": "checked_item",
+        "label": "Name"
+      },
+      {
+        "type": "checked_item",
+        "label": "Date Modified"
+      },
+      {
+        "type": "checked_item",
+        "label": "Size"
+      },
+      {
+        "type": "checked_item",
+        "label": "Kind"
+      }
+    ],
+    "_view_submenu": [
+      {
+        "type": "item",
+        "label": "Icons"
+      },
+      {
+        "type": "item",
+        "label": "List"
+      },
+      {
+        "type": "item",
+        "label": "Columns"
+      },
+      {
+        "type": "item",
+        "label": "Gallery"
+      }
+    ]
+  },
+  "settings_sidebar": null
+}

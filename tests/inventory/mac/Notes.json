@@ -1,0 +1,4 @@
+{
+  "app": "Notes",
+  "error": "TimeoutExpired: Command '['osascript', '/var/folders/6m/g1cj17dn3_72s41t6xkw3sr00000gn/T/rmac-inventory/driver.applescript']' timed out after 60 seconds"
+}

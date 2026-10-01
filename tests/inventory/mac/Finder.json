@@ -1,0 +1,2830 @@
+{
+  "app": "Finder",
+  "source": "mac-accessibility-tree",
+  "menu_bar": [
+    {
+      "label": "Apple",
+      "items": [],
+      "items_omitted": "system Apple menu, scrubbed post-capture (OS chrome + contains the owner's name)"
+    },
+    {
+      "label": "Finder",
+      "items": [
+        {
+          "label": "About Finder",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Settings…",
+          "shortcut": "⌘,",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Empty Bin…",
+          "shortcut": "⇧⌘⌫",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Empty Bin",
+          "shortcut": "⌥⇧⌘⌫",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [],
+          "children_omitted": "dynamic/personal submenu, not read"
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Finder",
+          "shortcut": "⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "shortcut": "⌥⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "New Finder Window",
+          "shortcut": "⌘N",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "New Folder",
+          "shortcut": "⇧⌘N",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "New Folder with Selection",
+          "shortcut": "⌃⌘N",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "New Smart Folder",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "New Tab",
+          "shortcut": "⌘T",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Open",
+          "shortcut": "⌘O",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Open in New Tab",
+          "shortcut": "⌃⌘O",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Open in New Window and Close",
+          "shortcut": "⌥⌘O",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Open With",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": [
+            {
+              "label": "Google Chrome (default)",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Arc",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Books",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Chromium",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "ColorSync Utility",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Microsoft Word",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Preview",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Safari",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "App Store…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Other…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Always Open With",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": [
+            {
+              "label": "Google Chrome (default)",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Arc",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Books",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Chromium",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "ColorSync Utility",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Microsoft Word",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Preview",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Safari",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "App Store…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Other…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Close Window",
+          "shortcut": "⌘W",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "shortcut": "⌥⌘W",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Get Info",
+          "shortcut": "⌘I",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Inspector",
+          "shortcut": "⌥⌘I",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Get Summary Info",
+          "shortcut": "⌃⌘I",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Rename",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Compress",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Compress",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Duplicate",
+          "shortcut": "⌘D",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Duplicate Exactly",
+          "shortcut": "⌥⇧⌘D",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Make Alias",
+          "shortcut": "⌃⌘A",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quick Look “finder-context-sandbox”",
+          "shortcut": "⌘Y",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Slideshow “finder-context-sandbox”",
+          "shortcut": "⌥⌘Y",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Print",
+          "shortcut": "⌘P",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Share…",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Manage Shared Folder…",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Original",
+          "shortcut": "⌘R",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Add to Sidebar",
+          "shortcut": "⌃⌘T",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Add to Dock",
+          "shortcut": "⌃⇧⌘T",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Move to Bin",
+          "shortcut": "⌘⌫",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Delete Immediately…",
+          "shortcut": "⌥⌘⌫",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Eject",
+          "shortcut": "⌘E",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Eject",
+          "shortcut": "⌘E",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Eject",
+          "shortcut": "⌘E",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Find",
+          "shortcut": "⌘F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Find by Name…",
+          "shortcut": "⌃⇧⌘F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo Move of “Untitled”",
+          "shortcut": "⌘Z",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "shortcut": "⇧⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "shortcut": "⌘X",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "shortcut": "⌘C",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Copy “finder-context-sandbox” as Pathname",
+          "shortcut": "⌥⌘C",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Copy as Link",
+          "shortcut": "⌃⌥⌘C",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "shortcut": "⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Move Item Here",
+          "shortcut": "⌥⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste Exactly",
+          "shortcut": "⌥⇧⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "shortcut": "⌘A",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Deselect All",
+          "shortcut": "⌥⌘A",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Clipboard",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "AutoFill",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Contact…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Passwords…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Credit Card…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Start Dictation…",
+          "shortcut": "🎤",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Emoji & Symbols",
+          "shortcut": "🌐",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "as Icons",
+          "shortcut": "⌘1",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "as List",
+          "shortcut": "⌘2",
+          "enabled": true,
+          "checked": true,
+          "children": []
+        },
+        {
+          "label": "as Columns",
+          "shortcut": "⌘3",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "as Gallery",
+          "shortcut": "⌘4",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Use Groups",
+          "shortcut": "⌃⌘0",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Sort By",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Name",
+              "shortcut": "⌃⌥⌘1",
+              "enabled": true,
+              "checked": true,
+              "children": []
+            },
+            {
+              "label": "Kind",
+              "shortcut": "⌃⌥⌘2",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Date Last Opened",
+              "shortcut": "⌃⌥⌘3",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Date Added",
+              "shortcut": "⌃⌥⌘4",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Date Modified",
+              "shortcut": "⌃⌥⌘5",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Date Created",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Size",
+              "shortcut": "⌃⌥⌘6",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Tags",
+              "shortcut": "⌃⌥⌘7",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Clean Up",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Clean Up Selection",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Clean Up By",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": [
+            {
+              "label": "Name",
+              "shortcut": "⌥⌘1",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Kind",
+              "shortcut": "⌥⌘2",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Date Modified",
+              "shortcut": "⌥⌘5",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Date Created",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Size",
+              "shortcut": "⌥⌘6",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Tags",
+              "shortcut": "⌥⌘7",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Tab Bar",
+          "shortcut": "⇧⌘T",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show All Tabs",
+          "shortcut": "⇧⌘\\",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Sidebar",
+          "shortcut": "⌃⌘S",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Preview",
+          "shortcut": "⇧⌘P",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Toolbar",
+          "shortcut": "⌥⌘T",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Path Bar",
+          "shortcut": "⌥⌘P",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Status Bar",
+          "shortcut": "⌘/",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Customise Toolbar…",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show View Options",
+          "shortcut": "⌘J",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Preview Options",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "shortcut": "F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Go",
+      "items": [
+        {
+          "label": "Back",
+          "shortcut": "⌘[",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Forward",
+          "shortcut": "⌘]",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Enclosing Folder",
+          "shortcut": "⌘",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Enclosing Folder",
+          "shortcut": "⌘",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Enclosing Folder in New Window",
+          "shortcut": "⌃⌘",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Select Startup Disk",
+          "shortcut": "⇧⌘",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Recents",
+          "shortcut": "⇧⌘F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Documents",
+          "shortcut": "⇧⌘O",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Desktop",
+          "shortcut": "⇧⌘D",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Downloads",
+          "shortcut": "⌥⌘L",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Home",
+          "shortcut": "⇧⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Library",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Computer",
+          "shortcut": "⇧⌘C",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "AirDrop",
+          "shortcut": "⇧⌘R",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Network",
+          "shortcut": "⇧⌘K",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "iCloud Drive",
+          "shortcut": "⇧⌘I",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Shared",
+          "shortcut": "⇧⌘S",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Applications",
+          "shortcut": "⇧⌘A",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Utilities",
+          "shortcut": "⇧⌘U",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Recent Folders",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Downloads",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "finder-context-sandbox",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "lulo-vis",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Clear Menu",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Go to Folder…",
+          "shortcut": "⇧⌘G",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Connect to Server…",
+          "shortcut": "⌘K",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Minimise",
+          "shortcut": "⌘M",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "shortcut": "⌥⌘M",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom All",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "shortcut": "⌃F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "shortcut": "⌃C",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Halves",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left",
+              "shortcut": "⌃←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "shortcut": "⌃→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "shortcut": "⌃↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "shortcut": "⌃↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top Left",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top Right",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Left",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Right",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Arrange",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left & Right",
+              "shortcut": "⌃⇧←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left & Quarters",
+              "shortcut": "⌃⌥⇧←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right & Left",
+              "shortcut": "⌃⇧→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right & Quarters",
+              "shortcut": "⌃⌥⇧→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top & Bottom",
+              "shortcut": "⌃⇧↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top & Quarters",
+              "shortcut": "⌃⌥⇧↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Top",
+              "shortcut": "⌃⇧↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Quarters",
+              "shortcut": "⌃⌥⇧↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "shortcut": "⌃R",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Full-Screen Tile",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Left of Screen",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right of Screen",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Remove Window from Set",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Cycle Through Windows",
+          "shortcut": "⌘`",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Progress Window",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Bring All to Front",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Arrange in Front",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Previous Tab",
+          "shortcut": "",
+          "enabled": false,
+          "checked": true,
+          "children": []
+        },
+        {
+          "label": "Show Next Tab",
+          "shortcut": "",
+          "enabled": false,
+          "checked": true,
+          "children": []
+        },
+        {
+          "label": "Move Tab to New Window",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Merge All Windows",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Downloads",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "finder-context-sandbox",
+          "shortcut": "",
+          "enabled": true,
+          "checked": true,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Mac User Guide",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Tips for Your Mac",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "toolbar": {
+    "present": true,
+    "items": [
+      {
+        "depth": 0,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 1,
+        "role": "AXGroup",
+        "label": "Back/Forward"
+      },
+      {
+        "depth": 2,
+        "role": "AXButton",
+        "label": "back"
+      },
+      {
+        "depth": 2,
+        "role": "AXButton",
+        "label": "forward"
+      },
+      {
+        "depth": 0,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 1,
+        "role": "AXRadioGroup",
+        "label": "radio group"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioButton",
+        "label": "icon view"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioButton",
+        "label": "list view"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioButton",
+        "label": "column view"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioButton",
+        "label": "gallery view"
+      },
+      {
+        "depth": 0,
+        "role": "AXMenuButton",
+        "label": "Group"
+      },
+      {
+        "depth": 1,
+        "role": "AXMenuButton",
+        "label": "menu button"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "Share"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "Edit Tags"
+      },
+      {
+        "depth": 0,
+        "role": "AXMenuButton",
+        "label": "Action"
+      },
+      {
+        "depth": 1,
+        "role": "AXMenuButton",
+        "label": "menu button"
+      },
+      {
+        "depth": 0,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Search"
+      }
+    ]
+  },
+  "settings": {
+    "present": true,
+    "controls": [
+      {
+        "depth": 0,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 1,
+        "role": "AXHeading",
+        "label": "heading"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "tickbox"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "tickbox"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "tickbox"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "tickbox"
+      },
+      {
+        "depth": 1,
+        "role": "AXHeading",
+        "label": "heading"
+      },
+      {
+        "depth": 1,
+        "role": "AXPopUpButton",
+        "label": "Recents"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "tickbox"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Store your Desktop & Documents folders in iCloud Drive and access them from your other devices."
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "tickbox"
+      },
+      {
+        "depth": 0,
+        "role": "AXToolbar",
+        "label": "toolbar"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "General"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Tags"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Sidebar"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Advanced"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "close button"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "zoom button"
+      },
+      {
+        "depth": 1,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 2,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "minimise button"
+      },
+      {
+        "depth": 0,
+        "role": "AXStaticText",
+        "label": "Finder Settings"
+      }
+    ]
+  },
+  "context_menus": {
+    "file": [
+      {
+        "label": "Open",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Open With",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": [
+          {
+            "label": "TextEdit (default)",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": null,
+            "shortcut": "",
+            "enabled": false,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Chromium",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Google Chrome",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Instruments",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Microsoft Excel",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Microsoft Word",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Notes",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Numbers",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Pages",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Safari",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Script Editor",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Sublime Text",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Visual Studio Code",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Xcode",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Zed",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": null,
+            "shortcut": "",
+            "enabled": false,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "App Store…",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Other…",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          }
+        ]
+      },
+      {
+        "label": "Always Open With",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": [
+          {
+            "label": "TextEdit (default)",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": null,
+            "shortcut": "",
+            "enabled": false,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Chromium",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Google Chrome",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Instruments",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Microsoft Excel",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Microsoft Word",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Notes",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Numbers",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Pages",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Safari",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Script Editor",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Sublime Text",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Visual Studio Code",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Xcode",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Zed",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": null,
+            "shortcut": "",
+            "enabled": false,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "App Store…",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Other…",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          }
+        ]
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Move to Bin",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Get Info",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Show Inspector",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Rename",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Compress “sample.txt”",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Compress “sample.txt”",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Duplicate",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Duplicate Exactly",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Make Alias",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Quick Look",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Slideshow “sample.txt”",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Copy",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Copy “sample.txt” as Pathname",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Share…",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "label",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Quick Actions",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": [
+          {
+            "label": null,
+            "shortcut": "",
+            "enabled": false,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Customise…",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          }
+        ]
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Compress using Keka",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Extract using Keka",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Send to Keka",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      }
+    ],
+    "folder": [
+      {
+        "label": "Open in New Tab",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Open in New Window",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Move to Bin",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Get Info",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Show Inspector",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Rename",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Compress “Subfolder”",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Compress “Subfolder”",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Duplicate",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Duplicate Exactly",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Make Alias",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Quick Look",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Slideshow “Subfolder”",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Copy",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Copy “Subfolder” as Pathname",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Share…",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "label",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Import from iPhone",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": [],
+        "children_omitted": "dynamic/personal submenu, scrubbed post-capture"
+      },
+      {
+        "label": "Quick Actions",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": [
+          {
+            "label": null,
+            "shortcut": "",
+            "enabled": false,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Customise…",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          }
+        ]
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Services",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": [],
+        "children_omitted": "dynamic/personal submenu, not read"
+      }
+    ],
+    "background": [
+      {
+        "label": "Open in New Tab",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Open in New Window",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Move to Bin",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Get Info",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Show Inspector",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Rename",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Compress “Subfolder”",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Compress “Subfolder”",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Duplicate",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Duplicate Exactly",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Make Alias",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Quick Look",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Slideshow “Subfolder”",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Copy",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Copy “Subfolder” as Pathname",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Share…",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "label",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Import from iPhone",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": [],
+        "children_omitted": "dynamic/personal submenu, scrubbed post-capture"
+      },
+      {
+        "label": "Quick Actions",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": [
+          {
+            "label": null,
+            "shortcut": "",
+            "enabled": false,
+            "checked": false,
+            "children": []
+          },
+          {
+            "label": "Customise…",
+            "shortcut": "",
+            "enabled": true,
+            "checked": false,
+            "children": []
+          }
+        ]
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": null,
+        "shortcut": "",
+        "enabled": false,
+        "checked": false,
+        "children": []
+      },
+      {
+        "label": "Services",
+        "shortcut": "",
+        "enabled": true,
+        "checked": false,
+        "children": [],
+        "children_omitted": "dynamic/personal submenu, not read"
+      }
+    ]
+  }
+}

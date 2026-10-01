@@ -330,17 +330,11 @@
     "present": true,
     "extraction": "heuristic",
     "groups": [
-      "Clock tabs",
       "World Clock",
       "Alarms",
       "Stopwatch",
       "Timers",
-      "space",
-      "l",
-      "clock::ShowWorldClock",
-      "clock::ShowAlarms",
-      "clock::ShowStopwatch",
-      "clock::ShowTimers"
+      "Clock tabs"
     ]
   },
   "context_menus": {}

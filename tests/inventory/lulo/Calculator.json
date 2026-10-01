@@ -297,9 +297,8 @@
     "present": true,
     "extraction": "heuristic",
     "groups": [
-      "Mode",
       "History",
-      "Display"
+      "Mode"
     ]
   },
   "context_menus": {}

@@ -100,14 +100,17 @@ impl Settings {
         self.wifi_scanning = true;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let result = cx
-                .background_executor()
-                .spawn(async {
-                    let _ = rmac_network::request_scan();
-                    std::thread::sleep(WIFI_PANE_SCAN_SETTLE);
-                    rmac_network::snapshot()
-                })
-                .await;
+            // `rmac_network::request_scan()`/`snapshot()` use
+            // `zbus::blocking`; GPUI's background executor is not safe to
+            // block on synchronous D-Bus I/O from (LINUX-HW-07).
+            // `blocking::unblock` runs it on the dedicated blocking-task
+            // pool instead.
+            let result = blocking::unblock(|| {
+                let _ = rmac_network::request_scan();
+                std::thread::sleep(WIFI_PANE_SCAN_SETTLE);
+                rmac_network::snapshot()
+            })
+            .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.wifi_scanning = false;
                 // A real mutation may have started while this scan's

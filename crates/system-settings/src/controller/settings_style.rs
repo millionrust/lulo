@@ -27,9 +27,15 @@ pub(super) const TOOLBAR_HEIGHT: f32 = 52.0;
 // ---- sidebar ---------------------------------------------------------------
 
 /// The sidebar is a floating panel 8 in from the window's left, top and
-/// bottom edges; the detail column starts 8 after it (x 223).
+/// bottom edges; the detail column starts 8 after it (x 223 on the Mac's
+/// own 215-wide panel).
 pub(super) const SIDEBAR_INSET: f32 = 8.0;
-pub(super) const SIDEBAR_PANEL_WIDTH: f32 = 215.0;
+/// The Mac's measured panel is 215 wide (design-lab/settings.html), but
+/// Lulo adds Linux-only rows the Mac never has to fit — "Touchscreen"
+/// (LINUX-HW-02) truncated to "Touchscre…" at that width even though every
+/// Mac row fits. Widened just enough for the longest current label with
+/// its icon/inset budget; keep this in sync if a longer row is ever added.
+pub(super) const SIDEBAR_PANEL_WIDTH: f32 = 236.0;
 pub(super) const SIDEBAR_COLUMN_WIDTH: f32 = SIDEBAR_INSET + SIDEBAR_PANEL_WIDTH;
 /// Window radius 27 minus the inset keeps the corners concentric.
 pub(super) const SIDEBAR_RADIUS: f32 = 19.0;

@@ -3694,8 +3694,7 @@ mod linux_wayland {
                                     .text_color(rgba(tokens::dialog_icon_badge_text())),
                             ),
                     );
-                    let mut body = div()
-                        .p_3()
+                    let mut top = div()
                         .flex()
                         .flex_col()
                         .items_center()
@@ -3708,24 +3707,42 @@ mod linux_wayland {
                                 .child(confirmation.title),
                         );
                     if !body_text.is_empty() {
-                        body = body.child(
+                        top = top.child(
                             div()
                                 .w_full()
                                 .text_color(rgba(tokens::secondary_text()))
                                 .child(body_text),
                         );
                     }
-                    panel = panel.child(
-                        body.child(
+                    // Fixed height, with the button row pinned to the
+                    // bottom edge (`justify_between`) instead of just
+                    // hugging the content. This panel and the separate
+                    // backdrop window painted behind it
+                    // (`open_menu_backdrop`, `MenuBackdropPanel`) are both
+                    // sized from `confirmation.height`; a shorter,
+                    // content-hugging panel left the backdrop's extra
+                    // height showing through below the buttons as an
+                    // opaque dark slab (the owner's reported "black
+                    // shadow" below the panel). The Mac's own layout pins
+                    // its button row the same way (fixed-height `.win`,
+                    // `bottom: 12px`, design-lab/session-dialogs.html).
+                    let body = div()
+                        .h(px(confirmation.height))
+                        .p_3()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .justify_between()
+                        .child(top)
+                        .child(
                             div()
                                 .w_full()
                                 .flex()
                                 .justify_end()
                                 .gap_2()
-                                .mt_2()
                                 .children(buttons),
-                        ),
-                    );
+                        );
+                    panel = panel.child(body);
                     return Some(panel);
                 }
                 let panel = self.menu_rows(

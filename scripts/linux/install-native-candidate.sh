@@ -11,15 +11,20 @@ install_minimum_kib=$((25 * 1024 * 1024))
 mode=
 package_directory=
 reinstall=false
+build_metadata=
 
 usage() {
   cat >&2 <<'EOF'
 usage: scripts/linux/install-native-candidate.sh --check|--execute \
-  --directory /absolute/path/to/native-package-set [--reinstall]
+  --directory /absolute/path/to/native-package-set [--reinstall] \
+  [--build-metadata TAG]
 
   --check    Verify the Ubuntu/GNOME recovery boundary and candidate packages.
   --execute  Install that exact two-package set through APT and verify it.
   --reinstall  Reinstall an already-current package set (execute only).
+  --build-metadata  The tag (e.g. "iterate") a fast `--profile iterate`
+             candidate build was packaged with; omit for a real
+             Beta/stable (`--profile release`) build.
 
 Execution requires /run/rmac-reference-pc to contain exactly:
   rmac-reference-pc-install-v1
@@ -60,6 +65,12 @@ while [[ $# -gt 0 ]]; do
     --reinstall)
       [[ "$reinstall" == false ]] || fail "--reinstall may be specified once"
       reinstall=true
+      ;;
+    --build-metadata)
+      shift
+      [[ $# -gt 0 && -z "$build_metadata" ]] \
+        || fail "--build-metadata requires one value"
+      build_metadata=$1
       ;;
     -h|--help)
       usage
@@ -112,8 +123,9 @@ architecture="$(dpkg --print-architecture)"
   || fail "only amd64 and arm64 candidates are supported"
 python3 "$repo_root/scripts/linux/verify-session-package.py" \
   --root / --recovery-only
-python3 "$repo_root/scripts/linux/verify-native-packages.py" \
-  --directory "$package_directory" --architecture "$architecture"
+verify_native_args=(--directory "$package_directory" --architecture "$architecture")
+[[ -z "$build_metadata" ]] || verify_native_args+=(--build-metadata "$build_metadata")
+python3 "$repo_root/scripts/linux/verify-native-packages.py" "${verify_native_args[@]}"
 python3 "$repo_root/scripts/linux/archive-development-install.py" --check
 
 shopt -s nullglob

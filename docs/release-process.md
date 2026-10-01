@@ -491,6 +491,65 @@ upstream bumps the ordinary Debian revision (`debian_revision`: `1` -> `2`);
   new Debian revision, `+luloN`, or upstream version.
 - **arm64** needs the same self-hosted runner as rmac's arm64 packages.
 
+## Candidate builds for owner testing
+
+Candidate builds for owner testing use `--profile iterate`; Beta/stable
+releases use `release`. A full `release` build on the reference laptop (fat
+LTO, `codegen-units = 1`, 2 jobs) takes about 1.5 hours from a clean target,
+which is too slow for the owner to try a change. `[profile.iterate]` in the
+root `Cargo.toml` and in `shell/Cargo.toml` inherits `release` (so it keeps
+`opt-level = 3`, `panic = "abort"`, and release's `debug-assertions = false`
+and `overflow-checks = false` -- no surprises from a debug build) but turns
+off `lto` and `codegen-units = 1` and turns on `incremental = true`, and
+leaves `strip = false` so a plain `cargo build --profile iterate` keeps
+debug symbols for relinking and debugging directly; it is never used for a
+tagged release. `build-native-inputs.sh` strips only the *staged copy* it
+hands to the packager when `--profile` is not `release`, so a candidate
+package set is still close to release size without touching the shared
+target directory's own (debug-symbol-rich) binaries.
+
+Build candidate inputs with the same guarded script, naming the profile:
+
+```bash
+bash scripts/linux/build-native-inputs.sh \
+  --output "${PWD}/target/native-package-inputs" \
+  --profile iterate
+```
+
+This reuses the repository's one shared, incremental `target` directory
+(`CARGO_TARGET_DIR` is unchanged; only the `release`/`iterate` subdirectory
+Cargo reads binaries from differs), so switching between a candidate and a
+release build never throws away the other's incremental state. The script's
+printed "Next:" command already includes the matching packaging flag; pass
+it through so the two packages stay installable:
+
+```bash
+python3 scripts/linux/build-native-packages.py \
+  --binary-dir "${PWD}/target/native-package-inputs" \
+  --output "${PWD}/artifacts/native-amd64-candidate" \
+  --architecture amd64 \
+  --build-metadata iterate
+python3 scripts/linux/verify-native-packages.py \
+  --directory "${PWD}/artifacts/native-amd64-candidate" \
+  --architecture amd64 \
+  --build-metadata iterate
+```
+
+`--build-metadata iterate` folds the profile name into the Debian version as
+build metadata (`0.9.0~beta.1+iterate-38` rather than
+`0.9.0~beta.1-38`), so a candidate `.deb` is never byte-identical to, or
+confused with, a real release build, `rmac-apps` and `rmac-session` still
+carry one matching ("version pair") version, and `dpkg` still orders and
+installs it normally. Release notes are keyed to the exact release version,
+so a candidate build's `rmac-session` package carries no
+`Lulo-Release-Notes` field. Omit `--build-metadata` (or pass `--profile
+release` to `build-native-inputs.sh`) for a real Beta/stable release; the
+version, filenames, and manifest are then exactly what they always were.
+
+Candidate packages are for the owner's own testing with
+`scripts/linux/install-native-candidate.sh` or `install.sh --from-dir`, never
+for `stage-apt-snapshot.py` or a tagged release.
+
 ## Runner decisions
 
 **amd64**: built inside a real `ubuntu:26.04` container on a

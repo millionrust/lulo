@@ -141,18 +141,18 @@ impl Settings {
         self.wifi_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let (result, recovery_snapshot) = cx
-                .background_executor()
-                .spawn(async move {
-                    let result =
-                        rmac_network::connect_with_password(&network, password, &cancellation);
-                    let recovery_snapshot = result
-                        .is_err()
-                        .then(|| rmac_network::snapshot().ok())
-                        .flatten();
-                    (result, recovery_snapshot)
-                })
-                .await;
+            // `rmac_network::connect_with_password()`/`snapshot()` use
+            // `zbus::blocking`; GPUI's background executor is not safe to
+            // block on synchronous D-Bus I/O from (LINUX-HW-07).
+            let (result, recovery_snapshot) = blocking::unblock(move || {
+                let result = rmac_network::connect_with_password(&network, password, &cancellation);
+                let recovery_snapshot = result
+                    .is_err()
+                    .then(|| rmac_network::snapshot().ok())
+                    .flatten();
+                (result, recovery_snapshot)
+            })
+            .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wifi_password_update(result, recovery_snapshot);
                 cx.notify();
@@ -227,18 +227,18 @@ impl Settings {
         self.wifi_error = None;
         cx.notify();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let (result, recovery_snapshot) = cx
-                .background_executor()
-                .spawn(async move {
-                    let result =
-                        rmac_network::connect_enterprise(&network, credentials, &cancellation);
-                    let recovery_snapshot = result
-                        .is_err()
-                        .then(|| rmac_network::snapshot().ok())
-                        .flatten();
-                    (result, recovery_snapshot)
-                })
-                .await;
+            // `rmac_network::connect_enterprise()`/`snapshot()` use
+            // `zbus::blocking`; GPUI's background executor is not safe to
+            // block on synchronous D-Bus I/O from (LINUX-HW-07).
+            let (result, recovery_snapshot) = blocking::unblock(move || {
+                let result = rmac_network::connect_enterprise(&network, credentials, &cancellation);
+                let recovery_snapshot = result
+                    .is_err()
+                    .then(|| rmac_network::snapshot().ok())
+                    .flatten();
+                (result, recovery_snapshot)
+            })
+            .await;
             let _ = this.update(cx, |this: &mut Settings, cx| {
                 this.finish_wifi_enterprise_update(result, recovery_snapshot);
                 cx.notify();

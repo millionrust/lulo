@@ -67,6 +67,12 @@ Use `arm64` and a different empty output directory on the native arm64 builder.
 The assembler consumes the prebuilt files and never performs a hidden Rust
 build. The input builder is the only command in this flow that invokes Cargo.
 
+For a fast candidate build for owner testing instead of a Beta/stable
+release, add `--profile iterate` to `build-native-inputs.sh` and
+`--build-metadata iterate` to `build-native-packages.py` (and to
+`verify-native-packages.py`, below, if `--version` is not given). See
+[Release process](release-process.md) "Candidate builds for owner testing".
+
 ## Exact dependencies
 
 Shared-library dependencies are generated from every packaged ELF with

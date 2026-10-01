@@ -295,3 +295,20 @@ python3 scripts/behavior/run_window_move.py --bin-dir $CARGO_TARGET_DIR/iterate 
 python3 scripts/behavior/run_window_move.py --bin-dir $CARGO_TARGET_DIR/iterate \
   --geometry-only --keep
 ```
+
+`run_terminal_close.py` covers the red traffic light on a real `rmac-terminal`
+window (the owner's report: it did nothing). It runs the same nested-niri
+skeleton as `run_niri_minimize.py` so AT-SPI (`org.a11y.Bus`) and the shipped
+`shell.kdl` are available, then drives the close button through AT-SPI's own
+`Action.doAction` — no synthetic pointer/keyboard input into the app itself.
+It checks: closing with no running foreground job closes the window with no
+review (`RequestClose` reaching its handler regardless of what currently has
+keyboard focus was the actual bug — see TERM-14/18, docs/parity.md); closing
+with `sleep 30` running shows the "Do you want to terminate running processes
+in this window?" review; Cancel leaves the window open and the job running;
+a second close plus Terminate closes the window and ends the job.
+
+```sh
+python3 scripts/behavior/run_terminal_close.py --niri ~/rmac-niri-build/target/release/niri \
+  --bin-dir $CARGO_TARGET_DIR/iterate
+```

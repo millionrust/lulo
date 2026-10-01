@@ -6382,6 +6382,7 @@ dependencies = [
  "libc",
  "quick-xml 0.39.4",
  "rmac-recent-documents",
+ "rustix 1.1.4",
  "url",
  "walkdir",
 ]

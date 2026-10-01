@@ -55,7 +55,7 @@ impl FinderView {
                     .text_size(rmac_ui::text_px(15.0))
                     .font_weight(rmac_ui::mac::SEMIBOLD)
                     .text_color(label())
-                    .child(entry.name.clone()),
+                    .child(displayed_name(entry)),
             )
             .child(
                 div()
@@ -154,7 +154,7 @@ impl FinderView {
                         .text_size(rmac_ui::text_px(13.0))
                         .truncate()
                         .text_color(row_text)
-                        .child(e.name.clone())
+                        .child(displayed_name(&e))
                         .into_any_element(),
                 };
                 col = col.child(
@@ -348,7 +348,7 @@ impl FinderView {
                         } else {
                             primary_text()
                         })
-                        .child(entry.name.clone()),
+                        .child(displayed_name(entry)),
                 )
                 .on_mouse_down(
                     MouseButton::Left,
@@ -411,7 +411,7 @@ impl FinderView {
                             .text_size(rmac_ui::text_px(15.0))
                             .font_weight(rmac_ui::mac::SEMIBOLD)
                             .text_color(label())
-                            .child(entry.name.clone()),
+                            .child(displayed_name(entry)),
                     )
                     .child(
                         div()

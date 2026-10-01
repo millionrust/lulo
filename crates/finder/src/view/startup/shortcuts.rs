@@ -133,5 +133,11 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("cmd-shift-d", GoDesktop, Some("Finder")),
         KeyBinding::new("cmd-shift-o", GoDocuments, Some("Finder")),
         KeyBinding::new("cmd-shift-f", GoRecents, Some("Finder")),
+        // Finder ▸ Settings… ⌘,
+        KeyBinding::new(
+            rmac_ui::shortcuts::SETTINGS.keystroke,
+            ShowSettings,
+            Some("Finder"),
+        ),
     ]);
 }

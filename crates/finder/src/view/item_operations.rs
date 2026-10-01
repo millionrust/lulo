@@ -37,6 +37,11 @@ impl FinderView {
                 failures.push(format!("{}: {error}", path.display()));
             } else {
                 updated += 1;
+                // FILES-05: keep the Linux tag index (there is no Spotlight
+                // here) exactly in step with what Files itself just wrote,
+                // without waiting for this folder to be listed again.
+                #[cfg(any(target_os = "linux", test))]
+                rmac_search::tag_index::record(&path, (!remove_tag).then_some(tag));
             }
         }
         if failures.is_empty() {

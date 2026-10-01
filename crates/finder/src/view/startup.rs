@@ -16,31 +16,6 @@ impl FinderView {
         let home = PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/".to_string()));
         let file_words = rmac_locale::FileVocabulary::from_environment();
 
-        let p =
-            |name: &str, path: PathBuf, icon: &'static str, tint: Hsla, kind: PlaceKind| Place {
-                name: name.to_string().into(),
-                path,
-                icon,
-                tint,
-                kind,
-            };
-
-        // Folder places come from the shared Files model (also used by the
-        // Open/Save panel), so both sidebars list the same real folders.
-        let from_spec = |spec: rmac_finder::places::PlaceSpec| {
-            let tint = if spec.secondary_tint {
-                drive_gray()
-            } else {
-                accent()
-            };
-            p(&spec.name, spec.path, spec.icon, tint, PlaceKind::Item)
-        };
-
-        // Real mounted volumes.
-        let mut locations: Vec<Place> = rmac_finder::places::standard_locations(&home)
-            .into_iter()
-            .map(from_spec)
-            .collect();
         let (mounts, mount_error) = match rmac_mounts::discover() {
             Ok(mounts) => (mounts, None),
             Err(error) => (
@@ -48,92 +23,19 @@ impl FinderView {
                 Some(format!("Could not load mounted volumes: {error}").into()),
             ),
         };
-        locations.extend(mounts.iter().cloned().map(|mount| {
-            p(
-                &mount.name,
-                mount.path,
-                "icons/hard-drive.svg",
-                drive_gray(),
-                if mount.ejectable {
-                    PlaceKind::Volume
-                } else {
-                    PlaceKind::Item
-                },
-            )
-        }));
 
-        #[cfg(target_os = "macos")]
-        let tag = |name: &str, color: u32| p(name, PathBuf::new(), "", hsl(color), PlaceKind::Tag);
-        let mut prominent = vec![p(
-            "Recents",
-            PathBuf::new(),
-            "icons/clock.svg",
-            accent(),
-            PlaceKind::Recents,
-        )];
-        if let Some(shared) = rmac_finder::places::shared_folder(&home) {
-            prominent.push(from_spec(shared));
-        }
-
-        let mut favorites = vec![p(
-            "Applications",
-            PathBuf::new(),
-            "icons/layout-grid.svg",
-            accent(),
-            PlaceKind::Applications,
-        )];
-        favorites.extend(
-            rmac_finder::places::favourite_folders(&home)
-                .into_iter()
-                .map(from_spec),
-        );
         // User-added Favourites (drag a folder onto the Favourites header),
         // shared by every window and pruned to folders that still exist.
         let favourite_extras: Vec<PathBuf> = sidebar_favourites::load_sidebar_favourites()
             .into_iter()
             .filter(|path| path.is_dir())
             .collect();
-        favorites.extend(
-            favourite_extras
-                .iter()
-                .map(|path| sidebar_favourites::extra_favourite_place(path)),
-        );
-        #[cfg(target_os = "linux")]
-        locations.push(p(
-            file_words.bin(),
-            PathBuf::new(),
-            "icons/trash-2.svg",
-            accent(),
-            PlaceKind::Trash,
-        ));
-        #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
-        let mut sections = vec![
-            Section {
-                title: "".into(),
-                places: prominent,
-            },
-            Section {
-                title: file_words.favourites().into(),
-                places: favorites,
-            },
-            Section {
-                title: "Locations".into(),
-                places: locations,
-            },
-        ];
-        #[cfg(target_os = "macos")]
-        sections.push(Section {
-            title: "Tags".into(),
-            places: vec![
-                tag("Red", 0xff3b30),
-                tag("Orange", 0xff9500),
-                tag("Yellow", 0xffcc00),
-                tag("Green", 0x34c759),
-                tag("Blue", 0x1372f9),
-                tag("Purple", 0xaf52de),
-                tag("Gray", 0x8e8e93),
-            ],
-        });
+        // Built from `favourite_extras`/`mounts`/the Settings window's
+        // Sidebar and Tags tabs below, right after `view` exists.
+        let sections = Vec::new();
+
+        #[cfg(any(target_os = "linux", test))]
+        rmac_search::tag_index::start_background_scan(home.clone());
 
         bind_finder_keys(cx);
 
@@ -374,6 +276,8 @@ impl FinderView {
             type_select: TypeSelect::default(),
             spring: SpringLoading::default(),
         };
+        view.rebuild_sidebar_sections(cx);
+        super::settings::register_window(cx.weak_entity(), cx);
         view.persist_finder_state();
         view.reload(cx);
         view.refresh_pasteboard_state(cx);

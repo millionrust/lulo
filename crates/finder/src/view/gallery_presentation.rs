@@ -33,7 +33,7 @@ impl FinderView {
                                     .text_size(rmac_ui::text_px(15.0))
                                     .font_weight(rmac_ui::mac::SEMIBOLD)
                                     .text_color(label())
-                                    .child(entry.name.clone()),
+                                    .child(displayed_name(entry)),
                             )
                             .child(
                                 div()

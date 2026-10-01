@@ -451,7 +451,7 @@ impl FinderView {
                         } else {
                             primary_text()
                         })
-                        .child(e.name.clone())
+                        .child(displayed_name(e))
                         .into_any_element(),
                 };
                 tiles.push(
@@ -834,6 +834,7 @@ impl FinderView {
                 cx.listener(|this, _: &GoToFolder, window, cx| this.open_go_to_folder(window, cx)),
             )
             .on_action(cx.listener(|this, _: &EmptyTrash, _, cx| this.request_empty_trash(cx)))
+            .on_action(cx.listener(|this, _: &ShowSettings, _, cx| this.show_settings(cx)))
             .on_action(cx.listener(|this, _: &ShowHelp, _, cx| {
                 this.help_open = true;
                 cx.notify();
@@ -1060,7 +1061,12 @@ impl FinderView {
                 .min_w(px(0.0))
                 .v_flex()
                 .justify_center()
-                .child(div().truncate().text_color(primary).child(e.name.clone()))
+                .child(
+                    div()
+                        .truncate()
+                        .text_color(primary)
+                        .child(displayed_name(e)),
+                )
                 .when_some(search_detail, |el, detail| {
                     el.child(
                         div()

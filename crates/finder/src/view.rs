@@ -35,7 +35,10 @@ mod responsive_layout;
 mod search_helpers;
 mod search_info_controller;
 mod selection_controller;
+mod settings;
+mod settings_window;
 mod sidebar_favourites;
+mod sidebar_sections;
 mod startup;
 mod thumbnail_controller;
 mod transient_state;
@@ -169,6 +172,7 @@ actions!(
         GoDesktop,
         GoDocuments,
         GoRecents,
+        ShowSettings,
     ]
 );
 

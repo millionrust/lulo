@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 mod model;
 mod platform;
 mod ranked;
+pub mod tag_index;
 #[cfg(test)]
 mod tests;
 

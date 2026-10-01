@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Finder Settings</title>
+<!-- NOT measured on the Mac: the laptop/Mac was locked for this agent run
+     (FILES-35). Laid out from the written spec in docs/beta-checklist.md
+     (General: desktop items, new-window target, open-folders-in-tabs;
+     Tags: the seven colours with a show-in-sidebar checkbox each; Sidebar:
+     one checkbox per section; Advanced: extensions, Bin warnings,
+     folders-on-top, search scope) rather than a screenshot. A follow-up
+     agent with laptop access should re-measure this against the real
+     Finder ▸ Settings… window and correct any size/spacing here before
+     trusting it as ground truth. The 420×460 window size ported to
+     `crates/finder/src/view/settings_window.rs` is a placeholder for the
+     same reason. -->
+<style>
+:root{color-scheme:dark;--surface:#202027;--line:#3b3b43;--text:#dddddf;--muted:#a4a4aa;--control:#303038;--accent:#1372f9}
+*{box-sizing:border-box}body{margin:20px;background:#111;color:var(--text);font:13px system-ui;display:flex;gap:22px;align-items:start;flex-wrap:wrap}
+.panel{width:420px;height:460px;border:1px solid var(--line);border-radius:12px;background:var(--surface);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 32px #0008}
+header{text-align:center;color:var(--muted);height:28px;line-height:28px;font-weight:600;border-bottom:1px solid var(--line)}
+.tabs{display:flex;gap:4px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.tabs span{padding:4px 10px;border-radius:6px;background:var(--control)}
+.tabs span.on{background:var(--accent);color:#fff}
+.body{flex:1;overflow:auto;padding:4px 0}
+.section-label{padding:10px 12px 4px;font-size:11px;font-weight:600;color:var(--muted)}
+label{display:flex;align-items:center;gap:8px;padding:4px 12px;line-height:20px}
+.list{margin:0 12px;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.list .row{display:flex;align-items:center;gap:8px;height:28px;padding:0 10px;border-top:1px solid var(--line)}
+.list .row:first-child{border-top:none}
+.list .row.on{color:var(--accent)}
+.swatch{width:12px;height:12px;border-radius:50%}
+input{accent-color:var(--accent)}
+</style>
+<section class="panel">
+  <header>Settings</header>
+  <div class="tabs"><span class="on">General</span><span>Tags</span><span>Sidebar</span><span>Advanced</span></div>
+  <div class="body">
+    <div class="section-label">Show these items on the desktop:</div>
+    <label><input type="checkbox">Hard disks</label>
+    <label><input type="checkbox" checked>External disks</label>
+    <label><input type="checkbox" checked>CDs, DVDs, and iPods</label>
+    <label><input type="checkbox" checked>Connected servers</label>
+    <div class="section-label">New Finder windows show:</div>
+    <div class="list">
+      <div class="row on">Home ✓</div>
+      <div class="row">Desktop</div>
+      <div class="row">Documents</div>
+      <div class="row">Downloads</div>
+      <div class="row">Computer</div>
+    </div>
+    <label style="margin-top:8px"><input type="checkbox">Open folders in tabs instead of new windows</label>
+  </div>
+</section>
+<section class="panel">
+  <header>Settings</header>
+  <div class="tabs"><span>General</span><span class="on">Tags</span><span>Sidebar</span><span>Advanced</span></div>
+  <div class="body">
+    <div class="section-label">Tags</div>
+    <div class="list">
+      <div class="row"><span class="swatch" style="background:#ff3b30"></span><span style="flex:1">Red</span><label style="padding:0"><input type="checkbox" checked>Show in sidebar</label></div>
+      <div class="row"><span class="swatch" style="background:#ff9500"></span><span style="flex:1">Orange</span><label style="padding:0"><input type="checkbox" checked>Show in sidebar</label></div>
+      <div class="row"><span class="swatch" style="background:#ffcc00"></span><span style="flex:1">Yellow</span><label style="padding:0"><input type="checkbox" checked>Show in sidebar</label></div>
+      <div class="row"><span class="swatch" style="background:#34c759"></span><span style="flex:1">Green</span><label style="padding:0"><input type="checkbox" checked>Show in sidebar</label></div>
+      <div class="row"><span class="swatch" style="background:#1372f9"></span><span style="flex:1">Blue</span><label style="padding:0"><input type="checkbox" checked>Show in sidebar</label></div>
+      <div class="row"><span class="swatch" style="background:#af52de"></span><span style="flex:1">Purple</span><label style="padding:0"><input type="checkbox" checked>Show in sidebar</label></div>
+      <div class="row"><span class="swatch" style="background:#8e8e93"></span><span style="flex:1">Gray</span><label style="padding:0"><input type="checkbox" checked>Show in sidebar</label></div>
+    </div>
+  </div>
+</section>
+<section class="panel">
+  <header>Settings</header>
+  <div class="tabs"><span>General</span><span>Tags</span><span class="on">Sidebar</span><span>Advanced</span></div>
+  <div class="body">
+    <div class="section-label">Show these items in the sidebar:</div>
+    <label><input type="checkbox" checked>Recents</label>
+    <label><input type="checkbox" checked>Applications</label>
+    <label><input type="checkbox">Desktop</label>
+    <label><input type="checkbox">Documents</label>
+    <label><input type="checkbox" checked>Downloads</label>
+    <label><input type="checkbox">Home</label>
+    <label><input type="checkbox" checked>Bin</label>
+    <label><input type="checkbox" checked>Hard disks</label>
+    <label><input type="checkbox" checked>External disks</label>
+    <label><input type="checkbox" checked>Tags…</label>
+  </div>
+</section>
+<section class="panel">
+  <header>Settings</header>
+  <div class="tabs"><span>General</span><span>Tags</span><span>Sidebar</span><span class="on">Advanced</span></div>
+  <div class="body">
+    <label><input type="checkbox" checked>Show all filename extensions</label>
+    <label><input type="checkbox" checked>Show warning before changing an extension</label>
+    <label><input type="checkbox" checked>Show warning before emptying the Bin</label>
+    <label><input type="checkbox">Remove items from the Bin after 30 days</label>
+    <div class="section-label">Keep folders on top:</div>
+    <label><input type="checkbox">in windows, when sorting by name</label>
+    <label><input type="checkbox">on Desktop</label>
+    <div class="section-label">When performing a search:</div>
+    <div class="list">
+      <div class="row on">Search This Mac ✓</div>
+      <div class="row">Search the Current Folder</div>
+      <div class="row">Use the Previous Search Scope</div>
+    </div>
+  </div>
+</section>
+</html>

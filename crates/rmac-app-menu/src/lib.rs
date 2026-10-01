@@ -530,7 +530,10 @@ const NOTES_MENUS: &[MenuSpec] = &[
 const FILES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: APPLICATION_MENU,
-        items: &[item!("Empty Trash…", "finder::EmptyTrash", "⇧⌘⌫")],
+        items: &[
+            item!("Settings…", "finder::ShowSettings", "⌘,", separator),
+            item!("Empty Trash…", "finder::EmptyTrash", "⇧⌘⌫"),
+        ],
     },
     MenuSpec {
         label: "File",

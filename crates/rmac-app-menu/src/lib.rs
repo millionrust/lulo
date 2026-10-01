@@ -704,7 +704,7 @@ const MONITOR_MENUS: &[MenuSpec] = &[
             ),
             item!(
                 "Filter Processes",
-                "activity_monitor::FocusSearch",
+                "activity_monitor::FilterProcesses",
                 "⌥⌘F",
                 separator
             ),

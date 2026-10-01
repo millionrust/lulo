@@ -256,7 +256,7 @@
         },
         {
           "label": "Filter Processes",
-          "action": "activity_monitor::FocusSearch",
+          "action": "activity_monitor::FilterProcesses",
           "shortcut": "⌥⌘F",
           "separator_before": true,
           "children": []

@@ -11,8 +11,8 @@ use crate::columns::ColKey;
 use crate::metrics::{format_bytes, format_duration, format_mem, format_rate, Tab};
 use crate::view_filter::ViewFilter;
 use crate::{
-    process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, FindNext,
-    FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess, Minimize, QuitProcess,
+    process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, FilterProcesses,
+    FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess, Minimize, QuitProcess,
     RefreshEveryFiveSeconds, RefreshEverySecond, RefreshEveryTwoSeconds, ShowActiveProcesses,
     ShowAllProcesses, ShowMyProcesses, ShowOtherUsersProcesses, ShowSystemProcesses,
     ToggleCpuColumn, ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn,
@@ -46,6 +46,9 @@ impl Render for MonitorView {
                 this.request_kill(true, window, cx);
             }))
             .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
+                this.focus_search(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &FilterProcesses, window, cx| {
                 this.focus_search(window, cx);
             }))
             .on_action(cx.listener(|this, _: &FindNext, _, cx| {

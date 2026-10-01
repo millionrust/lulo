@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "scenario": "files/find-by-name",
+  "platform": "Lulo",
+  "observations": {
+    "focused": {"focus": {"role": "search-field", "label": "Search by Name"}}
+  }
+}

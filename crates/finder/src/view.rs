@@ -179,6 +179,7 @@ actions!(
         EmptyTrash,
         EmptyTrashImmediately,
         Find,
+        FindByName,
         CopyAsPathname,
         CopyAsLink,
         DeselectAll,
@@ -455,6 +456,7 @@ struct FinderView {
     search_cancel: Option<Arc<AtomicBool>>,
     /// The toolbar search circle has been opened into a field.
     search_open: bool,
+    search_name_only: bool,
     /// View ▸ Show Path Bar (⌥⌘P); off by default, as on the Mac.
     show_path_bar: bool,
     show_status_bar: bool,

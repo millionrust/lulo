@@ -613,6 +613,7 @@ const FILES_MENUS: &[MenuSpec] = &[
             // has no alternates yet, so it is listed after it.
             item!("Delete Immediately…", "finder::DeletePermanently", "⌥⌘⌫"),
             item!("Find", "finder::Find", "⌘F", separator),
+            item!("Find by Name…", "finder::FindByName", "⌃⇧⌘F"),
         ],
     },
     MenuSpec {
@@ -2553,6 +2554,7 @@ mod tests {
             ("finder::CloseAll", "⌥⌘W"),
             ("finder::QuickLook", "⌘Y"),
             ("finder::GoUpInNewWindow", "⌃⌘↑"),
+            ("finder::FindByName", "⌃⇧⌘F"),
             ("finder::MoveItemHere", "⌥⌘V"),
             ("finder::GoRecents", "⇧⌘F"),
             ("finder::GoDocuments", "⇧⌘O"),

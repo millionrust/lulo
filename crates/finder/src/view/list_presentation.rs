@@ -804,6 +804,9 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &GoDocuments, _, cx| this.go_documents(cx)))
             .on_action(cx.listener(|this, _: &GoRecents, _, cx| this.recents_click(cx)))
             .on_action(cx.listener(|this, _: &Find, window, cx| this.open_search(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &FindByName, window, cx| this.open_name_search(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &CopyAsPathname, _, cx| this.copy_as_pathname(cx)))
             .on_action(cx.listener(|this, _: &CopyAsLink, _, cx| this.copy_as_link(cx)))
             .on_action(cx.listener(|this, _: &MoveItemHere, _, cx| this.move_item_here(cx)))

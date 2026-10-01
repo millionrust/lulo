@@ -212,6 +212,13 @@
           "shortcut": "⌘F",
           "separator_before": true,
           "children": []
+        },
+        {
+          "label": "Find by Name…",
+          "action": "finder::FindByName",
+          "shortcut": "⌃⇧⌘F",
+          "separator_before": false,
+          "children": []
         }
       ]
     },
@@ -821,7 +828,6 @@
       "View",
       "Sort By",
       "Actions",
-      "Search",
       "Toolbar"
     ]
   },

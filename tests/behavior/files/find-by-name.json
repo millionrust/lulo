@@ -1,0 +1,12 @@
+{
+  "title": "Control-Shift-Command-F opens filename search",
+  "app": "files",
+  "lulo_only": true,
+  "setup": {"files": {"report.txt": "Fixture\n"}},
+  "launch": {"folder": "."},
+  "steps": [
+    {"key": "ctrl-shift-cmd-f"},
+    {"observe": "focused", "facts": ["focus"]}
+  ],
+  "omit": ["focused.focus.value", "focused.focus.selection", "focused.focus.selected_text", "focused.focus.selected_all"]
+}

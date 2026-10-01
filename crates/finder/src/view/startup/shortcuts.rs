@@ -136,6 +136,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             Some("Finder"),
         ),
         KeyBinding::new(rmac_ui::shortcuts::FIND.keystroke, Find, Some("Finder")),
+        KeyBinding::new("ctrl-shift-cmd-f", FindByName, Some("Finder")),
         KeyBinding::new("alt-cmd-c", CopyAsPathname, Some("Finder")),
         KeyBinding::new("ctrl-alt-cmd-c", CopyAsLink, Some("Finder")),
         KeyBinding::new("alt-cmd-a", DeselectAll, Some("Finder")),

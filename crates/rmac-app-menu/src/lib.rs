@@ -446,11 +446,11 @@ const NOTES_MENUS: &[MenuSpec] = &[
             submenu!(
                 "Export as",
                 "notes::ExportAsMenu",
-                [item!("PDF…", "notes::ExportNotePdf", "")],
+                [item!("PDF", "notes::ExportNotePdf", "")],
                 separator
             ),
             item!("Export Notes…", "notes::ExportNotes", "⇧⌘E"),
-            item!("Pin Note", "notes::TogglePin", "", separator),
+            item!("Unpin Note", "notes::TogglePin", "", separator),
             item!("Duplicate Note", "notes::DuplicateNote", "⌘D"),
             item!("Print…", "notes::PrintNote", "⌘P", separator),
         ],
@@ -463,6 +463,8 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("Cut", "input::Cut", "⌘X", separator),
             item!("Copy", "input::Copy", "⌘C"),
             item!("Paste", "input::Paste", "⌘V"),
+            item!("Paste and Match Style", "notes::PastePlainText", "⌥⇧⌘V"),
+            item!("Delete Note", "notes::DeleteSelectedNote", "⌫", separator),
             item!("Select All", "input::SelectAll", "⌘A"),
             item!("Add Photo…", "notes::AddPhoto", "", separator),
             submenu!(
@@ -471,6 +473,10 @@ const NOTES_MENUS: &[MenuSpec] = &[
                 [
                     item!("Find…", "notes::FindInNote", "⌘F"),
                     item!("Note List Search…", "notes::FocusSearch", "⌥⌘F"),
+                    item!("Find Next", "notes::FindInNoteNext", "⌘G"),
+                    item!("Find Previous", "notes::FindInNotePrevious", "⇧⌘G"),
+                    item!("Use Selection for Find", "notes::UseSelectionForFind", "⌘E"),
+                    item!("Jump to Selection", "notes::JumpToSelection", "⌘J"),
                 ],
                 separator
             ),
@@ -479,29 +485,25 @@ const NOTES_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "Format",
         items: &[
-            item!("Bold", "notes::ToggleBold", "⌘B"),
-            item!("Italic", "notes::ToggleItalic", "⌘I", separator),
+            item!("Title", "notes::SetStyleTitle", "⇧⌘T"),
+            item!("Heading", "notes::SetStyleHeading", "⇧⌘H"),
+            item!("Subheading", "notes::SetStyleSubheading", "⇧⌘J"),
+            item!("Body", "notes::SetStyleBody", "⇧⌘B"),
+            item!("Monostyled", "notes::SetStyleMonospaced", "⇧⌘M"),
+            item!("Bulleted List", "notes::InsertBulletedList", "⇧⌘7", separator),
+            item!("Dashed List", "notes::InsertDashedList", "⇧⌘8"),
+            item!("Numbered List", "notes::InsertNumberedList", "⇧⌘9"),
+            item!("Block Quote", "notes::InsertBlockQuote", "⌘'"),
+            item!("Checklist", "notes::InsertChecklist", "⇧⌘L"),
+            item!("Mark as Ticked", "notes::ToggleChecklistDone", "⇧⌘U"),
             submenu!(
-                "Paragraph Style",
-                "notes::ParagraphStyleMenu",
+                "Font",
+                "notes::FontMenu",
                 [
-                    item!("Title", "notes::SetStyleTitle", ""),
-                    item!("Heading", "notes::SetStyleHeading", ""),
-                    item!("Subheading", "notes::SetStyleSubheading", ""),
-                    item!("Body", "notes::SetStyleBody", ""),
-                    item!("Monospaced", "notes::SetStyleMonospaced", ""),
+                    item!("Bold", "notes::ToggleBold", "⌘B"),
+                    item!("Italic", "notes::ToggleItalic", "⌘I"),
                 ],
                 separator
-            ),
-            item!("Checklist", "notes::InsertChecklist", "⇧⌘L"),
-            item!("Mark as Done", "notes::ToggleChecklistDone", "⇧⌘U"),
-            submenu!(
-                "Lists",
-                "notes::ListsMenu",
-                [
-                    item!("Bulleted List", "notes::InsertBulletedList", ""),
-                    item!("Numbered List", "notes::InsertNumberedList", ""),
-                ]
             ),
         ],
     },

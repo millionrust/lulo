@@ -159,6 +159,30 @@ impl NotesView {
         });
     }
 
+    pub(super) fn insert_block_quote(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.apply_to_current_line(window, cx, |line| {
+            if let Some(unquoted) = line.strip_prefix("> ") {
+                unquoted.to_string()
+            } else {
+                format!("> {line}")
+            }
+        });
+    }
+
+    pub(super) fn paste_plain_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.body_format_editable() {
+            return;
+        }
+        let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
+            return;
+        };
+        self.body.update(cx, |state, cx| {
+            state.replace(text, window, cx);
+            state.focus(window, cx);
+        });
+        self.schedule_current_edit(cx);
+    }
+
     /// Wrap (or unwrap) the current selection in `prefix`/`suffix`, the
     /// Markdown-insertion form of Bold (`**`) and Italic (`_`). An empty
     /// selection gets an empty pair with the caret left inside it.

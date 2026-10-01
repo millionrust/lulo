@@ -491,10 +491,18 @@ impl NotesView {
             "notes::SetStyleBody",
             "notes::SetStyleMonospaced",
             "notes::InsertBulletedList",
+            "notes::InsertDashedList",
             "notes::InsertNumberedList",
+            "notes::InsertBlockQuote",
+            "notes::PastePlainText",
         ] {
             rmac_ui::set_menu_enabled(action, body_editable, cx);
         }
+        rmac_ui::set_menu_enabled("notes::DeleteSelectedNote", ready && has_note, cx);
+        rmac_ui::set_menu_enabled("notes::FindInNoteNext", ready && has_note, cx);
+        rmac_ui::set_menu_enabled("notes::FindInNotePrevious", ready && has_note, cx);
+        rmac_ui::set_menu_enabled("notes::UseSelectionForFind", body_editable, cx);
+        rmac_ui::set_menu_enabled("notes::JumpToSelection", body_editable, cx);
         rmac_ui::set_menu_enabled("notes::FindInNote", ready && has_note, cx);
         rmac_ui::set_menu_enabled("notes::PrintNote", has_note, cx);
         rmac_ui::set_menu_enabled("notes::ExportNotePdf", has_note, cx);

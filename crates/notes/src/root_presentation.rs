@@ -114,6 +114,15 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &FindInNotePrevious, window, cx| {
                 this.note_find_previous(window, cx)
             }))
+            .on_action(cx.listener(|this, _: &UseSelectionForFind, window, cx| {
+                this.use_selection_for_find(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &JumpToSelection, window, cx| {
+                this.jump_to_selection(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &PastePlainText, window, cx| {
+                this.paste_plain_text(window, cx)
+            }))
             .on_action(cx.listener(|this, _: &ExportNotes, _, cx| this.begin_export(cx)))
             .on_action(cx.listener(|this, _: &PrintNote, window, cx| this.print_note(window, cx)))
             .on_action(
@@ -149,6 +158,12 @@ impl NotesView {
             }))
             .on_action(cx.listener(|this, _: &InsertNumberedList, window, cx| {
                 this.insert_list_marker(ListMarker::Numbered, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &InsertDashedList, window, cx| {
+                this.insert_list_marker(ListMarker::Bulleted, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &InsertBlockQuote, window, cx| {
+                this.insert_block_quote(window, cx)
             }))
             .on_action(cx.listener(|this, _: &RenameSelectedFolder, window, cx| {
                 this.begin_folder_rename(window, cx)

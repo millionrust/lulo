@@ -21,6 +21,23 @@ fn note_find_offsets(hay: &str, needle: &str) -> Vec<usize> {
 }
 
 impl NotesView {
+    pub(super) fn use_selection_for_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let selection = self.body.read(cx).selected_range();
+        let text = self.body.read(cx).value().get(selection).unwrap_or_default().to_string();
+        if text.is_empty() {
+            return;
+        }
+        self.note_find_input.update(cx, |state, cx| state.set_value(text, window, cx));
+        self.note_find_open = true;
+        self.recompute_note_find_matches(cx);
+        self.note_find_input.update(cx, |state, cx| state.focus(window, cx));
+        cx.notify();
+    }
+
+    pub(super) fn jump_to_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.body.update(cx, |state, cx| state.focus(window, cx));
+    }
+
     pub(super) fn toggle_note_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.note_find_open {
             self.close_note_find(window, cx);

@@ -26,7 +26,9 @@ impl NotesView {
             KeyBinding::new("cmd-alt-f", FocusSearch, Some("Notes")),
             KeyBinding::new("cmd-g", FindInNoteNext, Some("Notes")),
             KeyBinding::new("shift-cmd-g", FindInNotePrevious, Some("Notes")),
-            KeyBinding::new("cmd-shift-e", ExportNotes, Some("Notes")),
+            KeyBinding::new("cmd-e", UseSelectionForFind, Some("Notes")),
+            KeyBinding::new("cmd-j", JumpToSelection, Some("Notes")),
+            KeyBinding::new("alt-shift-cmd-v", PastePlainText, Some("Notes")),
             KeyBinding::new(
                 rmac_ui::shortcuts::PRINT.keystroke,
                 PrintNote,
@@ -36,6 +38,15 @@ impl NotesView {
             KeyBinding::new("cmd-shift-u", ToggleChecklistDone, Some("Notes")),
             KeyBinding::new("cmd-b", ToggleBold, Some("Notes")),
             KeyBinding::new("cmd-i", ToggleItalic, Some("Notes")),
+            KeyBinding::new("shift-cmd-t", SetStyleTitle, Some("Notes")),
+            KeyBinding::new("shift-cmd-h", SetStyleHeading, Some("Notes")),
+            KeyBinding::new("shift-cmd-j", SetStyleSubheading, Some("Notes")),
+            KeyBinding::new("shift-cmd-b", SetStyleBody, Some("Notes")),
+            KeyBinding::new("shift-cmd-m", SetStyleMonospaced, Some("Notes")),
+            KeyBinding::new("shift-cmd-7", InsertBulletedList, Some("Notes")),
+            KeyBinding::new("shift-cmd-8", InsertDashedList, Some("Notes")),
+            KeyBinding::new("shift-cmd-9", InsertNumberedList, Some("Notes")),
+            KeyBinding::new("cmd-apostrophe", InsertBlockQuote, Some("Notes")),
             // ⌘W closes the window through the same review as the red
             // button (pending changes, open choosers, running imports).
             KeyBinding::new(

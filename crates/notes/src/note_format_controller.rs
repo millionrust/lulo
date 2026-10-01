@@ -25,6 +25,69 @@ pub(super) enum ListMarker {
     Numbered,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum ChecklistBulkAction {
+    TickAll,
+    UntickAll,
+    MoveTickedToBottom,
+    DeleteTicked,
+}
+
+fn checklist_line(line: &str) -> bool {
+    let line = line.trim_start();
+    line.starts_with("- [ ] ") || line.starts_with("- [x] ") || line.starts_with("- [X] ")
+}
+
+fn ticked_line(line: &str) -> bool {
+    let line = line.trim_start();
+    line.starts_with("- [x] ") || line.starts_with("- [X] ")
+}
+
+fn checklist_bulk_text(text: &str, action: ChecklistBulkAction) -> String {
+    let trailing_newline = text.ends_with('\n');
+    let mut lines = text.lines().map(str::to_owned).collect::<Vec<_>>();
+    match action {
+        ChecklistBulkAction::TickAll | ChecklistBulkAction::UntickAll => {
+            for line in &mut lines {
+                if !checklist_line(line) {
+                    continue;
+                }
+                if let Some(range) = find_checkbox_marker(line) {
+                    line.replace_range(
+                        range,
+                        if matches!(action, ChecklistBulkAction::TickAll) {
+                            "[x]"
+                        } else {
+                            "[ ]"
+                        },
+                    );
+                }
+            }
+        }
+        ChecklistBulkAction::DeleteTicked => lines.retain(|line| !ticked_line(line)),
+        ChecklistBulkAction::MoveTickedToBottom => {
+            let mut start = 0;
+            while start < lines.len() {
+                if !checklist_line(&lines[start]) {
+                    start += 1;
+                    continue;
+                }
+                let mut end = start + 1;
+                while end < lines.len() && checklist_line(&lines[end]) {
+                    end += 1;
+                }
+                lines[start..end].sort_by_key(|line| ticked_line(line));
+                start = end;
+            }
+        }
+    }
+    let mut result = lines.join("\n");
+    if trailing_newline {
+        result.push('\n');
+    }
+    result
+}
+
 /// The current line's text with one leading Markdown marker (heading,
 /// checklist, list, or a whole-line code span) removed, so switching
 /// paragraph styles replaces rather than stacks markers.
@@ -60,8 +123,10 @@ fn strip_leading_marker(line: &str) -> &str {
 /// text can never be mistaken for a marker further in.
 fn find_checkbox_marker(text: &str) -> Option<std::ops::Range<usize>> {
     const MARKERS: [&str; 3] = ["[ ]", "[x]", "[X]"];
-    let window_end = text.len().min(16);
-    let prefix = text.get(..window_end)?;
+    let window_end = (0..=text.len().min(16))
+        .rev()
+        .find(|&index| text.is_char_boundary(index))?;
+    let prefix = &text[..window_end];
     MARKERS
         .into_iter()
         .find_map(|marker| prefix.find(marker).map(|index| index..index + marker.len()))
@@ -82,6 +147,27 @@ fn current_line_range(value: &str, cursor: usize) -> std::ops::Range<usize> {
 }
 
 impl NotesView {
+    pub(super) fn apply_checklist_bulk(
+        &mut self,
+        action: ChecklistBulkAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.body_format_editable() {
+            return;
+        }
+        let current = self.body.read(cx).value().to_string();
+        let updated = checklist_bulk_text(&current, action);
+        if updated == current {
+            return;
+        }
+        self.body.update(cx, |state, cx| {
+            state.set_selected_range(0..current.len(), cx);
+            state.replace(updated, window, cx);
+            state.focus(window, cx);
+        });
+        self.schedule_current_edit(cx);
+    }
     /// Whether the body accepts an edit right now — mirrors
     /// `edit_recovery_controller::assistive_fields_editable` and
     /// `insert_checklist`'s own guard.
@@ -367,5 +453,26 @@ mod tests {
             find_checkbox_marker("- A very long line of text before any [ ] appears"),
             None
         );
+    }
+
+    #[test]
+    fn checklist_bulk_actions_preserve_other_lines_and_list_boundaries() {
+        let body = "First\n- [x] one\n- [ ] two\n- [x] three\n\n- [x] four\n- [ ] five\n";
+        assert_eq!(
+            checklist_bulk_text(body, ChecklistBulkAction::MoveTickedToBottom),
+            "First\n- [ ] two\n- [x] one\n- [x] three\n\n- [ ] five\n- [x] four\n"
+        );
+        assert_eq!(
+            checklist_bulk_text(body, ChecklistBulkAction::DeleteTicked),
+            "First\n- [ ] two\n\n- [ ] five\n"
+        );
+        assert!(checklist_bulk_text(body, ChecklistBulkAction::TickAll)
+            .lines()
+            .filter(|line| checklist_line(line))
+            .all(ticked_line));
+        assert!(checklist_bulk_text(body, ChecklistBulkAction::UntickAll)
+            .lines()
+            .filter(|line| checklist_line(line))
+            .all(|line| !ticked_line(line)));
     }
 }

@@ -8,7 +8,7 @@ impl NotesView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         if window.is_window_active() {
-            self.publish_menu_state(cx);
+            self.publish_menu_state(window, cx);
         }
         let content = match self.session.phase() {
             SessionPhase::Starting if self.message.is_none() => centered_state(
@@ -93,6 +93,10 @@ impl NotesView {
             .on_action(cx.listener(|this, _: &DeleteSelectedNote, _, cx| {
                 this.delete_selected_note_with_undo(cx)
             }))
+            .on_action(cx.listener(|this, _: &CloseAll, window, cx| this.request_close(window, cx)))
+            .on_action(cx.listener(|_, _: &FocusMainWindow, window, _| {
+                window.activate_window();
+            }))
             .on_action(cx.listener(|this, _: &TogglePin, _, cx| this.toggle_pin(cx)))
             .on_action(cx.listener(|this, _: &DuplicateNote, _, cx| this.duplicate_note(cx)))
             .on_action(
@@ -143,6 +147,18 @@ impl NotesView {
             }))
             .on_action(cx.listener(|this, _: &ToggleChecklistDone, window, cx| {
                 this.toggle_checklist_line(window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &TickAll, window, cx| {
+                this.apply_checklist_bulk(ChecklistBulkAction::TickAll, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &UntickAll, window, cx| {
+                this.apply_checklist_bulk(ChecklistBulkAction::UntickAll, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &MoveTickedToBottom, window, cx| {
+                this.apply_checklist_bulk(ChecklistBulkAction::MoveTickedToBottom, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &DeleteTicked, window, cx| {
+                this.apply_checklist_bulk(ChecklistBulkAction::DeleteTicked, window, cx)
             }))
             .on_action(cx.listener(|this, _: &ToggleBold, window, cx| this.toggle_bold(window, cx)))
             .on_action(

@@ -74,6 +74,13 @@
           "children": []
         },
         {
+          "label": "Close All",
+          "action": "notes::CloseAll",
+          "shortcut": "⌥⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Import to Notes…",
           "action": "notes::ImportNote",
           "shortcut": "",
@@ -182,6 +189,13 @@
           "action": "notes::DeleteSelectedNote",
           "shortcut": "⌫",
           "separator_before": true,
+          "children": []
+        },
+        {
+          "label": "Rename",
+          "action": "notes::RenameSelectedFolder",
+          "shortcut": "",
+          "separator_before": false,
           "children": []
         },
         {
@@ -336,6 +350,42 @@
           "shortcut": "⇧⌘U",
           "separator_before": false,
           "children": []
+        },
+        {
+          "label": "More",
+          "action": "notes::ChecklistMoreMenu",
+          "shortcut": "",
+          "separator_before": false,
+          "children": [
+            {
+              "label": "Tick All",
+              "action": "notes::TickAll",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Untick All",
+              "action": "notes::UntickAll",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Move Ticked to Bottom",
+              "action": "notes::MoveTickedToBottom",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            },
+            {
+              "label": "Delete Ticked",
+              "action": "notes::DeleteTicked",
+              "shortcut": "",
+              "separator_before": false,
+              "children": []
+            }
+          ]
         },
         {
           "label": "Font",
@@ -496,6 +546,13 @@
               "children": []
             }
           ]
+        },
+        {
+          "label": "Notes",
+          "action": "notes::FocusMainWindow",
+          "shortcut": "⌘0",
+          "separator_before": true,
+          "children": []
         },
         {
           "label": "Bring All to Front",

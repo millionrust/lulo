@@ -453,7 +453,7 @@ impl NotesView {
     /// The menu bar's live state: View ▸ Sort By ticks the current order,
     /// File ▸ Pin Note says Unpin for a pinned note, and commands that need
     /// a note, the library or no pending change are greyed out without.
-    pub(super) fn publish_menu_state(&self, cx: &mut Context<Self>) {
+    pub(super) fn publish_menu_state(&self, window: &Window, cx: &mut Context<Self>) {
         let ready = self.is_interactive_ready();
         let pending = self.latest_local_generation.is_some();
         let sort_order = self.session.snapshot().map(|snapshot| snapshot.sort_order);
@@ -482,6 +482,7 @@ impl NotesView {
                 .session
                 .selected_note()
                 .is_some_and(|note| !note.deleted);
+        let body_focused = self.body.read(cx).focus_handle(cx).is_focused(window);
         for action in [
             "notes::ToggleBold",
             "notes::ToggleItalic",
@@ -494,14 +495,28 @@ impl NotesView {
             "notes::InsertDashedList",
             "notes::InsertNumberedList",
             "notes::InsertBlockQuote",
+            "notes::ToggleChecklistDone",
             "notes::InsertLink",
             "notes::IncreaseIndent",
             "notes::DecreaseIndent",
             "notes::PastePlainText",
+            "notes::TickAll",
+            "notes::UntickAll",
+            "notes::MoveTickedToBottom",
+            "notes::DeleteTicked",
         ] {
-            rmac_ui::set_menu_enabled(action, body_editable, cx);
+            rmac_ui::set_menu_enabled(action, body_editable && body_focused, cx);
         }
         rmac_ui::set_menu_enabled("notes::DeleteSelectedNote", ready && has_note, cx);
+        rmac_ui::set_menu_enabled(
+            "notes::RenameSelectedFolder",
+            ready
+                && matches!(
+                    self.session.folder_selection(),
+                    rmac_notes_runtime::FolderSelection::Folder(_)
+                ),
+            cx,
+        );
         rmac_ui::set_menu_enabled("notes::FindInNoteNext", ready && has_note, cx);
         rmac_ui::set_menu_enabled("notes::FindInNotePrevious", ready && has_note, cx);
         rmac_ui::set_menu_enabled("notes::UseSelectionForFind", body_editable, cx);

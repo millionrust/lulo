@@ -441,6 +441,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("New Note", "notes::ComposeNote", "⌘N"),
             item!("New Folder", "notes::CreateFolder", "⇧⌘N"),
             item!("Close", "rmac_ui::RequestClose", "⌘W", separator),
+            item!("Close All", "notes::CloseAll", "⌥⌘W"),
             item!("Import to Notes…", "notes::ImportNote", "", separator),
             item!("Import Markdown...", "notes::ImportMarkdown", ""),
             submenu!(
@@ -467,6 +468,7 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("Paste", "input::Paste", "⌘V"),
             item!("Paste and Match Style", "notes::PastePlainText", "⌥⇧⌘V"),
             item!("Delete Note", "notes::DeleteSelectedNote", "⌫", separator),
+            item!("Rename", "notes::RenameSelectedFolder", ""),
             item!("Select All", "input::SelectAll", "⌘A"),
             item!("Add Link…", "notes::InsertLink", "⌘K"),
             submenu!(
@@ -505,6 +507,16 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("Checklist", "notes::InsertChecklist", "⇧⌘L"),
             item!("Mark as Ticked", "notes::ToggleChecklistDone", "⇧⌘U"),
             submenu!(
+                "More",
+                "notes::ChecklistMoreMenu",
+                [
+                    item!("Tick All", "notes::TickAll", ""),
+                    item!("Untick All", "notes::UntickAll", ""),
+                    item!("Move Ticked to Bottom", "notes::MoveTickedToBottom", ""),
+                    item!("Delete Ticked", "notes::DeleteTicked", ""),
+                ]
+            ),
+            submenu!(
                 "Font",
                 "notes::FontMenu",
                 [
@@ -531,6 +543,10 @@ const NOTES_MENUS: &[MenuSpec] = &[
             item!("Zoom Out", "notes::ZoomOut", "⇧⌘,"),
             item!("Actual Size", "notes::ZoomReset", "⇧⌘0"),
         ],
+    },
+    MenuSpec {
+        label: WINDOW_MENU,
+        items: &[item!("Notes", "notes::FocusMainWindow", "⌘0")],
     },
 ];
 
@@ -2055,6 +2071,8 @@ mod tests {
             ("notes::InsertBlockQuote", "⌘'"),
             ("notes::ToggleFolders", "⌃⌘S"),
             ("notes::ZoomReset", "⇧⌘0"),
+            ("notes::CloseAll", "⌥⌘W"),
+            ("notes::FocusMainWindow", "⌘0"),
         ] {
             assert_eq!(shortcuts[action], shortcut, "{action}");
         }

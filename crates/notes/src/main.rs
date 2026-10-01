@@ -37,9 +37,9 @@ use std::thread;
 
 use gpui::{
     accesskit, actions, div, img, prelude::FluentBuilder as _, px, AccessibleAction, AnyElement,
-    AppContext as _, Context, Div, Entity, FocusHandle, InteractiveElement as _, IntoElement,
-    KeyBinding, ObjectFit, ParentElement, Render, RenderImage, Role, SharedString, Stateful,
-    StatefulInteractiveElement as _, Styled, StyledImage as _, Window,
+    AppContext as _, Context, Div, Entity, FocusHandle, Focusable as _, InteractiveElement as _,
+    IntoElement, KeyBinding, ObjectFit, ParentElement, Render, RenderImage, Role, SharedString,
+    Stateful, StatefulInteractiveElement as _, Styled, StyledImage as _, Window,
 };
 use gpui_component::{Icon, IconName, Size, StyledExt as _};
 use rmac_editor::InputState;
@@ -70,7 +70,7 @@ use input_support::{
     display_title, now_unix_ms, parse_tags, safe_export_stem, take_counter, unique_folder_name,
 };
 use markdown_presentation::render_markdown_document;
-use note_format_controller::{ListMarker, ParagraphStyle};
+use note_format_controller::{ChecklistBulkAction, ListMarker, ParagraphStyle};
 use notes_style::*;
 use presentation::{
     attachment_match_row, centered_state, date_label, date_section, folder_row,
@@ -90,6 +90,8 @@ actions!(
         CreateFolder,
         TrashOrRestore,
         DeleteSelectedNote,
+        CloseAll,
+        FocusMainWindow,
         TogglePin,
         DuplicateNote,
         SortByEdited,
@@ -108,6 +110,10 @@ actions!(
         DeleteSelectedFolder,
         InsertChecklist,
         ToggleChecklistDone,
+        TickAll,
+        UntickAll,
+        MoveTickedToBottom,
+        DeleteTicked,
         ToggleBold,
         ToggleItalic,
         SetStyleTitle,

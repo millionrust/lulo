@@ -22,6 +22,8 @@ impl NotesView {
             // this only fires when the list holds the keyboard.
             KeyBinding::new("backspace", DeleteSelectedNote, Some("Notes")),
             KeyBinding::new("cmd-d", DuplicateNote, Some("Notes")),
+            KeyBinding::new("alt-cmd-w", CloseAll, Some("Notes")),
+            KeyBinding::new("cmd-0", FocusMainWindow, Some("Notes")),
             // ⌘F is in-note Find; ⌥⌘F is the Mac's Note List Search.
             KeyBinding::new("cmd-f", FindInNote, Some("Notes")),
             KeyBinding::new("shift-cmd-f", FindAndReplace, Some("Notes")),

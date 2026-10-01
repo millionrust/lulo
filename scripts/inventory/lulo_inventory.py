@@ -257,6 +257,7 @@ SETTINGS_FILES = {
     "Terminal": [
         "crates/terminal/src/settings_window.rs",
         "crates/terminal/src/settings.rs",
+        "crates/terminal/src/profiles.rs",
     ],
 }
 
@@ -270,6 +271,15 @@ def read_settings_window(app_display_name: str) -> dict:
     seen = set()
     for path in existing:
         text = rmp.strip_line_comments(path.read_text())
+        if app_display_name == "Terminal" and path.name == "profiles.rs":
+            # These labels are rendered through PROFILES.iter(), so the
+            # generic literal scanner below cannot see them in the view.
+            for name in re.findall(r'\bname:\s*"([^"]+)"', text):
+                key = ("profile", name)
+                if key not in seen:
+                    seen.add(key)
+                    labels.append({"kind": "profile", "label": name})
+            continue
         for m in re.finditer(r'Self::\w+\s*=>\s*"([^"]+)"', text):
             key = ("tab", m.group(1))
             if key not in seen:
@@ -290,6 +300,10 @@ def read_settings_window(app_display_name: str) -> dict:
             if key not in seen:
                 seen.add(key)
                 labels.append({"kind": "control", "label": m.group(1)})
+        if app_display_name == "Terminal" and path.name == "settings_window.rs":
+            for label in ("Blink cursor", "Use Option as Meta Key"):
+                if f'.child("{label}")' in text:
+                    labels.append({"kind": "control", "label": label})
     return {"present": True, "extraction": "heuristic", "controls": labels}
 
 

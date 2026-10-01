@@ -282,6 +282,7 @@ impl Render for SettingsView {
                             ),
                     )
                     .child(section_label("Text"))
+                    .child(section_label("Cursor"))
                     .child(
                         div().px_3().v_flex().child(
                             div()
@@ -293,7 +294,7 @@ impl Render for SettingsView {
                                     |(index, style)| {
                                         choice_row(
                                             ("settings-cursor-style", index),
-                                            format!("Cursor: {}", style.label()),
+                                            style.label(),
                                             style == self.settings.cursor_style,
                                             index == 0,
                                             None,
@@ -316,7 +317,7 @@ impl Render for SettingsView {
                             .justify_between()
                             .text_size(px(12.0))
                             .text_color(rmac_ui::mac::text())
-                            .child("Blink Cursor")
+                            .child("Blink cursor")
                             .child(if self.settings.cursor_blink {
                                 "On"
                             } else {

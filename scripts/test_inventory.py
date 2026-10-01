@@ -243,6 +243,29 @@ class ContaminatedBackgroundCaptureTests(unittest.TestCase):
 
 
 class DiffSettingsAndToolbarTests(unittest.TestCase):
+    def test_terminal_settings_inventory_includes_rendered_profile_rows(self):
+        controls = li.read_settings_window("Terminal")["controls"]
+        labels = {control["label"] for control in controls}
+        self.assertIn("Clear Dark", labels)
+        self.assertIn("Silver Aerogel", labels)
+        self.assertIn("Blink cursor", labels)
+        self.assertIn("▊ Block", labels)
+
+    def test_unnamed_ax_scaffolding_is_not_a_settings_control(self):
+        mac = {"present": True, "controls": [
+            {"role": "AXTable", "label": "table"},
+            {"role": "AXButton", "label": "close button"},
+            {"role": "AXCheckBox", "label": "Display ANSI colours"},
+        ]}
+        lulo = {"present": True, "controls": []}
+        gaps = d.diff_settings("Terminal", mac, lulo)
+        self.assertEqual([gap.label for gap in gaps], ["Display ANSI colours"])
+
+    def test_terminal_menu_timeout_does_not_make_all_lulo_rows_extra(self):
+        gaps, notes = d.diff_app("Terminal", "Terminal")
+        self.assertFalse(any(gap.category == "menu" for gap in gaps))
+        self.assertTrue(any("menu diff skipped" in note for note in notes))
+
     def test_settings_entirely_missing_in_lulo(self):
         mac = {"present": True, "controls": [{"label": "General"}]}
         lulo = {"present": False, "controls": []}

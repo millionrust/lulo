@@ -15,7 +15,14 @@ fix).
 
 To re-run: `python3 scripts/inventory/lulo_inventory.py && python3 scripts/inventory/mac_inventory.py && python3 scripts/inventory/diff.py` (the Mac step needs to run on the reference Mac, unlocked; see the note at the bottom if it has not run yet).
 
-_1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+_984 gaps across 10 apps; 22 Mac-only items were allowlisted (see `tests/inventory/allowlist.json`)._
+
+## Coverage notes
+
+- Mac menu bar for TextEdit was not captured: osascript timed out after 90s; menu diff skipped
+- Mac menu bar for Terminal was not captured: osascript timed out after 90s; menu diff skipped
+
+To finish this run once the Mac is free: `python3 scripts/inventory/mac_inventory.py Terminal TextEdit && python3 scripts/inventory/diff.py`.
 
 ## Calculator
 
@@ -307,13 +314,8 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | FIL-MENU-124 | wrong/missing shortcut | Show Previous Tab | Window ▸ Show Previous Tab |  | ⌃⇧⇥ | shortcut differs |
 | FIL-SETTINGS-001 | missing settings control | Finder Settings | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | FIL-SETTINGS-002 | missing settings control | Store your Desktop & Documents folders in iCloud Drive and access them from your other devices. | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| FIL-SETTINGS-003 | missing settings control | close button | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| FIL-SETTINGS-004 | missing settings control | group | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| FIL-SETTINGS-005 | missing settings control | heading | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| FIL-SETTINGS-006 | missing settings control | minimise button | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| FIL-SETTINGS-007 | missing settings control | tickbox | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| FIL-SETTINGS-008 | missing settings control | toolbar | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| FIL-SETTINGS-009 | missing settings control | zoom button | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| FIL-SETTINGS-003 | missing settings control | heading | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| FIL-SETTINGS-004 | missing settings control | tickbox | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | FIL-CONTEXT-007 | Lulo-only (not on the Mac) | <label> | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
 | FIL-CONTEXT-008 | Lulo-only (not on the Mac) | Blue | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
 | FIL-CONTEXT-009 | Lulo-only (not on the Mac) | Gray | context menu ▸ file |  |  | present in Lulo but not found on the Mac |
@@ -910,11 +912,11 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | SET-MENU-074 | wrong/missing shortcut | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size | ⌃R | ⌃⌘R | shortcut differs |
 | SET-MENU-057 | wrong/missing shortcut | Right | Window ▸ Move & Resize ▸ Right | ⌃→ | ⌃⌘→ | shortcut differs |
 | SET-MENU-058 | wrong/missing shortcut | Top | Window ▸ Move & Resize ▸ Top | ⌃↑ | ⌃⌘↑ | shortcut differs |
-| SET-SIDEBAR-001 | missing sidebar pane | Apple Intelligence & Siri | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-002 | missing sidebar pane | Family | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-003 | missing sidebar pane | Game Center | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-004 | missing sidebar pane | Internet Accounts | sidebar |  |  | missing from Lulo's System Settings sidebar |
-| SET-SIDEBAR-005 | missing sidebar pane | Jacob Samas, Apple Account | sidebar |  |  | missing from Lulo's System Settings sidebar |
+| SET-SIDEBAR-001 | missing sidebar pane | <Owner>, Apple Account | sidebar |  |  | missing from Lulo's System Settings sidebar |
+| SET-SIDEBAR-002 | missing sidebar pane | Apple Intelligence & Siri | sidebar |  |  | missing from Lulo's System Settings sidebar |
+| SET-SIDEBAR-003 | missing sidebar pane | Family | sidebar |  |  | missing from Lulo's System Settings sidebar |
+| SET-SIDEBAR-004 | missing sidebar pane | Game Center | sidebar |  |  | missing from Lulo's System Settings sidebar |
+| SET-SIDEBAR-005 | missing sidebar pane | Internet Accounts | sidebar |  |  | missing from Lulo's System Settings sidebar |
 | SET-SIDEBAR-006 | missing sidebar pane | Printers & Scanners | sidebar |  |  | missing from Lulo's System Settings sidebar |
 | SET-SIDEBAR-007 | missing sidebar pane | Screen Time | sidebar |  |  | missing from Lulo's System Settings sidebar |
 | SET-SIDEBAR-008 | missing sidebar pane | Touch ID & Password | sidebar |  |  | missing from Lulo's System Settings sidebar |
@@ -942,173 +944,50 @@ _1112 gaps across 10 apps; 23 Mac-only items were allowlisted (see `tests/invent
 | TRM-SETTINGS-004 | missing settings control | Allow blinking text | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TRM-SETTINGS-005 | missing settings control | Antialias text | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 | TRM-SETTINGS-006 | missing settings control | Background | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-007 | missing settings control | Basic | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-008 | missing settings control | Blink cursor | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-009 | missing settings control | Bold Text | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-010 | missing settings control | Bright | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-011 | missing settings control | Change… | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-012 | missing settings control | Clear Dark | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-013 | missing settings control | Clear Light | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-014 | missing settings control | Colour & Effects | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-015 | missing settings control | Cursor | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-016 | missing settings control | Default | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-017 | missing settings control | Display ANSI colours | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-018 | missing settings control | Dynamic foreground colours | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-019 | missing settings control | Encodings | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-020 | missing settings control | Grass | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-021 | missing settings control | Help | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-022 | missing settings control | Homebrew | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-023 | missing settings control | Image: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-024 | missing settings control | Man Page | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-025 | missing settings control | Normal | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-026 | missing settings control | Novel | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-027 | missing settings control | Ocean | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-028 | missing settings control | Pro | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-029 | missing settings control | Profiles | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-030 | missing settings control | Red Sands | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-031 | missing settings control | Remove | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-032 | missing settings control | SF Mono Regular 11 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-033 | missing settings control | Selection | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-034 | missing settings control | Silver Aerogel | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-035 | missing settings control | Solid Colors | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-036 | missing settings control | System selectedControlColor | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-037 | missing settings control | System textBackgroundColor | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-038 | missing settings control | System textColor | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-039 | missing settings control | Tab | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-040 | missing settings control | Use bold fonts | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-041 | missing settings control | Use bright colours for bold text | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-042 | missing settings control | Window Groups | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-043 | missing settings control | action | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-044 | missing settings control | close button | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-045 | missing settings control | column | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-046 | missing settings control | decrement arrow button | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-047 | missing settings control | decrement page button | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-048 | missing settings control | group | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-049 | missing settings control | increment arrow button | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-050 | missing settings control | increment page button | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-051 | missing settings control | minimise button | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-052 | missing settings control | radio group | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-053 | missing settings control | rgb 0 0 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-054 | missing settings control | rgb 0 0 0.7 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-055 | missing settings control | rgb 0 0 1 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-056 | missing settings control | rgb 0 0.65 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-057 | missing settings control | rgb 0 0.65 0.7 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-058 | missing settings control | rgb 0 0.85 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-059 | missing settings control | rgb 0 0.9 0.9 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-060 | missing settings control | rgb 0.4 0.4 0.4 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-061 | missing settings control | rgb 0.544755 0.544755 0.544755 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-062 | missing settings control | rgb 0.6 0 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-063 | missing settings control | rgb 0.6 0.6 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-064 | missing settings control | rgb 0.7 0 0.7 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-065 | missing settings control | rgb 0.75 0.75 0.75 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-066 | missing settings control | rgb 0.9 0 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-067 | missing settings control | rgb 0.9 0 0.9 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-068 | missing settings control | rgb 0.9 0.9 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-069 | missing settings control | rgb 0.9 0.9 0.9 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-070 | missing settings control | scroll area | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-071 | missing settings control | scroll bar | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-072 | missing settings control | tab group | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-073 | missing settings control | table | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-074 | missing settings control | table row | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-075 | missing settings control | text | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-076 | missing settings control | toolbar | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-077 | missing settings control | value indicator | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-078 | missing settings control | zoom button | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-079 | missing settings control | ┃ Vertical Bar | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-080 | missing settings control | ▁ Underline | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-SETTINGS-081 | missing settings control | ▊ Block | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
-| TRM-MENU-001 | Lulo-only (not on the Mac) | About Terminal | Application ▸ About Terminal |  |  | present in Lulo but not found on the Mac |
-| TRM-MENU-004 | Lulo-only (not on the Mac) | Hide Others | Application ▸ Hide Others |  | ⌥⌘H | present in Lulo but not found on the Mac |
-| TRM-MENU-003 | Lulo-only (not on the Mac) | Hide Terminal | Application ▸ Hide Terminal |  | ⌘H | present in Lulo but not found on the Mac |
-| TRM-MENU-006 | Lulo-only (not on the Mac) | Quit Terminal | Application ▸ Quit Terminal |  | ⌘Q | present in Lulo but not found on the Mac |
-| TRM-MENU-002 | Lulo-only (not on the Mac) | Settings… | Application ▸ Settings… |  | ⌘, | present in Lulo but not found on the Mac |
-| TRM-MENU-005 | Lulo-only (not on the Mac) | Show All | Application ▸ Show All |  |  | present in Lulo but not found on the Mac |
-| TRM-MENU-019 | Lulo-only (not on the Mac) | Clear to Start | Edit ▸ Clear to Start |  | ⌘K | present in Lulo but not found on the Mac |
-| TRM-MENU-012 | Lulo-only (not on the Mac) | Copy | Edit ▸ Copy |  | ⌘C | present in Lulo but not found on the Mac |
-| TRM-MENU-020 | Lulo-only (not on the Mac) | Find | Edit ▸ Find |  |  | present in Lulo but not found on the Mac |
-| TRM-MENU-022 | Lulo-only (not on the Mac) | Find Next | Edit ▸ Find ▸ Find Next |  | ⌘G | present in Lulo but not found on the Mac |
-| TRM-MENU-023 | Lulo-only (not on the Mac) | Find Previous | Edit ▸ Find ▸ Find Previous |  | ⇧⌘G | present in Lulo but not found on the Mac |
-| TRM-MENU-021 | Lulo-only (not on the Mac) | Find… | Edit ▸ Find ▸ Find… |  | ⌘F | present in Lulo but not found on the Mac |
-| TRM-MENU-016 | Lulo-only (not on the Mac) | Navigate | Edit ▸ Navigate |  |  | present in Lulo but not found on the Mac |
-| TRM-MENU-018 | Lulo-only (not on the Mac) | Jump to Next Mark | Edit ▸ Navigate ▸ Jump to Next Mark |  | ⌘↓ | present in Lulo but not found on the Mac |
-| TRM-MENU-017 | Lulo-only (not on the Mac) | Jump to Previous Mark | Edit ▸ Navigate ▸ Jump to Previous Mark |  | ⌘↑ | present in Lulo but not found on the Mac |
-| TRM-MENU-013 | Lulo-only (not on the Mac) | Paste | Edit ▸ Paste |  | ⌘V | present in Lulo but not found on the Mac |
-| TRM-MENU-014 | Lulo-only (not on the Mac) | Select All | Edit ▸ Select All |  | ⌘A | present in Lulo but not found on the Mac |
-| TRM-MENU-015 | Lulo-only (not on the Mac) | Select Between Marks | Edit ▸ Select Between Marks |  | ⇧⌘A | present in Lulo but not found on the Mac |
-| TRM-MENU-042 | Lulo-only (not on the Mac) | Terminal Help | Help ▸ Terminal Help |  | ⌘? | present in Lulo but not found on the Mac |
-| TRM-MENU-009 | Lulo-only (not on the Mac) | Close Tab | Shell ▸ Close Tab |  | ⌘W | present in Lulo but not found on the Mac |
-| TRM-MENU-011 | Lulo-only (not on the Mac) | Hard Reset | Shell ▸ Hard Reset |  | ⌃⌥⌘R | present in Lulo but not found on the Mac |
-| TRM-MENU-008 | Lulo-only (not on the Mac) | New Tab | Shell ▸ New Tab |  | ⌘T | present in Lulo but not found on the Mac |
-| TRM-MENU-007 | Lulo-only (not on the Mac) | New Window | Shell ▸ New Window |  | ⌘N | present in Lulo but not found on the Mac |
-| TRM-MENU-010 | Lulo-only (not on the Mac) | Reset | Shell ▸ Reset |  | ⌥⌘R | present in Lulo but not found on the Mac |
-| TRM-MENU-025 | Lulo-only (not on the Mac) | Bigger | View ▸ Bigger |  | ⌘+ | present in Lulo but not found on the Mac |
-| TRM-MENU-024 | Lulo-only (not on the Mac) | Default Font Size | View ▸ Default Font Size |  | ⌘0 | present in Lulo but not found on the Mac |
-| TRM-MENU-027 | Lulo-only (not on the Mac) | Next Profile | View ▸ Next Profile |  | ⇧⌘P | present in Lulo but not found on the Mac |
-| TRM-MENU-026 | Lulo-only (not on the Mac) | Smaller | View ▸ Smaller |  | ⌘− | present in Lulo but not found on the Mac |
-| TRM-MENU-041 | Lulo-only (not on the Mac) | Bring All to Front | Window ▸ Bring All to Front |  |  | present in Lulo but not found on the Mac |
-| TRM-MENU-032 | Lulo-only (not on the Mac) | Centre | Window ▸ Centre |  | ⌃⌘C | present in Lulo but not found on the Mac |
-| TRM-MENU-031 | Lulo-only (not on the Mac) | Fill | Window ▸ Fill |  | ⌃⇧⌘F | present in Lulo but not found on the Mac |
-| TRM-MENU-028 | Lulo-only (not on the Mac) | Minimise | Window ▸ Minimise |  | ⌘M | present in Lulo but not found on the Mac |
-| TRM-MENU-029 | Lulo-only (not on the Mac) | Minimise All | Window ▸ Minimise All |  | ⌥⌘M | present in Lulo but not found on the Mac |
-| TRM-MENU-033 | Lulo-only (not on the Mac) | Move & Resize | Window ▸ Move & Resize |  |  | present in Lulo but not found on the Mac |
-| TRM-MENU-037 | Lulo-only (not on the Mac) | Bottom | Window ▸ Move & Resize ▸ Bottom |  | ⌃⌘↓ | present in Lulo but not found on the Mac |
-| TRM-MENU-034 | Lulo-only (not on the Mac) | Left | Window ▸ Move & Resize ▸ Left |  | ⌃⌘← | present in Lulo but not found on the Mac |
-| TRM-MENU-038 | Lulo-only (not on the Mac) | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size |  | ⌃⌘R | present in Lulo but not found on the Mac |
-| TRM-MENU-035 | Lulo-only (not on the Mac) | Right | Window ▸ Move & Resize ▸ Right |  | ⌃⌘→ | present in Lulo but not found on the Mac |
-| TRM-MENU-036 | Lulo-only (not on the Mac) | Top | Window ▸ Move & Resize ▸ Top |  | ⌃⌘↑ | present in Lulo but not found on the Mac |
-| TRM-MENU-040 | Lulo-only (not on the Mac) | Show Next Tab | Window ▸ Show Next Tab |  | ⇧⌘] | present in Lulo but not found on the Mac |
-| TRM-MENU-039 | Lulo-only (not on the Mac) | Show Previous Tab | Window ▸ Show Previous Tab |  | ⇧⌘[ | present in Lulo but not found on the Mac |
-| TRM-MENU-030 | Lulo-only (not on the Mac) | Zoom | Window ▸ Zoom |  |  | present in Lulo but not found on the Mac |
+| TRM-SETTINGS-007 | missing settings control | Bold Text | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-008 | missing settings control | Bright | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-009 | missing settings control | Change… | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-010 | missing settings control | Colour & Effects | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-011 | missing settings control | Default | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-012 | missing settings control | Display ANSI colours | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-013 | missing settings control | Dynamic foreground colours | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-014 | missing settings control | Encodings | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-015 | missing settings control | Help | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-016 | missing settings control | Image: | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-017 | missing settings control | Normal | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-018 | missing settings control | Profiles | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-019 | missing settings control | Remove | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-020 | missing settings control | Selection | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-021 | missing settings control | System selectedControlColor | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-022 | missing settings control | System textBackgroundColor | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-023 | missing settings control | System textColor | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-024 | missing settings control | Tab | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-025 | missing settings control | Use bold fonts | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-026 | missing settings control | Use bright colours for bold text | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-027 | missing settings control | Window Groups | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-028 | missing settings control | rgb 0 0 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-029 | missing settings control | rgb 0 0 0.7 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-030 | missing settings control | rgb 0 0 1 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-031 | missing settings control | rgb 0 0.65 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-032 | missing settings control | rgb 0 0.65 0.7 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-033 | missing settings control | rgb 0 0.85 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-034 | missing settings control | rgb 0 0.9 0.9 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-035 | missing settings control | rgb 0.4 0.4 0.4 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-036 | missing settings control | rgb 0.544755 0.544755 0.544755 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-037 | missing settings control | rgb 0.6 0 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-038 | missing settings control | rgb 0.6 0.6 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-039 | missing settings control | rgb 0.7 0 0.7 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-040 | missing settings control | rgb 0.75 0.75 0.75 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-041 | missing settings control | rgb 0.9 0 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-042 | missing settings control | rgb 0.9 0 0.9 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-043 | missing settings control | rgb 0.9 0.9 0 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
+| TRM-SETTINGS-044 | missing settings control | rgb 0.9 0.9 0.9 1 | settings |  |  | seen on the Mac's Settings window, not found in Lulo's |
 
 ## Text Editor
 
 | id | impact | item | where | Mac shortcut | Lulo shortcut | note |
 |---|---|---|---|---|---|---|
 | TXT-SETTINGS-001 | missing settings control | Settings window | settings |  |  | the Mac has a Settings window for this app; Lulo has none yet |
-| TXT-MENU-001 | Lulo-only (not on the Mac) | About Text Editor | Application ▸ About Text Editor |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-003 | Lulo-only (not on the Mac) | Hide Others | Application ▸ Hide Others |  | ⌥⌘H | present in Lulo but not found on the Mac |
-| TXT-MENU-002 | Lulo-only (not on the Mac) | Hide Text Editor | Application ▸ Hide Text Editor |  | ⌘H | present in Lulo but not found on the Mac |
-| TXT-MENU-005 | Lulo-only (not on the Mac) | Quit Text Editor | Application ▸ Quit Text Editor |  | ⌘Q | present in Lulo but not found on the Mac |
-| TXT-MENU-004 | Lulo-only (not on the Mac) | Show All | Application ▸ Show All |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-019 | Lulo-only (not on the Mac) | Copy | Edit ▸ Copy |  | ⌘C | present in Lulo but not found on the Mac |
-| TXT-MENU-018 | Lulo-only (not on the Mac) | Cut | Edit ▸ Cut |  | ⌘X | present in Lulo but not found on the Mac |
-| TXT-MENU-021 | Lulo-only (not on the Mac) | Delete | Edit ▸ Delete |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-023 | Lulo-only (not on the Mac) | Find | Edit ▸ Find |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-026 | Lulo-only (not on the Mac) | Find Next | Edit ▸ Find ▸ Find Next |  | ⌘G | present in Lulo but not found on the Mac |
-| TXT-MENU-027 | Lulo-only (not on the Mac) | Find Previous | Edit ▸ Find ▸ Find Previous |  | ⇧⌘G | present in Lulo but not found on the Mac |
-| TXT-MENU-025 | Lulo-only (not on the Mac) | Find and Replace… | Edit ▸ Find ▸ Find and Replace… |  | ⌥⌘F | present in Lulo but not found on the Mac |
-| TXT-MENU-024 | Lulo-only (not on the Mac) | Find… | Edit ▸ Find ▸ Find… |  | ⌘F | present in Lulo but not found on the Mac |
-| TXT-MENU-020 | Lulo-only (not on the Mac) | Paste | Edit ▸ Paste |  | ⌘V | present in Lulo but not found on the Mac |
-| TXT-MENU-017 | Lulo-only (not on the Mac) | Redo | Edit ▸ Redo |  | ⇧⌘Z | present in Lulo but not found on the Mac |
-| TXT-MENU-022 | Lulo-only (not on the Mac) | Select All | Edit ▸ Select All |  | ⌘A | present in Lulo but not found on the Mac |
-| TXT-MENU-016 | Lulo-only (not on the Mac) | Undo | Edit ▸ Undo |  | ⌘Z | present in Lulo but not found on the Mac |
-| TXT-MENU-010 | Lulo-only (not on the Mac) | Close | File ▸ Close |  | ⌘W | present in Lulo but not found on the Mac |
-| TXT-MENU-012 | Lulo-only (not on the Mac) | Duplicate | File ▸ Duplicate |  | ⇧⌘S | present in Lulo but not found on the Mac |
-| TXT-MENU-014 | Lulo-only (not on the Mac) | Export as PDF… | File ▸ Export as PDF… |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-006 | Lulo-only (not on the Mac) | New | File ▸ New |  | ⌘N | present in Lulo but not found on the Mac |
-| TXT-MENU-008 | Lulo-only (not on the Mac) | Open Recent | File ▸ Open Recent |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-009 | Lulo-only (not on the Mac) | Clear Menu | File ▸ Open Recent ▸ Clear Menu |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-007 | Lulo-only (not on the Mac) | Open… | File ▸ Open… |  | ⌘O | present in Lulo but not found on the Mac |
-| TXT-MENU-015 | Lulo-only (not on the Mac) | Print… | File ▸ Print… |  | ⌘P | present in Lulo but not found on the Mac |
-| TXT-MENU-011 | Lulo-only (not on the Mac) | Save | File ▸ Save |  | ⌘S | present in Lulo but not found on the Mac |
-| TXT-MENU-013 | Lulo-only (not on the Mac) | Save As… | File ▸ Save As… |  | ⌥⇧⌘S | present in Lulo but not found on the Mac |
-| TXT-MENU-028 | Lulo-only (not on the Mac) | Font | Format ▸ Font |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-029 | Lulo-only (not on the Mac) | Bigger | Format ▸ Font ▸ Bigger |  | ⌘+ | present in Lulo but not found on the Mac |
-| TXT-MENU-030 | Lulo-only (not on the Mac) | Smaller | Format ▸ Font ▸ Smaller |  | ⌘− | present in Lulo but not found on the Mac |
-| TXT-MENU-031 | Lulo-only (not on the Mac) | Monospaced | Format ▸ Monospaced |  | ⇧⌘M | present in Lulo but not found on the Mac |
-| TXT-MENU-044 | Lulo-only (not on the Mac) | Text Editor Help | Help ▸ Text Editor Help |  | ⌘? | present in Lulo but not found on the Mac |
-| TXT-MENU-043 | Lulo-only (not on the Mac) | Bring All to Front | Window ▸ Bring All to Front |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-036 | Lulo-only (not on the Mac) | Centre | Window ▸ Centre |  | ⌃⌘C | present in Lulo but not found on the Mac |
-| TXT-MENU-035 | Lulo-only (not on the Mac) | Fill | Window ▸ Fill |  | ⌃⇧⌘F | present in Lulo but not found on the Mac |
-| TXT-MENU-032 | Lulo-only (not on the Mac) | Minimise | Window ▸ Minimise |  | ⌘M | present in Lulo but not found on the Mac |
-| TXT-MENU-033 | Lulo-only (not on the Mac) | Minimise All | Window ▸ Minimise All |  | ⌥⌘M | present in Lulo but not found on the Mac |
-| TXT-MENU-037 | Lulo-only (not on the Mac) | Move & Resize | Window ▸ Move & Resize |  |  | present in Lulo but not found on the Mac |
-| TXT-MENU-041 | Lulo-only (not on the Mac) | Bottom | Window ▸ Move & Resize ▸ Bottom |  | ⌃⌘↓ | present in Lulo but not found on the Mac |
-| TXT-MENU-038 | Lulo-only (not on the Mac) | Left | Window ▸ Move & Resize ▸ Left |  | ⌃⌘← | present in Lulo but not found on the Mac |
-| TXT-MENU-042 | Lulo-only (not on the Mac) | Return to Previous Size | Window ▸ Move & Resize ▸ Return to Previous Size |  | ⌃⌘R | present in Lulo but not found on the Mac |
-| TXT-MENU-039 | Lulo-only (not on the Mac) | Right | Window ▸ Move & Resize ▸ Right |  | ⌃⌘→ | present in Lulo but not found on the Mac |
-| TXT-MENU-040 | Lulo-only (not on the Mac) | Top | Window ▸ Move & Resize ▸ Top |  | ⌃⌘↑ | present in Lulo but not found on the Mac |
-| TXT-MENU-034 | Lulo-only (not on the Mac) | Zoom | Window ▸ Zoom |  |  | present in Lulo but not found on the Mac |
 
 ## Weather
 

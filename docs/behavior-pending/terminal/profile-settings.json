@@ -1,0 +1,14 @@
+{
+  "title": "Terminal Settings opens with the Mac profile list",
+  "app": "terminal",
+  "steps": [
+    {
+      "key": "cmd-,",
+      "settle": 1.0
+    },
+    {
+      "observe": "settings_open",
+      "facts": ["windows"]
+    }
+  ]
+}

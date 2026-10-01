@@ -622,6 +622,13 @@ const FILES_MENUS: &[MenuSpec] = &[
 
 const MONITOR_MENUS: &[MenuSpec] = &[
     MenuSpec {
+        label: "File",
+        items: &[
+            item!("Close", "activity_monitor::Close", "⌘W"),
+            item!("Close All", "activity_monitor::CloseAll", "⌥⌘W"),
+        ],
+    },
+    MenuSpec {
         label: "Edit",
         items: &[
             item!("Undo", "input::Undo", "⌘Z"),
@@ -633,21 +640,81 @@ const MONITOR_MENUS: &[MenuSpec] = &[
             submenu!(
                 "Find",
                 "activity_monitor::FindMenu",
-                [item!("Find…", "activity_monitor::FocusSearch", "⌘F")],
+                [
+                    item!("Find…", "activity_monitor::FocusSearch", "⌘F"),
+                    item!("Find Next", "activity_monitor::FindNext", "⌘G"),
+                    item!("Find Previous", "activity_monitor::FindPrevious", "⇧⌘G"),
+                ],
                 separator
             ),
         ],
     },
     MenuSpec {
         label: "View",
-        // Activity Monitor keeps its process commands in View. The Mac
-        // binds Quit Process to ⌥⌘Q; here ⌘⌫ does it, and the hint says so.
         items: &[
-            item!("Quit Process", "activity_monitor::QuitProcess", "⌘⌫"),
+            submenu!(
+                "Columns",
+                "activity_monitor::ColumnsMenu",
+                [
+                    item!("Process ID", "activity_monitor::TogglePidColumn", ""),
+                    item!("User", "activity_monitor::ToggleUserColumn", ""),
+                    item!("% CPU", "activity_monitor::ToggleCpuColumn", ""),
+                    item!("# Threads", "activity_monitor::ToggleThreadsColumn", ""),
+                    item!("Real Memory", "activity_monitor::ToggleMemoryColumn", ""),
+                ]
+            ),
+            submenu!(
+                "Update Frequency",
+                "activity_monitor::UpdateFrequencyMenu",
+                [
+                    item!(
+                        "Very often (1 sec)",
+                        "activity_monitor::RefreshEverySecond",
+                        ""
+                    ),
+                    item!(
+                        "Often (2 sec)",
+                        "activity_monitor::RefreshEveryTwoSeconds",
+                        ""
+                    ),
+                    item!(
+                        "Normally (5 sec)",
+                        "activity_monitor::RefreshEveryFiveSeconds",
+                        ""
+                    ),
+                ],
+                separator
+            ),
+            item!("All Processes", "activity_monitor::ShowAllProcesses", ""),
+            item!("My Processes", "activity_monitor::ShowMyProcesses", ""),
             item!(
-                "Force Quit Process…",
-                "activity_monitor::ForceQuitProcess",
-                "⇧⌘⌫"
+                "System Processes",
+                "activity_monitor::ShowSystemProcesses",
+                ""
+            ),
+            item!(
+                "Other Users’ Processes",
+                "activity_monitor::ShowOtherUsersProcesses",
+                ""
+            ),
+            item!(
+                "Active Processes",
+                "activity_monitor::ShowActiveProcesses",
+                ""
+            ),
+            item!(
+                "Filter Processes",
+                "activity_monitor::FilterProcesses",
+                "⌥⌘F",
+                separator
+            ),
+            item!("Inspect Process", "activity_monitor::InspectProcess", "⌘I"),
+            item!("Quit Process", "activity_monitor::QuitProcess", "⌥⌘Q"),
+            item!(
+                "Clear CPU History",
+                "activity_monitor::ClearCpuHistory",
+                "⌘K",
+                separator
             ),
         ],
     },
@@ -2082,8 +2149,7 @@ mod tests {
             &["activity_monitor::QuitProcess"],
         )
         .unwrap();
-        // The hint matches the ⌘⌫ binding instead of the word "Delete".
-        assert_eq!(hints(&monitor)["activity_monitor::QuitProcess"], "⌘⌫");
+        assert_eq!(hints(&monitor)["activity_monitor::QuitProcess"], "⌥⌘Q");
     }
 
     #[test]

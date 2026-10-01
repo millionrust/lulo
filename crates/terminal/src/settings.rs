@@ -44,9 +44,9 @@ impl CursorStyle {
 
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::Block => "Block",
-            Self::Underline => "Underline",
-            Self::Bar => "Vertical bar",
+            Self::Block => "▊ Block",
+            Self::Underline => "▁ Underline",
+            Self::Bar => "┃ Vertical Bar",
         }
     }
 }

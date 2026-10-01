@@ -1,0 +1,15 @@
+{
+  "title": "Find Next selects the matching process",
+  "app": "system-monitor",
+  "steps": [
+    {"observe": "opened", "facts": ["windows"]},
+    {"key": "alt-cmd-f"},
+    {"type": "rmac-system-monitor"},
+    {"observe": "query", "facts": ["focus"]},
+    {"key": "cmd-g"},
+    {"observe": "found", "facts": ["selection"]}
+  ],
+  "tolerance": {
+    "found.selection.items": "count"
+  }
+}

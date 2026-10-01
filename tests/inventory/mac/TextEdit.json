@@ -1,4 +1,269 @@
 {
   "app": "TextEdit",
-  "error": "TimeoutExpired: Command '['osascript', '/var/folders/6m/g1cj17dn3_72s41t6xkw3sr00000gn/T/rmac-inventory/driver.applescript']' timed out after 60 seconds"
+  "source": "mac-accessibility-tree",
+  "menu_bar_error": "osascript timed out after 90s",
+  "toolbar": {
+    "present": false,
+    "items": []
+  },
+  "settings": {
+    "present": true,
+    "controls": [
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "Restore All Defaults"
+      },
+      {
+        "depth": 0,
+        "role": "AXTabGroup",
+        "label": "tab group"
+      },
+      {
+        "depth": 1,
+        "role": "AXRadioButton",
+        "label": "New Document"
+      },
+      {
+        "depth": 1,
+        "role": "AXRadioButton",
+        "label": "Open and Save"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Wrap to page"
+      },
+      {
+        "depth": 1,
+        "role": "AXRadioGroup",
+        "label": "radio group"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioButton",
+        "label": "Rich text"
+      },
+      {
+        "depth": 2,
+        "role": "AXRadioButton",
+        "label": "Plain text"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Width:"
+      },
+      {
+        "depth": 1,
+        "role": "AXTextField",
+        "label": "96"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "characters"
+      },
+      {
+        "depth": 1,
+        "role": "AXTextField",
+        "label": "30"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "lines"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Height:"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Plain text font:"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Helvetica 12"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Change..."
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Change..."
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Menlo Regular 11"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Rich text font:"
+      },
+      {
+        "depth": 1,
+        "role": "AXTextField",
+        "label": "text field"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Author:"
+      },
+      {
+        "depth": 1,
+        "role": "AXTextField",
+        "label": "text field"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Organisation:"
+      },
+      {
+        "depth": 1,
+        "role": "AXTextField",
+        "label": "text field"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Copyright:"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Show ruler"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Check spelling as you type "
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Format"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Window Size"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Font"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Properties"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Options"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Use the Format menu to choose settings for an open document."
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Document properties are saved only with rich text files. Choose File > Show Properties to change the properties for an open document."
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Check grammar with spelling "
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Correct spelling automatically"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Smart quotes"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Smart dashes"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Smart links"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Text replacement"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Data detectors"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Smart copy/paste"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Smart quotes and dashes in rich text documents only"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Check and correct spelling in rich text documents only"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "close button"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "zoom button"
+      },
+      {
+        "depth": 1,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 2,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "minimise button"
+      },
+      {
+        "depth": 0,
+        "role": "AXStaticText",
+        "label": "Settings"
+      }
+    ]
+  }
 }

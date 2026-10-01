@@ -21,7 +21,7 @@ FORMAT = 1
 REPO = Path(__file__).resolve().parents[2]
 SCENARIO_ROOT = REPO / "tests" / "behavior"
 
-APPS = {"files", "text-editor", "settings", "calculator", "desktop", "preview"}
+APPS = {"files", "text-editor", "settings", "calculator", "desktop", "preview", "system-monitor", "terminal"}
 STEP_KINDS = {
     "key",
     "type",
@@ -401,14 +401,14 @@ def describe(value: Any) -> str:
     return str(value)
 
 
-def report_lines(sid: str, scenario: dict[str, Any], mismatches: list[dict[str, Any]]) -> list[str]:
+def report_lines(sid: str, scenario: dict[str, Any], mismatches: list[dict[str, Any]], reference: str = "Mac") -> list[str]:
     if not mismatches:
         return [f"PASS  {sid}  {scenario['title']}"]
     lines = [f"FAIL  {sid}  {scenario['title']}"]
     for item in mismatches:
         lines.append(
             f"      {item['observation']}.{item['fact']}.{item['field']}: "
-            f"Mac {describe(item['expected'])}, Lulo {describe(item['actual'])}"
+            f"{reference} {describe(item['expected'])}, Lulo {describe(item['actual'])}"
         )
     return lines
 

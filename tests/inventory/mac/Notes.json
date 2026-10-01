@@ -1,4 +1,2149 @@
 {
   "app": "Notes",
-  "error": "TimeoutExpired: Command '['osascript', '/var/folders/6m/g1cj17dn3_72s41t6xkw3sr00000gn/T/rmac-inventory/driver.applescript']' timed out after 60 seconds"
+  "source": "mac-accessibility-tree",
+  "menu_bar": [
+    {
+      "label": "Apple",
+      "items": []
+    },
+    {
+      "label": "Notes",
+      "items": [
+        {
+          "label": "About Notes",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Settings…",
+          "shortcut": "⌘,",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Accounts…",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close All Locked Notes",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Services",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [],
+          "children_omitted": "dynamic/personal submenu, not read"
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Notes",
+          "shortcut": "⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Others",
+          "shortcut": "⌥⌘H",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show All",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quit Notes",
+          "shortcut": "⌘Q",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Quit and Keep Windows",
+          "shortcut": "⌥⌘Q",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "File",
+      "items": [
+        {
+          "label": "New Note",
+          "shortcut": "⌘N",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "New Folder",
+          "shortcut": "⇧⌘N",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "New Smart Folder",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "More",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "New Smart Folder with Tag Selection",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Share",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Note “Projects links:”",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close",
+          "shortcut": "⌘W",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Close All",
+          "shortcut": "⌥⌘W",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "<<Import From Device - unlocalized>>",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Import to Notes…",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Import Markdown...",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Export as",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "PDF",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Markdown",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Open in Pages",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Unpin Note",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Lock Note",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Duplicate Note",
+          "shortcut": "⌘D",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Print…",
+          "shortcut": "⌘P",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Edit",
+      "items": [
+        {
+          "label": "Undo",
+          "shortcut": "⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Redo",
+          "shortcut": "⇧⌘Z",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Cut",
+          "shortcut": "⌘X",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Copy",
+          "shortcut": "⌘C",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste",
+          "shortcut": "⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste and Match Style",
+          "shortcut": "⌥⇧⌘V",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Paste and Retain Style",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Delete Note",
+          "shortcut": "⌫",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Rename",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Select All",
+          "shortcut": "⌘A",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Attach File…",
+          "shortcut": "⇧⌘A",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Add Link…",
+          "shortcut": "⌘K",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Record Audio…",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Rename Attachment…",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Find",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Note List Search…",
+              "shortcut": "⌥⌘F",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Find…",
+              "shortcut": "⌘F",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Find and Replace…",
+              "shortcut": "⇧⌘F",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Find Next",
+              "shortcut": "⌘G",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Find Previous",
+              "shortcut": "⇧⌘G",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Use Selection for Find",
+              "shortcut": "⌘E",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Jump to Selection",
+              "shortcut": "⌘J",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Spelling and Grammar",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Show Spelling and Grammar",
+              "shortcut": "⌘:",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Check Document Now",
+              "shortcut": "⌘;",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Check Spelling While Typing",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Check Grammar With Spelling",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Correct Spelling Automatically",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Substitutions",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Show Substitutions",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Smart Copy/Paste",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Smart Quotes",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Smart Lists",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Smart Dashes",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Smart Links",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Smart Tags",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Text Replacement",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Transformations",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Make Uppercase",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Make Lowercase",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Capitalise",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Speech",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Start Speaking",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Stop Speaking",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "AutoFill",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Contact…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Passwords…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Credit Card…",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Start Dictation…",
+          "shortcut": "🎤",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Emoji & Symbols",
+          "shortcut": "🌐",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Format",
+      "items": [
+        {
+          "label": "Title",
+          "shortcut": "⇧⌘T",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Heading",
+          "shortcut": "⇧⌘H",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Subheading",
+          "shortcut": "⇧⌘J",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Body",
+          "shortcut": "⇧⌘B",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Monostyled",
+          "shortcut": "⇧⌘M",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Bulleted List",
+          "shortcut": "⇧⌘7",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Dashed List",
+          "shortcut": "⇧⌘8",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Numbered List",
+          "shortcut": "⇧⌘9",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Block Quote",
+          "shortcut": "⌘'",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Block Quote",
+          "shortcut": "⌘'",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Checklist",
+          "shortcut": "⇧⌘L",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Mark as Ticked",
+          "shortcut": "⇧⌘U",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "More",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Tick All",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Untick All",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Move Ticked to Bottom",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Delete Ticked",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Move Item",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Up",
+              "shortcut": "⌃⌘",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Down",
+              "shortcut": "⌃⌘",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Table",
+          "shortcut": "⌥⌘T",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Convert to Text",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Note with Light Background",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Font",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Show Fonts",
+              "shortcut": "⌘T",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bold",
+              "shortcut": "⌘B",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Italic",
+              "shortcut": "⌘I",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Underline",
+              "shortcut": "⌘U",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Strikethrough",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Highlight",
+              "shortcut": "⇧⌘E",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bigger",
+              "shortcut": "⌘+",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Smaller",
+              "shortcut": "⌘−",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Baseline",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": [
+                {
+                  "label": "Use Default",
+                  "shortcut": "",
+                  "enabled": false,
+                  "checked": false,
+                  "children": []
+                },
+                {
+                  "label": "Superscript",
+                  "shortcut": "",
+                  "enabled": false,
+                  "checked": false,
+                  "children": []
+                },
+                {
+                  "label": "Subscript",
+                  "shortcut": "",
+                  "enabled": false,
+                  "checked": false,
+                  "children": []
+                }
+              ]
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Show Colours",
+              "shortcut": "⇧⌘C",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Copy Style",
+              "shortcut": "⌥⌘C",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Paste Style",
+              "shortcut": "⌥⌘V",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Remove Style",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Text",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Align Left",
+              "shortcut": "⌘{",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Centre",
+              "shortcut": "⌘|",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Justify",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Align Right",
+              "shortcut": "⌘}",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Writing Direction",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": [
+                {
+                  "label": "Paragraph",
+                  "shortcut": "",
+                  "enabled": false,
+                  "checked": false,
+                  "children": []
+                },
+                {
+                  "label": null,
+                  "shortcut": "⌘Default",
+                  "enabled": false,
+                  "checked": true,
+                  "children": []
+                },
+                {
+                  "label": null,
+                  "shortcut": "⌘Left to Right",
+                  "enabled": false,
+                  "checked": true,
+                  "children": []
+                },
+                {
+                  "label": null,
+                  "shortcut": "⌘Right to Left",
+                  "enabled": false,
+                  "checked": true,
+                  "children": []
+                },
+                {
+                  "label": null,
+                  "shortcut": "",
+                  "enabled": false,
+                  "checked": false,
+                  "children": []
+                },
+                {
+                  "label": "Selection",
+                  "shortcut": "",
+                  "enabled": false,
+                  "checked": false,
+                  "children": []
+                },
+                {
+                  "label": null,
+                  "shortcut": "⌘Default",
+                  "enabled": false,
+                  "checked": true,
+                  "children": []
+                },
+                {
+                  "label": null,
+                  "shortcut": "⌘Left to Right",
+                  "enabled": false,
+                  "checked": true,
+                  "children": []
+                },
+                {
+                  "label": null,
+                  "shortcut": "⌘Right to Left",
+                  "enabled": false,
+                  "checked": true,
+                  "children": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "label": "Indentation",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Increase",
+              "shortcut": "⌘]",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Decrease",
+              "shortcut": "⌘[",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Maths Results",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": [
+            {
+              "label": "Insert Results",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Suggest Results",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Off",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "View",
+      "items": [
+        {
+          "label": "as List",
+          "shortcut": "⌘1",
+          "enabled": true,
+          "checked": true,
+          "children": []
+        },
+        {
+          "label": "as Gallery",
+          "shortcut": "⌘2",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Recent Notes",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Previous Note",
+              "shortcut": "⌥⌘[",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Next Note",
+              "shortcut": "⌥⌘]",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Projects links:",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Clear Menu",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Folders",
+          "shortcut": "⌃⌘S",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Note Count",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Attachment View",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Set All to Small",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Set All to Large",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Attachments Browser",
+          "shortcut": "⌘3",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show in Note",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Highlights",
+          "shortcut": "⌃⌘I",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Note Activity",
+          "shortcut": "⌃⌘K",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Show Folder Activity",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom In",
+          "shortcut": "⇧⌘.",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom Out",
+          "shortcut": "⇧⌘,",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Actual Size",
+          "shortcut": "⇧⌘0",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Expand Section",
+          "shortcut": "⌥⌘",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Expand All Sections",
+          "shortcut": "⌥⇧⌘",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Collapse Section",
+          "shortcut": "⌥⌘",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Collapse All Sections",
+          "shortcut": "⌥⇧⌘",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Hide Toolbar",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Customise Toolbar…",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Enter Full Screen",
+          "shortcut": "F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Window",
+      "items": [
+        {
+          "label": "Minimise",
+          "shortcut": "⌘M",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Minimise All",
+          "shortcut": "⌥⌘M",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom",
+          "shortcut": "⌃⌘Z",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Zoom All",
+          "shortcut": "⌃⌥⌘Z",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Fill",
+          "shortcut": "⌃F",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Centre",
+          "shortcut": "⌃C",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Move & Resize",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Halves",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left",
+              "shortcut": "⌃←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right",
+              "shortcut": "⌃→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top",
+              "shortcut": "⌃↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom",
+              "shortcut": "⌃↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top Left",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top Right",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Left",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom Right",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Arrange",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left & Right",
+              "shortcut": "⌃⇧←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Left & Quarters",
+              "shortcut": "⌃⌥⇧←",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right & Left",
+              "shortcut": "⌃⇧→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right & Quarters",
+              "shortcut": "⌃⌥⇧→",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top & Bottom",
+              "shortcut": "⌃⇧↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Top & Quarters",
+              "shortcut": "⌃⌥⇧↑",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Top",
+              "shortcut": "⌃⇧↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Bottom & Quarters",
+              "shortcut": "⌃⌥⇧↓",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Quarters",
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": null,
+              "shortcut": "",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Return to Previous Size",
+              "shortcut": "⌃R",
+              "enabled": false,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": "Full-Screen Tile",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": [
+            {
+              "label": "Left of Screen",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            },
+            {
+              "label": "Right of Screen",
+              "shortcut": "",
+              "enabled": true,
+              "checked": false,
+              "children": []
+            }
+          ]
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Remove Window from Set",
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Open Note in New Window",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Notes",
+          "shortcut": "⌘0",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Photo Browser",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Bring All to Front",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Arrange in Front",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        }
+      ]
+    },
+    {
+      "label": "Help",
+      "items": [
+        {
+          "label": "Notes Help",
+          "shortcut": "⌘?",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": null,
+          "shortcut": "",
+          "enabled": false,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Using Tags",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        },
+        {
+          "label": "Using Smart Folders",
+          "shortcut": "",
+          "enabled": true,
+          "checked": false,
+          "children": []
+        }
+      ]
+    }
+  ],
+  "toolbar": {
+    "present": true,
+    "items": [
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "Folders"
+      },
+      {
+        "depth": 0,
+        "role": "AXMenuButton",
+        "label": "View Options"
+      },
+      {
+        "depth": 1,
+        "role": "AXMenuButton",
+        "label": "View Options"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "New Note"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "Format"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "Off"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "Table"
+      },
+      {
+        "depth": 0,
+        "role": "AXMenuButton",
+        "label": "Media"
+      },
+      {
+        "depth": 1,
+        "role": "AXMenuButton",
+        "label": "Media"
+      },
+      {
+        "depth": 0,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Share"
+      },
+      {
+        "depth": 1,
+        "role": "AXMenuButton",
+        "label": "More"
+      },
+      {
+        "depth": 0,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 1,
+        "role": "AXTextField",
+        "label": "search text field"
+      },
+      {
+        "depth": 2,
+        "role": "AXButton",
+        "label": "button"
+      }
+    ]
+  },
+  "settings": {
+    "present": true,
+    "controls": [
+      {
+        "depth": 0,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Sort notes by:"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "New notes start with:"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Default account:"
+      },
+      {
+        "depth": 1,
+        "role": "AXPopUpButton",
+        "label": "Title"
+      },
+      {
+        "depth": 1,
+        "role": "AXPopUpButton",
+        "label": "iCloud"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Siri uses this default account when creating notes."
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Enable the On My Mac account"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Notes in On My Mac are stored on this computer. Disabling this account doesn’t affect your other notes."
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Default text size:"
+      },
+      {
+        "depth": 1,
+        "role": "AXSlider",
+        "label": "slider"
+      },
+      {
+        "depth": 2,
+        "role": "AXValueIndicator",
+        "label": "value indicator"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Locked notes:"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Change Password…"
+      },
+      {
+        "depth": 1,
+        "role": "AXPopUpButton",
+        "label": "Date Edited"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Use your fingerprint to view locked notes."
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Use Touch ID"
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Help"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Use dark backgrounds for note content"
+      },
+      {
+        "depth": 1,
+        "role": "AXPopUpButton",
+        "label": "Use Custom Password"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Automatically sort ticked items"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Always resume to last Quick Note"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Allow mention notifications"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Receive notifications on this Mac when your name is mentioned in shared notes."
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "When invoking Quick Note using a hot corner or keyboard shortcut, resume to last Quick Note instead of creating a new one."
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "Automatically move checklist items to the bottom of the list as they are ticked off."
+      },
+      {
+        "depth": 1,
+        "role": "AXButton",
+        "label": "Reset Password…"
+      },
+      {
+        "depth": 1,
+        "role": "AXCheckBox",
+        "label": "Group notes by date"
+      },
+      {
+        "depth": 1,
+        "role": "AXStaticText",
+        "label": "When sorted by Date Edited or Date Created, group notes by date."
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "close button"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "zoom button"
+      },
+      {
+        "depth": 1,
+        "role": "AXGroup",
+        "label": "group"
+      },
+      {
+        "depth": 0,
+        "role": "AXButton",
+        "label": "minimise button"
+      },
+      {
+        "depth": 0,
+        "role": "AXStaticText",
+        "label": "Notes Settings"
+      }
+    ]
+  }
 }

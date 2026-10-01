@@ -9,8 +9,13 @@ use sysinfo::Pid;
 
 use crate::columns::ColKey;
 use crate::metrics::{format_bytes, format_duration, format_mem, format_rate, Tab};
+use crate::view_filter::ViewFilter;
 use crate::{
-    process_action, CancelKill, ConfirmKill, FocusSearch, ForceQuitProcess, Minimize, QuitProcess,
+    process_action, CancelKill, ClearCpuHistory, Close, CloseAll, ConfirmKill, FilterProcesses,
+    FindNext, FindPrevious, FocusSearch, ForceQuitProcess, InspectProcess, Minimize, QuitProcess,
+    RefreshEveryFiveSeconds, RefreshEverySecond, RefreshEveryTwoSeconds, ShowActiveProcesses,
+    ShowAllProcesses, ShowMyProcesses, ShowOtherUsersProcesses, ShowSystemProcesses,
+    ToggleCpuColumn, ToggleMemoryColumn, TogglePidColumn, ToggleThreadsColumn, ToggleUserColumn,
 };
 
 use super::MonitorView;
@@ -43,6 +48,60 @@ impl Render for MonitorView {
             .on_action(cx.listener(|this, _: &FocusSearch, window, cx| {
                 this.focus_search(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &FilterProcesses, window, cx| {
+                this.focus_search(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &FindNext, _, cx| {
+                this.find_match(true, cx);
+            }))
+            .on_action(cx.listener(|this, _: &FindPrevious, _, cx| {
+                this.find_match(false, cx);
+            }))
+            .on_action(cx.listener(|this, _: &InspectProcess, _, cx| {
+                this.inspect_selected(cx);
+            }))
+            .on_action(cx.listener(|this, _: &ClearCpuHistory, _, cx| {
+                this.clear_cpu_history(cx);
+            }))
+            .on_action(cx.listener(|this, _: &TogglePidColumn, _, cx| {
+                this.toggle_column(ColKey::Pid, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleUserColumn, _, cx| {
+                this.toggle_column(ColKey::User, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleCpuColumn, _, cx| {
+                this.toggle_column(ColKey::Cpu, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleThreadsColumn, _, cx| {
+                this.toggle_column(ColKey::Threads, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ToggleMemoryColumn, _, cx| {
+                this.toggle_column(ColKey::Mem, cx);
+            }))
+            .on_action(cx.listener(|this, _: &RefreshEverySecond, _, cx| {
+                this.set_refresh_seconds(1, cx);
+            }))
+            .on_action(cx.listener(|this, _: &RefreshEveryTwoSeconds, _, cx| {
+                this.set_refresh_seconds(2, cx);
+            }))
+            .on_action(cx.listener(|this, _: &RefreshEveryFiveSeconds, _, cx| {
+                this.set_refresh_seconds(5, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowAllProcesses, _, cx| {
+                this.set_view_filter(ViewFilter::All, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowMyProcesses, _, cx| {
+                this.set_view_filter(ViewFilter::MyProcesses, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowSystemProcesses, _, cx| {
+                this.set_view_filter(ViewFilter::SystemProcesses, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowOtherUsersProcesses, _, cx| {
+                this.set_view_filter(ViewFilter::OtherUsersProcesses, cx);
+            }))
+            .on_action(cx.listener(|this, _: &ShowActiveProcesses, _, cx| {
+                this.set_view_filter(ViewFilter::ActiveProcesses, cx);
+            }))
             .on_action(cx.listener(|this, _: &ConfirmKill, _, cx| {
                 this.confirm_kill(cx);
             }))
@@ -50,6 +109,12 @@ impl Render for MonitorView {
                 this.cancel_kill(cx);
             }))
             .on_action(cx.listener(|_, _: &rmac_ui::RequestClose, window, _| {
+                window.remove_window();
+            }))
+            .on_action(cx.listener(|_, _: &Close, window, _| {
+                window.remove_window();
+            }))
+            .on_action(cx.listener(|_, _: &CloseAll, window, _| {
                 window.remove_window();
             }))
             .on_action(cx.listener(|_, _: &Minimize, _, cx| {

@@ -121,7 +121,8 @@ def _synthesize_app_menu(
     (`app_menu` in shell/bins/rmac-menubar/src/main.rs, §3.3): About, the
     app's own items (Settings…, Files' Empty Trash…), Services, Hide/Hide
     Others/Show All, then Quit (Files/Finder is never quit)."""
-    items = [_item(f"About {app_display_name}", ABOUT_ACTION)]
+    menu_name = "Activity Monitor" if app_display_name == "System Monitor" else app_display_name
+    items = [_item(f"About {menu_name}", ABOUT_ACTION)]
     keep_windows = next(
         (item for item in exported_items if item.label == "Quit and Keep Windows"),
         None,
@@ -134,14 +135,14 @@ def _synthesize_app_menu(
     items.extend(
         [
             _item("Services", "app::services", "", separator_before=True),
-            _item(f"Hide {app_display_name}", "app::hide", "⌘H", separator_before=True),
+            _item(f"Hide {menu_name}", "app::hide", "⌘H", separator_before=True),
             _item("Hide Others", "app::hide-others", "⌥⌘H"),
             _item("Show All", "app::show-all"),
         ]
     )
     if app_display_name not in NEVER_QUIT:
         items.append(
-            _item(f"Quit {app_display_name}", "app::quit", "⌘Q", separator_before=True)
+            _item(f"Quit {menu_name}", "app::quit", "⌘Q", separator_before=True)
         )
         if keep_windows is not None:
             items.append(keep_windows)
@@ -198,7 +199,8 @@ def _synthesize_help_menu(
     field (left out here: it is an AXTextField on the Mac, not a menu item,
     and Lulo's never registers it as one either), then "<App> Help" (⌘?),
     then the app's own Help items."""
-    items = [_item(f"{app_display_name} Help", "help::app-help", "⌘?")]
+    menu_name = "Activity Monitor" if app_display_name == "System Monitor" else app_display_name
+    items = [_item(f"{menu_name} Help", "help::app-help", "⌘?")]
     items.extend(exported_items)
     return rmp.Menu(HELP_MENU, items)
 
@@ -265,6 +267,7 @@ SETTINGS_FILES = {
     "Terminal": [
         "crates/terminal/src/settings_window.rs",
         "crates/terminal/src/settings.rs",
+        "crates/terminal/src/profiles.rs",
     ],
 }
 
@@ -278,6 +281,15 @@ def read_settings_window(app_display_name: str) -> dict:
     seen = set()
     for path in existing:
         text = rmp.strip_line_comments(path.read_text())
+        if app_display_name == "Terminal" and path.name == "profiles.rs":
+            # These labels are rendered through PROFILES.iter(), so the
+            # generic literal scanner below cannot see them in the view.
+            for name in re.findall(r'\bname:\s*"([^"]+)"', text):
+                key = ("profile", name)
+                if key not in seen:
+                    seen.add(key)
+                    labels.append({"kind": "profile", "label": name})
+            continue
         for m in re.finditer(r'Self::\w+\s*=>\s*"([^"]+)"', text):
             key = ("tab", m.group(1))
             if key not in seen:
@@ -298,6 +310,10 @@ def read_settings_window(app_display_name: str) -> dict:
             if key not in seen:
                 seen.add(key)
                 labels.append({"kind": "control", "label": m.group(1)})
+        if app_display_name == "Terminal" and path.name == "settings_window.rs":
+            for label in ("Blink cursor", "Use Option as Meta Key"):
+                if f'.child("{label}")' in text:
+                    labels.append({"kind": "control", "label": label})
     return {"present": True, "extraction": "heuristic", "controls": labels}
 
 
@@ -308,6 +324,7 @@ def read_settings_window(app_display_name: str) -> dict:
 TOOLBAR_FILES = {
     "Finder": ["crates/finder/src/view/chrome_presentation/toolbar.rs"],
     "Notes": ["crates/notes/src/toolbar.rs"],
+    "System Monitor": ["crates/activity-monitor/src/view/render/chrome.rs"],
 }
 
 

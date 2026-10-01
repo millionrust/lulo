@@ -98,6 +98,38 @@ pub(crate) static PROFILES: &[Profile] = &[
         selection: 0xa4a390,
         ansi: MAC_ANSI,
     },
+    Profile {
+        name: "Clear Dark",
+        bg: 0x1e1e1e,
+        fg: 0xffffff,
+        cursor: 0x9c9d9d,
+        selection: 0x464646,
+        ansi: MAC_ANSI,
+    },
+    Profile {
+        name: "Clear Light",
+        bg: 0xffffff,
+        fg: 0x000000,
+        cursor: 0x000000,
+        selection: 0xb4d5fe,
+        ansi: MAC_ANSI,
+    },
+    Profile {
+        name: "Silver Aerogel",
+        bg: 0xe8e8e8,
+        fg: 0x222222,
+        cursor: 0x555555,
+        selection: 0xa6c8eb,
+        ansi: MAC_ANSI,
+    },
+    Profile {
+        name: "Solid Colors",
+        bg: 0x2b3344,
+        fg: 0xffffff,
+        cursor: 0xffffff,
+        selection: 0x56657e,
+        ansi: MAC_ANSI,
+    },
 ];
 
 /// Index of "Basic", Terminal's default profile.
@@ -264,6 +296,29 @@ pub(crate) fn save_font_size(size: f32) -> Result<(), storage::Failure> {
 #[cfg(test)]
 mod tests {
     use super::{parse, PROFILES};
+
+    #[test]
+    fn all_mac_profile_names_are_selectable() {
+        for name in [
+            "Basic",
+            "Clear Dark",
+            "Clear Light",
+            "Grass",
+            "Homebrew",
+            "Man Page",
+            "Novel",
+            "Ocean",
+            "Pro",
+            "Red Sands",
+            "Silver Aerogel",
+            "Solid Colors",
+        ] {
+            assert!(
+                PROFILES.iter().any(|profile| profile.name == name),
+                "{name}"
+            );
+        }
+    }
 
     #[test]
     fn stable_names_and_legacy_indices_are_supported() {

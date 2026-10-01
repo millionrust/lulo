@@ -202,6 +202,7 @@ actions!(
         ShowWallpaper,
         ShowWifi,
         EnterFullScreen,
+        CloseAll,
         SelectAlert,
         SelectErrorAlert,
         SelectNotificationAlert,

@@ -658,7 +658,7 @@ const SETTINGS_MENUS: &[MenuSpec] = &[
         label: WINDOW_MENU,
         items: &[
             item!("Close", "rmac_ui::RequestClose", "⌘W"),
-            item!("Close All", "rmac_ui::RequestClose", "⌥⌘W"),
+            item!("Close All", "system_settings::CloseAll", "⌥⌘W"),
         ],
     },
     MenuSpec {

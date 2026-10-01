@@ -450,7 +450,7 @@
         },
         {
           "label": "Close All",
-          "action": "rmac_ui::RequestClose",
+          "action": "system_settings::CloseAll",
           "shortcut": "⌥⌘W",
           "separator_before": false,
           "children": []

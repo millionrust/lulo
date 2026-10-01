@@ -699,6 +699,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not args.all and not args.scenarios:
         parser.error("name scenarios or pass --all")
     paths = sc.scenario_paths(only=[] if args.all else args.scenarios)
+    paths = [path for path in paths if not sc.load(path).get("lulo_only")]
     if args.missing:
         paths = [p for p in paths if not sc.expectation_path(p).exists()]
     lock = open(LOCK, "w")

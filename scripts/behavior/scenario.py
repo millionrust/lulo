@@ -1,11 +1,11 @@
 """Behaviour-parity scenarios: loading, portable facts and comparison.
 
 A scenario (tests/behavior/<area>/<name>.json) says what to set up, which
-keys to press and which facts to observe. record_mac.py plays it on macOS
-and writes <name>.mac.json; run_lulo.py plays it on Lulo inside a nested
-compositor and compares against that file. Both sides describe what they
-saw in the same portable vocabulary defined here, so the comparison never
-has to know which toolkit produced a fact.
+keys to press and which facts to observe. record_mac.py plays ordinary
+scenarios on macOS and writes <name>.mac.json; run_lulo.py plays them on
+Lulo inside a nested compositor and compares against that file. Scenarios
+marked lulo_only compare against <name>.lulo.json instead. Observations use
+the same portable vocabulary regardless of toolkit.
 
 Only words and numbers are ever recorded: no captures, no absolute paths.
 """
@@ -21,7 +21,7 @@ FORMAT = 1
 REPO = Path(__file__).resolve().parents[2]
 SCENARIO_ROOT = REPO / "tests" / "behavior"
 
-APPS = {"files", "text-editor", "settings", "calculator", "desktop", "preview"}
+APPS = {"files", "text-editor", "settings", "calculator", "desktop", "preview", "notes"}
 STEP_KINDS = {
     "key",
     "type",
@@ -407,7 +407,7 @@ def report_lines(sid: str, scenario: dict[str, Any], mismatches: list[dict[str, 
     for item in mismatches:
         lines.append(
             f"      {item['observation']}.{item['fact']}.{item['field']}: "
-            f"Mac {describe(item['expected'])}, Lulo {describe(item['actual'])}"
+            f"Expected {describe(item['expected'])}, Lulo {describe(item['actual'])}"
         )
     return lines
 

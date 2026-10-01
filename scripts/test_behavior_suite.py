@@ -218,8 +218,8 @@ class ScenarioFileTests(unittest.TestCase):
         for path in paths:
             with self.subTest(path=path.name):
                 scenario = sc.load(path)
-                expected = sc.expectation_path(path)
-                self.assertTrue(expected.exists(), f"{path.name} has no .mac.json")
+                expected = sc.expectation_path(path, "lulo" if scenario.get("lulo_only") else "mac")
+                self.assertTrue(expected.exists(), f"{path.name} has no recorded expectation")
                 data = json.loads(expected.read_text())
                 self.assertNotIn("error", data)
                 names = {s["observe"] for s in scenario["steps"] if "observe" in s}
@@ -332,6 +332,24 @@ class CompareTests(unittest.TestCase):
         evaluated = compare.evaluate(json.loads(Path(handle.name).read_text()))
         Path(handle.name).unlink()
         self.assertEqual([e["status"] for e in evaluated], ["pass"])
+
+    def test_compare_uses_lulo_expectation_for_private_notes_scenario(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            notes = root / "notes"
+            notes.mkdir()
+            (notes / "find.json").write_text(json.dumps({
+                "title": "Private Notes journey", "app": "notes", "lulo_only": True,
+                "steps": [{"observe": "body", "facts": ["focus"]}],
+            }))
+            expected = {"observations": {"body": {"focus": {"value": "changed"}}}}
+            (notes / "find.lulo.json").write_text(json.dumps(expected))
+            evaluated = compare.evaluate({"results": [
+                {"scenario": "notes/find", "lulo": expected},
+            ]}, root)
+        self.assertEqual([entry["status"] for entry in evaluated], ["pass"])
 
     def test_compare_does_not_drop_results_without_scenarios_or_expectations(self):
         import tempfile

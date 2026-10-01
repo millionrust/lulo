@@ -3,7 +3,8 @@
 
     python3 scripts/behavior/run_lulo.py --bin-dir DIR [--shell-bin-dir DIR] [SCENARIO…]
 
-Every scenario with a recorded <name>.mac.json runs against the Lulo apps in
+Every scenario with a recorded <name>.mac.json or an explicitly Lulo-only
+<name>.lulo.json runs against the Lulo apps in
 --bin-dir (rmac-files, rmac-text-editor, rmac-system-settings,
 rmac-calculator; the desktop is the shell's `wallpaper` binary). Results go
 to --output (JSON) and a readable report goes to stdout; see compare.py.
@@ -51,6 +52,7 @@ APP_BINARIES = {
     "calculator": ["rmac-calculator"],
     "desktop": ["rmac-wallpaper", "wallpaper"],
     "preview": ["rmac-preview"],
+    "notes": ["rmac-notes"],
 }
 KEEP_ENV = {"PATH", "LANG", "TERM", "USER", "LOGNAME", "SHELL", "CARGO_TARGET_DIR", "RUST_BACKTRACE", "RUST_LOG"}
 TEXT_ROLES = {"text-field", "text-area", "search-field", "combo-box"}
@@ -1405,7 +1407,7 @@ def inner(args: argparse.Namespace) -> int:
         for path in sc.scenario_paths(only=args.scenarios):
             sid = sc.scenario_id(path)
             scenario = sc.load(path)
-            expected_path = sc.expectation_path(path)
+            expected_path = sc.expectation_path(path, "lulo" if scenario.get("lulo_only") else "mac")
             if not expected_path.exists() and not args.explore:
                 continue
             run = LuloRun(nested, sid, scenario, bins, args.settle,
@@ -1444,7 +1446,7 @@ def inner(args: argparse.Namespace) -> int:
     if args.output:
         Path(args.output).write_text(json.dumps({"format": sc.FORMAT, "results": results}, indent=2, ensure_ascii=False) + "\n")
     passed = sum(r["status"] == "pass" for r in results)
-    print(f"\n{passed}/{len(results)} scenarios match the Mac")
+    print(f"\n{passed}/{len(results)} scenarios match their recorded expectations")
     return 0 if passed == len(results) else 1
 
 

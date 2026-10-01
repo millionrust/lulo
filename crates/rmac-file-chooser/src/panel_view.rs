@@ -396,6 +396,8 @@ impl Panel {
             elements.push(
                 at(m::DISCLOSURE_X, top, m::DISCLOSURE_WIDTH, m::CONTROL_HEIGHT)
                     .id("collapse")
+                    .role(Role::Button)
+                    .aria_label("Hide Details")
                     .child(plate(colors.control))
                     .child(at(7.0, 7.0, 12.0, 12.0).child(glyph(
                         "icons/chevron-up.svg",
@@ -664,6 +666,8 @@ impl Panel {
                 m::CONTROL_HEIGHT,
             )
             .id("expand")
+            .role(Role::Button)
+            .aria_label("Show Details")
             .child(plate(colors.control))
             .child(at(7.0, 7.0, 12.0, 12.0).child(glyph(
                 "icons/chevron-down.svg",

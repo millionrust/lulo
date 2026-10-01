@@ -921,7 +921,11 @@ class LuloRun:
             raise StepFailed(f"the app exited ({self.process.returncode}) during the scenario")
 
     def window_origin(self, frame=None) -> tuple[int, int]:
-        windows = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
+        helpers = self.helper_frames() if frame is not None else []
+        if any(frame == helper for helper in helpers):
+            windows = [w for w in self.nested.windows() if w.get("focused")]
+        else:
+            windows = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
         matching = [w for w in windows if w.get("name") == name(frame)] if frame is not None else []
         focused = matching or [w for w in windows if w.get("focused")] or windows
         if not focused:

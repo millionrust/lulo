@@ -44,8 +44,11 @@ rmac show its own Mac-shaped panel for all of them, safely?
    search), icon and list views listed with `rmac_finder::listing`, the compact Save
    sheet (Save As, File Format when the app offers more than one filter, one row per
    app choice, Where + disclosure) and its expanded form, and the Go to Folder sheet.
-   Keyboard: ⇧⌘G, ⇧⌘D, ⇧⌘H, ⌘↑, ⌘↓, ⌘[ ⌘], ⌘1/⌘2, ⌘F, ⇧⌘N, ⇧⌘., arrows,
+   Keyboard: ⇧⌘G, ⌘D, ⇧⌘H, ⌘↑, ⌘↓, ⌘[ ⌘], ⌘1/⌘2, ⌘F, ⇧⌘N, ⇧⌘., arrows,
    type-to-select, Return, Esc.
+   The portal adapter stores recently chosen folders per application under
+   XDG state; Where lists them and later requests start in the last chosen
+   folder when the application did not provide one.
 
 ## Parent window handling
 

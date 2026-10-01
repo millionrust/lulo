@@ -71,6 +71,7 @@ use rmac_ui::{
     AccessibleTextInput as _, Button, InputEvent, InputState, SearchField, Slider, SliderEvent,
     SliderState, Spinner, TextField, Toggle,
 };
+use rmac_finder::sidebar_favourites::FavouriteKey;
 
 use crate::conflict::{
     conflict_prompt, prepare_conflict_batch, resolve_conflict_task, unique_path_avoiding,
@@ -109,6 +110,7 @@ actions!(
     finder,
     [
         NewFolder,
+        NewFolderWithSelection,
         RenameItem,
         RenameNextItem,
         Duplicate,
@@ -352,6 +354,7 @@ struct FinderView {
     /// User-added Favourites, over and above the built-in ones — the same
     /// list `sidebar_favourites` persists and every window shares.
     favourite_extras: Vec<PathBuf>,
+    favourite_order: Vec<FavouriteKey>,
     sidebar_drop_index: Option<usize>,
     /// Separate Get Info windows opened from this Finder window.
     info_windows: Vec<gpui::WindowHandle<Root>>,

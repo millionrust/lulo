@@ -106,6 +106,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
         KeyBinding::new("alt-cmd-p", TogglePathBar, Some("Finder")),
         KeyBinding::new("cmd-/", ToggleStatusBar, Some("Finder")),
         KeyBinding::new("cmd-l", MakeAlias, Some("Finder")),
+        KeyBinding::new("ctrl-cmd-n", NewFolderWithSelection, Some("Finder")),
         KeyBinding::new("cmd-r", ShowOriginal, Some("Finder")),
         KeyBinding::new("cmd-shift-c", GoComputer, Some("Finder")),
         KeyBinding::new(

@@ -105,18 +105,30 @@ impl Render for FinderView {
                 "The item can't be found",
                 format!("“{name}” may have been moved or deleted. Remove it from the Sidebar?"),
                 vec![
-                    rmac_ui::dialog_button("missing-favourite-cancel", "Keep", rmac_ui::DialogButtonKind::Normal)
-                        .on_click(cx.listener(|this, _, _, cx| { this.missing_favourite = None; cx.notify(); }))
-                        .into_any_element(),
-                    rmac_ui::dialog_button("missing-favourite-remove", "Remove", rmac_ui::DialogButtonKind::Primary)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            if let Some(path) = this.missing_favourite.take() {
-                                this.remove_sidebar_favourite(&path, cx);
-                            }
-                        }))
-                        .into_any_element(),
+                    rmac_ui::dialog_button(
+                        "missing-favourite-cancel",
+                        "Keep",
+                        rmac_ui::DialogButtonKind::Normal,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.missing_favourite = None;
+                        cx.notify();
+                    }))
+                    .into_any_element(),
+                    rmac_ui::dialog_button(
+                        "missing-favourite-remove",
+                        "Remove",
+                        rmac_ui::DialogButtonKind::Primary,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if let Some(path) = this.missing_favourite.take() {
+                            this.remove_sidebar_favourite(&path, cx);
+                        }
+                    }))
+                    .into_any_element(),
                 ],
-            ).into_any_element()
+            )
+            .into_any_element()
         });
         let conflict_dialog = self.render_conflict(cx);
         let recovery_dialog = self.render_recovery(cx);
@@ -504,6 +516,7 @@ impl Render for FinderView {
                         state.position(),
                         sort_key,
                         compress_label,
+                        self.selection_count(),
                         can_open_with,
                         can_paste,
                         self.trash_view,
@@ -516,6 +529,7 @@ impl Render for FinderView {
                     MenuPurpose::Sidebar => Self::build_sidebar_menu(
                         state.position(),
                         self.sidebar_context_is_favourite,
+                        self.sidebar_context_path.as_ref().is_some_and(|path| path.as_os_str().is_empty()),
                     ),
                 };
                 el.child(menu.render(&state))
@@ -563,7 +577,15 @@ impl FinderView {
         rmac_ui::set_menu_label("finder::CloseTab", state.close_label, cx);
         rmac_ui::set_menu_label("finder::ToggleSidebar", state.sidebar_label, cx);
         rmac_ui::set_menu_label("finder::TogglePathBar", state.path_bar_label, cx);
-        rmac_ui::set_menu_label("finder::ToggleStatusBar", if self.show_status_bar { "Hide Status Bar" } else { "Show Status Bar" }, cx);
+        rmac_ui::set_menu_label(
+            "finder::ToggleStatusBar",
+            if self.show_status_bar {
+                "Hide Status Bar"
+            } else {
+                "Show Status Bar"
+            },
+            cx,
+        );
         for (action, checked) in [
             ("finder::SortByName", state.sort_name),
             ("finder::SortByDate", state.sort_date),

@@ -51,7 +51,10 @@ impl FinderView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.open_info_entries(paths.iter().filter_map(|path| entry_for(path)).collect(), cx);
+        self.open_info_entries(
+            paths.iter().filter_map(|path| entry_for(path)).collect(),
+            cx,
+        );
     }
 
     fn open_info_entries(&mut self, entries: Vec<Entry>, cx: &mut Context<Self>) {

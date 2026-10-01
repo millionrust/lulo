@@ -79,6 +79,13 @@ def saved_favourites(run: run_window_move.Run) -> list[str]:
     return document["paths"]
 
 
+def saved_favourite_order(run: run_window_move.Run) -> list[str]:
+    path = Path(run.env["XDG_STATE_HOME"]) / "rmac/files/favourites.json"
+    document = json.loads(path.read_text())
+    return [item["value"] for item in document.get("order", [])
+            if item["kind"] == "path"]
+
+
 def drag_once(run: run_window_move.Run, pid: int, name: str,
               destination: tuple[float, float], *, steps: int = 20,
               delay: float = .12, hold: float = .8) -> None:
@@ -212,9 +219,11 @@ def inner(args: argparse.Namespace) -> int:
             return run.finish()
         drag_points(run, row, heading, steps=8, delay=.04, hold=.15)
         reordered = run.wait_for(
-            lambda: saved_favourites(run)[:2] == [str(pinned_one), str(pinned_two)], 8
+            lambda: saved_favourite_order(run).index(str(pinned_one))
+            < saved_favourite_order(run).index(str(pinned_two)), 8
         )
-        run.check("Sidebar drag reorders favourites", bool(reordered), str(saved_favourites(run)))
+        run.check("Sidebar drag reorders favourites", bool(reordered),
+                  str(saved_favourite_order(run)))
 
         row = sidebar_point(run, files.pid, pinned_one.name)
         pointer = run.pointer

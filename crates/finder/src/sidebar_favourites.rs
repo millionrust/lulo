@@ -15,6 +15,37 @@ const VERSION: u32 = 1;
 struct SavedFavourites {
     version: u32,
     paths: Vec<PathBuf>,
+    #[serde(default)]
+    order: Vec<FavouriteKey>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
+pub enum FavouriteKey {
+    Applications,
+    Path(PathBuf),
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Favourites {
+    pub paths: Vec<PathBuf>,
+    pub order: Vec<FavouriteKey>,
+}
+
+impl Favourites {
+    fn sanitised(mut self) -> Self {
+        self.paths = sanitise(self.paths);
+        let mut seen = BTreeSet::new();
+        self.order.retain(|key| {
+            seen.insert(key.clone())
+                && match key {
+                    FavouriteKey::Applications => true,
+                    FavouriteKey::Path(path) => path.is_absolute(),
+                }
+        });
+        self.order.truncate(MAX_FAVOURITES + 4);
+        self
+    }
 }
 
 fn state_path() -> Option<PathBuf> {
@@ -42,27 +73,31 @@ pub fn sanitise(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 }
 
 pub fn load() -> Vec<PathBuf> {
+    load_state().paths
+}
+
+pub fn load_state() -> Favourites {
     let Some(path) = state_path() else {
-        return Vec::new();
+        return Favourites::default();
     };
     let Ok(bytes) = FileSystem.read_bounded_no_follow(&path, MAX_FILE_BYTES) else {
-        return Vec::new();
+        return Favourites::default();
     };
     decode(&bytes)
 }
 
-fn decode(bytes: &[u8]) -> Vec<PathBuf> {
-    let paths = serde_json::from_slice::<SavedFavourites>(bytes)
+fn decode(bytes: &[u8]) -> Favourites {
+    serde_json::from_slice::<SavedFavourites>(bytes)
         .ok()
         .filter(|saved| saved.version == VERSION)
-        .map(|saved| saved.paths)
+        .map(|saved| Favourites { paths: saved.paths, order: saved.order })
         // Migrate the unversioned array written by older Files builds.
-        .or_else(|| serde_json::from_slice::<Vec<PathBuf>>(bytes).ok())
-        .unwrap_or_default();
-    sanitise(paths)
+        .or_else(|| serde_json::from_slice::<Vec<PathBuf>>(bytes).ok().map(|paths| Favourites { paths, order: Vec::new() }))
+        .unwrap_or_default()
+        .sanitised()
 }
 
-pub fn save(paths: &[PathBuf]) -> std::io::Result<()> {
+pub fn save_state(state: &Favourites) -> std::io::Result<()> {
     let Some(path) = state_path() else {
         return Ok(());
     };
@@ -70,9 +105,11 @@ pub fn save(paths: &[PathBuf]) -> std::io::Result<()> {
         return Ok(());
     };
     rmac_storage::create_dir_all_private(parent)?;
+    let state = state.clone().sanitised();
     let bytes = serde_json::to_vec(&SavedFavourites {
         version: VERSION,
-        paths: sanitise(paths.to_vec()),
+        paths: state.paths,
+        order: state.order,
     })?;
     if bytes.len() > MAX_FILE_BYTES {
         return Err(std::io::Error::new(
@@ -85,18 +122,18 @@ pub fn save(paths: &[PathBuf]) -> std::io::Result<()> {
 
 /// Queue persistence on a single sleeping worker. Consecutive reorders are
 /// coalesced so the UI never waits on storage and the last order wins.
-pub fn queue_save(paths: Vec<PathBuf>) -> std::io::Result<()> {
-    static WRITER: OnceLock<Result<mpsc::Sender<Vec<PathBuf>>, String>> = OnceLock::new();
+pub fn queue_save(state: Favourites) -> std::io::Result<()> {
+    static WRITER: OnceLock<Result<mpsc::Sender<Favourites>, String>> = OnceLock::new();
     let writer = WRITER.get_or_init(|| {
-        let (sender, receiver) = mpsc::channel::<Vec<PathBuf>>();
+        let (sender, receiver) = mpsc::channel::<Favourites>();
         std::thread::Builder::new()
             .name("files-sidebar-save".into())
             .spawn(move || {
-                while let Ok(mut paths) = receiver.recv() {
+                while let Ok(mut state) = receiver.recv() {
                     while let Ok(newer) = receiver.try_recv() {
-                        paths = newer;
+                        state = newer;
                     }
-                    if let Err(error) = save(&paths) {
+                    if let Err(error) = save_state(&state) {
                         eprintln!("could not save Files sidebar favourites: {error}");
                     }
                 }
@@ -105,7 +142,7 @@ pub fn queue_save(paths: Vec<PathBuf>) -> std::io::Result<()> {
             .map_err(|error| error.to_string())
     });
     match writer {
-        Ok(sender) => sender.send(paths).map_err(std::io::Error::other),
+        Ok(sender) => sender.send(state).map_err(std::io::Error::other),
         Err(error) => Err(std::io::Error::other(error.clone())),
     }
 }
@@ -142,7 +179,12 @@ mod tests {
     #[test]
     fn files_missing_targets_and_deduplication_are_supported() {
         assert_eq!(
-            sanitise(vec!["relative".into(), "/tmp/a.txt".into(), "/tmp/a.txt".into(), "/gone".into()]),
+            sanitise(vec![
+                "relative".into(),
+                "/tmp/a.txt".into(),
+                "/tmp/a.txt".into(),
+                "/gone".into()
+            ]),
             vec![PathBuf::from("/tmp/a.txt"), PathBuf::from("/gone")]
         );
     }
@@ -151,7 +193,14 @@ mod tests {
     fn insertion_reorders_without_a_duplicate() {
         let mut paths = vec!["/a".into(), "/b".into(), "/c".into()];
         assert!(insert(&mut paths, "/a".into(), 3));
-        assert_eq!(paths, vec![PathBuf::from("/b"), PathBuf::from("/c"), PathBuf::from("/a")]);
+        assert_eq!(
+            paths,
+            vec![
+                PathBuf::from("/b"),
+                PathBuf::from("/c"),
+                PathBuf::from("/a")
+            ]
+        );
     }
 
     #[test]
@@ -159,6 +208,6 @@ mod tests {
         let v1 = br#"{"version":1,"paths":["/tmp/one","/tmp/two"]}"#;
         let legacy = br#"["/tmp/one","/tmp/two"]"#;
         assert_eq!(decode(v1), decode(legacy));
-        assert_eq!(decode(br#"{"version":2,"paths":["/tmp/one"]}"#), Vec::<PathBuf>::new());
+        assert_eq!(decode(br#"{"version":2,"paths":["/tmp/one"]}"#), Favourites::default());
     }
 }

@@ -183,39 +183,72 @@ fn sidebar_sections(home: &Path) -> Vec<SidebarSection> {
         });
     }
     first.extend(rmac_finder::places::shared_folder(home).map(place));
+    let saved = rmac_finder::sidebar_favourites::load_state();
     // The Mac's Favourites opens with Applications, then the user's folders.
-    let favourites = rmac_finder::places::applications_folder()
+    let mut favourites: Vec<SidebarPlace> = rmac_finder::places::applications_folder()
         .into_iter()
         .filter(|_| visibility.applications)
-        .chain(rmac_finder::places::favourite_folders(home).into_iter().filter(|spec| {
-            spec.path.is_dir() && match spec.name.as_str() {
-                "Desktop" => visibility.desktop,
-                "Documents" => visibility.documents,
-                "Downloads" => visibility.downloads,
-                _ => true,
-            }
-        }))
+        .chain(
+            rmac_finder::places::favourite_folders(home)
+                .into_iter()
+                .filter(|spec| {
+                    spec.path.is_dir()
+                        && match spec.name.as_str() {
+                            "Desktop" => visibility.desktop,
+                            "Documents" => visibility.documents,
+                            "Downloads" => visibility.downloads,
+                            _ => true,
+                        }
+                }),
+        )
         .map(place)
-        .chain(rmac_finder::sidebar_favourites::load().into_iter().map(|path| SidebarPlace {
-            name: rmac_finder::sidebar_favourites::label(&path).into(),
-            icon: if path.is_dir() { "icons/folder.svg" } else { "icons/file.svg" },
-            location: Location::Folder(path),
-        }))
+        .chain(
+            saved.paths
+                .into_iter()
+                .map(|path| SidebarPlace {
+                    name: rmac_finder::sidebar_favourites::label(&path).into(),
+                    icon: if path.is_dir() {
+                        "icons/folder.svg"
+                    } else {
+                        "icons/file.svg"
+                    },
+                    location: Location::Folder(path),
+                }),
+        )
         .collect();
+    favourites.sort_by_key(|place| {
+        saved.order.iter().position(|key| match (key, &place.location) {
+            (rmac_finder::sidebar_favourites::FavouriteKey::Applications, Location::Folder(path)) =>
+                path == Path::new("/usr/share/applications"),
+            (rmac_finder::sidebar_favourites::FavouriteKey::Path(saved), Location::Folder(path)) =>
+                saved == path,
+            _ => false,
+        }).unwrap_or(usize::MAX)
+    });
     let mut locations: Vec<SidebarPlace> = rmac_finder::places::standard_locations(home)
         .into_iter()
         .map(place)
         .collect();
     if let Ok(mounts) = rmac_mounts::discover() {
-        locations.extend(mounts.into_iter().filter(|mount| {
-            if mount.ejectable { visibility.external_disks } else { visibility.hard_disks }
-        }).map(|mount| SidebarPlace {
-            name: mount.name.into(),
-            location: Location::Folder(mount.path),
-            icon: "icons/hard-drive.svg",
-        }));
+        locations.extend(
+            mounts
+                .into_iter()
+                .filter(|mount| {
+                    if mount.ejectable {
+                        visibility.external_disks
+                    } else {
+                        visibility.hard_disks
+                    }
+                })
+                .map(|mount| SidebarPlace {
+                    name: mount.name.into(),
+                    location: Location::Folder(mount.path),
+                    icon: "icons/hard-drive.svg",
+                }),
+        );
     }
-    locations.retain(|place| visibility.home || place.location != Location::Folder(home.to_path_buf()));
+    locations
+        .retain(|place| visibility.home || place.location != Location::Folder(home.to_path_buf()));
     let media = rmac_finder::places::media_folders(home)
         .into_iter()
         .map(place)
@@ -310,7 +343,8 @@ impl Panel {
             if window.is_window_active() {
                 this.refresh_sidebar_async(cx);
             }
-        }).detach();
+        })
+        .detach();
         match &name {
             Some(name) => {
                 let name_focus = name.read(cx).focus_handle(cx);
@@ -376,12 +410,16 @@ impl Panel {
     fn refresh_sidebar_async(&self, cx: &mut Context<Self>) {
         let home = self.home.clone();
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-            let sections = cx.background_executor().spawn(async move { sidebar_sections(&home) }).await;
+            let sections = cx
+                .background_executor()
+                .spawn(async move { sidebar_sections(&home) })
+                .await;
             let _ = this.update(cx, |this, cx| {
                 this.sections = sections;
                 cx.notify();
             });
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn mode(&self) -> Mode {

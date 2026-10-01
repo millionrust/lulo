@@ -26,7 +26,9 @@ impl FinderView {
 
         // User-added Favourites (drag a folder onto the Favourites header),
         // shared by every window and pruned to folders that still exist.
-        let favourite_extras: Vec<PathBuf> = sidebar_favourites::load_sidebar_favourites();
+        let saved_favourites = rmac_finder::sidebar_favourites::load_state();
+        let favourite_extras = saved_favourites.paths;
+        let favourite_order = saved_favourites.order;
         // Built from `favourite_extras`/`mounts`/the Settings window's
         // Sidebar and Tags tabs below, right after `view` exists.
         let sections = Vec::new();
@@ -109,14 +111,17 @@ impl FinderView {
                 this.refresh_pasteboard_state(cx);
                 let before = this.favourite_extras.clone();
                 cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
-                    let favourites = blocking::unblock(sidebar_favourites::load_sidebar_favourites).await;
+                    let favourites =
+                        blocking::unblock(rmac_finder::sidebar_favourites::load_state).await;
                     let _ = this.update(cx, |this, cx| {
-                        if this.favourite_extras == before && favourites != before {
-                            this.favourite_extras = favourites;
+                        if this.favourite_extras == before && (favourites.paths != before || favourites.order != this.favourite_order) {
+                            this.favourite_extras = favourites.paths;
+                            this.favourite_order = favourites.order;
                             this.rebuild_sidebar_sections(cx);
                         }
                     });
-                }).detach();
+                })
+                .detach();
             }
             if !window.is_window_active()
                 && rmac_ui::ContextMenuState::dismiss(&mut this.menu_at, window, cx)
@@ -217,6 +222,7 @@ impl FinderView {
             file_words,
             sections,
             favourite_extras,
+            favourite_order,
             sidebar_drop_index: None,
             info_windows: Vec::new(),
             go_to: None,

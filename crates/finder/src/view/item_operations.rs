@@ -12,15 +12,21 @@ impl FinderView {
     /// File ▸ Show Original resolves a symbolic-link alias and reveals its
     /// target in the enclosing folder.
     pub(super) fn show_original(&mut self, cx: &mut Context<Self>) {
-        let Some(path) = self.selected_paths().into_iter().next() else { return; };
+        let Some(path) = self.selected_paths().into_iter().next() else {
+            return;
+        };
         cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
             let target = blocking::unblock(move || {
                 let metadata = std::fs::symlink_metadata(&path)?;
                 if !metadata.file_type().is_symlink() {
-                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "The selected item is not an alias"));
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "The selected item is not an alias",
+                    ));
                 }
                 std::fs::canonicalize(path)
-            }).await;
+            })
+            .await;
             let _ = this.update(cx, |this: &mut FinderView, cx| match target {
                 Ok(target) => {
                     if let Some(parent) = target.parent() {
@@ -33,7 +39,8 @@ impl FinderView {
                     cx.notify();
                 }
             });
-        }).detach();
+        })
+        .detach();
     }
 
     pub(super) fn menu_unavailable(&mut self, message: &'static str, cx: &mut Context<Self>) {
@@ -112,6 +119,61 @@ impl FinderView {
     }
 
     // ---- operations ----
+    pub(super) fn new_folder_with_selection(&mut self, cx: &mut Context<Self>) {
+        if self.block_mutation_during_transfer(cx) {
+            return;
+        }
+        let paths = self.selected_paths();
+        let Some(parent) = paths.first().and_then(|path| path.parent()).map(Path::to_path_buf) else {
+            self.operation_notice = Some("Select items to put in a new folder".into());
+            cx.notify();
+            return;
+        };
+        if paths.iter().any(|path| path.parent() != Some(parent.as_path())) {
+            self.operation_error = Some("Select items from one folder".into());
+            cx.notify();
+            return;
+        }
+        let Some(journal) = self.operation_journal.clone() else {
+            self.operation_error = Some("File-operation recovery is unavailable".into());
+            cx.notify();
+            return;
+        };
+        self.new_folder_busy = true;
+        cx.notify();
+        cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
+            let result = blocking::unblock(move || {
+                let folder = unique_path(parent.join("New Folder With Items"));
+                file_ops::create_folder(&file_ops::RealFileSystem, &folder)
+                    .map_err(|error| error.detail)?;
+                journal.undo_store().archive_created_folder(&folder)
+                    .map_err(|error| error.to_string())?;
+                Ok::<_, String>((folder, paths))
+            }).await;
+            let _ = this.update(cx, |this: &mut FinderView, cx| {
+                this.new_folder_busy = false;
+                match result {
+                    Ok((folder, paths)) => {
+                        let tasks = paths.into_iter().filter_map(|source| {
+                            let name = source.file_name()?;
+                            Some(file_ops::TransferTask {
+                                kind: file_ops::TransferKind::Move,
+                                destination: folder.join(name),
+                                source,
+                            })
+                        }).collect();
+                        this.pending_select = Some(folder);
+                        this.start_transfer_with_conflicts("Moving", tasks, false, false, cx);
+                    }
+                    Err(error) => {
+                        this.operation_error = Some(error.into());
+                        cx.notify();
+                    }
+                }
+            });
+        }).detach();
+    }
+
     pub(super) fn new_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.block_mutation_during_transfer(cx) {
             return;

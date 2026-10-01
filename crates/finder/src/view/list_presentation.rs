@@ -726,6 +726,7 @@ impl FinderView {
             .track_focus(&self.focus)
             .key_context("Finder")
             .on_action(cx.listener(|this, _: &NewFolder, window, cx| this.new_folder(window, cx)))
+            .on_action(cx.listener(|this, _: &NewFolderWithSelection, _, cx| this.new_folder_with_selection(cx)))
             .on_action(
                 cx.listener(|this, _: &RenameItem, window, cx| this.rename_selected(window, cx)),
             )
@@ -796,12 +797,26 @@ impl FinderView {
                     this.add_sidebar_favourite(path, cx);
                 }
             }))
-            .on_action(cx.listener(|this, _: &SidebarRemove, _, cx| this.sidebar_remove_context(cx)))
-            .on_action(cx.listener(|this, _: &SidebarOpenWindow, _, cx| this.sidebar_open_window(cx)))
+            .on_action(
+                cx.listener(|this, _: &SidebarRemove, _, cx| this.sidebar_remove_context(cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SidebarOpenWindow, _, cx| this.sidebar_open_window(cx)),
+            )
             .on_action(cx.listener(|this, _: &SidebarOpenTab, _, cx| this.sidebar_open_tab(cx)))
-            .on_action(cx.listener(|this, _: &SidebarShowEnclosing, _, cx| this.sidebar_show_enclosing(cx)))
-            .on_action(cx.listener(|this, _: &SidebarGetInfo, window, cx| this.sidebar_get_info(window, cx)))
-            .on_action(cx.listener(|this, _: &SidebarRename, window, cx| this.sidebar_rename(window, cx)))
+            .on_action(
+                cx.listener(|this, _: &SidebarShowEnclosing, _, cx| {
+                    this.sidebar_show_enclosing(cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &SidebarGetInfo, window, cx| {
+                    this.sidebar_get_info(window, cx)
+                }),
+            )
+            .on_action(
+                cx.listener(|this, _: &SidebarRename, window, cx| this.sidebar_rename(window, cx)),
+            )
             .on_action(cx.listener(|this, _: &OpenWith, _, cx| this.request_open_with(cx)))
             .on_action(cx.listener(|this, _: &ToggleHidden, _, cx| this.toggle_hidden(cx)))
             .on_action(cx.listener(|this, _: &QuickLook, _, cx| this.quick_look(cx)))
@@ -964,7 +979,9 @@ impl FinderView {
             .when(self.show_path_bar, |el: Stateful<Div>| {
                 el.child(self.render_path_bar(cx))
             })
-            .when(self.show_status_bar, |el: Stateful<Div>| el.child(self.render_status_bar()))
+            .when(self.show_status_bar, |el: Stateful<Div>| {
+                el.child(self.render_status_bar())
+            })
     }
     fn render_list_row(
         &self,

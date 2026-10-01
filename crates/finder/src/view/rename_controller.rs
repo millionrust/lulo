@@ -35,7 +35,13 @@ impl FinderView {
         let Some(entry) = self.selected_entry() else {
             return;
         };
-        self.begin_rename_path(entry.path.clone(), entry.name.to_string(), entry.is_dir, window, cx);
+        self.begin_rename_path(
+            entry.path.clone(),
+            entry.name.to_string(),
+            entry.is_dir,
+            window,
+            cx,
+        );
     }
 
     pub(super) fn rename_sidebar_path(
@@ -47,11 +53,20 @@ impl FinderView {
         if self.renaming.is_some() || self.block_mutation_during_transfer(cx) {
             return;
         }
-        let Some(entry) = entry_for(&path) else { return; };
+        let Some(entry) = entry_for(&path) else {
+            return;
+        };
         self.begin_rename_path(path, entry.name.to_string(), entry.is_dir, window, cx);
     }
 
-    fn begin_rename_path(&mut self, path: PathBuf, name: String, is_dir: bool, window: &mut Window, cx: &mut Context<Self>) {
+    fn begin_rename_path(
+        &mut self,
+        path: PathBuf,
+        name: String,
+        is_dir: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let selection = rename_selection(&name, is_dir);
         let input = cx.new(|cx| InputState::new(window, cx).default_value(name));
         cx.subscribe_in(
@@ -102,13 +117,23 @@ impl FinderView {
                 cx.spawn(async move |this, cx: &mut gpui::AsyncApp| {
                     if completion.recv().await == Ok(true) {
                         let _ = this.update(cx, |this: &mut FinderView, cx| {
-                            if let Some(favourite) = this.favourite_extras.iter_mut().find(|item| item.as_path() == source.as_path()) {
-                                *favourite = destination;
+                            if let Some(favourite) = this
+                                .favourite_extras
+                                .iter_mut()
+                                .find(|item| item.as_path() == source.as_path())
+                            {
+                                *favourite = destination.clone();
+                                for key in &mut this.favourite_order {
+                                    if *key == FavouriteKey::Path(source.clone()) {
+                                        *key = FavouriteKey::Path(destination.clone());
+                                    }
+                                }
                                 this.save_and_broadcast_favourites(cx);
                             }
                         });
                     }
-                }).detach();
+                })
+                .detach();
             }
         }
         window.focus(&self.focus, cx);

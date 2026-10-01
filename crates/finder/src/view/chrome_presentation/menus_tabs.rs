@@ -4,16 +4,23 @@ impl FinderView {
     pub(in crate::view) fn build_sidebar_menu(
         pos: Point<Pixels>,
         removable: bool,
+        applications: bool,
     ) -> rmac_ui::ContextMenu {
-        let mut menu = rmac_ui::ContextMenu::new(pos)
-            .item("Open in New Window", Box::new(SidebarOpenWindow))
-            .item("Open in New Tab", Box::new(SidebarOpenTab))
-            .item("Show in Enclosing Folder", Box::new(SidebarShowEnclosing))
-            .separator()
-            .item("Get Info", Box::new(SidebarGetInfo))
-            .item("Rename", Box::new(SidebarRename));
+        let mut menu = if applications {
+            rmac_ui::ContextMenu::new(pos).item("Open", Box::new(GoApplications))
+        } else {
+            rmac_ui::ContextMenu::new(pos)
+                .item("Open in New Window", Box::new(SidebarOpenWindow))
+                .item("Open in New Tab", Box::new(SidebarOpenTab))
+                .item("Show in Enclosing Folder", Box::new(SidebarShowEnclosing))
+                .separator()
+                .item("Get Info", Box::new(SidebarGetInfo))
+                .item("Rename", Box::new(SidebarRename))
+        };
         if removable {
-            menu = menu.separator().item("Remove from Sidebar", Box::new(SidebarRemove));
+            menu = menu
+                .separator()
+                .item("Remove from Sidebar", Box::new(SidebarRemove));
         }
         menu
     }
@@ -44,6 +51,7 @@ impl FinderView {
         pos: Point<Pixels>,
         sort_key: SortKey,
         compress_label: Option<String>,
+        selection_count: usize,
         can_open_with: bool,
         _can_paste: bool,
         trash_view: bool,
@@ -113,6 +121,9 @@ impl FinderView {
                 rmac_ui::shortcuts::OPEN_SELECTION,
                 Box::new(OpenItems),
             );
+            if selection_count > 1 {
+                m = m.item("New Folder with Selection", Box::new(NewFolderWithSelection));
+            }
             // The picker loads type handlers asynchronously and owns the
             // default-app controls, so this row opens it instead of building
             // a submenu from data that is not available to this menu builder.

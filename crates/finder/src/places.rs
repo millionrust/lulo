@@ -1,8 +1,8 @@
 //! Framework-neutral sidebar places shared by Files and the Open/Save panel.
 //! Only folders that exist on this machine are offered.
 
-use std::path::{Path, PathBuf};
 use rmac_storage::{Backend as _, FileSystem};
+use std::path::{Path, PathBuf};
 
 /// The Files Settings ▸ Sidebar choices used by the separate chooser process.
 /// It reads the same versioned document that Files writes.
@@ -39,11 +39,19 @@ pub fn sidebar_visibility() -> SidebarVisibility {
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
-    else { return visibility };
+    else {
+        return visibility;
+    };
     let path = state_home.join("rmac/files/settings.json");
-    let Ok(bytes) = FileSystem.read_bounded_no_follow(&path, 64 * 1024) else { return visibility };
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else { return visibility };
-    if value["version"].as_u64() != Some(1) { return visibility; }
+    let Ok(bytes) = FileSystem.read_bounded_no_follow(&path, 64 * 1024) else {
+        return visibility;
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return visibility;
+    };
+    if value["version"].as_u64() != Some(1) {
+        return visibility;
+    }
     let sidebar = &value["settings"]["sidebar"];
     let enabled = |name: &str, default| sidebar[name].as_bool().unwrap_or(default);
     visibility.recents = enabled("show_recents", visibility.recents);

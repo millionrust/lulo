@@ -241,10 +241,10 @@ impl WeatherView {
         self.search_generation += 1;
         let generation = self.search_generation;
         let query = self.search.read(cx).value().to_string();
+        self.results.clear();
+        self.search_failed = false;
+        cx.notify();
         let Some(url) = geocode::search_url(&query) else {
-            self.results.clear();
-            self.search_failed = false;
-            cx.notify();
             return;
         };
         cx.spawn(async move |this, cx| {

@@ -899,8 +899,10 @@ class LuloRun:
     def fact_sidebar(self) -> dict[str, Any]:
         """Weather's city list owns the window's only editable search field."""
         frame = self.active_frame()
+        pyatspi = atspi()
         visible = frame is not None and any(
             sc.normalize_atspi_role(role(node)) in TEXT_ROLES
+            and has_state(node, pyatspi.STATE_EDITABLE)
             for node in descendants(frame, limit=3000)
         )
         return {"visible": visible}

@@ -1026,6 +1026,7 @@ const WEATHER_MENUS: &[MenuSpec] = &[
     MenuSpec {
         label: "File",
         items: &[
+            item!("Add Location to List", "weather::AddLocationToList", "⇧⌘L"),
             item!("Close", "weather::CloseWindow", "⌘W"),
             item!("Close All", "weather::CloseWindow", "⌥⌘W"),
         ],

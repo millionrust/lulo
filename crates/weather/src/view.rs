@@ -18,7 +18,9 @@ use rmac_weather::metrics as m;
 use rmac_weather::store::{self, Cached, Settings};
 use rmac_weather::summary::{self, Column, Unit};
 
-use crate::{CloseWindow, FindCity, Refresh, ToggleSidebar, UseCelsius, UseFahrenheit};
+use crate::{
+    AddLocationToList, CloseWindow, FindCity, Refresh, ToggleSidebar, UseCelsius, UseFahrenheit,
+};
 
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(350);
 const REFRESH_EVERY: Duration = Duration::from_secs(60 * 60);
@@ -1132,6 +1134,18 @@ fn range_bar(from: f32, to: f32, dot: Option<f32>) -> impl IntoElement {
 
 impl Render for WeatherView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        rmac_ui::set_menu_enabled("weather::AddLocationToList", !self.results.is_empty(), cx);
+        let (has_selection, has_text) = {
+            let search = self.search.read(cx);
+            (
+                !search.selected_range().is_empty(),
+                !search.value().is_empty(),
+            )
+        };
+        for action in ["input::Cut", "input::Copy", "input::Delete"] {
+            rmac_ui::set_menu_enabled(action, has_selection, cx);
+        }
+        rmac_ui::set_menu_enabled("input::SelectAll", has_text, cx);
         rmac_ui::set_menu_checked("weather::UseCelsius", self.unit == Unit::Celsius, cx);
         rmac_ui::set_menu_checked("weather::UseFahrenheit", self.unit == Unit::Fahrenheit, cx);
         let width = f32::from(window.viewport_size().width);
@@ -1161,6 +1175,11 @@ impl Render for WeatherView {
                 this.search.update(cx, |state, cx| state.focus(window, cx));
             }))
             .on_action(cx.listener(|this, _: &ToggleSidebar, _, cx| this.toggle_sidebar(cx)))
+            .on_action(cx.listener(|this, _: &AddLocationToList, _, cx| {
+                if let Some(place) = this.results.first().cloned() {
+                    this.add_place(place, cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &UseCelsius, _, cx| this.set_unit(Unit::Celsius, cx)))
             .on_action(
                 cx.listener(|this, _: &UseFahrenheit, _, cx| this.set_unit(Unit::Fahrenheit, cx)),

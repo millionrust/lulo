@@ -20,6 +20,7 @@ gpui::actions!(
         UseCelsius,
         UseFahrenheit,
         ToggleSidebar,
+        AddLocationToList,
         CloseWindow
     ]
 );
@@ -63,6 +64,7 @@ fn main() {
                 KeyBinding::new(rmac_ui::shortcuts::CLOSE.keystroke, CloseWindow, context),
                 KeyBinding::new("alt-cmd-w", CloseWindow, context),
                 KeyBinding::new("ctrl-cmd-s", ToggleSidebar, context),
+                KeyBinding::new("shift-cmd-l", AddLocationToList, context),
             ]);
             rmac_ui::install_app_menu(WEATHER, cx);
             let (width, height) = metrics::WINDOW;

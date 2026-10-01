@@ -53,6 +53,13 @@
       "label": "File",
       "items": [
         {
+          "label": "Add Location to List",
+          "action": "weather::AddLocationToList",
+          "shortcut": "⇧⌘L",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Close",
           "action": "weather::CloseWindow",
           "shortcut": "⌘W",

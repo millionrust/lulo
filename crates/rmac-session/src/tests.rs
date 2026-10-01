@@ -450,12 +450,11 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
         include_str!("../units/rmac-notification-center-panel.service"),
     ];
     for unit in on_demand_units {
-        assert!(unit.contains("Restart=on-success"));
-        assert!(unit.contains("RestartSec=100ms"));
+        assert!(unit.contains("Restart=no"));
         assert!(unit.contains("StartLimitIntervalSec=0"));
         assert!(unit.contains("OnFailure=rmac-component-failure@%N.service"));
         assert!(unit.contains("ConditionFileIsExecutable=%h/.local/libexec/rmac/"));
-        assert!(!unit.contains("Restart=on-failure"));
+        assert!(!unit.contains("Before=rmac-shortcut-broker.service"));
         assert!(!unit.contains("StartLimitBurst="));
         assert!(!unit.contains("/bin/sh"));
     }
@@ -477,24 +476,20 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     let quick_settings = include_str!("../units/rmac-quick-settings.service");
     let notification_panel = include_str!("../units/rmac-notification-center-panel.service");
     let shortcut_broker = include_str!("../units/rmac-shortcut-broker.service");
-    assert!(launcher.contains("Before=rmac-shortcut-broker.service"));
     assert!(launcher.contains("Type=notify"));
     assert!(launcher.contains("NotifyAccess=all"));
-    assert!(app_drawer.contains("Before=rmac-shortcut-broker.service"));
     assert!(app_drawer.contains("Type=notify"));
     assert!(app_drawer.contains("NotifyAccess=all"));
     assert!(app_drawer.contains("ExecStart=%h/.local/libexec/rmac/rmac-app-drawer --service"));
-    assert!(quick_settings.contains("Before=rmac-shortcut-broker.service"));
     assert!(quick_settings.contains("Type=notify"));
     assert!(quick_settings.contains("NotifyAccess=all"));
     assert!(notification_panel
         .contains("After=rmac-session-supervisor.service rmac-notification-center.service"));
-    assert!(notification_panel.contains("Before=rmac-shortcut-broker.service"));
     assert!(notification_panel.contains("Type=notify"));
     assert!(notification_panel.contains("NotifyAccess=all"));
-    assert!(shortcut_broker.contains("rmac-quick-settings.service"));
+    assert!(!shortcut_broker.contains("rmac-quick-settings.service"));
     assert!(!shortcut_broker.contains("rmac-app-drawer.service"));
-    assert!(shortcut_broker.contains("rmac-notification-center-panel.service"));
+    assert!(!shortcut_broker.contains("rmac-notification-center-panel.service"));
 
     let lock = include_str!("../units/rmac-lock.service");
     assert!(lock.contains("Type=notify"));
@@ -542,8 +537,14 @@ fn unit_assets_bound_restarts_and_keep_components_in_separate_crash_domains() {
     let safe_target = include_str!("../units/rmac-safe-mode.target");
     assert!(normal_target
         .contains("Requires=rmac-session-supervisor.service rmac-lock-coordinator.service"));
-    assert!(normal_target.contains("rmac-notification-center-panel.service"));
-    assert!(normal_target.contains("rmac-app-drawer.service"));
+    for surface in [
+        "rmac-launcher.service",
+        "rmac-app-drawer.service",
+        "rmac-quick-settings.service",
+        "rmac-notification-center-panel.service",
+    ] {
+        assert!(!normal_target.contains(surface));
+    }
     assert!(normal_target.contains("rmac-osd.service"));
     assert!(normal_target.contains("rmac-app-switcher.service"));
     assert!(normal_target.contains("rmac-screenshot.service"));

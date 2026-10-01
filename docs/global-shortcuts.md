@@ -65,15 +65,16 @@ fixed `rmac-lock.service` directly and waits for the lock readiness transaction,
 so shell availability cannot turn a security action into a dropped event. No
 shortcut is converted into a shell command.
 
-The supervised launcher, Apps, Quick Settings, and Notification Center
-panel processes bind their own endpoints, signal systemd readiness only after
-the socket exists, and order the broker after all four ready units. Each keeps
-at most one on-demand GPUI surface and treats a repeated activation as
-dismissal. Apps retains a separate standalone mode for development and
-performance measurement; only its explicit service mode owns the shortcut.
+The launcher, Apps, Quick Settings, and Notification Center panel are stopped
+at login. When their action-scoped socket is absent, the dispatcher queues a
+nonblocking start of the matching systemd user unit and retries the datagram
+until its endpoint binds. It starts a unit only once per invocation; a stale
+socket during an idle exit gets the same retry treatment. Each process keeps
+at most one GPUI surface, treats repeated activation as dismissal, and exits
+after five minutes without a window (configurable with
+`RMAC_SURFACE_IDLE_SECONDS`, 1–3600). Apps retains a separate standalone mode.
 The notification daemon remains a separate D-Bus authority and cannot consume
-the panel shortcut. Every compiled ordinary shell action therefore has a live,
-crash-isolated consumer before the broker accepts activations.
+the panel shortcut. The file chooser is activated by D-Bus.
 
 ## Explicit niri fallback
 

@@ -191,7 +191,8 @@ impl Player {
     /// Start mpv; events arrive on `events`, and `frames` is signalled when
     /// a new frame is ready (collect it with [`Player::take_frame`]).
     pub fn start(
-        events: async_channel::Sender<Event>,
+        generation: u64,
+        events: async_channel::Sender<(u64, Event)>,
         frames: async_channel::Sender<()>,
     ) -> Result<Self, String> {
         let api = Arc::new(Api::load()?);
@@ -209,7 +210,9 @@ impl Player {
         for (name, value) in [
             ("vo", "libmpv"),
             ("hwdec", "auto-copy-safe"),
-            ("keep-open", "yes"),
+            // The window retains its last GPUI frame. Keeping mpv's decoder
+            // and demuxer open after EOF needlessly pins their buffers.
+            ("keep-open", "no"),
             ("idle", "yes"),
             ("config", "no"),
             ("terminal", "no"),
@@ -249,7 +252,7 @@ impl Player {
         {
             let (api, handle) = (api.clone(), handle.clone());
             threads.push(std::thread::spawn(move || {
-                event_loop(&api, &handle, &events)
+                event_loop(&api, &handle, generation, &events)
             }));
         }
         {
@@ -351,7 +354,12 @@ fn mark_dirty(render: &RenderShared) {
     render.wake.notify_one();
 }
 
-fn event_loop(api: &Api, handle: &Handle, events: &async_channel::Sender<Event>) {
+fn event_loop(
+    api: &Api,
+    handle: &Handle,
+    generation: u64,
+    events: &async_channel::Sender<(u64, Event)>,
+) {
     let mut width = 0.0;
     let mut height = 0.0;
     loop {
@@ -359,7 +367,7 @@ fn event_loop(api: &Api, handle: &Handle, events: &async_channel::Sender<Event>)
         let event = unsafe { &*(api.wait_event)(handle.0, -1.0) };
         let message = match event.event_id {
             EVENT_SHUTDOWN => {
-                let _ = events.send_blocking(Event::Shutdown);
+                let _ = events.send_blocking((generation, Event::Shutdown));
                 return;
             }
             EVENT_FILE_LOADED => Some(Event::FileLoaded),
@@ -382,7 +390,7 @@ fn event_loop(api: &Api, handle: &Handle, events: &async_channel::Sender<Event>)
             _ => None,
         };
         if let Some(message) = message {
-            if events.send_blocking(message).is_err() {
+            if events.send_blocking((generation, message)).is_err() {
                 return;
             }
         }
@@ -500,7 +508,15 @@ fn render_loop(
         // SAFETY: render thread owns the context.
         let flags = unsafe { (api.render_context_update)(context) };
         let packed = render.target.load(Ordering::Acquire);
-        if flags & RENDER_UPDATE_FRAME == 0 || packed == 0 {
+        if packed == 0 {
+            buffer = Vec::new();
+            *render
+                .latest
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+            continue;
+        }
+        if flags & RENDER_UPDATE_FRAME == 0 {
             continue;
         }
         let (width, height) = ((packed >> 32) as u32, (packed & 0xFFFF_FFFF) as u32);

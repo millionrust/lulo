@@ -231,8 +231,10 @@ impl gpui::AssetSource for WidgetAssets {
 fn main() {
     rmac_ui::application()
         .with_assets(rmac_ui::layered_assets(WidgetAssets))
+        .with_quit_mode(gpui::QuitMode::Explicit)
         .run(|cx: &mut App| {
             rmac_ui::init_application(cx);
+            rmac_ui::install_surface_idle_exit(cx);
             // Card times follow the locale's 12- or 24-hour clock.
             cx.background_executor()
                 .spawn(blocking::unblock(model::load_hour_cycle))

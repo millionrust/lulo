@@ -6,6 +6,13 @@ mod render;
 
 impl Settings {
     pub(super) fn refresh_wallpaper_preview(&mut self, cx: &mut Context<Self>) {
+        if self.current().name.as_ref() != "Wallpaper" {
+            self.wallpaper_preview_generation = self.wallpaper_preview_generation.wrapping_add(1);
+            self._wallpaper_preview_watcher = None;
+            self.wallpaper_preview = None;
+            self.wallpaper_preview_loading = true;
+            return;
+        }
         let Some(snapshot) = self.shell_settings.as_ref() else {
             self.wallpaper_preview_loading = false;
             self.wallpaper_preview_error = Some("Wallpaper settings are unavailable".into());

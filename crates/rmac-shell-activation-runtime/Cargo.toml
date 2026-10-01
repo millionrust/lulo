@@ -8,11 +8,9 @@ publish = false
 
 [dependencies]
 async-channel.workspace = true
+async-io.workspace = true
 futures-util.workspace = true
 rmac-compositor.workspace = true
 rmac-shell-invocation.workspace = true
 rmac-shell-invocation-runtime.workspace = true
 rmac-shortcuts.workspace = true
-
-[dev-dependencies]
-async-io.workspace = true

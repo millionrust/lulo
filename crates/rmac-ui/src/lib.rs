@@ -52,7 +52,8 @@ pub use gpui_component::{ActiveTheme, StyledExt};
 pub use menu_target::{register_menu_target, track_key_window};
 pub use runtime::{
     defer_content_ready, init_application, install_app_instance, install_app_menu,
-    mark_content_ready, prepare_surface_window, shell_surface_root, text_px,
+    install_surface_idle_exit, mark_content_ready, prepare_surface_window, shell_surface_root,
+    text_px,
 };
 pub use window::*;
 

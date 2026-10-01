@@ -209,6 +209,7 @@ pub(super) struct Settings {
     pub(super) notification_origins:
         std::collections::BTreeMap<String, rmac_notifications_linux::origin::Origin>,
     pub(super) app_catalog: Vec<rmac_apps::Application>,
+    pub(super) catalog_reload: async_channel::Sender<()>,
     pub(super) _app_catalog_watcher: Option<rmac_apps::CatalogWatcher>,
 
     // Focus

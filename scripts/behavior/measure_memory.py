@@ -38,6 +38,10 @@ SHELL = (
     ("rmac-notification-center-panel", ()), ("rmac-osd", ("--service",)),
     ("screenshot", ("--service",)),
 )
+COLD_SURFACES = {
+    "rmac-launcher", "rmac-app-drawer", "rmac-quick-settings",
+    "rmac-notification-center-panel",
+}
 
 
 def sample(pid: int) -> dict:
@@ -79,6 +83,8 @@ def inner(args: argparse.Namespace) -> int:
         }
     try:
         for name, flags in SHELL:
+            if args.cold_surfaces and name in COLD_SURFACES:
+                continue
             binary = bins / ({"rmac-osd": "osd"}.get(name, name))
             if not binary.is_file():
                 binary = Path("/usr/libexec/rmac") / (name if name.startswith("rmac-") else "rmac-" + name)
@@ -153,6 +159,7 @@ def outer(args: argparse.Namespace) -> int:
                 "--inner", str(work), "--bin-dir", args.bin_dir, "--niri", args.niri,
                 "--gpu", args.gpu, "--arenas", str(args.arenas), "--settle", str(args.settle),
                 "--output", args.output, *(["--exercise-osd"] if args.exercise_osd else []),
+                *(["--cold-surfaces"] if args.cold_surfaces else []),
             ], env=env)
         finally:
             run_lulo.reap(Path(env["XDG_RUNTIME_DIR"]))
@@ -167,6 +174,8 @@ def main() -> int:
     parser.add_argument("--arenas", type=int, default=0, help="0 means allocator default")
     parser.add_argument("--settle", type=float, default=5)
     parser.add_argument("--exercise-osd", action="store_true")
+    parser.add_argument("--cold-surfaces", action="store_true",
+                        help="leave shortcut surfaces stopped, as at login")
     parser.add_argument("--output", required=True)
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()

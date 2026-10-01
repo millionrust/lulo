@@ -215,8 +215,10 @@ fn route_activation(activation: rmac_shell_activation_runtime::Activation, cx: &
 pub(crate) fn run(show_on_start: bool) {
     rmac_ui::application()
         .with_assets(gpui_component_assets::Assets)
+        .with_quit_mode(gpui::QuitMode::Explicit)
         .run(move |cx: &mut GpuiApp| {
             rmac_ui::init_application(cx);
+            rmac_ui::install_surface_idle_exit(cx);
             cx.bind_keys(key_bindings());
             cx.set_global(AppDrawerService {
                 active: None,

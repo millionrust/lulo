@@ -24,10 +24,7 @@ impl Settings {
         .detach();
 
         let (catalog_events, catalog_event_rx) = async_channel::bounded(1);
-        let app_catalog_watcher = rmac_apps::watch_catalog(move || {
-            let _ = catalog_events.try_send(());
-        })
-        .ok();
+        let catalog_reload = catalog_events.clone();
 
         // System audio sliders write through the platform audio service.
         let output_volume = Self::audio_slider(cx, 0.0, rmac_audio::DeviceKind::Output);
@@ -73,7 +70,7 @@ impl Settings {
         let wifi_pane_scan_task =
             wifi_pane_was_visible.then(|| Self::spawn_wifi_pane_scan_loop(cx));
 
-        Self {
+        let mut settings = Self {
             system_data_loading: true,
             system_data_busy: false,
             system_data_error: None,
@@ -239,7 +236,8 @@ impl Settings {
             notification_apps: Vec::new(),
             notification_origins: std::collections::BTreeMap::new(),
             app_catalog: Vec::new(),
-            _app_catalog_watcher: app_catalog_watcher,
+            catalog_reload,
+            _app_catalog_watcher: None,
 
             focus_policy_loading: true,
             focus_policy_busy: false,
@@ -396,6 +394,8 @@ impl Settings {
             mac_keyboard: None,
             mac_keyboard_busy: false,
             mac_keyboard_error: None,
-        }
+        };
+        settings.sync_catalog_for_pane(false);
+        settings
     }
 }

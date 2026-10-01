@@ -12,7 +12,7 @@ Rules for agents: read only your surface's `##` section; when you fix a gap, set
 
 | ID | Sev | Size | Status | Gap | Where |
 |---|---|---|---|---|---|
-| MEM-01 | P1 | M | Partial (`b1d6202a`) | Idle OSD allocated a renderer and layer surface before any volume or brightness event; it now opens on first use, and wallpaper releases its decoded pixel cache after rendering. In the nested Intel session, sampled shell RSS fell 637.49→538.53 MiB and PSS 399.77→361.98 MiB. Remaining: combined shell RSS still exceeds 256 MiB; Player is 160.17 MiB and Settings 131.30 MiB against the 128 MiB app limit. Software-rendered clients remain well over budget. The eight-hour swap-aware soak is open. | `shell/bins/rmac-osd/src/main.rs`, `crates/rmac-wallpaper-{runtime,image}`, `docs/perf/reference-laptop-2026-10-01-memory-diet.md` |
+| MEM-01 | P1 | M | Partial (`b1d6202a`, round 2) | Round 1 deferred OSD allocation and dropped wallpaper's decoded cache. Round 2 starts Spotlight, App Drawer, Quick Settings and Notification Center's panel on demand, releases Player's audio backend at EOF, and scopes Settings catalog/wallpaper work to relevant panes. The nested Intel shell fell 540.29→460.62 MiB RSS and 363.50→293.37 MiB PSS with 12→8 resident processes; Player fell 160.19→121.75 MiB RSS. Remaining: the combined shell exceeds 256 MiB RSS, Settings is 132.23 MiB against the 128 MiB app limit, cold first-open <150 ms is unproven, the software-rendered round-2 path is unmeasured, and the swap-aware eight-hour soak is open. See the proposed PSS/private budget and limits in the round-2 report. | `crates/rmac-session`, `crates/rmac-shortcuts`, `crates/player`, `crates/system-settings`, `docs/perf/reference-laptop-2026-10-01-memory-diet-round-2.md` |
 
 ### Touch input
 

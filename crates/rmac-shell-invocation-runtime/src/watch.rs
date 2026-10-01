@@ -87,7 +87,7 @@ async fn watch_compositor(
             result = watcher => match result {
                 Ok(()) => return Ok(()),
                 Err(error) => {
-                    let _ = error;
+                    eprintln!("shell invocation compositor watcher: {error}");
                     if sender.send(rmac_compositor::Event::ConnectionChanged {
                         state: rmac_compositor::ConnectionState::Disconnected,
                     }).await.is_err() {

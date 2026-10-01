@@ -20,14 +20,13 @@ fallback unit. It refuses to build or install anything while
 it from `crates/rmac-lock-provider-linux/pam/rmac-lock`: without that PAM
 service every lock request fails, so the session would resume from suspend
 unlocked.
-The launcher, Apps, Quick Settings, and Notification Center panel
-services bind their separate action-scoped runtime sockets before the shortcut
-broker starts, so
-the first consented activation has an owner and one surface crash cannot
-consume another action. The panel service is distinct from the D-Bus
-notification authority: closing its window leaves its shortcut endpoint alive,
-while restarting it cannot take down notification admission or retained
-history.
+The launcher, Apps, Quick Settings, and Notification Center panel start on
+first request through the shortcut dispatcher. It asks systemd to start the
+matching unit and retries delivery until that unit binds its action-scoped
+socket, so the first request survives startup. After the last window closes,
+the process remains available for five minutes by default, then exits. The
+panel remains distinct from the D-Bus notification authority, which retains
+history independently.
 The installer also
 builds the notification and Focus services, installs the notification
 portal descriptor and desktop-specific backend selection, and installs D-Bus

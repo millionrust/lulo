@@ -2,7 +2,6 @@
 Description=rmac Apps
 PartOf=rmac-session.target
 After=rmac-session-supervisor.service
-Before=rmac-shortcut-broker.service
 OnFailure=rmac-component-failure@%N.service
 StartLimitIntervalSec=0
 ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-app-drawer
@@ -11,10 +10,7 @@ ConditionFileIsExecutable=%h/.local/libexec/rmac/rmac-app-drawer
 Type=notify
 NotifyAccess=all
 ExecStart=%h/.local/libexec/rmac/rmac-app-drawer --service
-# GPUI's Linux event loop exits successfully when its final window closes.
-# Re-arm the endpoint after that expected lifecycle, but leave a non-zero exit
-# failed so OnFailure can move the session through its normal recovery path.
-Restart=on-success
-RestartSec=100ms
+# The dispatcher starts this unit on first use.
+Restart=no
 NoNewPrivileges=yes
 PrivateTmp=yes

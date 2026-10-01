@@ -14,6 +14,7 @@ impl EditorView {
         let find_input = cx.new(|cx| InputState::new(window, cx).placeholder("Find"));
         let replace_input = cx.new(|cx| InputState::new(window, cx).placeholder("Replace with"));
         let save_name_input = cx.new(|cx| InputState::new(window, cx).default_value("Untitled"));
+        let save_goto_input = cx.new(|cx| InputState::new(window, cx).placeholder("Go to Folder"));
 
         // TextEdit-style untitled numbering: only a window that opens with
         // no path (never one about to load a file) claims a number, freed
@@ -60,8 +61,18 @@ impl EditorView {
             }
             _ => {}
         });
+        let sub_save_goto = cx.subscribe_in(
+            &save_goto_input,
+            window,
+            |this, _input, ev: &InputEvent, window, cx| {
+                if matches!(ev, InputEvent::PressEnter { .. }) {
+                    this.commit_save_goto(window, cx);
+                }
+            },
+        );
 
         cx.bind_keys([
+            KeyBinding::new("cmd-shift-g", SaveGoToFolder, Some("Input")),
             KeyBinding::new(rmac_ui::shortcuts::NEW.keystroke, NewFile, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::OPEN.keystroke, OpenFile, Some(CTX)),
             KeyBinding::new(rmac_ui::shortcuts::SAVE.keystroke, SaveFile, Some(CTX)),
@@ -264,6 +275,11 @@ impl EditorView {
             find_input,
             replace_input,
             save_name_input,
+            save_goto_input,
+            save_goto_open: false,
+            save_goto_busy: false,
+            save_goto_error: false,
+            save_custom_folder: None,
             save_location: SaveLocation::default(),
             matches: Vec::new(),
             current: 0,
@@ -292,7 +308,7 @@ impl EditorView {
             watched_directory: None,
             document_watcher,
             pending_startup_path: initial_path,
-            _subscriptions: vec![sub_main, sub_find],
+            _subscriptions: vec![sub_main, sub_find, sub_save_goto],
         }
     }
 }

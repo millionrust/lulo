@@ -1,0 +1,19 @@
+{
+  "title": "Command-Shift-G opens Go to Folder from the Untitled Save sheet",
+  "app": "text-editor",
+  "launch": {},
+  "steps": [
+    {"type": "A new document"},
+    {"key": "cmd-s", "settle": 1.0},
+    {"key": "cmd-shift-g", "settle": 0.8},
+    {"observe": "goto", "facts": ["focus", "dialog"]},
+    {"key": "escape"},
+    {"key": "escape"},
+    {"observe": "cancelled", "facts": ["dialog", "saved_documents"]}
+  ],
+  "tolerance": {
+    "goto.dialog.title": "ignore",
+    "goto.dialog.buttons": "ignore",
+    "goto.dialog.texts": "ignore"
+  }
+}

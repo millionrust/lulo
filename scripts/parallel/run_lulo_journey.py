@@ -250,6 +250,12 @@ class Driver:
             self.click(step[kind], step.get("target"))
         elif kind == "menu":
             for label in step[kind]:
+                if self.current == "text-editor" and label == "Parallel Journey Sandbox":
+                    # Text Editor adds its format extension when saving; its
+                    # Open Recent menu shows the resulting file name.
+                    matches = list(self.sandbox.glob(f"{label}*"))
+                    if len(matches) == 1:
+                        label = matches[0].name
                 self.click(label)
                 time.sleep(0.15)
         elif kind == "key":
@@ -417,6 +423,9 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--keep", action="store_true")
     parser.add_argument("--inner", type=Path, help=argparse.SUPPRESS)
+    # run_window_move.Run uses this switch for its other two modes; parallel
+    # journeys always use the ordinary 1440×900 nested session.
+    parser.set_defaults(frame_only=False)
     args = parser.parse_args()
     if args.inner:
         data = journey.load(journey.JOURNEYS / f"{args.journeys[0]}.json")

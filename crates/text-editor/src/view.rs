@@ -39,7 +39,7 @@ use crate::PrintFile;
 use crate::{document, long_lines, recovery, rtf, storage};
 use crate::{
     CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, FindNext, FindPrev, IncreaseFont,
-    NewFile, OpenFile, SaveFile, SaveFileAs, ToggleFind, ToggleMono, ToggleReplace,
+    NewFile, OpenFile, SaveFile, SaveFileAs, SaveGoToFolder, ToggleFind, ToggleMono, ToggleReplace,
 };
 
 use document_io::{
@@ -188,6 +188,11 @@ struct EditorView {
     find_input: Entity<InputState>,
     replace_input: Entity<InputState>,
     save_name_input: Entity<InputState>,
+    save_goto_input: Entity<InputState>,
+    save_goto_open: bool,
+    save_goto_busy: bool,
+    save_goto_error: bool,
+    save_custom_folder: Option<PathBuf>,
     save_location: SaveLocation,
     /// Byte offsets of every match of the current query in the buffer.
     matches: Vec<usize>,

@@ -17,9 +17,9 @@ use crate::{
     document, ClearRecentMenu, CloseBar, CloseWindow, DecreaseFont, DuplicateDocument, ExportPdf,
     FindNext, FindPrev, IncreaseFont, NewFile, OpenFile, OpenRecent0, OpenRecent1, OpenRecent2,
     OpenRecent3, OpenRecent4, OpenRecent5, OpenRecent6, OpenRecent7, OpenRecent8, OpenRecent9,
-    PrintFile, SaveFile, SaveFileAs, SetEncodingUtf16Be, SetEncodingUtf16Le, SetEncodingUtf8,
-    SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf, ToggleFind,
-    ToggleMono, ToggleReplace,
+    PrintFile, SaveFile, SaveFileAs, SaveGoToFolder, SetEncodingUtf16Be, SetEncodingUtf16Le,
+    SetEncodingUtf8, SetEncodingUtf8Bom, SetLineEndingCr, SetLineEndingCrLf, SetLineEndingLf,
+    ToggleFind, ToggleMono, ToggleReplace,
 };
 
 use super::{
@@ -128,7 +128,20 @@ impl Render for EditorView {
                 cx.listener(|this, _: &ToggleReplace, window, cx| this.toggle_replace(window, cx)),
             )
             .on_action(cx.listener(|this, _: &FindNext, _, cx| this.find_next(cx)))
-            .on_action(cx.listener(|this, _: &FindPrev, _, cx| this.find_prev(cx)))
+            .on_action(cx.listener(|this, _: &FindPrev, window, cx| {
+                if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) {
+                    this.open_save_goto(window, cx);
+                } else {
+                    this.find_prev(cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &SaveGoToFolder, window, cx| {
+                if matches!(this.alert, Some(ActiveAlert::ConfirmSave(_))) {
+                    this.open_save_goto(window, cx);
+                } else {
+                    this.find_prev(cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &CloseBar, window, cx| this.close_bar(window, cx)))
             .on_action(cx.listener(|this, _: &ToggleMono, _, cx| this.toggle_mono(cx)))
             .on_action(cx.listener(|this, _: &SetEncodingUtf8, _, cx| {
@@ -157,13 +170,14 @@ impl Render for EditorView {
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 this.guarded(Pending::Close, window, cx)
             }))
-            .on_action(cx.listener(|this, _: &crate::SheetWhereDocuments, _, cx| { this.save_location = SaveLocation::Documents; cx.notify(); }))
-            .on_action(cx.listener(|this, _: &crate::SheetWhereDesktop, _, cx| { this.save_location = SaveLocation::Desktop; cx.notify(); }))
-            .on_action(cx.listener(|this, _: &crate::SheetWhereHome, _, cx| { this.save_location = SaveLocation::Home; cx.notify(); }))
-            .on_action(cx.listener(|this, _: &crate::SheetWhereDownloads, _, cx| { this.save_location = SaveLocation::Downloads; cx.notify(); }))
+            .on_action(cx.listener(|this, _: &crate::SheetWhereDocuments, _, cx| { this.save_location = SaveLocation::Documents; this.save_custom_folder = None; cx.notify(); }))
+            .on_action(cx.listener(|this, _: &crate::SheetWhereDesktop, _, cx| { this.save_location = SaveLocation::Desktop; this.save_custom_folder = None; cx.notify(); }))
+            .on_action(cx.listener(|this, _: &crate::SheetWhereHome, _, cx| { this.save_location = SaveLocation::Home; this.save_custom_folder = None; cx.notify(); }))
+            .on_action(cx.listener(|this, _: &crate::SheetWhereDownloads, _, cx| { this.save_location = SaveLocation::Downloads; this.save_custom_folder = None; cx.notify(); }))
             .on_action(cx.listener(|this, _: &crate::SheetWhereOther, window, cx| {
                 if let Some(ActiveAlert::ConfirmSave(then)) = this.alert.take() {
                     this.save_location = SaveLocation::Other;
+                    this.save_custom_folder = None;
                     this.save_sheet(then, window, cx);
                 }
             }))
@@ -363,6 +377,13 @@ impl Render for EditorView {
             })
             .when_some(self.alert.clone(), |d, alert| {
                 d.child(self.render_alert(alert, cx))
+            })
+            .when(self.save_goto_open, |d| {
+                d.child(
+                    rmac_ui::dialog("text-editor-save-goto", self.render_save_goto(cx))
+                        .aria_label("Go to Folder")
+                        .attached(),
+                )
             })
     }
 }

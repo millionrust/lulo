@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "scenario": "text-editor/open-panel-desktop",
+  "platform": "Task contract (Mac at login screen; no recording)",
+  "observations": {
+    "open": {"dialog": {"present": true}},
+    "desktop": {"dialog": {"present": true}, "selection": {"items": ["Desktop"]}},
+    "cancelled": {"dialog": {"present": false}}
+  }
+}

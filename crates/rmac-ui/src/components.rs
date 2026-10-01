@@ -188,12 +188,18 @@ pub struct Dialog {
     initial_focus: InitialFocus,
     extra_key_down: Vec<KeyDownListener>,
     attached: bool,
+    focus_trap: bool,
 }
 
 /// A key handler a dialog runs alongside its own key handling.
 type KeyDownListener = Box<dyn Fn(&KeyDownEvent, &mut Window, &mut App)>;
 
 impl Dialog {
+    /// Leave focus to a newer dialog displayed above this one.
+    pub fn passive(mut self) -> Self {
+        self.focus_trap = false;
+        self
+    }
     /// Place a document sheet directly below the window title bar.
     pub fn attached(mut self) -> Self {
         self.attached = true;
@@ -237,7 +243,9 @@ impl RenderOnce for Dialog {
             .use_keyed_state(self.id.clone(), cx, |_, cx| cx.focus_handle())
             .read(cx)
             .clone();
-        enter_dialog_focus(&boundary, self.initial_focus, window, cx);
+        if self.focus_trap {
+            enter_dialog_focus(&boundary, self.initial_focus, window, cx);
+        }
         let navigation_boundary = boundary.clone();
 
         let mut element = div()
@@ -256,15 +264,17 @@ impl RenderOnce for Dialog {
             // Swallow clicks on the scrim so they don't fall through to the app.
             .occlude()
             .track_focus(&boundary)
-            .capture_key_down(move |event: &KeyDownEvent, window, cx| {
-                let forward = match event.keystroke.key.as_str() {
-                    "tab" => Some(!event.keystroke.modifiers.shift),
-                    _ => None,
-                };
-                if let Some(forward) = forward {
-                    cx.stop_propagation();
-                    cycle_focus_within(&navigation_boundary, forward, window, cx);
-                }
+            .when(self.focus_trap, |element| {
+                element.capture_key_down(move |event: &KeyDownEvent, window, cx| {
+                    let forward = match event.keystroke.key.as_str() {
+                        "tab" => Some(!event.keystroke.modifiers.shift),
+                        _ => None,
+                    };
+                    if let Some(forward) = forward {
+                        cx.stop_propagation();
+                        cycle_focus_within(&navigation_boundary, forward, window, cx);
+                    }
+                })
             })
             .when_some(self.aria_label, |el, name| el.aria_label(name))
             .child(self.content);
@@ -293,6 +303,7 @@ pub fn dialog(id: impl Into<ElementId>, content: impl IntoElement) -> Dialog {
         initial_focus: InitialFocus::First,
         extra_key_down: Vec::new(),
         attached: false,
+        focus_trap: true,
     }
 }
 

@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 
 use gpui::{
-    div, prelude::FluentBuilder as _, px, svg, AnyElement, ClickEvent, Context, Div,
-    Focusable as _, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton,
+    div, prelude::FluentBuilder as _, px, svg, AccessibleAction, AnyElement, ClickEvent, Context,
+    Div, Focusable as _, Hsla, InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton,
     MouseDownEvent, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled, Svg, Window,
 };
@@ -242,9 +242,19 @@ impl Panel {
                     colors.text_sidebar
                 };
                 let location = place.location.clone();
+                let accessible_location = location.clone();
+                let entity = cx.entity();
                 column = column.child(
                     div()
                         .id(SharedString::from(format!("place-{index}-{row}")))
+                        .role(Role::ListBoxOption)
+                        .aria_label(place.name.clone())
+                        .aria_selected(selected)
+                        .on_a11y_action(AccessibleAction::Click, move |_, _, cx| {
+                            entity.update(cx, |this, cx| {
+                                this.navigate(accessible_location.clone(), cx)
+                            });
+                        })
                         .relative()
                         .ml(px(m::SIDEBAR_PILL_INSET))
                         .w(px(m::SIDEBAR_PILL_WIDTH))
@@ -386,6 +396,8 @@ impl Panel {
             elements.push(
                 at(m::DISCLOSURE_X, top, m::DISCLOSURE_WIDTH, m::CONTROL_HEIGHT)
                     .id("collapse")
+                    .role(Role::Button)
+                    .aria_label("Hide Details")
                     .child(plate(colors.control))
                     .child(at(7.0, 7.0, 12.0, 12.0).child(glyph(
                         "icons/chevron-up.svg",
@@ -654,6 +666,8 @@ impl Panel {
                 m::CONTROL_HEIGHT,
             )
             .id("expand")
+            .role(Role::Button)
+            .aria_label("Show Details")
             .child(plate(colors.control))
             .child(at(7.0, 7.0, 12.0, 12.0).child(glyph(
                 "icons/chevron-down.svg",

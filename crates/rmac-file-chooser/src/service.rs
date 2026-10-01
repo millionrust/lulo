@@ -10,6 +10,8 @@ use std::sync::Arc;
 use async_channel::{Receiver, Sender};
 
 use crate::outcome::Outcome;
+use crate::recent;
+use crate::request::Mode;
 use crate::request::Request;
 
 /// More simultaneous panels than this are refused rather than queued.
@@ -33,6 +35,8 @@ impl Close {
 pub struct PanelRequest {
     pub id: u64,
     pub request: Request,
+    /// Loaded by the portal thread before the GPUI window is opened.
+    pub recent_places: Vec<std::path::PathBuf>,
     /// Send exactly one outcome; dropping it without sending means Cancel.
     pub reply: Sender<Outcome>,
     /// Resolves when the frontend closes the request; the panel must close.
@@ -83,7 +87,7 @@ impl Broker {
     /// Present one panel and wait for the user or for Close().
     pub async fn present(
         &self,
-        request: Request,
+        mut request: Request,
         panel_closed: Receiver<()>,
         adapter_closed: Receiver<()>,
     ) -> Result<Outcome, BrokerError> {
@@ -97,10 +101,17 @@ impl Broker {
             return Err(BrokerError::Busy);
         }
         let _guard = LiveGuard(self.live.clone());
+        let app_id = request.app_id.clone();
+        let mode = request.mode;
+        let recent_places = recent::load(&app_id);
+        if request.initial_folder().is_none() {
+            request.current_folder = recent_places.first().cloned();
+        }
         let (reply, outcome) = async_channel::bounded(1);
         let panel = PanelRequest {
             id: self.next_id.fetch_add(1, Ordering::Relaxed),
             request,
+            recent_places,
             reply,
             closed: panel_closed,
         };
@@ -112,7 +123,20 @@ impl Broker {
             let _ = adapter_closed.recv().await;
             Outcome::Cancelled
         };
-        Ok(futures_lite::future::or(chosen, closed).await)
+        let outcome = futures_lite::future::or(chosen, closed).await;
+        if let Outcome::Chosen(selection) = &outcome {
+            if let Some(path) = selection.paths.first() {
+                let folder = if mode == Mode::Open && path.is_dir() {
+                    Some(path.as_path())
+                } else {
+                    path.parent()
+                };
+                if let Some(folder) = folder {
+                    recent::remember(&app_id, folder);
+                }
+            }
+        }
+        Ok(outcome)
     }
 }
 

@@ -14,6 +14,7 @@ pub use rmac_finder::goto;
 pub mod metrics;
 pub mod outcome;
 pub mod parent;
+pub mod recent;
 pub mod request;
 pub mod service;
 

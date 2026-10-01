@@ -1,6 +1,7 @@
 //! Text Editor dirty-close, recovery, conflict, and error alert state machine.
 
 use super::*;
+use gpui::Focusable as _;
 
 impl EditorView {
     /// If the buffer is dirty, ask before discarding; otherwise act immediately.
@@ -49,6 +50,9 @@ impl EditorView {
             input.set_selected_range(0..name.len(), cx);
         });
         self.save_location = SaveLocation::Documents;
+        self.save_custom_folder = None;
+        self.save_goto_open = false;
+        self.save_goto_busy = false;
         self.alert = Some(ActiveAlert::ConfirmSave(then));
         if then.is_some() {
             let _ = rmac_sound::play_alert();
@@ -131,7 +135,82 @@ impl EditorView {
     /// Cancel / dismiss the alert without acting.
     pub(super) fn alert_cancel(&mut self, cx: &mut Context<Self>) {
         self.alert = None;
+        self.save_goto_open = false;
         cx.notify();
+    }
+
+    pub(super) fn open_save_goto(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !matches!(self.alert, Some(ActiveAlert::ConfirmSave(_))) {
+            return;
+        }
+        self.save_goto_input.update(cx, |input, cx| {
+            input.set_value("", window, cx);
+            input.focus(window, cx);
+        });
+        let goto_focus = self.save_goto_input.read(cx).focus_handle(cx);
+        window.on_next_frame(move |window, cx| window.focus(&goto_focus, cx));
+        self.save_goto_open = true;
+        self.save_goto_error = false;
+        cx.notify();
+    }
+
+    pub(super) fn close_save_goto(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.save_goto_open = false;
+        self.save_goto_error = false;
+        self.save_name_input
+            .update(cx, |input, cx| input.focus(window, cx));
+        cx.notify();
+    }
+
+    pub(super) fn commit_save_goto(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.save_goto_open || self.save_goto_busy {
+            return;
+        }
+        let raw = self.save_goto_input.read(cx).text().to_string();
+        let raw = raw.trim();
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        let folder = if raw == "~" {
+            home
+        } else if let Some(rest) = raw.strip_prefix("~/") {
+            home.join(rest)
+        } else {
+            PathBuf::from(raw)
+        };
+        if !folder.is_absolute() {
+            self.save_goto_error = true;
+            cx.notify();
+            return;
+        }
+        self.save_goto_busy = true;
+        cx.spawn_in(window, async move |this, cx| {
+            let check = folder.clone();
+            let valid = cx
+                .background_executor()
+                .spawn(async move { check.is_dir() })
+                .await;
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.save_goto_busy = false;
+                if !this.save_goto_open {
+                    return;
+                }
+                if valid {
+                    this.save_custom_folder = Some(folder);
+                    this.save_goto_open = false;
+                    this.save_goto_error = false;
+                    this.save_name_input.update(cx, |input, cx| {
+                        input.focus(window, cx);
+                        let len = input.text().len();
+                        input.set_selected_range(0..len, cx);
+                    });
+                } else {
+                    this.save_goto_error = true;
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub(super) fn perform(

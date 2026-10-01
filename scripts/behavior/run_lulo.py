@@ -921,7 +921,11 @@ class LuloRun:
             raise StepFailed(f"the app exited ({self.process.returncode}) during the scenario")
 
     def window_origin(self, frame=None) -> tuple[int, int]:
-        windows = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
+        helpers = self.helper_frames() if frame is not None else []
+        if any(frame == helper for helper in helpers):
+            windows = [w for w in self.nested.windows() if w.get("focused")]
+        else:
+            windows = [w for w in self.nested.windows() if w.get("pid") == self.process.pid]
         matching = [w for w in windows if w.get("name") == name(frame)] if frame is not None else []
         focused = matching or [w for w in windows if w.get("focused")] or windows
         if not focused:
@@ -1028,14 +1032,15 @@ class LuloRun:
 
 
 def explore(run: LuloRun) -> None:
-    """Print the app's accessible tree (for writing new scenarios)."""
+    """Print the app and portal helper trees (for writing new scenarios)."""
 
     pyatspi = atspi()
     app = run.application()
+    frames = run.frames() + run.helper_frames()
     print(f"== {run.sid}: application {name(app) if app is not None else None!r}, "
-          f"{len(run.frames())} top-level nodes, sway windows "
+          f"{len(frames)} top-level nodes, sway windows "
           f"{[(w.get('name'), w.get('focused')) for w in run.nested.windows()]}")
-    for frame in run.frames():
+    for frame in frames:
         for node in descendants(frame, limit=1500):
             depth = 0
             parent = node

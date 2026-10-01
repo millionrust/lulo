@@ -23,6 +23,7 @@ gpui::actions!(
         ToggleReplace,
         FindNext,
         FindPrev,
+        SaveGoToFolder,
         CloseBar,
         ToggleMono,
         SetEncodingUtf8,

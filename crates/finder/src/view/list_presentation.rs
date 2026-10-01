@@ -852,8 +852,13 @@ impl FinderView {
                 this.add_paths_to_dock(this.selected_paths(), cx)
             }))
             .on_action(cx.listener(|this, _: &OpenWith, _, cx| this.request_open_with(cx)))
+            .on_action(
+                cx.listener(|this, _: &AlwaysOpenWithOther, _, cx| {
+                    this.request_always_open_with(cx)
+                }),
+            )
             .on_action(cx.listener(|this, action: &OpenWithHandlerAction, _, cx| {
-                this.open_with_menu_handler(action.index, cx)
+                this.open_with_menu_handler(action.index, action.make_default, cx)
             }))
             .on_action(cx.listener(|this, action: &GoToTitlePathAction, _, cx| {
                 this.navigate(action.path.clone(), cx)
@@ -885,6 +890,9 @@ impl FinderView {
             .on_action(cx.listener(|this, _: &NewTab, _, cx| this.new_tab(cx)))
             .on_action(cx.listener(|this, _: &CloseTab, window, cx| {
                 this.close_tab_or_window(window, cx);
+            }))
+            .on_action(cx.listener(|_, _: &CloseAll, _, cx| {
+                cx.defer(super::settings::close_all_windows);
             }))
             .on_action(cx.listener(|this, _: &PreviousTab, _, cx| this.select_adjacent_tab(-1, cx)))
             .on_action(cx.listener(|this, _: &NextTab, _, cx| this.select_adjacent_tab(1, cx)))

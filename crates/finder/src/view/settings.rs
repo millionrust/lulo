@@ -24,7 +24,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-use gpui::{App, WeakEntity};
+use gpui::{AnyWindowHandle, App, WeakEntity};
 use rmac_storage::{Backend as _, FileSystem};
 use serde::{Deserialize, Serialize};
 
@@ -361,20 +361,48 @@ pub(super) fn update(
 }
 
 #[derive(Default)]
-struct OpenFinderWindows(Vec<WeakEntity<FinderView>>);
+struct OpenFinderWindows(Vec<(WeakEntity<FinderView>, AnyWindowHandle)>);
 
 impl gpui::Global for OpenFinderWindows {}
 
 /// Registers one Files window to receive a sidebar rebuild whenever
 /// settings change. Dead entries (a closed window) are pruned the next
 /// time this runs, so the registry never grows across a long session.
-pub(super) fn register_window(weak: WeakEntity<FinderView>, cx: &mut App) {
+pub(super) fn register_window(weak: WeakEntity<FinderView>, handle: AnyWindowHandle, cx: &mut App) {
     if !cx.has_global::<OpenFinderWindows>() {
         cx.set_global(OpenFinderWindows::default());
     }
     let windows = &mut cx.global_mut::<OpenFinderWindows>().0;
-    windows.retain(|existing| existing.entity_id() != weak.entity_id());
-    windows.push(weak);
+    windows.retain(|(existing, _)| existing.entity_id() != weak.entity_id());
+    windows.push((weak, handle));
+}
+
+/// Close each Finder window through its normal persistence path. The action
+/// is deferred until after the active window's event finishes dispatching.
+pub(super) fn close_all_windows(cx: &mut App) {
+    let Some(windows) = cx.try_global::<OpenFinderWindows>() else {
+        return;
+    };
+    let mut saves = Vec::new();
+    for (weak, handle) in windows.0.clone() {
+        let _ = cx.update_window(handle, |_, window, cx| {
+            if let Ok(save) =
+                weak.update(cx, |view, cx| view.close_finder_window_for_all(window, cx))
+            {
+                saves.push(save);
+            }
+        });
+    }
+    cx.background_executor()
+        .spawn(async move {
+            blocking::unblock(move || {
+                for (persistence, state) in saves {
+                    persistence.close(state);
+                }
+            })
+            .await;
+        })
+        .detach();
 }
 
 pub(super) fn broadcast(cx: &mut App) {
@@ -382,7 +410,7 @@ pub(super) fn broadcast(cx: &mut App) {
         return;
     };
     let live: Vec<_> = windows.0.clone();
-    for weak in live {
+    for (weak, _) in live {
         let _ = weak.update(cx, |view, cx| view.rebuild_sidebar_sections(cx));
     }
 }
@@ -395,7 +423,7 @@ pub(super) fn broadcast_favourites(
         return;
     };
     let live = windows.0.clone();
-    for weak in live {
+    for (weak, _) in live {
         let _ = weak.update(cx, |view, cx| {
             view.favourite_extras = favourites.paths.clone();
             view.favourite_order = favourites.order.clone();

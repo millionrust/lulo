@@ -123,6 +123,13 @@
           "children": []
         },
         {
+          "label": "Close All",
+          "action": "finder::CloseAll",
+          "shortcut": "⌥⌘W",
+          "separator_before": false,
+          "children": []
+        },
+        {
           "label": "Get Info",
           "action": "finder::GetInfo",
           "shortcut": "⌘I",
@@ -844,6 +851,21 @@
         "label": "Other…"
       },
       {
+        "type": "item",
+        "label": "<handler.name.clone()>"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "submenu",
+        "label": "Always Open With"
+      },
+      {
+        "type": "item",
+        "label": "Other…"
+      },
+      {
         "type": "separator"
       },
       {
@@ -962,6 +984,21 @@
       {
         "type": "submenu",
         "label": "Open With"
+      },
+      {
+        "type": "item",
+        "label": "Other…"
+      },
+      {
+        "type": "item",
+        "label": "<handler.name.clone()>"
+      },
+      {
+        "type": "separator"
+      },
+      {
+        "type": "submenu",
+        "label": "Always Open With"
       },
       {
         "type": "item",

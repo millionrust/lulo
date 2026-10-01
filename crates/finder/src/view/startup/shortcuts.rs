@@ -100,6 +100,7 @@ pub(super) fn bind_finder_keys(cx: &mut Context<FinderView>) {
             CloseTab,
             Some("Finder"),
         ),
+        KeyBinding::new("alt-cmd-w", CloseAll, Some("Finder")),
         KeyBinding::new("ctrl-shift-tab", PreviousTab, Some("Finder")),
         KeyBinding::new("ctrl-tab", NextTab, Some("Finder")),
         KeyBinding::new("cmd-shift-[", PreviousTab, Some("Finder")),

@@ -161,12 +161,32 @@ impl FinderView {
                     for (index, handler) in association.handlers.iter().take(16).enumerate() {
                         submenu = submenu.item(
                             handler.name.clone(),
-                            Box::new(OpenWithHandlerAction { index }),
+                            Box::new(OpenWithHandlerAction {
+                                index,
+                                make_default: false,
+                            }),
                         );
                     }
                     submenu = submenu.separator();
                 }
                 m = m.submenu("Open With", submenu.item("Other…", Box::new(OpenWith)));
+                let mut always = rmac_ui::ContextMenu::new(pos);
+                if let Some(association) = open_with_association {
+                    for (index, handler) in association.handlers.iter().take(16).enumerate() {
+                        always = always.item(
+                            handler.name.clone(),
+                            Box::new(OpenWithHandlerAction {
+                                index,
+                                make_default: true,
+                            }),
+                        );
+                    }
+                    always = always.separator();
+                }
+                m = m.submenu(
+                    "Always Open With",
+                    always.item("Other…", Box::new(AlwaysOpenWithOther)),
+                );
             }
             m = m
                 .separator()

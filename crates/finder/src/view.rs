@@ -151,6 +151,7 @@ actions!(
         OpenSelectionInNewWindow,
         OpenSelectionInNewWindowAndClose,
         OpenWith,
+        AlwaysOpenWithOther,
         QuickLook,
         Compress,
         GetInfo,
@@ -165,6 +166,7 @@ actions!(
         SortByKind,
         NewTab,
         CloseTab,
+        CloseAll,
         PreviousTab,
         NextTab,
         ShowHelp,
@@ -216,6 +218,7 @@ struct DraggedSidebarItem(PathBuf);
 #[action(namespace = finder, no_json)]
 struct OpenWithHandlerAction {
     index: usize,
+    make_default: bool,
 }
 
 #[derive(Clone, PartialEq, gpui::Action)]

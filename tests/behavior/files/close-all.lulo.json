@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "scenario": "files/close-all",
+  "platform": "Lulo",
+  "observations": {
+    "before": {"windows": {"count": 2}},
+    "closed": {"windows": {"count": 0}}
+  }
+}

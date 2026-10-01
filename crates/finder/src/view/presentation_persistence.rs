@@ -137,6 +137,7 @@ impl FinderState {
 /// ([`FinderPersistence::close`]), so it always holds the *last-closed*
 /// window's state for the next launch to restore, as the Mac's window
 /// restoration does.
+#[derive(Clone)]
 pub(super) struct FinderPersistence {
     window_id: String,
     pending: Arc<Mutex<Option<FinderState>>>,
@@ -324,10 +325,26 @@ impl FinderView {
     /// after this runs, so the save happens before `remove_window`, not
     /// after.
     pub(super) fn close_finder_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.finder_persistence.close(self.finder_state());
+        self.remove_finder_window(window, cx);
+    }
+
+    /// Close All batches persistence on the background executor so closing
+    /// several windows never holds up the UI thread with file writes.
+    pub(super) fn close_finder_window_for_all(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> (FinderPersistence, Option<FinderState>) {
+        let save = (self.finder_persistence.clone(), self.finder_state());
+        self.remove_finder_window(window, cx);
+        save
+    }
+
+    fn remove_finder_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(cancel) = self.size_scan_cancel.take() {
             cancel.store(true, std::sync::atomic::Ordering::Relaxed);
         }
-        self.finder_persistence.close(self.finder_state());
         for info_window in self.info_windows.drain(..) {
             let _ = cx.update_window(*info_window, |_, window, _| window.remove_window());
         }

@@ -598,6 +598,7 @@ const FILES_MENUS: &[MenuSpec] = &[
                 "⌥⌘O"
             ),
             item!("Close Window", "finder::CloseTab", "⌘W"),
+            item!("Close All", "finder::CloseAll", "⌥⌘W"),
             item!("Get Info", "finder::GetInfo", "⌘I", separator),
             item!("Quick Look", "finder::QuickLook", "⌘Y"),
             item!("Rename", "finder::RenameItem", ""),
@@ -2549,6 +2550,7 @@ mod tests {
             ("finder::DeselectAll", "⌥⌘A"),
             ("finder::OpenSelectionInNewTab", "⌃⌘O"),
             ("finder::OpenSelectionInNewWindowAndClose", "⌥⌘O"),
+            ("finder::CloseAll", "⌥⌘W"),
             ("finder::QuickLook", "⌘Y"),
             ("finder::GoUpInNewWindow", "⌃⌘↑"),
             ("finder::MoveItemHere", "⌥⌘V"),

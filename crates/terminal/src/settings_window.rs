@@ -171,7 +171,7 @@ fn choice_row(
     swatch: Option<u32>,
     on_click: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
-    let label = label.into();
+    let label: SharedString = label.into();
     div()
         .id(id)
         .role(Role::RadioButton)
